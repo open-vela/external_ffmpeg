@@ -3,20 +3,20 @@
  * Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
  * Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -61,10 +61,8 @@ static int probe(AVProbeData *p)
 {
     const uint8_t *b = p->buf;
 
-    if (((b[0] == 'B' && b[1] == 'I' && b[2] == 'K' &&
-         (b[3] == 'b' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' || b[3] == 'i')) ||
-         (b[0] == 'K' && b[1] == 'B' && b[2] == '2' && /* Bink 2 */
-         (b[3] == 'a' || b[3] == 'd' || b[3] == 'f' || b[3] == 'g'))) &&
+    if ( b[0] == 'B' && b[1] == 'I' && b[2] == 'K' &&
+        (b[3] == 'b' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' || b[3] == 'i') &&
         AV_RL32(b+8) > 0 &&  // num_frames
         AV_RL32(b+20) > 0 && AV_RL32(b+20) <= BINK_MAX_WIDTH &&
         AV_RL32(b+24) > 0 && AV_RL32(b+24) <= BINK_MAX_HEIGHT &&
@@ -83,7 +81,6 @@ static int read_header(AVFormatContext *s)
     uint32_t pos, next_pos;
     uint16_t flags;
     int keyframe;
-    int ret;
 
     vst = avformat_new_stream(s, NULL);
     if (!vst)
@@ -123,14 +120,11 @@ static int read_header(AVFormatContext *s)
 
     vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     vst->codec->codec_id   = AV_CODEC_ID_BINKVIDEO;
-
-    if ((vst->codec->codec_tag & 0xFFFFFF) == MKTAG('K', 'B', '2', 0)) {
-        av_log(s, AV_LOG_WARNING, "Bink 2 video is not implemented\n");
-        vst->codec->codec_id = AV_CODEC_ID_NONE;
-    }
-
-    if (ff_get_extradata(vst->codec, pb, 4) < 0)
+    vst->codec->extradata  = av_mallocz(4 + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!vst->codec->extradata)
         return AVERROR(ENOMEM);
+    vst->codec->extradata_size = 4;
+    avio_read(pb, vst->codec->extradata, 4);
 
     bink->num_audio_tracks = avio_rl32(pb);
 
@@ -162,8 +156,10 @@ static int read_header(AVFormatContext *s)
                 ast->codec->channels       = 1;
                 ast->codec->channel_layout = AV_CH_LAYOUT_MONO;
             }
-            if (ff_alloc_extradata(ast->codec, 4))
+            ast->codec->extradata = av_mallocz(4 + FF_INPUT_BUFFER_PADDING_SIZE);
+            if (!ast->codec->extradata)
                 return AVERROR(ENOMEM);
+            ast->codec->extradata_size = 4;
             AV_WL32(ast->codec->extradata, vst->codec->codec_tag);
         }
 
@@ -189,12 +185,11 @@ static int read_header(AVFormatContext *s)
             av_log(s, AV_LOG_ERROR, "invalid frame index table\n");
             return AVERROR(EIO);
         }
-        if ((ret = av_add_index_entry(vst, pos, i, next_pos - pos, 0,
-                                      keyframe ? AVINDEX_KEYFRAME : 0)) < 0)
-            return ret;
+        av_add_index_entry(vst, pos, i, next_pos - pos, 0,
+                           keyframe ? AVINDEX_KEYFRAME : 0);
     }
 
-    avio_seek(pb, vst->index_entries[0].pos, SEEK_SET);
+    avio_skip(pb, 4);
 
     bink->current_track = -1;
     return 0;
@@ -211,7 +206,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
         AVStream *st = s->streams[0]; // stream 0 is video stream with index
 
         if (bink->video_pts >= st->duration)
-            return AVERROR_EOF;
+            return AVERROR(EIO);
 
         index_entry = av_index_search_timestamp(st, bink->video_pts,
                                                 AVSEEK_FLAG_ANY);
@@ -293,5 +288,4 @@ AVInputFormat ff_bink_demuxer = {
     .read_header    = read_header,
     .read_packet    = read_packet,
     .read_seek      = read_seek,
-    .flags          = AVFMT_SHOW_IDS,
 };
