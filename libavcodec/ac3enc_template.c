@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2011 Justin Ruggles <justin.ruggles@gmail.com>
  * Copyright (c) 2006-2010 Prakash Punnoor <prakash@punnoor.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,9 +47,6 @@ static void clip_coefficients(AudioDSPContext *adsp, CoefType *coef,
 
 static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl);
 
-static void sum_square_butterfly(AC3EncodeContext *s, CoefSumType sum[4],
-                                 const CoefType *coef0, const CoefType *coef1,
-                                 int len);
 
 int AC3_NAME(allocate_sample_buffers)(AC3EncodeContext *s)
 {
@@ -57,7 +54,7 @@ int AC3_NAME(allocate_sample_buffers)(AC3EncodeContext *s)
 
     FF_ALLOC_OR_GOTO(s->avctx, s->windowed_samples, AC3_WINDOW_SIZE *
                      sizeof(*s->windowed_samples), alloc_fail);
-    FF_ALLOC_ARRAY_OR_GOTO(s->avctx, s->planar_samples, s->channels, sizeof(*s->planar_samples),
+    FF_ALLOC_OR_GOTO(s->avctx, s->planar_samples, s->channels * sizeof(*s->planar_samples),
                      alloc_fail);
     for (ch = 0; ch < s->channels; ch++) {
         FF_ALLOCZ_OR_GOTO(s->avctx, s->planar_samples[ch],
@@ -73,7 +70,7 @@ alloc_fail:
 
 /*
  * Copy input samples.
- * Channels are reordered from FFmpeg's default order to AC-3 order.
+ * Channels are reordered from Libav's default order to AC-3 order.
  */
 static void copy_input_samples(AC3EncodeContext *s, SampleType **samples)
 {
@@ -136,7 +133,7 @@ static void apply_channel_coupling(AC3EncodeContext *s)
 #else
     int32_t (*fixed_cpl_coords)[AC3_MAX_CHANNELS][16] = cpl_coords;
 #endif
-    int av_uninit(blk), ch, bnd, i, j;
+    int blk, ch, bnd, i, j;
     CoefSumType energy[AC3_MAX_BLOCKS][AC3_MAX_CHANNELS][16] = {{{0}}};
     int cpl_start, num_cpl_coefs;
 
@@ -263,7 +260,7 @@ static void apply_channel_coupling(AC3EncodeContext *s)
                 energy_cpl = energy[blk][CPL_CH][bnd];
                 energy_ch = energy[blk][ch][bnd];
                 blk1 = blk+1;
-                while (blk1 < s->num_blocks && !s->blocks[blk1].new_cpl_coords[ch]) {
+                while (!s->blocks[blk1].new_cpl_coords[ch] && blk1 < s->num_blocks) {
                     if (s->blocks[blk1].cpl_in_use) {
                         energy_cpl += energy[blk1][CPL_CH][bnd];
                         energy_ch += energy[blk1][ch][bnd];
@@ -339,8 +336,8 @@ static void apply_channel_coupling(AC3EncodeContext *s)
 static void compute_rematrixing_strategy(AC3EncodeContext *s)
 {
     int nb_coefs;
-    int blk, bnd;
-    AC3Block *block, *block0 = NULL;
+    int blk, bnd, i;
+    AC3Block *block, *block0;
 
     if (s->channel_mode != AC3_CHMODE_STEREO)
         return;
@@ -364,12 +361,20 @@ static void compute_rematrixing_strategy(AC3EncodeContext *s)
         }
 
         for (bnd = 0; bnd < block->num_rematrixing_bands; bnd++) {
-            /* calculate sum of squared coeffs for one band in one block */
+            /* calculate calculate sum of squared coeffs for one band in one block */
             int start = ff_ac3_rematrix_band_tab[bnd];
             int end   = FFMIN(nb_coefs, ff_ac3_rematrix_band_tab[bnd+1]);
-            CoefSumType sum[4];
-            sum_square_butterfly(s, sum, block->mdct_coef[1] + start,
-                                 block->mdct_coef[2] + start, end - start);
+            CoefSumType sum[4] = {0,};
+            for (i = start; i < end; i++) {
+                CoefType lt = block->mdct_coef[1][i];
+                CoefType rt = block->mdct_coef[2][i];
+                CoefType md = lt + rt;
+                CoefType sd = lt - rt;
+                MAC_COEF(sum[0], lt, lt);
+                MAC_COEF(sum[1], rt, rt);
+                MAC_COEF(sum[2], md, md);
+                MAC_COEF(sum[3], sd, sd);
+            }
 
             /* compare sums to determine if rematrixing will be used for this band */
             if (FFMIN(sum[2], sum[3]) < FFMIN(sum[0], sum[1]))
@@ -438,8 +443,10 @@ int AC3_NAME(encode_frame)(AVCodecContext *avctx, AVPacket *avpkt,
 
     ff_ac3_quantize_mantissas(s);
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, s->frame_size)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, s->frame_size))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
     ff_ac3_output_frame(s, avpkt->data);
 
     if (frame->pts != AV_NOPTS_VALUE)
