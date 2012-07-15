@@ -2,20 +2,20 @@
 ;* 32 point SSE-optimized DCT transform
 ;* Copyright (c) 2010 Vitor Sessak
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -23,7 +23,8 @@
 
 SECTION_RODATA 32
 
-align 32
+ps_p1p1m1m1: dd 0, 0, 0x80000000, 0x80000000, 0, 0, 0x80000000, 0x80000000
+
 ps_cos_vec: dd   0.500603,  0.505471,  0.515447,  0.531043
             dd   0.553104,  0.582935,  0.622504,  0.674808
             dd -10.190008, -3.407609, -2.057781, -1.484165
@@ -37,9 +38,6 @@ ps_cos_vec: dd   0.500603,  0.505471,  0.515447,  0.531043
             dd   1.000000,  0.707107,  1.000000, -0.707107
             dd   1.000000,  0.707107,  1.000000, -0.707107
             dd   0.707107,  0.707107,  0.707107,  0.707107
-
-align 32
-ps_p1p1m1m1: dd 0, 0, 0x80000000, 0x80000000, 0, 0, 0x80000000, 0x80000000
 
 %macro BUTTERFLY 4
     subps  %4, %1, %2
@@ -192,7 +190,6 @@ ps_p1p1m1m1: dd 0, 0, 0x80000000, 0x80000000, 0, 0, 0x80000000, 0x80000000
 
 INIT_YMM avx
 SECTION .text
-%if HAVE_AVX_EXTERNAL
 ; void ff_dct32_float_avx(FFTSample *out, const FFTSample *in)
 cglobal dct32_float, 2,3,8, out, in, tmp
     ; pass 1
@@ -265,7 +262,6 @@ cglobal dct32_float, 2,3,8, out, in, tmp
 INIT_XMM
     PASS6_AND_PERMUTE
     RET
-%endif
 
 %if ARCH_X86_64
 %define SPILL SWAP

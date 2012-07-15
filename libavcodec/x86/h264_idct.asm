@@ -9,20 +9,20 @@
 ;*          Holger Lubitz <hal@duncan.ol.sub.de>
 ;*          Min Chen <chenm001.163.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;*****************************************************************************
 
@@ -695,38 +695,6 @@ cglobal h264_idct_add8_8, 5, 8 + npicregs, 0, dst1, block_offset, block, stride,
     add        r0mp, gprsize
 %endif
     call         h264_idct_add8_mmx_plane
-    RET
-
-cglobal h264_idct_add8_422_8, 5, 8 + npicregs, 0, dst1, block_offset, block, stride, nnzc, cntr, coeff, dst2, picreg
-; dst1, block_offset, block, stride, nnzc, cntr, coeff, dst2, picreg
-    movsxdifnidn r3, r3d
-%ifdef PIC
-    lea     picregq, [scan8_mem]
-%endif
-%if ARCH_X86_64
-    mov       dst2q, r0
-%endif
-
-    mov          r5, 16  ; i
-    add          r2, 512 ; i * 16 * sizeof(dctcoef) ; #define dctcoef int16_t
-
-    call         h264_idct_add8_mmx_plane
-    add r5, 4
-    call         h264_idct_add8_mmx_plane
-
-%if ARCH_X86_64
-    add       dst2q, gprsize ; dest[1]
-%else
-    add        r0mp, gprsize
-%endif
-
-    add r5, 4   ; set to 32
-    add r2, 256 ; set to i * 16 * sizeof(dctcoef)
-
-    call         h264_idct_add8_mmx_plane
-    add r5, 4
-    call         h264_idct_add8_mmx_plane
-
     RET
 
 h264_idct_add8_mmxext_plane:
