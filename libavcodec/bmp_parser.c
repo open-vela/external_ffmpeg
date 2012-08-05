@@ -2,20 +2,20 @@
  * BMP parser
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,6 +25,8 @@
  */
 
 #include "libavutil/bswap.h"
+#include "libavutil/common.h"
+
 #include "parser.h"
 
 typedef struct BMPParseContext {
@@ -41,8 +43,6 @@ static int bmp_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     uint64_t state = bpc->pc.state64;
     int next = END_NOT_FOUND;
     int i = 0;
-
-    s->pict_type = AV_PICTURE_TYPE_NONE;
 
     *poutbuf_size = 0;
     if (buf_size == 0)
