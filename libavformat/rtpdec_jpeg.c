@@ -2,20 +2,20 @@
  * RTP JPEG-compressed Video Depacketizer, RFC 2435
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -92,8 +92,7 @@ static void jpeg_put_marker(PutByteContext *pbc, int code)
 }
 
 static int jpeg_create_header(uint8_t *buf, int size, uint32_t type, uint32_t w,
-                              uint32_t h, const uint8_t *qtable, int nb_qtable,
-                              int dri)
+                              uint32_t h, const uint8_t *qtable, int nb_qtable)
 {
     PutByteContext pbc;
     uint8_t *dht_size_ptr;
@@ -118,12 +117,6 @@ static int jpeg_create_header(uint8_t *buf, int size, uint32_t type, uint32_t w,
     bytestream2_put_be16(&pbc, 1);
     bytestream2_put_byte(&pbc, 0);
     bytestream2_put_byte(&pbc, 0);
-
-    if (dri) {
-        jpeg_put_marker(&pbc, DRI);
-        bytestream2_put_be16(&pbc, 4);
-        bytestream2_put_be16(&pbc, dri);
-    }
 
     /* DQT */
     jpeg_put_marker(&pbc, DQT);
@@ -219,7 +212,7 @@ static int jpeg_parse_packet(AVFormatContext *ctx, PayloadContext *jpeg,
     const uint8_t *qtables = NULL;
     uint16_t qtable_len;
     uint32_t off;
-    int ret, dri = 0;
+    int ret;
 
     if (len < 8) {
         av_log(ctx, AV_LOG_ERROR, "Too short RTP/JPEG packet.\n");
@@ -235,16 +228,6 @@ static int jpeg_parse_packet(AVFormatContext *ctx, PayloadContext *jpeg,
     buf += 8;
     len -= 8;
 
-    if (type & 0x40) {
-        if (len < 4) {
-            av_log(ctx, AV_LOG_ERROR, "Too short RTP/JPEG packet.\n");
-            return AVERROR_INVALIDDATA;
-        }
-        dri = AV_RB16(buf);
-        buf += 4;
-        len -= 4;
-        type &= ~0x40;
-    }
     if (type > 1) {
         av_log(ctx, AV_LOG_ERROR, "Unimplemented RTP/JPEG type %d\n", type);
         return AVERROR_PATCHWELCOME;
@@ -329,7 +312,7 @@ static int jpeg_parse_packet(AVFormatContext *ctx, PayloadContext *jpeg,
          * interchange format. */
         jpeg->hdr_size = jpeg_create_header(hdr, sizeof(hdr), type, width,
                                             height, qtables,
-                                            qtable_len / 64, dri);
+                                            qtable_len / 64);
 
         /* Copy JPEG header to frame buffer. */
         avio_write(jpeg->frame, hdr, jpeg->hdr_size);

@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,16 +23,11 @@
 
 #include "url.h"
 
-extern const URLProtocol ff_async_protocol;
-extern const URLProtocol ff_bluray_protocol;
-extern const URLProtocol ff_cache_protocol;
 extern const URLProtocol ff_concat_protocol;
 extern const URLProtocol ff_crypto_protocol;
-extern const URLProtocol ff_data_protocol;
 extern const URLProtocol ff_ffrtmpcrypt_protocol;
 extern const URLProtocol ff_ffrtmphttp_protocol;
 extern const URLProtocol ff_file_protocol;
-extern const URLProtocol ff_ftp_protocol;
 extern const URLProtocol ff_gopher_protocol;
 extern const URLProtocol ff_hls_protocol;
 extern const URLProtocol ff_http_protocol;
@@ -52,41 +47,23 @@ extern const URLProtocol ff_rtmpts_protocol;
 extern const URLProtocol ff_rtp_protocol;
 extern const URLProtocol ff_sctp_protocol;
 extern const URLProtocol ff_srtp_protocol;
-extern const URLProtocol ff_subfile_protocol;
 extern const URLProtocol ff_tcp_protocol;
 extern const URLProtocol ff_tls_gnutls_protocol;
-extern const URLProtocol ff_tls_schannel_protocol;
-extern const URLProtocol ff_tls_securetransport_protocol;
 extern const URLProtocol ff_tls_openssl_protocol;
 extern const URLProtocol ff_udp_protocol;
-extern const URLProtocol ff_udplite_protocol;
 extern const URLProtocol ff_unix_protocol;
 extern const URLProtocol ff_librtmp_protocol;
 extern const URLProtocol ff_librtmpe_protocol;
 extern const URLProtocol ff_librtmps_protocol;
 extern const URLProtocol ff_librtmpt_protocol;
 extern const URLProtocol ff_librtmpte_protocol;
-extern const URLProtocol ff_libssh_protocol;
-extern const URLProtocol ff_libsmbclient_protocol;
 
 static const URLProtocol *url_protocols[] = {
-#if CONFIG_ASYNC_PROTOCOL
-    &ff_async_protocol,
-#endif
-#if CONFIG_BLURAY_PROTOCOL
-    &ff_bluray_protocol,
-#endif
-#if CONFIG_CACHE_PROTOCOL
-    &ff_cache_protocol,
-#endif
 #if CONFIG_CONCAT_PROTOCOL
     &ff_concat_protocol,
 #endif
 #if CONFIG_CRYPTO_PROTOCOL
     &ff_crypto_protocol,
-#endif
-#if CONFIG_DATA_PROTOCOL
-    &ff_data_protocol,
 #endif
 #if CONFIG_FFRTMPCRYPT_PROTOCOL
     &ff_ffrtmpcrypt_protocol,
@@ -96,9 +73,6 @@ static const URLProtocol *url_protocols[] = {
 #endif
 #if CONFIG_FILE_PROTOCOL
     &ff_file_protocol,
-#endif
-#if CONFIG_FTP_PROTOCOL
-    &ff_ftp_protocol,
 #endif
 #if CONFIG_GOPHER_PROTOCOL
     &ff_gopher_protocol,
@@ -157,29 +131,17 @@ static const URLProtocol *url_protocols[] = {
 #if CONFIG_SRTP_PROTOCOL
     &ff_srtp_protocol,
 #endif
-#if CONFIG_SUBFILE_PROTOCOL
-    &ff_subfile_protocol,
-#endif
 #if CONFIG_TCP_PROTOCOL
     &ff_tcp_protocol,
 #endif
 #if CONFIG_TLS_GNUTLS_PROTOCOL
     &ff_tls_gnutls_protocol,
 #endif
-#if CONFIG_TLS_SCHANNEL_PROTOCOL
-    &ff_tls_schannel_protocol,
-#endif
-#if CONFIG_TLS_SECURETRANSPORT_PROTOCOL
-    &ff_tls_securetransport_protocol,
-#endif
 #if CONFIG_TLS_OPENSSL_PROTOCOL
     &ff_tls_openssl_protocol,
 #endif
 #if CONFIG_UDP_PROTOCOL
     &ff_udp_protocol,
-#endif
-#if CONFIG_UDPLITE_PROTOCOL
-    &ff_udplite_protocol,
 #endif
 #if CONFIG_UNIX_PROTOCOL
     &ff_unix_protocol,
@@ -201,12 +163,6 @@ static const URLProtocol *url_protocols[] = {
 #if CONFIG_LIBRTMPTE_PROTOCOL
     &ff_librtmpte_protocol,
 #endif
-#if CONFIG_LIBSSH_PROTOCOL
-    &ff_libssh_protocol,
-#endif
-#if CONFIG_LIBSMBCLIENT_PROTOCOL
-    &ff_libsmbclient_protocol,
-#endif
     NULL,
 };
 
@@ -215,7 +171,7 @@ const AVClass *ff_urlcontext_child_class_next(const AVClass *prev)
     int i;
 
     /* find the protocol that corresponds to prev */
-    for (i = 0; prev && url_protocols[i]; i++) {
+    for (i = 0; url_protocols[i]; i++) {
         if (url_protocols[i]->priv_data_class == prev) {
             i++;
             break;
