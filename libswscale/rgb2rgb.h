@@ -6,20 +6,20 @@
  *  Written by Nick Kurshev.
  *  YUV & runtime CPU stuff by Michael (michaelni@gmx.at)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,12 +52,6 @@ extern void (*rgb32tobgr15)(const uint8_t *src, uint8_t *dst, int src_size);
 
 extern void (*shuffle_bytes_2103)(const uint8_t *src, uint8_t *dst, int src_size);
 
-void rgb64tobgr48_nobswap(const uint8_t *src, uint8_t *dst, int src_size);
-void   rgb64tobgr48_bswap(const uint8_t *src, uint8_t *dst, int src_size);
-void rgb48tobgr48_nobswap(const uint8_t *src, uint8_t *dst, int src_size);
-void   rgb48tobgr48_bswap(const uint8_t *src, uint8_t *dst, int src_size);
-void    rgb64to48_nobswap(const uint8_t *src, uint8_t *dst, int src_size);
-void      rgb64to48_bswap(const uint8_t *src, uint8_t *dst, int src_size);
 void    rgb24to32(const uint8_t *src, uint8_t *dst, int src_size);
 void    rgb32to24(const uint8_t *src, uint8_t *dst, int src_size);
 void rgb16tobgr32(const uint8_t *src, uint8_t *dst, int src_size);
@@ -70,15 +64,16 @@ void rgb15tobgr16(const uint8_t *src, uint8_t *dst, int src_size);
 void rgb15tobgr15(const uint8_t *src, uint8_t *dst, int src_size);
 void rgb12tobgr12(const uint8_t *src, uint8_t *dst, int src_size);
 void    rgb12to15(const uint8_t *src, uint8_t *dst, int src_size);
+void   bgr8torgb8(const uint8_t *src, uint8_t *dst, int src_size);
 
 void shuffle_bytes_0321(const uint8_t *src, uint8_t *dst, int src_size);
 void shuffle_bytes_1230(const uint8_t *src, uint8_t *dst, int src_size);
 void shuffle_bytes_3012(const uint8_t *src, uint8_t *dst, int src_size);
 void shuffle_bytes_3210(const uint8_t *src, uint8_t *dst, int src_size);
 
-void ff_rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
-                      uint8_t *vdst, int width, int height, int lumStride,
-                      int chromStride, int srcStride, int32_t *rgb2yuv);
+void rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
+                   uint8_t *vdst, int width, int height, int lumStride,
+                   int chromStride, int srcStride);
 
 /**
  * Height should be a multiple of 2 and width should be a multiple of 16.
@@ -124,10 +119,9 @@ extern void (*yuv422ptouyvy)(const uint8_t *ysrc, const uint8_t *usrc, const uin
  * Chrominance data is only taken from every second line, others are ignored.
  * FIXME: Write high quality version.
  */
-extern void (*ff_rgb24toyv12)(const uint8_t *src, uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
-                              int width, int height,
-                              int lumStride, int chromStride, int srcStride,
-                              int32_t *rgb2yuv);
+extern void (*rgb24toyv12)(const uint8_t *src, uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
+                           int width, int height,
+                           int lumStride, int chromStride, int srcStride);
 extern void (*planar2x)(const uint8_t *src, uint8_t *dst, int width, int height,
                         int srcStride, int dstStride);
 
