@@ -3,20 +3,20 @@
  *
  * Copyright (C) 2015 Timo Rothenpieler <timo@rothenpieler.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,8 @@
 #include <va/va_dec_hevc.h>
 
 #include "avcodec.h"
-#include "hevc.h"
+#include "hevcdec.h"
+#include "hwaccel.h"
 #include "vaapi_decode.h"
 
 typedef struct VAAPIDecodePictureHEVC {
@@ -231,11 +232,11 @@ static int vaapi_hevc_start_frame(AVCodecContext          *avctx,
                 iq_matrix.ScalingList8x8[i][j]   = scaling_list->sl[1][i][j];
                 iq_matrix.ScalingList16x16[i][j] = scaling_list->sl[2][i][j];
                 if (i < 2)
-                    iq_matrix.ScalingList32x32[i][j] = scaling_list->sl[3][i * 3][j];
+                    iq_matrix.ScalingList32x32[i][j] = scaling_list->sl[3][i][j];
             }
             iq_matrix.ScalingListDC16x16[i] = scaling_list->sl_dc[0][i];
             if (i < 2)
-                iq_matrix.ScalingListDC32x32[i] = scaling_list->sl_dc[1][i * 3];
+                iq_matrix.ScalingListDC32x32[i] = scaling_list->sl_dc[1][i];
         }
 
         err = ff_vaapi_decode_make_param_buffer(avctx, &pic->pic,
@@ -296,9 +297,9 @@ static void fill_pred_weight_table(const HEVCContext *h,
     slice_param->delta_chroma_log2_weight_denom = 0;
     slice_param->luma_log2_weight_denom         = 0;
 
-    if (sh->slice_type == I_SLICE ||
-        (sh->slice_type == P_SLICE && !h->ps.pps->weighted_pred_flag) ||
-        (sh->slice_type == B_SLICE && !h->ps.pps->weighted_bipred_flag))
+    if (sh->slice_type == HEVC_SLICE_I ||
+        (sh->slice_type == HEVC_SLICE_P && !h->ps.pps->weighted_pred_flag) ||
+        (sh->slice_type == HEVC_SLICE_B && !h->ps.pps->weighted_bipred_flag))
         return;
 
     slice_param->luma_log2_weight_denom = sh->luma_log2_weight_denom;
@@ -316,7 +317,7 @@ static void fill_pred_weight_table(const HEVCContext *h,
         slice_param->ChromaOffsetL0[i][1] = sh->chroma_offset_l0[i][1];
     }
 
-    if (sh->slice_type == B_SLICE) {
+    if (sh->slice_type == HEVC_SLICE_B) {
         for (i = 0; i < 15 && i < sh->nb_refs[L1]; i++) {
             slice_param->delta_luma_weight_l1[i] = sh->luma_weight_l1[i] - (1 << sh->luma_log2_weight_denom);
             slice_param->luma_offset_l1[i] = sh->luma_offset_l1[i];
@@ -355,8 +356,8 @@ static int vaapi_hevc_decode_slice(AVCodecContext *avctx,
     const SliceHeader       *sh = &h->sh;
     VAAPIDecodePictureHEVC *pic = h->ref->hwaccel_picture_private;
 
-    int nb_list = (sh->slice_type == B_SLICE) ?
-                  2 : (sh->slice_type == I_SLICE ? 0 : 1);
+    int nb_list = (sh->slice_type == HEVC_SLICE_B) ?
+                  2 : (sh->slice_type == HEVC_SLICE_I ? 0 : 1);
 
     int err, i, list_idx;
 
@@ -378,7 +379,7 @@ static int vaapi_hevc_decode_slice(AVCodecContext *avctx,
         .slice_data_flag               = VA_SLICE_DATA_FLAG_ALL,
         /* Add 1 to the bits count here to account for the byte_alignment bit, which
          * always is at least one bit and not accounted for otherwise. */
-        .slice_data_byte_offset        = (get_bits_count(&h->HEVClc->gb) + 1 + 7) / 8,
+        .slice_data_byte_offset        = (get_bits_count(&h->HEVClc.gb) + 1 + 7) / 8,
         .slice_segment_address         = sh->slice_segment_addr,
         .slice_qp_delta                = sh->slice_qp_delta,
         .slice_cb_qp_offset            = sh->slice_cb_qp_offset,
@@ -386,7 +387,7 @@ static int vaapi_hevc_decode_slice(AVCodecContext *avctx,
         .slice_beta_offset_div2        = sh->beta_offset / 2,
         .slice_tc_offset_div2          = sh->tc_offset / 2,
         .collocated_ref_idx            = sh->slice_temporal_mvp_enabled_flag ? sh->collocated_ref_idx : 0xFF,
-        .five_minus_max_num_merge_cand = sh->slice_type == I_SLICE ? 0 : 5 - sh->max_num_merge_cand,
+        .five_minus_max_num_merge_cand = sh->slice_type == HEVC_SLICE_I ? 0 : 5 - sh->max_num_merge_cand,
         .num_ref_idx_l0_active_minus1  = sh->nb_refs[L0] ? sh->nb_refs[L0] - 1 : 0,
         .num_ref_idx_l1_active_minus1  = sh->nb_refs[L1] ? sh->nb_refs[L1] - 1 : 0,
 
@@ -434,4 +435,5 @@ AVHWAccel ff_hevc_vaapi_hwaccel = {
     .init                 = ff_vaapi_decode_init,
     .uninit               = ff_vaapi_decode_uninit,
     .priv_data_size       = sizeof(VAAPIDecodeContext),
+    .caps_internal        = HWACCEL_CAP_ASYNC_SAFE,
 };
