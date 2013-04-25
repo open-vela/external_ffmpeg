@@ -3,20 +3,20 @@
  *
  * Copyright (C) 2012 - 2013 Guillaume Martres
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,8 +24,6 @@
 #include "hevc.h"
 
 #include "bit_depth_template.c"
-#include "hevcdsp.h"
-
 
 static void FUNC(put_pcm)(uint8_t *_dst, ptrdiff_t stride, int size,
                           GetBitContext *gb, int pcm_bit_depth)
@@ -52,7 +50,7 @@ static void FUNC(transquant_bypass4x4)(uint8_t *_dst, int16_t *coeffs,
 
     for (y = 0; y < 4; y++) {
         for (x = 0; x < 4; x++) {
-            dst[x] = av_clip_pixel(dst[x] + *coeffs);
+            dst[x] += *coeffs;
             coeffs++;
         }
         dst += stride;
@@ -69,7 +67,7 @@ static void FUNC(transquant_bypass8x8)(uint8_t *_dst, int16_t *coeffs,
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++) {
-            dst[x] = av_clip_pixel(dst[x] + *coeffs);
+            dst[x] += *coeffs;
             coeffs++;
         }
         dst += stride;
@@ -86,7 +84,7 @@ static void FUNC(transquant_bypass16x16)(uint8_t *_dst, int16_t *coeffs,
 
     for (y = 0; y < 16; y++) {
         for (x = 0; x < 16; x++) {
-            dst[x] = av_clip_pixel(dst[x] + *coeffs);
+            dst[x] += *coeffs;
             coeffs++;
         }
         dst += stride;
@@ -103,7 +101,7 @@ static void FUNC(transquant_bypass32x32)(uint8_t *_dst, int16_t *coeffs,
 
     for (y = 0; y < 32; y++) {
         for (x = 0; x < 32; x++) {
-            dst[x] = av_clip_pixel(dst[x] + *coeffs);
+            dst[x] += *coeffs;
             coeffs++;
         }
         dst += stride;
@@ -395,7 +393,7 @@ static void FUNC(sao_band_filter)(uint8_t *_dst, uint8_t *_src,
         offset_table[(k + sao_left_class) & 31] = sao_offset_val[k + 1];
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++)
-            dst[x] = av_clip_pixel(src[x] + offset_table[src[x] >> shift]);
+            dst[x] = av_clip_pixel(src[x] + offset_table[av_clip_pixel(src[x] >> shift)]);
         dst += stride;
         src += stride;
     }
