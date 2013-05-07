@@ -53,6 +53,8 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/fixed_dsp.h"
 #include "libavutil/lfg.h"
+#include "libavutil/mem_internal.h"
+
 #include "ac3.h"
 #include "ac3dsp.h"
 #include "bswapdsp.h"
@@ -251,7 +253,6 @@ typedef struct AC3DecodeContext {
 ///@}
 } AC3DecodeContext;
 
-#if CONFIG_EAC3_DECODER
 /**
  * Parse the E-AC-3 frame header.
  * This parses both the bit stream info and audio frame header.
@@ -270,7 +271,6 @@ static void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch);
  * approximate the original high frequency signal.
  */
 static void ff_eac3_apply_spectral_extension(AC3DecodeContext *s);
-#endif
 
 #if (!USE_FIXED)
 extern float ff_ac3_heavy_dynamic_range_tab[256];
