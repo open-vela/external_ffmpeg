@@ -53,7 +53,6 @@ fate-ac3-encode: CMP_SHIFT = -1024
 fate-ac3-encode: CMP_TARGET = 404.53
 fate-ac3-encode: SIZE_TOLERANCE = 488
 
-
 FATE_EAC3-$(call ENCDEC, EAC3, EAC3) += fate-eac3-encode
 fate-eac3-encode: CMD = enc_dec_pcm eac3 wav s16le $(subst $(SAMPLES),$(TARGET_SAMPLES),$(REF)) -c:a eac3 -b:a 128k
 fate-eac3-encode: CMP_SHIFT = -1024
@@ -66,7 +65,7 @@ fate-ac3-encode fate-eac3-encode: REF = $(SAMPLES)/audio-reference/luckynight_2c
 FATE_AC3-$(call ENCMUX, AC3_FIXED, AC3) += fate-ac3-fixed-encode
 fate-ac3-fixed-encode: tests/data/asynth-44100-2.wav
 fate-ac3-fixed-encode: SRC = $(TARGET_PATH)/tests/data/asynth-44100-2.wav
-fate-ac3-fixed-encode: CMD = md5 -i $(SRC) -c ac3_fixed -ab 128k -f ac3 -flags +bitexact
+fate-ac3-fixed-encode: CMD = md5 -i $(SRC) -c ac3_fixed -b 128k -f ac3 -flags bitexact
 fate-ac3-fixed-encode: CMP = oneline
 fate-ac3-fixed-encode: REF = a1d1fc116463b771abf5aef7ed37d7b1
 
