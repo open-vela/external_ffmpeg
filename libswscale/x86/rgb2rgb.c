@@ -6,20 +6,20 @@
  * Written by Nick Kurshev.
  * palette & YUV & runtime CPU stuff by Michael (michaelni@gmx.at)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -72,10 +72,8 @@ DECLARE_ASM_CONST(8, uint64_t, blue_16mask)  = 0x0000001f0000001fULL;
 DECLARE_ASM_CONST(8, uint64_t, red_15mask)   = 0x00007c0000007c00ULL;
 DECLARE_ASM_CONST(8, uint64_t, green_15mask) = 0x000003e0000003e0ULL;
 DECLARE_ASM_CONST(8, uint64_t, blue_15mask)  = 0x0000001f0000001fULL;
-DECLARE_ASM_CONST(8, uint64_t, mul15_mid)    = 0x4200420042004200ULL;
-DECLARE_ASM_CONST(8, uint64_t, mul15_hi)     = 0x0210021002100210ULL;
-DECLARE_ASM_CONST(8, uint64_t, mul16_mid)    = 0x2080208020802080ULL;
 
+#define RGB2YUV_SHIFT 8
 #define BY ((int)( 0.098*(1<<RGB2YUV_SHIFT)+0.5))
 #define BV ((int)(-0.071*(1<<RGB2YUV_SHIFT)+0.5))
 #define BU ((int)( 0.439*(1<<RGB2YUV_SHIFT)+0.5))
@@ -91,44 +89,35 @@ DECLARE_ASM_CONST(8, uint64_t, mul16_mid)    = 0x2080208020802080ULL;
 #define COMPILE_TEMPLATE_MMXEXT 0
 #define COMPILE_TEMPLATE_AMD3DNOW 0
 #define COMPILE_TEMPLATE_SSE2 0
-#define COMPILE_TEMPLATE_AVX 0
 
 //MMX versions
 #undef RENAME
-#define RENAME(a) a ## _mmx
+#define RENAME(a) a ## _MMX
 #include "rgb2rgb_template.c"
 
 // MMXEXT versions
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 1
-#define RENAME(a) a ## _mmxext
+#define RENAME(a) a ## _MMXEXT
 #include "rgb2rgb_template.c"
 
 //SSE2 versions
 #undef RENAME
 #undef COMPILE_TEMPLATE_SSE2
 #define COMPILE_TEMPLATE_SSE2 1
-#define RENAME(a) a ## _sse2
-#include "rgb2rgb_template.c"
-
-//AVX versions
-#undef RENAME
-#undef COMPILE_TEMPLATE_AVX
-#define COMPILE_TEMPLATE_AVX 1
-#define RENAME(a) a ## _avx
+#define RENAME(a) a ## _SSE2
 #include "rgb2rgb_template.c"
 
 //3DNOW versions
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #undef COMPILE_TEMPLATE_SSE2
-#undef COMPILE_TEMPLATE_AVX
 #undef COMPILE_TEMPLATE_AMD3DNOW
 #define COMPILE_TEMPLATE_MMXEXT 0
 #define COMPILE_TEMPLATE_SSE2 0
 #define COMPILE_TEMPLATE_AMD3DNOW 1
-#define RENAME(a) a ## _3dnow
+#define RENAME(a) a ## _3DNOW
 #include "rgb2rgb_template.c"
 
 /*
@@ -146,14 +135,12 @@ av_cold void rgb2rgb_init_x86(void)
     int cpu_flags = av_get_cpu_flags();
 
     if (INLINE_MMX(cpu_flags))
-        rgb2rgb_init_mmx();
+        rgb2rgb_init_MMX();
     if (INLINE_AMD3DNOW(cpu_flags))
-        rgb2rgb_init_3dnow();
+        rgb2rgb_init_3DNOW();
     if (INLINE_MMXEXT(cpu_flags))
-        rgb2rgb_init_mmxext();
+        rgb2rgb_init_MMXEXT();
     if (INLINE_SSE2(cpu_flags))
-        rgb2rgb_init_sse2();
-    if (INLINE_AVX(cpu_flags))
-        rgb2rgb_init_avx();
+        rgb2rgb_init_SSE2();
 #endif /* HAVE_INLINE_ASM */
 }
