@@ -2,20 +2,20 @@
  * Lagarith lossless decoder
  * Copyright (c) 2009 Nathan Caldwell <saintdev (at) gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -157,8 +157,8 @@ static int lag_read_prob_header(lag_rac *rac, GetBitContext *gb)
                 av_log(rac->avctx, AV_LOG_ERROR, "Invalid probability run encountered.\n");
                 return -1;
             }
-            if (prob > 256 - i)
-                prob = 256 - i;
+            if (prob > 257 - i)
+                prob = 257 - i;
             for (j = 0; j < prob; j++)
                 rac->prob[++i] = 0;
         }
@@ -174,15 +174,7 @@ static int lag_read_prob_header(lag_rac *rac, GetBitContext *gb)
 
     if (cumul_prob & (cumul_prob - 1)) {
         uint64_t mul = softfloat_reciprocal(cumul_prob);
-        for (i = 1; i <= 128; i++) {
-            rac->prob[i] = softfloat_mul(rac->prob[i], mul);
-            scaled_cumul_prob += rac->prob[i];
-        }
-        if (scaled_cumul_prob <= 0) {
-            av_log(rac->avctx, AV_LOG_ERROR, "Scaled probabilities invalid\n");
-            return AVERROR_INVALIDDATA;
-        }
-        for (; i < 257; i++) {
+        for (i = 1; i < 257; i++) {
             rac->prob[i] = softfloat_mul(rac->prob[i], mul);
             scaled_cumul_prob += rac->prob[i];
         }
@@ -257,8 +249,8 @@ static void lag_pred_line(LagarithContext *l, uint8_t *buf,
 
     if (!line) {
         /* Left prediction only for first line */
-        L = l->dsp.add_hfyu_left_prediction(buf, buf,
-                                            width, 0);
+        L = l->dsp.add_hfyu_left_prediction(buf + 1, buf + 1,
+                                            width - 1, buf[0]);
     } else {
         /* Left pixel is actually prev_row[width] */
         L = buf[width - stride - 1];
@@ -284,12 +276,11 @@ static void lag_pred_line_yuy2(LagarithContext *l, uint8_t *buf,
     int L, TL;
 
     if (!line) {
-        L= buf[0];
-        if (is_luma)
-            buf[0] = 0;
-        l->dsp.add_hfyu_left_prediction(buf, buf, width, 0);
-        if (is_luma)
-            buf[0] = L;
+        if (is_luma) {
+            buf++;
+            width--;
+        }
+        l->dsp.add_hfyu_left_prediction(buf + 1, buf + 1, width - 1, buf[0]);
         return;
     }
     if (line == 1) {
@@ -302,17 +293,14 @@ static void lag_pred_line_yuy2(LagarithContext *l, uint8_t *buf,
             L += buf[i];
             buf[i] = L;
         }
-        for (; i<width; i++) {
-            L     = mid_pred(L&0xFF, buf[i-stride], (L + buf[i-stride] - TL)&0xFF) + buf[i];
-            TL    = buf[i-stride];
-            buf[i]= L;
-        }
+        buf   += HEAD;
+        width -= HEAD;
     } else {
         TL = buf[width - (2 * stride) - 1];
         L  = buf[width - stride - 1];
-        l->dsp.add_hfyu_median_prediction(buf, buf - stride, buf, width,
-                                        &L, &TL);
     }
+    l->dsp.add_hfyu_median_prediction(buf, buf - stride, buf, width,
+                                      &L, &TL);
 }
 
 static int lag_decode_line(LagarithContext *l, lag_rac *rac,
@@ -386,7 +374,7 @@ output_zeros:
         i = 0;
         while (!zero_run && dst + i < end) {
             i++;
-            if (i+2 >= src_end - src)
+            if (src + i >= src_end)
                 return AVERROR_INVALIDDATA;
             zero_run =
                 !(src[i] | (src[i + 1] & mask1) | (src[i + 2] & mask2));
@@ -406,7 +394,7 @@ output_zeros:
             dst += i;
         }
     }
-    return  src - src_start;
+    return src_start - src;
 }
 
 
@@ -419,7 +407,7 @@ static int lag_decode_arith_plane(LagarithContext *l, uint8_t *dst,
     int read = 0;
     uint32_t length;
     uint32_t offset = 1;
-    int esc_count;
+    int esc_count = src[0];
     GetBitContext gb;
     lag_rac rac;
     const uint8_t *src_end = src + src_size;
@@ -427,14 +415,8 @@ static int lag_decode_arith_plane(LagarithContext *l, uint8_t *dst,
     rac.avctx = l->avctx;
     l->zeros = 0;
 
-    if(src_size < 2)
-        return AVERROR_INVALIDDATA;
-
-    esc_count = src[0];
     if (esc_count < 4) {
         length = width * height;
-        if(src_size < 5)
-            return AVERROR_INVALIDDATA;
         if (esc_count && AV_RL32(src + 1) < length) {
             length = AV_RL32(src + 1);
             offset += 4;
@@ -517,7 +499,7 @@ static int lag_decode_frame(AVCodecContext *avctx,
                             void *data, int *got_frame, AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
-    unsigned int buf_size = avpkt->size;
+    int buf_size = avpkt->size;
     LagarithContext *l = avctx->priv_data;
     ThreadFrame frame = { .f = data };
     AVFrame *const p  = data;
@@ -526,7 +508,6 @@ static int lag_decode_frame(AVCodecContext *avctx,
     uint32_t offs[4];
     uint8_t *srcs[4], *dst;
     int i, j, planes = 3;
-    int ret;
 
     p->key_frame = 1;
 
@@ -538,51 +519,16 @@ static int lag_decode_frame(AVCodecContext *avctx,
     switch (frametype) {
     case FRAME_SOLID_RGBA:
         avctx->pix_fmt = AV_PIX_FMT_RGB32;
-    case FRAME_SOLID_GRAY:
-        if (frametype == FRAME_SOLID_GRAY)
-            if (avctx->bits_per_coded_sample == 24) {
-                avctx->pix_fmt = AV_PIX_FMT_RGB24;
-            } else {
-                avctx->pix_fmt = AV_PIX_FMT_0RGB32;
-                planes = 4;
-            }
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
-            return ret;
+        if (ff_thread_get_buffer(avctx, &frame, 0) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            return -1;
+        }
 
         dst = p->data[0];
-        if (frametype == FRAME_SOLID_RGBA) {
         for (j = 0; j < avctx->height; j++) {
             for (i = 0; i < avctx->width; i++)
                 AV_WN32(dst + i * 4, offset_gu);
-            dst += p->linesize[0];
-        }
-        } else {
-            for (j = 0; j < avctx->height; j++) {
-                memset(dst, buf[1], avctx->width * planes);
-                dst += p->linesize[0];
-            }
-        }
-        break;
-    case FRAME_SOLID_COLOR:
-        if (avctx->bits_per_coded_sample == 24) {
-            avctx->pix_fmt = AV_PIX_FMT_RGB24;
-        } else {
-            avctx->pix_fmt = AV_PIX_FMT_RGB32;
-            offset_gu |= 0xFFU << 24;
-        }
-
-        if ((ret = ff_thread_get_buffer(avctx, &frame,0)) < 0)
-            return ret;
-
-        dst = p->data[0];
-        for (j = 0; j < avctx->height; j++) {
-            for (i = 0; i < avctx->width; i++)
-                if (avctx->bits_per_coded_sample == 24) {
-                    AV_WB24(dst + i * 3, offset_gu);
-                } else {
-                    AV_WN32(dst + i * 4, offset_gu);
-                }
             dst += p->linesize[0];
         }
         break;
@@ -596,8 +542,10 @@ static int lag_decode_frame(AVCodecContext *avctx,
         if (frametype == FRAME_ARITH_RGB24 || frametype == FRAME_U_RGB24)
             avctx->pix_fmt = AV_PIX_FMT_RGB24;
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
-            return ret;
+        if (ff_thread_get_buffer(avctx, &frame, 0) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            return -1;
+        }
 
         offs[0] = offset_bv;
         offs[1] = offset_gu;
@@ -605,7 +553,7 @@ static int lag_decode_frame(AVCodecContext *avctx,
 
         if (!l->rgb_planes) {
             l->rgb_stride = FFALIGN(avctx->width, 16);
-            l->rgb_planes = av_malloc(l->rgb_stride * avctx->height * 4 + 16);
+            l->rgb_planes = av_malloc(l->rgb_stride * avctx->height * planes + 1);
             if (!l->rgb_planes) {
                 av_log(avctx, AV_LOG_ERROR, "cannot allocate temporary buffer\n");
                 return AVERROR(ENOMEM);
@@ -613,13 +561,14 @@ static int lag_decode_frame(AVCodecContext *avctx,
         }
         for (i = 0; i < planes; i++)
             srcs[i] = l->rgb_planes + (i + 1) * l->rgb_stride * avctx->height - l->rgb_stride;
-        for (i = 0; i < planes; i++)
-            if (buf_size <= offs[i]) {
-                av_log(avctx, AV_LOG_ERROR,
-                        "Invalid frame offsets\n");
-                return AVERROR_INVALIDDATA;
-            }
-
+        if (offset_ry >= buf_size ||
+            offset_gu >= buf_size ||
+            offset_bv >= buf_size ||
+            (planes == 4 && offs[3] >= buf_size)) {
+            av_log(avctx, AV_LOG_ERROR,
+                    "Invalid frame offsets\n");
+            return AVERROR_INVALIDDATA;
+        }
         for (i = 0; i < planes; i++)
             lag_decode_arith_plane(l, srcs[i],
                                    avctx->width, avctx->height,
@@ -653,8 +602,10 @@ static int lag_decode_frame(AVCodecContext *avctx,
     case FRAME_ARITH_YUY2:
         avctx->pix_fmt = AV_PIX_FMT_YUV422P;
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
-            return ret;
+        if (ff_thread_get_buffer(avctx, &frame, 0) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            return -1;
+        }
 
         if (offset_ry >= buf_size ||
             offset_gu >= buf_size ||
@@ -677,10 +628,9 @@ static int lag_decode_frame(AVCodecContext *avctx,
     case FRAME_ARITH_YV12:
         avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
-            return ret;
-        if (buf_size <= offset_ry || buf_size <= offset_gu || buf_size <= offset_bv) {
-            return AVERROR_INVALIDDATA;
+        if (ff_thread_get_buffer(avctx, &frame, 0) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            return -1;
         }
 
         if (offset_ry >= buf_size ||
@@ -704,7 +654,7 @@ static int lag_decode_frame(AVCodecContext *avctx,
     default:
         av_log(avctx, AV_LOG_ERROR,
                "Unsupported Lagarith frame type: %#x\n", frametype);
-        return AVERROR_PATCHWELCOME;
+        return -1;
     }
 
     *got_frame = 1;
