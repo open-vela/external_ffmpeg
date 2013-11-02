@@ -4,20 +4,20 @@
  * Copyright (c) 2014 Konstantin Shishkov
  * Copyright (c) 2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -216,11 +216,10 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
         av_log(avctx, AV_LOG_ERROR, "Could not allocate slice data.\n");
         return AVERROR(ENOMEM);
     }
-    memset(ctx->slice_data, 0, nslices * sizeof(ctx->slice_data[0]));
 
     for (slice = 0; slice < nslices; slice++) {
-        unsigned slice_off = AV_RB32(src + tsize + FIC_HEADER_SIZE + slice * 4);
-        unsigned slice_size;
+        int slice_off = AV_RB32(src + tsize + FIC_HEADER_SIZE + slice * 4);
+        int slice_size;
         int y_off   = ctx->slice_h * slice;
         int slice_h = ctx->slice_h;
 
@@ -235,10 +234,10 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
             slice_size = AV_RB32(src + tsize + FIC_HEADER_SIZE + slice * 4 + 4);
         }
 
-        if (slice_size < slice_off || slice_size > msize)
-            continue;
-
         slice_size -= slice_off;
+
+        if (slice_off > msize || slice_off + slice_size > msize)
+            continue;
 
         ctx->slice_data[slice].src      = sdata + slice_off;
         ctx->slice_data[slice].src_size = slice_size;
