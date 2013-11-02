@@ -7,26 +7,27 @@
  * 1,4,8bpp support and context / deglobalize stuff
  * by Michael Niedermayer (michaelni@gmx.at)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <assert.h>
 
 #include "config.h"
 #include "libswscale/rgb2rgb.h"
@@ -53,7 +54,7 @@ DECLARE_ASM_CONST(8, uint64_t, pb_07) = 0x0707070707070707ULL;
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 0
-#define RENAME(a) a ## _MMX
+#define RENAME(a) a ## _mmx
 #include "yuv2rgb_template.c"
 #endif /* HAVE_MMX_INLINE */
 
@@ -62,7 +63,7 @@ DECLARE_ASM_CONST(8, uint64_t, pb_07) = 0x0707070707070707ULL;
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 1
-#define RENAME(a) a ## _MMXEXT
+#define RENAME(a) a ## _mmxext
 #include "yuv2rgb_template.c"
 #endif /* HAVE_MMXEXT_INLINE */
 
@@ -73,13 +74,17 @@ av_cold SwsFunc ff_yuv2rgb_init_x86(SwsContext *c)
 #if HAVE_MMX_INLINE
     int cpu_flags = av_get_cpu_flags();
 
+    if (c->srcFormat != AV_PIX_FMT_YUV420P &&
+        c->srcFormat != AV_PIX_FMT_YUVA420P)
+        return NULL;
+
 #if HAVE_MMXEXT_INLINE
     if (cpu_flags & AV_CPU_FLAG_MMXEXT) {
         switch (c->dstFormat) {
         case AV_PIX_FMT_RGB24:
-            return yuv420_rgb24_MMXEXT;
+            return yuv420_rgb24_mmxext;
         case AV_PIX_FMT_BGR24:
-            return yuv420_bgr24_MMXEXT;
+            return yuv420_bgr24_mmxext;
         }
     }
 #endif
@@ -89,21 +94,27 @@ av_cold SwsFunc ff_yuv2rgb_init_x86(SwsContext *c)
             case AV_PIX_FMT_RGB32:
                 if (c->srcFormat == AV_PIX_FMT_YUVA420P) {
 #if HAVE_7REGS && CONFIG_SWSCALE_ALPHA
-                    return yuva420_rgb32_MMX;
+                    return yuva420_rgb32_mmx;
 #endif
                     break;
-                } else return yuv420_rgb32_MMX;
+                } else
+                    return yuv420_rgb32_mmx;
             case AV_PIX_FMT_BGR32:
                 if (c->srcFormat == AV_PIX_FMT_YUVA420P) {
 #if HAVE_7REGS && CONFIG_SWSCALE_ALPHA
-                    return yuva420_bgr32_MMX;
+                    return yuva420_bgr32_mmx;
 #endif
                     break;
-                } else return yuv420_bgr32_MMX;
-            case AV_PIX_FMT_RGB24:  return yuv420_rgb24_MMX;
-            case AV_PIX_FMT_BGR24:  return yuv420_bgr24_MMX;
-            case AV_PIX_FMT_RGB565: return yuv420_rgb16_MMX;
-            case AV_PIX_FMT_RGB555: return yuv420_rgb15_MMX;
+                } else
+                    return yuv420_bgr32_mmx;
+            case AV_PIX_FMT_RGB24:
+                return yuv420_rgb24_mmx;
+            case AV_PIX_FMT_BGR24:
+                return yuv420_bgr24_mmx;
+            case AV_PIX_FMT_RGB565:
+                return yuv420_rgb16_mmx;
+            case AV_PIX_FMT_RGB555:
+                return yuv420_rgb15_mmx;
         }
     }
 #endif /* HAVE_MMX_INLINE */
