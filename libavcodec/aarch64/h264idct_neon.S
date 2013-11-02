@@ -2,20 +2,20 @@
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  * Copyright (c) 2013 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -106,8 +106,8 @@ function ff_h264_idct_add16_neon, export=1
         mov             w9,  w3         // stride
         movrel          x7,  scan8
         mov             x10, #16
-        movrel          x13, ff_h264_idct_dc_add_neon
-        movrel          x14, ff_h264_idct_add_neon
+        movrel          x13, X(ff_h264_idct_dc_add_neon)
+        movrel          x14, X(ff_h264_idct_add_neon)
 1:      mov             w2,  w9
         ldrb            w3,  [x7], #1
         ldrsw           x0,  [x5], #4
@@ -133,8 +133,8 @@ function ff_h264_idct_add16intra_neon, export=1
         mov             w9,  w3         // stride
         movrel          x7,  scan8
         mov             x10, #16
-        movrel          x13, ff_h264_idct_dc_add_neon
-        movrel          x14, ff_h264_idct_add_neon
+        movrel          x13, X(ff_h264_idct_dc_add_neon)
+        movrel          x14, X(ff_h264_idct_add_neon)
 1:      mov             w2,  w9
         ldrb            w3,  [x7], #1
         ldrsw           x0,  [x5], #4
@@ -160,8 +160,8 @@ function ff_h264_idct_add8_neon, export=1
         add             x5,  x1,  #16*4         // block_offset
         add             x9,  x2,  #16*32        // block
         mov             w19, w3                 // stride
-        movrel          x13, ff_h264_idct_dc_add_neon
-        movrel          x14, ff_h264_idct_add_neon
+        movrel          x13, X(ff_h264_idct_dc_add_neon)
+        movrel          x14, X(ff_h264_idct_add_neon)
         movrel          x7,  scan8+16
         mov             x10, #0
         mov             x11, #16
@@ -374,8 +374,8 @@ function ff_h264_idct8_add4_neon, export=1
         mov             w2,  w3
         movrel          x7,  scan8
         mov             w10, #16
-        movrel          x13, ff_h264_idct8_dc_add_neon
-        movrel          x14, ff_h264_idct8_add_neon
+        movrel          x13, X(ff_h264_idct8_dc_add_neon)
+        movrel          x14, X(ff_h264_idct8_add_neon)
 1:      ldrb            w9,  [x7], #4
         ldrsw           x0,  [x5], #16
         ldrb            w9,  [x4, w9, UXTW]
