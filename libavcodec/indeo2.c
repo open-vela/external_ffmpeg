@@ -2,20 +2,20 @@
  * Intel Indeo 2 codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,7 @@
 
 typedef struct Ir2Context{
     AVCodecContext *avctx;
-    AVFrame *picture;
+    AVFrame picture;
     GetBitContext gb;
     int decode_delta;
 } Ir2Context;
@@ -146,11 +146,13 @@ static int ir2_decode_frame(AVCodecContext *avctx,
     const uint8_t *buf   = avpkt->data;
     int buf_size         = avpkt->size;
     AVFrame *picture     = data;
-    AVFrame * const p    = s->picture;
+    AVFrame * const p    = &s->picture;
     int start, ret;
 
-    if ((ret = ff_reget_buffer(avctx, p)) < 0)
+    if ((ret = ff_reget_buffer(avctx, p)) < 0) {
+        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     start = 48; /* hardcoded for now */
 
@@ -171,36 +173,36 @@ static int ir2_decode_frame(AVCodecContext *avctx,
 
     if (s->decode_delta) { /* intraframe */
         if ((ret = ir2_decode_plane(s, avctx->width, avctx->height,
-                                    s->picture->data[0], s->picture->linesize[0],
+                                    s->picture.data[0], s->picture.linesize[0],
                                     ir2_luma_table)) < 0)
             return ret;
 
         /* swapped U and V */
         if ((ret = ir2_decode_plane(s, avctx->width >> 2, avctx->height >> 2,
-                                    s->picture->data[2], s->picture->linesize[2],
+                                    s->picture.data[2], s->picture.linesize[2],
                                     ir2_luma_table)) < 0)
             return ret;
         if ((ret = ir2_decode_plane(s, avctx->width >> 2, avctx->height >> 2,
-                                    s->picture->data[1], s->picture->linesize[1],
+                                    s->picture.data[1], s->picture.linesize[1],
                                     ir2_luma_table)) < 0)
             return ret;
     } else { /* interframe */
         if ((ret = ir2_decode_plane_inter(s, avctx->width, avctx->height,
-                                          s->picture->data[0], s->picture->linesize[0],
+                                          s->picture.data[0], s->picture.linesize[0],
                                           ir2_luma_table)) < 0)
             return ret;
         /* swapped U and V */
         if ((ret = ir2_decode_plane_inter(s, avctx->width >> 2, avctx->height >> 2,
-                                          s->picture->data[2], s->picture->linesize[2],
+                                          s->picture.data[2], s->picture.linesize[2],
                                           ir2_luma_table)) < 0)
             return ret;
         if ((ret = ir2_decode_plane_inter(s, avctx->width >> 2, avctx->height >> 2,
-                                          s->picture->data[1], s->picture->linesize[1],
+                                          s->picture.data[1], s->picture.linesize[1],
                                           ir2_luma_table)) < 0)
             return ret;
     }
 
-    if ((ret = av_frame_ref(picture, s->picture)) < 0)
+    if ((ret = av_frame_ref(picture, &s->picture)) < 0)
         return ret;
 
     *got_frame = 1;
@@ -217,9 +219,7 @@ static av_cold int ir2_decode_init(AVCodecContext *avctx)
 
     avctx->pix_fmt= AV_PIX_FMT_YUV410P;
 
-    ic->picture = av_frame_alloc();
-    if (!ic->picture)
-        return AVERROR(ENOMEM);
+    avcodec_get_frame_defaults(&ic->picture);
 
     ir2_vlc.table = vlc_tables;
     ir2_vlc.table_allocated = 1 << CODE_VLC_BITS;
@@ -239,8 +239,9 @@ static av_cold int ir2_decode_init(AVCodecContext *avctx)
 static av_cold int ir2_decode_end(AVCodecContext *avctx)
 {
     Ir2Context * const ic = avctx->priv_data;
+    AVFrame *pic = &ic->picture;
 
-    av_frame_free(&ic->picture);
+    av_frame_unref(pic);
 
     return 0;
 }

@@ -2,20 +2,20 @@
  * Zip Motion Blocks Video (ZMBV) encoder
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,6 +44,8 @@
  */
 typedef struct ZmbvEncContext {
     AVCodecContext *avctx;
+    AVFrame pic;
+
     int range;
     uint8_t *comp_buf, *work_buf;
     uint8_t pal[768];
@@ -119,7 +121,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                         const AVFrame *pict, int *got_packet)
 {
     ZmbvEncContext * const c = avctx->priv_data;
-    AVFrame * const p = (AVFrame *)pict;
+    AVFrame * const p = &c->pic;
     uint8_t *src, *prev, *buf;
     uint32_t *palptr;
     int keyframe, chpal;
@@ -132,6 +134,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     c->curfrm++;
     if(c->curfrm == c->keyint)
         c->curfrm = 0;
+    *p = *pict;
     p->pict_type= keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
     p->key_frame= keyframe;
     chpal = !keyframe && memcmp(p->data[1], c->pal2, 1024);
@@ -226,8 +229,10 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     pkt_size = c->zstream.total_out + 1 + 6*keyframe;
-    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size)) < 0)
+    if ((ret = ff_alloc_packet(pkt, pkt_size)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting packet of size %d.\n", pkt_size);
         return ret;
+    }
     buf = pkt->data;
 
     fl = (keyframe ? ZMBV_KEYFRAME : 0) | (chpal ? ZMBV_DELTAPAL : 0);
@@ -308,6 +313,8 @@ static av_cold int encode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Inflate init error: %d\n", zret);
         return -1;
     }
+
+    avctx->coded_frame = &c->pic;
 
     return 0;
 }
