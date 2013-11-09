@@ -2,20 +2,20 @@
  * Interplay C93 video decoder
  * Copyright (c) 2007 Anssi Hannula <anssi.hannula@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,7 @@
 #include "internal.h"
 
 typedef struct {
-    AVFrame pictures[2];
+    AVFrame *pictures[2];
     int currentpic;
 } C93DecoderContext;
 
@@ -46,21 +46,27 @@ typedef enum {
 #define C93_HAS_PALETTE 0x01
 #define C93_FIRST_FRAME 0x02
 
-static av_cold int decode_init(AVCodecContext *avctx)
-{
-    C93DecoderContext *s = avctx->priv_data;
-    avctx->pix_fmt = AV_PIX_FMT_PAL8;
-    avcodec_get_frame_defaults(&s->pictures[0]);
-    avcodec_get_frame_defaults(&s->pictures[1]);
-    return 0;
-}
-
 static av_cold int decode_end(AVCodecContext *avctx)
 {
     C93DecoderContext * const c93 = avctx->priv_data;
 
-    av_frame_unref(&c93->pictures[0]);
-    av_frame_unref(&c93->pictures[1]);
+    av_frame_free(&c93->pictures[0]);
+    av_frame_free(&c93->pictures[1]);
+
+    return 0;
+}
+
+static av_cold int decode_init(AVCodecContext *avctx)
+{
+    C93DecoderContext *s = avctx->priv_data;
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
+
+    s->pictures[0] = av_frame_alloc();
+    s->pictures[1] = av_frame_alloc();
+    if (!s->pictures[0] || !s->pictures[1]) {
+        decode_end(avctx);
+        return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -121,19 +127,18 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     C93DecoderContext * const c93 = avctx->priv_data;
-    AVFrame * const newpic = &c93->pictures[c93->currentpic];
-    AVFrame * const oldpic = &c93->pictures[c93->currentpic^1];
+    AVFrame * const newpic = c93->pictures[c93->currentpic];
+    AVFrame * const oldpic = c93->pictures[c93->currentpic^1];
     GetByteContext gb;
     uint8_t *out;
     int stride, ret, i, x, y, b, bt = 0;
 
-    if ((ret = ff_set_dimensions(avctx, WIDTH, HEIGHT)) < 0)
-        return ret;
-
     c93->currentpic ^= 1;
 
-    if ((ret = ff_reget_buffer(avctx, newpic)) < 0)
+    if ((ret = ff_reget_buffer(avctx, newpic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     stride = newpic->linesize[0];
 
@@ -171,14 +176,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             case C93_4X4_FROM_PREV:
                 for (j = 0; j < 8; j += 4) {
                     for (i = 0; i < 8; i += 4) {
-                        int offset = bytestream2_get_le16(&gb);
-                        int from_x = offset % WIDTH;
-                        int from_y = offset / WIDTH;
-                        if (block_type == C93_4X4_FROM_CURR && from_y == y+j &&
-                            (FFABS(from_x - x-i) < 4 || FFABS(from_x - x-i) > WIDTH-4)) {
-                            avpriv_request_sample(avctx, "block overlap %d %d %d %d\n", from_x, x+i, from_y, y+j);
-                            return AVERROR_INVALIDDATA;
-                        }
+                        offset = bytestream2_get_le16(&gb);
                         if ((ret = copy_block(avctx, &out[j*stride+i],
                                               copy_from, offset, 4, stride)) < 0)
                             return ret;
@@ -238,7 +236,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     if (b & C93_HAS_PALETTE) {
         uint32_t *palette = (uint32_t *) newpic->data[1];
         for (i = 0; i < 256; i++) {
-            palette[i] = 0xFFU << 24 | bytestream2_get_be24(&gb);
+            palette[i] = bytestream2_get_be24(&gb);
         }
         newpic->palette_has_changed = 1;
     } else {

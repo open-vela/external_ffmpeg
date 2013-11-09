@@ -2,20 +2,20 @@
  * Quicktime Video (RPZA) Video Decoder
  * Copyright (C) 2003 the ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@
 typedef struct RpzaContext {
 
     AVCodecContext *avctx;
-    AVFrame frame;
+    AVFrame *frame;
 
     const unsigned char *buf;
     int size;
@@ -72,7 +72,7 @@ typedef struct RpzaContext {
 static void rpza_decode_stream(RpzaContext *s)
 {
     int width = s->avctx->width;
-    int stride = s->frame.linesize[0] / 2;
+    int stride = s->frame->linesize[0] / 2;
     int row_inc = stride - 4;
     int stream_ptr = 0;
     int chunk_size;
@@ -82,10 +82,10 @@ static void rpza_decode_stream(RpzaContext *s)
     unsigned short color4[4];
     unsigned char index, idx;
     unsigned short ta, tb;
-    unsigned short *pixels = (unsigned short *)s->frame.data[0];
+    unsigned short *pixels = (unsigned short *)s->frame->data[0];
 
     int row_ptr = 0;
-    int pixel_ptr = -4;
+    int pixel_ptr = 0;
     int block_ptr;
     int pixel_x, pixel_y;
     int total_blocks;
@@ -141,7 +141,6 @@ static void rpza_decode_stream(RpzaContext *s)
             colorA = AV_RB16 (&s->buf[stream_ptr]);
             stream_ptr += 2;
             while (n_blocks--) {
-                ADVANCE_BLOCK()
                 block_ptr = row_ptr + pixel_ptr;
                 for (pixel_y = 0; pixel_y < 4; pixel_y++) {
                     for (pixel_x = 0; pixel_x < 4; pixel_x++){
@@ -150,6 +149,7 @@ static void rpza_decode_stream(RpzaContext *s)
                     }
                     block_ptr += row_inc;
                 }
+                ADVANCE_BLOCK();
             }
             break;
 
@@ -188,7 +188,6 @@ static void rpza_decode_stream(RpzaContext *s)
             if (s->size - stream_ptr < n_blocks * 4)
                 return;
             while (n_blocks--) {
-                ADVANCE_BLOCK();
                 block_ptr = row_ptr + pixel_ptr;
                 for (pixel_y = 0; pixel_y < 4; pixel_y++) {
                     index = s->buf[stream_ptr++];
@@ -199,6 +198,7 @@ static void rpza_decode_stream(RpzaContext *s)
                     }
                     block_ptr += row_inc;
                 }
+                ADVANCE_BLOCK();
             }
             break;
 
@@ -206,7 +206,6 @@ static void rpza_decode_stream(RpzaContext *s)
         case 0x00:
             if (s->size - stream_ptr < 30)
                 return;
-            ADVANCE_BLOCK();
             block_ptr = row_ptr + pixel_ptr;
             for (pixel_y = 0; pixel_y < 4; pixel_y++) {
                 for (pixel_x = 0; pixel_x < 4; pixel_x++){
@@ -220,6 +219,7 @@ static void rpza_decode_stream(RpzaContext *s)
                 }
                 block_ptr += row_inc;
             }
+            ADVANCE_BLOCK();
             break;
 
         /* Unknown opcode */
@@ -239,7 +239,9 @@ static av_cold int rpza_decode_init(AVCodecContext *avctx)
     s->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_RGB555;
 
-    avcodec_get_frame_defaults(&s->frame);
+    s->frame = av_frame_alloc();
+    if (!s->frame)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -256,12 +258,14 @@ static int rpza_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
-    if ((ret = ff_reget_buffer(avctx, &s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     rpza_decode_stream(s);
 
-    if ((ret = av_frame_ref(data, &s->frame)) < 0)
+    if ((ret = av_frame_ref(data, s->frame)) < 0)
         return ret;
 
     *got_frame      = 1;
@@ -274,7 +278,7 @@ static av_cold int rpza_decode_end(AVCodecContext *avctx)
 {
     RpzaContext *s = avctx->priv_data;
 
-    av_frame_unref(&s->frame);
+    av_frame_free(&s->frame);
 
     return 0;
 }
