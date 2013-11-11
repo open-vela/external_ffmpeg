@@ -3,20 +3,20 @@
  * Copyright (C) 2004 Alex Beregszaszi
  * Copyright (C) 2006 Benjamin Larsson
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,6 +57,7 @@
 typedef struct FlashSVContext {
     AVCodecContext *avctx;
     uint8_t        *previous_frame;
+    AVFrame         frame;
     int             image_width, image_height;
     int             block_width, block_height;
     uint8_t        *tmpblock;
@@ -88,21 +89,6 @@ static int copy_region_enc(uint8_t *sptr, uint8_t *dptr, int dx, int dy,
     return 0;
 }
 
-static av_cold int flashsv_encode_end(AVCodecContext *avctx)
-{
-    FlashSVContext *s = avctx->priv_data;
-
-    deflateEnd(&s->zstream);
-
-    av_free(s->encbuffer);
-    av_free(s->previous_frame);
-    av_free(s->tmpblock);
-
-    av_frame_free(&avctx->coded_frame);
-
-    return 0;
-}
-
 static av_cold int flashsv_encode_init(AVCodecContext *avctx)
 {
     FlashSVContext *s = avctx->priv_data;
@@ -131,17 +117,11 @@ static av_cold int flashsv_encode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
-    avctx->coded_frame = av_frame_alloc();
-    if (!avctx->coded_frame) {
-        flashsv_encode_end(avctx);
-        return AVERROR(ENOMEM);
-    }
-
     return 0;
 }
 
 
-static int encode_bitstream(FlashSVContext *s, const AVFrame *p, uint8_t *buf,
+static int encode_bitstream(FlashSVContext *s, AVFrame *p, uint8_t *buf,
                             int buf_size, int block_width, int block_height,
                             uint8_t *previous_frame, int *I_frame)
 {
@@ -219,11 +199,13 @@ static int flashsv_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                                 const AVFrame *pict, int *got_packet)
 {
     FlashSVContext * const s = avctx->priv_data;
-    const AVFrame * const p = pict;
+    AVFrame * const p = &s->frame;
     uint8_t *pfptr;
     int res;
     int I_frame = 0;
     int opt_w = 4, opt_h = 4;
+
+    *p = *pict;
 
     /* First frame needs to be a keyframe */
     if (avctx->frame_number == 0) {
@@ -246,12 +228,8 @@ static int flashsv_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         I_frame = 1;
     }
 
-    if ((res = ff_alloc_packet(pkt, s->image_width * s->image_height * 3)) < 0) {
-        //Conservative upper bound check for compressed data
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n",
-               s->image_width * s->image_height * 3);
+    if ((res = ff_alloc_packet2(avctx, pkt, s->image_width * s->image_height * 3)) < 0)
         return res;
-    }
 
     pkt->size = encode_bitstream(s, p, pkt->data, pkt->size, opt_w * 16, opt_h * 16,
                                  pfptr, &I_frame);
@@ -266,18 +244,33 @@ static int flashsv_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     //mark the frame type so the muxer can mux it correctly
     if (I_frame) {
-        avctx->coded_frame->pict_type      = AV_PICTURE_TYPE_I;
-        avctx->coded_frame->key_frame      = 1;
+        p->pict_type      = AV_PICTURE_TYPE_I;
+        p->key_frame      = 1;
         s->last_key_frame = avctx->frame_number;
         av_dlog(avctx, "Inserting keyframe at frame %d\n", avctx->frame_number);
     } else {
-        avctx->coded_frame->pict_type = AV_PICTURE_TYPE_P;
-        avctx->coded_frame->key_frame = 0;
+        p->pict_type = AV_PICTURE_TYPE_P;
+        p->key_frame = 0;
     }
 
-    if (avctx->coded_frame->key_frame)
+    avctx->coded_frame = p;
+
+    if (p->key_frame)
         pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
+
+    return 0;
+}
+
+static av_cold int flashsv_encode_end(AVCodecContext *avctx)
+{
+    FlashSVContext *s = avctx->priv_data;
+
+    deflateEnd(&s->zstream);
+
+    av_free(s->encbuffer);
+    av_free(s->previous_frame);
+    av_free(s->tmpblock);
 
     return 0;
 }

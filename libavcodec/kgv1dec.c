@@ -2,20 +2,20 @@
  * Kega Game Video (KGV1) decoder
  * Copyright (c) 2010 Daniel Verkamp
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@
 #include "internal.h"
 
 typedef struct {
-    AVCodecContext *avctx;
     AVFrame *prev;
 } KgvContext;
 
@@ -39,7 +38,7 @@ static void decode_flush(AVCodecContext *avctx)
 {
     KgvContext * const c = avctx->priv_data;
 
-    av_frame_free(&c->prev);
+    av_frame_unref(c->prev);
 }
 
 static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
@@ -50,7 +49,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     const uint8_t *buf_end = buf + avpkt->size;
     KgvContext * const c = avctx->priv_data;
     int offsets[8];
-    uint16_t *out, *prev;
+    uint8_t *out, *prev;
     int outcnt = 0, maxcnt;
     int w, h, i, res;
 
@@ -71,9 +70,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     if ((res = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
         return res;
-    out  = (uint16_t *) frame->data[0];
+    out  = frame->data[0];
     if (c->prev->data[0]) {
-        prev = (uint16_t *) c->prev->data[0];
+        prev = c->prev->data[0];
     } else {
         prev = NULL;
     }
@@ -81,16 +80,15 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     for (i = 0; i < 8; i++)
         offsets[i] = -1;
 
-    while (outcnt < maxcnt && buf_end - 2 > buf) {
+    while (outcnt < maxcnt && buf_end - 2 >= buf) {
         int code = AV_RL16(buf);
         buf += 2;
 
         if (!(code & 0x8000)) {
-            out[outcnt++] = code; // rgb555 pixel coded directly
+            AV_WN16A(&out[2 * outcnt], code); // rgb555 pixel coded directly
+            outcnt++;
         } else {
             int count;
-            int inp_off;
-            uint16_t *inp;
 
             if ((code & 0x6000) == 0x6000) {
                 // copy from previous frame
@@ -108,7 +106,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
                 start = (outcnt + offsets[oidx]) % maxcnt;
 
-                if (maxcnt - start < count)
+                if (maxcnt - start < count || maxcnt - outcnt < count)
                     break;
 
                 if (!prev) {
@@ -117,8 +115,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                     break;
                 }
 
-                inp = prev;
-                inp_off = start;
+                memcpy(out + 2 * outcnt, prev + 2 * start, 2 * count);
             } else {
                 // copy from earlier in this frame
                 int offset = (code & 0x1FFF) + 1;
@@ -133,19 +130,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                     count = 4 + *buf++;
                 }
 
-                if (outcnt < offset)
+                if (outcnt < offset || maxcnt - outcnt < count)
                     break;
 
-                inp = out;
-                inp_off = outcnt - offset;
+                av_memcpy_backptr(out + 2 * outcnt, 2 * offset, 2 * count);
             }
-
-            if (maxcnt - outcnt < count)
-                break;
-
-            for (i = inp_off; i < count + inp_off; i++) {
-                out[outcnt++] = inp[i];
-            }
+            outcnt += count;
         }
     }
 
@@ -165,20 +155,20 @@ static av_cold int decode_init(AVCodecContext *avctx)
 {
     KgvContext * const c = avctx->priv_data;
 
+    avctx->pix_fmt = AV_PIX_FMT_RGB555;
+    avctx->flags  |= CODEC_FLAG_EMU_EDGE;
+
     c->prev = av_frame_alloc();
     if (!c->prev)
         return AVERROR(ENOMEM);
-
-    c->avctx = avctx;
-    avctx->pix_fmt = AV_PIX_FMT_RGB555;
-    avctx->flags  |= CODEC_FLAG_EMU_EDGE;
 
     return 0;
 }
 
 static av_cold int decode_end(AVCodecContext *avctx)
 {
-    decode_flush(avctx);
+    KgvContext * const c = avctx->priv_data;
+    av_frame_free(&c->prev);
     return 0;
 }
 

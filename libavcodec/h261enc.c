@@ -3,20 +3,20 @@
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2004 Maarten Daniels
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +26,7 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "mpegvideo.h"
 #include "h263.h"
@@ -212,8 +213,8 @@ static void h261_encode_block(H261Context *h, int16_t *block, int n)
             put_bits(&s->pb, rl->table_vlc[code][1], rl->table_vlc[code][0]);
             if (code == rl->n) {
                 put_bits(&s->pb, 6, run);
-                assert(slevel != 0);
-                assert(level <= 127);
+                av_assert1(slevel != 0);
+                av_assert1(level <= 127);
                 put_sbits(&s->pb, 8, slevel);
             } else {
                 put_bits(&s->pb, 1, sign);
@@ -267,7 +268,7 @@ void ff_h261_encode_mb(MpegEncContext *s, int16_t block[6][64],
             h->mtype += 3;
         if (cbp || s->dquant)
             h->mtype++;
-        assert(h->mtype > 1);
+        av_assert1(h->mtype > 1);
     }
 
     if (s->dquant)
@@ -296,7 +297,7 @@ void ff_h261_encode_mb(MpegEncContext *s, int16_t block[6][64],
     h->previous_mba = h->current_mba;
 
     if (HAS_CBP(h->mtype)) {
-        assert(cbp > 0);
+        av_assert1(cbp > 0);
         put_bits(&s->pb,
                  ff_h261_cbp_tab[cbp - 1][1],
                  ff_h261_cbp_tab[cbp - 1][0]);

@@ -2,20 +2,20 @@
  * Quicktime Graphics (SMC) Video Decoder
  * Copyright (C) 2003 the ffmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@
 typedef struct SmcContext {
 
     AVCodecContext *avctx;
-    AVFrame *frame;
+    AVFrame frame;
 
     GetByteContext gb;
 
@@ -81,10 +81,10 @@ static void smc_decode_stream(SmcContext *s)
 {
     int width = s->avctx->width;
     int height = s->avctx->height;
-    int stride = s->frame->linesize[0];
+    int stride = s->frame.linesize[0];
     int i;
     int chunk_size;
-    int buf_size = (int) (s->gb.buffer_end - s->gb.buffer_start);
+    int buf_size = bytestream2_size(&s->gb);
     unsigned char opcode;
     int n_blocks;
     unsigned int color_flags;
@@ -92,9 +92,9 @@ static void smc_decode_stream(SmcContext *s)
     unsigned int color_flags_b;
     unsigned int flag_mask;
 
-    unsigned char *pixels = s->frame->data[0];
+    unsigned char *pixels = s->frame.data[0];
 
-    int image_size = height * s->frame->linesize[0];
+    int image_size = height * s->frame.linesize[0];
     int row_ptr = 0;
     int pixel_ptr = 0;
     int pixel_x, pixel_y;
@@ -112,7 +112,7 @@ static void smc_decode_stream(SmcContext *s)
     int color_octet_index = 0;
 
     /* make the palette available */
-    memcpy(s->frame->data[1], s->pal, AVPALETTE_SIZE);
+    memcpy(s->frame.data[1], s->pal, AVPALETTE_SIZE);
 
     bytestream2_skip(&s->gb, 1);
     chunk_size = bytestream2_get_be24(&s->gb);
@@ -417,9 +417,7 @@ static av_cold int smc_decode_init(AVCodecContext *avctx)
     s->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
-    s->frame = av_frame_alloc();
-    if (!s->frame)
-        return AVERROR(ENOMEM);
+    avcodec_get_frame_defaults(&s->frame);
 
     return 0;
 }
@@ -436,20 +434,18 @@ static int smc_decode_frame(AVCodecContext *avctx,
 
     bytestream2_init(&s->gb, buf, buf_size);
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, &s->frame)) < 0)
         return ret;
-    }
 
     if (pal) {
-        s->frame->palette_has_changed = 1;
+        s->frame.palette_has_changed = 1;
         memcpy(s->pal, pal, AVPALETTE_SIZE);
     }
 
     smc_decode_stream(s);
 
     *got_frame      = 1;
-    if ((ret = av_frame_ref(data, s->frame)) < 0)
+    if ((ret = av_frame_ref(data, &s->frame)) < 0)
         return ret;
 
     /* always report that the buffer was completely consumed */
@@ -460,7 +456,7 @@ static av_cold int smc_decode_end(AVCodecContext *avctx)
 {
     SmcContext *s = avctx->priv_data;
 
-    av_frame_free(&s->frame);
+    av_frame_unref(&s->frame);
 
     return 0;
 }

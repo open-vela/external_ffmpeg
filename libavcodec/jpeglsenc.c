@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Michael Niedermayer
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
 
 #include "avcodec.h"
 #include "get_bits.h"
+#include "put_bits.h"
 #include "golomb.h"
 #include "internal.h"
 #include "mathops.h"
@@ -248,7 +249,8 @@ static void ls_store_lse(JLSState *state, PutBitContext *pb)
 static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
                              const AVFrame *pict, int *got_packet)
 {
-    const AVFrame *const p = pict;
+    JpeglsContext *const s = avctx->priv_data;
+    AVFrame *const p       = &s->picture;
     const int near         = avctx->prediction_method;
     PutBitContext pb, pb2;
     GetBitContext gb;
@@ -257,17 +259,19 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
     int i, size, ret;
     int comps;
 
+    *p           = *pict;
+    p->pict_type = AV_PICTURE_TYPE_I;
+    p->key_frame = 1;
+
     if (avctx->pix_fmt == AV_PIX_FMT_GRAY8 ||
         avctx->pix_fmt == AV_PIX_FMT_GRAY16)
         comps = 1;
     else
         comps = 3;
 
-    if ((ret = ff_alloc_packet(pkt, avctx->width * avctx->height * comps * 4 +
-                               FF_MIN_BUFFER_SIZE)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+    if ((ret = ff_alloc_packet2(avctx, pkt, avctx->width  *avctx->height * comps * 4 +
+                                FF_MIN_BUFFER_SIZE)) < 0)
         return ret;
-    }
 
     buf2 = av_malloc(pkt->size);
 
@@ -308,7 +312,11 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
 
     ls_store_lse(state, &pb);
 
-    zero = av_mallocz(p->linesize[0]);
+    zero = av_mallocz(FFABS(p->linesize[0]));
+    if (!zero) {
+        av_free(state);
+        return AVERROR(ENOMEM);
+    }
     last = zero;
     cur  = p->data[0];
     if (avctx->pix_fmt == AV_PIX_FMT_GRAY8) {
@@ -341,7 +349,7 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
                 Rc[j] = last[j];
             }
             last = cur;
-            cur += p->linesize[0];
+            cur += s->picture.linesize[0];
         }
     } else if (avctx->pix_fmt == AV_PIX_FMT_BGR24) {
         int j, width;
@@ -355,12 +363,12 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
                 Rc[j] = last[j];
             }
             last = cur;
-            cur += p->linesize[0];
+            cur += s->picture.linesize[0];
         }
     }
 
-    av_free(zero);
-    av_free(state);
+    av_freep(&zero);
+    av_freep(&state);
 
     /* the specification says that after doing 0xff escaping unused bits in
      * the last byte must be set to 0, so just append 7 "optional" zero-bits
@@ -395,20 +403,12 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
     return 0;
 }
 
-static av_cold int encode_close(AVCodecContext *avctx)
-{
-    av_frame_free(&avctx->coded_frame);
-    return 0;
-}
-
 static av_cold int encode_init_ls(AVCodecContext *ctx)
 {
-    ctx->coded_frame = av_frame_alloc();
-    if (!ctx->coded_frame)
-        return AVERROR(ENOMEM);
+    JpeglsContext *c = (JpeglsContext *)ctx->priv_data;
 
-    ctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-    ctx->coded_frame->key_frame = 1;
+    c->avctx         = ctx;
+    ctx->coded_frame = &c->picture;
 
     if (ctx->pix_fmt != AV_PIX_FMT_GRAY8  &&
         ctx->pix_fmt != AV_PIX_FMT_GRAY16 &&
@@ -426,8 +426,8 @@ AVCodec ff_jpegls_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("JPEG-LS"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_JPEGLS,
+    .priv_data_size = sizeof(JpeglsContext),
     .init           = encode_init_ls,
-    .close          = encode_close,
     .encode2        = encode_picture_ls,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_BGR24, AV_PIX_FMT_RGB24,

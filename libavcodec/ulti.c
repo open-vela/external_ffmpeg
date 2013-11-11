@@ -2,20 +2,20 @@
  * IBM Ultimotion Video Decoder
  * Copyright (C) 2004 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,7 +37,7 @@
 typedef struct UltimotionDecodeContext {
     AVCodecContext *avctx;
     int width, height, blocks;
-    AVFrame *frame;
+    AVFrame frame;
     const uint8_t *ulti_codebook;
     GetByteContext gb;
 } UltimotionDecodeContext;
@@ -51,19 +51,19 @@ static av_cold int ulti_decode_init(AVCodecContext *avctx)
     s->height = avctx->height;
     s->blocks = (s->width / 8) * (s->height / 8);
     avctx->pix_fmt = AV_PIX_FMT_YUV410P;
+    avctx->coded_frame = &s->frame;
+    avctx->coded_frame = (AVFrame*) &s->frame;
     s->ulti_codebook = ulti_codebook;
-
-    s->frame = av_frame_alloc();
-    if (!s->frame)
-        return AVERROR(ENOMEM);
+    avcodec_get_frame_defaults(&s->frame);
 
     return 0;
 }
 
 static av_cold int ulti_decode_end(AVCodecContext *avctx){
     UltimotionDecodeContext *s = avctx->priv_data;
+    AVFrame *pic = &s->frame;
 
-    av_frame_free(&s->frame);
+    av_frame_unref(pic);
 
     return 0;
 }
@@ -227,10 +227,8 @@ static int ulti_decode_frame(AVCodecContext *avctx,
     int skip;
     int tmp;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, &s->frame)) < 0)
         return ret;
-    }
 
     bytestream2_init(&s->gb, buf, buf_size);
 
@@ -370,7 +368,7 @@ static int ulti_decode_frame(AVCodecContext *avctx,
                         Luma[14] = (tmp >> 6) & 0x3F;
                         Luma[15] = tmp & 0x3F;
 
-                        ulti_convert_yuv(s->frame, tx, ty, Luma, chroma);
+                        ulti_convert_yuv(&s->frame, tx, ty, Luma, chroma);
                     } else {
                         if (bytestream2_get_bytes_left(&s->gb) < 4)
                             goto err;
@@ -382,20 +380,20 @@ static int ulti_decode_frame(AVCodecContext *avctx,
                             Y[1] = tmp & 0x3F;
                             Y[2] = bytestream2_get_byteu(&s->gb) & 0x3F;
                             Y[3] = bytestream2_get_byteu(&s->gb) & 0x3F;
-                            ulti_grad(s->frame, tx, ty, Y, chroma, angle); //draw block
+                            ulti_grad(&s->frame, tx, ty, Y, chroma, angle); //draw block
                         } else { // some patterns
                             int f0, f1;
                             f0 = bytestream2_get_byteu(&s->gb);
                             f1 = tmp;
                             Y[0] = bytestream2_get_byteu(&s->gb) & 0x3F;
                             Y[1] = bytestream2_get_byteu(&s->gb) & 0x3F;
-                            ulti_pattern(s->frame, tx, ty, f1, f0, Y[0], Y[1], chroma);
+                            ulti_pattern(&s->frame, tx, ty, f1, f0, Y[0], Y[1], chroma);
                         }
                     }
                     break;
                 }
                 if(code != 3)
-                    ulti_grad(s->frame, tx, ty, Y, chroma, angle); // draw block
+                    ulti_grad(&s->frame, tx, ty, Y, chroma, angle); // draw block
             }
             blocks++;
                 x += 8;
@@ -407,7 +405,7 @@ static int ulti_decode_frame(AVCodecContext *avctx,
     }
 
     *got_frame = 1;
-    if ((ret = av_frame_ref(data, s->frame)) < 0)
+    if ((ret = av_frame_ref(data, &s->frame)) < 0)
         return ret;
 
     return buf_size;

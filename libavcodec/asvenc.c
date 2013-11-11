@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,7 @@
 
 #include "asv.h"
 #include "avcodec.h"
+#include "internal.h"
 #include "mathops.h"
 #include "mpeg12data.h"
 
@@ -114,7 +115,7 @@ static inline void asv2_encode_block(ASV1Context *a, int16_t block[64]){
         if( (block[index + 1] = (block[index + 1]*a->q_intra_matrix[index + 1] + (1<<15))>>16) ) ccp |= 2;
         if( (block[index + 9] = (block[index + 9]*a->q_intra_matrix[index + 9] + (1<<15))>>16) ) ccp |= 1;
 
-        assert(i || ccp<8);
+        av_assert2(i || ccp<8);
         if(i) put_bits(&a->pb, ff_asv_ac_ccp_tab[ccp][1], ff_asv_ac_ccp_tab[ccp][0]);
         else  put_bits(&a->pb, ff_asv_dc_ccp_tab[ccp][1], ff_asv_dc_ccp_tab[ccp][0]);
 
@@ -147,16 +148,14 @@ static inline int encode_mb(ASV1Context *a, int16_t block[6][64]){
     return 0;
 }
 
-static inline void dct_get(ASV1Context *a, const AVFrame *frame,
-                           int mb_x, int mb_y)
-{
+static inline void dct_get(ASV1Context *a, int mb_x, int mb_y){
     int16_t (*block)[64]= a->block;
-    int linesize = frame->linesize[0];
+    int linesize= a->picture.linesize[0];
     int i;
 
-    uint8_t *ptr_y  = frame->data[0] + (mb_y * 16* linesize              ) + mb_x * 16;
-    uint8_t *ptr_cb = frame->data[1] + (mb_y * 8 * frame->linesize[1]) + mb_x * 8;
-    uint8_t *ptr_cr = frame->data[2] + (mb_y * 8 * frame->linesize[2]) + mb_x * 8;
+    uint8_t *ptr_y  = a->picture.data[0] + (mb_y * 16* linesize              ) + mb_x * 16;
+    uint8_t *ptr_cb = a->picture.data[1] + (mb_y * 8 * a->picture.linesize[1]) + mb_x * 8;
+    uint8_t *ptr_cr = a->picture.data[2] + (mb_y * 8 * a->picture.linesize[2]) + mb_x * 8;
 
     a->dsp.get_pixels(block[0], ptr_y                 , linesize);
     a->dsp.get_pixels(block[1], ptr_y              + 8, linesize);
@@ -166,8 +165,8 @@ static inline void dct_get(ASV1Context *a, const AVFrame *frame,
         a->dsp.fdct(block[i]);
 
     if(!(a->avctx->flags&CODEC_FLAG_GRAY)){
-        a->dsp.get_pixels(block[4], ptr_cb, frame->linesize[1]);
-        a->dsp.get_pixels(block[5], ptr_cr, frame->linesize[2]);
+        a->dsp.get_pixels(block[4], ptr_cb, a->picture.linesize[1]);
+        a->dsp.get_pixels(block[5], ptr_cr, a->picture.linesize[2]);
         for(i=4; i<6; i++)
             a->dsp.fdct(block[i]);
     }
@@ -177,21 +176,23 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                         const AVFrame *pict, int *got_packet)
 {
     ASV1Context * const a = avctx->priv_data;
+    AVFrame * const p= &a->picture;
     int size, ret;
     int mb_x, mb_y;
 
-    if (!pkt->data &&
-        (ret = av_new_packet(pkt, a->mb_height*a->mb_width*MAX_MB_SIZE +
-                                  FF_MIN_BUFFER_SIZE)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+    if ((ret = ff_alloc_packet2(avctx, pkt, a->mb_height*a->mb_width*MAX_MB_SIZE +
+                                  FF_MIN_BUFFER_SIZE)) < 0)
         return ret;
-    }
 
     init_put_bits(&a->pb, pkt->data, pkt->size);
 
+    *p = *pict;
+    p->pict_type= AV_PICTURE_TYPE_I;
+    p->key_frame= 1;
+
     for(mb_y=0; mb_y<a->mb_height2; mb_y++){
         for(mb_x=0; mb_x<a->mb_width2; mb_x++){
-            dct_get(a, pict, mb_x, mb_y);
+            dct_get(a, mb_x, mb_y);
             encode_mb(a, a->block);
         }
     }
@@ -199,7 +200,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if(a->mb_width2 != a->mb_width){
         mb_x= a->mb_width2;
         for(mb_y=0; mb_y<a->mb_height2; mb_y++){
-            dct_get(a, pict, mb_x, mb_y);
+            dct_get(a, mb_x, mb_y);
             encode_mb(a, a->block);
         }
     }
@@ -207,7 +208,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if(a->mb_height2 != a->mb_height){
         mb_y= a->mb_height2;
         for(mb_x=0; mb_x<a->mb_width; mb_x++){
-            dct_get(a, pict, mb_x, mb_y);
+            dct_get(a, mb_x, mb_y);
             encode_mb(a, a->block);
         }
     }
@@ -238,12 +239,6 @@ static av_cold int encode_init(AVCodecContext *avctx){
     ASV1Context * const a = avctx->priv_data;
     int i;
     const int scale= avctx->codec_id == AV_CODEC_ID_ASV1 ? 1 : 2;
-
-    avctx->coded_frame = av_frame_alloc();
-    if (!avctx->coded_frame)
-        return AVERROR(ENOMEM);
-    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-    avctx->coded_frame->key_frame = 1;
 
     ff_asv_common_init(avctx);
 

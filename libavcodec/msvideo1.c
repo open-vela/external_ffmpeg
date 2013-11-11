@@ -2,20 +2,20 @@
  * Microsoft Video-1 Decoder
  * Copyright (C) 2003 the ffmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,7 +47,7 @@
 typedef struct Msvideo1Context {
 
     AVCodecContext *avctx;
-    AVFrame *frame;
+    AVFrame frame;
 
     const unsigned char *buf;
     int size;
@@ -72,9 +72,7 @@ static av_cold int msvideo1_decode_init(AVCodecContext *avctx)
         avctx->pix_fmt = AV_PIX_FMT_RGB555;
     }
 
-    s->frame = av_frame_alloc();
-    if (!s->frame)
-        return AVERROR(ENOMEM);
+    avcodec_get_frame_defaults(&s->frame);
 
     return 0;
 }
@@ -95,8 +93,8 @@ static void msvideo1_decode_8bit(Msvideo1Context *s)
     unsigned short flags;
     int skip_blocks;
     unsigned char colors[8];
-    unsigned char *pixels = s->frame->data[0];
-    int stride = s->frame->linesize[0];
+    unsigned char *pixels = s->frame.data[0];
+    int stride = s->frame.linesize[0];
 
     stream_ptr = 0;
     skip_blocks = 0;
@@ -176,7 +174,7 @@ static void msvideo1_decode_8bit(Msvideo1Context *s)
 
     /* make the palette available on the way out */
     if (s->avctx->pix_fmt == AV_PIX_FMT_PAL8)
-        memcpy(s->frame->data[1], s->pal, AVPALETTE_SIZE);
+        memcpy(s->frame.data[1], s->pal, AVPALETTE_SIZE);
 }
 
 static void msvideo1_decode_16bit(Msvideo1Context *s)
@@ -195,8 +193,8 @@ static void msvideo1_decode_16bit(Msvideo1Context *s)
     unsigned short flags;
     int skip_blocks;
     unsigned short colors[8];
-    unsigned short *pixels = (unsigned short *)s->frame->data[0];
-    int stride = s->frame->linesize[0] / 2;
+    unsigned short *pixels = (unsigned short *)s->frame.data[0];
+    int stride = s->frame.linesize[0] / 2;
 
     stream_ptr = 0;
     skip_blocks = 0;
@@ -300,17 +298,15 @@ static int msvideo1_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, &s->frame)) < 0)
         return ret;
-    }
 
     if (s->mode_8bit) {
         const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
 
         if (pal) {
             memcpy(s->pal, pal, AVPALETTE_SIZE);
-            s->frame->palette_has_changed = 1;
+            s->frame.palette_has_changed = 1;
         }
     }
 
@@ -319,7 +315,7 @@ static int msvideo1_decode_frame(AVCodecContext *avctx,
     else
         msvideo1_decode_16bit(s);
 
-    if ((ret = av_frame_ref(data, s->frame)) < 0)
+    if ((ret = av_frame_ref(data, &s->frame)) < 0)
         return ret;
 
     *got_frame      = 1;
@@ -332,7 +328,7 @@ static av_cold int msvideo1_decode_end(AVCodecContext *avctx)
 {
     Msvideo1Context *s = avctx->priv_data;
 
-    av_frame_free(&s->frame);
+    av_frame_unref(&s->frame);
 
     return 0;
 }

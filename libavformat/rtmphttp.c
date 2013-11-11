@@ -2,20 +2,20 @@
  * RTMP HTTP network protocol
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -113,7 +113,7 @@ static int rtmp_http_read(URLContext *h, uint8_t *buf, int size)
         if (ret < 0 && ret != AVERROR_EOF)
             return ret;
 
-        if (ret == AVERROR_EOF) {
+        if (ret == 0 || ret == AVERROR_EOF) {
             if (rt->finishing) {
                 /* Do not send new requests when the client wants to
                  * close the connection. */
@@ -227,7 +227,7 @@ static int rtmp_http_open(URLContext *h, const char *uri, int flags)
     /* read the server reply which contains a unique ID */
     for (;;) {
         ret = ffurl_read(rt->stream, rt->client_id + off, sizeof(rt->client_id) - off);
-        if (ret == AVERROR_EOF)
+        if (ret == 0 || ret == AVERROR_EOF)
             break;
         if (ret < 0)
             goto fail;

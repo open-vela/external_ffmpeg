@@ -2,20 +2,20 @@
  * Microsoft Screen 4 (aka Microsoft Expression Encoder Screen) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -126,7 +126,7 @@ static const uint8_t mss4_vec_entry_vlc_syms[2][9] = {
 #define MAX_ENTRIES  162
 
 typedef struct MSS4Context {
-    AVFrame   *pic;
+    AVFrame    *pic;
 
     VLC        dc_vlc[2], ac_vlc[2];
     VLC        vec_entry_vlc[2];
@@ -554,10 +554,8 @@ static int mss4_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
         return ret;
-    }
     c->pic->key_frame = (frame_type == INTRA_FRAME);
     c->pic->pict_type = (frame_type == INTRA_FRAME) ? AV_PICTURE_TYPE_I
                                                    : AV_PICTURE_TYPE_P;
@@ -575,7 +573,7 @@ static int mss4_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             ff_mss34_gen_quant_mat(c->quant_mat[i], quality, !i);
     }
 
-    init_get_bits(&gb, buf + HEADER_SIZE, (buf_size - HEADER_SIZE) * 8);
+    init_get_bits8(&gb, buf + HEADER_SIZE, (buf_size - HEADER_SIZE));
 
     mb_width  = FFALIGN(width,  16) >> 4;
     mb_height = FFALIGN(height, 16) >> 4;
@@ -628,23 +626,14 @@ static int mss4_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     return buf_size;
 }
 
-static av_cold int mss4_decode_end(AVCodecContext *avctx)
-{
-    MSS4Context * const c = avctx->priv_data;
-    int i;
-
-    av_frame_free(&c->pic);
-    for (i = 0; i < 3; i++)
-        av_freep(&c->prev_dc[i]);
-    mss4_free_vlcs(c);
-
-    return 0;
-}
-
 static av_cold int mss4_decode_init(AVCodecContext *avctx)
 {
     MSS4Context * const c = avctx->priv_data;
     int i;
+
+    c->pic = av_frame_alloc();
+    if (!c->pic)
+        return AVERROR(ENOMEM);
 
     if (mss4_init_vlcs(c)) {
         av_log(avctx, AV_LOG_ERROR, "Cannot initialise VLCs\n");
@@ -661,13 +650,21 @@ static av_cold int mss4_decode_init(AVCodecContext *avctx)
         }
     }
 
-    c->pic = av_frame_alloc();
-    if (!c->pic) {
-        mss4_decode_end(avctx);
-        return AVERROR(ENOMEM);
-    }
-
     avctx->pix_fmt     = AV_PIX_FMT_YUV444P;
+
+    return 0;
+}
+
+static av_cold int mss4_decode_end(AVCodecContext *avctx)
+{
+    MSS4Context * const c = avctx->priv_data;
+    int i;
+
+    av_frame_free(&c->pic);
+
+    for (i = 0; i < 3; i++)
+        av_freep(&c->prev_dc[i]);
+    mss4_free_vlcs(c);
 
     return 0;
 }
