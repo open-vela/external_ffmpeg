@@ -2,20 +2,20 @@
  * Intel Indeo 2 codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -149,10 +149,8 @@ static int ir2_decode_frame(AVCodecContext *avctx,
     AVFrame * const p    = s->picture;
     int start, ret;
 
-    if ((ret = ff_reget_buffer(avctx, p)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, p)) < 0)
         return ret;
-    }
 
     start = 48; /* hardcoded for now */
 
@@ -173,36 +171,36 @@ static int ir2_decode_frame(AVCodecContext *avctx,
 
     if (s->decode_delta) { /* intraframe */
         if ((ret = ir2_decode_plane(s, avctx->width, avctx->height,
-                                    p->data[0], p->linesize[0],
+                                    s->picture->data[0], s->picture->linesize[0],
                                     ir2_luma_table)) < 0)
             return ret;
 
         /* swapped U and V */
         if ((ret = ir2_decode_plane(s, avctx->width >> 2, avctx->height >> 2,
-                                    p->data[2], p->linesize[2],
+                                    s->picture->data[2], s->picture->linesize[2],
                                     ir2_luma_table)) < 0)
             return ret;
         if ((ret = ir2_decode_plane(s, avctx->width >> 2, avctx->height >> 2,
-                                    p->data[1], p->linesize[1],
+                                    s->picture->data[1], s->picture->linesize[1],
                                     ir2_luma_table)) < 0)
             return ret;
     } else { /* interframe */
         if ((ret = ir2_decode_plane_inter(s, avctx->width, avctx->height,
-                                          p->data[0], p->linesize[0],
+                                          s->picture->data[0], s->picture->linesize[0],
                                           ir2_luma_table)) < 0)
             return ret;
         /* swapped U and V */
         if ((ret = ir2_decode_plane_inter(s, avctx->width >> 2, avctx->height >> 2,
-                                          p->data[2], p->linesize[2],
+                                          s->picture->data[2], s->picture->linesize[2],
                                           ir2_luma_table)) < 0)
             return ret;
         if ((ret = ir2_decode_plane_inter(s, avctx->width >> 2, avctx->height >> 2,
-                                          p->data[1], p->linesize[1],
+                                          s->picture->data[1], s->picture->linesize[1],
                                           ir2_luma_table)) < 0)
             return ret;
     }
 
-    if ((ret = av_frame_ref(picture, p)) < 0)
+    if ((ret = av_frame_ref(picture, s->picture)) < 0)
         return ret;
 
     *got_frame = 1;
