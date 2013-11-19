@@ -2,20 +2,20 @@
  * gsm 06.10 decoder
  * Copyright (c) 2010 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,18 +34,9 @@
 
 static av_cold int gsm_init(AVCodecContext *avctx)
 {
-    if (avctx->codec_tag == 0x0032 &&
-        avctx->bit_rate != 13000 &&
-        avctx->bit_rate != 17912 &&
-        avctx->bit_rate != 35824 &&
-        avctx->bit_rate != 71656) {
-        av_log(avctx, AV_LOG_ERROR, "Unsupported audio mode\n");
-        return AVERROR_PATCHWELCOME;
-    }
     avctx->channels       = 1;
     avctx->channel_layout = AV_CH_LAYOUT_MONO;
-    if (!avctx->sample_rate)
-        avctx->sample_rate = 8000;
+    avctx->sample_rate    = 8000;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
     switch (avctx->codec_id) {
@@ -78,8 +69,10 @@ static int gsm_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = avctx->frame_size;
-    if ((res = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((res = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return res;
+    }
     samples = (int16_t *)frame->data[0];
 
     switch (avctx->codec_id) {
@@ -108,7 +101,6 @@ static void gsm_flush(AVCodecContext *avctx)
     memset(s, 0, sizeof(*s));
 }
 
-#if CONFIG_GSM_DECODER
 AVCodec ff_gsm_decoder = {
     .name           = "gsm",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM"),
@@ -120,8 +112,7 @@ AVCodec ff_gsm_decoder = {
     .flush          = gsm_flush,
     .capabilities   = CODEC_CAP_DR1,
 };
-#endif
-#if CONFIG_GSM_MS_DECODER
+
 AVCodec ff_gsm_ms_decoder = {
     .name           = "gsm_ms",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM Microsoft variant"),
@@ -133,4 +124,3 @@ AVCodec ff_gsm_ms_decoder = {
     .flush          = gsm_flush,
     .capabilities   = CODEC_CAP_DR1,
 };
-#endif
