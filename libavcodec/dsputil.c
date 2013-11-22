@@ -5,20 +5,20 @@
  *
  * gmc & q-pel & 32/64 bit based MC by Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,6 @@
 #include "mathops.h"
 #include "mpegvideo.h"
 #include "config.h"
-#include "diracdsp.h"
 
 uint32_t ff_squareTbl[512] = {0, };
 
@@ -328,7 +327,7 @@ static int sse16_c(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h)
     return s;
 }
 
-static void diff_pixels_c(int16_t *av_restrict block, const uint8_t *s1,
+static void diff_pixels_c(int16_t *restrict block, const uint8_t *s1,
                           const uint8_t *s2, int stride){
     int i;
 
@@ -348,7 +347,8 @@ static void diff_pixels_c(int16_t *av_restrict block, const uint8_t *s1,
     }
 }
 
-static void put_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixels,
+
+static void put_pixels_clamped_c(const int16_t *block, uint8_t *restrict pixels,
                                  int line_size)
 {
     int i;
@@ -369,40 +369,8 @@ static void put_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixe
     }
 }
 
-static void put_pixels_clamped4_c(const int16_t *block, uint8_t *av_restrict pixels,
-                                 int line_size)
-{
-    int i;
-
-    /* read the pixels */
-    for(i=0;i<4;i++) {
-        pixels[0] = av_clip_uint8(block[0]);
-        pixels[1] = av_clip_uint8(block[1]);
-        pixels[2] = av_clip_uint8(block[2]);
-        pixels[3] = av_clip_uint8(block[3]);
-
-        pixels += line_size;
-        block += 8;
-    }
-}
-
-static void put_pixels_clamped2_c(const int16_t *block, uint8_t *av_restrict pixels,
-                                 int line_size)
-{
-    int i;
-
-    /* read the pixels */
-    for(i=0;i<2;i++) {
-        pixels[0] = av_clip_uint8(block[0]);
-        pixels[1] = av_clip_uint8(block[1]);
-
-        pixels += line_size;
-        block += 8;
-    }
-}
-
 static void put_signed_pixels_clamped_c(const int16_t *block,
-                                        uint8_t *av_restrict pixels,
+                                        uint8_t *restrict pixels,
                                         int line_size)
 {
     int i, j;
@@ -422,7 +390,7 @@ static void put_signed_pixels_clamped_c(const int16_t *block,
     }
 }
 
-static void add_pixels8_c(uint8_t *av_restrict pixels,
+static void add_pixels8_c(uint8_t *restrict pixels,
                           int16_t *block,
                           int line_size)
 {
@@ -442,7 +410,7 @@ static void add_pixels8_c(uint8_t *av_restrict pixels,
     }
 }
 
-static void add_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixels,
+static void add_pixels_clamped_c(const int16_t *block, uint8_t *restrict pixels,
                                  int line_size)
 {
     int i;
@@ -457,36 +425,6 @@ static void add_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixe
         pixels[5] = av_clip_uint8(pixels[5] + block[5]);
         pixels[6] = av_clip_uint8(pixels[6] + block[6]);
         pixels[7] = av_clip_uint8(pixels[7] + block[7]);
-        pixels += line_size;
-        block += 8;
-    }
-}
-
-static void add_pixels_clamped4_c(const int16_t *block, uint8_t *av_restrict pixels,
-                          int line_size)
-{
-    int i;
-
-    /* read the pixels */
-    for(i=0;i<4;i++) {
-        pixels[0] = av_clip_uint8(pixels[0] + block[0]);
-        pixels[1] = av_clip_uint8(pixels[1] + block[1]);
-        pixels[2] = av_clip_uint8(pixels[2] + block[2]);
-        pixels[3] = av_clip_uint8(pixels[3] + block[3]);
-        pixels += line_size;
-        block += 8;
-    }
-}
-
-static void add_pixels_clamped2_c(const int16_t *block, uint8_t *av_restrict pixels,
-                          int line_size)
-{
-    int i;
-
-    /* read the pixels */
-    for(i=0;i<2;i++) {
-        pixels[0] = av_clip_uint8(pixels[0] + block[0]);
-        pixels[1] = av_clip_uint8(pixels[1] + block[1]);
         pixels += line_size;
         block += 8;
     }
@@ -1391,51 +1329,6 @@ void ff_avg_rv40_qpel8_mc33_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)
 }
 #endif /* CONFIG_RV40_DECODER */
 
-#if CONFIG_DIRAC_DECODER
-#define DIRAC_MC(OPNAME)\
-void ff_ ## OPNAME ## _dirac_pixels8_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-     OPNAME ## _pixels8_8_c(dst, src[0], stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels16_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_8_c(dst, src[0], stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels32_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_8_c(dst   , src[0]   , stride, h);\
-    OPNAME ## _pixels16_8_c(dst+16, src[0]+16, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels8_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels8_l2_8(dst, src[0], src[1], stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels16_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l2_8(dst, src[0], src[1], stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels32_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l2_8(dst   , src[0]   , src[1]   , stride, stride, stride, h);\
-    OPNAME ## _pixels16_l2_8(dst+16, src[0]+16, src[1]+16, stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels8_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels8_l4_8(dst, src[0], src[1], src[2], src[3], stride, stride, stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels16_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l4_8(dst, src[0], src[1], src[2], src[3], stride, stride, stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels32_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l4_8(dst   , src[0]   , src[1]   , src[2]   , src[3]   , stride, stride, stride, stride, stride, h);\
-    OPNAME ## _pixels16_l4_8(dst+16, src[0]+16, src[1]+16, src[2]+16, src[3]+16, stride, stride, stride, stride, stride, h);\
-}
-DIRAC_MC(put)
-DIRAC_MC(avg)
-#endif
-
 static void wmv2_mspel8_v_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride, int w){
     const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;
     int i;
@@ -1776,7 +1669,7 @@ static int try_8x8basis_c(int16_t rem[64], int16_t weight[64], int16_t basis[64]
         int b= rem[i] + ((basis[i]*scale + (1<<(BASIS_SHIFT - RECON_SHIFT-1)))>>(BASIS_SHIFT - RECON_SHIFT));
         int w= weight[i];
         b>>= RECON_SHIFT;
-        av_assert2(-512<b && b<512);
+        assert(-512<b && b<512);
 
         sum += (w*b)*(w*b)>>4;
     }
@@ -1841,14 +1734,6 @@ void ff_set_cmp(DSPContext* c, me_cmp_func *cmp, int type){
         case FF_CMP_NSSE:
             cmp[i]= c->nsse[i];
             break;
-#if CONFIG_DWT
-        case FF_CMP_W53:
-            cmp[i]= c->w53[i];
-            break;
-        case FF_CMP_W97:
-            cmp[i]= c->w97[i];
-            break;
-#endif
         default:
             av_log(NULL, AV_LOG_ERROR,"internal error in cmp function selection\n");
         }
@@ -1857,7 +1742,7 @@ void ff_set_cmp(DSPContext* c, me_cmp_func *cmp, int type){
 
 static void add_bytes_c(uint8_t *dst, uint8_t *src, int w){
     long i;
-    for(i=0; i<=w-(int)sizeof(long); i+=sizeof(long)){
+    for (i = 0; i <= w - (int) sizeof(long); i += sizeof(long)) {
         long a = *(long*)(src+i);
         long b = *(long*)(dst+i);
         *(long*)(dst+i) = ((a&pb_7f) + (b&pb_7f)) ^ ((a^b)&pb_80);
@@ -1866,7 +1751,7 @@ static void add_bytes_c(uint8_t *dst, uint8_t *src, int w){
         dst[i+0] += src[i+0];
 }
 
-static void diff_bytes_c(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int w){
+static void diff_bytes_c(uint8_t *dst, uint8_t *src1, uint8_t *src2, int w){
     long i;
 #if !HAVE_FAST_UNALIGNED
     if((long)src2 & (sizeof(long)-1)){
@@ -1882,7 +1767,7 @@ static void diff_bytes_c(uint8_t *dst, const uint8_t *src1, const uint8_t *src2,
         }
     }else
 #endif
-    for(i=0; i<=w-(int)sizeof(long); i+=sizeof(long)){
+    for (i = 0; i <= w - (int) sizeof(long); i += sizeof(long)) {
         long a = *(long*)(src1+i);
         long b = *(long*)(src2+i);
         *(long*)(dst+i) = ((a|pb_80) - (b&pb_7f)) ^ ((a^b^pb_80)&pb_80);
@@ -2006,7 +1891,7 @@ static int hadamard8_diff8x8_c(/*MpegEncContext*/ void *s, uint8_t *dst, uint8_t
     int temp[64];
     int sum=0;
 
-    av_assert2(h==8);
+    assert(h==8);
 
     for(i=0; i<8; i++){
         //FIXME try pointer walks
@@ -2051,7 +1936,7 @@ static int hadamard8_intra8x8_c(/*MpegEncContext*/ void *s, uint8_t *src, uint8_
     int temp[64];
     int sum=0;
 
-    av_assert2(h==8);
+    assert(h==8);
 
     for(i=0; i<8; i++){
         //FIXME try pointer walks
@@ -2098,7 +1983,7 @@ static int dct_sad8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *src2
     MpegEncContext * const s= (MpegEncContext *)c;
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
 
-    av_assert2(h==8);
+    assert(h==8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
     s->dsp.fdct(temp);
@@ -2163,7 +2048,7 @@ static int dct_max8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *src2
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
     int sum=0, i;
 
-    av_assert2(h==8);
+    assert(h==8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
     s->dsp.fdct(temp);
@@ -2180,7 +2065,7 @@ static int quant_psnr8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *s
     int16_t * const bak = temp+64;
     int sum=0, i;
 
-    av_assert2(h==8);
+    assert(h==8);
     s->mb_intra=0;
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
@@ -2208,7 +2093,7 @@ static int rd8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *src2, int
     uint8_t * length;
     uint8_t * last_length;
 
-    av_assert2(h==8);
+    assert(h==8);
 
     copy_block8(lsrc1, src1, 8, stride, 8);
     copy_block8(lsrc2, src2, 8, stride, 8);
@@ -2250,7 +2135,7 @@ static int rd8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *src2, int
 
         level= temp[i] + 64;
 
-        av_assert2(level - 64);
+        assert(level - 64);
 
         if((level&(~127)) == 0){
             bits+= last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -2282,7 +2167,7 @@ static int bit8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *src2, in
     uint8_t * length;
     uint8_t * last_length;
 
-    av_assert2(h==8);
+    assert(h==8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
 
@@ -2321,7 +2206,7 @@ static int bit8x8_c(/*MpegEncContext*/ void *c, uint8_t *src1, uint8_t *src2, in
 
         level= temp[i] + 64;
 
-        av_assert2(level - 64);
+        assert(level - 64);
 
         if((level&(~127)) == 0){
             bits+= last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -2538,37 +2423,6 @@ static void jref_idct_add(uint8_t *dest, int line_size, int16_t *block)
     add_pixels_clamped_c(block, dest, line_size);
 }
 
-static void ff_jref_idct4_put(uint8_t *dest, int line_size, int16_t *block)
-{
-    ff_j_rev_dct4 (block);
-    put_pixels_clamped4_c(block, dest, line_size);
-}
-static void ff_jref_idct4_add(uint8_t *dest, int line_size, int16_t *block)
-{
-    ff_j_rev_dct4 (block);
-    add_pixels_clamped4_c(block, dest, line_size);
-}
-
-static void ff_jref_idct2_put(uint8_t *dest, int line_size, int16_t *block)
-{
-    ff_j_rev_dct2 (block);
-    put_pixels_clamped2_c(block, dest, line_size);
-}
-static void ff_jref_idct2_add(uint8_t *dest, int line_size, int16_t *block)
-{
-    ff_j_rev_dct2 (block);
-    add_pixels_clamped2_c(block, dest, line_size);
-}
-
-static void ff_jref_idct1_put(uint8_t *dest, int line_size, int16_t *block)
-{
-    dest[0] = av_clip_uint8((block[0] + 4)>>3);
-}
-static void ff_jref_idct1_add(uint8_t *dest, int line_size, int16_t *block)
-{
-    dest[0] = av_clip_uint8(dest[0] + ((block[0] + 4)>>3));
-}
-
 /* init static data */
 av_cold void ff_dsputil_static_init(void)
 {
@@ -2592,7 +2446,7 @@ int ff_check_alignment(void){
                 "Compiler did not align stack variables. Libavcodec has been miscompiled\n"
                 "and may be very slow or crash. This is not a bug in libavcodec,\n"
                 "but in the compiler. You may try recompiling using gcc >= 4.2.\n"
-                "Do not report crashes to FFmpeg developers.\n");
+                "Do not report crashes to Libav developers.\n");
 #endif
             did_fail=1;
         }
@@ -2625,33 +2479,12 @@ av_cold void ff_dsputil_init(DSPContext* c, AVCodecContext *avctx)
     }
 #endif //CONFIG_ENCODERS
 
-    if(avctx->lowres==1){
-        c->idct_put= ff_jref_idct4_put;
-        c->idct_add= ff_jref_idct4_add;
-        c->idct    = ff_j_rev_dct4;
-        c->idct_permutation_type= FF_NO_IDCT_PERM;
-    }else if(avctx->lowres==2){
-        c->idct_put= ff_jref_idct2_put;
-        c->idct_add= ff_jref_idct2_add;
-        c->idct    = ff_j_rev_dct2;
-        c->idct_permutation_type= FF_NO_IDCT_PERM;
-    }else if(avctx->lowres==3){
-        c->idct_put= ff_jref_idct1_put;
-        c->idct_add= ff_jref_idct1_add;
-        c->idct    = ff_j_rev_dct1;
-        c->idct_permutation_type= FF_NO_IDCT_PERM;
-    }else{
-        if (avctx->bits_per_raw_sample == 10) {
-            c->idct_put              = ff_simple_idct_put_10;
-            c->idct_add              = ff_simple_idct_add_10;
-            c->idct                  = ff_simple_idct_10;
-            c->idct_permutation_type = FF_NO_IDCT_PERM;
-        } else if (avctx->bits_per_raw_sample == 12) {
-            c->idct_put              = ff_simple_idct_put_12;
-            c->idct_add              = ff_simple_idct_add_12;
-            c->idct                  = ff_simple_idct_12;
-            c->idct_permutation_type = FF_NO_IDCT_PERM;
-        } else {
+    if (avctx->bits_per_raw_sample == 10) {
+        c->idct_put              = ff_simple_idct_put_10;
+        c->idct_add              = ff_simple_idct_add_10;
+        c->idct                  = ff_simple_idct_10;
+        c->idct_permutation_type = FF_NO_IDCT_PERM;
+    } else {
         if(avctx->idct_algo==FF_IDCT_INT){
             c->idct_put= jref_idct_put;
             c->idct_add= jref_idct_add;
@@ -2667,7 +2500,6 @@ av_cold void ff_dsputil_init(DSPContext* c, AVCodecContext *avctx)
             c->idct_add = ff_simple_idct_add_8;
             c->idct     = ff_simple_idct_8;
             c->idct_permutation_type= FF_NO_IDCT_PERM;
-        }
         }
     }
 
@@ -2783,9 +2615,6 @@ av_cold void ff_dsputil_init(DSPContext* c, AVCodecContext *avctx)
     c->vsse[5]= vsse_intra8_c;
     c->nsse[0]= nsse16_c;
     c->nsse[1]= nsse8_c;
-#if CONFIG_SNOW_DECODER || CONFIG_SNOW_ENCODER
-    ff_dsputil_init_dwt(c);
-#endif
 
     c->ssd_int8_vs_int16 = ssd_int8_vs_int16_c;
 
@@ -2829,20 +2658,14 @@ av_cold void ff_dsputil_init(DSPContext* c, AVCodecContext *avctx)
     switch (avctx->bits_per_raw_sample) {
     case 9:
     case 10:
-    case 12:
-    case 14:
         BIT_DEPTH_FUNCS(16);
         break;
     default:
-        if(avctx->bits_per_raw_sample<=8 || avctx->codec_type != AVMEDIA_TYPE_VIDEO) {
-            BIT_DEPTH_FUNCS(8);
-        }
+        BIT_DEPTH_FUNCS(8);
         break;
     }
 
 
-    if (ARCH_ALPHA)
-        ff_dsputil_init_alpha(c, avctx);
     if (ARCH_ARM)
         ff_dsputil_init_arm(c, avctx);
     if (ARCH_BFIN)
@@ -2858,14 +2681,4 @@ av_cold void ff_dsputil_init(DSPContext* c, AVCodecContext *avctx)
 
     ff_init_scantable_permutation(c->idct_permutation,
                                   c->idct_permutation_type);
-}
-
-av_cold void dsputil_init(DSPContext* c, AVCodecContext *avctx)
-{
-    ff_dsputil_init(c, avctx);
-}
-
-av_cold void avpriv_dsputil_init(DSPContext *c, AVCodecContext *avctx)
-{
-    ff_dsputil_init(c, avctx);
 }
