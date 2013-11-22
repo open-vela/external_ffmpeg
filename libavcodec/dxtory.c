@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,7 @@ static int dxtory_decode_v1_rgb(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *dst;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * (int64_t)bpp) {
+    if (src_size < avctx->width * avctx->height * bpp) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -66,7 +66,7 @@ static int dxtory_decode_v1_410(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y1, *Y2, *Y3, *Y4, *U, *V;
     int ret;
 
-    if (src_size < FFALIGN(avctx->width, 4) * FFALIGN(avctx->height, 4) * 9LL / 8) {
+    if (src_size < avctx->width * avctx->height * 18 / 16) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -83,10 +83,10 @@ static int dxtory_decode_v1_410(AVCodecContext *avctx, AVFrame *pic,
     V  = pic->data[2];
     for (h = 0; h < avctx->height; h += 4) {
         for (w = 0; w < avctx->width; w += 4) {
-            AV_COPY32U(Y1 + w, src);
-            AV_COPY32U(Y2 + w, src + 4);
-            AV_COPY32U(Y3 + w, src + 8);
-            AV_COPY32U(Y4 + w, src + 12);
+            AV_COPY32(Y1 + w, src);
+            AV_COPY32(Y2 + w, src + 4);
+            AV_COPY32(Y3 + w, src + 8);
+            AV_COPY32(Y4 + w, src + 12);
             U[w >> 2] = src[16] + 0x80;
             V[w >> 2] = src[17] + 0x80;
             src += 18;
@@ -109,7 +109,7 @@ static int dxtory_decode_v1_420(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y1, *Y2, *U, *V;
     int ret;
 
-    if (src_size < FFALIGN(avctx->width, 2) * FFALIGN(avctx->height, 2) * 3LL / 2) {
+    if (src_size < avctx->width * avctx->height * 3 / 2) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -146,7 +146,7 @@ static int dxtory_decode_v1_444(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 3LL) {
+    if (src_size < avctx->width * avctx->height * 3) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -201,12 +201,12 @@ static int check_slice_size(AVCodecContext *avctx,
 
     if (slice_size > src_size - off) {
         av_log(avctx, AV_LOG_ERROR,
-               "invalid slice size %"PRIu32" (only %"PRIu32" bytes left)\n",
+               "invalid slice size %d (only %d bytes left)\n",
                slice_size, src_size - off);
         return AVERROR_INVALIDDATA;
     }
     if (slice_size <= 16) {
-        av_log(avctx, AV_LOG_ERROR, "invalid slice size %"PRIu32"\n",
+        av_log(avctx, AV_LOG_ERROR, "invalid slice size %d\n",
                slice_size);
         return AVERROR_INVALIDDATA;
     }
@@ -214,7 +214,7 @@ static int check_slice_size(AVCodecContext *avctx,
     cur_slice_size = AV_RL32(src + off);
     if (cur_slice_size != slice_size - 16) {
         av_log(avctx, AV_LOG_ERROR,
-               "Slice sizes mismatch: got %"PRIu32" instead of %"PRIu32"\n",
+               "Slice sizes mismatch: got %d instead of %d\n",
                cur_slice_size, slice_size - 16);
     }
 
@@ -296,8 +296,7 @@ static int dxtory_decode_v2(AVCodecContext *avctx, AVFrame *pic,
         if (ret < 0)
             return ret;
 
-        if ((ret = init_get_bits8(&gb2, src + off + 16, slice_size - 16)) < 0)
-            return ret;
+        init_get_bits(&gb2, src + off + 16, (slice_size - 16) * 8);
 
         line += decode_slice(&gb2, pic, line, avctx->height - line, lru);
 
