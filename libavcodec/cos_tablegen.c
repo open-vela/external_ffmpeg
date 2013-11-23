@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
     printf("#include \"libavcodec/%s\"\n", do_sin ? "rdft.h" : "fft.h");
     for (i = 4; i <= BITS; i++) {
         int m = 1 << i;
-        double freq = 2*3.14159265358979323846/m;
+        double freq = 2*M_PI/m;
         printf("%s(%i) = {\n   ", do_sin ? "SINTABLE" : "COSTABLE", m);
         for (j = 0; j < m/2 - 1; j++) {
             int idx = j > m/4 ? m/2 - j : j;
