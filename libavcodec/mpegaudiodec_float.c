@@ -2,41 +2,25 @@
  * Float MPEG Audio decoder
  * Copyright (c) 2010 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config.h"
-#include "libavutil/samplefmt.h"
-
 #define CONFIG_FLOAT 1
-
-#include "mpegaudio.h"
-
-#define SHR(a,b)       ((a)*(1.0f/(1<<(b))))
-#define FIXR_OLD(a)    ((int)((a) * FRAC_ONE + 0.5))
-#define FIXR(x)        ((float)(x))
-#define FIXHR(x)       ((float)(x))
-#define MULH3(x, y, s) ((s)*(y)*(x))
-#define MULLx(x, y, s) ((y)*(x))
-#define RENAME(a) a ## _float
-#define OUT_FMT   AV_SAMPLE_FMT_FLT
-#define OUT_FMT_P AV_SAMPLE_FMT_FLTP
-
-#include "mpegaudiodec_template.c"
+#include "mpegaudiodec.c"
 
 #if CONFIG_MP1FLOAT_DECODER
 AVCodec ff_mp1float_decoder = {
