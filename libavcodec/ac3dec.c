@@ -7,20 +7,20 @@
  * Copyright (c) 2007-2008 Bartlomiej Wolowiec <bartek.wolowiec@gmail.com>
  * Copyright (c) 2007 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include <math.h>
 #include <string.h>
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/opt.h"
 #include "internal.h"
@@ -179,20 +178,10 @@ static av_cold int ac3_decode_init(AVCodecContext *avctx)
     avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
 
     /* allow downmixing to stereo or mono */
-#if FF_API_REQUEST_CHANNELS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (avctx->request_channels == 1)
-        avctx->request_channel_layout = AV_CH_LAYOUT_MONO;
-    else if (avctx->request_channels == 2)
-        avctx->request_channel_layout = AV_CH_LAYOUT_STEREO;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-    if (avctx->channels > 1 &&
-        avctx->request_channel_layout == AV_CH_LAYOUT_MONO)
-        avctx->channels = 1;
-    else if (avctx->channels > 2 &&
-             avctx->request_channel_layout == AV_CH_LAYOUT_STEREO)
-        avctx->channels = 2;
+    if (avctx->request_channels > 0 && avctx->request_channels <= 2 &&
+        avctx->request_channels < avctx->channels) {
+        avctx->channels = avctx->request_channels;
+    }
     s->downmixed = 1;
 
     for (i = 0; i < AC3_MAX_CHANNELS; i++) {
@@ -261,6 +250,7 @@ static int parse_frame_header(AC3DecodeContext *s)
     s->bit_alloc_params.sr_code     = hdr.sr_code;
     s->bitstream_mode               = hdr.bitstream_mode;
     s->channel_mode                 = hdr.channel_mode;
+    s->channel_layout               = hdr.channel_layout;
     s->lfe_on                       = hdr.lfe_on;
     s->bit_alloc_params.sr_shift    = hdr.sr_shift;
     s->sample_rate                  = hdr.sample_rate;
@@ -450,7 +440,7 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
         case 0:
             /* random noise with approximate range of -0.707 to 0.707 */
             if (dither)
-                mantissa = (av_lfg_get(&s->dith_state) / 362) - 5932275;
+                mantissa = (((av_lfg_get(&s->dith_state)>>8)*181)>>8) - 5931008;
             else
                 mantissa = 0;
             break;
@@ -1334,7 +1324,7 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         if (s->frame_size > buf_size) {
             av_log(avctx, AV_LOG_ERROR, "incomplete frame\n");
             err = AAC_AC3_PARSE_ERROR_FRAME_SIZE;
-        } else if (avctx->err_recognition & AV_EF_CRCCHECK) {
+        } else if (avctx->err_recognition & (AV_EF_CRCCHECK|AV_EF_CAREFUL)) {
             /* check for crc mismatch */
             if (av_crc(av_crc_get_table(AV_CRC_16_ANSI), 0, &buf[2],
                        s->frame_size - 2)) {
@@ -1358,18 +1348,19 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         s->output_mode  = s->channel_mode;
         if (s->lfe_on)
             s->output_mode |= AC3_OUTPUT_LFEON;
-        if (s->channels > 1 &&
-            avctx->request_channel_layout == AV_CH_LAYOUT_MONO) {
-            s->out_channels = 1;
-            s->output_mode  = AC3_CHMODE_MONO;
-        } else if (s->channels > 2 &&
-                   avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
-            s->out_channels = 2;
-            s->output_mode  = AC3_CHMODE_STEREO;
+        if (avctx->request_channels > 0 && avctx->request_channels <= 2 &&
+                avctx->request_channels < s->channels) {
+            s->out_channels = avctx->request_channels;
+            s->output_mode  = avctx->request_channels == 1 ? AC3_CHMODE_MONO : AC3_CHMODE_STEREO;
+            s->channel_layout = avpriv_ac3_channel_layout_tab[s->output_mode];
         }
         avctx->channels       = s->out_channels;
-        avctx->channel_layout = avpriv_ac3_channel_layout_tab[s->output_mode];
+        avctx->channel_layout = s->channel_layout;
 
+        s->loro_center_mix_level   = gain_levels[s->  center_mix_level];
+        s->loro_surround_mix_level = gain_levels[s->surround_mix_level];
+        s->ltrt_center_mix_level   = LEVEL_MINUS_3DB;
+        s->ltrt_surround_mix_level = LEVEL_MINUS_3DB;
         /* set downmixing coefficients if needed */
         if (s->channels != s->out_channels && !((s->output_mode & AC3_OUTPUT_LFEON) &&
                 s->fbw_channels == s->out_channels)) {
@@ -1388,19 +1379,18 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = s->num_blocks * AC3_BLOCK_SIZE;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     /* decode the audio blocks */
     channel_map = ff_ac3_dec_channel_map[s->output_mode & ~AC3_OUTPUT_LFEON][s->lfe_on];
+    for (ch = 0; ch < AC3_MAX_CHANNELS; ch++) {
+        output[ch] = s->output[ch];
+        s->outptr[ch] = s->output[ch];
+    }
     for (ch = 0; ch < s->channels; ch++) {
         if (ch < s->out_channels)
             s->outptr[channel_map[ch]] = (float *)frame->data[ch];
-        else
-            s->outptr[ch] = s->output[ch];
-        output[ch] = s->output[ch];
     }
     for (blk = 0; blk < s->num_blocks; blk++) {
         if (!err && decode_audio_block(s, blk)) {
@@ -1409,12 +1399,16 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         }
         if (err)
             for (ch = 0; ch < s->out_channels; ch++)
-                memcpy(s->outptr[channel_map[ch]], output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
+                memcpy(((float*)frame->data[ch]) + AC3_BLOCK_SIZE*blk, output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
         for (ch = 0; ch < s->out_channels; ch++)
             output[ch] = s->outptr[channel_map[ch]];
-        for (ch = 0; ch < s->out_channels; ch++)
-            s->outptr[ch] += AC3_BLOCK_SIZE;
+        for (ch = 0; ch < s->out_channels; ch++) {
+            if (!ch || channel_map[ch])
+                s->outptr[channel_map[ch]] += AC3_BLOCK_SIZE;
+        }
     }
+
+    av_frame_set_decode_error_flags(frame, err ? FF_DECODE_ERROR_INVALID_BITSTREAM : 0);
 
     /* keep last block for error concealment in next frame */
     for (ch = 0; ch < s->out_channels; ch++)
@@ -1441,6 +1435,13 @@ static av_cold int ac3_decode_end(AVCodecContext *avctx)
 #define PAR (AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_AUDIO_PARAM)
 static const AVOption options[] = {
     { "drc_scale", "percentage of dynamic range compression to apply", OFFSET(drc_scale), AV_OPT_TYPE_FLOAT, {.dbl = 1.0}, 0.0, 1.0, PAR },
+
+{"dmix_mode", "Preferred Stereo Downmix Mode", OFFSET(preferred_stereo_downmix), AV_OPT_TYPE_INT, {.i64 = -1 }, -1, 2, 0, "dmix_mode"},
+{"ltrt_cmixlev",   "Lt/Rt Center Mix Level",   OFFSET(ltrt_center_mix_level),    AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+{"ltrt_surmixlev", "Lt/Rt Surround Mix Level", OFFSET(ltrt_surround_mix_level),  AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+{"loro_cmixlev",   "Lo/Ro Center Mix Level",   OFFSET(loro_center_mix_level),    AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+{"loro_surmixlev", "Lo/Ro Surround Mix Level", OFFSET(loro_surround_mix_level),  AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+
     { NULL},
 };
 

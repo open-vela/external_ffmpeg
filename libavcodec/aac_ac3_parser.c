@@ -3,24 +3,23 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "parser.h"
 #include "aac_ac3_parser.h"
@@ -84,22 +83,9 @@ get_next:
         avctx->sample_rate = s->sample_rate;
 
         /* (E-)AC-3: allow downmixing to stereo or mono */
-#if FF_API_REQUEST_CHANNELS
-FF_DISABLE_DEPRECATION_WARNINGS
-        if (avctx->request_channels == 1)
-            avctx->request_channel_layout = AV_CH_LAYOUT_MONO;
-        else if (avctx->request_channels == 2)
-            avctx->request_channel_layout = AV_CH_LAYOUT_STEREO;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-        if (s->channels > 1 &&
-            avctx->request_channel_layout == AV_CH_LAYOUT_MONO) {
-            avctx->channels       = 1;
-            avctx->channel_layout = AV_CH_LAYOUT_MONO;
-        } else if (s->channels > 2 &&
-                   avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
-            avctx->channels       = 2;
-            avctx->channel_layout = AV_CH_LAYOUT_STEREO;
+        if (avctx->request_channels > 0 && avctx->request_channels <= 2 &&
+            avctx->request_channels < s->channels) {
+            avctx->channels = avctx->request_channels;
         } else {
             avctx->channels = s->channels;
             avctx->channel_layout = s->channel_layout;

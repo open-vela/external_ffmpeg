@@ -2,20 +2,20 @@
  * Opus parser for Ogg
  * Copyright (c) 2012 Nicolas George
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,29 +41,28 @@ static int opus_header(AVFormatContext *avf, int idx)
     AVStream *st                 = avf->streams[idx];
     struct oggopus_private *priv = os->private;
     uint8_t *packet              = os->buf + os->pstart;
-    uint8_t *extradata;
 
     if (!priv) {
         priv = os->private = av_mallocz(sizeof(*priv));
         if (!priv)
             return AVERROR(ENOMEM);
     }
+
     if (os->flags & OGG_FLAG_BOS) {
         if (os->psize < OPUS_HEAD_SIZE || (AV_RL8(packet + 8) & 0xF0) != 0)
             return AVERROR_INVALIDDATA;
-
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codec->codec_id   = AV_CODEC_ID_OPUS;
-        st->codec->channels   = AV_RL8(packet + 9);
+        st->codec->channels   = AV_RL8 (packet + 9);
         priv->pre_skip        = AV_RL16(packet + 10);
+        /*orig_sample_rate    = AV_RL32(packet + 12);*/
+        /*gain                = AV_RL16(packet + 16);*/
+        /*channel_map         = AV_RL8 (packet + 18);*/
 
-        extradata = av_malloc(os->psize + FF_INPUT_BUFFER_PADDING_SIZE);
-        if (!extradata)
+        if (ff_alloc_extradata(st->codec, os->psize))
             return AVERROR(ENOMEM);
 
-        memcpy(extradata, packet, os->psize);
-        st->codec->extradata      = extradata;
-        st->codec->extradata_size = os->psize;
+        memcpy(st->codec->extradata, packet, os->psize);
 
         st->codec->sample_rate = 48000;
         avpriv_set_pts_info(st, 64, 1, 48000);
@@ -121,10 +120,10 @@ static int opus_packet(AVFormatContext *avf, int idx)
         skip = FFMIN(skip, os->pduration);
         if (skip > 0) {
             os->pduration = skip < os->pduration ? os->pduration - skip : 1;
-            av_log(avf, AV_LOG_WARNING,
-                   "Last packet is truncated to %d (because of unimplemented end trim support).\n",
+            os->end_trimming = skip;
+            av_log(avf, AV_LOG_DEBUG,
+                   "Last packet was truncated to %d due to end trimming.\n",
                    os->pduration);
-            return AVERROR_PATCHWELCOME;
         }
     }
 
@@ -137,6 +136,5 @@ const struct ogg_codec ff_opus_codec = {
     .magicsize        = 8,
     .header           = opus_header,
     .packet           = opus_packet,
-    .granule_is_start = 1,
     .nb_header        = 1,
 };
