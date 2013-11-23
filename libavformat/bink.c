@@ -3,20 +3,20 @@
  * Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
  * Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -116,10 +116,8 @@ static int read_header(AVFormatContext *s)
 
     vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     vst->codec->codec_id   = AV_CODEC_ID_BINKVIDEO;
-    vst->codec->extradata  = av_mallocz(4 + FF_INPUT_BUFFER_PADDING_SIZE);
-    if (!vst->codec->extradata)
+    if (ff_alloc_extradata(vst->codec, 4))
         return AVERROR(ENOMEM);
-    vst->codec->extradata_size = 4;
     avio_read(pb, vst->codec->extradata, 4);
 
     bink->num_audio_tracks = avio_rl32(pb);
@@ -152,10 +150,8 @@ static int read_header(AVFormatContext *s)
                 ast->codec->channels       = 1;
                 ast->codec->channel_layout = AV_CH_LAYOUT_MONO;
             }
-            ast->codec->extradata = av_mallocz(4 + FF_INPUT_BUFFER_PADDING_SIZE);
-            if (!ast->codec->extradata)
+            if (ff_alloc_extradata(ast->codec, 4))
                 return AVERROR(ENOMEM);
-            ast->codec->extradata_size = 4;
             AV_WL32(ast->codec->extradata, vst->codec->codec_tag);
         }
 
@@ -202,7 +198,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
         AVStream *st = s->streams[0]; // stream 0 is video stream with index
 
         if (bink->video_pts >= st->duration)
-            return AVERROR(EIO);
+            return AVERROR_EOF;
 
         index_entry = av_index_search_timestamp(st, bink->video_pts,
                                                 AVSEEK_FLAG_ANY);
