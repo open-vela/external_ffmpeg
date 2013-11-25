@@ -2,20 +2,20 @@
  * gsm 06.10 decoder
  * Copyright (c) 2010 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,6 +34,14 @@
 
 static av_cold int gsm_init(AVCodecContext *avctx)
 {
+    if (avctx->codec_tag == 0x0032 &&
+        avctx->bit_rate != 13000 &&
+        avctx->bit_rate != 17912 &&
+        avctx->bit_rate != 35824 &&
+        avctx->bit_rate != 71656) {
+        av_log(avctx, AV_LOG_ERROR, "Unsupported audio mode\n");
+        return AVERROR_PATCHWELCOME;
+    }
     avctx->channels       = 1;
     avctx->channel_layout = AV_CH_LAYOUT_MONO;
     if (!avctx->sample_rate)
@@ -47,16 +55,7 @@ static av_cold int gsm_init(AVCodecContext *avctx)
         break;
     case AV_CODEC_ID_GSM_MS:
         avctx->frame_size  = 2 * GSM_FRAME_SIZE;
-        if (!avctx->block_align)
-            avctx->block_align = GSM_MS_BLOCK_SIZE;
-        else
-            if (avctx->block_align < MSN_MIN_BLOCK_SIZE ||
-                avctx->block_align > GSM_MS_BLOCK_SIZE  ||
-                (avctx->block_align - MSN_MIN_BLOCK_SIZE) % 3) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid block alignment %d\n",
-                       avctx->block_align);
-                return AVERROR_INVALIDDATA;
-            }
+        avctx->block_align = GSM_MS_BLOCK_SIZE;
     }
 
     return 0;
@@ -79,10 +78,8 @@ static int gsm_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = avctx->frame_size;
-    if ((res = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((res = ff_get_buffer(avctx, frame, 0)) < 0)
         return res;
-    }
     samples = (int16_t *)frame->data[0];
 
     switch (avctx->codec_id) {
@@ -90,13 +87,12 @@ static int gsm_decode_frame(AVCodecContext *avctx, void *data,
         init_get_bits(&gb, buf, buf_size * 8);
         if (get_bits(&gb, 4) != 0xd)
             av_log(avctx, AV_LOG_WARNING, "Missing GSM magic!\n");
-        res = gsm_decode_block(avctx, samples, &gb, GSM_13000);
+        res = gsm_decode_block(avctx, samples, &gb);
         if (res < 0)
             return res;
         break;
     case AV_CODEC_ID_GSM_MS:
-        res = ff_msgsm_decode_block(avctx, samples, buf,
-                                    (GSM_MS_BLOCK_SIZE - avctx->block_align) / 3);
+        res = ff_msgsm_decode_block(avctx, samples, buf);
         if (res < 0)
             return res;
     }
@@ -112,6 +108,7 @@ static void gsm_flush(AVCodecContext *avctx)
     memset(s, 0, sizeof(*s));
 }
 
+#if CONFIG_GSM_DECODER
 AVCodec ff_gsm_decoder = {
     .name           = "gsm",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM"),
@@ -123,7 +120,8 @@ AVCodec ff_gsm_decoder = {
     .flush          = gsm_flush,
     .capabilities   = CODEC_CAP_DR1,
 };
-
+#endif
+#if CONFIG_GSM_MS_DECODER
 AVCodec ff_gsm_ms_decoder = {
     .name           = "gsm_ms",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM Microsoft variant"),
@@ -135,3 +133,4 @@ AVCodec ff_gsm_ms_decoder = {
     .flush          = gsm_flush,
     .capabilities   = CODEC_CAP_DR1,
 };
+#endif

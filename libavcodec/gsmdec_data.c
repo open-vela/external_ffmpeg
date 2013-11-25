@@ -2,20 +2,20 @@
  * gsm 06.10 decoder data
  * Copyright (c) 2010 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -91,30 +91,4 @@ const int16_t ff_gsm_dequant_tab[64][8] = {
     {-25087, -17919, -10752,  -3584,   3584,  10752,  17919,  25087},
     {-26879, -19199, -11520,  -3840,   3840,  11520,  19199,  26879},
     {-28671, -20479, -12288,  -4096,   4096,  12288,  20479,  28671}
-};
-
-static const int apcm_bits[11][13] = {
-    { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-    { 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1 },
-    { 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1 },
-    { 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1 },
-    { 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1 },
-    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
-    { 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3 }
-};
-
-const int* const ff_gsm_apcm_bits[][4] = {
-    { apcm_bits[10], apcm_bits[10], apcm_bits[10], apcm_bits[10] }, // 13000
-    { apcm_bits[10], apcm_bits[10], apcm_bits[10], apcm_bits[ 6] }, // 12400
-    { apcm_bits[10], apcm_bits[10], apcm_bits[ 7], apcm_bits[ 5] }, // 11800
-    { apcm_bits[10], apcm_bits[ 8], apcm_bits[ 5], apcm_bits[ 5] }, // 11200
-    { apcm_bits[ 9], apcm_bits[ 5], apcm_bits[ 5], apcm_bits[ 5] }, // 10600
-    { apcm_bits[ 5], apcm_bits[ 5], apcm_bits[ 5], apcm_bits[ 1] }, // 10000
-    { apcm_bits[ 5], apcm_bits[ 5], apcm_bits[ 2], apcm_bits[ 0] }, //  9400
-    { apcm_bits[ 5], apcm_bits[ 3], apcm_bits[ 0], apcm_bits[ 0] }, //  8800
-    { apcm_bits[ 4], apcm_bits[ 0], apcm_bits[ 0], apcm_bits[ 0] }, //  8200
 };

@@ -4,20 +4,20 @@
  * based on TwinVQ decoder
  * Copyright (c) 2009 Vitor Sessak
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -187,7 +187,7 @@ static int metasound_read_bitstream(AVCodecContext *avctx, TwinVQContext *tctx,
 
         sub = mtab->fmode[bits->ftype].sub;
 
-        if (bits->ftype != TWINVQ_FT_SHORT && !tctx->is_6kbps)
+        if (bits->ftype != TWINVQ_FT_SHORT)
             get_bits(&gb, 2);
 
         read_cb_data(tctx, &gb, bits->main_coeffs, bits->ftype);
@@ -235,7 +235,7 @@ static int metasound_read_bitstream(AVCodecContext *avctx, TwinVQContext *tctx,
             skip_bits(&gb, 4 - (get_bits_count(&gb) & 3));
     }
 
-    return 0;
+    return (get_bits_count(&gb) + 7) / 8;
 }
 
 typedef struct MetasoundProps {
@@ -307,12 +307,6 @@ static av_cold int metasound_decode_init(AVCodecContext *avctx)
     ibps = avctx->bit_rate / (1000 * avctx->channels);
 
     switch ((avctx->channels << 16) + (isampf << 8) + ibps) {
-    case (1 << 16) + ( 8 << 8) +  6:
-        tctx->mtab = &ff_metasound_mode0806;
-        break;
-    case (2 << 16) + ( 8 << 8) +  6:
-        tctx->mtab = &ff_metasound_mode0806s;
-        break;
     case (1 << 16) + ( 8 << 8) +  8:
         tctx->mtab = &ff_metasound_mode0808;
         break;
@@ -368,7 +362,6 @@ static av_cold int metasound_decode_init(AVCodecContext *avctx)
     tctx->decode_ppc     = decode_ppc;
     tctx->frame_size     = avctx->bit_rate * tctx->mtab->size
                                            / avctx->sample_rate;
-    tctx->is_6kbps       = ibps == 6;
 
     return ff_twinvq_decode_init(avctx);
 }

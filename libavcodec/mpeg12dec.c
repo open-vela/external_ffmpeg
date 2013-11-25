@@ -1,22 +1,22 @@
 /*
  * MPEG-1/2 decoder
  * Copyright (c) 2000, 2001 Fabrice Bellard
- * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+ * Copyright (c) 2002-2013 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,6 +35,7 @@
 #include "mpeg12.h"
 #include "mpeg12data.h"
 #include "bytestream.h"
+#include "vdpau_internal.h"
 #include "xvmc_internal.h"
 #include "thread.h"
 #include "version.h"
@@ -44,14 +45,12 @@ typedef struct Mpeg1Context {
     int mpeg_enc_ctx_allocated; /* true if decoding context allocated */
     int repeat_field; /* true if we must repeat the field */
     AVPanScan pan_scan;              /**< some temporary storage for the panscan */
-    uint8_t *a53_caption;
-    int a53_caption_size;
     int slice_count;
     int save_aspect_info;
     int save_width, save_height, save_progressive_seq;
     AVRational frame_rate_ext;       ///< MPEG-2 specific framerate modificator
     int sync;                        ///< Did we reach a sync point like a GOP/SEQ/KEYFrame?
-    int closed_gop;                  ///< GOP is closed
+    int tmpgexs;
     int extradata_decoded;
 } Mpeg1Context;
 
@@ -268,6 +267,11 @@ end:
     return 0;
 }
 
+/**
+ * Note: this function can read out of range and crash for corrupt streams.
+ * Changing this would eat up any speed benefits it has.
+ * Do not use "fast" flag if you need the code to be robust.
+ */
 static inline int mpeg1_fast_decode_block_inter(MpegEncContext *s, int16_t *block, int n)
 {
     int level, i, j, run;
@@ -419,6 +423,11 @@ end:
     return 0;
 }
 
+/**
+ * Note: this function can read out of range and crash for corrupt streams.
+ * Changing this would eat up any speed benefits it has.
+ * Do not use "fast" flag if you need the code to be robust.
+ */
 static inline int mpeg2_fast_decode_block_non_intra(MpegEncContext *s,
                                                     int16_t *block, int n)
 {
@@ -559,6 +568,11 @@ static inline int mpeg2_decode_block_intra(MpegEncContext *s, int16_t *block, in
     return 0;
 }
 
+/**
+ * Note: this function can read out of range and crash for corrupt streams.
+ * Changing this would eat up any speed benefits it has.
+ * Do not use "fast" flag if you need the code to be robust.
+ */
 static inline int mpeg2_fast_decode_block_intra(MpegEncContext *s, int16_t *block, int n)
 {
     int level, dc, diff, j, run;
@@ -648,6 +662,15 @@ static inline int get_qscale(MpegEncContext *s)
     }
 }
 
+static void exchange_uv(MpegEncContext *s)
+{
+    int16_t (*tmp)[64];
+
+    tmp           = s->pblocks[4];
+    s->pblocks[4] = s->pblocks[5];
+    s->pblocks[5] = tmp;
+}
+
 /* motion type (for MPEG-2) */
 #define MT_FIELD 1
 #define MT_FRAME 2
@@ -661,7 +684,7 @@ static int mpeg_decode_mb(MpegEncContext *s, int16_t block[12][64])
 
     av_dlog(s->avctx, "decode_mb: x=%d y=%d\n", s->mb_x, s->mb_y);
 
-    assert(s->mb_skipped == 0);
+    av_assert2(s->mb_skipped == 0);
 
     if (s->mb_skip_run-- != 0) {
         if (s->pict_type == AV_PICTURE_TYPE_P) {
@@ -674,11 +697,12 @@ static int mpeg_decode_mb(MpegEncContext *s, int16_t block[12][64])
                 mb_type = s->current_picture.mb_type[s->mb_x + s->mb_y * s->mb_stride - 1];
             else
                 mb_type = s->current_picture.mb_type[s->mb_width + (s->mb_y - 1) * s->mb_stride - 1]; // FIXME not sure if this is allowed in MPEG at all
-            if (IS_INTRA(mb_type))
+            if (IS_INTRA(mb_type)) {
+                av_log(s->avctx, AV_LOG_ERROR, "skip with previntra\n");
                 return -1;
+            }
             s->current_picture.mb_type[s->mb_x + s->mb_y*s->mb_stride] =
                 mb_type | MB_TYPE_SKIP;
-//            assert(s->current_picture.mb_type[s->mb_x + s->mb_y * s->mb_stride - 1] & (MB_TYPE_16x16 | MB_TYPE_16x8));
 
             if ((s->mv[0][0][0] | s->mv[0][0][1] | s->mv[1][0][0] | s->mv[1][0][1]) == 0)
                 s->mb_skipped = 1;
@@ -754,6 +778,9 @@ FF_DISABLE_DEPRECATION_WARNINGS
         // if 1, we memcpy blocks in xvmcvideo
         if (CONFIG_MPEG_XVMC_DECODER && s->avctx->xvmc_acceleration > 1) {
             ff_xvmc_pack_pblocks(s, -1); // inter are always full blocks
+            if (s->swap_uv) {
+                exchange_uv(s);
+            }
         }
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif /* FF_API_XVMC */
@@ -777,11 +804,12 @@ FF_ENABLE_DEPRECATION_WARNINGS
         }
     } else {
         if (mb_type & MB_TYPE_ZERO_MV) {
-            assert(mb_type & MB_TYPE_CBP);
+            av_assert2(mb_type & MB_TYPE_CBP);
 
             s->mv_dir = MV_DIR_FORWARD;
             if (s->picture_structure == PICT_FRAME) {
-                if (!s->frame_pred_frame_dct)
+                if (s->picture_structure == PICT_FRAME
+                    && !s->frame_pred_frame_dct)
                     s->interlaced_dct = get_bits1(&s->gb);
                 s->mv_type = MV_TYPE_16X16;
             } else {
@@ -800,10 +828,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
             s->mv[0][0][0] = 0;
             s->mv[0][0][1] = 0;
         } else {
-            assert(mb_type & MB_TYPE_L0L1);
+            av_assert2(mb_type & MB_TYPE_L0L1);
             // FIXME decide if MBs in field pictures are MB_TYPE_INTERLACED
             /* get additional motion vector type */
-            if (s->frame_pred_frame_dct)
+            if (s->picture_structure == PICT_FRAME && s->frame_pred_frame_dct)
                 motion_type = MT_FRAME;
             else {
                 motion_type = get_bits(&s->gb, 2);
@@ -877,6 +905,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                         }
                     }
                 } else {
+                    av_assert0(!s->progressive_sequence);
                     mb_type |= MB_TYPE_16x16 | MB_TYPE_INTERLACED;
                     for (i = 0; i < 2; i++) {
                         if (USES_LIST(mb_type, i)) {
@@ -893,6 +922,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 }
                 break;
             case MT_DMV:
+                if(s->progressive_sequence){
+                    av_log(s->avctx, AV_LOG_ERROR, "MT_DMV in progressive_sequence\n");
+                    return -1;
+                }
                 s->mv_type = MV_TYPE_DMV;
                 for (i = 0; i < 2; i++) {
                     if (USES_LIST(mb_type, i)) {
@@ -959,7 +992,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                  s->dsp.clear_blocks(s->block[6]);
             }
             if (cbp <= 0) {
-                av_log(s->avctx, AV_LOG_ERROR, "invalid cbp at %d %d\n", s->mb_x, s->mb_y);
+                av_log(s->avctx, AV_LOG_ERROR, "invalid cbp %d at %d %d\n", cbp, s->mb_x, s->mb_y);
                 return -1;
             }
 
@@ -968,6 +1001,9 @@ FF_DISABLE_DEPRECATION_WARNINGS
             //if 1, we memcpy blocks in xvmcvideo
             if (CONFIG_MPEG_XVMC_DECODER && s->avctx->xvmc_acceleration > 1) {
                 ff_xvmc_pack_pblocks(s, cbp);
+                if (s->swap_uv) {
+                    exchange_uv(s);
+                }
             }
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif /* FF_API_XVMC */
@@ -1093,45 +1129,83 @@ static void quant_matrix_rebuild(uint16_t *matrix, const uint8_t *old_perm,
     }
 }
 
+static const enum AVPixelFormat mpeg1_hwaccel_pixfmt_list_420[] = {
 #if FF_API_XVMC
-static const enum AVPixelFormat pixfmt_xvmc_mpg2_420[] = {
+#if CONFIG_MPEG_XVMC_DECODER
     AV_PIX_FMT_XVMC_MPEG2_IDCT,
     AV_PIX_FMT_XVMC_MPEG2_MC,
-    AV_PIX_FMT_NONE };
+#endif
 #endif /* FF_API_XVMC */
-
-static const enum AVPixelFormat mpeg12_hwaccel_pixfmt_list_420[] = {
-#if CONFIG_MPEG2_DXVA2_HWACCEL
-    AV_PIX_FMT_DXVA2_VLD,
-#endif
-#if CONFIG_MPEG2_VAAPI_HWACCEL
-    AV_PIX_FMT_VAAPI_VLD,
-#endif
-#if CONFIG_MPEG1_VDPAU_HWACCEL | CONFIG_MPEG2_VDPAU_HWACCEL
+#if CONFIG_MPEG1_VDPAU_HWACCEL
+    AV_PIX_FMT_VDPAU_MPEG1,
     AV_PIX_FMT_VDPAU,
 #endif
     AV_PIX_FMT_YUV420P,
     AV_PIX_FMT_NONE
 };
 
+static const enum AVPixelFormat mpeg2_hwaccel_pixfmt_list_420[] = {
+#if FF_API_XVMC
+#if CONFIG_MPEG_XVMC_DECODER
+    AV_PIX_FMT_XVMC_MPEG2_IDCT,
+    AV_PIX_FMT_XVMC_MPEG2_MC,
+#endif
+#endif /* FF_API_XVMC */
+#if CONFIG_MPEG2_VDPAU_HWACCEL
+    AV_PIX_FMT_VDPAU_MPEG2,
+    AV_PIX_FMT_VDPAU,
+#endif
+#if CONFIG_MPEG2_DXVA2_HWACCEL
+    AV_PIX_FMT_DXVA2_VLD,
+#endif
+#if CONFIG_MPEG2_VAAPI_HWACCEL
+    AV_PIX_FMT_VAAPI_VLD,
+#endif
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_NONE
+};
+
+static inline int uses_vdpau(AVCodecContext *avctx) {
+    return avctx->pix_fmt == AV_PIX_FMT_VDPAU_MPEG1 || avctx->pix_fmt == AV_PIX_FMT_VDPAU_MPEG2;
+}
+
 static enum AVPixelFormat mpeg_get_pixelformat(AVCodecContext *avctx)
 {
     Mpeg1Context *s1 = avctx->priv_data;
     MpegEncContext *s = &s1->mpeg_enc_ctx;
 
-#if FF_API_XVMC
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (avctx->xvmc_acceleration)
-        return avctx->get_format(avctx, pixfmt_xvmc_mpg2_420);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif /* FF_API_XVMC */
-
-    if (s->chroma_format <  2)
-        return avctx->get_format(avctx, mpeg12_hwaccel_pixfmt_list_420);
-    else if (s->chroma_format == 2)
+    if(s->chroma_format < 2) {
+        return ff_thread_get_format(avctx,
+                                avctx->codec_id == AV_CODEC_ID_MPEG1VIDEO ?
+                                mpeg1_hwaccel_pixfmt_list_420 :
+                                mpeg2_hwaccel_pixfmt_list_420);
+    } else if(s->chroma_format == 2)
         return AV_PIX_FMT_YUV422P;
     else
         return AV_PIX_FMT_YUV444P;
+}
+
+static void setup_hwaccel_for_pixfmt(AVCodecContext *avctx)
+{
+#if FF_API_XVMC
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->pix_fmt != AV_PIX_FMT_XVMC_MPEG2_IDCT && avctx->pix_fmt != AV_PIX_FMT_XVMC_MPEG2_MC) {
+        avctx->xvmc_acceleration = 0;
+    } else if (!avctx->xvmc_acceleration) {
+        avctx->xvmc_acceleration = 2;
+    }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif /* FF_API_XVMC */
+    avctx->hwaccel = ff_find_hwaccel(avctx);
+    // until then pix_fmt may be changed right after codec init
+#if FF_API_XVMC
+    if (avctx->pix_fmt == AV_PIX_FMT_XVMC_MPEG2_IDCT ||
+#else
+    if (
+#endif
+        avctx->hwaccel || uses_vdpau(avctx))
+        if (avctx->idct_algo == FF_IDCT_AUTO)
+            avctx->idct_algo = FF_IDCT_SIMPLE;
 }
 
 /* Call this function when we know all parameters.
@@ -1149,7 +1223,7 @@ static int mpeg_decode_postinit(AVCodecContext *avctx)
         s1->save_width           != s->width                ||
         s1->save_height          != s->height               ||
         s1->save_aspect_info     != s->aspect_ratio_info    ||
-        s1->save_progressive_seq != s->progressive_sequence ||
+        (s1->save_progressive_seq != s->progressive_sequence && (s->height&31)) ||
         0)
     {
 
@@ -1158,6 +1232,7 @@ static int mpeg_decode_postinit(AVCodecContext *avctx)
             s->parse_context.buffer = 0;
             ff_MPV_common_end(s);
             s->parse_context = pc;
+            s1->mpeg_enc_ctx_allocated = 0;
         }
 
         if ((s->width == 0) || (s->height == 0))
@@ -1167,7 +1242,12 @@ static int mpeg_decode_postinit(AVCodecContext *avctx)
         if (ret < 0)
             return ret;
 
-        avctx->bit_rate          = s->bit_rate;
+        if (avctx->codec_id == AV_CODEC_ID_MPEG2VIDEO && s->bit_rate) {
+            avctx->rc_max_rate = s->bit_rate;
+        } else if (avctx->codec_id == AV_CODEC_ID_MPEG1VIDEO && s->bit_rate &&
+                   (s->bit_rate != 0x3FFFF*400 || s->vbv_delay != 0xFFFF)) {
+            avctx->bit_rate = s->bit_rate;
+        }
         s1->save_aspect_info     = s->aspect_ratio_info;
         s1->save_width           = s->width;
         s1->save_height          = s->height;
@@ -1227,15 +1307,7 @@ static int mpeg_decode_postinit(AVCodecContext *avctx)
         } // MPEG-2
 
         avctx->pix_fmt = mpeg_get_pixelformat(avctx);
-        avctx->hwaccel = ff_find_hwaccel(avctx);
-        // until then pix_fmt may be changed right after codec init
-#if FF_API_XVMC
-        if ((avctx->pix_fmt == AV_PIX_FMT_XVMC_MPEG2_IDCT ||
-            avctx->hwaccel) && avctx->idct_algo == FF_IDCT_AUTO)
-#else
-        if (avctx->hwaccel && avctx->idct_algo == FF_IDCT_AUTO)
-#endif /* FF_API_XVMC */
-            avctx->idct_algo = FF_IDCT_SIMPLE;
+        setup_hwaccel_for_pixfmt(avctx);
 
         /* Quantization matrices may need reordering
          * if DCT permutation is changed. */
@@ -1269,19 +1341,22 @@ static int mpeg1_decode_picture(AVCodecContext *avctx,
         return -1;
 
     vbv_delay = get_bits(&s->gb, 16);
+    s->vbv_delay = vbv_delay;
     if (s->pict_type == AV_PICTURE_TYPE_P || s->pict_type == AV_PICTURE_TYPE_B) {
         s->full_pel[0] = get_bits1(&s->gb);
         f_code = get_bits(&s->gb, 3);
-        if (f_code == 0 && (avctx->err_recognition & AV_EF_BITSTREAM))
+        if (f_code == 0 && (avctx->err_recognition & (AV_EF_BITSTREAM|AV_EF_COMPLIANT)))
             return -1;
+        f_code += !f_code;
         s->mpeg_f_code[0][0] = f_code;
         s->mpeg_f_code[0][1] = f_code;
     }
     if (s->pict_type == AV_PICTURE_TYPE_B) {
         s->full_pel[1] = get_bits1(&s->gb);
         f_code = get_bits(&s->gb, 3);
-        if (f_code == 0 && (avctx->err_recognition & AV_EF_BITSTREAM))
+        if (f_code == 0 && (avctx->err_recognition & (AV_EF_BITSTREAM|AV_EF_COMPLIANT)))
             return -1;
+        f_code += !f_code;
         s->mpeg_f_code[1][0] = f_code;
         s->mpeg_f_code[1][1] = f_code;
     }
@@ -1327,8 +1402,8 @@ static void mpeg_decode_sequence_extension(Mpeg1Context *s1)
     s->codec_id      = s->avctx->codec_id = AV_CODEC_ID_MPEG2VIDEO;
 
     if (s->avctx->debug & FF_DEBUG_PICT_INFO)
-        av_log(s->avctx, AV_LOG_DEBUG, "profile: %d, level: %d vbv buffer: %d, bitrate:%d\n",
-               s->avctx->profile, s->avctx->level, s->avctx->rc_buffer_size, s->bit_rate);
+        av_log(s->avctx, AV_LOG_DEBUG, "profile: %d, level: %d ps: %d cf:%d vbv buffer: %d, bitrate:%d\n",
+               s->avctx->profile, s->avctx->level, s->progressive_sequence, s->chroma_format, s->avctx->rc_buffer_size, s->bit_rate);
 
 }
 
@@ -1401,7 +1476,7 @@ static int load_matrix(MpegEncContext *s, uint16_t matrix0[64], uint16_t matrix1
             return -1;
         }
         if (intra && i == 0 && v != 8) {
-            av_log(s->avctx, AV_LOG_ERROR, "intra matrix invalid, ignoring\n");
+            av_log(s->avctx, AV_LOG_DEBUG, "intra matrix specifies invalid DC quantizer %d, ignoring\n", v);
             v = 8; // needed by pink.mpg / issue1046
         }
         matrix0[j] = v;
@@ -1442,6 +1517,11 @@ static void mpeg_decode_picture_coding_extension(Mpeg1Context *s1)
         s->current_picture.f.pict_type = s->pict_type;
         s->current_picture.f.key_frame = s->pict_type == AV_PICTURE_TYPE_I;
     }
+    s->mpeg_f_code[0][0] += !s->mpeg_f_code[0][0];
+    s->mpeg_f_code[0][1] += !s->mpeg_f_code[0][1];
+    s->mpeg_f_code[1][0] += !s->mpeg_f_code[1][0];
+    s->mpeg_f_code[1][1] += !s->mpeg_f_code[1][1];
+
     s->intra_dc_precision         = get_bits(&s->gb, 2);
     s->picture_structure          = get_bits(&s->gb, 2);
     s->top_field_first            = get_bits1(&s->gb);
@@ -1454,28 +1534,6 @@ static void mpeg_decode_picture_coding_extension(Mpeg1Context *s1)
     s->chroma_420_type            = get_bits1(&s->gb);
     s->progressive_frame          = get_bits1(&s->gb);
 
-    if (s->progressive_sequence && !s->progressive_frame) {
-        s->progressive_frame = 1;
-        av_log(s->avctx, AV_LOG_ERROR, "interlaced frame in progressive sequence, ignoring\n");
-    }
-
-    if (s->picture_structure == 0 || (s->progressive_frame && s->picture_structure != PICT_FRAME)) {
-        av_log(s->avctx, AV_LOG_ERROR, "picture_structure %d invalid, ignoring\n", s->picture_structure);
-        s->picture_structure = PICT_FRAME;
-    }
-
-    if (s->progressive_sequence && !s->frame_pred_frame_dct) {
-        av_log(s->avctx, AV_LOG_WARNING, "invalid frame_pred_frame_dct\n");
-    }
-
-    if (s->picture_structure == PICT_FRAME) {
-        s->first_field = 0;
-        s->v_edge_pos  = 16 * s->mb_height;
-    } else {
-        s->first_field ^= 1;
-        s->v_edge_pos   = 8 * s->mb_height;
-        memset(s->mbskip_table, 0, s->mb_stride * s->mb_height);
-    }
 
     if (s->alternate_scan) {
         ff_init_scantable(s->dsp.idct_permutation, &s->inter_scantable, ff_alternate_vertical_scan);
@@ -1531,14 +1589,6 @@ static int mpeg_field_start(MpegEncContext *s, const uint8_t *buf, int buf_size)
             return AVERROR(ENOMEM);
         memcpy(pan_scan->data, &s1->pan_scan, sizeof(s1->pan_scan));
 
-        if (s1->a53_caption) {
-            AVFrameSideData *sd = av_frame_new_side_data(
-                &s->current_picture_ptr->f, AV_FRAME_DATA_A53_CC,
-                s1->a53_caption_size);
-            if (sd)
-                memcpy(sd->data, s1->a53_caption, s1->a53_caption_size);
-            av_freep(&s1->a53_caption);
-        }
         if (HAVE_THREADS && (avctx->active_thread_type & FF_THREAD_FRAME))
             ff_thread_finish_setup(avctx);
     } else { // second field
@@ -1594,14 +1644,17 @@ static int mpeg_decode_slice(MpegEncContext *s, int mb_y,
                              const uint8_t **buf, int buf_size)
 {
     AVCodecContext *avctx = s->avctx;
+    const int lowres      = s->avctx->lowres;
     const int field_pic   = s->picture_structure != PICT_FRAME;
 
     s->resync_mb_x =
     s->resync_mb_y = -1;
 
-    assert(mb_y < s->mb_height);
+    av_assert0(mb_y < s->mb_height);
 
     init_get_bits(&s->gb, *buf, buf_size * 8);
+    if(s->codec_id != AV_CODEC_ID_MPEG1VIDEO && s->mb_height > 2800/16)
+        skip_bits(&s->gb, 3);
 
     ff_mpeg1_clean_buffers(s);
     s->interlaced_dct = 0;
@@ -1614,9 +1667,8 @@ static int mpeg_decode_slice(MpegEncContext *s, int mb_y,
     }
 
     /* extra slice info */
-    while (get_bits1(&s->gb) != 0) {
-        skip_bits(&s->gb, 8);
-    }
+    if (skip_1stop_8data_bits(&s->gb) < 0)
+        return AVERROR_INVALIDDATA;
 
     s->mb_x = 0;
 
@@ -1712,21 +1764,21 @@ FF_ENABLE_DEPRECATION_WARNINGS
                     s->current_picture.motion_val[dir][xy + 1][1] = motion_y;
                     s->current_picture.ref_index [dir][b8_xy    ] =
                     s->current_picture.ref_index [dir][b8_xy + 1] = s->field_select[dir][i];
-                    assert(s->field_select[dir][i] == 0 || s->field_select[dir][i] == 1);
+                    av_assert2(s->field_select[dir][i] == 0 || s->field_select[dir][i] == 1);
                 }
                 xy += wrap;
                 b8_xy +=2;
             }
         }
 
-        s->dest[0] += 16;
-        s->dest[1] += 16 >> s->chroma_x_shift;
-        s->dest[2] += 16 >> s->chroma_x_shift;
+        s->dest[0] += 16 >> lowres;
+        s->dest[1] +=(16 >> lowres) >> s->chroma_x_shift;
+        s->dest[2] +=(16 >> lowres) >> s->chroma_x_shift;
 
         ff_MPV_decode_mb(s, s->block);
 
         if (++s->mb_x >= s->mb_width) {
-            const int mb_size = 16;
+            const int mb_size = 16 >> s->avctx->lowres;
 
             ff_mpeg_draw_horiz_band(s, mb_size*(s->mb_y >> field_pic), mb_size);
             ff_MPV_report_decode_progress(s);
@@ -1740,8 +1792,17 @@ FF_ENABLE_DEPRECATION_WARNINGS
                              && s->intra_dc_precision == 2 && s->q_scale_type == 1 && s->alternate_scan == 0
                              && s->progressive_frame == 0 /* vbv_delay == 0xBBB || 0xE10*/;
 
+                if (left >= 32 && !is_d10) {
+                    GetBitContext gb = s->gb;
+                    align_get_bits(&gb);
+                    if (show_bits(&gb, 24) == 0x060E2B) {
+                        av_log(avctx, AV_LOG_DEBUG, "Invalid MXF data found in video stream\n");
+                        is_d10 = 1;
+                    }
+                }
+
                 if (left < 0 || (left && show_bits(&s->gb, FFMIN(left, 23)) && !is_d10)
-                    || ((avctx->err_recognition & AV_EF_BUFFER) && left > 8)) {
+                    || ((avctx->err_recognition & (AV_EF_BITSTREAM | AV_EF_AGGRESSIVE)) && left > 8)) {
                     av_log(avctx, AV_LOG_ERROR, "end mismatch left=%d %0X\n", left, show_bits(&s->gb, FFMIN(left, 23)));
                     return -1;
                 } else
@@ -1848,7 +1909,10 @@ static int slice_decode_thread(AVCodecContext *c, void *arg)
 
         start_code = -1;
         buf = avpriv_find_start_code(buf, s->gb.buffer_end, &start_code);
-        mb_y= (start_code - SLICE_MIN_START_CODE) << field_pic;
+        mb_y= start_code - SLICE_MIN_START_CODE;
+        if(s->codec_id != AV_CODEC_ID_MPEG1VIDEO && s->mb_height > 2800/16)
+            mb_y += (*buf&0xE0)<<2;
+        mb_y <<= field_pic;
         if (s->picture_structure == PICT_BOTTOM_FIELD)
             mb_y++;
         if (mb_y < 0 || mb_y >= s->end_mb_y)
@@ -1881,7 +1945,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif /* FF_API_XVMC */
 
     /* end of slice reached */
-    if (/*s->mb_y << field_pic == s->mb_height &&*/ !s->first_field) {
+    if (/*s->mb_y << field_pic == s->mb_height &&*/ !s->first_field && !s->first_slice) {
         /* end of image */
 
         ff_er_frame_end(&s->er);
@@ -1892,7 +1956,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
             int ret = av_frame_ref(pict, &s->current_picture_ptr->f);
             if (ret < 0)
                 return ret;
-            ff_print_debug_info(s, s->current_picture_ptr);
+            ff_print_debug_info(s, s->current_picture_ptr, pict);
+            ff_mpv_export_qp_table(s, pict, s->current_picture_ptr, FF_QSCALE_TYPE_MPEG2);
         } else {
             if (avctx->active_thread_type & FF_THREAD_FRAME)
                 s->picture_number++;
@@ -1902,7 +1967,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 int ret = av_frame_ref(pict, &s->last_picture_ptr->f);
                 if (ret < 0)
                     return ret;
-                ff_print_debug_info(s, s->last_picture_ptr);
+                ff_print_debug_info(s, s->last_picture_ptr, pict);
+                ff_mpv_export_qp_table(s, pict, s->last_picture_ptr, FF_QSCALE_TYPE_MPEG2);
             }
         }
 
@@ -1927,13 +1993,13 @@ static int mpeg1_decode_sequence(AVCodecContext *avctx,
     if (width == 0 || height == 0) {
         av_log(avctx, AV_LOG_WARNING, "Invalid horizontal or vertical size "
                "value.\n");
-        if (avctx->err_recognition & AV_EF_BITSTREAM)
+        if (avctx->err_recognition & (AV_EF_BITSTREAM | AV_EF_COMPLIANT))
             return AVERROR_INVALIDDATA;
     }
     s->aspect_ratio_info = get_bits(&s->gb, 4);
     if (s->aspect_ratio_info == 0) {
         av_log(avctx, AV_LOG_ERROR, "aspect ratio has forbidden 0 value\n");
-        if (avctx->err_recognition & AV_EF_BITSTREAM)
+        if (avctx->err_recognition & (AV_EF_BITSTREAM | AV_EF_COMPLIANT))
             return -1;
     }
     s->frame_rate_index = get_bits(&s->gb, 4);
@@ -1979,10 +2045,12 @@ static int mpeg1_decode_sequence(AVCodecContext *avctx,
     s->progressive_sequence = 1;
     s->progressive_frame    = 1;
     s->picture_structure    = PICT_FRAME;
+    s->first_field          = 0;
     s->frame_pred_frame_dct = 1;
     s->chroma_format        = 1;
     s->codec_id             = s->avctx->codec_id = AV_CODEC_ID_MPEG1VIDEO;
     s->out_format           = FMT_MPEG1;
+    s->swap_uv              = 0; // AFAIK VCR2 does not have SEQ_HEADER
     if (s->flags & CODEC_FLAG_LOW_DELAY)
         s->low_delay = 1;
 
@@ -2003,6 +2071,7 @@ static int vcr2_init_sequence(AVCodecContext *avctx)
     s->out_format = FMT_MPEG1;
     if (s1->mpeg_enc_ctx_allocated) {
         ff_MPV_common_end(s);
+        s1->mpeg_enc_ctx_allocated = 0;
     }
     s->width  = avctx->coded_width;
     s->height = avctx->coded_height;
@@ -2010,15 +2079,7 @@ static int vcr2_init_sequence(AVCodecContext *avctx)
     s->low_delay = 1;
 
     avctx->pix_fmt = mpeg_get_pixelformat(avctx);
-    avctx->hwaccel = ff_find_hwaccel(avctx);
-
-#if FF_API_XVMC
-    if ((avctx->pix_fmt == AV_PIX_FMT_XVMC_MPEG2_IDCT || avctx->hwaccel) &&
-        avctx->idct_algo == FF_IDCT_AUTO)
-#else
-    if (avctx->hwaccel && avctx->idct_algo == FF_IDCT_AUTO)
-#endif /* FF_API_XVMC */
-        avctx->idct_algo = FF_IDCT_SIMPLE;
+    setup_hwaccel_for_pixfmt(avctx);
 
     if (ff_MPV_common_init(s) < 0)
         return -1;
@@ -2038,9 +2099,15 @@ static int vcr2_init_sequence(AVCodecContext *avctx)
     s->progressive_sequence  = 1;
     s->progressive_frame     = 1;
     s->picture_structure     = PICT_FRAME;
+    s->first_field           = 0;
     s->frame_pred_frame_dct  = 1;
     s->chroma_format         = 1;
-    s->codec_id              = s->avctx->codec_id = AV_CODEC_ID_MPEG2VIDEO;
+    if (s->codec_tag == AV_RL32("BW10")) {
+        s->codec_id              = s->avctx->codec_id = AV_CODEC_ID_MPEG1VIDEO;
+    } else {
+        s->swap_uv = 1; // in case of xvmc we need to swap uv for each MB
+        s->codec_id              = s->avctx->codec_id = AV_CODEC_ID_MPEG2VIDEO;
+    }
     s1->save_width           = s->width;
     s1->save_height          = s->height;
     s1->save_progressive_seq = s->progressive_sequence;
@@ -2048,64 +2115,24 @@ static int vcr2_init_sequence(AVCodecContext *avctx)
 }
 
 
-static int mpeg_decode_a53_cc(AVCodecContext *avctx,
-                              const uint8_t *p, int buf_size)
-{
-    Mpeg1Context *s1 = avctx->priv_data;
-
-    if (buf_size >= 6 &&
-        p[0] == 'G' && p[1] == 'A' && p[2] == '9' && p[3] == '4' &&
-        p[4] == 3 && (p[5] & 0x40)) {
-        /* extract A53 Part 4 CC data */
-        int cc_count = p[5] & 0x1f;
-        if (cc_count > 0 && buf_size >= 7 + cc_count * 3) {
-            av_freep(&s1->a53_caption);
-            s1->a53_caption_size = cc_count * 3;
-            s1->a53_caption = av_malloc(s1->a53_caption_size);
-            if (s1->a53_caption) {
-                memcpy(s1->a53_caption, p + 7, s1->a53_caption_size);
-            }
-        }
-        return 1;
-    } else if (buf_size >= 11 &&
-        p[0] == 'C' && p[1] == 'C' && p[2] == 0x01 && p[3] == 0xf8) {
-        /* extract DVD CC data */
-        int cc_count = 0;
-        int i;
-        // There is a caption count field in the data, but it is often
-        // incorect.  So count the number of captions present.
-        for (i = 5; i + 6 <= buf_size && ((p[i] & 0xfe) == 0xfe); i += 6)
-            cc_count++;
-        // Transform the DVD format into A53 Part 4 format
-        if (cc_count > 0) {
-            av_freep(&s1->a53_caption);
-            s1->a53_caption_size = cc_count * 6;
-            s1->a53_caption = av_malloc(s1->a53_caption_size);
-            if (s1->a53_caption) {
-                uint8_t field1 = !!(p[4] & 0x80);
-                uint8_t *cap = s1->a53_caption;
-                p += 5;
-                for (i = 0; i < cc_count; i++) {
-                    cap[0] = (p[0] == 0xff && field1) ? 0xfc : 0xfd;
-                    cap[1] = p[1];
-                    cap[2] = p[2];
-                    cap[3] = (p[3] == 0xff && !field1) ? 0xfc : 0xfd;
-                    cap[4] = p[4];
-                    cap[5] = p[5];
-                    cap += 6;
-                    p += 6;
-                }
-            }
-        }
-        return 1;
-    }
-    return 0;
-}
-
 static void mpeg_decode_user_data(AVCodecContext *avctx,
                                   const uint8_t *p, int buf_size)
 {
+    Mpeg1Context *s = avctx->priv_data;
     const uint8_t *buf_end = p + buf_size;
+
+    if(buf_size > 29){
+        int i;
+        for(i=0; i<20; i++)
+            if(!memcmp(p+i, "\0TMPGEXS\0", 9)){
+                s->tmpgexs= 1;
+            }
+
+/*        for(i=0; !(!p[i-2] && !p[i-1] && p[i]==1) && i<buf_size; i++){
+            av_log(avctx, AV_LOG_ERROR, "%c", p[i]);
+        }
+            av_log(avctx, AV_LOG_ERROR, "\n");*/
+    }
 
     /* we parse the DTG active format information */
     if (buf_end - p >= 5 &&
@@ -2121,8 +2148,6 @@ static void mpeg_decode_user_data(AVCodecContext *avctx,
                 return;
             avctx->dtg_active_format = p[0] & 0x0f;
         }
-    } else if (mpeg_decode_a53_cc(avctx, p, buf_size)) {
-        return;
     }
 }
 
@@ -2131,31 +2156,26 @@ static void mpeg_decode_gop(AVCodecContext *avctx,
 {
     Mpeg1Context *s1  = avctx->priv_data;
     MpegEncContext *s = &s1->mpeg_enc_ctx;
-
-    int time_code_hours, time_code_minutes;
-    int time_code_seconds, time_code_pictures;
     int broken_link;
+    int64_t tc;
 
     init_get_bits(&s->gb, buf, buf_size*8);
 
-    skip_bits1(&s->gb); /* drop_frame_flag */
+    tc = avctx->timecode_frame_start = get_bits(&s->gb, 25);
 
-    time_code_hours   = get_bits(&s->gb, 5);
-    time_code_minutes = get_bits(&s->gb, 6);
-    skip_bits1(&s->gb); // marker bit
-    time_code_seconds  = get_bits(&s->gb, 6);
-    time_code_pictures = get_bits(&s->gb, 6);
-
-    s1->closed_gop = get_bits1(&s->gb);
+    s->closed_gop = get_bits1(&s->gb);
     /*broken_link indicate that after editing the
       reference frames of the first B-Frames after GOP I-Frame
       are missing (open gop)*/
     broken_link = get_bits1(&s->gb);
 
-    if (s->avctx->debug & FF_DEBUG_PICT_INFO)
-        av_log(s->avctx, AV_LOG_DEBUG, "GOP (%2d:%02d:%02d.[%02d]) closed_gop=%d broken_link=%d\n",
-               time_code_hours, time_code_minutes, time_code_seconds,
-               time_code_pictures, s1->closed_gop, broken_link);
+    if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
+        char tcbuf[AV_TIMECODE_STR_SIZE];
+        av_timecode_make_mpeg_tc_string(tcbuf, tc);
+        av_log(s->avctx, AV_LOG_DEBUG,
+               "GOP (%s) closed_gop=%d broken_link=%d\n",
+               tcbuf, s->closed_gop, broken_link);
+    }
 }
 
 static int decode_chunks(AVCodecContext *avctx,
@@ -2168,6 +2188,7 @@ static int decode_chunks(AVCodecContext *avctx,
     const uint8_t *buf_end = buf + buf_size;
     int ret, input_size;
     int last_code = 0, skip_frame = 0;
+    int picture_start_code_seen = 0;
 
     for (;;) {
         /* find next start code */
@@ -2178,11 +2199,16 @@ static int decode_chunks(AVCodecContext *avctx,
                 if (HAVE_THREADS && (avctx->active_thread_type & FF_THREAD_SLICE) &&
                     !avctx->hwaccel) {
                     int i;
+                    av_assert0(avctx->thread_count > 1);
 
                     avctx->execute(avctx, slice_decode_thread,  &s2->thread_context[0], NULL, s->slice_count, sizeof(void*));
                     for (i = 0; i < s->slice_count; i++)
                         s2->er.error_count += s2->thread_context[i]->er.error_count;
                 }
+
+                if ((CONFIG_MPEG_VDPAU_DECODER || CONFIG_MPEG1_VDPAU_DECODER)
+                    && uses_vdpau(avctx))
+                    ff_vdpau_mpeg_picture_complete(s2, buf, buf_size, s->slice_count);
 
                 ret = slice_end(avctx, picture);
                 if (ret < 0)
@@ -2193,6 +2219,10 @@ static int decode_chunks(AVCodecContext *avctx,
                 }
             }
             s2->pict_type = 0;
+
+            if (avctx->err_recognition & AV_EF_EXPLODE && s2->er.error_count)
+                return AVERROR_INVALIDDATA;
+
             return FFMAX(0, buf_ptr - buf - s2->parse_context.last_index);
         }
 
@@ -2207,7 +2237,8 @@ static int decode_chunks(AVCodecContext *avctx,
         case SEQ_START_CODE:
             if (last_code == 0) {
                 mpeg1_decode_sequence(avctx, buf_ptr, input_size);
-                s->sync=1;
+                if(buf != avctx->extradata)
+                    s->sync=1;
             } else {
                 av_log(avctx, AV_LOG_ERROR, "ignoring SEQ_START_CODE after %X\n", last_code);
                 if (avctx->err_recognition & AV_EF_EXPLODE)
@@ -2216,12 +2247,24 @@ static int decode_chunks(AVCodecContext *avctx,
             break;
 
         case PICTURE_START_CODE:
+            if (picture_start_code_seen && s2->picture_structure == PICT_FRAME) {
+               /* If it's a frame picture, there can't be more than one picture header.
+                  Yet, it does happen and we need to handle it. */
+               av_log(avctx, AV_LOG_WARNING, "ignoring extra picture following a frame-picture\n");
+               break;
+            }
+            picture_start_code_seen = 1;
+
             if (s2->width <= 0 || s2->height <= 0) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid frame dimensions %dx%d.\n",
                        s2->width, s2->height);
                 return AVERROR_INVALIDDATA;
             }
 
+            if(s->tmpgexs){
+                s2->intra_dc_precision= 3;
+                s2->intra_matrix[0]= 1;
+            }
             if (HAVE_THREADS && (avctx->active_thread_type & FF_THREAD_SLICE) &&
                 !avctx->hwaccel && s->slice_count) {
                 int i;
@@ -2300,13 +2343,47 @@ static int decode_chunks(AVCodecContext *avctx,
             break;
         default:
             if (start_code >= SLICE_MIN_START_CODE &&
+                start_code <= SLICE_MAX_START_CODE && last_code == PICTURE_START_CODE) {
+
+                if (s2->progressive_sequence && !s2->progressive_frame) {
+                    s2->progressive_frame = 1;
+                    av_log(s2->avctx, AV_LOG_ERROR, "interlaced frame in progressive sequence, ignoring\n");
+                }
+
+                if (s2->picture_structure == 0 || (s2->progressive_frame && s2->picture_structure != PICT_FRAME)) {
+                    av_log(s2->avctx, AV_LOG_ERROR, "picture_structure %d invalid, ignoring\n", s2->picture_structure);
+                    s2->picture_structure = PICT_FRAME;
+                }
+
+                if (s2->progressive_sequence && !s2->frame_pred_frame_dct) {
+                    av_log(s2->avctx, AV_LOG_WARNING, "invalid frame_pred_frame_dct\n");
+                }
+
+                if (s2->picture_structure == PICT_FRAME) {
+                    s2->first_field = 0;
+                    s2->v_edge_pos  = 16 * s2->mb_height;
+                } else {
+                    s2->first_field ^= 1;
+                    s2->v_edge_pos   = 8 * s2->mb_height;
+                    memset(s2->mbskip_table, 0, s2->mb_stride * s2->mb_height);
+                }
+            }
+            if (start_code >= SLICE_MIN_START_CODE &&
                 start_code <= SLICE_MAX_START_CODE && last_code != 0) {
                 const int field_pic = s2->picture_structure != PICT_FRAME;
-                int mb_y = (start_code - SLICE_MIN_START_CODE) << field_pic;
+                int mb_y = start_code - SLICE_MIN_START_CODE;
                 last_code = SLICE_MIN_START_CODE;
+                if(s2->codec_id != AV_CODEC_ID_MPEG1VIDEO && s2->mb_height > 2800/16)
+                    mb_y += (*buf_ptr&0xE0)<<2;
 
+                mb_y <<= field_pic;
                 if (s2->picture_structure == PICT_BOTTOM_FIELD)
                     mb_y++;
+
+                if (buf_end - buf_ptr < 2) {
+                    av_log(s2->avctx, AV_LOG_ERROR, "slice too small\n");
+                    return AVERROR_INVALIDDATA;
+                }
 
                 if (mb_y >= s2->mb_height) {
                     av_log(s2->avctx, AV_LOG_ERROR, "slice below image (%d >= %d)\n", mb_y, s2->mb_height);
@@ -2316,13 +2393,13 @@ static int decode_chunks(AVCodecContext *avctx,
                 if (s2->last_picture_ptr == NULL) {
                 /* Skip B-frames if we do not have reference frames and gop is not closed */
                     if (s2->pict_type == AV_PICTURE_TYPE_B) {
-                        if (!s->closed_gop) {
+                        if (!s2->closed_gop) {
                             skip_frame = 1;
                             break;
                         }
                     }
                 }
-                if (s2->pict_type == AV_PICTURE_TYPE_I)
+                if (s2->pict_type == AV_PICTURE_TYPE_I || (s2->flags2 & CODEC_FLAG2_SHOW_ALL))
                     s->sync=1;
                 if (s2->next_picture_ptr == NULL) {
                 /* Skip P-frames if we do not have a reference frame or we have an invalid header. */
@@ -2364,11 +2441,17 @@ static int decode_chunks(AVCodecContext *avctx,
                     return AVERROR_INVALIDDATA;
                 }
 
+                if (uses_vdpau(avctx)) {
+                    s->slice_count++;
+                    break;
+                }
+
                 if (HAVE_THREADS && (avctx->active_thread_type & FF_THREAD_SLICE) &&
                     !avctx->hwaccel) {
                     int threshold = (s2->mb_height * s->slice_count +
                                      s2->slice_context_count / 2) /
                                     s2->slice_context_count;
+                    av_assert0(avctx->thread_count > 1);
                     if (threshold <= mb_y) {
                         MpegEncContext *thread_context = s2->thread_context[s->slice_count];
 
@@ -2409,6 +2492,7 @@ static int mpeg_decode_frame(AVCodecContext *avctx,
                              AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
+    int ret;
     int buf_size = avpkt->size;
     Mpeg1Context *s = avctx->priv_data;
     AVFrame *picture = data;
@@ -2436,19 +2520,32 @@ static int mpeg_decode_frame(AVCodecContext *avctx,
             return buf_size;
     }
 
-    if (s->mpeg_enc_ctx_allocated == 0 && avctx->codec_tag == AV_RL32("VCR2"))
+    s2->codec_tag = avpriv_toupper4(avctx->codec_tag);
+    if (s->mpeg_enc_ctx_allocated == 0 && (   s2->codec_tag == AV_RL32("VCR2")
+                                           || s2->codec_tag == AV_RL32("BW10")
+                                          ))
         vcr2_init_sequence(avctx);
 
     s->slice_count = 0;
 
     if (avctx->extradata && !s->extradata_decoded) {
-        int ret = decode_chunks(avctx, picture, got_output, avctx->extradata, avctx->extradata_size);
+        ret = decode_chunks(avctx, picture, got_output, avctx->extradata, avctx->extradata_size);
+        if(*got_output) {
+            av_log(avctx, AV_LOG_ERROR, "picture in extradata\n");
+            *got_output = 0;
+        }
         s->extradata_decoded = 1;
-        if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
+        if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE)) {
+            s2->current_picture_ptr = NULL;
             return ret;
+        }
     }
 
-    return decode_chunks(avctx, picture, got_output, buf, buf_size);
+    ret = decode_chunks(avctx, picture, got_output, buf, buf_size);
+    if (ret<0 || *got_output)
+        s2->current_picture_ptr = NULL;
+
+    return ret;
 }
 
 
@@ -2457,7 +2554,6 @@ static void flush(AVCodecContext *avctx)
     Mpeg1Context *s = avctx->priv_data;
 
     s->sync=0;
-    s->closed_gop = 0;
 
     ff_mpeg_flush(avctx);
 }
@@ -2468,7 +2564,6 @@ static av_cold int mpeg_decode_end(AVCodecContext *avctx)
 
     if (s->mpeg_enc_ctx_allocated)
         ff_MPV_common_end(&s->mpeg_enc_ctx);
-    av_freep(&s->a53_caption);
     return 0;
 }
 
@@ -2498,6 +2593,7 @@ AVCodec ff_mpeg1video_decoder = {
                              CODEC_CAP_TRUNCATED | CODEC_CAP_DELAY |
                              CODEC_CAP_SLICE_THREADS,
     .flush                 = flush,
+    .max_lowres            = 3,
     .update_thread_context = ONLY_IF_THREADS_ENABLED(mpeg_decode_update_thread_context)
 };
 
@@ -2514,7 +2610,23 @@ AVCodec ff_mpeg2video_decoder = {
                       CODEC_CAP_TRUNCATED | CODEC_CAP_DELAY |
                       CODEC_CAP_SLICE_THREADS,
     .flush          = flush,
+    .max_lowres     = 3,
     .profiles       = NULL_IF_CONFIG_SMALL(mpeg2_video_profiles),
+};
+
+//legacy decoder
+AVCodec ff_mpegvideo_decoder = {
+    .name           = "mpegvideo",
+    .long_name      = NULL_IF_CONFIG_SMALL("MPEG-1 video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MPEG2VIDEO,
+    .priv_data_size = sizeof(Mpeg1Context),
+    .init           = mpeg_decode_init,
+    .close          = mpeg_decode_end,
+    .decode         = mpeg_decode_frame,
+    .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1 | CODEC_CAP_TRUNCATED | CODEC_CAP_DELAY | CODEC_CAP_SLICE_THREADS,
+    .flush          = flush,
+    .max_lowres     = 3,
 };
 
 #if FF_API_XVMC
@@ -2552,3 +2664,35 @@ AVCodec ff_mpeg_xvmc_decoder = {
 
 #endif
 #endif /* FF_API_XVMC */
+
+#if CONFIG_MPEG_VDPAU_DECODER
+AVCodec ff_mpeg_vdpau_decoder = {
+    .name           = "mpegvideo_vdpau",
+    .long_name      = NULL_IF_CONFIG_SMALL("MPEG-1/2 video (VDPAU acceleration)"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MPEG2VIDEO,
+    .priv_data_size = sizeof(Mpeg1Context),
+    .init           = mpeg_decode_init,
+    .close          = mpeg_decode_end,
+    .decode         = mpeg_decode_frame,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_TRUNCATED |
+                      CODEC_CAP_HWACCEL_VDPAU | CODEC_CAP_DELAY,
+    .flush          = flush,
+};
+#endif
+
+#if CONFIG_MPEG1_VDPAU_DECODER
+AVCodec ff_mpeg1_vdpau_decoder = {
+    .name           = "mpeg1video_vdpau",
+    .long_name      = NULL_IF_CONFIG_SMALL("MPEG-1 video (VDPAU acceleration)"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MPEG1VIDEO,
+    .priv_data_size = sizeof(Mpeg1Context),
+    .init           = mpeg_decode_init,
+    .close          = mpeg_decode_end,
+    .decode         = mpeg_decode_frame,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_TRUNCATED |
+                      CODEC_CAP_HWACCEL_VDPAU | CODEC_CAP_DELAY,
+    .flush          = flush,
+};
+#endif
