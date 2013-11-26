@@ -1,21 +1,18 @@
 /*
- * Copyright (c) 2000, 2001 Fabrice Bellard
- * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -85,19 +82,6 @@ int32_t ff_scalarproduct_and_madd_int16_sse2(int16_t *v1, const int16_t *v2,
 int32_t ff_scalarproduct_and_madd_int16_ssse3(int16_t *v1, const int16_t *v2,
                                               const int16_t *v3,
                                               int order, int mul);
-
-void ff_apply_window_int16_round_mmxext(int16_t *output, const int16_t *input,
-                                        const int16_t *window, unsigned int len);
-void ff_apply_window_int16_round_sse2(int16_t *output, const int16_t *input,
-                                      const int16_t *window, unsigned int len);
-void ff_apply_window_int16_mmxext(int16_t *output, const int16_t *input,
-                                  const int16_t *window, unsigned int len);
-void ff_apply_window_int16_sse2(int16_t *output, const int16_t *input,
-                                const int16_t *window, unsigned int len);
-void ff_apply_window_int16_ssse3(int16_t *output, const int16_t *input,
-                                 const int16_t *window, unsigned int len);
-void ff_apply_window_int16_ssse3_atom(int16_t *output, const int16_t *input,
-                                      const int16_t *window, unsigned int len);
 
 void ff_bswap32_buf_ssse3(uint32_t *dst, const uint32_t *src, int w);
 void ff_bswap32_buf_sse2(uint32_t *dst, const uint32_t *src, int w);
@@ -544,11 +528,24 @@ static av_cold void dsputil_init_mmx(DSPContext *c, AVCodecContext *avctx,
         c->clear_block  = ff_clear_block_mmx;
         c->clear_blocks = ff_clear_blocks_mmx;
         c->draw_edges   = ff_draw_edges_mmx;
+
+        switch (avctx->idct_algo) {
+        case FF_IDCT_AUTO:
+        case FF_IDCT_SIMPLEMMX:
+            c->idct_put              = ff_simple_idct_put_mmx;
+            c->idct_add              = ff_simple_idct_add_mmx;
+            c->idct                  = ff_simple_idct_mmx;
+            c->idct_permutation_type = FF_SIMPLE_IDCT_PERM;
+            break;
+        case FF_IDCT_XVIDMMX:
+            c->idct_put              = ff_idct_xvid_mmx_put;
+            c->idct_add              = ff_idct_xvid_mmx_add;
+            c->idct                  = ff_idct_xvid_mmx;
+            break;
+        }
     }
 
-#if CONFIG_VIDEODSP && (ARCH_X86_32 || !HAVE_YASM)
     c->gmc = ff_gmc_mmx;
-#endif
 
     c->add_bytes = ff_add_bytes_mmx;
 #endif /* HAVE_MMX_INLINE */
@@ -564,7 +561,7 @@ static av_cold void dsputil_init_mmxext(DSPContext *c, AVCodecContext *avctx,
 #if HAVE_MMXEXT_INLINE
     const int high_bit_depth = avctx->bits_per_raw_sample > 8;
 
-    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
+    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX) {
         c->idct_put = ff_idct_xvid_mmxext_put;
         c->idct_add = ff_idct_xvid_mmxext_add;
         c->idct     = ff_idct_xvid_mmxext;
@@ -586,12 +583,6 @@ static av_cold void dsputil_init_mmxext(DSPContext *c, AVCodecContext *avctx,
 
     c->scalarproduct_int16          = ff_scalarproduct_int16_mmxext;
     c->scalarproduct_and_madd_int16 = ff_scalarproduct_and_madd_int16_mmxext;
-
-    if (avctx->flags & CODEC_FLAG_BITEXACT) {
-        c->apply_window_int16 = ff_apply_window_int16_mmxext;
-    } else {
-        c->apply_window_int16 = ff_apply_window_int16_round_mmxext;
-    }
 #endif /* HAVE_MMXEXT_EXTERNAL */
 }
 
@@ -617,12 +608,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     c->vector_clipf = ff_vector_clipf_sse;
 #endif /* HAVE_SSE_INLINE */
-
-#if HAVE_YASM
-#if HAVE_INLINE_ASM && CONFIG_VIDEODSP
-    c->gmc = ff_gmc_sse;
-#endif
-#endif /* HAVE_YASM */
 }
 
 static av_cold void dsputil_init_sse2(DSPContext *c, AVCodecContext *avctx,
@@ -631,7 +616,7 @@ static av_cold void dsputil_init_sse2(DSPContext *c, AVCodecContext *avctx,
 #if HAVE_SSE2_INLINE
     const int high_bit_depth = avctx->bits_per_raw_sample > 8;
 
-    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
+    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX) {
         c->idct_put              = ff_idct_xvid_sse2_put;
         c->idct_add              = ff_idct_xvid_sse2_add;
         c->idct                  = ff_idct_xvid_sse2;
@@ -647,11 +632,6 @@ static av_cold void dsputil_init_sse2(DSPContext *c, AVCodecContext *avctx,
     } else {
         c->vector_clip_int32 = ff_vector_clip_int32_sse2;
     }
-    if (avctx->flags & CODEC_FLAG_BITEXACT) {
-        c->apply_window_int16 = ff_apply_window_int16_sse2;
-    } else if (!(cpu_flags & AV_CPU_FLAG_SSE2SLOW)) {
-        c->apply_window_int16 = ff_apply_window_int16_round_sse2;
-    }
     c->bswap_buf = ff_bswap32_buf_sse2;
 #endif /* HAVE_SSE2_EXTERNAL */
 }
@@ -664,10 +644,6 @@ static av_cold void dsputil_init_ssse3(DSPContext *c, AVCodecContext *avctx,
     if (cpu_flags & AV_CPU_FLAG_SSE4) // not really SSE4, just slow on Conroe
         c->add_hfyu_left_prediction = ff_add_hfyu_left_prediction_sse4;
 
-    if (cpu_flags & AV_CPU_FLAG_ATOM)
-        c->apply_window_int16 = ff_apply_window_int16_ssse3_atom;
-    else
-        c->apply_window_int16 = ff_apply_window_int16_ssse3;
     if (!(cpu_flags & (AV_CPU_FLAG_SSE42 | AV_CPU_FLAG_3DNOW))) // cachesplit
         c->scalarproduct_and_madd_int16 = ff_scalarproduct_and_madd_int16_ssse3;
     c->bswap_buf = ff_bswap32_buf_ssse3;
@@ -687,30 +663,12 @@ av_cold void ff_dsputil_init_x86(DSPContext *c, AVCodecContext *avctx)
     int cpu_flags = av_get_cpu_flags();
 
 #if HAVE_7REGS && HAVE_INLINE_ASM
-    if (HAVE_MMX && cpu_flags & AV_CPU_FLAG_CMOV)
+    if (cpu_flags & AV_CPU_FLAG_CMOV)
         c->add_hfyu_median_prediction = ff_add_hfyu_median_prediction_cmov;
 #endif
 
-    if (X86_MMX(cpu_flags)) {
-#if HAVE_INLINE_ASM
-        const int idct_algo = avctx->idct_algo;
-
-        if (avctx->lowres == 0 && avctx->bits_per_raw_sample <= 8) {
-            if (idct_algo == FF_IDCT_AUTO || idct_algo == FF_IDCT_SIMPLEMMX) {
-                c->idct_put              = ff_simple_idct_put_mmx;
-                c->idct_add              = ff_simple_idct_add_mmx;
-                c->idct                  = ff_simple_idct_mmx;
-                c->idct_permutation_type = FF_SIMPLE_IDCT_PERM;
-            } else if (idct_algo == FF_IDCT_XVIDMMX) {
-                c->idct_put              = ff_idct_xvid_mmx_put;
-                c->idct_add              = ff_idct_xvid_mmx_add;
-                c->idct                  = ff_idct_xvid_mmx;
-            }
-        }
-#endif /* HAVE_INLINE_ASM */
-
+    if (X86_MMX(cpu_flags))
         dsputil_init_mmx(c, avctx, cpu_flags);
-    }
 
     if (X86_MMXEXT(cpu_flags))
         dsputil_init_mmxext(c, avctx, cpu_flags);
