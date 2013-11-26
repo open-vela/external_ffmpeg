@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2011 Maxim Poliakovski
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,7 @@
 
 #define CLIP_AND_BIAS(x) (av_clip((x) + BIAS, CLIP_MIN, CLIP_MAX))
 
-#if CONFIG_PRORES_DECODER | CONFIG_PRORES_LGPL_DECODER
+#if CONFIG_PRORES_DECODER
 /**
  * Add bias value, clamp and output pixels of a slice
  */
@@ -57,7 +57,7 @@ static void prores_idct_put_c(uint16_t *out, int linesize, int16_t *block, const
 }
 #endif
 
-#if CONFIG_PRORES_KS_ENCODER
+#if CONFIG_PRORES_ENCODER
 static void prores_fdct_c(const uint16_t *src, int linesize, int16_t *block)
 {
     int x, y;
@@ -72,18 +72,18 @@ static void prores_fdct_c(const uint16_t *src, int linesize, int16_t *block)
 }
 #endif
 
-av_cold void ff_proresdsp_init(ProresDSPContext *dsp, AVCodecContext *avctx)
+av_cold void ff_proresdsp_init(ProresDSPContext *dsp)
 {
-#if CONFIG_PRORES_DECODER | CONFIG_PRORES_LGPL_DECODER
+#if CONFIG_PRORES_DECODER
     dsp->idct_put = prores_idct_put_c;
     dsp->idct_permutation_type = FF_NO_IDCT_PERM;
 
-    if (ARCH_X86) ff_proresdsp_x86_init(dsp, avctx);
+    if (ARCH_X86) ff_proresdsp_x86_init(dsp);
 
     ff_init_scantable_permutation(dsp->idct_permutation,
                                   dsp->idct_permutation_type);
 #endif
-#if CONFIG_PRORES_KS_ENCODER
+#if CONFIG_PRORES_ENCODER
     dsp->fdct                 = prores_fdct_c;
     dsp->dct_permutation_type = FF_NO_IDCT_PERM;
     ff_init_scantable_permutation(dsp->dct_permutation,
