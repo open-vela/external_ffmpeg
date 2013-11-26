@@ -1,33 +1,78 @@
-MAIN_MAKEFILE=1
 include config.mak
 
 vpath %.c    $(SRC_PATH)
-vpath %.cpp  $(SRC_PATH)
 vpath %.h    $(SRC_PATH)
 vpath %.S    $(SRC_PATH)
 vpath %.asm  $(SRC_PATH)
 vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
-vpath %/fate_config.sh.template $(SRC_PATH)
 
-AVPROGS-$(CONFIG_FFMPEG)   += ffmpeg
-AVPROGS-$(CONFIG_FFPLAY)   += ffplay
-AVPROGS-$(CONFIG_FFPROBE)  += ffprobe
-AVPROGS-$(CONFIG_FFSERVER) += ffserver
+ifndef V
+Q      = @
+ECHO   = printf "$(1)\t%s\n" $(2)
+BRIEF  = CC HOSTCC HOSTLD AS YASM AR LD
+SILENT = DEPCC DEPHOSTCC DEPAS DEPYASM RANLIB RM STRIP
+MSG    = $@
+M      = @$(call ECHO,$(TAG),$@);
+$(foreach VAR,$(BRIEF), \
+    $(eval override $(VAR) = @$$(call ECHO,$(VAR),$$(MSG)); $($(VAR))))
+$(foreach VAR,$(SILENT),$(eval override $(VAR) = @$($(VAR))))
+$(eval INSTALL = @$(call ECHO,INSTALL,$$(^:$(SRC_PATH)/%=%)); $(INSTALL))
+endif
 
-AVPROGS    := $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
-INSTPROGS   = $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
-PROGS      += $(AVPROGS-yes)
+ALLFFLIBS = avcodec avdevice avfilter avformat avresample avutil swscale
 
-AVBASENAMES  = ffmpeg ffplay ffprobe ffserver
-ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
-ALLAVPROGS_G = $(AVBASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
+IFLAGS     := -I. -I$(SRC_PATH)
+CPPFLAGS   := $(IFLAGS) $(CPPFLAGS)
+CFLAGS     += $(ECFLAGS)
+CCFLAGS     = $(CPPFLAGS) $(CFLAGS)
+ASFLAGS    := $(CPPFLAGS) $(ASFLAGS)
+YASMFLAGS  += $(IFLAGS:%=%/) -Pconfig.asm
+HOSTCCFLAGS = $(IFLAGS) $(HOSTCPPFLAGS) $(HOSTCFLAGS)
+LDFLAGS    := $(ALLFFLIBS:%=$(LD_PATH)lib%) $(LDFLAGS)
+
+define COMPILE
+	$(call $(1)DEP,$(1))
+	$($(1)) $($(1)FLAGS) $($(1)_DEPFLAGS) $($(1)_C) $($(1)_O) $<
+endef
+
+COMPILE_C = $(call COMPILE,CC)
+COMPILE_S = $(call COMPILE,AS)
+
+%.o: %.c
+	$(COMPILE_C)
+
+%.o: %.S
+	$(COMPILE_S)
+
+%.i: %.c
+	$(CC) $(CCFLAGS) $(CC_E) $<
+
+%.h.c:
+	$(Q)echo '#include "$*.h"' >$@
+
+%.ver: %.v
+	$(Q)sed 's/$$MAJOR/$($(basename $(@F))_VERSION_MAJOR)/' $^ > $@
+
+%.c %.h: TAG = GEN
+
+AVPROGS-$(CONFIG_AVCONV)   += avconv
+AVPROGS-$(CONFIG_AVPLAY)   += avplay
+AVPROGS-$(CONFIG_AVPROBE)  += avprobe
+AVPROGS-$(CONFIG_AVSERVER) += avserver
+
+AVPROGS    := $(AVPROGS-yes:%=%$(EXESUF))
+PROGS      += $(AVPROGS)
+
+AVBASENAMES = avconv avplay avprobe avserver
+ALLAVPROGS  = $(AVBASENAMES:%=%$(EXESUF))
 
 $(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog) += cmdutils.o))
 
-OBJS-ffmpeg                   += ffmpeg_opt.o ffmpeg_filter.o
-OBJS-ffmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
-TESTTOOLS   = audiogen videogen rotozoom tiny_psnr tiny_ssim base64
+OBJS-avconv                   += avconv_opt.o avconv_filter.o
+OBJS-avconv-$(HAVE_VDPAU_X11) += avconv_vdpau.o
+
+TESTTOOLS   = audiogen videogen rotozoom tiny_psnr base64
 HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 TOOLS       = qt-faststart trasher
 TOOLS-$(CONFIG_ZLIB) += cws2fws
@@ -37,14 +82,11 @@ FFLIBS-$(CONFIG_AVFILTER) += avfilter
 FFLIBS-$(CONFIG_AVFORMAT) += avformat
 FFLIBS-$(CONFIG_AVRESAMPLE) += avresample
 FFLIBS-$(CONFIG_AVCODEC)  += avcodec
-FFLIBS-$(CONFIG_POSTPROC) += postproc
-FFLIBS-$(CONFIG_SWRESAMPLE)+= swresample
 FFLIBS-$(CONFIG_SWSCALE)  += swscale
 
 FFLIBS := avutil
 
-DATA_FILES := $(wildcard $(SRC_PATH)/presets/*.ffpreset) $(SRC_PATH)/doc/ffprobe.xsd
-EXAMPLES_FILES := $(wildcard $(SRC_PATH)/doc/examples/*.c) $(SRC_PATH)/doc/examples/Makefile $(SRC_PATH)/doc/examples/README
+DATA_FILES := $(wildcard $(SRC_PATH)/presets/*.avpreset)
 
 SKIPHEADERS = cmdutils_common_opts.h compat/w32pthreads.h
 
@@ -71,7 +113,6 @@ SUBDIR_VARS := CLEANFILES EXAMPLES FFLIBS HOSTPROGS TESTPROGS TOOLS      \
                ARMV5TE-OBJS ARMV6-OBJS VFP-OBJS NEON-OBJS                \
                ALTIVEC-OBJS VIS-OBJS                                     \
                MMX-OBJS YASM-OBJS                                        \
-               MIPSFPU-OBJS MIPSDSPR2-OBJS MIPSDSPR1-OBJS MIPS32R2-OBJS  \
                OBJS HOSTOBJS TESTOBJS
 
 define RESET
@@ -93,20 +134,16 @@ include $(SRC_PATH)/doc/Makefile
 
 define DOPROG
 OBJS-$(1) += $(1).o $(EXEOBJS) $(OBJS-$(1)-yes)
-$(1)$(PROGSSUF)_g$(EXESUF): $$(OBJS-$(1))
+$(1)$(EXESUF): $$(OBJS-$(1))
 $$(OBJS-$(1)): CFLAGS  += $(CFLAGS-$(1))
-$(1)$(PROGSSUF)_g$(EXESUF): LDFLAGS += $(LDFLAGS-$(1))
-$(1)$(PROGSSUF)_g$(EXESUF): FF_EXTRALIBS += $(LIBS-$(1))
+$(1)$(EXESUF): LDFLAGS += $(LDFLAGS-$(1))
+$(1)$(EXESUF): FF_EXTRALIBS += $(LIBS-$(1))
 -include $$(OBJS-$(1):.o=.d)
 endef
 
-$(foreach P,$(PROGS),$(eval $(call DOPROG,$(P))))
+$(foreach P,$(PROGS),$(eval $(call DOPROG,$(P:$(EXESUF)=))))
 
-$(PROGS:%=%$(PROGSSUF)$(EXESUF)): %$(PROGSSUF)$(EXESUF): %$(PROGSSUF)_g$(EXESUF)
-	$(CP) $< $@
-	$(STRIP) $@
-
-%$(PROGSSUF)_g$(EXESUF): %.o $(FF_DEP_LIBS)
+$(PROGS): %$(EXESUF): %.o $(FF_DEP_LIBS)
 	$(LD) $(LDFLAGS) $(LD_O) $(OBJS-$*) $(FF_EXTRALIBS)
 
 OBJDIRS += tools
@@ -139,12 +176,11 @@ install-progs-$(CONFIG_SHARED): install-libs
 
 install-progs: install-progs-yes $(AVPROGS)
 	$(Q)mkdir -p "$(BINDIR)"
-	$(INSTALL) -c -m 755 $(INSTPROGS) "$(BINDIR)"
+	$(INSTALL) -c -m 755 $(AVPROGS) "$(BINDIR)"
 
-install-data: $(DATA_FILES) $(EXAMPLES_FILES)
-	$(Q)mkdir -p "$(DATADIR)/examples"
+install-data: $(DATA_FILES)
+	$(Q)mkdir -p "$(DATADIR)"
 	$(INSTALL) -m 644 $(DATA_FILES) "$(DATADIR)"
-	$(INSTALL) -m 644 $(EXAMPLES_FILES) "$(DATADIR)/examples"
 
 uninstall: uninstall-libs uninstall-headers uninstall-progs uninstall-data
 
@@ -155,20 +191,19 @@ uninstall-data:
 	$(RM) -r "$(DATADIR)"
 
 clean::
-	$(RM) $(ALLAVPROGS) $(ALLAVPROGS_G)
+	$(RM) $(ALLAVPROGS)
 	$(RM) $(CLEANSUFFIXES)
 	$(RM) $(CLEANSUFFIXES:%=tools/%)
-	$(RM) -r coverage-html
 	$(RM) -rf coverage.info lcov
 
 distclean::
 	$(RM) $(DISTCLEANSUFFIXES)
-	$(RM) config.* .config libavutil/avconfig.h .version version.h libavcodec/codec_names.h
+	$(RM) config.* .config libavutil/avconfig.h .version version.h
 
 config:
-	$(SRC_PATH)/configure $(value FFMPEG_CONFIGURATION)
+	$(SRC_PATH)/configure $(value LIBAV_CONFIGURATION)
 
-check: all alltools examples testprogs fate
+check: all alltools checkheaders examples testprogs fate
 
 include $(SRC_PATH)/tests/Makefile
 
@@ -183,5 +218,5 @@ $(sort $(OBJDIRS)):
 # so this saves some time on slow systems.
 .SUFFIXES:
 
-.PHONY: all all-yes alltools check *clean config install*
+.PHONY: all all-yes alltools check *clean config examples install*
 .PHONY: testprogs uninstall*
