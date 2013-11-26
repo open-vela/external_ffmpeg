@@ -2,20 +2,20 @@
  * Musepack SV8 demuxer
  * Copyright (c) 2007 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,7 @@ typedef struct {
     int64_t apetag_start;
 } MPCContext;
 
-static inline int64_t bs_get_v(const uint8_t **bs)
+static inline int64_t bs_get_v(uint8_t **bs)
 {
     int64_t v = 0;
     int br = 0;
@@ -75,8 +75,8 @@ static inline int64_t bs_get_v(const uint8_t **bs)
 
 static int mpc8_probe(AVProbeData *p)
 {
-    const uint8_t *bs = p->buf + 4;
-    const uint8_t *bs_end = bs + p->buf_size;
+    uint8_t *bs = p->buf + 4;
+    uint8_t *bs_end = bs + p->buf_size;
     int64_t size;
 
     if (p->buf_size < 16)
@@ -150,7 +150,7 @@ static void mpc8_parse_seektable(AVFormatContext *s, int64_t off)
         av_log(s, AV_LOG_ERROR, "No seek table at given position\n");
         return;
     }
-    if (size > INT_MAX/10 || size<=0) {
+    if (size < 0 || size >= INT_MAX / 2) {
         av_log(s, AV_LOG_ERROR, "Bad seek table size\n");
         return;
     }
@@ -213,7 +213,7 @@ static int mpc8_read_header(AVFormatContext *s)
         return AVERROR_INVALIDDATA;
     }
 
-    while(!url_feof(pb)){
+    while(!pb->eof_reached){
         pos = avio_tell(pb);
         mpc8_get_chunk_header(pb, &tag, &size);
         if(tag == TAG_STREAMHDR)
@@ -241,8 +241,8 @@ static int mpc8_read_header(AVFormatContext *s)
     st->codec->codec_id = AV_CODEC_ID_MUSEPACK8;
     st->codec->bits_per_coded_sample = 16;
 
-    if (ff_alloc_extradata(st->codec, 2))
-        return AVERROR(ENOMEM);
+    st->codec->extradata_size = 2;
+    st->codec->extradata = av_mallocz(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
     avio_read(pb, st->codec->extradata, st->codec->extradata_size);
 
     st->codec->channels = (st->codec->extradata[1] >> 4) + 1;
@@ -251,8 +251,6 @@ static int mpc8_read_header(AVFormatContext *s)
     st->start_time = 0;
     st->duration = c->samples / (1152 << (st->codec->extradata[1]&3)*2);
     size -= avio_tell(pb) - pos;
-    if (size > 0)
-        avio_skip(pb, size);
 
     if (pb->seekable) {
         int64_t pos = avio_tell(s->pb);
@@ -269,7 +267,7 @@ static int mpc8_read_packet(AVFormatContext *s, AVPacket *pkt)
     int tag;
     int64_t pos, size;
 
-    while(!url_feof(s->pb)){
+    while(!s->pb->eof_reached){
         pos = avio_tell(s->pb);
 
         /* don't return bogus packets with the ape tag data */

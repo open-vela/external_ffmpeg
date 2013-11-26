@@ -2,20 +2,20 @@
  * Copyright (c) 2011 Stefano Sabatini
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,20 +41,24 @@ static const char *precision_str[] = {
 
 #define OFFSET(x) offsetof(VolumeContext, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
-#define F AV_OPT_FLAG_FILTERING_PARAM
 
-static const AVOption volume_options[] = {
-    { "volume", "set volume adjustment",
-            OFFSET(volume), AV_OPT_TYPE_DOUBLE, { .dbl = 1.0 }, 0, 0x7fffff, A|F },
-    { "precision", "select mathematical precision",
-            OFFSET(precision), AV_OPT_TYPE_INT, { .i64 = PRECISION_FLOAT }, PRECISION_FIXED, PRECISION_DOUBLE, A|F, "precision" },
-        { "fixed",  "select 8-bit fixed-point",     0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FIXED  }, INT_MIN, INT_MAX, A|F, "precision" },
-        { "float",  "select 32-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FLOAT  }, INT_MIN, INT_MAX, A|F, "precision" },
-        { "double", "select 64-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_DOUBLE }, INT_MIN, INT_MAX, A|F, "precision" },
-    { NULL }
+static const AVOption options[] = {
+    { "volume", "Volume adjustment.",
+            OFFSET(volume), AV_OPT_TYPE_DOUBLE, { .dbl = 1.0 }, 0, 0x7fffff, A },
+    { "precision", "Mathematical precision.",
+            OFFSET(precision), AV_OPT_TYPE_INT, { .i64 = PRECISION_FLOAT }, PRECISION_FIXED, PRECISION_DOUBLE, A, "precision" },
+        { "fixed",  "8-bit fixed-point.",     0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FIXED  }, INT_MIN, INT_MAX, A, "precision" },
+        { "float",  "32-bit floating-point.", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FLOAT  }, INT_MIN, INT_MAX, A, "precision" },
+        { "double", "64-bit floating-point.", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_DOUBLE }, INT_MIN, INT_MAX, A, "precision" },
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(volume);
+static const AVClass volume_class = {
+    .class_name = "volume filter",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static av_cold int init(AVFilterContext *ctx)
 {
@@ -80,7 +84,8 @@ static int query_formats(AVFilterContext *ctx)
     AVFilterFormats *formats = NULL;
     AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[][7] = {
-        [PRECISION_FIXED] = {
+        /* PRECISION_FIXED */
+        {
             AV_SAMPLE_FMT_U8,
             AV_SAMPLE_FMT_U8P,
             AV_SAMPLE_FMT_S16,
@@ -89,12 +94,14 @@ static int query_formats(AVFilterContext *ctx)
             AV_SAMPLE_FMT_S32P,
             AV_SAMPLE_FMT_NONE
         },
-        [PRECISION_FLOAT] = {
+        /* PRECISION_FLOAT */
+        {
             AV_SAMPLE_FMT_FLT,
             AV_SAMPLE_FMT_FLTP,
             AV_SAMPLE_FMT_NONE
         },
-        [PRECISION_DOUBLE] = {
+        /* PRECISION_DOUBLE */
+        {
             AV_SAMPLE_FMT_DBL,
             AV_SAMPLE_FMT_DBLP,
             AV_SAMPLE_FMT_NONE
@@ -165,6 +172,8 @@ static inline void scale_samples_s32(uint8_t *dst, const uint8_t *src,
         smp_dst[i] = av_clipl_int32((((int64_t)smp_src[i] * volume + 128) >> 8));
 }
 
+
+
 static av_cold void volume_init(VolumeContext *vol)
 {
     vol->samples_align = 1;
@@ -231,7 +240,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         out_buf = ff_get_audio_buffer(inlink, nb_samples);
         if (!out_buf)
             return AVERROR(ENOMEM);
-        av_frame_copy_props(out_buf, buf);
+        out_buf->pts = buf->pts;
     }
 
     if (vol->precision != PRECISION_FIXED || vol->volume_i > 0) {
@@ -296,5 +305,4 @@ AVFilter ff_af_volume = {
     .init           = init,
     .inputs         = avfilter_af_volume_inputs,
     .outputs        = avfilter_af_volume_outputs,
-    .flags          = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

@@ -3,20 +3,20 @@
  * Copyright (c) 2000,2001 Fabrice Bellard
  * Copyright (c) 2002-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,6 +59,33 @@
 #define VISUAL_OBJ_STARTCODE 0x1B5
 #define VOP_STARTCODE        0x1B6
 
+typedef struct Mpeg4DecContext {
+    MpegEncContext m;
+
+    ///< number of bits to represent the fractional part of time
+    int time_increment_bits;
+    int shape;
+    int vol_sprite_usage;
+    // reversible vlc
+    int rvlc;
+    ///< could this stream contain resync markers
+    int resync_marker;
+    ///< time distance of first I -> B, used for interlaced b frames
+    int t_frame;
+
+    int new_pred;
+
+    /* bug workarounds */
+    int divx_version;
+    int divx_build;
+    int xvid_build;
+    int lavc_build;
+
+    int cplx_estimation_trash_i;
+    int cplx_estimation_trash_p;
+    int cplx_estimation_trash_b;
+} Mpeg4DecContext;
+
 /* dc encoding for mpeg4 */
 extern const uint8_t ff_mpeg4_DCtab_lum[13][2];
 extern const uint8_t ff_mpeg4_DCtab_chrom[13][2];
@@ -94,18 +121,18 @@ void ff_mpeg4_pred_ac(MpegEncContext *s, int16_t *block, int n,
 void ff_set_mpeg4_time(MpegEncContext *s);
 void ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number);
 
-int ff_mpeg4_decode_picture_header(MpegEncContext *s, GetBitContext *gb);
+int ff_mpeg4_decode_picture_header(Mpeg4DecContext *ctx, GetBitContext *gb);
 void ff_mpeg4_encode_video_packet_header(MpegEncContext *s);
 void ff_mpeg4_clean_buffers(MpegEncContext *s);
 void ff_mpeg4_stuffing(PutBitContext *pbc);
 void ff_mpeg4_init_partitions(MpegEncContext *s);
 void ff_mpeg4_merge_partitions(MpegEncContext *s);
 void ff_clean_mpeg4_qscales(MpegEncContext *s);
-int ff_mpeg4_decode_partitions(MpegEncContext *s);
+int ff_mpeg4_decode_partitions(Mpeg4DecContext *ctx);
 int ff_mpeg4_get_video_packet_prefix_length(MpegEncContext *s);
-int ff_mpeg4_decode_video_packet_header(MpegEncContext *s);
+int ff_mpeg4_decode_video_packet_header(Mpeg4DecContext *ctx);
 void ff_mpeg4_init_direct_mv(MpegEncContext *s);
-void ff_mpeg4videodec_static_init(void);
+int ff_mpeg4_frame_end(AVCodecContext *avctx, const uint8_t *buf, int buf_size);
 
 /**
  *
@@ -180,7 +207,7 @@ static inline int ff_mpeg4_pred_dc(MpegEncContext *s, int n, int level,
     } else {
         level += pred;
         ret    = level;
-        if (s->err_recognition & (AV_EF_BITSTREAM | AV_EF_AGGRESSIVE)) {
+        if (s->err_recognition & AV_EF_BITSTREAM) {
             if (level < 0) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "dc<0 at %dx%d\n", s->mb_x, s->mb_y);

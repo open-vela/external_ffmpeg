@@ -1,20 +1,20 @@
 /*
  * Microsoft Screen 2 (aka Windows Media Video V9 Screen) decoder
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -384,8 +384,7 @@ static int decode_wmv9(AVCodecContext *avctx, const uint8_t *buf, int buf_size,
         s->current_picture_ptr = &s->picture[i];
     }
 
-    if ((ret = init_get_bits8(&s->gb, buf, buf_size)) < 0)
-        return ret;
+    init_get_bits(&s->gb, buf, buf_size * 8);
 
     s->loop_filter = avctx->skip_loop_filter < AVDISCARD_ALL;
 
@@ -483,8 +482,7 @@ static int mss2_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     av_assert0(FF_INPUT_BUFFER_PADDING_SIZE >=
                ARITH2_PADDING + (MIN_CACHE_BITS + 7) / 8);
 
-    if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
-        return ret;
+    init_get_bits(&gb, buf, buf_size * 8);
 
     if (keyframe = get_bits1(&gb))
         skip_bits(&gb, 7);
@@ -600,8 +598,10 @@ static int mss2_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (c->mvX < 0 || c->mvY < 0) {
         FFSWAP(uint8_t *, c->pal_pic, c->last_pal_pic);
 
-        if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
+        if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
 
         if (ctx->last_pic->data[0]) {
             av_assert0(frame->linesize[0] == ctx->last_pic->linesize[0]);
@@ -612,8 +612,10 @@ static int mss2_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             return AVERROR_INVALIDDATA;
         }
     } else {
-        if ((ret = ff_reget_buffer(avctx, ctx->last_pic)) < 0)
+        if ((ret = ff_reget_buffer(avctx, ctx->last_pic)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
             return ret;
+        }
         if ((ret = av_frame_ref(frame, ctx->last_pic)) < 0)
             return ret;
 
@@ -642,8 +644,7 @@ static int mss2_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                 ff_mss12_slicecontext_reset(&ctx->sc[1]);
         }
         if (is_rle) {
-            if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
-                return ret;
+            init_get_bits(&gb, buf, buf_size * 8);
             if (ret = decode_rle(&gb, c->pal_pic, c->pal_stride,
                                  c->rgb_pic, c->rgb_stride, c->pal, keyframe,
                                  ctx->split_position, 0,
@@ -778,7 +779,7 @@ static av_cold int wmv9_init(AVCodecContext *avctx)
 
     v->overlap         = 0;
 
-    v->s.resync_marker = 0;
+    v->resync_marker   = 0;
     v->rangered        = 0;
 
     v->s.max_b_frames = avctx->max_b_frames = 0;
@@ -823,11 +824,10 @@ static av_cold int mss2_decode_init(AVCodecContext *avctx)
     c->avctx = avctx;
     if (ret = ff_mss12_decode_init(c, 1, &ctx->sc[0], &ctx->sc[1]))
         return ret;
-    ctx->last_pic   = av_frame_alloc();
     c->pal_stride   = c->mask_stride;
     c->pal_pic      = av_mallocz(c->pal_stride * avctx->height);
     c->last_pal_pic = av_mallocz(c->pal_stride * avctx->height);
-    if (!c->pal_pic || !c->last_pal_pic || !ctx->last_pic) {
+    if (!c->pal_pic || !c->last_pal_pic) {
         mss2_decode_end(avctx);
         return AVERROR(ENOMEM);
     }
@@ -840,6 +840,11 @@ static av_cold int mss2_decode_init(AVCodecContext *avctx)
     avctx->pix_fmt = c->free_colours == 127 ? AV_PIX_FMT_RGB555
                                             : AV_PIX_FMT_RGB24;
 
+    ctx->last_pic = av_frame_alloc();
+    if (!ctx->last_pic) {
+        mss2_decode_end(avctx);
+        return AVERROR(ENOMEM);
+    }
 
     return 0;
 }

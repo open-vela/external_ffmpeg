@@ -3,20 +3,20 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -68,7 +68,7 @@ static void fill_picture_parameters(AVCodecContext *avctx,
         pp->bPicStructure      |= 0x01;
     if (s->picture_structure & PICT_BOTTOM_FIELD)
         pp->bPicStructure      |= 0x02;
-    pp->bSecondField            = v->interlace && v->fcm == ILACE_FIELD && v->second_field;
+    pp->bSecondField            = v->interlace && v->fcm != ILACE_FIELD && !s->first_field;
     pp->bPicIntra               = s->pict_type == AV_PICTURE_TYPE_I || v->bi_type;
     pp->bPicBackwardPrediction  = s->pict_type == AV_PICTURE_TYPE_B && !v->bi_type;
     pp->bBidirectionalAveragingMode = (1                                           << 7) |
@@ -97,7 +97,7 @@ static void fill_picture_parameters(AVCodecContext *avctx,
                                   (v->vstransform      );
     pp->bPicOverflowBlocks      = (v->quantizer_mode << 6) |
                                   (v->multires       << 5) |
-                                  (s->resync_marker  << 4) |
+                                  (v->resync_marker  << 4) |
                                   (v->rangered       << 3) |
                                   (s->max_b_frames       );
     pp->bPicExtrapolation       = (!v->interlace || v->fcm == PROGRESSIVE) ? 1 : 2;
@@ -178,16 +178,13 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
 
     if (FAILED(IDirectXVideoDecoder_GetBuffer(ctx->decoder,
                                               DXVA2_BitStreamDateBufferType,
-                                              (void **)&dxva_data, &dxva_size)))
+                                              &dxva_data, &dxva_size)))
         return -1;
 
     result = data_size <= dxva_size ? 0 : -1;
     if (!result) {
-        if (start_code_size > 0) {
+        if (start_code_size > 0)
             memcpy(dxva_data, start_code, start_code_size);
-            if (v->second_field)
-                dxva_data[3] = 0x0c;
-        }
         memcpy(dxva_data + start_code_size,
                ctx_pic->bitstream + slice->dwSliceDataLocation, slice_size);
         if (padding > 0)
