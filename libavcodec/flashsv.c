@@ -3,20 +3,20 @@
  * Copyright (C) 2004 Alex Beregszaszi
  * Copyright (C) 2006 Benjamin Larsson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -107,7 +107,7 @@ static av_cold int flashsv_decode_end(AVCodecContext *avctx)
     av_frame_free(&s->frame);
 
     /* free the tmpblock */
-    av_freep(&s->tmpblock);
+    av_free(s->tmpblock);
 
     return 0;
 }
@@ -142,9 +142,6 @@ static int flashsv2_prime(FlashSVContext *s, uint8_t *src, int size)
     z_stream zs;
     int zret; // Zlib return code
 
-    if (!src)
-        return AVERROR_INVALIDDATA;
-
     zs.zalloc = NULL;
     zs.zfree  = NULL;
     zs.opaque = NULL;
@@ -155,8 +152,7 @@ static int flashsv2_prime(FlashSVContext *s, uint8_t *src, int size)
     s->zstream.avail_out = s->block_size * 3;
     inflate(&s->zstream, Z_SYNC_FLUSH);
 
-    if (deflateInit(&zs, 0) != Z_OK)
-        return -1;
+    deflateInit(&zs, 0);
     zs.next_in   = s->tmpblock;
     zs.avail_in  = s->block_size * 3 - s->zstream.avail_out;
     zs.next_out  = s->deflate_block;
@@ -264,8 +260,6 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     FlashSVContext *s = avctx->priv_data;
     int h_blocks, v_blocks, h_part, v_part, i, j, ret;
     GetBitContext gb;
-    int last_blockwidth = s->block_width;
-    int last_blockheight= s->block_height;
 
     /* no supplementary picture */
     if (buf_size == 0)
@@ -273,18 +267,13 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     if (buf_size < 4)
         return -1;
 
-    if ((ret = init_get_bits8(&gb, avpkt->data, buf_size)) < 0)
-        return ret;
+    init_get_bits(&gb, avpkt->data, buf_size * 8);
 
     /* start to parse the bitstream */
     s->block_width  = 16 * (get_bits(&gb, 4) + 1);
     s->image_width  = get_bits(&gb, 12);
     s->block_height = 16 * (get_bits(&gb, 4) + 1);
     s->image_height = get_bits(&gb, 12);
-
-    if (   last_blockwidth != s->block_width
-        || last_blockheight!= s->block_height)
-        av_freep(&s->blocks);
 
     if (s->ver == 2) {
         skip_bits(&gb, 6);
@@ -307,13 +296,13 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     /* the block size could change between frames, make sure the buffer
      * is large enough, if not, get a larger one */
     if (s->block_size < s->block_width * s->block_height) {
-        int tmpblock_size = 3 * s->block_width * s->block_height;
+        int tmpblock_size = 3 * s->block_width * s->block_height, err;
 
-        s->tmpblock = av_realloc(s->tmpblock, tmpblock_size);
-        if (!s->tmpblock) {
+        if ((err = av_reallocp(&s->tmpblock, tmpblock_size)) < 0) {
+            s->block_size = 0;
             av_log(avctx, AV_LOG_ERROR,
                    "Cannot allocate decompression buffer.\n");
-            return AVERROR(ENOMEM);
+            return err;
         }
         if (s->ver == 2) {
             s->deflate_block_size = calc_deflate_block_size(tmpblock_size);
@@ -322,12 +311,10 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
                        "Cannot determine deflate buffer size.\n");
                 return -1;
             }
-            s->deflate_block = av_realloc(s->deflate_block,
-                                          s->deflate_block_size);
-            if (!s->deflate_block) {
-                av_log(avctx, AV_LOG_ERROR,
-                       "Cannot allocate deflate buffer.\n");
-                return AVERROR(ENOMEM);
+            if ((err = av_reallocp(&s->deflate_block, s->deflate_block_size)) < 0) {
+                s->block_size = 0;
+                av_log(avctx, AV_LOG_ERROR, "Cannot allocate deflate buffer.\n");
+                return err;
             }
         }
     }
@@ -335,8 +322,8 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
 
     /* initialize the image size once */
     if (avctx->width == 0 && avctx->height == 0) {
-        if ((ret = ff_set_dimensions(avctx, s->image_width, s->image_height)) < 0)
-            return ret;
+        avctx->width  = s->image_width;
+        avctx->height = s->image_height;
     }
 
     /* check for changes of image width and image height */
@@ -351,19 +338,23 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     /* we care for keyframes only in Screen Video v2 */
     s->is_keyframe = (avpkt->flags & AV_PKT_FLAG_KEY) && (s->ver == 2);
     if (s->is_keyframe) {
-        s->keyframedata = av_realloc(s->keyframedata, avpkt->size);
+        int err;
+        if ((err = av_reallocp(&s->keyframedata, avpkt->size)) < 0)
+            return err;
         memcpy(s->keyframedata, avpkt->data, avpkt->size);
+        if ((err = av_reallocp(&s->blocks, (v_blocks + !!v_part) *
+                               (h_blocks + !!h_part) * sizeof(s->blocks[0]))) < 0)
+            return err;
     }
-    if(s->ver == 2 && !s->blocks)
-        s->blocks = av_mallocz((v_blocks + !!v_part) * (h_blocks + !!h_part) *
-                               sizeof(s->blocks[0]));
 
     av_dlog(avctx, "image: %dx%d block: %dx%d num: %dx%d part: %dx%d\n",
             s->image_width, s->image_height, s->block_width, s->block_height,
             h_blocks, v_blocks, h_part, v_part);
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     /* loop over all block columns */
     for (j = 0; j < v_blocks + (v_part ? 1 : 0); j++) {
