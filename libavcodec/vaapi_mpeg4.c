@@ -3,26 +3,25 @@
  *
  * Copyright (C) 2008-2009 Splitted-Desktop Systems
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "vaapi_internal.h"
 #include "h263.h"
-#include "mpeg4video.h"
 
 /** Reconstruct bitstream intra_dc_vlc_thr */
 static int mpeg4_get_intra_dc_vlc_thr(MpegEncContext *s)
@@ -42,8 +41,7 @@ static int mpeg4_get_intra_dc_vlc_thr(MpegEncContext *s)
 
 static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_t *buffer, av_unused uint32_t size)
 {
-    Mpeg4DecContext *ctx = avctx->priv_data;
-    MpegEncContext * const s = &ctx->m;
+    MpegEncContext * const s = avctx->priv_data;
     struct vaapi_context * const vactx = avctx->hwaccel_context;
     VAPictureParameterBufferMPEG4 *pic_param;
     VAIQMatrixBufferMPEG4 *iq_matrix;
@@ -66,13 +64,13 @@ static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_
     pic_param->vol_fields.bits.chroma_format            = CHROMA_420;
     pic_param->vol_fields.bits.interlaced               = !s->progressive_sequence;
     pic_param->vol_fields.bits.obmc_disable             = 1;
-    pic_param->vol_fields.bits.sprite_enable            = ctx->vol_sprite_usage;
+    pic_param->vol_fields.bits.sprite_enable            = s->vol_sprite_usage;
     pic_param->vol_fields.bits.sprite_warping_accuracy  = s->sprite_warping_accuracy;
     pic_param->vol_fields.bits.quant_type               = s->mpeg_quant;
     pic_param->vol_fields.bits.quarter_sample           = s->quarter_sample;
     pic_param->vol_fields.bits.data_partitioned         = s->data_partitioning;
-    pic_param->vol_fields.bits.reversible_vlc           = ctx->rvlc;
-    pic_param->vol_fields.bits.resync_marker_disable    = !ctx->resync_marker;
+    pic_param->vol_fields.bits.reversible_vlc           = s->rvlc;
+    pic_param->vol_fields.bits.resync_marker_disable    = !s->resync_marker;
     pic_param->no_of_sprite_warping_points              = s->num_sprite_warping_points;
     for (i = 0; i < s->num_sprite_warping_points && i < 3; i++) {
         pic_param->sprite_trajectory_du[i]              = s->sprite_traj[i][0];
@@ -124,24 +122,13 @@ static int vaapi_mpeg4_decode_slice(AVCodecContext *avctx, const uint8_t *buffer
 
     av_dlog(avctx, "vaapi_mpeg4_decode_slice(): buffer %p, size %d\n", buffer, size);
 
-    /* video_plane_with_short_video_header() contains all GOBs
-     * in-order, and this is what VA API (Intel backend) expects: only
-     * a single slice param. So fake macroblock_number for Libav so
-     * that we don't call vaapi_mpeg4_decode_slice() again
-     */
-    if (avctx->codec->id == AV_CODEC_ID_H263)
-        size = s->gb.buffer_end - buffer;
-
     /* Fill in VASliceParameterBufferMPEG4 */
     slice_param = (VASliceParameterBufferMPEG4 *)ff_vaapi_alloc_slice(avctx->hwaccel_context, buffer, size);
     if (!slice_param)
         return -1;
     slice_param->macroblock_offset      = get_bits_count(&s->gb) % 8;
-    slice_param->macroblock_number      = s->mb_y * s->mb_width + s->mb_x;
+    slice_param->macroblock_number      = 0;
     slice_param->quant_scale            = s->qscale;
-
-    if (avctx->codec->id == AV_CODEC_ID_H263)
-        s->mb_y = s->mb_height;
 
     return 0;
 }
