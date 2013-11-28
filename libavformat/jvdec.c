@@ -2,20 +2,20 @@
  * Bitmap Brothers JV demuxer
  * Copyright (c) 2005, 2011 Peter Ross <pross@xvid.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,16 +27,17 @@
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
+
 #include "avformat.h"
 #include "internal.h"
 
 #define JV_PREAMBLE_SIZE 5
 
 typedef struct {
-    int audio_size;    /**< audio packet size (bytes) */
-    int video_size;    /**< video packet size (bytes) */
-    int palette_size;  /**< palette size (bytes) */
-    int video_type;    /**< per-frame video compression type */
+    int audio_size;    /** audio packet size (bytes) */
+    int video_size;    /** video packet size (bytes) */
+    int palette_size;  /** palette size (bytes) */
+    int video_type;    /** per-frame video compression type */
 } JVFrame;
 
 typedef struct {
@@ -53,8 +54,8 @@ typedef struct {
 
 static int read_probe(AVProbeData *pd)
 {
-    if (pd->buf[0] == 'J' && pd->buf[1] == 'V' && strlen(MAGIC) <= pd->buf_size - 4 &&
-        !memcmp(pd->buf + 4, MAGIC, strlen(MAGIC)))
+    if (pd->buf[0] == 'J' && pd->buf[1] == 'V' &&
+        !memcmp(pd->buf + 4, MAGIC, FFMIN(strlen(MAGIC), pd->buf_size - 4)))
         return AVPROBE_SCORE_MAX;
     return 0;
 }
@@ -96,17 +97,18 @@ static int read_header(AVFormatContext *s)
 
     avio_skip(pb, 4);
 
-    ast->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
-    ast->codec->codec_id    = AV_CODEC_ID_PCM_U8;
-    ast->codec->codec_tag   = 0; /* no fourcc */
-    ast->codec->sample_rate = avio_rl16(pb);
-    ast->codec->channels    = 1;
+    ast->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
+    ast->codec->codec_id       = AV_CODEC_ID_PCM_U8;
+    ast->codec->codec_tag      = 0; /* no fourcc */
+    ast->codec->sample_rate    = avio_rl16(pb);
+    ast->codec->channels       = 1;
     ast->codec->channel_layout = AV_CH_LAYOUT_MONO;
     avpriv_set_pts_info(ast, 64, 1, ast->codec->sample_rate);
 
     avio_skip(pb, 10);
 
-    ast->index_entries = av_malloc(ast->nb_index_entries * sizeof(*ast->index_entries));
+    ast->index_entries = av_malloc(ast->nb_index_entries *
+                                   sizeof(*ast->index_entries));
     if (!ast->index_entries)
         return AVERROR(ENOMEM);
 
@@ -115,18 +117,18 @@ static int read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
 
     offset = 0x68 + ast->nb_index_entries * 16;
-    for(i = 0; i < ast->nb_index_entries; i++) {
+    for (i = 0; i < ast->nb_index_entries; i++) {
         AVIndexEntry *e   = ast->index_entries + i;
         JVFrame      *jvf = jv->frames + i;
 
         /* total frame size including audio, video, palette data and padding */
-        e->size         = avio_rl32(pb);
-        e->timestamp    = i;
-        e->pos          = offset;
-        offset         += e->size;
+        e->size      = avio_rl32(pb);
+        e->timestamp = i;
+        e->pos       = offset;
+        offset      += e->size;
 
-        jvf->audio_size = avio_rl32(pb);
-        jvf->video_size = avio_rl32(pb);
+        jvf->audio_size   = avio_rl32(pb);
+        jvf->video_size   = avio_rl32(pb);
         jvf->palette_size = avio_r8(pb) ? 768 : 0;
 
         if ((jvf->video_size | jvf->audio_size) & ~0xFFFFFF ||
@@ -137,19 +139,19 @@ static int read_header(AVFormatContext *s)
                 read_close(s);
                 return AVERROR_INVALIDDATA;
             }
-            jvf->audio_size =
-            jvf->video_size =
+            jvf->audio_size   =
+            jvf->video_size   =
             jvf->palette_size = 0;
         }
 
         if (avio_r8(pb))
-             av_log(s, AV_LOG_WARNING, "unsupported audio codec\n");
+            av_log(s, AV_LOG_WARNING, "unsupported audio codec\n");
 
         jvf->video_type = avio_r8(pb);
         avio_skip(pb, 1);
 
         e->timestamp = jvf->audio_size ? audio_pts : AV_NOPTS_VALUE;
-        audio_pts += jvf->audio_size;
+        audio_pts   += jvf->audio_size;
 
         e->flags = jvf->video_type != 1 ? AVINDEX_KEYFRAME : 0;
     }
@@ -164,14 +166,14 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     AVIOContext *pb = s->pb;
     AVStream *ast = s->streams[0];
 
-    while (!url_feof(s->pb) && jv->pts < ast->nb_index_entries) {
+    while (!s->pb->eof_reached && jv->pts < ast->nb_index_entries) {
         const AVIndexEntry *e   = ast->index_entries + jv->pts;
         const JVFrame      *jvf = jv->frames + jv->pts;
 
-        switch(jv->state) {
+        switch (jv->state) {
         case JV_AUDIO:
             jv->state++;
-            if (jvf->audio_size ) {
+            if (jvf->audio_size) {
                 if (av_get_packet(s->pb, pkt, jvf->audio_size) < 0)
                     return AVERROR(ENOMEM);
                 pkt->stream_index = 0;
@@ -187,10 +189,9 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
                     return AVERROR(ENOMEM);
 
                 AV_WL32(pkt->data, jvf->video_size);
-                pkt->data[4]      = jvf->video_type;
-                if ((size = avio_read(pb, pkt->data + JV_PREAMBLE_SIZE, size)) < 0)
+                pkt->data[4] = jvf->video_type;
+                if (avio_read(pb, pkt->data + JV_PREAMBLE_SIZE, size) < 0)
                     return AVERROR(EIO);
-                memset(pkt->data + JV_PREAMBLE_SIZE + size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
 
                 pkt->size         = size + JV_PREAMBLE_SIZE;
                 pkt->stream_index = 1;
@@ -220,10 +221,10 @@ static int read_seek(AVFormatContext *s, int stream_index,
     AVStream *ast = s->streams[0];
     int i;
 
-    if (flags & (AVSEEK_FLAG_BYTE|AVSEEK_FLAG_FRAME))
+    if (flags & (AVSEEK_FLAG_BYTE | AVSEEK_FLAG_FRAME))
         return AVERROR(ENOSYS);
 
-    switch(stream_index) {
+    switch (stream_index) {
     case 0:
         i = av_index_search_timestamp(ast, ts, flags);
         break;

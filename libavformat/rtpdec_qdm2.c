@@ -2,20 +2,20 @@
  * QDesign Music 2 (QDM2) payload for RTP
  * Copyright (c) 2010 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,10 +26,8 @@
  */
 
 #include <string.h>
-#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/avcodec.h"
-#include "internal.h"
 #include "rtp.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
@@ -105,7 +103,9 @@ static int qdm2_parse_config(PayloadContext *qdm, AVStream *st,
                 if (item_len < 30)
                     return AVERROR_INVALIDDATA;
                 av_freep(&st->codec->extradata);
-                if (ff_alloc_extradata(st->codec, 26 + item_len)) {
+                st->codec->extradata_size = 26 + item_len;
+                if (!(st->codec->extradata = av_mallocz(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE))) {
+                    st->codec->extradata_size = 0;
                     return AVERROR(ENOMEM);
                 }
                 AV_WB32(st->codec->extradata, 12);
@@ -193,7 +193,7 @@ static int qdm2_restore_block(PayloadContext *qdm, AVStream *st, AVPacket *pkt)
     for (n = 0; n < 0x80; n++)
         if (qdm->len[n] > 0)
             break;
-    av_assert0(n < 0x80);
+    assert(n < 0x80);
 
     if ((res = av_new_packet(pkt, qdm->block_size)) < 0)
         return res;
