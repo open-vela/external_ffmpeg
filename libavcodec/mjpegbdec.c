@@ -2,20 +2,20 @@
  * Apple MJPEG-B decoder
  * Copyright (c) 2002 Alex Beregszaszi
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,7 +52,6 @@ static int mjpegb_decode_frame(AVCodecContext *avctx,
 
     buf_ptr = buf;
     buf_end = buf + buf_size;
-    s->got_picture = 0;
 
 read_header:
     /* reset on every SOI */
@@ -130,16 +129,12 @@ read_header:
         if (s->bottom_field != s->interlace_polarity && second_field_offs)
         {
             buf_ptr = buf + second_field_offs;
+            second_field_offs = 0;
             goto read_header;
             }
     }
 
     //XXX FIXME factorize, this looks very similar to the EOI code
-
-    if(!s->got_picture) {
-        av_log(avctx, AV_LOG_WARNING, "no picture\n");
-        return buf_size;
-    }
 
     if ((ret = av_frame_ref(data, s->picture_ptr)) < 0)
         return ret;
@@ -163,5 +158,4 @@ AVCodec ff_mjpegb_decoder = {
     .close          = ff_mjpeg_decode_end,
     .decode         = mjpegb_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .max_lowres     = 3,
 };
