@@ -4,35 +4,33 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <vdpau/vdpau.h>
 
 #include "avcodec.h"
-#include "mpeg4video.h"
 #include "vdpau.h"
 #include "vdpau_internal.h"
 
 static int vdpau_mpeg4_start_frame(AVCodecContext *avctx,
                                    const uint8_t *buffer, uint32_t size)
 {
-    Mpeg4DecContext *ctx = avctx->priv_data;
-    MpegEncContext * const s = &ctx->m;
+    MpegEncContext * const s = avctx->priv_data;
     Picture *pic             = s->current_picture_ptr;
     struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
     VdpPictureInfoMPEG4Part2 *info = &pic_ctx->info.mpeg4;
@@ -64,7 +62,7 @@ static int vdpau_mpeg4_start_frame(AVCodecContext *avctx,
     info->vop_time_increment_resolution     = s->avctx->time_base.den;
     info->vop_fcode_forward                 = s->f_code;
     info->vop_fcode_backward                = s->b_code;
-    info->resync_marker_disable             = !ctx->resync_marker;
+    info->resync_marker_disable             = !s->resync_marker;
     info->interlaced                        = !s->progressive_sequence;
     info->quant_type                        = s->mpeg_quant;
     info->quarter_sample                    = s->quarter_sample;

@@ -2,20 +2,20 @@
  * MLP parser prototypes
  * Copyright (c) 2007 Ian Caulfield
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,6 +39,7 @@ typedef struct MLPHeaderInfo
     int group1_samplerate;                  ///< Sample rate of first substream
     int group2_samplerate;                  ///< Sample rate of second substream (MLP only)
 
+    int channel_arrangement;
     int channels_mlp;                       ///< Channel count for MLP streams
     int channels_thd_stream1;               ///< Channel count for substream 1 of TrueHD streams ("6-channel presentation")
     int channels_thd_stream2;               ///< Channel count for substream 2 of TrueHD streams ("8-channel presentation")
@@ -57,5 +58,8 @@ typedef struct MLPHeaderInfo
 
 
 int ff_mlp_read_major_sync(void *log, MLPHeaderInfo *mh, GetBitContext *gb);
+uint64_t ff_truehd_layout(int chanmap);
+
+extern const uint64_t ff_mlp_layout[32];
 
 #endif /* AVCODEC_MLP_PARSER_H */
