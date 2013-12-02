@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,7 @@
 
 #include <stdint.h>
 
-#include "dvdata.h"
+#include "dv_vlc_data.h"
 
 #if CONFIG_SMALL
 #define DV_VLC_MAP_RUN_SIZE 15
@@ -51,20 +51,20 @@ static void dv_vlc_map_tableinit(void)
 {
     int i, j;
     for (i = 0; i < NB_DV_VLC - 1; i++) {
-       if (ff_dv_vlc_run[i] >= DV_VLC_MAP_RUN_SIZE)
+       if (dv_vlc_run[i] >= DV_VLC_MAP_RUN_SIZE)
            continue;
 #if CONFIG_SMALL
-       if (ff_dv_vlc_level[i] >= DV_VLC_MAP_LEV_SIZE)
+       if (dv_vlc_level[i] >= DV_VLC_MAP_LEV_SIZE)
            continue;
 #endif
 
-       if (dv_vlc_map[ff_dv_vlc_run[i]][ff_dv_vlc_level[i]].size != 0)
+       if (dv_vlc_map[dv_vlc_run[i]][dv_vlc_level[i]].size != 0)
            continue;
 
-       dv_vlc_map[ff_dv_vlc_run[i]][ff_dv_vlc_level[i]].vlc  =
-           ff_dv_vlc_bits[i] << (!!ff_dv_vlc_level[i]);
-       dv_vlc_map[ff_dv_vlc_run[i]][ff_dv_vlc_level[i]].size =
-           ff_dv_vlc_len[i] + (!!ff_dv_vlc_level[i]);
+       dv_vlc_map[dv_vlc_run[i]][dv_vlc_level[i]].vlc  =
+           dv_vlc_bits[i] << (!!dv_vlc_level[i]);
+       dv_vlc_map[dv_vlc_run[i]][dv_vlc_level[i]].size =
+           dv_vlc_len[i] + (!!dv_vlc_level[i]);
     }
     for (i = 0; i < DV_VLC_MAP_RUN_SIZE; i++) {
 #if CONFIG_SMALL
