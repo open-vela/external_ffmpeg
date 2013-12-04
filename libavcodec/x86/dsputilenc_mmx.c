@@ -5,20 +5,20 @@
  *
  * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -424,8 +424,8 @@ static int nsse8_mmx(void *p, uint8_t * pix1, uint8_t * pix2, int line_size, int
 static int vsad_intra16_mmx(void *v, uint8_t * pix, uint8_t * dummy, int line_size, int h) {
     int tmp;
 
-    assert( (((int)pix) & 7) == 0);
-    assert((line_size &7) ==0);
+    av_assert2( (((int)pix) & 7) == 0);
+    av_assert2((line_size &7) ==0);
 
 #define SUM(in0, in1, out0, out1) \
       "movq (%0), %%mm2\n"\
@@ -487,8 +487,8 @@ static int vsad_intra16_mmxext(void *v, uint8_t *pix, uint8_t *dummy,
 {
     int tmp;
 
-    assert( (((int)pix) & 7) == 0);
-    assert((line_size &7) ==0);
+    av_assert2( (((int)pix) & 7) == 0);
+    av_assert2((line_size &7) ==0);
 
 #define SUM(in0, in1, out0, out1) \
       "movq (%0), " #out0 "\n"\
@@ -527,9 +527,9 @@ static int vsad_intra16_mmxext(void *v, uint8_t *pix, uint8_t *dummy,
 static int vsad16_mmx(void *v, uint8_t * pix1, uint8_t * pix2, int line_size, int h) {
     int tmp;
 
-    assert( (((int)pix1) & 7) == 0);
-    assert( (((int)pix2) & 7) == 0);
-    assert((line_size &7) ==0);
+    av_assert2( (((int)pix1) & 7) == 0);
+    av_assert2( (((int)pix2) & 7) == 0);
+    av_assert2((line_size &7) ==0);
 
 #define SUM(in0, in1, out0, out1) \
       "movq (%0),%%mm2\n"\
@@ -607,9 +607,9 @@ static int vsad16_mmxext(void *v, uint8_t *pix1, uint8_t *pix2,
 {
     int tmp;
 
-    assert( (((int)pix1) & 7) == 0);
-    assert( (((int)pix2) & 7) == 0);
-    assert((line_size &7) ==0);
+    av_assert2( (((int)pix1) & 7) == 0);
+    av_assert2( (((int)pix2) & 7) == 0);
+    av_assert2((line_size &7) ==0);
 
 #define SUM(in0, in1, out0, out1) \
       "movq (%0)," #out0 "\n"\
@@ -661,8 +661,9 @@ static int vsad16_mmxext(void *v, uint8_t *pix1, uint8_t *pix2,
 }
 #undef SUM
 
-static void diff_bytes_mmx(uint8_t *dst, uint8_t *src1, uint8_t *src2, int w){
+static void diff_bytes_mmx(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int w){
     x86_reg i=0;
+    if(w>=16)
     __asm__ volatile(
         "1:                             \n\t"
         "movq  (%2, %0), %%mm0          \n\t"
@@ -991,13 +992,6 @@ av_cold void ff_dsputilenc_init_mmx(DSPContext *c, AVCodecContext *avctx)
         c->ssd_int8_vs_int16 = ssd_int8_vs_int16_mmx;
     }
 
-    if (INLINE_AMD3DNOW(cpu_flags)) {
-        if (!(avctx->flags & CODEC_FLAG_BITEXACT)) {
-            c->try_8x8basis = try_8x8basis_3dnow;
-        }
-        c->add_8x8basis = add_8x8basis_3dnow;
-    }
-
     if (INLINE_MMXEXT(cpu_flags)) {
         if (avctx->bits_per_raw_sample <= 8 &&
             (dct_algo == FF_DCT_AUTO || dct_algo == FF_DCT_MMX))
@@ -1030,6 +1024,13 @@ av_cold void ff_dsputilenc_init_mmx(DSPContext *c, AVCodecContext *avctx)
         c->sum_abs_dctelem = sum_abs_dctelem_ssse3;
     }
 #endif
+
+    if (INLINE_AMD3DNOW(cpu_flags)) {
+        if (!(avctx->flags & CODEC_FLAG_BITEXACT)) {
+            c->try_8x8basis = try_8x8basis_3dnow;
+        }
+        c->add_8x8basis = add_8x8basis_3dnow;
+    }
 #endif /* HAVE_INLINE_ASM */
 
     if (EXTERNAL_MMX(cpu_flags)) {

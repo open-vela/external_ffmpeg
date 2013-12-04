@@ -4,20 +4,20 @@
  * see http://www.pcisys.net/~melanson/codecs/huffyuv.txt for a description of
  * the algorithm used
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,10 +29,11 @@
 #include "avcodec.h"
 #include "huffyuv.h"
 #include "huffman.h"
+#include "internal.h"
 #include "put_bits.h"
 
 static inline int sub_left_prediction(HYuvContext *s, uint8_t *dst,
-                                      uint8_t *src, int w, int left)
+                                      const uint8_t *src, int w, int left)
 {
     int i;
     if (w < 32) {
@@ -54,7 +55,7 @@ static inline int sub_left_prediction(HYuvContext *s, uint8_t *dst,
 }
 
 static inline void sub_left_prediction_bgr32(HYuvContext *s, uint8_t *dst,
-                                             uint8_t *src, int w,
+                                             const uint8_t *src, int w,
                                              int *red, int *green, int *blue,
                                              int *alpha)
 {
@@ -128,8 +129,8 @@ static int store_table(HYuvContext *s, const uint8_t *len, uint8_t *buf)
         for (; i < 256 && len[i] == val && repeat < 255; i++)
             repeat++;
 
-        assert(val < 32 && val >0 && repeat<256 && repeat>0);
-        if ( repeat > 7) {
+        av_assert0(val < 32 && val >0 && repeat<256 && repeat>0);
+        if (repeat > 7) {
             buf[index++] = val;
             buf[index++] = repeat;
         } else {
@@ -149,6 +150,10 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     avctx->extradata = av_mallocz(1024*30); // 256*3+4 == 772
     avctx->stats_out = av_mallocz(1024*30); // 21*256*3(%llu ) + 3(\n) + 1(0) = 16132
+    if (!avctx->extradata || !avctx->stats_out) {
+        av_freep(&avctx->stats_out);
+        return AVERROR(ENOMEM);
+    }
     s->version = 2;
 
     avctx->coded_frame = av_frame_alloc();
@@ -163,7 +168,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
     case AV_PIX_FMT_YUV422P:
         if (s->width & 1) {
             av_log(avctx, AV_LOG_ERROR, "Width must be even for this colorspace.\n");
-            return -1;
+            return AVERROR(EINVAL);
         }
         s->bitstream_bpp = avctx->pix_fmt == AV_PIX_FMT_YUV420P ? 12 : 16;
         break;
@@ -175,7 +180,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "format not supported\n");
-        return -1;
+        return AVERROR(EINVAL);
     }
     avctx->bits_per_coded_sample = s->bitstream_bpp;
     s->decorrelate = s->bitstream_bpp >= 24;
@@ -187,7 +192,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
             av_log(avctx, AV_LOG_ERROR,
                    "context=1 is not compatible with "
                    "2 pass huffyuv encoding\n");
-            return -1;
+            return AVERROR(EINVAL);
         }
     }else s->context= 0;
 
@@ -196,13 +201,13 @@ static av_cold int encode_init(AVCodecContext *avctx)
             av_log(avctx, AV_LOG_ERROR,
                    "Error: YV12 is not supported by huffyuv; use "
                    "vcodec=ffvhuff or format=422p\n");
-            return -1;
+            return AVERROR(EINVAL);
         }
         if (avctx->context_model) {
             av_log(avctx, AV_LOG_ERROR,
                    "Error: per-frame huffman tables are not supported "
                    "by huffyuv; use vcodec=ffvhuff\n");
-            return -1;
+            return AVERROR(EINVAL);
         }
         if (s->interlaced != ( s->height > 288 ))
             av_log(avctx, AV_LOG_INFO,
@@ -212,7 +217,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
     if (s->bitstream_bpp >= 24 && s->predictor == MEDIAN) {
         av_log(avctx, AV_LOG_ERROR,
                "Error: RGB is incompatible with median predictor\n");
-        return -1;
+        return AVERROR(EINVAL);
     }
 
     ((uint8_t*)avctx->extradata)[0] = s->predictor | (s->decorrelate << 6);
@@ -276,7 +281,10 @@ static av_cold int encode_init(AVCodecContext *avctx)
                 s->stats[i][j]= 0;
     }
 
-    ff_huffyuv_alloc_temp(s);
+    if (ff_huffyuv_alloc_temp(s)) {
+        ff_huffyuv_common_end(s);
+        return AVERROR(ENOMEM);
+    }
 
     s->picture_number=0;
 
@@ -394,8 +402,8 @@ static inline int encode_bgra_bitstream(HYuvContext *s, int count, int planes)
 
 #define LOAD_GBRA                                                       \
     int g = s->temp[0][planes == 3 ? 3 * i + 1 : 4 * i + G];            \
-    int b = s->temp[0][planes == 3 ? 3 * i + 2 : 4 * i + B] - g & 0xFF; \
-    int r = s->temp[0][planes == 3 ? 3 * i + 0 : 4 * i + R] - g & 0xFF; \
+    int b =(s->temp[0][planes == 3 ? 3 * i + 2 : 4 * i + B] - g) & 0xFF;\
+    int r =(s->temp[0][planes == 3 ? 3 * i + 0 : 4 * i + R] - g) & 0xFF;\
     int a = s->temp[0][planes * i + A];
 
 #define STAT_BGRA                                                       \
@@ -446,11 +454,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     const AVFrame * const p = pict;
     int i, j, size = 0, ret;
 
-    if (!pkt->data &&
-        (ret = av_new_packet(pkt, width * height * 3 * 4 + FF_MIN_BUFFER_SIZE)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error allocating output packet.\n");
+    if ((ret = ff_alloc_packet2(avctx, pkt, width * height * 3 * 4 + FF_MIN_BUFFER_SIZE)) < 0)
         return ret;
-    }
 
     if (s->context) {
         for (i = 0; i < 3; i++) {
