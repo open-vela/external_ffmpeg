@@ -2,20 +2,20 @@
  * mtv demuxer
  * Copyright (c) 2006 Reynaldo H. Verdejo Pinochet
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,10 +42,10 @@ typedef struct MTVDemuxContext {
     unsigned int audio_br;          ///< bitrate of audio channel (mp3)
     unsigned int img_colorfmt;      ///< frame colorfmt rgb 565/555
     unsigned int img_bpp;           ///< frame bits per pixel
-    unsigned int img_width;
-    unsigned int img_height;
+    unsigned int img_width;         //
+    unsigned int img_height;        //
     unsigned int img_segment_size;  ///< size of image segment
-    unsigned int video_fps;
+    unsigned int video_fps;         //
     unsigned int full_segment_size;
 
 } MTVDemuxContext;
@@ -57,7 +57,7 @@ static int mtv_probe(AVProbeData *p)
         return 0;
 
     /* Check for nonzero in bpp and (width|height) header fields */
-    if(p->buf_size < 57 || !(p->buf[51] && AV_RL16(&p->buf[52]) | AV_RL16(&p->buf[54])))
+    if(!(p->buf[51] && AV_RL16(&p->buf[52]) | AV_RL16(&p->buf[54])))
         return 0;
 
     /* If width or height are 0 then imagesize header field should not */
@@ -96,19 +96,13 @@ static int mtv_read_header(AVFormatContext *s)
 
     /* Calculate width and height if missing from header */
 
-    if(mtv->img_bpp>>3){
-    if(!mtv->img_width && mtv->img_height)
+    if(!mtv->img_width)
         mtv->img_width=mtv->img_segment_size / (mtv->img_bpp>>3)
                         / mtv->img_height;
 
-    if(!mtv->img_height && mtv->img_width)
+    if(!mtv->img_height)
         mtv->img_height=mtv->img_segment_size / (mtv->img_bpp>>3)
                         / mtv->img_width;
-    }
-    if(!mtv->img_height || !mtv->img_width || !mtv->img_segment_size){
-        av_log(s, AV_LOG_ERROR, "width or height or segment_size is invalid and I cannot calculate them from other information\n");
-        return AVERROR(EINVAL);
-    }
 
     avio_skip(pb, 4);
     audio_subsegments = avio_rl16(pb);

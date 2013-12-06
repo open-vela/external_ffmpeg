@@ -2,20 +2,20 @@
  * amr file format
  * Copyright (c) 2001 ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@ Only mono files are supported.
 
 */
 
-#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "avformat.h"
 #include "internal.h"
@@ -112,7 +111,7 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
     int read, size = 0, toc, mode;
     int64_t pos = avio_tell(s->pb);
 
-    if (url_feof(s->pb)) {
+    if (s->pb->eof_reached) {
         return AVERROR(EIO);
     }
 
@@ -132,6 +131,8 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
         };
 
         size = packed_size[mode];
+    } else {
+        assert(0);
     }
 
     if (!size || av_new_packet(pkt, size))
