@@ -1,10 +1,30 @@
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, DPX) += fate-dpx
+FATE_IMAGE-$(call DEMDEC, IMAGE2, DPX) += fate-dpx
 fate-dpx: CMD = framecrc -i $(TARGET_SAMPLES)/dpx/lighthouse_rgb48.dpx
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, PICTOR) += fate-pictor
+FATE_EXR += fate-exr-slice-raw
+fate-exr-slice-raw: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgba_slice_raw.exr -pix_fmt rgba64le
+
+FATE_EXR += fate-exr-slice-rle
+fate-exr-slice-rle: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgba_slice_rle.exr -pix_fmt rgba64le
+
+FATE_EXR += fate-exr-slice-zip1
+fate-exr-slice-zip1: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgba_slice_zip1.exr -pix_fmt rgba64le
+
+FATE_EXR += fate-exr-slice-zip16
+fate-exr-slice-zip16: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgba_slice_zip16.exr -pix_fmt rgba64le
+
+FATE_EXR += fate-exr-slice-pxr24
+fate-exr-slice-pxr24: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgb_slice_pxr24.exr -pix_fmt rgb48le
+
+FATE_EXR-$(call DEMDEC, IMAGE2, EXR) += $(FATE_EXR)
+
+FATE_IMAGE += $(FATE_EXR-yes)
+fate-exr: $(FATE_EXR-yes)
+
+FATE_IMAGE-$(call DEMDEC, IMAGE2, PICTOR) += fate-pictor
 fate-pictor: CMD = framecrc -i $(TARGET_SAMPLES)/pictor/MFISH.PIC -pix_fmt rgb24
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, PTX) += fate-ptx
+FATE_IMAGE-$(call DEMDEC, IMAGE2, PTX) += fate-ptx
 fate-ptx: CMD = framecrc -i $(TARGET_SAMPLES)/ptx/_113kw_pic.ptx -pix_fmt rgb24
 
 FATE_SUNRASTER += fate-sunraster-1bit-raw
@@ -30,7 +50,7 @@ fate-sunraster-24bit-rle: CMD = framecrc -i $(TARGET_SAMPLES)/sunraster/lena-24b
 
 FATE_SUNRASTER-$(call DEMDEC, IMAGE2, SUNRAST) += $(FATE_SUNRASTER)
 
-FATE_SAMPLES_AVCONV += $(FATE_SUNRASTER-yes)
+FATE_IMAGE += $(FATE_SUNRASTER-yes)
 fate-sunraster: $(FATE_SUNRASTER-yes)
 
 FATE_TARGA = CBW8       \
@@ -49,7 +69,7 @@ FATE_TARGA := $(FATE_TARGA:%=fate-targa-conformance-%)  \
 
 FATE_TARGA-$(call DEMDEC, IMAGE2, TARGA) += $(FATE_TARGA)
 
-FATE_SAMPLES_AVCONV += $(FATE_TARGA-yes)
+FATE_IMAGE += $(FATE_TARGA-yes)
 fate-targa: $(FATE_TARGA-yes)
 
 fate-targa-conformance-CBW8:  CMD = framecrc -i $(TARGET_SAMPLES)/targa-conformance/CBW8.TGA
@@ -73,5 +93,13 @@ fate-tiff-fax-g3s: CMD = framecrc -i $(TARGET_SAMPLES)/CCITT_fax/G31DS.TIF
 
 FATE_TIFF-$(call DEMDEC, IMAGE2, TIFF) += $(FATE_TIFF)
 
-FATE_SAMPLES_AVCONV += $(FATE_TIFF-yes)
+FATE_IMAGE += $(FATE_TIFF-yes)
 fate-tiff: $(FATE_TIFF-yes)
+
+FATE_IMAGE-$(call DEMDEC, IMAGE2, XFACE) += fate-xface
+fate-xface: CMD = framecrc -i $(TARGET_SAMPLES)/xface/lena.xface
+
+FATE_IMAGE += $(FATE_IMAGE-yes)
+
+FATE_SAMPLES_FFMPEG += $(FATE_IMAGE)
+fate-image: $(FATE_IMAGE)
