@@ -3,20 +3,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,11 +45,13 @@ static void vc1_extract_headers(AVCodecParserContext *s, AVCodecContext *avctx,
 
     vpc->v.s.avctx = avctx;
     vpc->v.parse_only = 1;
+    vpc->v.first_pic_header_flag = 1;
     next = buf;
     s->repeat_pict = 0;
 
     for(start = buf, end = buf + buf_size; next < end; start = next){
         int buf2_size, size;
+        int ret;
 
         next = find_next_marker(start + 4, end);
         size = next - start - 4;
@@ -65,9 +67,12 @@ static void vc1_extract_headers(AVCodecParserContext *s, AVCodecContext *avctx,
             break;
         case VC1_CODE_FRAME:
             if(vpc->v.profile < PROFILE_ADVANCED)
-                ff_vc1_parse_frame_header    (&vpc->v, &gb);
+                ret = ff_vc1_parse_frame_header    (&vpc->v, &gb);
             else
-                ff_vc1_parse_frame_header_adv(&vpc->v, &gb);
+                ret = ff_vc1_parse_frame_header_adv(&vpc->v, &gb);
+
+            if (ret < 0)
+                break;
 
             /* keep AV_PICTURE_TYPE_BI internal to VC1 */
             if (vpc->v.s.pict_type == AV_PICTURE_TYPE_BI)

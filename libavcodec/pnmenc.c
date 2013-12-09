@@ -2,46 +2,44 @@
  * PNM image format
  * Copyright (c) 2002, 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
-#include "bytestream.h"
 #include "internal.h"
+#include "pnm.h"
+
 
 static int pnm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                            const AVFrame *pict, int *got_packet)
+                            const AVFrame *p, int *got_packet)
 {
-    uint8_t *bytestream, *bytestream_start, *bytestream_end;
-    const AVFrame * const p = pict;
+    PNMContext *s     = avctx->priv_data;
     int i, h, h1, c, n, linesize, ret;
     uint8_t *ptr, *ptr1, *ptr2;
 
-    if ((ret = ff_alloc_packet(pkt, avpicture_get_size(avctx->pix_fmt,
+    if ((ret = ff_alloc_packet2(avctx, pkt, avpicture_get_size(avctx->pix_fmt,
                                                        avctx->width,
-                                                       avctx->height) + 200)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "encoded frame too large\n");
+                                                       avctx->height) + 200)) < 0)
         return ret;
-    }
 
-    bytestream_start =
-    bytestream       = pkt->data;
-    bytestream_end   = pkt->data + pkt->size;
+    s->bytestream_start =
+    s->bytestream       = pkt->data;
+    s->bytestream_end   = pkt->data + pkt->size;
 
     h  = avctx->height;
     h1 = h;
@@ -67,6 +65,10 @@ static int pnm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         n  = avctx->width * 6;
         break;
     case AV_PIX_FMT_YUV420P:
+        if (avctx->width & 1 || avctx->height & 1) {
+            av_log(avctx, AV_LOG_ERROR, "pgmyuv needs even width and height\n");
+            return AVERROR(EINVAL);
+        }
         c  = '5';
         n  = avctx->width;
         h1 = (h * 3) / 2;
@@ -79,22 +81,22 @@ static int pnm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     default:
         return -1;
     }
-    snprintf(bytestream, bytestream_end - bytestream,
+    snprintf(s->bytestream, s->bytestream_end - s->bytestream,
              "P%c\n%d %d\n", c, avctx->width, h1);
-    bytestream += strlen(bytestream);
+    s->bytestream += strlen(s->bytestream);
     if (avctx->pix_fmt != AV_PIX_FMT_MONOWHITE) {
         int maxdepth = (1 << (av_pix_fmt_desc_get(avctx->pix_fmt)->comp[0].depth_minus1 + 1)) - 1;
-        snprintf(bytestream, bytestream_end - bytestream,
+        snprintf(s->bytestream, s->bytestream_end - s->bytestream,
                  "%d\n", maxdepth);
-        bytestream += strlen(bytestream);
+        s->bytestream += strlen(s->bytestream);
     }
 
     ptr      = p->data[0];
     linesize = p->linesize[0];
     for (i = 0; i < h; i++) {
-        memcpy(bytestream, ptr, n);
-        bytestream += n;
-        ptr        += linesize;
+        memcpy(s->bytestream, ptr, n);
+        s->bytestream += n;
+        ptr           += linesize;
     }
 
     if (avctx->pix_fmt == AV_PIX_FMT_YUV420P || avctx->pix_fmt == AV_PIX_FMT_YUV420P16BE) {
@@ -103,38 +105,21 @@ static int pnm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         ptr1 = p->data[1];
         ptr2 = p->data[2];
         for (i = 0; i < h; i++) {
-            memcpy(bytestream, ptr1, n);
-            bytestream += n;
-            memcpy(bytestream, ptr2, n);
-            bytestream += n;
+            memcpy(s->bytestream, ptr1, n);
+            s->bytestream += n;
+            memcpy(s->bytestream, ptr2, n);
+            s->bytestream += n;
                 ptr1 += p->linesize[1];
                 ptr2 += p->linesize[2];
         }
     }
-    pkt->size   = bytestream - bytestream_start;
+    pkt->size   = s->bytestream - s->bytestream_start;
     pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
 
     return 0;
 }
 
-static av_cold int pnm_encode_init(AVCodecContext *avctx)
-{
-    avctx->coded_frame = av_frame_alloc();
-    if (!avctx->coded_frame)
-        return AVERROR(ENOMEM);
-
-    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-    avctx->coded_frame->key_frame = 1;
-
-    return 0;
-}
-
-static av_cold int pnm_encode_close(AVCodecContext *avctx)
-{
-    av_frame_free(&avctx->coded_frame);
-    return 0;
-}
 
 #if CONFIG_PGM_ENCODER
 AVCodec ff_pgm_encoder = {
@@ -142,8 +127,7 @@ AVCodec ff_pgm_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("PGM (Portable GrayMap) image"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PGM,
-    .init           = pnm_encode_init,
-    .close          = pnm_encode_close,
+    .priv_data_size = sizeof(PNMContext),
     .encode2        = pnm_encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY16BE, AV_PIX_FMT_NONE
@@ -157,8 +141,7 @@ AVCodec ff_pgmyuv_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("PGMYUV (Portable GrayMap YUV) image"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PGMYUV,
-    .init           = pnm_encode_init,
-    .close          = pnm_encode_close,
+    .priv_data_size = sizeof(PNMContext),
     .encode2        = pnm_encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV420P16BE, AV_PIX_FMT_NONE
@@ -172,8 +155,7 @@ AVCodec ff_ppm_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("PPM (Portable PixelMap) image"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PPM,
-    .init           = pnm_encode_init,
-    .close          = pnm_encode_close,
+    .priv_data_size = sizeof(PNMContext),
     .encode2        = pnm_encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_RGB24, AV_PIX_FMT_RGB48BE, AV_PIX_FMT_NONE
@@ -187,8 +169,7 @@ AVCodec ff_pbm_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("PBM (Portable BitMap) image"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PBM,
-    .init           = pnm_encode_init,
-    .close          = pnm_encode_close,
+    .priv_data_size = sizeof(PNMContext),
     .encode2        = pnm_encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_MONOWHITE,
                                                   AV_PIX_FMT_NONE },
