@@ -2,20 +2,20 @@
  * DV encoder
  * Copyright (c) 2003 Roman Shaposhnik
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,10 +42,10 @@ static av_cold int dvvideo_init_encoder(AVCodecContext *avctx)
         ff_dv_print_profiles(avctx, AV_LOG_ERROR);
         return AVERROR(EINVAL);
     }
-    if (avctx->height > 576) {
-        av_log(avctx, AV_LOG_ERROR, "DVCPRO HD encoding is not supported.\n");
-        return AVERROR_PATCHWELCOME;
-    }
+
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
 
     dv_vlc_map_tableinit();
 
@@ -213,7 +213,7 @@ static av_always_inline int dv_init_enc_block(EncBlockInfo* bi, uint8_t *data, i
        method suggested in SMPTE 314M Table 22, and an improved
        method. The SMPTE method is very conservative; it assigns class
        3 (i.e. severe quantization) to any block where the largest AC
-       component is greater than 36. FFmpeg's DV encoder tracks AC bit
+       component is greater than 36. Libav's DV encoder tracks AC bit
        consumption precisely, so there is no need to bias most blocks
        towards strongly lossy compression. Instead, we assign class 2
        to most blocks, and use class 3 only when strictly necessary
@@ -221,13 +221,13 @@ static av_always_inline int dv_init_enc_block(EncBlockInfo* bi, uint8_t *data, i
 
 #if 0 /* SMPTE spec method */
     static const int classes[] = {12, 24, 36, 0xffff};
-#else /* improved FFmpeg method */
+#else /* improved Libav method */
     static const int classes[] = {-1, -1, 255, 0xffff};
 #endif
     int max  = classes[0];
     int prev = 0;
 
-    av_assert2((((int)blk) & 15) == 0);
+    assert((((int)blk) & 15) == 0);
 
     bi->area_q[0] = bi->area_q[1] = bi->area_q[2] = bi->area_q[3] = 0;
     bi->partial_bit_count = 0;
@@ -256,7 +256,7 @@ static av_always_inline int dv_init_enc_block(EncBlockInfo* bi, uint8_t *data, i
 
           if (level + 15 > 30U) {
               bi->sign[i] = (level >> 31) & 1;
-              /* weight it and shift down into range, adding for rounding */
+              /* weight it and and shift down into range, adding for rounding */
               /* the extra division by a factor of 2^4 reverses the 8x expansion of the DCT
                  AND the 2x doubling of the weights */
               level = (FFABS(level) * weight[i] + (1 << (dv_weight_bits+3))) >> (dv_weight_bits+4);
@@ -318,7 +318,7 @@ static inline void dv_guess_qnos(EncBlockInfo* blks, int* qnos)
                     b->bit_size[a] = 1; // 4 areas 4 bits for EOB :)
                     b->area_q[a]++;
                     prev = b->prev[a];
-                    av_assert2(b->next[prev] >= mb_area_start[a+1] || b->mb[prev]);
+                    assert(b->next[prev] >= mb_area_start[a+1] || b->mb[prev]);
                     for (k = b->next[prev] ; k < mb_area_start[a+1]; k = b->next[k]) {
                        b->mb[k] >>= 1;
                        if (b->mb[k]) {
@@ -328,11 +328,11 @@ static inline void dv_guess_qnos(EncBlockInfo* blks, int* qnos)
                            if (b->next[k] >= mb_area_start[a+1] && b->next[k]<64){
                                 for (a2 = a + 1; b->next[k] >= mb_area_start[a2+1]; a2++)
                                     b->prev[a2] = prev;
-                                av_assert2(a2 < 4);
-                                av_assert2(b->mb[b->next[k]]);
+                                assert(a2 < 4);
+                                assert(b->mb[b->next[k]]);
                                 b->bit_size[a2] += dv_rl2vlc_size(b->next[k] - prev - 1, b->mb[b->next[k]])
                                                   -dv_rl2vlc_size(b->next[k] -    k - 1, b->mb[b->next[k]]);
-                                av_assert2(b->prev[a2] == k && (a2 + 1 >= 4 || b->prev[a2+1] != k));
+                                assert(b->prev[a2] == k && (a2 + 1 >= 4 || b->prev[a2+1] != k));
                                 b->prev[a2] = prev;
                            }
                            b->next[prev] = b->next[k];
@@ -392,12 +392,12 @@ static int dv_encode_video_segment(AVCodecContext *avctx, void *arg)
         if ((s->sys->pix_fmt == AV_PIX_FMT_YUV420P) ||
             (s->sys->pix_fmt == AV_PIX_FMT_YUV411P && mb_x >= (704 / 8)) ||
             (s->sys->height >= 720 && mb_y != 134)) {
-            y_stride = s->picture.linesize[0] << 3;
+            y_stride = s->frame->linesize[0] << 3;
         } else {
             y_stride = 16;
         }
-        y_ptr    = s->picture.data[0] + ((mb_y * s->picture.linesize[0] + mb_x) << 3);
-        linesize = s->picture.linesize[0];
+        y_ptr    = s->frame->data[0] + ((mb_y * s->frame->linesize[0] + mb_x) << 3);
+        linesize = s->frame->linesize[0];
 
         if (s->sys->video_stype == 4) { /* SD 422 */
             vs_bit_size +=
@@ -415,12 +415,12 @@ static int dv_encode_video_segment(AVCodecContext *avctx, void *arg)
         enc_blk += 4;
 
         /* initializing chrominance blocks */
-        c_offset = (((mb_y >>  (s->sys->pix_fmt == AV_PIX_FMT_YUV420P)) * s->picture.linesize[1] +
+        c_offset = (((mb_y >>  (s->sys->pix_fmt == AV_PIX_FMT_YUV420P)) * s->frame->linesize[1] +
                      (mb_x >> ((s->sys->pix_fmt == AV_PIX_FMT_YUV411P) ? 2 : 1))) << 3);
         for (j = 2; j; j--) {
-            uint8_t *c_ptr = s->picture.data[j] + c_offset;
-            linesize = s->picture.linesize[j];
-            y_stride = (mb_y == 134) ? 8 : (s->picture.linesize[j] << 3);
+            uint8_t *c_ptr = s->frame->data[j] + c_offset;
+            linesize = s->frame->linesize[j];
+            y_stride = (mb_y == 134) ? 8 : (s->frame->linesize[j] << 3);
             if (s->sys->pix_fmt == AV_PIX_FMT_YUV411P && mb_x >= (704 / 8)) {
                 uint8_t* d;
                 uint8_t* b = scratch;
@@ -519,7 +519,6 @@ static inline int dv_write_pack(enum dv_pack_type pack_id, DVVideoContext *c,
      *      compression scheme (if any).
      */
     int apt   = (c->sys->pix_fmt == AV_PIX_FMT_YUV420P ? 0 : 1);
-    int fs    = c->picture.top_field_first ? 0x00 : 0x40;
 
     uint8_t aspect = 0;
     if ((int)(av_q2d(c->avctx->sample_aspect_ratio) * c->avctx->width / c->avctx->height * 10) >= 17) /* 16:9 */
@@ -558,7 +557,7 @@ static inline int dv_write_pack(enum dv_pack_type pack_id, DVVideoContext *c,
           buf[2] = 0xc8 |     /* reserved -- always b11001xxx */
                    aspect;
           buf[3] = (1 << 7) | /* frame/field flag 1 -- frame, 0 -- field */
-                   fs       | /* first/second field flag 0 -- field 2, 1 -- field 1 */
+                   (1 << 6) | /* first/second field flag 0 -- field 2, 1 -- field 1 */
                    (1 << 5) | /* frame change flag 0 -- same picture as before, 1 -- different */
                    (1 << 4) | /* 1 - interlaced, 0 - noninterlaced */
                    0xc;       /* reserved -- always b1100 */
@@ -664,13 +663,15 @@ static int dvvideo_encode_frame(AVCodecContext *c, AVPacket *pkt,
     s->sys = avpriv_dv_codec_profile(c);
     if (!s->sys || ff_dv_init_dynamic_tables(s->sys))
         return -1;
-    if ((ret = ff_alloc_packet2(c, pkt, s->sys->frame_size)) < 0)
+    if ((ret = ff_alloc_packet(pkt, s->sys->frame_size)) < 0) {
+        av_log(c, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
+    }
 
-    c->pix_fmt           = s->sys->pix_fmt;
-    s->picture           = *frame;
-    s->picture.key_frame = 1;
-    s->picture.pict_type = AV_PICTURE_TYPE_I;
+    c->pix_fmt                = s->sys->pix_fmt;
+    s->frame                  = frame;
+    c->coded_frame->key_frame = 1;
+    c->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 
     s->buf = pkt->data;
     c->execute(c, dv_encode_video_segment, s->sys->work_chunks, NULL,
@@ -686,6 +687,12 @@ static int dvvideo_encode_frame(AVCodecContext *c, AVPacket *pkt,
     return 0;
 }
 
+static int dvvideo_encode_close(AVCodecContext *avctx)
+{
+    av_frame_free(&avctx->coded_frame);
+    return 0;
+}
+
 AVCodec ff_dvvideo_encoder = {
     .name           = "dvvideo",
     .long_name      = NULL_IF_CONFIG_SMALL("DV (Digital Video)"),
@@ -694,6 +701,7 @@ AVCodec ff_dvvideo_encoder = {
     .priv_data_size = sizeof(DVVideoContext),
     .init           = dvvideo_init_encoder,
     .encode2        = dvvideo_encode_frame,
+    .close          = dvvideo_encode_close,
     .capabilities   = CODEC_CAP_SLICE_THREADS,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV411P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
