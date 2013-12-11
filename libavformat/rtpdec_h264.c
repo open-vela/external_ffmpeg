@@ -2,20 +2,20 @@
  * RTP H264 Protocol (RFC3984)
  * Copyright (c) 2006 Ryan Martell
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -190,8 +190,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
     switch (type) {
     case 0:                    // undefined, but pass them through
     case 1:
-        if ((result = av_new_packet(pkt, len + sizeof(start_sequence))) < 0)
-            return result;
+        av_new_packet(pkt, len + sizeof(start_sequence));
         memcpy(pkt->data, start_sequence, sizeof(start_sequence));
         memcpy(pkt->data + sizeof(start_sequence), buf, len);
         COUNT_NAL_TYPE(data, nal);
@@ -293,14 +292,12 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
                 COUNT_NAL_TYPE(data, nal_type);
             if (start_bit) {
                 /* copy in the start sequence, and the reconstructed nal */
-                if ((result = av_new_packet(pkt, sizeof(start_sequence) + sizeof(nal) + len)) < 0)
-                    return result;
+                av_new_packet(pkt, sizeof(start_sequence) + sizeof(nal) + len);
                 memcpy(pkt->data, start_sequence, sizeof(start_sequence));
                 pkt->data[sizeof(start_sequence)] = reconstructed_nal;
                 memcpy(pkt->data + sizeof(start_sequence) + sizeof(nal), buf, len);
             } else {
-                if ((result = av_new_packet(pkt, len)) < 0)
-                    return result;
+                av_new_packet(pkt, len);
                 memcpy(pkt->data, buf, len);
             }
         } else {
