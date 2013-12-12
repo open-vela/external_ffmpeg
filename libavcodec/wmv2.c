@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The FFmpeg Project
+ * Copyright (c) 2002 The Libav Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -94,8 +94,8 @@ void ff_mspel_motion(MpegEncContext *s,
 {
     Wmv2Context * const w= (Wmv2Context*)s;
     uint8_t *ptr;
-    int dxy, mx, my, src_x, src_y, v_edge_pos;
-    ptrdiff_t offset, linesize, uvlinesize;
+    int dxy, offset, mx, my, src_x, src_y, v_edge_pos;
+    ptrdiff_t linesize, uvlinesize;
     int emu=0;
 
     dxy = ((motion_y & 1) << 1) | (motion_x & 1);
@@ -117,6 +117,7 @@ void ff_mspel_motion(MpegEncContext *s,
     uvlinesize = s->uvlinesize;
     ptr = ref_picture[0] + (src_y * linesize) + src_x;
 
+    if(s->flags&CODEC_FLAG_EMU_EDGE){
         if(src_x<1 || src_y<1 || src_x + 17  >= s->h_edge_pos
                               || src_y + h+1 >= v_edge_pos){
             s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
@@ -128,6 +129,7 @@ void ff_mspel_motion(MpegEncContext *s,
             ptr= s->edge_emu_buffer + 1 + s->linesize;
             emu=1;
         }
+    }
 
     s->dsp.put_mspel_pixels_tab[dxy](dest_y             , ptr             , linesize);
     s->dsp.put_mspel_pixels_tab[dxy](dest_y+8           , ptr+8           , linesize);
