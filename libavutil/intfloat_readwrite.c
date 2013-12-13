@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2005 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,11 +26,10 @@
  */
 
 #include <stdint.h>
+#include "common.h"
 #include "mathematics.h"
 #include "intfloat_readwrite.h"
-#include "version.h"
 
-#if FF_API_INTFLOAT
 double av_int2dbl(int64_t v){
     if((uint64_t)v+v > 0xFFEULL<<52)
         return NAN;
@@ -90,11 +89,10 @@ AVExtFloat av_dbl2ext(double d){
             ext.mantissa[i] = m>>(56-(i<<3));
     } else if (f != 0.0) {
         ext.exponent[0] = 0x7f; ext.exponent[1] = 0xff;
-        if (f != INFINITY)
+        if (!isinf(f))
             ext.mantissa[0] = ~0;
     }
     if (d < 0)
         ext.exponent[0] |= 0x80;
     return ext;
 }
-#endif /* FF_API_INTFLOAT */

@@ -6,25 +6,24 @@
  * Copyright (C) 2012 - 2013 Gildas Cocherel
  * Copyright (C) 2013 Vittorio Giovara
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/imgutils.h"
-
 #include "golomb.h"
 #include "hevc.h"
 
@@ -73,7 +72,7 @@ static const AVRational vui_sar[] = {
 int ff_hevc_decode_short_term_rps(HEVCContext *s, ShortTermRPS *rps,
                                   const HEVCSPS *sps, int is_slice_header)
 {
-    HEVCLocalContext *lc = &s->HEVClc;
+    HEVCLocalContext *lc = s->HEVClc;
     uint8_t rps_predict = 0;
     int delta_poc;
     int k0 = 0;
@@ -192,57 +191,58 @@ int ff_hevc_decode_short_term_rps(HEVCContext *s, ShortTermRPS *rps,
     return 0;
 }
 
-static int decode_profile_tier_level(HEVCLocalContext *lc, PTL *ptl,
-                                     int max_num_sub_layers)
+
+static int decode_profile_tier_level(HEVCContext *s,  ProfileTierLevel *ptl)
 {
-    int i, j;
+    int i;
+    HEVCLocalContext *lc = s->HEVClc;
     GetBitContext *gb = &lc->gb;
 
-    ptl->general_profile_space = get_bits(gb, 2);
-    ptl->general_tier_flag     = get_bits1(gb);
-    ptl->general_profile_idc   = get_bits(gb, 5);
+    ptl->profile_space = get_bits(gb, 2);
+    ptl->tier_flag     = get_bits1(gb);
+    ptl->profile_idc   = get_bits(gb, 5);
+    if (ptl->profile_idc == 1)
+        av_log(s->avctx, AV_LOG_DEBUG, "Main profile bitstream\n");
+    else if (ptl->profile_idc == 2)
+        av_log(s->avctx, AV_LOG_DEBUG, "Main10 profile bitstream\n");
+    else
+        av_log(s->avctx, AV_LOG_WARNING, "No profile indication! (%d)\n", ptl->profile_idc);
+
     for (i = 0; i < 32; i++)
-        ptl->general_profile_compatibility_flag[i] = get_bits1(gb);
-    skip_bits1(gb); // general_progressive_source_flag
-    skip_bits1(gb); // general_interlaced_source_flag
-    skip_bits1(gb); // general_non_packed_constraint_flag
-    skip_bits1(gb); // general_frame_only_constraint_flag
+        ptl->profile_compatibility_flag[i] = get_bits1(gb);
+    ptl->progressive_source_flag    = get_bits1(gb);
+    ptl->interlaced_source_flag     = get_bits1(gb);
+    ptl->non_packed_constraint_flag = get_bits1(gb);
+    ptl->frame_only_constraint_flag = get_bits1(gb);
     if (get_bits(gb, 16) != 0) // XXX_reserved_zero_44bits[0..15]
         return -1;
     if (get_bits(gb, 16) != 0) // XXX_reserved_zero_44bits[16..31]
         return -1;
     if (get_bits(gb, 12) != 0) // XXX_reserved_zero_44bits[32..43]
         return -1;
+    ptl->level_idc = get_bits(gb, 8);
+    return 0;
+}
 
-    ptl->general_level_idc = get_bits(gb, 8);
+static int parse_ptl(HEVCContext *s, PTL *ptl, int max_num_sub_layers)
+{
+    int i;
+    HEVCLocalContext *lc = s->HEVClc;
+    GetBitContext *gb = &lc->gb;
+    decode_profile_tier_level(s, &ptl->general_PTL);
+
     for (i = 0; i < max_num_sub_layers - 1; i++) {
         ptl->sub_layer_profile_present_flag[i] = get_bits1(gb);
         ptl->sub_layer_level_present_flag[i]   = get_bits1(gb);
     }
-    if (max_num_sub_layers - 1 > 0)
+    if (max_num_sub_layers - 1> 0)
         for (i = max_num_sub_layers - 1; i < 8; i++)
-            skip_bits(gb, 2);  // reserved_zero_2bits[i]
+            skip_bits(gb, 2); // reserved_zero_2bits[i]
     for (i = 0; i < max_num_sub_layers - 1; i++) {
         if (ptl->sub_layer_profile_present_flag[i]) {
-            ptl->sub_layer_profile_space[i] = get_bits(gb, 2);
-            ptl->sub_layer_tier_flag[i]     = get_bits(gb, 1);
-            ptl->sub_layer_profile_idc[i]   = get_bits(gb, 5);
-            for (j = 0; j < 32; j++)
-                ptl->sub_layer_profile_compatibility_flags[i][j] = get_bits1(gb);
-            skip_bits1(gb); // sub_layer_progressive_source_flag
-            skip_bits1(gb); // sub_layer_interlaced_source_flag
-            skip_bits1(gb); // sub_layer_non_packed_constraint_flag
-            skip_bits1(gb); // sub_layer_frame_only_constraint_flag
-
-            if (get_bits(gb, 16) != 0) // sub_layer_reserved_zero_44bits[0..15]
-                return -1;
-            if (get_bits(gb, 16) != 0) // sub_layer_reserved_zero_44bits[16..31]
-                return -1;
-            if (get_bits(gb, 12) != 0) // sub_layer_reserved_zero_44bits[32..43]
-                return -1;
+            decode_profile_tier_level(s, &ptl->sub_layer_PTL[i]);
+            ptl->sub_layer_PTL[i].level_idc = get_bits(gb, 8);
         }
-        if (ptl->sub_layer_level_present_flag[i])
-            ptl->sub_layer_level_idc[i] = get_bits(gb, 8);
     }
     return 0;
 }
@@ -250,7 +250,7 @@ static int decode_profile_tier_level(HEVCLocalContext *lc, PTL *ptl,
 static void decode_sublayer_hrd(HEVCContext *s, int nb_cpb,
                                 int subpic_params_present)
 {
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     int i;
 
     for (i = 0; i < nb_cpb; i++) {
@@ -268,7 +268,7 @@ static void decode_sublayer_hrd(HEVCContext *s, int nb_cpb,
 static void decode_hrd(HEVCContext *s, int common_inf_present,
                        int max_sublayers)
 {
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     int nal_params_present = 0, vcl_params_present = 0;
     int subpic_params_present = 0;
     int i;
@@ -325,13 +325,13 @@ static void decode_hrd(HEVCContext *s, int common_inf_present,
 int ff_hevc_decode_nal_vps(HEVCContext *s)
 {
     int i,j;
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     int vps_id = 0;
     HEVCVPS *vps;
     AVBufferRef *vps_buf = av_buffer_allocz(sizeof(*vps));
 
     if (!vps_buf)
-      return AVERROR(ENOMEM);
+        return AVERROR(ENOMEM);
     vps = (HEVCVPS*)vps_buf->data;
 
     av_log(s->avctx, AV_LOG_DEBUG, "Decoding VPS\n");
@@ -362,7 +362,7 @@ int ff_hevc_decode_nal_vps(HEVCContext *s)
         goto err;
     }
 
-    if (decode_profile_tier_level(&s->HEVClc, &vps->ptl, vps->vps_max_sub_layers) < 0) {
+    if (parse_ptl(s, &vps->ptl, vps->vps_max_sub_layers) < 0) {
         av_log(s->avctx, AV_LOG_ERROR, "Error decoding profile tier level.\n");
         goto err;
     }
@@ -423,7 +423,7 @@ err:
 static void decode_vui(HEVCContext *s, HEVCSPS *sps)
 {
     VUI *vui          = &sps->vui;
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     int sar_present;
 
     av_log(s->avctx, AV_LOG_DEBUG, "Decoding VUI\n");
@@ -503,6 +503,7 @@ static void decode_vui(HEVCContext *s, HEVCSPS *sps)
     }
 
     vui->vui_timing_info_present_flag = get_bits1(gb);
+
     if (vui->vui_timing_info_present_flag) {
         vui->vui_num_units_in_tick               = get_bits(gb, 32);
         vui->vui_time_scale                      = get_bits(gb, 32);
@@ -555,7 +556,7 @@ static void set_default_scaling_list_data(ScalingList *sl)
 
 static int scaling_list_data(HEVCContext *s, ScalingList *sl)
 {
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     uint8_t scaling_list_pred_mode_flag[4][6];
     int32_t scaling_list_dc_coef[2][6];
     int size_id, matrix_id, i, pos, delta;
@@ -613,7 +614,7 @@ static int scaling_list_data(HEVCContext *s, ScalingList *sl)
 int ff_hevc_decode_nal_sps(HEVCContext *s)
 {
     const AVPixFmtDescriptor *desc;
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     int ret    = 0;
     int sps_id = 0;
     int log2_diff_max_min_transform_block_size;
@@ -647,8 +648,8 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
     }
 
     skip_bits1(gb); // temporal_id_nesting_flag
-    if (decode_profile_tier_level(&s->HEVClc, &sps->ptl,
-                                  sps->max_sub_layers) < 0) {
+
+    if (parse_ptl(s, &sps->ptl, sps->max_sub_layers) < 0) {
         av_log(s->avctx, AV_LOG_ERROR, "error decoding profile tier level\n");
         ret = AVERROR_INVALIDDATA;
         goto err;
@@ -807,18 +808,8 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
 
     sps->pcm_enabled_flag = get_bits1(gb);
     if (sps->pcm_enabled_flag) {
-        int pcm_bit_depth_chroma;
         sps->pcm.bit_depth   = get_bits(gb, 4) + 1;
-        pcm_bit_depth_chroma = get_bits(gb, 4) + 1;
-        if (pcm_bit_depth_chroma != sps->pcm.bit_depth) {
-            av_log(s->avctx, AV_LOG_ERROR,
-                   "PCM Luma bit depth (%d) is different from PCM chroma"
-                   "bit depth (%d), this is unsupported.\n",
-                   sps->pcm.bit_depth, pcm_bit_depth_chroma);
-            ret = AVERROR_INVALIDDATA;
-            goto err;
-        }
-
+        sps->pcm.bit_depth_chroma = get_bits(gb, 4) + 1;
         sps->pcm.log2_min_pcm_cb_size = get_ue_golomb_long(gb) + 3;
         sps->pcm.log2_max_pcm_cb_size = sps->pcm.log2_min_pcm_cb_size +
                                         get_ue_golomb_long(gb);
@@ -994,7 +985,7 @@ static void hevc_pps_free(void *opaque, uint8_t *data)
 
 int ff_hevc_decode_nal_pps(HEVCContext *s)
 {
-    GetBitContext *gb = &s->HEVClc.gb;
+    GetBitContext *gb = &s->HEVClc->gb;
     HEVCSPS      *sps = NULL;
     int pic_area_in_ctbs, pic_area_in_min_cbs, pic_area_in_min_tbs;
     int log2_diff_ctb_min_tb_size;
