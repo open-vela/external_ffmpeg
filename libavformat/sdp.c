@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2007 Luca Abeni
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -438,7 +438,7 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                                      payload_type, config ? config : "");
             break;
         case AV_CODEC_ID_AAC:
-            if (fmt && fmt->oformat && fmt->oformat->priv_class &&
+            if (fmt && fmt->oformat->priv_class &&
                 av_opt_flag_is_set(fmt->priv_data, "rtpflags", "latm")) {
                 config = latm_context2config(c);
                 if (!config)
@@ -513,13 +513,6 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
             break;
         case AV_CODEC_ID_THEORA: {
             const char *pix_fmt;
-            if (c->extradata_size)
-                config = xiph_extradata2config(c);
-            else
-                av_log(c, AV_LOG_ERROR, "Theora configuation info missing\n");
-            if (!config)
-                return NULL;
-
             switch (c->pix_fmt) {
             case AV_PIX_FMT_YUV420P:
                 pix_fmt = "YCbCr-4:2:0";
@@ -532,9 +525,15 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                 break;
             default:
                 av_log(c, AV_LOG_ERROR, "Unsupported pixel format.\n");
-                av_free(config);
                 return NULL;
             }
+
+            if (c->extradata_size)
+                config = xiph_extradata2config(c);
+            else
+                av_log(c, AV_LOG_ERROR, "Theora configuation info missing\n");
+            if (!config)
+                return NULL;
 
             av_strlcatf(buff, size, "a=rtpmap:%d theora/90000\r\n"
                                     "a=fmtp:%d delivery-method=inline; "
@@ -576,20 +575,6 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
         case AV_CODEC_ID_SPEEX:
             av_strlcatf(buff, size, "a=rtpmap:%d speex/%d\r\n",
                                      payload_type, c->sample_rate);
-            if (c->codec) {
-                const char *mode;
-                uint64_t vad_option;
-
-                if (c->flags & CODEC_FLAG_QSCALE)
-                      mode = "on";
-                else if (!av_opt_get_int(c, "vad", AV_OPT_FLAG_ENCODING_PARAM, &vad_option) && vad_option)
-                      mode = "vad";
-                else
-                      mode = "off";
-
-                av_strlcatf(buff, size, "a=fmtp:%d vbr=%s\r\n",
-                                        payload_type, mode);
-            }
             break;
         case AV_CODEC_ID_OPUS:
             av_strlcatf(buff, size, "a=rtpmap:%d opus/48000\r\n",
