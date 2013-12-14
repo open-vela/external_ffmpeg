@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2006 Luca Barbato <lu_zero@gentoo.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@
 
 #include "libavcodec/vorbisdsp.h"
 
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
 static void vorbis_inverse_coupling_altivec(float *mag, float *ang,
                                             intptr_t blocksize)
 {
@@ -50,14 +50,14 @@ static void vorbis_inverse_coupling_altivec(float *mag, float *ang,
         vec_stl(m, 0, mag+i);
     }
 }
-#endif /* HAVE_ALTIVEC */
+#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
 
 av_cold void ff_vorbisdsp_init_ppc(VorbisDSPContext *c)
 {
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 
     c->vorbis_inverse_coupling = vorbis_inverse_coupling_altivec;
-#endif /* HAVE_ALTIVEC */
+#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
 }
