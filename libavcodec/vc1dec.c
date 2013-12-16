@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,8 @@
 #include "msmpeg4data.h"
 #include "unary.h"
 #include "mathops.h"
+#include "vdpau_internal.h"
+#include "libavutil/avassert.h"
 
 #undef NDEBUG
 #include <assert.h>
@@ -57,20 +59,6 @@ static const int offset_table2[9] = {  0,  1,  3,  7, 15, 31, 63, 127, 255 };
  * @{
  */
 
-/**
- * Imode types
- * @{
- */
-enum Imode {
-    IMODE_RAW,
-    IMODE_NORM2,
-    IMODE_DIFF2,
-    IMODE_NORM6,
-    IMODE_DIFF6,
-    IMODE_ROWSKIP,
-    IMODE_COLSKIP
-};
-/** @} */ //imode defines
 
 static void init_block_index(VC1Context *v)
 {
@@ -461,11 +449,13 @@ static void vc1_mc_1mv(VC1Context *v, int dir)
         s->vdsp.emulated_edge_mc(uvbuf, srcU,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
         s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
         srcU = uvbuf;
         srcV = uvbuf + 16;
         /* if we deal with range reduction we need to scale source blocks */
@@ -630,6 +620,8 @@ static void vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
             tx = (chosen_mv[f][0][0] + chosen_mv[f][1][0]) / 2;
             ty = (chosen_mv[f][0][1] + chosen_mv[f][1][1]) / 2;
             break;
+        default:
+            av_assert0(0);
         }
         s->current_picture.motion_val[1][s->block_index[0] + v->blocks_off][0] = tx;
         s->current_picture.motion_val[1][s->block_index[0] + v->blocks_off][1] = ty;
@@ -1011,21 +1003,26 @@ static void vc1_mc_4mv_chroma4(VC1Context *v, int dir, int dir2, int avg)
         uvsrc_x = av_clip(uvsrc_x, -8, s->avctx->coded_width  >> 1);
         uvsrc_y = av_clip(uvsrc_y, -8, s->avctx->coded_height >> 1);
         if (i < 2 ? dir : dir2) {
-            srcU = s->next_picture.f.data[1] + uvsrc_y * s->uvlinesize + uvsrc_x;
-            srcV = s->next_picture.f.data[2] + uvsrc_y * s->uvlinesize + uvsrc_x;
+            srcU = s->next_picture.f.data[1];
+            srcV = s->next_picture.f.data[2];
             lutuv  = v->next_lutuv;
             use_ic = v->next_use_ic;
         } else {
-            srcU = s->last_picture.f.data[1] + uvsrc_y * s->uvlinesize + uvsrc_x;
-            srcV = s->last_picture.f.data[2] + uvsrc_y * s->uvlinesize + uvsrc_x;
+            srcU = s->last_picture.f.data[1];
+            srcV = s->last_picture.f.data[2];
             lutuv  = v->last_lutuv;
             use_ic = v->last_use_ic;
         }
+        if (!srcU)
+            return;
+        srcU += uvsrc_y * s->uvlinesize + uvsrc_x;
+        srcV += uvsrc_y * s->uvlinesize + uvsrc_x;
         uvmx_field[i] = (uvmx_field[i] & 3) << 1;
         uvmy_field[i] = (uvmy_field[i] & 3) << 1;
 
         if (fieldmv && !(uvsrc_y & 1))
-            v_edge_pos--;
+            v_edge_pos = (s->v_edge_pos >> 1) - 1;
+
         if (fieldmv && (uvsrc_y & 1) && uvsrc_y < 2)
             uvsrc_y--;
         if (use_ic
@@ -1214,6 +1211,7 @@ static av_always_inline void get_mvdata_interlaced(VC1Context *v, int *dmv_x,
         }
     }
     else {
+        av_assert0(index < esc);
         if (extend_x)
             offs_tab = offset_table2;
         else
@@ -1676,7 +1674,7 @@ static inline void vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
     MpegEncContext *s = &v->s;
     int xy, wrap, off = 0;
     int A[2], B[2], C[2];
-    int px, py;
+    int px = 0, py = 0;
     int a_valid = 0, b_valid = 0, c_valid = 0;
     int field_a, field_b, field_c; // 0: same, 1: opposit
     int total_valid, num_samefield, num_oppfield;
@@ -1810,11 +1808,10 @@ static inline void vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 px = mid_pred(A[0], B[0], C[0]);
                 py = mid_pred(A[1], B[1], C[1]);
             } else if (total_valid) {
-                if (a_valid) { px = A[0]; py = A[1]; }
-                if (b_valid) { px = B[0]; py = B[1]; }
-                if (c_valid) { px = C[0]; py = C[1]; }
-            } else
-                px = py = 0;
+                if      (a_valid) { px = A[0]; py = A[1]; }
+                else if (b_valid) { px = B[0]; py = B[1]; }
+                else              { px = C[0]; py = C[1]; }
+            }
         }
     } else {
         if (a_valid)
@@ -1853,27 +1850,28 @@ static inline void vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 } else if (!field_b && b_valid) {
                     px = B[0];
                     py = B[1];
-                } else if (c_valid) {
+                } else /*if (c_valid)*/ {
+                    av_assert1(c_valid);
                     px = C[0];
                     py = C[1];
-                } else px = py = 0;
+                } /*else px = py = 0;*/
             } else {
                 if (field_a && a_valid) {
                     px = A[0];
                     py = A[1];
-                } else if (field_b && b_valid) {
+                } else /*if (field_b && b_valid)*/ {
+                    av_assert1(field_b && b_valid);
                     px = B[0];
                     py = B[1];
-                } else if (c_valid) {
+                } /*else if (c_valid) {
                     px = C[0];
                     py = C[1];
-                }
+                }*/
             }
         } else if (total_valid == 1) {
             px = (a_valid) ? A[0] : ((b_valid) ? B[0] : C[0]);
             py = (a_valid) ? A[1] : ((b_valid) ? B[1] : C[1]);
-        } else
-            px = py = 0;
+        }
     }
 
     /* store MV using signed modulus of MV range defined in 4.11 */
@@ -1974,11 +1972,13 @@ static void vc1_interp_mc(VC1Context *v)
         s->vdsp.emulated_edge_mc(uvbuf, srcU,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
         s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
         srcU = uvbuf;
         srcV = uvbuf + 16;
         /* if we deal with range reduction we need to scale source blocks */
@@ -2795,7 +2795,7 @@ static int vc1_decode_i_block_adv(VC1Context *v, int16_t block[64], int n,
     MpegEncContext *s = &v->s;
     int dc_pred_dir = 0; /* Direction of the DC prediction used */
     int i;
-    int16_t *dc_val;
+    int16_t *dc_val = NULL;
     int16_t *ac_val, *ac_val2;
     int dcdiff;
     int a_avail = v->a_avail, c_avail = v->c_avail;
@@ -3007,7 +3007,7 @@ static int vc1_decode_intra_block(VC1Context *v, int16_t block[64], int n,
     MpegEncContext *s = &v->s;
     int dc_pred_dir = 0; /* Direction of the DC prediction used */
     int i;
-    int16_t *dc_val;
+    int16_t *dc_val = NULL;
     int16_t *ac_val, *ac_val2;
     int dcdiff;
     int mb_pos = s->mb_x + s->mb_y * s->mb_stride;
@@ -3782,7 +3782,7 @@ static int vc1_decode_p_mb_intfr(VC1Context *v)
     int idx_mbmode = 0, mvbp;
     int stride_y, fieldtx;
 
-    mquant = v->pq; /* Loosy initialization */
+    mquant = v->pq; /* Lossy initialization */
 
     if (v->skip_is_raw)
         skipped = get_bits1(gb);
@@ -3988,11 +3988,11 @@ static int vc1_decode_p_mb_intfi(VC1Context *v)
     int val; /* temp values */
     int first_block = 1;
     int dst_idx, off;
-    int pred_flag;
+    int pred_flag = 0;
     int block_cbp = 0, pat, block_tt = 0;
     int idx_mbmode = 0;
 
-    mquant = v->pq; /* Loosy initialization */
+    mquant = v->pq; /* Lossy initialization */
 
     idx_mbmode = get_vlc2(gb, v->mbmode_vlc->table, VC1_IF_MBMODE_VLC_BITS, 2);
     if (idx_mbmode <= 1) { // intra MB
@@ -4260,9 +4260,9 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
     int fwd;
     int dmv_x[2], dmv_y[2], pred_flag[2];
     int bmvtype = BMV_TYPE_BACKWARD;
-    int idx_mbmode, interpmvp;
+    int idx_mbmode;
 
-    mquant      = v->pq; /* Loosy initialization */
+    mquant      = v->pq; /* Lossy initialization */
     s->mb_intra = 0;
 
     idx_mbmode = get_vlc2(gb, v->mbmode_vlc->table, VC1_IF_MBMODE_VLC_BITS, 2);
@@ -4313,6 +4313,7 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
         else
             fwd = v->forward_mb_plane[mb_pos];
         if (idx_mbmode <= 5) { // 1-MV
+            int interpmvp = 0;
             dmv_x[0]     = dmv_x[1] = dmv_y[0] = dmv_y[1] = 0;
             pred_flag[0] = pred_flag[1] = 0;
             if (fwd)
@@ -4335,7 +4336,7 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
             if (bmvtype != BMV_TYPE_DIRECT && idx_mbmode & 1) {
                 get_mvdata_interlaced(v, &dmv_x[bmvtype == BMV_TYPE_BACKWARD], &dmv_y[bmvtype == BMV_TYPE_BACKWARD], &pred_flag[bmvtype == BMV_TYPE_BACKWARD]);
             }
-            if (bmvtype == BMV_TYPE_INTERPOLATED && interpmvp) {
+            if (interpmvp) {
                 get_mvdata_interlaced(v, &dmv_x[1], &dmv_y[1], &pred_flag[1]);
             }
             if (bmvtype == BMV_TYPE_DIRECT) {
@@ -4548,9 +4549,9 @@ static int vc1_decode_b_mb_intfr(VC1Context *v)
             if (mb_has_coeffs)
                 cbp = 1 + get_vlc2(&v->s.gb, v->cbpcy_vlc->table, VC1_CBPCY_P_VLC_BITS, 2);
             if (!direct) {
-                if (bmvtype == BMV_TYPE_INTERPOLATED & twomv) {
+                if (bmvtype == BMV_TYPE_INTERPOLATED && twomv) {
                     v->fourmvbp = get_vlc2(gb, v->fourmvbp_vlc->table, VC1_4MV_BLOCK_PATTERN_VLC_BITS, 1);
-                } else if (bmvtype == BMV_TYPE_INTERPOLATED | twomv) {
+                } else if (bmvtype == BMV_TYPE_INTERPOLATED || twomv) {
                     v->twomvbp = get_vlc2(gb, v->twomvbp_vlc->table, VC1_2MV_BLOCK_PATTERN_VLC_BITS, 1);
                 }
             }
@@ -5273,7 +5274,7 @@ static void vc1_sprite_parse_transform(GetBitContext* gb, int c[7])
         c[6] = 1 << 16;
 }
 
-static void vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
+static int vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
 {
     AVCodecContext *avctx = v->s.avctx;
     int sprite, i;
@@ -5317,7 +5318,7 @@ static void vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
         sd->effect_pcount2 = get_bits(gb, 16);
         if (sd->effect_pcount2 > 10) {
             av_log(avctx, AV_LOG_ERROR, "Too many effect parameters\n");
-            return;
+            return AVERROR_INVALIDDATA;
         } else if (sd->effect_pcount2) {
             i = -1;
             av_log(avctx, AV_LOG_DEBUG, "Effect params 2: ");
@@ -5334,10 +5335,14 @@ static void vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
         av_log(avctx, AV_LOG_DEBUG, "Effect flag set\n");
 
     if (get_bits_count(gb) >= gb->size_in_bits +
-       (avctx->codec_id == AV_CODEC_ID_WMV3IMAGE ? 64 : 0))
+       (avctx->codec_id == AV_CODEC_ID_WMV3IMAGE ? 64 : 0)) {
         av_log(avctx, AV_LOG_ERROR, "Buffer overrun\n");
+        return AVERROR_INVALIDDATA;
+    }
     if (get_bits_count(gb) < gb->size_in_bits - 8)
         av_log(avctx, AV_LOG_WARNING, "Buffer not fully read\n");
+
+    return 0;
 }
 
 static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
@@ -5349,7 +5354,7 @@ static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
     int ysub[2];
     MpegEncContext *s = &v->s;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i <= v->two_sprites; i++) {
         xoff[i] = av_clip(sd->coefs[i][2], 0, v->sprite_width-1 << 16);
         xadv[i] = sd->coefs[i][0];
         if (xadv[i] != 1<<16 || (v->sprite_width << 16) - (v->output_width << 16) - xoff[i])
@@ -5427,7 +5432,7 @@ static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
         }
 
         if (!plane) {
-            for (i = 0; i < 2; i++) {
+            for (i = 0; i <= v->two_sprites; i++) {
                 xoff[i] >>= 1;
                 yoff[i] >>= 1;
             }
@@ -5439,11 +5444,16 @@ static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
 
 static int vc1_decode_sprites(VC1Context *v, GetBitContext* gb)
 {
+    int ret;
     MpegEncContext *s     = &v->s;
     AVCodecContext *avctx = s->avctx;
     SpriteData sd;
 
-    vc1_parse_sprites(v, gb, &sd);
+    memset(&sd, 0, sizeof(sd));
+
+    ret = vc1_parse_sprites(v, gb, &sd);
+    if (ret < 0)
+        return ret;
 
     if (!s->current_picture.f.data[0]) {
         av_log(avctx, AV_LOG_ERROR, "Got no sprites\n");
@@ -5456,10 +5466,8 @@ static int vc1_decode_sprites(VC1Context *v, GetBitContext* gb)
     }
 
     av_frame_unref(v->sprite_output_frame);
-    if (ff_get_buffer(avctx, v->sprite_output_frame, 0) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
-    }
+    if ((ret = ff_get_buffer(avctx, v->sprite_output_frame, 0)) < 0)
+        return ret;
 
     vc1_draw_sprites(v, &sd);
 
@@ -5539,7 +5547,8 @@ av_cold int ff_vc1_decode_init_alloc_tables(VC1Context *v)
 
     if (s->avctx->codec_id == AV_CODEC_ID_WMV3IMAGE || s->avctx->codec_id == AV_CODEC_ID_VC1IMAGE) {
         for (i = 0; i < 4; i++)
-            if (!(v->sr_rows[i >> 1][i & 1] = av_malloc(v->output_width))) return -1;
+            if (!(v->sr_rows[i >> 1][i & 1] = av_malloc(v->output_width)))
+                return AVERROR(ENOMEM);
     }
 
     if (!v->mv_type_mb_plane || !v->direct_mb_plane || !v->acpred_plane || !v->over_flags_plane ||
@@ -5585,6 +5594,7 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
     VC1Context *v = avctx->priv_data;
     MpegEncContext *s = &v->s;
     GetBitContext gb;
+    int ret;
 
     /* save the container output size for WMImage */
     v->output_width  = avctx->width;
@@ -5601,8 +5611,18 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
     avctx->flags |= CODEC_FLAG_EMU_EDGE;
     v->s.flags   |= CODEC_FLAG_EMU_EDGE;
 
-    if (ff_vc1_init_common(v) < 0)
-        return -1;
+    if ((ret = ff_vc1_init_common(v)) < 0)
+        return ret;
+    // ensure static VLC tables are initialized
+    if ((ret = ff_msmpeg4_decode_init(avctx)) < 0)
+        return ret;
+    if ((ret = ff_vc1_decode_init_alloc_tables(v)) < 0)
+        return ret;
+    // Hack to ensure the above functions will be called
+    // again once we know all necessary settings.
+    // That this is necessary might indicate a bug.
+    ff_vc1_decode_end(avctx);
+
     ff_h264chroma_init(&v->h264chroma, 8);
     ff_vc1dsp_init(&v->vc1dsp);
 
@@ -5616,8 +5636,8 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
 
         init_get_bits(&gb, avctx->extradata, avctx->extradata_size*8);
 
-        if (ff_vc1_decode_sequence_header(avctx, v, &gb) < 0)
-          return -1;
+        if ((ret = ff_vc1_decode_sequence_header(avctx, v, &gb)) < 0)
+          return ret;
 
         count = avctx->extradata_size*8 - get_bits_count(&gb);
         if (count > 0) {
@@ -5651,16 +5671,16 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
             init_get_bits(&gb, buf2, buf2_size * 8);
             switch (AV_RB32(start)) {
             case VC1_CODE_SEQHDR:
-                if (ff_vc1_decode_sequence_header(avctx, v, &gb) < 0) {
+                if ((ret = ff_vc1_decode_sequence_header(avctx, v, &gb)) < 0) {
                     av_free(buf2);
-                    return -1;
+                    return ret;
                 }
                 seq_initialized = 1;
                 break;
             case VC1_CODE_ENTRYPOINT:
-                if (ff_vc1_decode_entry_point(avctx, v, &gb) < 0) {
+                if ((ret = ff_vc1_decode_entry_point(avctx, v, &gb)) < 0) {
                     av_free(buf2);
-                    return -1;
+                    return ret;
                 }
                 ep_initialized = 1;
                 break;
@@ -5707,6 +5727,11 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
             v->sprite_height > 1 << 14 ||
             v->output_width  > 1 << 14 ||
             v->output_height > 1 << 14) return -1;
+
+        if ((v->sprite_width&1) || (v->sprite_height&1)) {
+            avpriv_request_sample(avctx, "odd sprites support");
+            return AVERROR_PATCHWELCOME;
+        }
     }
     return 0;
 }
@@ -5758,13 +5783,18 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
     MpegEncContext *s = &v->s;
     AVFrame *pict = data;
     uint8_t *buf2 = NULL;
-    const uint8_t *buf_start = buf;
-    int mb_height, n_slices1;
+    const uint8_t *buf_start = buf, *buf_start_second_field = NULL;
+    int mb_height, n_slices1=-1;
     struct {
         uint8_t *buf;
         GetBitContext gb;
         int mby_start;
     } *slices = NULL, *tmp;
+
+    v->second_field = 0;
+
+    if(s->flags & CODEC_FLAG_LOW_DELAY)
+        s->low_delay = 1;
 
     /* no supplementary picture */
     if (buf_size == 0 || (buf_size == 4 && AV_RB32(buf) == VC1_CODE_ENDOFSEQ)) {
@@ -5777,13 +5807,22 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
             *got_frame = 1;
         }
 
-        return 0;
+        return buf_size;
+    }
+
+    if (s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU) {
+        if (v->profile < PROFILE_ADVANCED)
+            avctx->pix_fmt = AV_PIX_FMT_VDPAU_WMV3;
+        else
+            avctx->pix_fmt = AV_PIX_FMT_VDPAU_VC1;
     }
 
     //for advanced profile we may need to parse and unescape data
     if (avctx->codec_id == AV_CODEC_ID_VC1 || avctx->codec_id == AV_CODEC_ID_VC1IMAGE) {
         int buf_size2 = 0;
         buf2 = av_mallocz(buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
+        if (!buf2)
+            return AVERROR(ENOMEM);
 
         if (IS_MARKER(AV_RB32(buf))) { /* frame starts with marker and needs to be parsed */
             const uint8_t *start, *end, *next;
@@ -5796,12 +5835,16 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                 if (size <= 0) continue;
                 switch (AV_RB32(start)) {
                 case VC1_CODE_FRAME:
-                    if (avctx->hwaccel)
+                    if (avctx->hwaccel ||
+                        s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU)
                         buf_start = start;
                     buf_size2 = vc1_unescape_buffer(start + 4, size, buf2);
                     break;
                 case VC1_CODE_FIELD: {
                     int buf_size3;
+                    if (avctx->hwaccel ||
+                        s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU)
+                        buf_start_second_field = start;
                     tmp = av_realloc(slices, sizeof(*slices) * (n_slices+1));
                     if (!tmp)
                         goto err;
@@ -5815,7 +5858,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                                   buf_size3 << 3);
                     /* assuming that the field marker is at the exact middle,
                        hope it's correct */
-                    slices[n_slices].mby_start = s->mb_height >> 1;
+                    slices[n_slices].mby_start = s->mb_height + 1 >> 1;
                     n_slices1 = n_slices - 1; // index of the last slice of the first field
                     n_slices++;
                     break;
@@ -5853,6 +5896,9 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                 av_log(avctx, AV_LOG_ERROR, "Error in WVC1 interlaced frame\n");
                 goto err;
             } else { // found field marker, unescape second field
+                if (avctx->hwaccel ||
+                    s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU)
+                    buf_start_second_field = divider;
                 tmp = av_realloc(slices, sizeof(*slices) * (n_slices+1));
                 if (!tmp)
                     goto err;
@@ -5863,7 +5909,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                 buf_size3 = vc1_unescape_buffer(divider + 4, buf + buf_size - divider - 4, slices[n_slices].buf);
                 init_get_bits(&slices[n_slices].gb, slices[n_slices].buf,
                               buf_size3 << 3);
-                slices[n_slices].mby_start = s->mb_height >> 1;
+                slices[n_slices].mby_start = s->mb_height + 1 >> 1;
                 n_slices1 = n_slices - 1;
                 n_slices++;
             }
@@ -5910,6 +5956,8 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
         s->low_delay = !avctx->has_b_frames || v->res_sprite;
 
         if (v->profile == PROFILE_ADVANCED) {
+            if(avctx->coded_width<=1 || avctx->coded_height<=1)
+                goto err;
             s->h_edge_pos = avctx->coded_width;
             s->v_edge_pos = avctx->coded_height;
         }
@@ -5929,9 +5977,17 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
     }
     v->first_pic_header_flag = 0;
 
+    if (avctx->debug & FF_DEBUG_PICT_INFO)
+        av_log(v->s.avctx, AV_LOG_DEBUG, "pict_type: %c\n", av_get_picture_type_char(s->pict_type));
+
     if ((avctx->codec_id == AV_CODEC_ID_WMV3IMAGE || avctx->codec_id == AV_CODEC_ID_VC1IMAGE)
         && s->pict_type != AV_PICTURE_TYPE_I) {
         av_log(v->s.avctx, AV_LOG_ERROR, "Sprite decoder: expected I-frame\n");
+        goto err;
+    }
+
+    if ((s->mb_height >> v->field_mode) == 0) {
+        av_log(v->s.avctx, AV_LOG_ERROR, "image too short\n");
         goto err;
     }
 
@@ -5960,6 +6016,9 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
         goto err;
     }
 
+    v->s.current_picture_ptr->f.interlaced_frame = (v->fcm != PROGRESSIVE);
+    v->s.current_picture_ptr->f.top_field_first  = v->tff;
+
     // process pulldown flags
     s->current_picture_ptr->f.repeat_pict = 0;
     // Pulldown flags are only valid when 'broadcast' has been set.
@@ -5975,13 +6034,51 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
     s->me.qpel_put = s->dsp.put_qpel_pixels_tab;
     s->me.qpel_avg = s->dsp.avg_qpel_pixels_tab;
 
-    if (avctx->hwaccel) {
-        if (avctx->hwaccel->start_frame(avctx, buf, buf_size) < 0)
-            goto err;
-        if (avctx->hwaccel->decode_slice(avctx, buf_start, (buf + buf_size) - buf_start) < 0)
-            goto err;
-        if (avctx->hwaccel->end_frame(avctx) < 0)
-            goto err;
+    if ((CONFIG_VC1_VDPAU_DECODER)
+        &&s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU) {
+        if (v->field_mode && buf_start_second_field) {
+            ff_vdpau_vc1_decode_picture(s, buf_start, buf_start_second_field - buf_start);
+            ff_vdpau_vc1_decode_picture(s, buf_start_second_field, (buf + buf_size) - buf_start_second_field);
+        } else {
+            ff_vdpau_vc1_decode_picture(s, buf_start, (buf + buf_size) - buf_start);
+        }
+    } else if (avctx->hwaccel) {
+        if (v->field_mode && buf_start_second_field) {
+            // decode first field
+            s->picture_structure = PICT_BOTTOM_FIELD - v->tff;
+            if (avctx->hwaccel->start_frame(avctx, buf_start, buf_start_second_field - buf_start) < 0)
+                goto err;
+            if (avctx->hwaccel->decode_slice(avctx, buf_start, buf_start_second_field - buf_start) < 0)
+                goto err;
+            if (avctx->hwaccel->end_frame(avctx) < 0)
+                goto err;
+
+            // decode second field
+            s->gb = slices[n_slices1 + 1].gb;
+            s->picture_structure = PICT_TOP_FIELD + v->tff;
+            v->second_field = 1;
+            v->pic_header_flag = 0;
+            if (ff_vc1_parse_frame_header_adv(v, &s->gb) < 0) {
+                av_log(avctx, AV_LOG_ERROR, "parsing header for second field failed");
+                goto err;
+            }
+            v->s.current_picture_ptr->f.pict_type = v->s.pict_type;
+
+            if (avctx->hwaccel->start_frame(avctx, buf_start_second_field, (buf + buf_size) - buf_start_second_field) < 0)
+                goto err;
+            if (avctx->hwaccel->decode_slice(avctx, buf_start_second_field, (buf + buf_size) - buf_start_second_field) < 0)
+                goto err;
+            if (avctx->hwaccel->end_frame(avctx) < 0)
+                goto err;
+        } else {
+            s->picture_structure = PICT_FRAME;
+            if (avctx->hwaccel->start_frame(avctx, buf_start, (buf + buf_size) - buf_start) < 0)
+                goto err;
+            if (avctx->hwaccel->decode_slice(avctx, buf_start, (buf + buf_size) - buf_start) < 0)
+                goto err;
+            if (avctx->hwaccel->end_frame(avctx) < 0)
+                goto err;
+        }
     } else {
         int header_ret = 0;
 
@@ -5998,10 +6095,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
         }
         mb_height = s->mb_height >> v->field_mode;
 
-        if (!mb_height) {
-            av_log(v->s.avctx, AV_LOG_ERROR, "Invalid mb_height.\n");
-            goto err;
-        }
+        av_assert0 (mb_height > 0);
 
         for (i = 0; i <= n_slices; i++) {
             if (i > 0 &&  slices[i - 1].mby_start >= mb_height) {
@@ -6012,7 +6106,8 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                     continue;
                 }
                 v->second_field = 1;
-                v->blocks_off   = s->mb_width  * s->mb_height << 1;
+                av_assert0((s->mb_height & 1) == 0);
+                v->blocks_off   = s->b8_stride * (s->mb_height&~1);
                 v->mb_off       = s->mb_stride * s->mb_height >> 1;
             } else {
                 v->second_field = 0;
@@ -6043,8 +6138,21 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
             s->start_mb_y = (i == 0) ? 0 : FFMAX(0, slices[i-1].mby_start % mb_height);
             if (!v->field_mode || v->second_field)
                 s->end_mb_y = (i == n_slices     ) ? mb_height : FFMIN(mb_height, slices[i].mby_start % mb_height);
-            else
+            else {
+                if (i >= n_slices) {
+                    av_log(v->s.avctx, AV_LOG_ERROR, "first field slice count too large\n");
+                    continue;
+                }
                 s->end_mb_y = (i <= n_slices1 + 1) ? mb_height : FFMIN(mb_height, slices[i].mby_start % mb_height);
+            }
+            if (s->end_mb_y <= s->start_mb_y) {
+                av_log(v->s.avctx, AV_LOG_ERROR, "end mb y %d %d invalid\n", s->end_mb_y, s->start_mb_y);
+                continue;
+            }
+            if (!v->p_frame_skipped && s->pict_type != AV_PICTURE_TYPE_I && !v->cbpcy_vlc) {
+                av_log(v->s.avctx, AV_LOG_ERROR, "missing cbpcy_vlc\n");
+                continue;
+            }
             ff_vc1_decode_blocks(v);
             if (i != n_slices)
                 s->gb = slices[i].gb;
@@ -6065,6 +6173,8 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                 get_bits_count(&s->gb), s->gb.size_in_bits);
 //  if (get_bits_count(&s->gb) > buf_size * 8)
 //      return -1;
+        if(s->er.error_occurred && s->pict_type == AV_PICTURE_TYPE_B)
+            goto err;
         if (!v->field_mode)
             ff_er_frame_end(&s->er);
     }
@@ -6088,12 +6198,12 @@ image:
         if (s->pict_type == AV_PICTURE_TYPE_B || s->low_delay) {
             if ((ret = av_frame_ref(pict, &s->current_picture_ptr->f)) < 0)
                 goto err;
-            ff_print_debug_info(s, s->current_picture_ptr);
+            ff_print_debug_info(s, s->current_picture_ptr, pict);
             *got_frame = 1;
         } else if (s->last_picture_ptr != NULL) {
             if ((ret = av_frame_ref(pict, &s->last_picture_ptr->f)) < 0)
                 goto err;
-            ff_print_debug_info(s, s->last_picture_ptr);
+            ff_print_debug_info(s, s->last_picture_ptr, pict);
             *got_frame = 1;
         }
     }
@@ -6164,6 +6274,38 @@ AVCodec ff_wmv3_decoder = {
     .flush          = ff_mpeg_flush,
     .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY,
     .pix_fmts       = vc1_hwaccel_pixfmt_list_420,
+    .profiles       = NULL_IF_CONFIG_SMALL(profiles)
+};
+#endif
+
+#if CONFIG_WMV3_VDPAU_DECODER
+AVCodec ff_wmv3_vdpau_decoder = {
+    .name           = "wmv3_vdpau",
+    .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Video 9 VDPAU"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_WMV3,
+    .priv_data_size = sizeof(VC1Context),
+    .init           = vc1_decode_init,
+    .close          = ff_vc1_decode_end,
+    .decode         = vc1_decode_frame,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY | CODEC_CAP_HWACCEL_VDPAU,
+    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_VDPAU_WMV3, AV_PIX_FMT_NONE },
+    .profiles       = NULL_IF_CONFIG_SMALL(profiles)
+};
+#endif
+
+#if CONFIG_VC1_VDPAU_DECODER
+AVCodec ff_vc1_vdpau_decoder = {
+    .name           = "vc1_vdpau",
+    .long_name      = NULL_IF_CONFIG_SMALL("SMPTE VC-1 VDPAU"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_VC1,
+    .priv_data_size = sizeof(VC1Context),
+    .init           = vc1_decode_init,
+    .close          = ff_vc1_decode_end,
+    .decode         = vc1_decode_frame,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY | CODEC_CAP_HWACCEL_VDPAU,
+    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_VDPAU_VC1, AV_PIX_FMT_NONE },
     .profiles       = NULL_IF_CONFIG_SMALL(profiles)
 };
 #endif
