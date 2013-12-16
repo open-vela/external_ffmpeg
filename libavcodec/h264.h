@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,6 +45,8 @@
 #define MAX_MMCO_COUNT         66
 
 #define MAX_DELAYED_PIC_COUNT  16
+
+#define MAX_MBPAIR_SIZE (256*1024) // a tighter bound could be calculated if someone cares about a few bytes
 
 /* Compiling in interlaced support reduces the speed
  * of progressive decoding by about 2%. */
@@ -85,6 +87,7 @@
 #define CABAC(h) h->pps.cabac
 #endif
 
+#define CHROMA(h)    (h->sps.chroma_format_idc)
 #define CHROMA422(h) (h->sps.chroma_format_idc == 2)
 #define CHROMA444(h) (h->sps.chroma_format_idc == 3)
 
@@ -95,7 +98,7 @@
 #define IS_REF0(a)         ((a) & MB_TYPE_REF0)
 #define IS_8x8DCT(a)       ((a) & MB_TYPE_8x8DCT)
 
-#define QP_MAX_NUM (51 + 2 * 6)           // The maximum supported qp
+#define QP_MAX_NUM (51 + 6*6)           // The maximum supported qp
 
 /* NAL unit types */
 enum {
@@ -122,6 +125,7 @@ enum {
 typedef enum {
     SEI_BUFFERING_PERIOD            = 0,   ///< buffering period (H.264, D.1.1)
     SEI_TYPE_PIC_TIMING             = 1,   ///< picture timing
+    SEI_TYPE_USER_DATA_ITU_T_T35    = 4,   ///< user data registered by ITU-T Recommendation T.35
     SEI_TYPE_USER_DATA_UNREGISTERED = 5,   ///< unregistered user data
     SEI_TYPE_RECOVERY_POINT         = 6,   ///< recovery point (frame # to decoder sync)
     SEI_TYPE_FRAME_PACKING          = 45,  ///< frame packing arrangement
@@ -141,6 +145,19 @@ typedef enum {
     SEI_PIC_STRUCT_FRAME_DOUBLING    = 7, ///<  7: %frame doubling
     SEI_PIC_STRUCT_FRAME_TRIPLING    = 8  ///<  8: %frame tripling
 } SEI_PicStructType;
+
+/**
+ * frame_packing_arrangement types
+ */
+typedef enum {
+    SEI_FPA_TYPE_CHECKERBOARD        = 0,
+    SEI_FPA_TYPE_INTERLEAVE_COLUMN   = 1,
+    SEI_FPA_TYPE_INTERLEAVE_ROW      = 2,
+    SEI_FPA_TYPE_SIDE_BY_SIDE        = 3,
+    SEI_FPA_TYPE_TOP_BOTTOM          = 4,
+    SEI_FPA_TYPE_INTERLEAVE_TEMPORAL = 5,
+    SEI_FPA_TYPE_2D                  = 6,
+} SEI_FpaType;
 
 /**
  * Sequence parameter set
@@ -225,9 +242,21 @@ typedef struct PPS {
     int transform_8x8_mode;         ///< transform_8x8_mode_flag
     uint8_t scaling_matrix4[6][16];
     uint8_t scaling_matrix8[6][64];
-    uint8_t chroma_qp_table[2][64]; ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
+    uint8_t chroma_qp_table[2][QP_MAX_NUM+1];  ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
     int chroma_qp_diff;
 } PPS;
+
+/**
+ * Frame Packing Arrangement Type
+ */
+typedef struct FPA {
+    int         frame_packing_arrangement_id;
+    int         frame_packing_arrangement_cancel_flag; ///< is previous arrangement canceled, -1 if never received
+    SEI_FpaType frame_packing_arrangement_type;
+    int         frame_packing_arrangement_repetition_period;
+    int         content_interpretation_type;
+    int         quincunx_sampling_flag;
+} FPA;
 
 /**
  * Memory management control operation opcode.
@@ -256,7 +285,6 @@ typedef struct MMCO {
  */
 typedef struct H264Context {
     AVCodecContext *avctx;
-    DSPContext       dsp;
     VideoDSPContext vdsp;
     H264DSPContext h264dsp;
     H264ChromaContext h264chroma;
@@ -264,6 +292,7 @@ typedef struct H264Context {
     MotionEstContext me;
     ParseContext parse_context;
     GetBitContext gb;
+    DSPContext       dsp;
     ERContext er;
 
     Picture *DPB;
@@ -446,12 +475,12 @@ typedef struct H264Context {
     uint8_t field_scan[16];
     uint8_t field_scan8x8[64];
     uint8_t field_scan8x8_cavlc[64];
-    const uint8_t *zigzag_scan_q0;
-    const uint8_t *zigzag_scan8x8_q0;
-    const uint8_t *zigzag_scan8x8_cavlc_q0;
-    const uint8_t *field_scan_q0;
-    const uint8_t *field_scan8x8_q0;
-    const uint8_t *field_scan8x8_cavlc_q0;
+    uint8_t zigzag_scan_q0[16];
+    uint8_t zigzag_scan8x8_q0[64];
+    uint8_t zigzag_scan8x8_cavlc_q0[64];
+    uint8_t field_scan_q0[16];
+    uint8_t field_scan8x8_q0[64];
+    uint8_t field_scan8x8_cavlc_q0[64];
 
     int x264_build;
 
@@ -548,7 +577,7 @@ typedef struct H264Context {
     struct H264Context *thread_context[MAX_THREADS];
 
     /**
-     * current slice number, used to initalize slice_num of each thread/context
+     * current slice number, used to initialize slice_num of each thread/context
      */
     int current_slice;
 
@@ -571,6 +600,7 @@ typedef struct H264Context {
     enum AVPictureType pict_type;
 
     int last_slice_type;
+    unsigned int last_ref_count[2];
     /** @} */
 
     /**
@@ -621,6 +651,13 @@ typedef struct H264Context {
     int sei_recovery_frame_cnt;
 
     /**
+     * Are the SEI recovery points looking valid.
+     */
+    int valid_recovery_point;
+
+    FPA sei_fpa;
+
+    /**
      * recovery_frame is the frame_num at which the next frame should
      * be fully constructed.
      *
@@ -650,8 +687,16 @@ typedef struct H264Context {
 
     int cur_chroma_format_idc;
     uint8_t *bipred_scratchpad;
+
+    int16_t slice_row[MAX_SLICES]; ///< to detect when MAX_SLICES is too low
+
+    uint8_t parse_history[4];
+    int parse_history_count;
+    int parse_last_mb;
     uint8_t *edge_emu_buffer;
     int16_t *dc_val_base;
+
+    uint8_t *visualization_buffer[3]; ///< temporary buffer vor MV visualization
 
     AVBufferPool *qscale_table_pool;
     AVBufferPool *mb_type_pool;
@@ -659,7 +704,7 @@ typedef struct H264Context {
     AVBufferPool *ref_index_pool;
 } H264Context;
 
-extern const uint8_t ff_h264_chroma_qp[3][QP_MAX_NUM + 1]; ///< One chroma qp table for each supported bit depth (8, 9, 10).
+extern const uint8_t ff_h264_chroma_qp[7][QP_MAX_NUM + 1]; ///< One chroma qp table for each possible bit depth (8-14).
 extern const uint16_t ff_h264_mb_sizes[4];
 
 /**
@@ -742,7 +787,7 @@ int ff_h264_check_intra4x4_pred_mode(H264Context *h);
 int ff_h264_check_intra_pred_mode(H264Context *h, int mode, int is_chroma);
 
 void ff_h264_hl_decode_mb(H264Context *h);
-int ff_h264_decode_extradata(H264Context *h);
+int ff_h264_decode_extradata(H264Context *h, const uint8_t *buf, int size);
 int ff_h264_decode_init(AVCodecContext *avctx);
 void ff_h264_decode_init_vlc(void);
 
@@ -777,6 +822,12 @@ void ff_h264_filter_mb(H264Context *h, int mb_x, int mb_y,
  * @param h H.264 context.
  */
 void ff_h264_reset_sei(H264Context *h);
+
+/**
+ * Get stereo_mode string from the h264 frame_packing_arrangement
+ * @param h H.264 context.
+ */
+const char* ff_h264_sei_stereo_mode(H264Context *h);
 
 /*
  * o-o o-o
