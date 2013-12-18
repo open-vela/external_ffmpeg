@@ -2,20 +2,20 @@
  * Tele-typewriter demuxer
  * Copyright (c) 2010 Peter Ross <pross@xvid.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,8 +38,8 @@ typedef struct {
     AVClass *class;
     int chars_per_frame;
     uint64_t fsize;  /**< file size less metadata buffer */
-    char *video_size;/**< A string describing video size, set by a private option. */
-    char *framerate; /**< Set by a private option. */
+    int width, height; /**< Set by a private option. */
+    AVRational framerate; /**< Set by a private option. */
 } TtyDemuxContext;
 
 /**
@@ -75,9 +75,8 @@ static int efi_read(AVFormatContext *avctx, uint64_t start_pos)
 static int read_header(AVFormatContext *avctx)
 {
     TtyDemuxContext *s = avctx->priv_data;
-    int width = 0, height = 0, ret = 0;
+    int ret = 0;
     AVStream *st = avformat_new_stream(avctx, NULL);
-    AVRational framerate;
 
     if (!st) {
         ret = AVERROR(ENOMEM);
@@ -87,18 +86,10 @@ static int read_header(AVFormatContext *avctx)
     st->codec->codec_type  = AVMEDIA_TYPE_VIDEO;
     st->codec->codec_id    = AV_CODEC_ID_ANSI;
 
-    if (s->video_size && (ret = av_parse_video_size(&width, &height, s->video_size)) < 0) {
-        av_log (avctx, AV_LOG_ERROR, "Couldn't parse video size.\n");
-        goto fail;
-    }
-    if ((ret = av_parse_video_rate(&framerate, s->framerate)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Could not parse framerate: %s.\n", s->framerate);
-        goto fail;
-    }
-    st->codec->width  = width;
-    st->codec->height = height;
-    avpriv_set_pts_info(st, 60, framerate.den, framerate.num);
-    st->avg_frame_rate = framerate;
+    st->codec->width  = s->width;
+    st->codec->height = s->height;
+    avpriv_set_pts_info(st, 60, s->framerate.den, s->framerate.num);
+    st->avg_frame_rate = s->framerate;
 
     /* simulate tty display speed */
     s->chars_per_frame = FFMAX(av_q2d(st->time_base)*s->chars_per_frame, 1);
@@ -122,20 +113,22 @@ static int read_packet(AVFormatContext *avctx, AVPacket *pkt)
     TtyDemuxContext *s = avctx->priv_data;
     int n;
 
-    if (avctx->pb->eof_reached)
+    if (url_feof(avctx->pb))
         return AVERROR_EOF;
 
     n = s->chars_per_frame;
     if (s->fsize) {
         // ignore metadata buffer
         uint64_t p = avio_tell(avctx->pb);
+        if (p == s->fsize)
+            return AVERROR_EOF;
         if (p + s->chars_per_frame > s->fsize)
             n = s->fsize - p;
     }
 
     pkt->size = av_get_packet(avctx->pb, pkt, n);
-    if (pkt->size <= 0)
-        return AVERROR(EIO);
+    if (pkt->size < 0)
+        return pkt->size;
     pkt->flags |= AV_PKT_FLAG_KEY;
     return 0;
 }
@@ -144,8 +137,8 @@ static int read_packet(AVFormatContext *avctx, AVPacket *pkt)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
     { "chars_per_frame", "", offsetof(TtyDemuxContext, chars_per_frame), AV_OPT_TYPE_INT, {.i64 = 6000}, 1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
-    { "video_size", "A string describing frame size, such as 640x480 or hd720.", OFFSET(video_size), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC },
-    { "framerate", "", OFFSET(framerate), AV_OPT_TYPE_STRING, {.str = "25"}, 0, 0, DEC },
+    { "video_size", "A string describing frame size, such as 640x480 or hd720.", OFFSET(width), AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, 0, DEC },
+    { "framerate", "", OFFSET(framerate), AV_OPT_TYPE_VIDEO_RATE, {.str = "25"}, 0, 0, DEC },
     { NULL },
 };
 
