@@ -2,20 +2,20 @@
  * VC-1 and WMV3 decoder - DSP functions
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,10 +25,8 @@
  *
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "h264chroma.h"
-#include "rnd_avg.h"
 #include "vc1dsp.h"
 
 
@@ -564,8 +562,8 @@ static av_always_inline int vc1_mspel_filter(const uint8_t *src, int stride, int
 
 /** Function used to do motion compensation with bicubic interpolation
  */
-#define VC1_MSPEL_MC(OP, OP4, OPNAME)\
-static av_always_inline void OPNAME ## vc1_mspel_mc(uint8_t *dst, const uint8_t *src, ptrdiff_t stride, int hmode, int vmode, int rnd)\
+#define VC1_MSPEL_MC(OP, OPNAME)\
+static av_always_inline void OPNAME ## vc1_mspel_mc(uint8_t *dst, const uint8_t *src, int stride, int hmode, int vmode, int rnd)\
 {\
     int     i, j;\
 \
@@ -618,24 +616,13 @@ static av_always_inline void OPNAME ## vc1_mspel_mc(uint8_t *dst, const uint8_t 
         dst += stride;\
         src += stride;\
     }\
-}\
-static void OPNAME ## pixels8x8_c(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int rnd){\
-    int i;\
-    for(i=0; i<8; i++){\
-        OP4(*(uint32_t*)(block  ), AV_RN32(pixels  ));\
-        OP4(*(uint32_t*)(block+4), AV_RN32(pixels+4));\
-        pixels+=line_size;\
-        block +=line_size;\
-    }\
 }
 
 #define op_put(a, b) a = av_clip_uint8(b)
 #define op_avg(a, b) a = (a + av_clip_uint8(b) + 1) >> 1
-#define op4_avg(a, b) a = rnd_avg32(a, b)
-#define op4_put(a, b) a = b
 
-VC1_MSPEL_MC(op_put, op4_put, put_)
-VC1_MSPEL_MC(op_avg, op4_avg, avg_)
+VC1_MSPEL_MC(op_put, put_)
+VC1_MSPEL_MC(op_avg, avg_)
 
 /* pixel functions - really are entry points to vc1_mspel_mc */
 
@@ -679,7 +666,7 @@ static void put_no_rnd_vc1_chroma_mc8_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
     const int D=(  x)*(  y);
     int i;
 
-    av_assert2(x<8 && y<8 && x>=0 && y>=0);
+    assert(x<8 && y<8 && x>=0 && y>=0);
 
     for(i=0; i<h; i++)
     {
@@ -703,7 +690,7 @@ static void put_no_rnd_vc1_chroma_mc4_c(uint8_t *dst, uint8_t *src, int stride, 
     const int D=(  x)*(  y);
     int i;
 
-    av_assert2(x<8 && y<8 && x>=0 && y>=0);
+    assert(x<8 && y<8 && x>=0 && y>=0);
 
     for(i=0; i<h; i++)
     {
@@ -724,7 +711,7 @@ static void avg_no_rnd_vc1_chroma_mc8_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
     const int D=(  x)*(  y);
     int i;
 
-    av_assert2(x<8 && y<8 && x>=0 && y>=0);
+    assert(x<8 && y<8 && x>=0 && y>=0);
 
     for(i=0; i<h; i++)
     {
@@ -736,26 +723,6 @@ static void avg_no_rnd_vc1_chroma_mc8_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
         dst[5] = avg2(dst[5], ((A*src[5] + B*src[6] + C*src[stride+5] + D*src[stride+6] + 32 - 4) >> 6));
         dst[6] = avg2(dst[6], ((A*src[6] + B*src[7] + C*src[stride+6] + D*src[stride+7] + 32 - 4) >> 6));
         dst[7] = avg2(dst[7], ((A*src[7] + B*src[8] + C*src[stride+7] + D*src[stride+8] + 32 - 4) >> 6));
-        dst+= stride;
-        src+= stride;
-    }
-}
-
-static void avg_no_rnd_vc1_chroma_mc4_c(uint8_t *dst/*align 8*/, uint8_t *src/*align 1*/, int stride, int h, int x, int y){
-    const int A=(8-x)*(8-y);
-    const int B=(  x)*(8-y);
-    const int C=(8-x)*(  y);
-    const int D=(  x)*(  y);
-    int i;
-
-    av_assert2(x<8 && y<8 && x>=0 && y>=0);
-
-    for(i=0; i<h; i++)
-    {
-        dst[0] = avg2(dst[0], ((A*src[0] + B*src[1] + C*src[stride+0] + D*src[stride+1] + 32 - 4) >> 6));
-        dst[1] = avg2(dst[1], ((A*src[1] + B*src[2] + C*src[stride+1] + D*src[stride+2] + 32 - 4) >> 6));
-        dst[2] = avg2(dst[2], ((A*src[2] + B*src[3] + C*src[stride+2] + D*src[stride+3] + 32 - 4) >> 6));
-        dst[3] = avg2(dst[3], ((A*src[3] + B*src[4] + C*src[stride+3] + D*src[stride+4] + 32 - 4) >> 6));
         dst+= stride;
         src+= stride;
     }
@@ -841,7 +808,7 @@ av_cold void ff_vc1dsp_init(VC1DSPContext* dsp) {
     dsp->vc1_v_loop_filter16 = vc1_v_loop_filter16_c;
     dsp->vc1_h_loop_filter16 = vc1_h_loop_filter16_c;
 
-    dsp->put_vc1_mspel_pixels_tab[ 0] = put_pixels8x8_c;
+    dsp->put_vc1_mspel_pixels_tab[ 0] = ff_put_pixels8x8_c;
     dsp->put_vc1_mspel_pixels_tab[ 1] = put_vc1_mspel_mc10_c;
     dsp->put_vc1_mspel_pixels_tab[ 2] = put_vc1_mspel_mc20_c;
     dsp->put_vc1_mspel_pixels_tab[ 3] = put_vc1_mspel_mc30_c;
@@ -858,7 +825,7 @@ av_cold void ff_vc1dsp_init(VC1DSPContext* dsp) {
     dsp->put_vc1_mspel_pixels_tab[14] = put_vc1_mspel_mc23_c;
     dsp->put_vc1_mspel_pixels_tab[15] = put_vc1_mspel_mc33_c;
 
-    dsp->avg_vc1_mspel_pixels_tab[ 0] = avg_pixels8x8_c;
+    dsp->avg_vc1_mspel_pixels_tab[ 0] = ff_avg_pixels8x8_c;
     dsp->avg_vc1_mspel_pixels_tab[ 1] = avg_vc1_mspel_mc10_c;
     dsp->avg_vc1_mspel_pixels_tab[ 2] = avg_vc1_mspel_mc20_c;
     dsp->avg_vc1_mspel_pixels_tab[ 3] = avg_vc1_mspel_mc30_c;
@@ -878,7 +845,6 @@ av_cold void ff_vc1dsp_init(VC1DSPContext* dsp) {
     dsp->put_no_rnd_vc1_chroma_pixels_tab[0]= put_no_rnd_vc1_chroma_mc8_c;
     dsp->avg_no_rnd_vc1_chroma_pixels_tab[0]= avg_no_rnd_vc1_chroma_mc8_c;
     dsp->put_no_rnd_vc1_chroma_pixels_tab[1] = put_no_rnd_vc1_chroma_mc4_c;
-    dsp->avg_no_rnd_vc1_chroma_pixels_tab[1] = avg_no_rnd_vc1_chroma_mc4_c;
 
 #if CONFIG_WMV3IMAGE_DECODER || CONFIG_VC1IMAGE_DECODER
     dsp->sprite_h = sprite_h_c;
@@ -888,6 +854,8 @@ av_cold void ff_vc1dsp_init(VC1DSPContext* dsp) {
     dsp->sprite_v_double_twoscale = sprite_v_double_twoscale_c;
 #endif
 
+    if (ARCH_ARM)
+        ff_vc1dsp_init_arm(dsp);
     if (ARCH_PPC)
         ff_vc1dsp_init_ppc(dsp);
     if (ARCH_X86)
