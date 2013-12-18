@@ -5,20 +5,20 @@
  *               2008 Benjamin Larsson
  *               2011 David Goldwich
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,7 +37,6 @@
  * - Sound data organized in packets follow the EA3 header
  *   (can be encrypted using the Sony DRM!).
  *
- * CODEC SUPPORT: Only ATRAC3 codec is currently supported!
  */
 
 #include "libavutil/channel_layout.h"
@@ -172,13 +171,9 @@ static int nprobe(AVFormatContext *s, uint8_t *enc_header, unsigned size,
     taglen  = AV_RB32(&enc_header[pos + 32]);
     datalen = AV_RB32(&enc_header[pos + 36]) >> 4;
 
-    pos += 44;
-    if (size - pos < taglen)
-        return -1;
+    pos += 44L + taglen;
 
-    pos += taglen;
-
-    if (datalen << 4 > size - pos)
+    if (pos + (((uint64_t)datalen) << 4) > size)
         return -1;
 
     av_des_init(&av_des, n_val, 192, 1);
@@ -353,12 +348,10 @@ static int oma_read_header(AVFormatContext *s)
 
         /* fake the ATRAC3 extradata
          * (wav format, makes stream copy to wav work) */
-        st->codec->extradata_size = 14;
-        edata = av_mallocz(14 + FF_INPUT_BUFFER_PADDING_SIZE);
-        if (!edata)
+        if (ff_alloc_extradata(st->codec, 14))
             return AVERROR(ENOMEM);
 
-        st->codec->extradata = edata;
+        edata = st->codec->extradata;
         AV_WL16(&edata[0],  1);             // always 1
         AV_WL32(&edata[2],  samplerate);    // samples rate
         AV_WL16(&edata[6],  jsflag);        // coding mode
@@ -389,7 +382,7 @@ static int oma_read_header(AVFormatContext *s)
         av_log(s, AV_LOG_ERROR, "Unsupported codec ATRAC3+!\n");
         break;
     case OMA_CODECID_MP3:
-        st->need_parsing = AVSTREAM_PARSE_FULL;
+        st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
         framesize = 1024;
         break;
     case OMA_CODECID_LPCM:

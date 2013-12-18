@@ -89,6 +89,8 @@ FATE_SEEK_VSYNTH2-$(call ENCDEC, RAWVIDEO,      AVI)     += rgb
 FATE_SEEK_VSYNTH2-$(call ENCDEC, ROQ,           ROQ)     += roqvideo
 FATE_SEEK_VSYNTH2-$(call ENCDEC, RV10,          RM)      += rv10
 FATE_SEEK_VSYNTH2-$(call ENCDEC, RV20,          RM)      += rv20
+FATE_SEEK_VSYNTH2-$(call ENCDEC, SNOW,          AVI)     += snow
+FATE_SEEK_VSYNTH2-$(call ENCDEC, SNOW,          AVI)     += snow-ll
 FATE_SEEK_VSYNTH2-$(call ENCDEC, SVQ1,          MOV)     += svq1
 FATE_SEEK_VSYNTH2-$(call ENCDEC, WMV1,          AVI)     += wmv1
 FATE_SEEK_VSYNTH2-$(call ENCDEC, WMV2,          AVI)     += wmv2
@@ -135,6 +137,8 @@ fate-seek-vsynth2-rgb:               SRC = fate/vsynth2-rgb.avi
 fate-seek-vsynth2-roqvideo:          SRC = fate/vsynth2-roqvideo.roq
 fate-seek-vsynth2-rv10:              SRC = fate/vsynth2-rv10.rm
 fate-seek-vsynth2-rv20:              SRC = fate/vsynth2-rv20.rm
+fate-seek-vsynth2-snow:              SRC = fate/vsynth2-snow.avi
+fate-seek-vsynth2-snow-ll:           SRC = fate/vsynth2-snow-ll.avi
 fate-seek-vsynth2-svq1:              SRC = fate/vsynth2-svq1.mov
 fate-seek-vsynth2-wmv1:              SRC = fate/vsynth2-wmv1.avi
 fate-seek-vsynth2-wmv2:              SRC = fate/vsynth2-wmv2.avi
@@ -179,6 +183,7 @@ FATE_SEEK_LAVF-$(call ENCDEC,  TIFF,                  IMAGE2)      += tiff
 FATE_SEEK_LAVF-$(call ENCDEC2, MPEG2VIDEO, MP2,       MPEGTS)      += ts
 FATE_SEEK_LAVF-$(call ENCDEC,  PCM_U8,                VOC)         += voc
 FATE_SEEK_LAVF-$(call ENCDEC,  PCM_S16LE,             WAV)         += wav
+FATE_SEEK_LAVF-$(call ENCDEC,  MP2,                   WTV)         += wtv
 FATE_SEEK_LAVF-$(CONFIG_YUV4MPEGPIPE_MUXER)                        += yuv4mpeg
 
 fate-seek-lavf-aiff:     SRC = lavf/lavf.aif
@@ -216,6 +221,7 @@ fate-seek-lavf-tiff:     SRC = images/tiff/%02d.tiff
 fate-seek-lavf-ts:       SRC = lavf/lavf.ts
 fate-seek-lavf-voc:      SRC = lavf/lavf.voc
 fate-seek-lavf-wav:      SRC = lavf/lavf.wav
+fate-seek-lavf-wtv:      SRC = lavf/lavf.wtv
 fate-seek-lavf-yuv4mpeg: SRC = lavf/lavf.y4m
 
 FATE_SEEK += $(FATE_SEEK_LAVF-yes:%=fate-seek-lavf-%)
