@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Reimar Doeffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,8 +39,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     int h, w, ret;
     AVFrame *pic = data;
     const uint32_t *src = (const uint32_t *)avpkt->data;
-    int aligned_width = FFALIGN(avctx->width,
-                                avctx->codec_id == AV_CODEC_ID_R10K ? 1 : 64);
+    int aligned_width = FFALIGN(avctx->width, 64);
     uint8_t *dst_line;
 
     if (avpkt->size < 4 * aligned_width * avctx->height) {
@@ -58,13 +57,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     for (h = 0; h < avctx->height; h++) {
         uint16_t *dst = (uint16_t *)dst_line;
         for (w = 0; w < avctx->width; w++) {
-            uint32_t pixel;
+            uint32_t pixel = av_be2ne32(*src++);
             uint16_t r, g, b;
-            if (avctx->codec_id==AV_CODEC_ID_AVRP) {
-                pixel = av_le2ne32(*src++);
-            } else {
-                pixel = av_be2ne32(*src++);
-            }
             if (avctx->codec_id==AV_CODEC_ID_R210) {
                 b =  pixel <<  6;
                 g = (pixel >>  4) & 0xffc0;
@@ -104,17 +98,6 @@ AVCodec ff_r10k_decoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("AJA Kona 10-bit RGB Codec"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_R10K,
-    .init           = decode_init,
-    .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
-};
-#endif
-#if CONFIG_AVRP_DECODER
-AVCodec ff_avrp_decoder = {
-    .name           = "avrp",
-    .long_name      = NULL_IF_CONFIG_SMALL("Avid 1:1 10-bit RGB Packer"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_AVRP,
     .init           = decode_init,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
