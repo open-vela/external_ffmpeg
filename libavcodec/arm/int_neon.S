@@ -1,21 +1,21 @@
 /*
  * ARM NEON optimised integer operations
- * Copyright (c) 2009 Kostya Shishkov
+ * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,10 +41,10 @@ function ff_scalarproduct_int16_neon, export=1
 
         vpadd.s32       d16, d0,   d1
         vpadd.s32       d17, d2,   d3
-        vpadd.s32       d18, d4,   d5
-        vpadd.s32       d19, d6,   d7
+        vpadd.s32       d10, d4,   d5
+        vpadd.s32       d11, d6,   d7
         vpadd.s32       d0,  d16,  d17
-        vpadd.s32       d1,  d18,  d19
+        vpadd.s32       d1,  d10,  d11
         vpadd.s32       d2,  d0,   d1
         vpaddl.s32      d3,  d2
         vmov.32         r0,  d3[0]
@@ -81,10 +81,10 @@ function ff_scalarproduct_and_madd_int16_neon, export=1
 
         vpadd.s32       d16, d0,   d1
         vpadd.s32       d17, d2,   d3
-        vpadd.s32       d18, d4,   d5
-        vpadd.s32       d19, d6,   d7
+        vpadd.s32       d10, d4,   d5
+        vpadd.s32       d11, d6,   d7
         vpadd.s32       d0,  d16,  d17
-        vpadd.s32       d1,  d18,  d19
+        vpadd.s32       d1,  d10,  d11
         vpadd.s32       d2,  d0,   d1
         vpaddl.s32      d3,  d2
         vmov.32         r0,  d3[0]
