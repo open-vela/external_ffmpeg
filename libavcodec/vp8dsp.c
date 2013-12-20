@@ -2,20 +2,20 @@
  * Copyright (C) 2010 David Conrad
  * Copyright (C) 2010 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -415,7 +415,7 @@ VP8_EPEL_HV(8,  6, 6)
 VP8_EPEL_HV(4,  6, 6)
 
 #define VP8_BILINEAR(SIZE) \
-static void put_vp8_bilinear ## SIZE ## _h_c(uint8_t *dst, ptrdiff_t dstride, uint8_t *src, ptrdiff_t sstride, int h, int mx, int my) \
+static void put_vp8_bilinear ## SIZE ## _h_c(uint8_t *dst, ptrdiff_t stride, uint8_t *src, ptrdiff_t s2, int h, int mx, int my) \
 { \
     int a = 8-mx, b = mx; \
     int x, y; \
@@ -423,24 +423,24 @@ static void put_vp8_bilinear ## SIZE ## _h_c(uint8_t *dst, ptrdiff_t dstride, ui
     for (y = 0; y < h; y++) { \
         for (x = 0; x < SIZE; x++) \
             dst[x] = (a*src[x] + b*src[x+1] + 4) >> 3; \
-        dst += dstride; \
-        src += sstride; \
+        dst += stride; \
+        src += stride; \
     } \
 } \
-static void put_vp8_bilinear ## SIZE ## _v_c(uint8_t *dst, ptrdiff_t dstride, uint8_t *src, ptrdiff_t sstride, int h, int mx, int my) \
+static void put_vp8_bilinear ## SIZE ## _v_c(uint8_t *dst, ptrdiff_t stride, uint8_t *src, ptrdiff_t s2, int h, int mx, int my) \
 { \
     int c = 8-my, d = my; \
     int x, y; \
 \
     for (y = 0; y < h; y++) { \
         for (x = 0; x < SIZE; x++) \
-            dst[x] = (c*src[x] + d*src[x+sstride] + 4) >> 3; \
-        dst += dstride; \
-        src += sstride; \
+            dst[x] = (c*src[x] + d*src[x+stride] + 4) >> 3; \
+        dst += stride; \
+        src += stride; \
     } \
 } \
 \
-static void put_vp8_bilinear ## SIZE ## _hv_c(uint8_t *dst, ptrdiff_t dstride, uint8_t *src, ptrdiff_t sstride, int h, int mx, int my) \
+static void put_vp8_bilinear ## SIZE ## _hv_c(uint8_t *dst, ptrdiff_t stride, uint8_t *src, ptrdiff_t s2, int h, int mx, int my) \
 { \
     int a = 8-mx, b = mx; \
     int c = 8-my, d = my; \
@@ -452,7 +452,7 @@ static void put_vp8_bilinear ## SIZE ## _hv_c(uint8_t *dst, ptrdiff_t dstride, u
         for (x = 0; x < SIZE; x++) \
             tmp[x] = (a*src[x] + b*src[x+1] + 4) >> 3; \
         tmp += SIZE; \
-        src += sstride; \
+        src += stride; \
     } \
 \
     tmp = tmp_array; \
@@ -460,7 +460,7 @@ static void put_vp8_bilinear ## SIZE ## _hv_c(uint8_t *dst, ptrdiff_t dstride, u
     for (y = 0; y < h; y++) { \
         for (x = 0; x < SIZE; x++) \
             dst[x] = (c*tmp[x] + d*tmp[x+SIZE] + 4) >> 3; \
-        dst += dstride; \
+        dst += stride; \
         tmp += SIZE; \
     } \
 }
