@@ -2,20 +2,20 @@
  * TechnoTrend PVA (.pva) demuxer
  * Copyright (c) 2007, 2008 Ivo van Poorten
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,13 +32,26 @@ typedef struct {
     int continue_pes;
 } PVAContext;
 
-static int pva_probe(AVProbeData * pd) {
-    unsigned char *buf = pd->buf;
+static int pva_check(const uint8_t *p) {
+    int length = AV_RB16(p + 6);
+    if (AV_RB16(p) != PVA_MAGIC || !p[2] || p[2] > 2 || p[4] != 0x55 ||
+        (p[5] & 0xe0) || length > PVA_MAX_PAYLOAD_LENGTH)
+        return -1;
+    return length + 8;
+}
 
-    if (AV_RB16(buf) == PVA_MAGIC && buf[2] && buf[2] < 3 && buf[4] == 0x55)
+static int pva_probe(AVProbeData * pd) {
+    const unsigned char *buf = pd->buf;
+    int len = pva_check(buf);
+
+    if (len < 0)
+        return 0;
+
+    if (pd->buf_size >= len + 8 &&
+        pva_check(buf + len) >= 0)
         return AVPROBE_SCORE_EXTENSION;
 
-    return 0;
+    return AVPROBE_SCORE_MAX / 4;
 }
 
 static int pva_read_header(AVFormatContext *s) {
@@ -72,6 +85,7 @@ static int read_part_of_packet(AVFormatContext *s, int64_t *pts,
     PVAContext *pvactx = s->priv_data;
     int syncword, streamid, reserved, flags, length, pts_flag;
     int64_t pva_pts = AV_NOPTS_VALUE, startpos;
+    int ret;
 
 recover:
     startpos = avio_tell(pb);
@@ -120,8 +134,8 @@ recover:
             pes_flags              = avio_rb16(pb);
             pes_header_data_length = avio_r8(pb);
 
-            if (pes_signal != 1) {
-                pva_log(s, AV_LOG_WARNING, "expected signaled PES packet, "
+            if (pes_signal != 1 || pes_header_data_length == 0) {
+                pva_log(s, AV_LOG_WARNING, "expected non empty signaled PES packet, "
                                           "trying to recover\n");
                 avio_skip(pb, length - 9);
                 if (!read_packet)
@@ -129,15 +143,23 @@ recover:
                 goto recover;
             }
 
-            avio_read(pb, pes_header_data, pes_header_data_length);
+            ret = avio_read(pb, pes_header_data, pes_header_data_length);
+            if (ret != pes_header_data_length)
+                return ret < 0 ? ret : AVERROR_INVALIDDATA;
             length -= 9 + pes_header_data_length;
 
             pes_packet_length -= 3 + pes_header_data_length;
 
             pvactx->continue_pes = pes_packet_length;
 
-            if (pes_flags & 0x80 && (pes_header_data[0] & 0xf0) == 0x20)
+            if (pes_flags & 0x80 && (pes_header_data[0] & 0xf0) == 0x20) {
+                if (pes_header_data_length < 5) {
+                    pva_log(s, AV_LOG_ERROR, "header too short\n");
+                    avio_skip(pb, length);
+                    return AVERROR_INVALIDDATA;
+                }
                 pva_pts = ff_parse_pes_pts(pes_header_data);
+            }
         }
 
         pvactx->continue_pes -= length;
