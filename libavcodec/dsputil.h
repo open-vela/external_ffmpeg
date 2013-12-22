@@ -3,34 +3,33 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
  * DSP utils.
- * note, many functions in here may use MMX which trashes the FPU state, it is
- * absolutely necessary to call emms_c() between dsp & float/double code
+ * Note, many functions in here may use MMX which trashes the FPU state, it is
+ * absolutely necessary to call emms_c() between DSP & float/double code.
  */
 
 #ifndef AVCODEC_DSPUTIL_H
 #define AVCODEC_DSPUTIL_H
 
-#include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "rnd_avg.h"
 
@@ -62,21 +61,22 @@ void ff_gmc_c(uint8_t *dst, uint8_t *src, int stride, int h, int ox, int oy,
               int dxx, int dxy, int dyx, int dyy, int shift, int r, int width, int height);
 
 /* minimum alignment rules ;)
-If you notice errors in the align stuff, need more alignment for some ASM code
-for some CPU or need to use a function with less aligned data then send a mail
-to the ffmpeg-devel mailing list, ...
+ * If you notice errors in the align stuff, need more alignment for some ASM code
+ * for some CPU or need to use a function with less aligned data then send a mail
+ * to the libav-devel mailing list, ...
+ *
+ * !warning These alignments might not match reality, (missing attribute((align))
+ * stuff somewhere possible).
+ * I (Michael) did not check them, these are just the alignments which I think
+ * could be reached easily ...
+ *
+ * !future video codecs might need functions with less strict alignment
+ */
 
-!warning These alignments might not match reality, (missing attribute((align))
-stuff somewhere possible).
-I (Michael) did not check them, these are just the alignments which I think
-could be reached easily ...
-
-!future video codecs might need functions with less strict alignment
-*/
-
-/* add and put pixel (decoding) */
-// blocksizes for op_pixels_func are 8x4,8x8 16x8 16x16
-//h for op_pixels_func is limited to {width/2, width} but never larger than 16 and never smaller than 4
+/* add and put pixel (decoding)
+ * Block sizes for op_pixels_func are 8x4,8x8 16x8 16x16.
+ * h for op_pixels_func is limited to { width / 2, width },
+ * but never larger than 16 and never smaller than 4. */
 typedef void (*tpel_mc_func)(uint8_t *block/*align width (8 or 16)*/, const uint8_t *pixels/*align 1*/, int line_size, int w, int h);
 typedef void (*qpel_mc_func)(uint8_t *dst/*align width (8 or 16)*/, uint8_t *src/*align 1*/, ptrdiff_t stride);
 
@@ -100,10 +100,14 @@ DEF_OLD_QPEL(qpel8_mc32_old_c)
 DEF_OLD_QPEL(qpel8_mc13_old_c)
 DEF_OLD_QPEL(qpel8_mc33_old_c)
 
-/* motion estimation */
-// h is limited to {width/2, width, 2*width} but never larger than 16 and never smaller than 2
-// although currently h<4 is not used as functions with width <8 are neither used nor implemented
-typedef int (*me_cmp_func)(void /*MpegEncContext*/ *s, uint8_t *blk1/*align width (8 or 16)*/, uint8_t *blk2/*align 1*/, int line_size, int h)/* __attribute__ ((const))*/;
+/* Motion estimation:
+ * h is limited to { width / 2, width, 2 * width },
+ * but never larger than 16 and never smaller than 2.
+ * Although currently h < 4 is not used as functions with
+ * width < 8 are neither used nor implemented. */
+typedef int (*me_cmp_func)(void /* MpegEncContext */ *s,
+                           uint8_t *blk1 /* align width (8 or 16) */,
+                           uint8_t *blk2 /* align 1 */, int line_size, int h);
 
 /**
  * Scantable.
@@ -143,7 +147,6 @@ typedef struct DSPContext {
     void (*clear_blocks)(int16_t *blocks/*align 16*/);
     int (*pix_sum)(uint8_t * pix, int line_size);
     int (*pix_norm1)(uint8_t * pix, int line_size);
-// 16x16 8x8 4x4 2x2 16x8 8x4 4x2 8x16 4x8 2x4
 
     me_cmp_func sad[6]; /* identical to pix_absAxA except additional void * */
     me_cmp_func sse[6];
@@ -155,8 +158,6 @@ typedef struct DSPContext {
     me_cmp_func vsad[6];
     me_cmp_func vsse[6];
     me_cmp_func nsse[6];
-    me_cmp_func w53[6];
-    me_cmp_func w97[6];
     me_cmp_func dct_max[6];
     me_cmp_func dct264_sad[6];
 
@@ -171,10 +172,10 @@ typedef struct DSPContext {
                              int size);
 
     /**
-     * Thirdpel motion compensation with rounding (a+b+1)>>1.
-     * this is an array[12] of motion compensation functions for the 9 thirdpe
-     * positions<br>
-     * *pixels_tab[ xthirdpel + 4*ythirdpel ]
+     * Thirdpel motion compensation with rounding (a + b + 1) >> 1.
+     * this is an array[12] of motion compensation functions for the
+     * 9 thirdpel positions<br>
+     * *pixels_tab[xthirdpel + 4 * ythirdpel]
      * @param block destination where the result is stored
      * @param pixels source
      * @param line_size number of bytes in a horizontal line of block
@@ -190,18 +191,17 @@ typedef struct DSPContext {
 
     me_cmp_func pix_abs[2][4];
 
-    /* huffyuv specific */
+    /* HuffYUV specific */
     void (*add_bytes)(uint8_t *dst/*align 16*/, uint8_t *src/*align 16*/, int w);
-    void (*diff_bytes)(uint8_t *dst/*align 16*/, const uint8_t *src1/*align 16*/, const uint8_t *src2/*align 1*/,int w);
+    void (*diff_bytes)(uint8_t *dst/*align 16*/, uint8_t *src1/*align 16*/, uint8_t *src2/*align 1*/,int w);
     /**
-     * subtract huffyuv's variant of median prediction
-     * note, this might read from src1[-1], src2[-1]
+     * Subtract HuffYUV's variant of median prediction.
+     * Note, this might read from src1[-1], src2[-1].
      */
     void (*sub_hfyu_median_prediction)(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int w, int *left, int *left_top);
     void (*add_hfyu_median_prediction)(uint8_t *dst, const uint8_t *top, const uint8_t *diff, int w, int *left, int *left_top);
     int  (*add_hfyu_left_prediction)(uint8_t *dst, const uint8_t *src, int w, int left);
     void (*add_hfyu_left_prediction_bgr32)(uint8_t *dst, const uint8_t *src, int w, int *red, int *green, int *blue, int *alpha);
-    /* this might write to dst[w] */
     void (*bswap_buf)(uint32_t *dst, const uint32_t *src, int w);
     void (*bswap16_buf)(uint16_t *dst, const uint16_t *src, int len);
 
@@ -229,16 +229,18 @@ typedef struct DSPContext {
     void (*idct_add)(uint8_t *dest/*align 8*/, int line_size, int16_t *block/*align 16*/);
 
     /**
-     * idct input permutation.
-     * several optimized IDCTs need a permutated input (relative to the normal order of the reference
-     * IDCT)
-     * this permutation must be performed before the idct_put/add, note, normally this can be merged
-     * with the zigzag/alternate scan<br>
-     * an example to avoid confusion:
-     * - (->decode coeffs -> zigzag reorder -> dequant -> reference idct ->...)
-     * - (x -> reference dct -> reference idct -> x)
-     * - (x -> reference dct -> simple_mmx_perm = idct_permutation -> simple_idct_mmx -> x)
-     * - (->decode coeffs -> zigzag reorder -> simple_mmx_perm -> dequant -> simple_idct_mmx ->...)
+     * IDCT input permutation.
+     * Several optimized IDCTs need a permutated input (relative to the
+     * normal order of the reference IDCT).
+     * This permutation must be performed before the idct_put/add.
+     * Note, normally this can be merged with the zigzag/alternate scan<br>
+     * An example to avoid confusion:
+     * - (->decode coeffs -> zigzag reorder -> dequant -> reference IDCT -> ...)
+     * - (x -> reference DCT -> reference IDCT -> x)
+     * - (x -> reference DCT -> simple_mmx_perm = idct_permutation
+     *    -> simple_idct_mmx -> x)
+     * - (-> decode coeffs -> zigzag reorder -> simple_mmx_perm -> dequant
+     *    -> simple_idct_mmx -> ...)
      */
     uint8_t idct_permutation[64];
     int idct_permutation_type;
@@ -275,7 +277,8 @@ typedef struct DSPContext {
     int32_t (*scalarproduct_and_madd_int16)(int16_t *v1/*align 16*/, const int16_t *v2, const int16_t *v3, int len, int mul);
 
     /**
-     * Clip each element in an array of int32_t to a given minimum and maximum value.
+     * Clip each element in an array of int32_t to a given minimum and
+     * maximum value.
      * @param dst  destination array
      *             constraints: 16-byte aligned
      * @param src  source array
@@ -295,21 +298,12 @@ typedef struct DSPContext {
 
 void ff_dsputil_static_init(void);
 void ff_dsputil_init(DSPContext* p, AVCodecContext *avctx);
-void avpriv_dsputil_init(DSPContext* p, AVCodecContext *avctx);
-attribute_deprecated void dsputil_init(DSPContext* c, AVCodecContext *avctx);
-
-int ff_check_alignment(void);
 
 void ff_set_cmp(DSPContext* c, me_cmp_func *cmp, int type);
 
-void ff_dsputil_init_alpha(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_arm(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_bfin(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_ppc(DSPContext* c, AVCodecContext *avctx);
-void ff_dsputil_init_sh4(DSPContext* c, AVCodecContext *avctx);
-void ff_dsputil_init_vis(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_x86(DSPContext* c, AVCodecContext *avctx);
-
-void ff_dsputil_init_dwt(DSPContext *c);
 
 #endif /* AVCODEC_DSPUTIL_H */

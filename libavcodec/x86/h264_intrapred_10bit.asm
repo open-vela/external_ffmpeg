@@ -5,20 +5,20 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -50,7 +50,7 @@ SECTION .text
 %endmacro
 
 ;-----------------------------------------------------------------------------
-; void pred4x4_down_right(pixel *src, const pixel *topright, int stride)
+; void ff_pred4x4_down_right(pixel *src, const pixel *topright, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED4x4_DR 0
 cglobal pred4x4_down_right_10, 3, 3
@@ -82,14 +82,12 @@ INIT_XMM sse2
 PRED4x4_DR
 INIT_XMM ssse3
 PRED4x4_DR
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_DR
-%endif
 
-;-----------------------------------------------------------------------------
-; void pred4x4_vertical_right(pixel *src, const pixel *topright, int stride)
-;-----------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+; void ff_pred4x4_vertical_right(pixel *src, const pixel *topright, int stride)
+;------------------------------------------------------------------------------
 %macro PRED4x4_VR 0
 cglobal pred4x4_vertical_right_10, 3, 3, 6
     sub     r0, r2
@@ -121,14 +119,12 @@ INIT_XMM sse2
 PRED4x4_VR
 INIT_XMM ssse3
 PRED4x4_VR
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_VR
-%endif
 
-;-----------------------------------------------------------------------------
-; void pred4x4_horizontal_down(pixel *src, const pixel *topright, int stride)
-;-----------------------------------------------------------------------------
+;-------------------------------------------------------------------------------
+; void ff_pred4x4_horizontal_down(pixel *src, const pixel *topright, int stride)
+;-------------------------------------------------------------------------------
 %macro PRED4x4_HD 0
 cglobal pred4x4_horizontal_down_10, 3, 3
     sub        r0, r2
@@ -163,13 +159,11 @@ INIT_XMM sse2
 PRED4x4_HD
 INIT_XMM ssse3
 PRED4x4_HD
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_HD
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred4x4_dc(pixel *src, const pixel *topright, int stride)
+; void ff_pred4x4_dc(pixel *src, const pixel *topright, int stride)
 ;-----------------------------------------------------------------------------
 %macro HADDD 2 ; sum junk
 %if mmsize == 16
@@ -210,7 +204,7 @@ cglobal pred4x4_dc_10, 3, 3
     RET
 
 ;-----------------------------------------------------------------------------
-; void pred4x4_down_left(pixel *src, const pixel *topright, int stride)
+; void ff_pred4x4_down_left(pixel *src, const pixel *topright, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED4x4_DL 0
 cglobal pred4x4_down_left_10, 3, 3
@@ -234,13 +228,11 @@ cglobal pred4x4_down_left_10, 3, 3
 
 INIT_XMM sse2
 PRED4x4_DL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_DL
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred4x4_vertical_left(pixel *src, const pixel *topright, int stride)
+; void ff_pred4x4_vertical_left(pixel *src, const pixel *topright, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED4x4_VL 0
 cglobal pred4x4_vertical_left_10, 3, 3
@@ -263,13 +255,11 @@ cglobal pred4x4_vertical_left_10, 3, 3
 
 INIT_XMM sse2
 PRED4x4_VL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_VL
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred4x4_horizontal_up(pixel *src, const pixel *topright, int stride)
+; void ff_pred4x4_horizontal_up(pixel *src, const pixel *topright, int stride)
 ;-----------------------------------------------------------------------------
 INIT_MMX mmxext
 cglobal pred4x4_horizontal_up_10, 3, 3
@@ -303,7 +293,7 @@ cglobal pred4x4_horizontal_up_10, 3, 3
 
 
 ;-----------------------------------------------------------------------------
-; void pred8x8_vertical(pixel *src, int stride)
+; void ff_pred8x8_vertical(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 INIT_XMM sse2
 cglobal pred8x8_vertical_10, 2, 2
@@ -319,7 +309,7 @@ cglobal pred8x8_vertical_10, 2, 2
     RET
 
 ;-----------------------------------------------------------------------------
-; void pred8x8_horizontal(pixel *src, int stride)
+; void ff_pred8x8_horizontal(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 INIT_XMM sse2
 cglobal pred8x8_horizontal_10, 2, 3
@@ -339,7 +329,7 @@ cglobal pred8x8_horizontal_10, 2, 3
     REP_RET
 
 ;-----------------------------------------------------------------------------
-; void predict_8x8_dc(pixel *src, int stride)
+; void ff_predict_8x8_dc(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro MOV8 2-3
 ; sort of a hack, but it works
@@ -426,7 +416,7 @@ INIT_XMM sse2
 PRED8x8_DC pshuflw
 
 ;-----------------------------------------------------------------------------
-; void pred8x8_top_dc(pixel *src, int stride)
+; void ff_pred8x8_top_dc(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 INIT_XMM sse2
 cglobal pred8x8_top_dc_10, 2, 4
@@ -453,7 +443,7 @@ cglobal pred8x8_top_dc_10, 2, 4
     RET
 
 ;-----------------------------------------------------------------------------
-; void pred8x8_plane(pixel *src, int stride)
+; void ff_pred8x8_plane(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 INIT_XMM sse2
 cglobal pred8x8_plane_10, 2, 7, 7
@@ -516,7 +506,8 @@ cglobal pred8x8_plane_10, 2, 7, 7
 
 
 ;-----------------------------------------------------------------------------
-; void pred8x8l_128_dc(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_128_dc(pixel *src, int has_topleft, int has_topright,
+;                         int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_128_DC 0
 cglobal pred8x8l_128_dc_10, 4, 4
@@ -540,7 +531,8 @@ INIT_XMM sse2
 PRED8x8L_128_DC
 
 ;-----------------------------------------------------------------------------
-; void pred8x8l_top_dc(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_top_dc(pixel *src, int has_topleft, int has_topright,
+;                         int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_TOP_DC 0
 cglobal pred8x8l_top_dc_10, 4, 4, 6
@@ -573,14 +565,12 @@ cglobal pred8x8l_top_dc_10, 4, 4, 6
 
 INIT_XMM sse2
 PRED8x8L_TOP_DC
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_TOP_DC
-%endif
 
-;-----------------------------------------------------------------------------
-;void pred8x8l_dc(pixel *src, int has_topleft, int has_topright, int stride)
-;-----------------------------------------------------------------------------
+;-------------------------------------------------------------------------------
+; void ff_pred8x8l_dc(pixel *src, int has_topleft, int has_topright, int stride)
+;-------------------------------------------------------------------------------
 ;TODO: see if scalar is faster
 %macro PRED8x8L_DC 0
 cglobal pred8x8l_dc_10, 4, 6, 6
@@ -632,13 +622,12 @@ cglobal pred8x8l_dc_10, 4, 6, 6
 
 INIT_XMM sse2
 PRED8x8L_DC
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_DC
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred8x8l_vertical(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_vertical(pixel *src, int has_topleft, int has_topright,
+;                           int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_VERTICAL 0
 cglobal pred8x8l_vertical_10, 4, 4, 6
@@ -667,13 +656,12 @@ cglobal pred8x8l_vertical_10, 4, 4, 6
 
 INIT_XMM sse2
 PRED8x8L_VERTICAL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_VERTICAL
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred8x8l_horizontal(uint8_t *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_horizontal(uint8_t *src, int has_topleft, int has_topright,
+;                             int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_HORIZONTAL 0
 cglobal pred8x8l_horizontal_10, 4, 4, 5
@@ -723,13 +711,12 @@ INIT_XMM sse2
 PRED8x8L_HORIZONTAL
 INIT_XMM ssse3
 PRED8x8L_HORIZONTAL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_HORIZONTAL
-%endif
 
 ;-----------------------------------------------------------------------------
-;void pred8x8l_down_left(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_down_left(pixel *src, int has_topleft, int has_topright,
+;                            int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_DOWN_LEFT 0
 cglobal pred8x8l_down_left_10, 4, 4, 7
@@ -791,13 +778,12 @@ INIT_XMM sse2
 PRED8x8L_DOWN_LEFT
 INIT_XMM ssse3
 PRED8x8L_DOWN_LEFT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_DOWN_LEFT
-%endif
 
 ;-----------------------------------------------------------------------------
-;void pred8x8l_down_right(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_down_right(pixel *src, int has_topleft, int has_topright,
+;                             int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_DOWN_RIGHT 0
 ; standard forbids this when has_topleft is false
@@ -865,13 +851,12 @@ INIT_XMM sse2
 PRED8x8L_DOWN_RIGHT
 INIT_XMM ssse3
 PRED8x8L_DOWN_RIGHT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_DOWN_RIGHT
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred8x8l_vertical_right(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_vertical_right(pixel *src, int has_topleft,
+;                                 int has_topright, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_VERTICAL_RIGHT 0
 ; likewise with 8x8l_down_right
@@ -935,13 +920,12 @@ INIT_XMM sse2
 PRED8x8L_VERTICAL_RIGHT
 INIT_XMM ssse3
 PRED8x8L_VERTICAL_RIGHT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_VERTICAL_RIGHT
-%endif
 
 ;-----------------------------------------------------------------------------
-; void pred8x8l_horizontal_up(pixel *src, int has_topleft, int has_topright, int stride)
+; void ff_pred8x8l_horizontal_up(pixel *src, int has_topleft,
+;                                int has_topright, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED8x8L_HORIZONTAL_UP 0
 cglobal pred8x8l_horizontal_up_10, 4, 4, 6
@@ -996,14 +980,12 @@ INIT_XMM sse2
 PRED8x8L_HORIZONTAL_UP
 INIT_XMM ssse3
 PRED8x8L_HORIZONTAL_UP
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_HORIZONTAL_UP
-%endif
 
 
 ;-----------------------------------------------------------------------------
-; void pred16x16_vertical(pixel *src, int stride)
+; void ff_pred16x16_vertical(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro MOV16 3-5
     mova [%1+     0], %2
@@ -1039,7 +1021,7 @@ INIT_XMM sse2
 PRED16x16_VERTICAL
 
 ;-----------------------------------------------------------------------------
-; void pred16x16_horizontal(pixel *src, int stride)
+; void ff_pred16x16_horizontal(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED16x16_HORIZONTAL 0
 cglobal pred16x16_horizontal_10, 2, 3
@@ -1063,7 +1045,7 @@ INIT_XMM sse2
 PRED16x16_HORIZONTAL
 
 ;-----------------------------------------------------------------------------
-; void pred16x16_dc(pixel *src, int stride)
+; void ff_pred16x16_dc(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED16x16_DC 0
 cglobal pred16x16_dc_10, 2, 6
@@ -1109,7 +1091,7 @@ INIT_XMM sse2
 PRED16x16_DC
 
 ;-----------------------------------------------------------------------------
-; void pred16x16_top_dc(pixel *src, int stride)
+; void ff_pred16x16_top_dc(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED16x16_TOP_DC 0
 cglobal pred16x16_top_dc_10, 2, 3
@@ -1141,7 +1123,7 @@ INIT_XMM sse2
 PRED16x16_TOP_DC
 
 ;-----------------------------------------------------------------------------
-; void pred16x16_left_dc(pixel *src, int stride)
+; void ff_pred16x16_left_dc(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED16x16_LEFT_DC 0
 cglobal pred16x16_left_dc_10, 2, 6
@@ -1178,7 +1160,7 @@ INIT_XMM sse2
 PRED16x16_LEFT_DC
 
 ;-----------------------------------------------------------------------------
-; void pred16x16_128_dc(pixel *src, int stride)
+; void ff_pred16x16_128_dc(pixel *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro PRED16x16_128_DC 0
 cglobal pred16x16_128_dc_10, 2,3
