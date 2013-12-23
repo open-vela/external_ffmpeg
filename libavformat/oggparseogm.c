@@ -23,6 +23,7 @@
 **/
 
 #include <stdlib.h>
+#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/get_bits.h"
 #include "libavcodec/bytestream.h"
@@ -40,6 +41,7 @@ ogm_header(AVFormatContext *s, int idx)
     GetByteContext p;
     uint64_t time_unit;
     uint64_t spu;
+    uint32_t size;
 
     bytestream2_init(&p, os->buf + os->pstart, os->psize);
     if (!(bytestream2_peek_byte(&p) & 1))
@@ -68,11 +70,13 @@ ogm_header(AVFormatContext *s, int idx)
             acid[4] = 0;
             cid = strtol(acid, NULL, 16);
             st->codec->codec_id = ff_codec_get_id(ff_codec_wav_tags, cid);
-            st->need_parsing = AVSTREAM_PARSE_FULL;
+            // our parser completely breaks AAC in Ogg
+            if (st->codec->codec_id != AV_CODEC_ID_AAC)
+                st->need_parsing = AVSTREAM_PARSE_FULL;
         }
 
-        bytestream2_skip(&p, 4);    /* useless size field */
-
+        size        = bytestream2_get_le32(&p);
+        size        = FFMIN(size, os->psize);
         time_unit   = bytestream2_get_le64(&p);
         spu         = bytestream2_get_le64(&p);
         bytestream2_skip(&p, 4);    /* default_len */
@@ -86,8 +90,18 @@ ogm_header(AVFormatContext *s, int idx)
             st->codec->channels = bytestream2_get_le16(&p);
             bytestream2_skip(&p, 2); /* block_align */
             st->codec->bit_rate = bytestream2_get_le32(&p) * 8;
-            st->codec->sample_rate = spu * 10000000 / time_unit;
+            st->codec->sample_rate = time_unit ? spu * 10000000 / time_unit : 0;
             avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
+            if (size >= 56 && st->codec->codec_id == AV_CODEC_ID_AAC) {
+                bytestream2_skip(&p, 4);
+                size -= 4;
+            }
+            if (size > 52) {
+                av_assert0(FF_INPUT_BUFFER_PADDING_SIZE <= 52);
+                size -= 52;
+                ff_alloc_extradata(st->codec, size);
+                bytestream2_get_buffer(&p, st->codec->extradata, st->codec->extradata_size);
+            }
         }
     } else if (bytestream2_peek_byte(&p) == 3) {
         bytestream2_skip(&p, 7);
