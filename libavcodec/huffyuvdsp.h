@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -20,18 +20,6 @@
 #define AVCODEC_HUFFYUVDSP_H
 
 #include <stdint.h>
-
-#if HAVE_BIGENDIAN
-#define B 3
-#define G 2
-#define R 1
-#define A 0
-#else
-#define B 0
-#define G 1
-#define R 2
-#define A 3
-#endif
 
 typedef struct HuffYUVDSPContext {
     void (*add_bytes)(uint8_t *dst /* align 16 */, uint8_t *src /* align 16 */,
@@ -42,7 +30,8 @@ typedef struct HuffYUVDSPContext {
     int (*add_hfyu_left_pred)(uint8_t *dst, const uint8_t *src,
                               int w, int left);
     void (*add_hfyu_left_pred_bgr32)(uint8_t *dst, const uint8_t *src,
-                                     intptr_t w, uint8_t *left);
+                                     int w, int *red, int *green,
+                                     int *blue, int *alpha);
 } HuffYUVDSPContext;
 
 void ff_huffyuvdsp_init(HuffYUVDSPContext *c);

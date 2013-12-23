@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,11 +81,22 @@ static int add_hfyu_left_pred_c(uint8_t *dst, const uint8_t *src, int w,
     return acc;
 }
 
+#if HAVE_BIGENDIAN
+#define B 3
+#define G 2
+#define R 1
+#define A 0
+#else
+#define B 0
+#define G 1
+#define R 2
+#define A 3
+#endif
 static void add_hfyu_left_pred_bgr32_c(uint8_t *dst, const uint8_t *src,
-                                       intptr_t w, uint8_t *left)
+                                       int w, int *red, int *green,
+                                       int *blue, int *alpha)
 {
-    int i;
-    uint8_t r = left[R], g = left[G], b = left[B], a = left[A];
+    int i, r = *red, g = *green, b = *blue, a = *alpha;
 
     for (i = 0; i < w; i++) {
         b += src[4 * i + B];
@@ -99,11 +110,15 @@ static void add_hfyu_left_pred_bgr32_c(uint8_t *dst, const uint8_t *src,
         dst[4 * i + A] = a;
     }
 
-    left[B] = b;
-    left[G] = g;
-    left[R] = r;
-    left[A] = a;
+    *red   = r;
+    *green = g;
+    *blue  = b;
+    *alpha = a;
 }
+#undef B
+#undef G
+#undef R
+#undef A
 
 av_cold void ff_huffyuvdsp_init(HuffYUVDSPContext *c)
 {
