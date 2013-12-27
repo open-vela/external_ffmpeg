@@ -2,20 +2,20 @@
  * RV40 decoder motion compensation functions
  * Copyright (c) 2008 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,6 +32,7 @@
 #include "pixels.h"
 #include "rnd_avg.h"
 #include "rv34dsp.h"
+#include "libavutil/avassert.h"
 
 #define RV40_LOWPASS(OPNAME, OP) \
 static av_unused void OPNAME ## rv40_qpel8_h_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride,\
@@ -299,7 +300,7 @@ static void OPNAME ## rv40_chroma_mc4_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
     int i;\
     int bias = rv40_bias[y>>1][x>>1];\
     \
-    assert(x<8 && y<8 && x>=0 && y>=0);\
+    av_assert2(x<8 && y<8 && x>=0 && y>=0);\
 \
     if(D){\
         for(i = 0; i < h; i++){\
@@ -332,7 +333,7 @@ static void OPNAME ## rv40_chroma_mc8_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
     int i;\
     int bias = rv40_bias[y>>1][x>>1];\
     \
-    assert(x<8 && y<8 && x>=0 && y>=0);\
+    av_assert2(x<8 && y<8 && x>=0 && y>=0);\
 \
     if(D){\
         for(i = 0; i < h; i++){\
