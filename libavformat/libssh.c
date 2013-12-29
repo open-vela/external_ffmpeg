@@ -91,13 +91,10 @@ static int libssh_open(URLContext *h, const char *url, int flags)
         goto fail;
     }
 
-    if (ssh_userauth_autopubkey(s->session, pass) != SSH_AUTH_SUCCESS) {
-        av_log(s, AV_LOG_DEBUG, "Authentication using public key failed, trying password method.\n");
-        if (ssh_userauth_password(s->session, NULL, pass) != SSH_AUTH_SUCCESS) {
-            av_log(h, AV_LOG_ERROR, "Authentication failed.\n");
-            ret = AVERROR(EACCES);
-            goto fail;
-        }
+    if (pass && ssh_userauth_password(s->session, NULL, pass) != SSH_AUTH_SUCCESS) {
+        av_log(h, AV_LOG_ERROR, "Error authenticating with password: %s\n", ssh_get_error(s->session));
+        ret = AVERROR(EACCES);
+        goto fail;
     }
 
     if (!(s->sftp = sftp_new(s->session))) {
@@ -124,8 +121,7 @@ static int libssh_open(URLContext *h, const char *url, int flags)
         access = O_RDONLY;
     }
 
-    /* 0666 = -rw-rw-rw- = read+write for everyone, minus umask */
-    if (!(s->file = sftp_open(s->sftp, path, access, 0666))) {
+    if (!(s->file = sftp_open(s->sftp, path, access, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH))) {
         av_log(h, AV_LOG_ERROR, "Error opening sftp file: %s\n", ssh_get_error(s->session));
         ret = AVERROR(EIO);
         goto fail;
