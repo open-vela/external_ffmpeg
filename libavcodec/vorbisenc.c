@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2006 Oded Shimon <ods15@ods15.dyndns.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -142,9 +142,9 @@ typedef struct {
 static inline int put_codeword(PutBitContext *pb, vorbis_enc_codebook *cb,
                                int entry)
 {
-    av_assert2(entry >= 0);
-    av_assert2(entry < cb->nentries);
-    av_assert2(cb->lens[entry]);
+    assert(entry >= 0);
+    assert(entry < cb->nentries);
+    assert(cb->lens[entry]);
     if (pb->size_in_bits - put_bits_count(pb) < cb->lens[entry])
         return AVERROR(EINVAL);
     put_bits(pb, cb->lens[entry], cb->codewords[entry]);
@@ -200,7 +200,7 @@ static int ready_codebook(vorbis_enc_codebook *cb)
 static int ready_residue(vorbis_enc_residue *rc, vorbis_enc_context *venc)
 {
     int i;
-    av_assert0(rc->type == 2);
+    assert(rc->type == 2);
     rc->maxes = av_mallocz(sizeof(float[2]) * rc->classifications);
     if (!rc->maxes)
         return AVERROR(ENOMEM);
@@ -880,8 +880,8 @@ static int residue_encode(vorbis_enc_context *venc, vorbis_enc_residue *rc,
     int classes[MAX_CHANNELS][NUM_RESIDUE_PARTITIONS];
     int classwords = venc->codebooks[rc->classbook].ndimensions;
 
-    av_assert0(rc->type == 2);
-    av_assert0(real_ch == 2);
+    assert(rc->type == 2);
+    assert(real_ch == 2);
     for (p = 0; p < partitions; p++) {
         float max1 = 0.0, max2 = 0.0;
         int s = rc->begin + p * psize;
@@ -1015,6 +1015,7 @@ static int apply_window_and_mdct(vorbis_enc_context *venc,
     return 1;
 }
 
+
 static int vorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                                const AVFrame *frame, int *got_packet_ptr)
 {
@@ -1030,8 +1031,10 @@ static int vorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         return 0;
     samples = 1 << (venc->log2_blocksize[0] - 1);
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, 8192)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, 8192))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     init_put_bits(&pb, avpkt->data, avpkt->size);
 
@@ -1088,10 +1091,10 @@ static int vorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     avpkt->size = put_bits_count(&pb) >> 3;
 
     avpkt->duration = ff_samples_to_time_base(avctx, avctx->frame_size);
-    if (frame) {
+    if (frame)
         if (frame->pts != AV_NOPTS_VALUE)
             avpkt->pts = ff_samples_to_time_base(avctx, frame->pts);
-    } else
+    else
         avpkt->pts = venc->next_pts;
     if (avpkt->pts != AV_NOPTS_VALUE)
         venc->next_pts = avpkt->pts + avpkt->duration;
@@ -1166,7 +1169,7 @@ static av_cold int vorbis_encode_init(AVCodecContext *avctx)
     int ret;
 
     if (avctx->channels != 2) {
-        av_log(avctx, AV_LOG_ERROR, "Current FFmpeg Vorbis encoder only supports 2 channels.\n");
+        av_log(avctx, AV_LOG_ERROR, "Current Libav Vorbis encoder only supports 2 channels.\n");
         return -1;
     }
 
@@ -1177,7 +1180,7 @@ static av_cold int vorbis_encode_init(AVCodecContext *avctx)
     if (avctx->flags & CODEC_FLAG_QSCALE)
         venc->quality = avctx->global_quality / (float)FF_QP2LAMBDA;
     else
-        venc->quality = 8;
+        venc->quality = 3.0;
     venc->quality *= venc->quality;
 
     if ((ret = put_main_header(venc, (uint8_t**)&avctx->extradata)) < 0)

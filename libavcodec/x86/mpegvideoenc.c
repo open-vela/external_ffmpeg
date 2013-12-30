@@ -2,20 +2,20 @@
  * The simplest mpeg encoder (well, it was the simplest!)
  * Copyright (c) 2000,2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,14 +30,12 @@
 /* not permutated inverse zigzag_direct + 1 for MMX quantizer */
 DECLARE_ALIGNED(16, static uint16_t, inv_zigzag_direct16)[64];
 
-#if HAVE_6REGS
-
 #if HAVE_MMX_INLINE
 #define COMPILE_TEMPLATE_MMXEXT 0
 #define COMPILE_TEMPLATE_SSE2   0
 #define COMPILE_TEMPLATE_SSSE3  0
-#define RENAME(a) a ## _MMX
-#define RENAMEl(a) a ## _mmx
+#define RENAME(a)      a ## _mmx
+#define RENAME_FDCT(a) a ## _mmx
 #include "mpegvideoenc_template.c"
 #endif /* HAVE_MMX_INLINE */
 
@@ -49,9 +47,9 @@ DECLARE_ALIGNED(16, static uint16_t, inv_zigzag_direct16)[64];
 #define COMPILE_TEMPLATE_SSE2   0
 #define COMPILE_TEMPLATE_SSSE3  0
 #undef RENAME
-#undef RENAMEl
-#define RENAME(a) a ## _MMXEXT
-#define RENAMEl(a) a ## _mmxext
+#undef RENAME_FDCT
+#define RENAME(a)      a ## _mmxext
+#define RENAME_FDCT(a) a ## _mmxext
 #include "mpegvideoenc_template.c"
 #endif /* HAVE_MMXEXT_INLINE */
 
@@ -63,9 +61,9 @@ DECLARE_ALIGNED(16, static uint16_t, inv_zigzag_direct16)[64];
 #define COMPILE_TEMPLATE_SSE2   1
 #define COMPILE_TEMPLATE_SSSE3  0
 #undef RENAME
-#undef RENAMEl
-#define RENAME(a) a ## _SSE2
-#define RENAMEl(a) a ## _sse2
+#undef RENAME_FDCT
+#define RENAME(a)      a ## _sse2
+#define RENAME_FDCT(a) a ## _sse2
 #include "mpegvideoenc_template.c"
 #endif /* HAVE_SSE2_INLINE */
 
@@ -77,13 +75,11 @@ DECLARE_ALIGNED(16, static uint16_t, inv_zigzag_direct16)[64];
 #define COMPILE_TEMPLATE_SSE2   1
 #define COMPILE_TEMPLATE_SSSE3  1
 #undef RENAME
-#undef RENAMEl
-#define RENAME(a) a ## _SSSE3
-#define RENAMEl(a) a ## _sse2
+#undef RENAME_FDCT
+#define RENAME(a)      a ## _ssse3
+#define RENAME_FDCT(a) a ## _sse2
 #include "mpegvideoenc_template.c"
 #endif /* HAVE_SSSE3_INLINE */
-
-#endif /* HAVE_6REGS */
 
 #if HAVE_INLINE_ASM
 static void  denoise_dct_mmx(MpegEncContext *s, int16_t *block){
@@ -197,7 +193,7 @@ static void  denoise_dct_sse2(MpegEncContext *s, int16_t *block){
 }
 #endif /* HAVE_INLINE_ASM */
 
-av_cold void ff_dct_encode_init_x86(MpegEncContext *s)
+av_cold void ff_MPV_encode_init_x86(MpegEncContext *s)
 {
     const int dct_algo = s->avctx->dct_algo;
     int i;
@@ -209,27 +205,23 @@ av_cold void ff_dct_encode_init_x86(MpegEncContext *s)
 #if HAVE_MMX_INLINE
         int cpu_flags = av_get_cpu_flags();
         if (INLINE_MMX(cpu_flags)) {
-#if HAVE_6REGS
-            s->dct_quantize = dct_quantize_MMX;
-#endif
+            s->dct_quantize = dct_quantize_mmx;
             s->denoise_dct  = denoise_dct_mmx;
         }
 #endif
-#if HAVE_6REGS && HAVE_MMXEXT_INLINE
+#if HAVE_MMXEXT_INLINE
         if (INLINE_MMXEXT(cpu_flags))
-            s->dct_quantize = dct_quantize_MMXEXT;
+            s->dct_quantize = dct_quantize_mmxext;
 #endif
 #if HAVE_SSE2_INLINE
         if (INLINE_SSE2(cpu_flags)) {
-#if HAVE_6REGS
-            s->dct_quantize = dct_quantize_SSE2;
-#endif
+            s->dct_quantize = dct_quantize_sse2;
             s->denoise_dct  = denoise_dct_sse2;
         }
 #endif
-#if HAVE_6REGS && HAVE_SSSE3_INLINE
+#if HAVE_SSSE3_INLINE
         if (INLINE_SSSE3(cpu_flags))
-            s->dct_quantize = dct_quantize_SSSE3;
+            s->dct_quantize = dct_quantize_ssse3;
 #endif
     }
 }

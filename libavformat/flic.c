@@ -2,20 +2,20 @@
  * FLI/FLC Animation File Demuxer
  * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -80,7 +80,7 @@ static int flic_probe(AVProbeData *p)
         return 0;
 
 
-    return AVPROBE_SCORE_MAX - 1;
+    return AVPROBE_SCORE_MAX;
 }
 
 static int flic_read_header(AVFormatContext *s)
@@ -117,7 +117,7 @@ static int flic_read_header(AVFormatContext *s)
 
     if (!st->codec->width || !st->codec->height) {
         /* Ugly hack needed for the following sample: */
-        /* http://samples.mplayerhq.hu/fli-flc/fli-bugs/specular.flc */
+        /* http://samples.libav.org/fli-flc/fli-bugs/specular.flc */
         av_log(s, AV_LOG_WARNING,
                "File with no specified width/height. Trying 640x480.\n");
         st->codec->width  = 640;
@@ -125,8 +125,8 @@ static int flic_read_header(AVFormatContext *s)
     }
 
     /* send over the whole 128-byte FLIC header */
-    if (ff_alloc_extradata(st->codec, FLIC_HEADER_SIZE))
-        return AVERROR(ENOMEM);
+    st->codec->extradata_size = FLIC_HEADER_SIZE;
+    st->codec->extradata = av_malloc(FLIC_HEADER_SIZE);
     memcpy(st->codec->extradata, header, FLIC_HEADER_SIZE);
 
     /* peek at the preamble to detect TFTD videos - they seem to always start with an audio chunk */
@@ -158,6 +158,7 @@ static int flic_read_header(AVFormatContext *s)
         ast->codec->codec_tag = 0;
         ast->codec->sample_rate = FLIC_TFTD_SAMPLE_RATE;
         ast->codec->channels = 1;
+        ast->codec->sample_fmt = AV_SAMPLE_FMT_U8;
         ast->codec->bit_rate = st->codec->sample_rate * 8;
         ast->codec->bits_per_coded_sample = 8;
         ast->codec->channel_layout = AV_CH_LAYOUT_MONO;
@@ -176,8 +177,8 @@ static int flic_read_header(AVFormatContext *s)
 
         /* send over abbreviated FLIC header chunk */
         av_free(st->codec->extradata);
-        if (ff_alloc_extradata(st->codec, 12))
-            return AVERROR(ENOMEM);
+        st->codec->extradata_size = 12;
+        st->codec->extradata = av_malloc(12);
         memcpy(st->codec->extradata, header, 12);
 
     } else if (magic_number == FLIC_FILE_MAGIC_1) {
@@ -186,7 +187,7 @@ static int flic_read_header(AVFormatContext *s)
                (magic_number == FLIC_FILE_MAGIC_3)) {
         avpriv_set_pts_info(st, 64, speed, 1000);
     } else {
-        av_log(s, AV_LOG_ERROR, "Invalid or unsupported magic chunk in file\n");
+        av_log(s, AV_LOG_INFO, "Invalid or unsupported magic chunk in file\n");
         return AVERROR_INVALIDDATA;
     }
 
