@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -116,6 +116,7 @@ av_cold void ff_atrac3p_init_wave_synth(void)
  *  @param[in]    synth_param   ptr to common synthesis parameters
  *  @param[in]    waves_info    parameters for each sine wave
  *  @param[in]    envelope      envelope data for all waves in a group
+ *  @param[in]    phase_shift   flag indicates 180° phase shift
  *  @param[in]    reg_offset    region offset for trimming envelope data
  *  @param[out]   out           receives sythesized data
  */
