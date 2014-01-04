@@ -2,20 +2,20 @@
  * MLP codec common header file
  * Copyright (c) 2007-2008 Ian Caulfield
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -123,5 +123,15 @@ static inline uint8_t xor_32_to_8(uint32_t value)
     value ^= value >>  8;
     return value;
 }
+
+typedef enum THDChannelModifier {
+    THD_CH_MODIFIER_NOTINDICATED  = 0x0,
+    THD_CH_MODIFIER_STEREO        = 0x0, // Stereo (not Dolby Surround)
+    THD_CH_MODIFIER_LTRT          = 0x1, // Dolby Surround
+    THD_CH_MODIFIER_LBINRBIN      = 0x2, // Dolby Headphone
+    THD_CH_MODIFIER_MONO          = 0x3, // Mono or Dual Mono
+    THD_CH_MODIFIER_NOTSURROUNDEX = 0x1, // Not Dolby Digital EX
+    THD_CH_MODIFIER_SURROUNDEX    = 0x2, // Dolby Digital EX
+} THDChannelModifier;
 
 #endif /* AVCODEC_MLP_H */
