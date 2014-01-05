@@ -4,20 +4,20 @@
  * Copyright (C) 2012 - 2013 Guillaume Martres
  * Copyright (C) 2013 Anand Meher Kotra
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,7 @@ static const uint8_t l0_l1_cand_idx[12][2] = {
 void ff_hevc_set_neighbour_available(HEVCContext *s, int x0, int y0,
                                      int nPbW, int nPbH)
 {
-    HEVCLocalContext *lc = s->HEVClc;
+    HEVCLocalContext *lc = &s->HEVClc;
     int x0b = x0 & ((1 << s->sps->log2_ctb_size) - 1);
     int y0b = y0 & ((1 << s->sps->log2_ctb_size) - 1);
 
@@ -98,7 +98,7 @@ static int check_prediction_block_available(HEVCContext *s, int log2_cb_size,
                                             int x0, int y0, int nPbW, int nPbH,
                                             int xA1, int yA1, int partIdx)
 {
-    HEVCLocalContext *lc = s->HEVClc;
+    HEVCLocalContext *lc = &s->HEVClc;
 
     if (lc->cu.x < xA1 && lc->cu.y < yA1 &&
         (lc->cu.x + (1 << log2_cb_size)) > xA1 &&
@@ -266,8 +266,7 @@ static int temporal_luma_motion_vector(HEVCContext *s, int x0, int y0,
     x = x0 + nPbW;
     y = y0 + nPbH;
 
-    if (s->threads_type == FF_THREAD_FRAME )
-        ff_thread_await_progress(&ref->tf, y, 0);
+    ff_thread_await_progress(&ref->tf, y, 0);
     if (tab_mvf &&
         (y0 >> s->sps->log2_ctb_size) == (y >> s->sps->log2_ctb_size) &&
         y < s->sps->height &&
@@ -314,7 +313,7 @@ static void derive_spatial_merge_candidates(HEVCContext *s, int x0, int y0,
                                             int singleMCLFlag, int part_idx,
                                             struct MvField mergecandlist[])
 {
-    HEVCLocalContext *lc   = s->HEVClc;
+    HEVCLocalContext *lc   = &s->HEVClc;
     RefPicList *refPicList = s->ref->refPicList;
     MvField *tab_mvf       = s->ref->tab_mvf;
 
@@ -478,7 +477,7 @@ static void derive_spatial_merge_candidates(HEVCContext *s, int x0, int y0,
     // combined bi-predictive merge candidates  (applies for B slices)
     if (s->sh.slice_type == B_SLICE && nb_orig_merge_cand > 1 &&
         nb_orig_merge_cand < s->sh.max_num_merge_cand) {
-        int comb_idx = 0;
+        int comb_idx;
 
         for (comb_idx = 0; nb_merge_cand < s->sh.max_num_merge_cand &&
                            comb_idx < nb_orig_merge_cand * (nb_orig_merge_cand - 1); comb_idx++) {
@@ -535,7 +534,7 @@ void ff_hevc_luma_mv_merge_mode(HEVCContext *s, int x0, int y0, int nPbW,
     struct MvField mergecand_list[MRG_MAX_NUM_CANDS] = { { { { 0 } } } };
     int nPbW2 = nPbW;
     int nPbH2 = nPbH;
-    HEVCLocalContext *lc = s->HEVClc;
+    HEVCLocalContext *lc = &s->HEVClc;
 
     if (s->pps->log2_parallel_merge_level > 2 && nCS == 8) {
         singleMCLFlag = 1;
@@ -625,7 +624,7 @@ void ff_hevc_luma_mv_mvp_mode(HEVCContext *s, int x0, int y0, int nPbW,
                               int merge_idx, MvField *mv,
                               int mvp_lx_flag, int LX)
 {
-    HEVCLocalContext *lc = s->HEVClc;
+    HEVCLocalContext *lc = &s->HEVClc;
     MvField *tab_mvf = s->ref->tab_mvf;
     int isScaledFlag_L0 = 0;
     int availableFlagLXA0 = 0;
