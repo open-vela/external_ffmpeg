@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Bartlomiej Wolowiec <bartek.wolowiec@gmail.com>
  * Copyright (c) 2008 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -341,11 +341,6 @@ int ff_eac3_parse_header(AC3DecodeContext *s)
         }
     }
 
-    /* default dolby matrix encoding modes */
-    s->dolby_surround_mode    = AC3_DSURMOD_NOTINDICATED;
-    s->dolby_surround_ex_mode = AC3_DSUREXMOD_NOTINDICATED;
-    s->dolby_headphone_mode   = AC3_DHEADPHONMOD_NOTINDICATED;
-
     /* mixing metadata */
     if (get_bits1(gbc)) {
         /* center and surround mix levels */
@@ -418,11 +413,10 @@ int ff_eac3_parse_header(AC3DecodeContext *s)
         s->bitstream_mode = get_bits(gbc, 3);
         skip_bits(gbc, 2); // skip copyright bit and original bitstream bit
         if (s->channel_mode == AC3_CHMODE_STEREO) {
-            s->dolby_surround_mode  = get_bits(gbc, 2);
-            s->dolby_headphone_mode = get_bits(gbc, 2);
+            skip_bits(gbc, 4); // skip Dolby surround and headphone mode
         }
         if (s->channel_mode >= AC3_CHMODE_2F2R) {
-            s->dolby_surround_ex_mode = get_bits(gbc, 2);
+            skip_bits(gbc, 2); // skip Dolby surround EX mode
         }
         for (i = 0; i < (s->channel_mode ? 1 : 2); i++) {
             if (get_bits1(gbc)) {
