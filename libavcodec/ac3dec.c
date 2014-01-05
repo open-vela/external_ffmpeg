@@ -7,20 +7,20 @@
  * Copyright (c) 2007-2008 Bartlomiej Wolowiec <bartek.wolowiec@gmail.com>
  * Copyright (c) 2007 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -227,26 +227,12 @@ static int ac3_parse_header(AC3DecodeContext *s)
 
     skip_bits(gbc, 2); //skip copyright bit and original bitstream bit
 
-    /* default dolby matrix encoding modes */
-    s->dolby_surround_ex_mode = AC3_DSUREXMOD_NOTINDICATED;
-    s->dolby_headphone_mode   = AC3_DHEADPHONMOD_NOTINDICATED;
-
-    /* skip the timecodes or parse the Alternate Bit Stream Syntax
+    /* skip the timecodes (or extra bitstream information for Alternate Syntax)
        TODO: read & use the xbsi1 downmix levels */
-    if (s->bitstream_id != 6) {
-        if (get_bits1(gbc))
-            skip_bits(gbc, 14); //skip timecode1
-        if (get_bits1(gbc))
-            skip_bits(gbc, 14); //skip timecode2
-    } else {
-        if (get_bits1(gbc))
-            skip_bits(gbc, 14); //skip xbsi1
-        if (get_bits1(gbc)) {
-            s->dolby_surround_ex_mode = get_bits(gbc, 2);
-            s->dolby_headphone_mode   = get_bits(gbc, 2);
-            skip_bits(gbc, 10); // skip adconvtyp (1), xbsi2 (8), encinfo (1)
-        }
-    }
+    if (get_bits1(gbc))
+        skip_bits(gbc, 14); //skip timecode1 / xbsi1
+    if (get_bits1(gbc))
+        skip_bits(gbc, 14); //skip timecode2 / xbsi2
 
     /* skip additional bitstream info */
     if (get_bits1(gbc)) {
@@ -273,7 +259,6 @@ static int parse_frame_header(AC3DecodeContext *s)
 
     /* get decoding parameters from header info */
     s->bit_alloc_params.sr_code     = hdr.sr_code;
-    s->bitstream_id                 = hdr.bitstream_id;
     s->bitstream_mode               = hdr.bitstream_mode;
     s->channel_mode                 = hdr.channel_mode;
     s->lfe_on                       = hdr.lfe_on;
@@ -289,7 +274,6 @@ static int parse_frame_header(AC3DecodeContext *s)
     s->num_blocks                   = hdr.num_blocks;
     s->frame_type                   = hdr.frame_type;
     s->substreamid                  = hdr.substreamid;
-    s->dolby_surround_mode          = hdr.dolby_surround_mode;
 
     if (s->lfe_on) {
         s->start_freq[s->lfe_ch]     = 0;
@@ -298,7 +282,7 @@ static int parse_frame_header(AC3DecodeContext *s)
         s->channel_in_cpl[s->lfe_ch] = 0;
     }
 
-    if (s->bitstream_id <= 10) {
+    if (hdr.bitstream_id <= 10) {
         s->eac3                  = 0;
         s->snr_offset_strategy   = 2;
         s->block_switch_syntax   = 1;
@@ -466,7 +450,7 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
         case 0:
             /* random noise with approximate range of -0.707 to 0.707 */
             if (dither)
-                mantissa = (av_lfg_get(&s->dith_state) / 362) - 5932275;
+                mantissa = (((av_lfg_get(&s->dith_state)>>8)*181)>>8) - 5931008;
             else
                 mantissa = 0;
             break;
@@ -513,6 +497,10 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
             break;
         default: /* 6 to 15 */
             /* Shift mantissa and sign-extend it. */
+            if (bap > 15) {
+                av_log(s->avctx, AV_LOG_ERROR, "bap %d is invalid in plain AC-3\n", bap);
+                bap = 15;
+            }
             mantissa = get_sbits(gbc, quantization_tab[bap]);
             mantissa <<= 24 - quantization_tab[bap];
             break;
@@ -1296,7 +1284,6 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
     int blk, ch, err, ret;
     const uint8_t *channel_map;
     const float *output[AC3_MAX_CHANNELS];
-    enum AVMatrixEncoding matrix_encoding;
 
     /* copy input buffer to decoder context to avoid reading past the end
        of the buffer, which can be caused by a damaged input stream. */
@@ -1351,7 +1338,7 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         if (s->frame_size > buf_size) {
             av_log(avctx, AV_LOG_ERROR, "incomplete frame\n");
             err = AAC_AC3_PARSE_ERROR_FRAME_SIZE;
-        } else if (avctx->err_recognition & AV_EF_CRCCHECK) {
+        } else if (avctx->err_recognition & (AV_EF_CRCCHECK|AV_EF_CAREFUL)) {
             /* check for crc mismatch */
             if (av_crc(av_crc_get_table(AV_CRC_16_ANSI), 0, &buf[2],
                        s->frame_size - 2)) {
@@ -1385,6 +1372,10 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
             s->output_mode  = AC3_CHMODE_STEREO;
         }
 
+        s->loro_center_mix_level   = gain_levels[s->  center_mix_level];
+        s->loro_surround_mix_level = gain_levels[s->surround_mix_level];
+        s->ltrt_center_mix_level   = LEVEL_MINUS_3DB;
+        s->ltrt_surround_mix_level = LEVEL_MINUS_3DB;
         /* set downmixing coefficients if needed */
         if (s->channels != s->out_channels && !((s->output_mode & AC3_OUTPUT_LFEON) &&
                 s->fbw_channels == s->out_channels)) {
@@ -1406,19 +1397,18 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = s->num_blocks * AC3_BLOCK_SIZE;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     /* decode the audio blocks */
     channel_map = ff_ac3_dec_channel_map[s->output_mode & ~AC3_OUTPUT_LFEON][s->lfe_on];
+    for (ch = 0; ch < AC3_MAX_CHANNELS; ch++) {
+        output[ch] = s->output[ch];
+        s->outptr[ch] = s->output[ch];
+    }
     for (ch = 0; ch < s->channels; ch++) {
         if (ch < s->out_channels)
             s->outptr[channel_map[ch]] = (float *)frame->data[ch];
-        else
-            s->outptr[ch] = s->output[ch];
-        output[ch] = s->output[ch];
     }
     for (blk = 0; blk < s->num_blocks; blk++) {
         if (!err && decode_audio_block(s, blk)) {
@@ -1427,45 +1417,20 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         }
         if (err)
             for (ch = 0; ch < s->out_channels; ch++)
-                memcpy(s->outptr[channel_map[ch]], output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
+                memcpy(((float*)frame->data[ch]) + AC3_BLOCK_SIZE*blk, output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
         for (ch = 0; ch < s->out_channels; ch++)
             output[ch] = s->outptr[channel_map[ch]];
-        for (ch = 0; ch < s->out_channels; ch++)
-            s->outptr[ch] += AC3_BLOCK_SIZE;
+        for (ch = 0; ch < s->out_channels; ch++) {
+            if (!ch || channel_map[ch])
+                s->outptr[channel_map[ch]] += AC3_BLOCK_SIZE;
+        }
     }
+
+    av_frame_set_decode_error_flags(frame, err ? FF_DECODE_ERROR_INVALID_BITSTREAM : 0);
 
     /* keep last block for error concealment in next frame */
     for (ch = 0; ch < s->out_channels; ch++)
         memcpy(s->output[ch], output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
-
-    /*
-     * AVMatrixEncoding
-     *
-     * Check whether the input layout is compatible, and make sure we're not
-     * downmixing (else the matrix encoding is no longer applicable).
-     */
-    matrix_encoding = AV_MATRIX_ENCODING_NONE;
-    if (s->channel_mode == AC3_CHMODE_STEREO &&
-        s->channel_mode == (s->output_mode & ~AC3_OUTPUT_LFEON)) {
-        if (s->dolby_surround_mode == AC3_DSURMOD_ON)
-            matrix_encoding = AV_MATRIX_ENCODING_DOLBY;
-        else if (s->dolby_headphone_mode == AC3_DHEADPHONMOD_ON)
-            matrix_encoding = AV_MATRIX_ENCODING_DOLBYHEADPHONE;
-    } else if (s->channel_mode >= AC3_CHMODE_2F2R &&
-               s->channel_mode == (s->output_mode & ~AC3_OUTPUT_LFEON)) {
-        switch (s->dolby_surround_ex_mode) {
-        case AC3_DSUREXMOD_ON: // EX or PLIIx
-            matrix_encoding = AV_MATRIX_ENCODING_DOLBYEX;
-            break;
-        case AC3_DSUREXMOD_PLIIZ:
-            matrix_encoding = AV_MATRIX_ENCODING_DPLIIZ;
-            break;
-        default: // not indicated or off
-            break;
-        }
-    }
-    if ((ret = ff_side_data_update_matrix_encoding(frame, matrix_encoding)) < 0)
-        return ret;
 
     *got_frame_ptr = 1;
 
@@ -1488,6 +1453,13 @@ static av_cold int ac3_decode_end(AVCodecContext *avctx)
 #define PAR (AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_AUDIO_PARAM)
 static const AVOption options[] = {
     { "drc_scale", "percentage of dynamic range compression to apply", OFFSET(drc_scale), AV_OPT_TYPE_FLOAT, {.dbl = 1.0}, 0.0, 1.0, PAR },
+
+{"dmix_mode", "Preferred Stereo Downmix Mode", OFFSET(preferred_stereo_downmix), AV_OPT_TYPE_INT, {.i64 = -1 }, -1, 2, 0, "dmix_mode"},
+{"ltrt_cmixlev",   "Lt/Rt Center Mix Level",   OFFSET(ltrt_center_mix_level),    AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+{"ltrt_surmixlev", "Lt/Rt Surround Mix Level", OFFSET(ltrt_surround_mix_level),  AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+{"loro_cmixlev",   "Lo/Ro Center Mix Level",   OFFSET(loro_center_mix_level),    AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+{"loro_surmixlev", "Lo/Ro Surround Mix Level", OFFSET(loro_surround_mix_level),  AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, 0},
+
     { NULL},
 };
 
