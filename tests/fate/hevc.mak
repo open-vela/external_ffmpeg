@@ -16,7 +16,7 @@ HEVC_SAMPLES =                  \
     CAINIT_G_SHARP_3            \
     CAINIT_H_SHARP_3            \
     CIP_A_Panasonic_3           \
-    cip_B_NEC_3                 \
+    cip_B_NEC_2                 \
     CIP_C_Panasonic_2           \
     DBLK_A_SONY_3               \
     DBLK_B_SONY_3               \
@@ -38,16 +38,16 @@ HEVC_SAMPLES =                  \
     ENTP_B_LG_2                 \
     ENTP_C_LG_3                 \
     EXT_A_ericsson_3            \
-    ipcm_A_NEC_3                \
-    ipcm_B_NEC_3                \
-    ipcm_C_NEC_3                \
-    ipcm_D_NEC_3                \
+    ipcm_A_NEC_2                \
+    ipcm_B_NEC_2                \
+    ipcm_C_NEC_2                \
+    ipcm_D_NEC_2                \
     ipcm_E_NEC_2                \
     IPRED_A_docomo_2            \
     IPRED_B_Nokia_3             \
     IPRED_C_Mitsubishi_2        \
     LS_A_Orange_2               \
-    LS_B_ORANGE_4               \
+    LS_B_ORANGE_3               \
     MAXBINS_A_TI_4              \
     MAXBINS_B_TI_4              \
     MAXBINS_C_TI_4              \
@@ -141,12 +141,12 @@ HEVC_SAMPLES_10BIT =            \
 
 define FATE_HEVC_TEST
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -vsync 0 -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit
+fate-hevc-conformance-$(1): CMD = framecrc -vsync drop -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit
 endef
 
 define FATE_HEVC_TEST_10BIT
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -vsync 0 -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
+fate-hevc-conformance-$(1): CMD = framecrc -vsync drop -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
 endef
 
 $(foreach N,$(HEVC_SAMPLES),$(eval $(call FATE_HEVC_TEST,$(N))))

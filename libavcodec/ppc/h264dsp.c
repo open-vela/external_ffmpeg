@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2004 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -750,7 +750,7 @@ av_cold void ff_h264dsp_init_ppc(H264DSPContext *c, const int bit_depth,
 
     if (bit_depth == 8) {
         c->h264_idct_add = h264_idct_add_altivec;
-        if (chroma_format_idc <= 1)
+        if (chroma_format_idc == 1)
             c->h264_idct_add8 = h264_idct_add8_altivec;
         c->h264_idct_add16      = h264_idct_add16_altivec;
         c->h264_idct_add16intra = h264_idct_add16intra_altivec;
