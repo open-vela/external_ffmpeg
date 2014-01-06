@@ -2,20 +2,19 @@
  * AviSynth/AvxSynth support
  * Copyright (c) 2012 AvxSynth Team.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,25 +26,17 @@
 /* Enable function pointer definitions for runtime loading. */
 #define AVSC_NO_DECLSPEC
 
-/* Platform-specific directives for AviSynth vs AvxSynth.
- *
- * avisynth_c.h needs to be the one provided with x264, as
- * the one in AviSynth's CVS hasn't been updated to support
- * 2.6's extra colorspaces. A temporary source of that header,
- * installable from a GNU-style Makefile is available from
- * github.com/qyot27/avisynth_headers -- AvxSynth doesn't
- * require this kind of special treatment because like any
- * standard *nix application, it installs its headers
- * alongside its libs. */
+/* Platform-specific directives for AviSynth vs AvxSynth. */
 #ifdef _WIN32
   #include <windows.h>
   #undef EXTERN_C
-  #include <avisynth/avisynth_c.h>
+  #include "compat/avisynth/avisynth_c.h"
+  #include "compat/avisynth/avisynth_c_25.h"
   #define AVISYNTH_LIB "avisynth"
   #define USING_AVISYNTH
 #else
   #include <dlfcn.h>
-  #include <avxsynth/avxsynth_c.h>
+  #include "compat/avisynth/avxsynth_c.h"
     #if defined (__APPLE__)
       #define AVISYNTH_LIB "libavxsynth.dylib"
     #else
@@ -392,19 +383,6 @@ static int avisynth_open_file(AVFormatContext *s)
     avs->clip = avs_library.avs_take_clip(val, avs->env);
     avs->vi   = avs_library.avs_get_video_info(avs->clip);
 
-#ifdef USING_AVISYNTH
-    /* libav only supports AviSynth 2.6 on Windows. Since AvxSynth
-     * identifies itself as interface version 3 like 2.5.8, this
-     * needs to be special-cased. */
-
-    if (avs_library.avs_get_version(avs->clip) == 3) {
-        av_log(s, AV_LOG_ERROR,
-               "AviSynth 2.5.8 not supported. Please upgrade to 2.6.\n");
-        ret = AVERROR_UNKNOWN;
-        goto fail;
-    }
-#endif
-
     /* Release the AVS_Value as it will go out of scope. */
     avs_library.avs_release_value(val);
 
@@ -481,16 +459,17 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
                   (int64_t)avs->vi->height) * bits) / 8;
     if (!pkt->size)
         return AVERROR_UNKNOWN;
-
-    if (av_new_packet(pkt, pkt->size) < 0)
+    if (av_new_packet(pkt, (int)pkt->size) < 0) {
+        av_free(pkt);
         return AVERROR(ENOMEM);
+    }
 
     frame = avs_library.avs_get_frame(avs->clip, n);
     error = avs_library.avs_clip_get_error(avs->clip);
     if (error) {
         av_log(s, AV_LOG_ERROR, "%s\n", error);
         avs->error = 1;
-        av_packet_unref(pkt);
+        av_freep(&pkt->data);
         return AVERROR_UNKNOWN;
     }
 
@@ -500,8 +479,18 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
         src_p = avs_get_read_ptr_p(frame, plane);
         pitch = avs_get_pitch_p(frame, plane);
 
+#ifdef USING_AVISYNTH
+        if (avs_library.avs_get_version(avs->clip) == 3) {
+            rowsize     = avs_get_row_size_p_25(frame, plane);
+            planeheight = avs_get_height_p_25(frame, plane);
+        } else {
+            rowsize     = avs_get_row_size_p(frame, plane);
+            planeheight = avs_get_height_p(frame, plane);
+        }
+#else
         rowsize     = avs_get_row_size_p(frame, plane);
         planeheight = avs_get_height_p(frame, plane);
+#endif
 
         /* Flip RGB video. */
         if (avs_is_rgb24(avs->vi) || avs_is_rgb(avs->vi)) {
@@ -569,8 +558,8 @@ static int avisynth_read_packet_audio(AVFormatContext *s, AVPacket *pkt,
                 samples * avs->vi->nchannels;
     if (!pkt->size)
         return AVERROR_UNKNOWN;
-
-    if (av_new_packet(pkt, pkt->size) < 0)
+    pkt->data = av_malloc(pkt->size);
+    if (!pkt->data)
         return AVERROR(ENOMEM);
 
     avs_library.avs_get_audio(avs->clip, pkt->data, n, samples);
@@ -578,7 +567,7 @@ static int avisynth_read_packet_audio(AVFormatContext *s, AVPacket *pkt,
     if (error) {
         av_log(s, AV_LOG_ERROR, "%s\n", error);
         avs->error = 1;
-        av_packet_unref(pkt);
+        av_freep(&pkt->data);
         return AVERROR_UNKNOWN;
     }
     return 0;
@@ -610,6 +599,8 @@ static int avisynth_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (avs->error)
         return AVERROR_UNKNOWN;
+
+    av_free_packet(pkt);
 
     /* If either stream reaches EOF, try to read the other one before
      * giving up. */
