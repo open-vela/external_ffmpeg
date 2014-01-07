@@ -35,18 +35,16 @@ checkout(){
 update()(
     cd ${src} || return
     case "$repo" in
-        git:*) git fetch --force && git reset --hard FETCH_HEAD ;;
+        git:*) git fetch --force; git reset --hard origin/master ;;
     esac
 )
 
 configure()(
     cd ${build} || return
-    ${shell} ${src}/configure                                           \
+    ${src}/configure                                                    \
         --prefix="${inst}"                                              \
         --samples="${samples}"                                          \
         --enable-gpl                                                    \
-        --enable-memory-poisoning                                       \
-        --enable-avresample                                             \
         ${arch:+--arch=$arch}                                           \
         ${cpu:+--cpu="$cpu"}                                            \
         ${cross_prefix:+--cross-prefix="$cross_prefix"}                 \
