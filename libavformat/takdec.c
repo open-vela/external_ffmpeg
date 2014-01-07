@@ -74,6 +74,7 @@ static int tak_read_header(AVFormatContext *s)
             buffer = av_malloc(size + FF_INPUT_BUFFER_PADDING_SIZE);
             if (!buffer)
                 return AVERROR(ENOMEM);
+            memset(buffer + size - 3, 0, FF_INPUT_BUFFER_PADDING_SIZE);
 
             if (avio_read(pb, buffer, size) != size) {
                 av_freep(&buffer);
