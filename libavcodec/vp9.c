@@ -232,7 +232,7 @@ typedef struct VP9Context {
     // block reconstruction intermediates
     int16_t *block_base, *block, *uvblock_base[2], *uvblock[2];
     uint8_t *eob_base, *uveob_base[2], *eob, *uveob[2];
-    struct { int x, y; } min_mv, max_mv;
+    VP56mv min_mv, max_mv;
     DECLARE_ALIGNED(32, uint8_t, tmp_y)[64*64];
     DECLARE_ALIGNED(32, uint8_t, tmp_uv)[2][32*32];
 } VP9Context;
@@ -3450,13 +3450,6 @@ static void adapt_probs(VP9Context *s)
     }
 }
 
-static void free_buffers(VP9Context *s)
-{
-    av_freep(&s->above_partition_ctx);
-    av_freep(&s->b_base);
-    av_freep(&s->block_base);
-}
-
 static av_cold int vp9_decode_free(AVCodecContext *ctx)
 {
     VP9Context *s = ctx->priv_data;
@@ -3475,9 +3468,11 @@ static av_cold int vp9_decode_free(AVCodecContext *ctx)
             ff_thread_release_buffer(ctx, &s->next_refs[i]);
         av_frame_free(&s->next_refs[i].f);
     }
-    free_buffers(s);
+    av_freep(&s->above_partition_ctx);
     av_freep(&s->c_b);
     s->c_b_size = 0;
+    av_freep(&s->b_base);
+    av_freep(&s->block_base);
 
     return 0;
 }
@@ -3767,10 +3762,7 @@ static int vp9_decode_update_thread_context(AVCodecContext *dst, const AVCodecCo
     int i, res;
     VP9Context *s = dst->priv_data, *ssrc = src->priv_data;
 
-    // detect size changes in other threads
-    if (s->above_partition_ctx && (s->cols != ssrc->cols || s->rows != ssrc->rows)) {
-        free_buffers(s);
-    }
+    // FIXME scalability, size, etc.
 
     for (i = 0; i < 2; i++) {
         if (s->frames[i].tf.f->data[0])
