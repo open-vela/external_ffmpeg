@@ -2,20 +2,20 @@
  * QCELP decoder
  * Copyright (c) 2007 Reynaldo H. Verdejo Pinochet
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,12 +23,13 @@
  * @file
  * QCELP decoder
  * @author Reynaldo H. Verdejo Pinochet
- * @remark Libav merging spearheaded by Kenan Gillet
+ * @remark FFmpeg merging spearheaded by Kenan Gillet
  * @remark Development mentored by Benjamin Larson
  */
 
 #include <stddef.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/float_dsp.h"
 #include "avcodec.h"
@@ -39,9 +40,6 @@
 #include "acelp_filters.h"
 #include "acelp_vectors.h"
 #include "lsp.h"
-
-#undef NDEBUG
-#include <assert.h>
 
 typedef enum {
     I_F_Q = -1,    /**< insufficient frame quality */
@@ -135,7 +133,7 @@ static int decode_lspf(QCELPContext *q, float *lspf)
         } else {
             erasure_coeff = QCELP_LSP_OCTAVE_PREDICTOR;
 
-            assert(q->bitrate == I_F_Q);
+            av_assert2(q->bitrate == I_F_Q);
 
             if (q->erasure_count > 1)
                 erasure_coeff *= q->erasure_count < 4 ? 0.9 : 0.7;
@@ -239,7 +237,7 @@ static void decode_gain_and_index(QCELPContext *q, float *gain)
                     av_clip((q->prev_g1[0] + q->prev_g1[1]) / 2 - 5, 0, 54);
             subframes_count = 8;
         } else {
-            assert(q->bitrate == I_F_Q);
+            av_assert2(q->bitrate == I_F_Q);
 
             g1[0] = q->prev_g1[1];
             switch (q->erasure_count) {
@@ -486,7 +484,7 @@ static void apply_pitch_filters(QCELPContext *q, float *cdn_vector)
                   else
                       max_pitch_gain = 0.0;
             } else {
-                assert(q->bitrate == SILENCE);
+                av_assert2(q->bitrate == SILENCE);
                 max_pitch_gain = 1.0;
             }
             for (i = 0; i < 4; i++)
@@ -695,10 +693,8 @@ static int qcelp_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = 160;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     outbuffer = (float *)frame->data[0];
 
     if ((q->bitrate = determine_bitrate(avctx, buf_size, &buf)) == I_F_Q) {
