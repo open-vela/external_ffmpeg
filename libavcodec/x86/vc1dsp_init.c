@@ -24,7 +24,6 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/vc1dsp.h"
