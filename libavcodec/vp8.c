@@ -6,20 +6,20 @@
  * Copyright (C) 2010 Jason Garrett-Glaser
  * Copyright (C) 2012 Daniel Kang
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,6 +45,7 @@ static void free_buffers(VP8Context *s)
             pthread_mutex_destroy(&s->thread_data[i].lock);
 #endif
             av_freep(&s->thread_data[i].filter_strength);
+            av_freep(&s->thread_data[i].edge_emu_buffer);
         }
     av_freep(&s->thread_data);
     av_freep(&s->macroblocks_base);
@@ -115,7 +116,7 @@ static int update_dimensions(VP8Context *s, int width, int height)
     AVCodecContext *avctx = s->avctx;
     int i, ret;
 
-    if (width  != s->avctx->width || ((width+15)/16 != s->mb_width || (height+15)/16 != s->mb_height) && s->macroblocks_base ||
+    if (width  != s->avctx->width ||
         height != s->avctx->height) {
         vp8_decode_flush_impl(s->avctx, 1);
 
@@ -382,7 +383,7 @@ static int decode_frame_header(VP8Context *s, const uint8_t *buf, int buf_size)
     }
 
     if (!s->macroblocks_base || /* first frame */
-        width != s->avctx->width || height != s->avctx->height || (width+15)/16 != s->mb_width || (height+15)/16 != s->mb_height) {
+        width != s->avctx->width || height != s->avctx->height) {
         if ((ret = update_dimensions(s, width, height)) < 0)
             return ret;
     }
@@ -664,7 +665,7 @@ void decode_intra4x4_modes(VP8Context *s, VP56RangeCoder *c, VP8Macroblock *mb,
 {
     uint8_t *intra4x4 = mb->intra4x4_pred_mode_mb;
 
-    if (layout) {
+    if (layout == 1) {
         VP8Macroblock *mb_top = mb - s->mb_width - 1;
         memcpy(mb->intra4x4_pred_mode_top, mb_top->intra4x4_pred_mode_top, 4);
     }
@@ -672,7 +673,7 @@ void decode_intra4x4_modes(VP8Context *s, VP56RangeCoder *c, VP8Macroblock *mb,
         int x, y;
         uint8_t* top;
         uint8_t* const left = s->intra4x4_pred_mode_left;
-        if (layout)
+        if (layout == 1)
             top = mb->intra4x4_pred_mode_top;
         else
             top = s->intra4x4_pred_mode_top + 4 * mb_x;
@@ -698,10 +699,9 @@ void decode_mb_mode(VP8Context *s, VP8Macroblock *mb, int mb_x, int mb_y,
 {
     VP56RangeCoder *c = &s->c;
 
-    if (s->segmentation.update_map) {
-        int bit  = vp56_rac_get_prob(c, s->prob->segmentid[0]);
-        *segment = vp56_rac_get_prob(c, s->prob->segmentid[1+bit]) + 2*bit;
-    } else if (s->segmentation.enabled)
+    if (s->segmentation.update_map)
+        *segment = vp8_rac_get_tree(c, vp8_segmentid_tree, s->prob->segmentid);
+    else if (s->segmentation.enabled)
         *segment = ref ? *ref : *segment;
     mb->segment = *segment;
 
@@ -714,7 +714,7 @@ void decode_mb_mode(VP8Context *s, VP8Macroblock *mb, int mb_x, int mb_y,
             decode_intra4x4_modes(s, c, mb, mb_x, 1, layout);
         } else {
             const uint32_t modes = vp8_pred4x4_mode[mb->mode] * 0x01010101u;
-            if (s->mb_layout)
+            if (s->mb_layout == 1)
                 AV_WN32A(mb->intra4x4_pred_mode_top, modes);
             else
                 AV_WN32A(s->intra4x4_pred_mode_top + 4 * mb_x, modes);
@@ -1161,7 +1161,7 @@ void vp8_mc_luma(VP8Context *s, VP8ThreadData *td, uint8_t *dst,
     uint8_t *src = ref->f->data[0];
 
     if (AV_RN32A(mv)) {
-        int src_linesize = linesize;
+
         int mx = (mv->x << 1)&7, mx_idx = subpel_idx[0][mx];
         int my = (mv->y << 1)&7, my_idx = subpel_idx[0][my];
 
@@ -1175,14 +1175,12 @@ void vp8_mc_luma(VP8Context *s, VP8ThreadData *td, uint8_t *dst,
             y_off < my_idx || y_off >= height - block_h - subpel_idx[2][my]) {
             s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
                                      src - my_idx * linesize - mx_idx,
-                                     32, linesize,
-                                     block_w + subpel_idx[1][mx],
-                                     block_h + subpel_idx[1][my],
+                                     linesize, linesize,
+                                     block_w + subpel_idx[1][mx], block_h + subpel_idx[1][my],
                                      x_off - mx_idx, y_off - my_idx, width, height);
-            src = td->edge_emu_buffer + mx_idx + 32 * my_idx;
-            src_linesize = 32;
+            src = td->edge_emu_buffer + mx_idx + linesize * my_idx;
         }
-        mc_func[my_idx][mx_idx](dst, linesize, src, src_linesize, block_h, mx, my);
+        mc_func[my_idx][mx_idx](dst, linesize, src, linesize, block_h, mx, my);
     } else {
         ff_thread_await_progress(ref, (3 + y_off + block_h) >> 4, 0);
         mc_func[0][0](dst, linesize, src + y_off * linesize + x_off, linesize, block_h, 0, 0);
@@ -1229,21 +1227,19 @@ void vp8_mc_chroma(VP8Context *s, VP8ThreadData *td, uint8_t *dst1, uint8_t *dst
             y_off < my_idx || y_off >= height - block_h - subpel_idx[2][my]) {
             s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
                                      src1 - my_idx * linesize - mx_idx,
-                                     32, linesize,
-                                     block_w + subpel_idx[1][mx],
-                                     block_h + subpel_idx[1][my],
+                                     linesize, linesize,
+                                     block_w + subpel_idx[1][mx], block_h + subpel_idx[1][my],
                                      x_off - mx_idx, y_off - my_idx, width, height);
-            src1 = td->edge_emu_buffer + mx_idx + 32 * my_idx;
-            mc_func[my_idx][mx_idx](dst1, linesize, src1, 32, block_h, mx, my);
+            src1 = td->edge_emu_buffer + mx_idx + linesize * my_idx;
+            mc_func[my_idx][mx_idx](dst1, linesize, src1, linesize, block_h, mx, my);
 
             s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
                                      src2 - my_idx * linesize - mx_idx,
-                                     32, linesize,
-                                     block_w + subpel_idx[1][mx],
-                                     block_h + subpel_idx[1][my],
+                                     linesize, linesize,
+                                     block_w + subpel_idx[1][mx], block_h + subpel_idx[1][my],
                                      x_off - mx_idx, y_off - my_idx, width, height);
-            src2 = td->edge_emu_buffer + mx_idx + 32 * my_idx;
-            mc_func[my_idx][mx_idx](dst2, linesize, src2, 32, block_h, mx, my);
+            src2 = td->edge_emu_buffer + mx_idx + linesize * my_idx;
+            mc_func[my_idx][mx_idx](dst2, linesize, src2, linesize, block_h, mx, my);
         } else {
             mc_func[my_idx][mx_idx](dst1, linesize, src1, linesize, block_h, mx, my);
             mc_func[my_idx][mx_idx](dst2, linesize, src2, linesize, block_h, mx, my);
@@ -1894,8 +1890,10 @@ int ff_vp8_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     curframe->tf.f->key_frame = s->keyframe;
     curframe->tf.f->pict_type = s->keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
-    if ((ret = vp8_alloc_frame(s, curframe, referenced)) < 0)
+    if ((ret = vp8_alloc_frame(s, curframe, referenced))) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed!\n");
         goto err;
+    }
 
     // check if golden and altref are swapped
     if (s->update_altref != VP56_FRAME_NONE) {
@@ -1919,6 +1917,10 @@ int ff_vp8_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     s->linesize   = curframe->tf.f->linesize[0];
     s->uvlinesize = curframe->tf.f->linesize[1];
+
+    if (!s->thread_data[0].edge_emu_buffer)
+        for (i = 0; i < MAX_THREADS; i++)
+            s->thread_data[i].edge_emu_buffer = av_malloc(21*s->linesize);
 
     memset(s->top_nnz, 0, s->mb_width*sizeof(*s->top_nnz));
     /* Zero macroblock structures for top/top-left prediction from outside the frame. */
@@ -2084,4 +2086,3 @@ AVCodec ff_vp8_decoder = {
     .init_thread_copy      = ONLY_IF_THREADS_ENABLED(vp8_decode_init_thread_copy),
     .update_thread_context = ONLY_IF_THREADS_ENABLED(vp8_decode_update_thread_context),
 };
-
