@@ -2,20 +2,20 @@
  * RIFF muxing functions
  * Copyright (c) 2000 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,14 +39,10 @@ void ff_end_tag(AVIOContext *pb, int64_t start)
 {
     int64_t pos;
 
-    av_assert0((start&1) == 0);
-
     pos = avio_tell(pb);
-    if (pos & 1)
-        avio_w8(pb, 0);
     avio_seek(pb, start - 4, SEEK_SET);
     avio_wl32(pb, (uint32_t)(pos - start));
-    avio_seek(pb, FFALIGN(pos, 2), SEEK_SET);
+    avio_seek(pb, pos, SEEK_SET);
 }
 
 /* WAVEFORMATEX header */
@@ -81,10 +77,8 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
 
     avio_wl16(pb, enc->channels);
     avio_wl32(pb, enc->sample_rate);
-    if (enc->codec_id == AV_CODEC_ID_ATRAC3 ||
-        enc->codec_id == AV_CODEC_ID_G723_1 ||
-        enc->codec_id == AV_CODEC_ID_MP2    ||
-        enc->codec_id == AV_CODEC_ID_MP3    ||
+    if (enc->codec_id == AV_CODEC_ID_MP2 ||
+        enc->codec_id == AV_CODEC_ID_MP3 ||
         enc->codec_id == AV_CODEC_ID_GSM_MS) {
         bps = 0;
     } else {
@@ -110,10 +104,6 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
         // blkalign = 144 * enc->bit_rate/enc->sample_rate;
     } else if (enc->codec_id == AV_CODEC_ID_AC3) {
         blkalign = 3840;                /* maximum bytes per frame */
-    } else if (enc->codec_id == AV_CODEC_ID_AAC) {
-        blkalign = 768 * enc->channels; /* maximum bytes per frame */
-    } else if (enc->codec_id == AV_CODEC_ID_G723_1) {
-        blkalign = 24;
     } else if (enc->block_align != 0) { /* specified by the codec */
         blkalign = enc->block_align;
     } else
@@ -125,8 +115,6 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
         enc->codec_id == AV_CODEC_ID_PCM_F64LE ||
         enc->codec_id == AV_CODEC_ID_PCM_S16LE) {
         bytespersec = enc->sample_rate * blkalign;
-    } else if (enc->codec_id == AV_CODEC_ID_G723_1) {
-        bytespersec = 800;
     } else {
         bytespersec = enc->bit_rate / 8;
     }
@@ -158,11 +146,6 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
         bytestream_put_le32(&riff_extradata, 0);
         /* dwPTSHigh */
         bytestream_put_le32(&riff_extradata, 0);
-    } else if (enc->codec_id == AV_CODEC_ID_G723_1) {
-        hdrsize += 20;
-        bytestream_put_le32(&riff_extradata, 0x9ace0002); /* extradata needed for msacm g723.1 codec */
-        bytestream_put_le32(&riff_extradata, 0xaea2f732);
-        bytestream_put_le16(&riff_extradata, 0xacde);
     } else if (enc->codec_id == AV_CODEC_ID_GSM_MS ||
                enc->codec_id == AV_CODEC_ID_ADPCM_IMA_WAV) {
         hdrsize += 2;
@@ -201,10 +184,10 @@ int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc)
 
 /* BITMAPINFOHEADER header */
 void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc,
-                       const AVCodecTag *tags, int for_asf, int ignore_extradata)
+                       const AVCodecTag *tags, int for_asf)
 {
     /* size */
-    avio_wl32(pb, 40 + (ignore_extradata ? 0 : enc->extradata_size));
+    avio_wl32(pb, 40 + enc->extradata_size);
     avio_wl32(pb, enc->width);
     //We always store RGB TopDown
     avio_wl32(pb, enc->codec_tag ? enc->height : -enc->height);
@@ -214,18 +197,16 @@ void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc,
     avio_wl16(pb, enc->bits_per_coded_sample ? enc->bits_per_coded_sample : 24);
     /* compression type */
     avio_wl32(pb, enc->codec_tag);
-    avio_wl32(pb, (enc->width * enc->height * (enc->bits_per_coded_sample ? enc->bits_per_coded_sample : 24)+7) / 8);
+    avio_wl32(pb, enc->width * enc->height * 3);
     avio_wl32(pb, 0);
     avio_wl32(pb, 0);
     avio_wl32(pb, 0);
     avio_wl32(pb, 0);
 
-    if (!ignore_extradata) {
-        avio_write(pb, enc->extradata, enc->extradata_size);
+    avio_write(pb, enc->extradata, enc->extradata_size);
 
-        if (!for_asf && enc->extradata_size & 1)
-            avio_w8(pb, 0);
-    }
+    if (!for_asf && enc->extradata_size & 1)
+        avio_w8(pb, 0);
 }
 
 void ff_parse_specific_params(AVCodecContext *stream, int *au_rate,
@@ -276,7 +257,7 @@ void ff_riff_write_info_tag(AVIOContext *pb, const char *tag, const char *str)
 static const char riff_tags[][5] = {
     "IARL", "IART", "ICMS", "ICMT", "ICOP", "ICRD", "ICRP", "IDIM", "IDPI",
     "IENG", "IGNR", "IKEY", "ILGT", "ILNG", "IMED", "INAM", "IPLT", "IPRD",
-    "IPRT", "ITRK", "ISBJ", "ISFT", "ISHP", "ISMP", "ISRC", "ISRF", "ITCH",
+    "IPRT", "ISBJ", "ISFT", "ISHP", "ISRC", "ISRF", "ITCH",
     { 0 }
 };
 
