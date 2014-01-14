@@ -2,20 +2,20 @@
  * SMJPEG demuxer
  * Copyright (c) 2011 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,8 @@
  * @file
  * This is a demuxer for Loki SDL Motion JPEG files
  */
+
+#include <inttypes.h>
 
 #include "avformat.h"
 #include "internal.h"
@@ -52,11 +54,11 @@ static int smjpeg_read_header(AVFormatContext *s)
     avio_skip(pb, 8); // magic
     version = avio_rb32(pb);
     if (version)
-        avpriv_request_sample(s, "Unknown version %d", version);
+        avpriv_request_sample(s, "Unknown version %"PRIu32, version);
 
     duration = avio_rb32(pb); // in msec
 
-    while (!url_feof(pb)) {
+    while (!pb->eof_reached) {
         htype = avio_rl32(pb);
         switch (htype) {
         case SMJPEG_TXT:
@@ -106,10 +108,10 @@ static int smjpeg_read_header(AVFormatContext *s)
             hlength = avio_rb32(pb);
             if (hlength < 12)
                 return AVERROR_INVALIDDATA;
+            avio_skip(pb, 4); // number of frames
             vst = avformat_new_stream(s, 0);
             if (!vst)
                 return AVERROR(ENOMEM);
-            vst->nb_frames         = avio_rb32(pb);
             vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
             vst->codec->width      = avio_rb16(pb);
             vst->codec->height     = avio_rb16(pb);
@@ -124,7 +126,7 @@ static int smjpeg_read_header(AVFormatContext *s)
         case SMJPEG_HEND:
             return 0;
         default:
-            av_log(s, AV_LOG_ERROR, "unknown header %x\n", htype);
+            av_log(s, AV_LOG_ERROR, "unknown header %"PRIx32"\n", htype);
             return AVERROR_INVALIDDATA;
         }
     }
@@ -139,7 +141,7 @@ static int smjpeg_read_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t pos;
     int ret;
 
-    if (url_feof(s->pb))
+    if (s->pb->eof_reached)
         return AVERROR_EOF;
     pos   = avio_tell(s->pb);
     dtype = avio_rl32(s->pb);
@@ -164,7 +166,7 @@ static int smjpeg_read_packet(AVFormatContext *s, AVPacket *pkt)
         ret = AVERROR_EOF;
         break;
     default:
-        av_log(s, AV_LOG_ERROR, "unknown chunk %x\n", dtype);
+        av_log(s, AV_LOG_ERROR, "unknown chunk %"PRIx32"\n", dtype);
         ret = AVERROR_INVALIDDATA;
         break;
     }
