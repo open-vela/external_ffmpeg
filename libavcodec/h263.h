@@ -1,20 +1,20 @@
 /*
  * H263 internal header
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #ifndef AVCODEC_H263_H
@@ -67,8 +67,8 @@ extern RLTable ff_rl_intra_aic;
 
 extern const uint16_t ff_h263_format[8][2];
 extern const uint8_t ff_modified_quant_tab[2][32];
-extern const uint16_t ff_mba_max[6];
-extern const uint8_t ff_mba_length[7];
+extern uint16_t ff_mba_max[6];
+extern uint8_t ff_mba_length[7];
 
 extern uint8_t ff_h263_static_rl_table_store[2][2][2*MAX_RUN + MAX_LEVEL + 3];
 
@@ -120,6 +120,7 @@ int av_const h263_get_picture_format(int width, int height);
 
 void ff_clean_h263_qscales(MpegEncContext *s);
 int ff_h263_resync(MpegEncContext *s);
+const uint8_t *ff_h263_find_resync_marker(const uint8_t *p, const uint8_t *end);
 int ff_h263_get_gob_height(MpegEncContext *s);
 void ff_h263_encode_motion(MpegEncContext * s, int val, int f_code);
 
@@ -196,7 +197,7 @@ static inline int get_p_cbp(MpegEncContext * s,
         for (i = 0; i < 6; i++) {
             if (s->block_last_index[i] >= 0 && ((cbp >> (5 - i))&1)==0 ){
                 s->block_last_index[i]= -1;
-                s->dsp.clear_block(s->block[i]);
+                s->bdsp.clear_block(s->block[i]);
             }
         }
     }else{

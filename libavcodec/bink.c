@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Konstantin Shishkov
  * Copyright (C) 2011 Peter Ross <pross@xvid.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,9 +24,9 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "avcodec.h"
-#include "dsputil.h"
 #include "binkdata.h"
 #include "binkdsp.h"
+#include "blockdsp.h"
 #include "hpeldsp.h"
 #include "internal.h"
 #include "mathops.h"
@@ -113,14 +113,13 @@ typedef struct Bundle {
  */
 typedef struct BinkContext {
     AVCodecContext *avctx;
-    DSPContext     dsp;
+    BlockDSPContext bdsp;
     HpelDSPContext hdsp;
     BinkDSPContext binkdsp;
     AVFrame        *last;
     int            version;              ///< internal Bink file version
     int            has_alpha;
     int            swap_planes;
-    unsigned       frame_num;
 
     Bundle         bundle[BINKB_NB_SRC]; ///< bundles for decoding all data types
     Tree           col_high[16];         ///< trees for decoding high nibble in "colours" data type
@@ -144,7 +143,7 @@ enum BlockTypes {
 };
 
 /**
- * Initialize length in all bundles.
+ * Initialize length length in all bundles.
  *
  * @param c     decoder context
  * @param width plane width
@@ -175,7 +174,7 @@ static void init_lengths(BinkContext *c, int width, int bw)
  *
  * @param c decoder context
  */
-static av_cold int init_bundles(BinkContext *c)
+static av_cold void init_bundles(BinkContext *c)
 {
     int bw, bh, blocks;
     int i;
@@ -185,13 +184,9 @@ static av_cold int init_bundles(BinkContext *c)
     blocks = bw * bh;
 
     for (i = 0; i < BINKB_NB_SRC; i++) {
-        c->bundle[i].data = av_mallocz(blocks * 64);
-        if (!c->bundle[i].data)
-            return AVERROR(ENOMEM);
+        c->bundle[i].data = av_malloc(blocks * 64);
         c->bundle[i].data_end = c->bundle[i].data + blocks * 64;
     }
-
-    return 0;
 }
 
 /**
@@ -684,11 +679,10 @@ static int read_dct_coeffs(GetBitContext *gb, int32_t block[64], const uint8_t *
         quant_idx = get_bits(gb, 4);
     } else {
         quant_idx = q;
-        if (quant_idx > 15U) {
-            av_log(NULL, AV_LOG_ERROR, "quant_index %d out of range\n", quant_idx);
-            return AVERROR_INVALIDDATA;
-        }
     }
+
+    if (quant_idx >= 16)
+        return AVERROR_INVALIDDATA;
 
     quant = quant_matrices[quant_idx];
 
@@ -872,7 +866,7 @@ static int binkb_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 memset(dctblock, 0, sizeof(*dctblock) * 64);
                 dctblock[0] = binkb_get_value(c, BINKB_SRC_INTRA_DC);
                 qp = binkb_get_value(c, BINKB_SRC_INTRA_Q);
-                read_dct_coeffs(gb, dctblock, bink_scan, (const int32_t (*)[64])binkb_intra_quant, qp);
+                read_dct_coeffs(gb, dctblock, bink_scan, binkb_intra_quant, qp);
                 c->binkdsp.idct_put(dst, stride, dctblock);
                 break;
             case 3:
@@ -886,7 +880,7 @@ static int binkb_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 } else {
                     put_pixels8x8_overlapped(dst, ref, stride);
                 }
-                c->dsp.clear_block(block);
+                c->bdsp.clear_block(block);
                 v = binkb_get_value(c, BINKB_SRC_INTER_COEFS);
                 read_residue(gb, block, v);
                 c->binkdsp.add_pixels8(dst, block, stride);
@@ -905,12 +899,12 @@ static int binkb_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 memset(dctblock, 0, sizeof(*dctblock) * 64);
                 dctblock[0] = binkb_get_value(c, BINKB_SRC_INTER_DC);
                 qp = binkb_get_value(c, BINKB_SRC_INTER_Q);
-                read_dct_coeffs(gb, dctblock, bink_scan, (const int32_t (*)[64])binkb_inter_quant, qp);
+                read_dct_coeffs(gb, dctblock, bink_scan, binkb_inter_quant, qp);
                 c->binkdsp.idct_add(dst, stride, dctblock);
                 break;
             case 5:
                 v = binkb_get_value(c, BINKB_SRC_COLORS);
-                c->dsp.fill_block_tab[1](dst, v, stride, 8);
+                c->bdsp.fill_block_tab[1](dst, v, stride, 8);
                 break;
             case 6:
                 for (i = 0; i < 2; i++)
@@ -1053,7 +1047,7 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                     break;
                 case FILL_BLOCK:
                     v = get_value(c, BINK_SRC_COLORS);
-                    c->dsp.fill_block_tab[0](dst, v, stride, 16);
+                    c->bdsp.fill_block_tab[0](dst, v, stride, 16);
                     break;
                 case PATTERN_BLOCK:
                     for (i = 0; i < 2; i++)
@@ -1123,7 +1117,7 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                     return AVERROR_INVALIDDATA;
                 }
                 c->hdsp.put_pixels_tab[1][0](dst, ref, stride, 8);
-                c->dsp.clear_block(block);
+                c->bdsp.clear_block(block);
                 v = get_bits(gb, 7);
                 read_residue(gb, block, v);
                 c->binkdsp.add_pixels8(dst, block, stride);
@@ -1136,17 +1130,12 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
                 break;
             case FILL_BLOCK:
                 v = get_value(c, BINK_SRC_COLORS);
-                c->dsp.fill_block_tab[1](dst, v, stride, 8);
+                c->bdsp.fill_block_tab[1](dst, v, stride, 8);
                 break;
             case INTER_BLOCK:
                 xoff = get_value(c, BINK_SRC_X_OFF);
                 yoff = get_value(c, BINK_SRC_Y_OFF);
                 ref = prev + xoff + yoff * stride;
-                if (ref < ref_start || ref > ref_end) {
-                    av_log(c->avctx, AV_LOG_ERROR, "Copy out of bounds @%d, %d\n",
-                           bx*8 + xoff, by*8 + yoff);
-                    return -1;
-                }
                 c->hdsp.put_pixels_tab[1][0](dst, ref, stride, 8);
                 memset(dctblock, 0, sizeof(*dctblock) * 64);
                 dctblock[0] = get_value(c, BINK_SRC_INTER_DC);
@@ -1188,11 +1177,15 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     int bits_count = pkt->size << 3;
 
     if (c->version > 'b') {
-        if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
+        if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
     } else {
-        if ((ret = ff_reget_buffer(avctx, c->last)) < 0)
+        if ((ret = ff_reget_buffer(avctx, c->last)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
             return ret;
+        }
         if ((ret = av_frame_ref(frame, c->last)) < 0)
             return ret;
     }
@@ -1207,8 +1200,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     if (c->version >= 'i')
         skip_bits_long(&gb, 32);
 
-    c->frame_num++;
-
     for (plane = 0; plane < 3; plane++) {
         plane_idx = (!plane || !c->swap_planes) ? plane : (plane ^ 3);
 
@@ -1217,7 +1208,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
                 return ret;
         } else {
             if ((ret = binkb_decode_plane(c, frame, &gb, plane_idx,
-                                          c->frame_num == 1, !!plane)) < 0)
+                                          !avctx->frame_number, !!plane)) < 0)
                 return ret;
         }
         if (get_bits_count(&gb) >= bits_count)
@@ -1243,28 +1234,41 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
 static av_cold void binkb_calc_quant(void)
 {
     uint8_t inv_bink_scan[64];
-    static const int s[64]={
-        1073741824,1489322693,1402911301,1262586814,1073741824, 843633538, 581104888, 296244703,
-        1489322693,2065749918,1945893874,1751258219,1489322693,1170153332, 806015634, 410903207,
-        1402911301,1945893874,1832991949,1649649171,1402911301,1102260336, 759250125, 387062357,
-        1262586814,1751258219,1649649171,1484645031,1262586814, 992008094, 683307060, 348346918,
-        1073741824,1489322693,1402911301,1262586814,1073741824, 843633538, 581104888, 296244703,
-         843633538,1170153332,1102260336, 992008094, 843633538, 662838617, 456571181, 232757969,
-         581104888, 806015634, 759250125, 683307060, 581104888, 456571181, 314491699, 160326478,
-         296244703, 410903207, 387062357, 348346918, 296244703, 232757969, 160326478,  81733730,
-    };
+    double s[64];
     int i, j;
-#define C (1LL<<30)
+
+    for (j = 0; j < 8; j++) {
+        for (i = 0; i < 8; i++) {
+            if (j && j != 4)
+               if (i && i != 4)
+                   s[j*8 + i] = cos(j * M_PI/16.0) * cos(i * M_PI/16.0) * 2.0;
+               else
+                   s[j*8 + i] = cos(j * M_PI/16.0) * sqrt(2.0);
+            else
+               if (i && i != 4)
+                   s[j*8 + i] = cos(i * M_PI/16.0) * sqrt(2.0);
+               else
+                   s[j*8 + i] = 1.0;
+        }
+    }
+
     for (i = 0; i < 64; i++)
         inv_bink_scan[bink_scan[i]] = i;
 
     for (j = 0; j < 16; j++) {
         for (i = 0; i < 64; i++) {
             int k = inv_bink_scan[i];
-            binkb_intra_quant[j][k] = binkb_intra_seed[i] * (int64_t)s[i] *
-                                        binkb_num[j]/(binkb_den[j] * (C>>12));
-            binkb_inter_quant[j][k] = binkb_inter_seed[i] * (int64_t)s[i] *
-                                        binkb_num[j]/(binkb_den[j] * (C>>12));
+            if (s[i] == 1.0) {
+                binkb_intra_quant[j][k] = (1L << 12) * binkb_intra_seed[i] *
+                                          binkb_num[j]/binkb_den[j];
+                binkb_inter_quant[j][k] = (1L << 12) * binkb_inter_seed[i] *
+                                          binkb_num[j]/binkb_den[j];
+            } else {
+                binkb_intra_quant[j][k] = (1L << 12) * binkb_intra_seed[i] * s[i] *
+                                          binkb_num[j]/(double)binkb_den[j];
+                binkb_inter_quant[j][k] = (1L << 12) * binkb_inter_seed[i] * s[i] *
+                                          binkb_num[j]/(double)binkb_den[j];
+            }
         }
     }
 }
@@ -1306,14 +1310,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     avctx->pix_fmt = c->has_alpha ? AV_PIX_FMT_YUVA420P : AV_PIX_FMT_YUV420P;
 
-    ff_dsputil_init(&c->dsp, avctx);
+    ff_blockdsp_init(&c->bdsp, avctx);
     ff_hpeldsp_init(&c->hdsp, avctx->flags);
     ff_binkdsp_init(&c->binkdsp);
 
-    if ((ret = init_bundles(c)) < 0) {
-        free_bundles(c);
-        return ret;
-    }
+    init_bundles(c);
 
     if (c->version == 'b') {
         if (!binkb_initialised) {
@@ -1335,13 +1336,6 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-static void flush(AVCodecContext *avctx)
-{
-    BinkContext * const c = avctx->priv_data;
-
-    c->frame_num = 0;
-}
-
 AVCodec ff_bink_decoder = {
     .name           = "binkvideo",
     .long_name      = NULL_IF_CONFIG_SMALL("Bink video"),
@@ -1351,6 +1345,5 @@ AVCodec ff_bink_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .flush          = flush,
     .capabilities   = CODEC_CAP_DR1,
 };

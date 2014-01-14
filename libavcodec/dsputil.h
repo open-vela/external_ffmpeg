@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,26 +37,6 @@ extern uint32_t ff_square_tab[512];
 void ff_gmc_c(uint8_t *dst, uint8_t *src, int stride, int h, int ox, int oy,
               int dxx, int dxy, int dyx, int dyy, int shift, int r,
               int width, int height);
-
-/* minimum alignment rules ;)
- * If you notice errors in the align stuff, need more alignment for some ASM code
- * for some CPU or need to use a function with less aligned data then send a mail
- * to the ffmpeg-devel mailing list, ...
- *
- * !warning These alignments might not match reality, (missing attribute((align))
- * stuff somewhere possible).
- * I (Michael) did not check them, these are just the alignments which I think
- * could be reached easily ...
- *
- * !future video codecs might need functions with less strict alignment
- */
-
-/* add and put pixel (decoding)
- * Block sizes for op_pixels_func are 8x4,8x8 16x8 16x16.
- * h for op_pixels_func is limited to { width / 2, width },
- * but never larger than 16 and never smaller than 4. */
-typedef void (*op_fill_func)(uint8_t *block /* align width (8 or 16) */,
-                             uint8_t value, int line_size, int h);
 
 struct MpegEncContext;
 /* Motion estimation:
@@ -116,8 +96,7 @@ typedef struct DSPContext {
                 int stride, int h, int ox, int oy,
                 int dxx, int dxy, int dyx, int dyy,
                 int shift, int r, int width, int height);
-    void (*clear_block)(int16_t *block /* align 16 */);
-    void (*clear_blocks)(int16_t *blocks /* align 16 */);
+
     int (*pix_sum)(uint8_t *pix, int line_size);
     int (*pix_norm1)(uint8_t *pix, int line_size);
 
@@ -131,8 +110,6 @@ typedef struct DSPContext {
     me_cmp_func vsad[6];
     me_cmp_func vsse[6];
     me_cmp_func nsse[6];
-    me_cmp_func w53[6];
-    me_cmp_func w97[6];
     me_cmp_func dct_max[6];
     me_cmp_func dct264_sad[6];
 
@@ -236,27 +213,18 @@ typedef struct DSPContext {
      */
     void (*vector_clip_int32)(int32_t *dst, const int32_t *src, int32_t min,
                               int32_t max, unsigned int len);
-
-    op_fill_func fill_block_tab[2];
 } DSPContext;
 
 void ff_dsputil_static_init(void);
 void ff_dsputil_init(DSPContext *p, AVCodecContext *avctx);
-void avpriv_dsputil_init(DSPContext* p, AVCodecContext *avctx);
-attribute_deprecated void dsputil_init(DSPContext* c, AVCodecContext *avctx);
-
-int ff_check_alignment(void);
 
 void ff_set_cmp(DSPContext *c, me_cmp_func *cmp, int type);
 
-void ff_dsputil_init_alpha(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_arm(DSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_dsputil_init_ppc(DSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_dsputil_init_x86(DSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
-
-void ff_dsputil_init_dwt(DSPContext *c);
 
 #endif /* AVCODEC_DSPUTIL_H */
