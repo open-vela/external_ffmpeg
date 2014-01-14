@@ -1,18 +1,21 @@
 /*
- * This file is part of Libav.
+ * Copyright (c) 2000, 2001 Fabrice Bellard
+ * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -528,24 +531,11 @@ static av_cold void dsputil_init_mmx(DSPContext *c, AVCodecContext *avctx,
         c->clear_block  = ff_clear_block_mmx;
         c->clear_blocks = ff_clear_blocks_mmx;
         c->draw_edges   = ff_draw_edges_mmx;
-
-        switch (avctx->idct_algo) {
-        case FF_IDCT_AUTO:
-        case FF_IDCT_SIMPLEMMX:
-            c->idct_put              = ff_simple_idct_put_mmx;
-            c->idct_add              = ff_simple_idct_add_mmx;
-            c->idct                  = ff_simple_idct_mmx;
-            c->idct_permutation_type = FF_SIMPLE_IDCT_PERM;
-            break;
-        case FF_IDCT_XVIDMMX:
-            c->idct_put              = ff_idct_xvid_mmx_put;
-            c->idct_add              = ff_idct_xvid_mmx_add;
-            c->idct                  = ff_idct_xvid_mmx;
-            break;
-        }
     }
 
+#if CONFIG_VIDEODSP && (ARCH_X86_32 || !HAVE_YASM)
     c->gmc = ff_gmc_mmx;
+#endif
 
     c->add_bytes = ff_add_bytes_mmx;
 #endif /* HAVE_MMX_INLINE */
@@ -561,7 +551,7 @@ static av_cold void dsputil_init_mmxext(DSPContext *c, AVCodecContext *avctx,
 #if HAVE_MMXEXT_INLINE
     const int high_bit_depth = avctx->bits_per_raw_sample > 8;
 
-    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX) {
+    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
         c->idct_put = ff_idct_xvid_mmxext_put;
         c->idct_add = ff_idct_xvid_mmxext_add;
         c->idct     = ff_idct_xvid_mmxext;
@@ -593,21 +583,21 @@ static av_cold void dsputil_init_sse(DSPContext *c, AVCodecContext *avctx,
     const int high_bit_depth = avctx->bits_per_raw_sample > 8;
 
     if (!high_bit_depth) {
-#if FF_API_XVMC
-FF_DISABLE_DEPRECATION_WARNINGS
-        if (!(CONFIG_MPEG_XVMC_DECODER && avctx->xvmc_acceleration > 1)) {
+        if (!(CONFIG_XVMC && avctx->hwaccel && avctx->hwaccel->decode_mb)) {
             /* XvMCCreateBlocks() may not allocate 16-byte aligned blocks */
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif /* FF_API_XVMC */
         c->clear_block  = ff_clear_block_sse;
         c->clear_blocks = ff_clear_blocks_sse;
-#if FF_API_XVMC
         }
-#endif /* FF_API_XVMC */
     }
 
     c->vector_clipf = ff_vector_clipf_sse;
 #endif /* HAVE_SSE_INLINE */
+
+#if HAVE_YASM
+#if HAVE_INLINE_ASM && CONFIG_VIDEODSP
+    c->gmc = ff_gmc_sse;
+#endif
+#endif /* HAVE_YASM */
 }
 
 static av_cold void dsputil_init_sse2(DSPContext *c, AVCodecContext *avctx,
@@ -616,7 +606,7 @@ static av_cold void dsputil_init_sse2(DSPContext *c, AVCodecContext *avctx,
 #if HAVE_SSE2_INLINE
     const int high_bit_depth = avctx->bits_per_raw_sample > 8;
 
-    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX) {
+    if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
         c->idct_put              = ff_idct_xvid_sse2_put;
         c->idct_add              = ff_idct_xvid_sse2_add;
         c->idct                  = ff_idct_xvid_sse2;
@@ -663,12 +653,30 @@ av_cold void ff_dsputil_init_x86(DSPContext *c, AVCodecContext *avctx)
     int cpu_flags = av_get_cpu_flags();
 
 #if HAVE_7REGS && HAVE_INLINE_ASM
-    if (cpu_flags & AV_CPU_FLAG_CMOV)
+    if (HAVE_MMX && cpu_flags & AV_CPU_FLAG_CMOV)
         c->add_hfyu_median_prediction = ff_add_hfyu_median_prediction_cmov;
 #endif
 
-    if (X86_MMX(cpu_flags))
+    if (X86_MMX(cpu_flags)) {
+#if HAVE_INLINE_ASM
+        const int idct_algo = avctx->idct_algo;
+
+        if (avctx->lowres == 0 && avctx->bits_per_raw_sample <= 8) {
+            if (idct_algo == FF_IDCT_AUTO || idct_algo == FF_IDCT_SIMPLEMMX) {
+                c->idct_put              = ff_simple_idct_put_mmx;
+                c->idct_add              = ff_simple_idct_add_mmx;
+                c->idct                  = ff_simple_idct_mmx;
+                c->idct_permutation_type = FF_SIMPLE_IDCT_PERM;
+            } else if (idct_algo == FF_IDCT_XVIDMMX) {
+                c->idct_put              = ff_idct_xvid_mmx_put;
+                c->idct_add              = ff_idct_xvid_mmx_add;
+                c->idct                  = ff_idct_xvid_mmx;
+            }
+        }
+#endif /* HAVE_INLINE_ASM */
+
         dsputil_init_mmx(c, avctx, cpu_flags);
+    }
 
     if (X86_MMXEXT(cpu_flags))
         dsputil_init_mmxext(c, avctx, cpu_flags);
