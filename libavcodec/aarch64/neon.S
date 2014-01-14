@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,6 +78,30 @@
 
         trn1            \r3\().4S,  \t1\().4S,  \r7\().4S
         trn2            \r7\().4S,  \t1\().4S,  \r7\().4S
+.endm
+
+.macro  transpose_4x16B r0, r1, r2, r3, t4, t5, t6, t7
+        trn1            \t4\().16B, \r0\().16B,  \r1\().16B
+        trn2            \t5\().16B, \r0\().16B,  \r1\().16B
+        trn1            \t6\().16B, \r2\().16B,  \r3\().16B
+        trn2            \t7\().16B, \r2\().16B,  \r3\().16B
+
+        trn1            \r0\().8H,  \t4\().8H,  \t6\().8H
+        trn2            \r2\().8H,  \t4\().8H,  \t6\().8H
+        trn1            \r1\().8H,  \t5\().8H,  \t7\().8H
+        trn2            \r3\().8H,  \t5\().8H,  \t7\().8H
+.endm
+
+.macro  transpose_4x8B  r0, r1, r2, r3, t4, t5, t6, t7
+        trn1            \t4\().8B,  \r0\().8B,  \r1\().8B
+        trn2            \t5\().8B,  \r0\().8B,  \r1\().8B
+        trn1            \t6\().8B,  \r2\().8B,  \r3\().8B
+        trn2            \t7\().8B,  \r2\().8B,  \r3\().8B
+
+        trn1            \r0\().4H,  \t4\().4H,  \t6\().4H
+        trn2            \r2\().4H,  \t4\().4H,  \t6\().4H
+        trn1            \r1\().4H,  \t5\().4H,  \t7\().4H
+        trn2            \r3\().4H,  \t5\().4H,  \t7\().4H
 .endm
 
 .macro  transpose_4x4H  r0, r1, r2, r3, r4, r5, r6, r7
