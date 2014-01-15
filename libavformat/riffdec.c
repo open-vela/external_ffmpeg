@@ -2,20 +2,20 @@
  * RIFF demuxing functions and data
  * Copyright (c) 2000 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,13 +37,6 @@ const AVCodecGuid ff_codec_wav_guids[] = {
     { AV_CODEC_ID_NONE }
 };
 
-void ff_get_guid(AVIOContext *s, ff_asf_guid *g)
-{
-    av_assert0(sizeof(*g) == 16); //compiler will optimize this out
-    if (avio_read(s, *g, sizeof(*g)) < (int)sizeof(*g))
-        memset(*g, 0, sizeof(*g));
-}
-
 enum AVCodecID ff_codec_guid_get_id(const AVCodecGuid *guids, ff_asf_guid guid)
 {
     int i;
@@ -64,10 +57,7 @@ enum AVCodecID ff_codec_guid_get_id(const AVCodecGuid *guids, ff_asf_guid guid)
 static void parse_waveformatex(AVIOContext *pb, AVCodecContext *c)
 {
     ff_asf_guid subformat;
-    int bps = avio_rl16(pb);
-    if (bps)
-        c->bits_per_coded_sample = bps;
-
+    c->bits_per_coded_sample = avio_rl16(pb);
     c->channel_layout        = avio_rl32(pb); /* dwChannelMask */
 
     ff_get_guid(pb, &subformat);
@@ -115,10 +105,14 @@ int ff_get_wav_header(AVIOContext *pb, AVCodecContext *codec, int size)
             cbSize -= 22;
             size   -= 22;
         }
+        codec->extradata_size = cbSize;
         if (cbSize > 0) {
             av_free(codec->extradata);
-            if (ff_get_extradata(codec, pb, cbSize) < 0)
+            codec->extradata = av_mallocz(codec->extradata_size +
+                                          FF_INPUT_BUFFER_PADDING_SIZE);
+            if (!codec->extradata)
                 return AVERROR(ENOMEM);
+            avio_read(pb, codec->extradata, codec->extradata_size);
             size -= cbSize;
         }
 
@@ -138,7 +132,7 @@ int ff_get_wav_header(AVIOContext *pb, AVCodecContext *codec, int size)
         codec->sample_rate = 0;
     }
     /* override bits_per_coded_sample for G.726 */
-    if (codec->codec_id == AV_CODEC_ID_ADPCM_G726 && codec->sample_rate)
+    if (codec->codec_id == AV_CODEC_ID_ADPCM_G726)
         codec->bits_per_coded_sample = codec->bit_rate / codec->sample_rate;
 
     return 0;
@@ -161,11 +155,10 @@ enum AVCodecID ff_wav_codec_get_id(unsigned int tag, int bps)
     return id;
 }
 
-int ff_get_bmp_header(AVIOContext *pb, AVStream *st, unsigned *esize)
+int ff_get_bmp_header(AVIOContext *pb, AVStream *st)
 {
     int tag1;
-    if(esize) *esize  = avio_rl32(pb);
-    else                avio_rl32(pb);
+    avio_rl32(pb); /* size */
     st->codec->width  = avio_rl32(pb);
     st->codec->height = (int32_t)avio_rl32(pb);
     avio_rl16(pb); /* planes */
@@ -196,23 +189,12 @@ int ff_read_riff_info(AVFormatContext *s, int64_t size)
 
         chunk_code = avio_rl32(pb);
         chunk_size = avio_rl32(pb);
-        if (url_feof(pb)) {
-            if (chunk_code || chunk_size) {
-                av_log(s, AV_LOG_WARNING, "INFO subchunk truncated\n");
-                return AVERROR_INVALIDDATA;
-            }
-            return AVERROR_EOF;
-        }
+
         if (chunk_size > end ||
             end - chunk_size < cur ||
             chunk_size == UINT_MAX) {
-            avio_seek(pb, -9, SEEK_CUR);
-            chunk_code = avio_rl32(pb);
-            chunk_size = avio_rl32(pb);
-            if (chunk_size > end || end - chunk_size < cur || chunk_size == UINT_MAX) {
-                av_log(s, AV_LOG_WARNING, "too big INFO subchunk\n");
-                return AVERROR_INVALIDDATA;
-            }
+            av_log(s, AV_LOG_WARNING, "too big INFO subchunk\n");
+            break;
         }
 
         chunk_size += (chunk_size & 1);
@@ -227,7 +209,7 @@ int ff_read_riff_info(AVFormatContext *s, int64_t size)
             continue;
         }
 
-        value = av_mallocz(chunk_size + 1);
+        value = av_malloc(chunk_size + 1);
         if (!value) {
             av_log(s, AV_LOG_ERROR,
                    "out of memory, unable to read INFO tag\n");
@@ -237,9 +219,13 @@ int ff_read_riff_info(AVFormatContext *s, int64_t size)
         AV_WL32(key, chunk_code);
 
         if (avio_read(pb, value, chunk_size) != chunk_size) {
+            av_free(value);
             av_log(s, AV_LOG_WARNING,
                    "premature end of file while reading INFO tag\n");
+            break;
         }
+
+        value[chunk_size] = 0;
 
         av_dict_set(&s->metadata, key, value, AV_DICT_DONT_STRDUP_VAL);
     }
