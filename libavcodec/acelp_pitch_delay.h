@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2008 Vladimir Voroshilov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,8 @@
 #define AVCODEC_ACELP_PITCH_DELAY_H
 
 #include <stdint.h>
-#include "dsputil.h"
+
+#include "audiodsp.h"
 
 #define PITCH_DELAY_MIN             20
 #define PITCH_DELAY_MAX             143
@@ -139,7 +140,7 @@ void ff_acelp_update_past_gain(
 /**
  * @brief Decode the adaptive codebook gain and add
  *        correction (4.1.5 and 3.9.1 of G.729).
- * @param dsp initialized dsputil context
+ * @param adsp initialized audio DSP context
  * @param gain_corr_factor gain correction factor (2.13)
  * @param fc_v fixed-codebook vector (2.13)
  * @param mr_energy mean innovation energy and fixed-point correction (7.13)
@@ -208,7 +209,7 @@ void ff_acelp_update_past_gain(
  * @remark The routine is used in G.729 and AMR (all modes).
  */
 int16_t ff_acelp_decode_gain_code(
-    DSPContext *dsp,
+    AudioDSPContext *adsp,
     int gain_corr_factor,
     const int16_t* fc_v,
     int mr_energy,

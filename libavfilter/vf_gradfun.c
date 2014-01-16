@@ -2,20 +2,20 @@
  * Copyright (c) 2010 Nolan Lum <nol888@gmail.com>
  * Copyright (c) 2009 Loren Merritt <lorenm@u.washington.edu>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -54,7 +54,7 @@ DECLARE_ALIGNED(16, static const uint16_t, dither)[8][8] = {
     {0x54,0x34,0x4C,0x2C,0x52,0x32,0x4A,0x2A},
 };
 
-void ff_gradfun_filter_line_c(uint8_t *dst, const uint8_t *src, const uint16_t *dc, int width, int thresh, const uint16_t *dithers)
+void ff_gradfun_filter_line_c(uint8_t *dst, uint8_t *src, uint16_t *dc, int width, int thresh, const uint16_t *dithers)
 {
     int x;
     for (x = 0; x < width; dc += x & 1, x++) {
@@ -68,7 +68,7 @@ void ff_gradfun_filter_line_c(uint8_t *dst, const uint8_t *src, const uint16_t *
     }
 }
 
-void ff_gradfun_blur_line_c(uint16_t *dc, uint16_t *buf, const uint16_t *buf1, const uint8_t *src, int src_linesize, int width)
+void ff_gradfun_blur_line_c(uint16_t *dc, uint16_t *buf, uint16_t *buf1, uint8_t *src, int src_linesize, int width)
 {
     int x, v, old;
     for (x = 0; x < width; x++) {
@@ -79,7 +79,7 @@ void ff_gradfun_blur_line_c(uint16_t *dc, uint16_t *buf, const uint16_t *buf1, c
     }
 }
 
-static void filter(GradFunContext *ctx, uint8_t *dst, const uint8_t *src, int width, int height, int dst_linesize, int src_linesize, int r)
+static void filter(GradFunContext *ctx, uint8_t *dst, uint8_t *src, int width, int height, int dst_linesize, int src_linesize, int r)
 {
     int bstride = FFALIGN(width, 16) / 2;
     int y;
@@ -126,9 +126,9 @@ static av_cold int init(AVFilterContext *ctx)
     GradFunContext *s = ctx->priv;
 
     s->thresh  = (1 << 15) / s->strength;
-    s->radius  = av_clip((s->radius + 1) & ~1, 4, 32);
+    s->radius &= ~1;
 
-    s->blur_line   = ff_gradfun_blur_line_c;
+    s->blur_line = ff_gradfun_blur_line_c;
     s->filter_line = ff_gradfun_filter_line_c;
 
     if (ARCH_X86)
@@ -149,10 +149,9 @@ static int query_formats(AVFilterContext *ctx)
 {
     static const enum AVPixelFormat pix_fmts[] = {
         AV_PIX_FMT_YUV410P,            AV_PIX_FMT_YUV420P,
-        AV_PIX_FMT_GRAY8,              AV_PIX_FMT_YUV444P,
+        AV_PIX_FMT_GRAY8,              AV_PIX_FMT_NV12,
+        AV_PIX_FMT_NV21,               AV_PIX_FMT_YUV444P,
         AV_PIX_FMT_YUV422P,            AV_PIX_FMT_YUV411P,
-        AV_PIX_FMT_YUV440P,
-        AV_PIX_FMT_GBRP,
         AV_PIX_FMT_NONE
     };
 
@@ -169,12 +168,12 @@ static int config_input(AVFilterLink *inlink)
     int vsub = desc->log2_chroma_h;
 
     av_freep(&s->buf);
-    s->buf = av_calloc((FFALIGN(inlink->w, 16) * (s->radius + 1) / 2 + 32), sizeof(*s->buf));
+    s->buf = av_mallocz((FFALIGN(inlink->w, 16) * (s->radius + 1) / 2 + 32) * sizeof(uint16_t));
     if (!s->buf)
         return AVERROR(ENOMEM);
 
-    s->chroma_w = FF_CEIL_RSHIFT(inlink->w, hsub);
-    s->chroma_h = FF_CEIL_RSHIFT(inlink->h, vsub);
+    s->chroma_w = -((-inlink->w) >> hsub);
+    s->chroma_h = -((-inlink->h) >> vsub);
     s->chroma_r = av_clip(((((s->radius >> hsub) + (s->radius >> vsub)) / 2 ) + 1) & ~1, 4, 32);
 
     return 0;
@@ -197,10 +196,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             av_frame_free(&in);
             return AVERROR(ENOMEM);
         }
+
         av_frame_copy_props(out, in);
+        out->width  = outlink->w;
+        out->height = outlink->h;
     }
 
-    for (p = 0; p < 4 && in->data[p] && in->linesize[p]; p++) {
+    for (p = 0; p < 4 && in->data[p]; p++) {
         int w = inlink->w;
         int h = inlink->h;
         int r = s->radius;
@@ -223,15 +225,19 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 }
 
 #define OFFSET(x) offsetof(GradFunContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
-
-static const AVOption gradfun_options[] = {
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption options[] = {
     { "strength", "The maximum amount by which the filter will change any one pixel.", OFFSET(strength), AV_OPT_TYPE_FLOAT, { .dbl = 1.2 }, 0.51, 64, FLAGS },
     { "radius",   "The neighborhood to fit the gradient to.",                          OFFSET(radius),   AV_OPT_TYPE_INT,   { .i64 = 16  }, 4,    32, FLAGS },
-    { NULL }
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(gradfun);
+static const AVClass gradfun_class = {
+    .class_name = "gradfun",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_gradfun_inputs[] = {
     {
@@ -259,7 +265,7 @@ AVFilter ff_vf_gradfun = {
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = avfilter_vf_gradfun_inputs,
-    .outputs       = avfilter_vf_gradfun_outputs,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+
+    .inputs    = avfilter_vf_gradfun_inputs,
+    .outputs   = avfilter_vf_gradfun_outputs,
 };
