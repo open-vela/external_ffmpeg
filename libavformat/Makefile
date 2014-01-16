@@ -300,6 +300,7 @@ OBJS-$(CONFIG_RTSP_MUXER)                += rtsp.o rtspenc.o httpauth.o \
 OBJS-$(CONFIG_SAP_DEMUXER)               += sapdec.o
 OBJS-$(CONFIG_SAP_MUXER)                 += sapenc.o
 OBJS-$(CONFIG_SDP_DEMUXER)               += rtsp.o
+OBJS-$(CONFIG_SDR2_DEMUXER)              += sdr2.o
 OBJS-$(CONFIG_SEGAFILM_DEMUXER)          += segafilm.o
 OBJS-$(CONFIG_SEGMENT_MUXER)             += segment.o
 OBJS-$(CONFIG_SHORTEN_DEMUXER)           += rawdec.o
