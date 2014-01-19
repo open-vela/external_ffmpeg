@@ -2,20 +2,20 @@
  * RTMP network protocol
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@
 #include <zlib.h>
 #endif
 
-#define APP_MAX_LENGTH 1024
+#define APP_MAX_LENGTH 128
 #define PLAYPATH_MAX_LENGTH 256
 #define TCURL_MAX_LENGTH 512
 #define FLASHVER_MAX_LENGTH 64
@@ -269,6 +269,9 @@ static int rtmp_write_amf_data(URLContext *s, char *param, uint8_t **p)
         *value = '\0';
         value++;
 
+        if (!field || !value)
+            goto fail;
+
         ff_amf_write_field_name(p, field);
     } else {
         goto fail;
@@ -315,7 +318,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
     int ret;
 
     if ((ret = ff_rtmp_packet_create(&pkt, RTMP_SYSTEM_CHANNEL, RTMP_PT_INVOKE,
-                                     0, 4096 + APP_MAX_LENGTH)) < 0)
+                                     0, 4096)) < 0)
         return ret;
 
     p = pkt.data;
@@ -2269,7 +2272,7 @@ static int get_packet(URLContext *s, int for_header)
             }
         }
         rt->bytes_read += ret;
-        if (rt->bytes_read - rt->last_bytes_read > rt->client_report_size) {
+        if (rt->bytes_read > rt->last_bytes_read + rt->client_report_size) {
             av_log(s, AV_LOG_DEBUG, "Sending bytes read report\n");
             if ((ret = gen_bytes_read(s, rt, rpkt.timestamp + 1)) < 0)
                 return ret;
@@ -2480,20 +2483,16 @@ reconnect:
             fname = strchr(p + 1, '/');
             if (!fname || (c && c < fname)) {
                 fname = p + 1;
-                av_strlcpy(rt->app, path + 1, FFMIN(p - path, APP_MAX_LENGTH));
+                av_strlcpy(rt->app, path + 1, p - path);
             } else {
                 fname++;
-                av_strlcpy(rt->app, path + 1, FFMIN(fname - path - 1, APP_MAX_LENGTH));
+                av_strlcpy(rt->app, path + 1, fname - path - 1);
             }
         }
     }
 
     if (old_app) {
         // The name of application has been defined by the user, override it.
-        if (strlen(old_app) >= APP_MAX_LENGTH) {
-            ret = AVERROR(EINVAL);
-            goto fail;
-        }
         av_free(rt->app);
         rt->app = old_app;
     }
@@ -2511,9 +2510,9 @@ reconnect:
             (!strcmp(fname + len - 4, ".f4v") ||
              !strcmp(fname + len - 4, ".mp4"))) {
             memcpy(rt->playpath, "mp4:", 5);
-        } else if (len >= 4 && !strcmp(fname + len - 4, ".flv")) {
-            fname[len - 4] = '\0';
         } else {
+            if (len >= 4 && !strcmp(fname + len - 4, ".flv"))
+                fname[len - 4] = '\0';
             rt->playpath[0] = 0;
         }
         av_strlcat(rt->playpath, fname, PLAYPATH_MAX_LENGTH);
