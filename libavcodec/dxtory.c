@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,7 +66,7 @@ static int dxtory_decode_v1(AVCodecContext *avctx, AVFrame *pic,
     return 0;
 }
 
-const uint8_t def_lru[8] = { 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xFF };
+static const uint8_t def_lru[8] = { 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xFF };
 
 static inline uint8_t decode_sym(GetBitContext *gb, uint8_t lru[8])
 {
@@ -118,8 +118,7 @@ static int dxtory_decode_v2(AVCodecContext *avctx, AVFrame *pic,
 {
     GetByteContext gb;
     GetBitContext  gb2;
-    int nslices, slice, slice_height, ref_slice_height;
-    int cur_y, next_y;
+    int nslices, slice, slice_height;
     uint32_t off, slice_size;
     uint8_t *Y, *U, *V;
     int ret;
@@ -135,13 +134,13 @@ static int dxtory_decode_v2(AVCodecContext *avctx, AVFrame *pic,
     if (!nslices || avctx->height % nslices) {
         avpriv_request_sample(avctx, "%d slices for %dx%d", nslices,
                               avctx->width, avctx->height);
-        return AVERROR_PATCHWELCOME;
+        return AVERROR(ENOSYS);
     }
 
-    ref_slice_height = avctx->height / nslices;
-    if ((avctx->width & 1) || (avctx->height & 1)) {
-        avpriv_request_sample(avctx, "Frame dimensions %dx%d",
-                              avctx->width, avctx->height);
+    slice_height = avctx->height / nslices;
+    if ((avctx->width & 1) || (slice_height & 1)) {
+        avpriv_request_sample(avctx, "slice dimensions %dx%d",
+                              avctx->width, slice_height);
     }
 
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -152,11 +151,8 @@ static int dxtory_decode_v2(AVCodecContext *avctx, AVFrame *pic,
     U = pic->data[1];
     V = pic->data[2];
 
-    cur_y  = 0;
-    next_y = ref_slice_height;
     for (slice = 0; slice < nslices; slice++) {
-        slice_size   = bytestream2_get_le32(&gb);
-        slice_height = (next_y & ~1) - (cur_y & ~1);
+        slice_size = bytestream2_get_le32(&gb);
         if (slice_size > src_size - off) {
             av_log(avctx, AV_LOG_ERROR,
                    "invalid slice size %d (only %d bytes left)\n",
@@ -181,8 +177,6 @@ static int dxtory_decode_v2(AVCodecContext *avctx, AVFrame *pic,
         U += pic->linesize[1] * (slice_height >> 1);
         V += pic->linesize[2] * (slice_height >> 1);
         off += slice_size;
-        cur_y   = next_y;
-        next_y += ref_slice_height;
     }
 
     return 0;
