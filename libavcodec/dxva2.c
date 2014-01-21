@@ -3,31 +3,23 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <assert.h>
-#include <string.h>
-
-#include "libavutil/log.h"
-#include "libavutil/time.h"
-
-#include "avcodec.h"
-#include "mpegvideo.h"
 #include "dxva2_internal.h"
 
 void *ff_dxva2_get_surface(const Picture *picture)
@@ -58,13 +50,10 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
     void     *dxva_data;
     unsigned dxva_size;
     int      result;
-    HRESULT hr;
 
-    hr = IDirectXVideoDecoder_GetBuffer(ctx->decoder, type,
-                                        &dxva_data, &dxva_size);
-    if (FAILED(hr)) {
-        av_log(avctx, AV_LOG_ERROR, "Failed to get a buffer for %u: 0x%lx\n",
-               type, hr);
+    if (FAILED(IDirectXVideoDecoder_GetBuffer(ctx->decoder, type,
+                                              &dxva_data, &dxva_size))) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to get a buffer for %d\n", type);
         return -1;
     }
     if (size <= dxva_size) {
@@ -77,15 +66,11 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
 
         result = 0;
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Buffer for type %u was too small\n", type);
+        av_log(avctx, AV_LOG_ERROR, "Buffer for type %d was too small\n", type);
         result = -1;
     }
-
-    hr = IDirectXVideoDecoder_ReleaseBuffer(ctx->decoder, type);
-    if (FAILED(hr)) {
-        av_log(avctx, AV_LOG_ERROR,
-               "Failed to release buffer type %u: 0x%lx\n",
-               type, hr);
+    if (FAILED(IDirectXVideoDecoder_ReleaseBuffer(ctx->decoder, type))) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to release buffer type %d\n", type);
         result = -1;
     }
     return result;
@@ -102,19 +87,12 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, Picture *pic,
     unsigned               buffer_count = 0;
     DXVA2_DecodeBufferDesc buffer[4];
     DXVA2_DecodeExecuteParams exec = { 0 };
-    int result, runs = 0;
-    HRESULT hr;
+    int      result;
 
-    do {
-        hr = IDirectXVideoDecoder_BeginFrame(ctx->decoder,
-                                             ff_dxva2_get_surface(pic),
-                                             NULL);
-        if (hr == E_PENDING)
-            av_usleep(2000);
-    } while (hr == E_PENDING && ++runs < 50);
-
-    if (FAILED(hr)) {
-        av_log(avctx, AV_LOG_ERROR, "Failed to begin frame: 0x%lx\n", hr);
+    if (FAILED(IDirectXVideoDecoder_BeginFrame(ctx->decoder,
+                                               ff_dxva2_get_surface(pic),
+                                               NULL))) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to begin frame\n");
         return -1;
     }
 
@@ -157,16 +135,14 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, Picture *pic,
     exec.NumCompBuffers      = buffer_count;
     exec.pCompressedBuffers  = buffer;
     exec.pExtensionData      = NULL;
-    hr = IDirectXVideoDecoder_Execute(ctx->decoder, &exec);
-    if (FAILED(hr)) {
-        av_log(avctx, AV_LOG_ERROR, "Failed to execute: 0x%lx\n", hr);
+    if (FAILED(IDirectXVideoDecoder_Execute(ctx->decoder, &exec))) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to execute\n");
         result = -1;
     }
 
 end:
-    hr = IDirectXVideoDecoder_EndFrame(ctx->decoder, NULL);
-    if (FAILED(hr)) {
-        av_log(avctx, AV_LOG_ERROR, "Failed to end frame: 0x%lx\n", hr);
+    if (FAILED(IDirectXVideoDecoder_EndFrame(ctx->decoder, NULL))) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to end frame\n");
         result = -1;
     }
 
