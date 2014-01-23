@@ -2,20 +2,20 @@
  * Misc image conversion routines
  * Copyright (c) 2001, 2002, 2003 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@
 #include "imgconvert.h"
 #include "internal.h"
 #include "mathops.h"
-#include "libavutil/avassert.h"
 #include "libavutil/colorspace.h"
 #include "libavutil/common.h"
 #include "libavutil/pixdesc.h"
@@ -51,49 +50,121 @@
 void avcodec_get_chroma_sub_sample(enum AVPixelFormat pix_fmt, int *h_shift, int *v_shift)
 {
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmt);
-    av_assert0(desc);
     *h_shift = desc->log2_chroma_w;
     *v_shift = desc->log2_chroma_h;
+}
+
+static int is_gray(const AVPixFmtDescriptor *desc)
+{
+    return desc->nb_components - (desc->flags & AV_PIX_FMT_FLAG_ALPHA) == 1;
 }
 
 int avcodec_get_pix_fmt_loss(enum AVPixelFormat dst_pix_fmt,
                              enum AVPixelFormat src_pix_fmt,
                              int has_alpha)
 {
-    return av_get_pix_fmt_loss(dst_pix_fmt, src_pix_fmt, has_alpha);
+    const AVPixFmtDescriptor *src_desc = av_pix_fmt_desc_get(src_pix_fmt);
+    const AVPixFmtDescriptor *dst_desc = av_pix_fmt_desc_get(dst_pix_fmt);
+    int loss, i, nb_components = FFMIN(src_desc->nb_components,
+                                       dst_desc->nb_components);
+
+    /* compute loss */
+    loss = 0;
+
+    if (dst_pix_fmt == src_pix_fmt)
+        return 0;
+
+    for (i = 0; i < nb_components; i++)
+        if (src_desc->comp[i].depth_minus1 > dst_desc->comp[i].depth_minus1)
+            loss |= FF_LOSS_DEPTH;
+
+    if (dst_desc->log2_chroma_w > src_desc->log2_chroma_w ||
+        dst_desc->log2_chroma_h > src_desc->log2_chroma_h)
+        loss |= FF_LOSS_RESOLUTION;
+
+    if ((src_desc->flags & AV_PIX_FMT_FLAG_RGB) != (dst_desc->flags & AV_PIX_FMT_FLAG_RGB))
+        loss |= FF_LOSS_COLORSPACE;
+
+    if (has_alpha && !(dst_desc->flags & AV_PIX_FMT_FLAG_ALPHA) &&
+         (dst_desc->flags & AV_PIX_FMT_FLAG_ALPHA))
+        loss |= FF_LOSS_ALPHA;
+
+    if (dst_pix_fmt == AV_PIX_FMT_PAL8 && !is_gray(src_desc))
+        return loss | FF_LOSS_COLORQUANT;
+
+    if (src_desc->nb_components > dst_desc->nb_components)
+        if (is_gray(dst_desc))
+            loss |= FF_LOSS_CHROMA;
+
+    return loss;
 }
 
-enum AVPixelFormat avcodec_find_best_pix_fmt_of_2(enum AVPixelFormat dst_pix_fmt1, enum AVPixelFormat dst_pix_fmt2,
-                                            enum AVPixelFormat src_pix_fmt, int has_alpha, int *loss_ptr)
+static enum AVPixelFormat avcodec_find_best_pix_fmt1(enum AVPixelFormat *pix_fmt_list,
+                                      enum AVPixelFormat src_pix_fmt,
+                                      int has_alpha,
+                                      int loss_mask)
 {
-    return av_find_best_pix_fmt_of_2(dst_pix_fmt1, dst_pix_fmt2, src_pix_fmt, has_alpha, loss_ptr);
+    int dist, i, loss, min_dist;
+    enum AVPixelFormat dst_pix_fmt;
+
+    /* find exact color match with smallest size */
+    dst_pix_fmt = AV_PIX_FMT_NONE;
+    min_dist = 0x7fffffff;
+    i = 0;
+    while (pix_fmt_list[i] != AV_PIX_FMT_NONE) {
+        enum AVPixelFormat pix_fmt = pix_fmt_list[i];
+
+        if (i > AV_PIX_FMT_NB) {
+            av_log(NULL, AV_LOG_ERROR, "Pixel format list longer than expected, "
+                   "it is either not properly terminated or contains duplicates\n");
+            return AV_PIX_FMT_NONE;
+        }
+
+        loss = avcodec_get_pix_fmt_loss(pix_fmt, src_pix_fmt, has_alpha) & loss_mask;
+        if (loss == 0) {
+            dist = av_get_bits_per_pixel(av_pix_fmt_desc_get(pix_fmt));
+            if (dist < min_dist) {
+                min_dist = dist;
+                dst_pix_fmt = pix_fmt;
+            }
+        }
+        i++;
+    }
+    return dst_pix_fmt;
 }
 
-#if AV_HAVE_INCOMPATIBLE_LIBAV_ABI
-enum AVPixelFormat avcodec_find_best_pix_fmt2(const enum AVPixelFormat *pix_fmt_list,
+enum AVPixelFormat avcodec_find_best_pix_fmt2(enum AVPixelFormat *pix_fmt_list,
                                             enum AVPixelFormat src_pix_fmt,
-                                            int has_alpha, int *loss_ptr){
-    return avcodec_find_best_pix_fmt_of_list(pix_fmt_list, src_pix_fmt, has_alpha, loss_ptr);
-}
-#else
-enum AVPixelFormat avcodec_find_best_pix_fmt2(enum AVPixelFormat dst_pix_fmt1, enum AVPixelFormat dst_pix_fmt2,
-                                            enum AVPixelFormat src_pix_fmt, int has_alpha, int *loss_ptr)
+                                            int has_alpha, int *loss_ptr)
 {
-    return avcodec_find_best_pix_fmt_of_2(dst_pix_fmt1, dst_pix_fmt2, src_pix_fmt, has_alpha, loss_ptr);
-}
-#endif
+    enum AVPixelFormat dst_pix_fmt;
+    int loss_mask, i;
+    static const int loss_mask_order[] = {
+        ~0, /* no loss first */
+        ~FF_LOSS_ALPHA,
+        ~FF_LOSS_RESOLUTION,
+        ~(FF_LOSS_COLORSPACE | FF_LOSS_RESOLUTION),
+        ~FF_LOSS_COLORQUANT,
+        ~FF_LOSS_DEPTH,
+        0,
+    };
 
-enum AVPixelFormat avcodec_find_best_pix_fmt_of_list(const enum AVPixelFormat *pix_fmt_list,
-                                            enum AVPixelFormat src_pix_fmt,
-                                            int has_alpha, int *loss_ptr){
-    int i;
-
-    enum AVPixelFormat best = AV_PIX_FMT_NONE;
-
-    for(i=0; pix_fmt_list[i] != AV_PIX_FMT_NONE; i++)
-        best = avcodec_find_best_pix_fmt_of_2(best, pix_fmt_list[i], src_pix_fmt, has_alpha, loss_ptr);
-
-    return best;
+    /* try with successive loss */
+    i = 0;
+    for(;;) {
+        loss_mask = loss_mask_order[i++];
+        dst_pix_fmt = avcodec_find_best_pix_fmt1(pix_fmt_list, src_pix_fmt,
+                                                 has_alpha, loss_mask);
+        if (dst_pix_fmt >= 0)
+            goto found;
+        if (loss_mask == 0)
+            break;
+    }
+    return AV_PIX_FMT_NONE;
+ found:
+    if (loss_ptr)
+        *loss_ptr = avcodec_get_pix_fmt_loss(dst_pix_fmt, src_pix_fmt, has_alpha);
+    return dst_pix_fmt;
 }
 
 /* 2x2 -> 1x1 */
@@ -185,22 +256,8 @@ void ff_shrink88(uint8_t *dst, int dst_wrap,
 /* return true if yuv planar */
 static inline int is_yuv_planar(const AVPixFmtDescriptor *desc)
 {
-    int i;
-    int planes[4] = { 0 };
-
-    if (     desc->flags & AV_PIX_FMT_FLAG_RGB
-        || !(desc->flags & AV_PIX_FMT_FLAG_PLANAR))
-        return 0;
-
-    /* set the used planes */
-    for (i = 0; i < desc->nb_components; i++)
-        planes[desc->comp[i].plane] = 1;
-
-    /* if there is an unused plane, the format is not planar */
-    for (i = 0; i < desc->nb_components; i++)
-        if (!planes[i])
-            return 0;
-    return 1;
+    return (!(desc->flags & AV_PIX_FMT_FLAG_RGB) &&
+             (desc->flags & AV_PIX_FMT_FLAG_PLANAR));
 }
 
 int av_picture_crop(AVPicture *dst, const AVPicture *src,
@@ -210,23 +267,15 @@ int av_picture_crop(AVPicture *dst, const AVPicture *src,
     int y_shift;
     int x_shift;
 
-    if (pix_fmt < 0 || pix_fmt >= AV_PIX_FMT_NB)
+    if (pix_fmt < 0 || pix_fmt >= AV_PIX_FMT_NB || !is_yuv_planar(desc))
         return -1;
 
     y_shift = desc->log2_chroma_h;
     x_shift = desc->log2_chroma_w;
 
-    if (is_yuv_planar(desc)) {
     dst->data[0] = src->data[0] + (top_band * src->linesize[0]) + left_band;
     dst->data[1] = src->data[1] + ((top_band >> y_shift) * src->linesize[1]) + (left_band >> x_shift);
     dst->data[2] = src->data[2] + ((top_band >> y_shift) * src->linesize[2]) + (left_band >> x_shift);
-    } else{
-        if(top_band % (1<<y_shift) || left_band % (1<<x_shift))
-            return -1;
-        if(left_band) //FIXME add support for this too
-            return -1;
-        dst->data[0] = src->data[0] + (top_band * src->linesize[0]) + left_band;
-    }
 
     dst->linesize[0] = src->linesize[0];
     dst->linesize[1] = src->linesize[1];
@@ -457,31 +506,3 @@ int avpicture_deinterlace(AVPicture *dst, const AVPicture *src,
 }
 
 #endif /* FF_API_DEINTERLACE */
-
-#ifdef TEST
-
-int main(void){
-    int i;
-    int err=0;
-    int skip = 0;
-
-    for (i=0; i<AV_PIX_FMT_NB*2; i++) {
-        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(i);
-        if(!desc || !desc->name) {
-            skip ++;
-            continue;
-        }
-        if (skip) {
-            av_log(NULL, AV_LOG_INFO, "%3d unused pixel format values\n", skip);
-            skip = 0;
-        }
-        av_log(NULL, AV_LOG_INFO, "pix fmt %s yuv_plan:%d avg_bpp:%d\n", desc->name, is_yuv_planar(desc), av_get_padded_bits_per_pixel(desc));
-        if ((!(desc->flags & AV_PIX_FMT_FLAG_ALPHA)) != (desc->nb_components != 2 && desc->nb_components != 4)) {
-            av_log(NULL, AV_LOG_ERROR, "Alpha flag mismatch\n");
-            err = 1;
-        }
-    }
-    return err;
-}
-
-#endif
