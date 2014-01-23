@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2009 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -132,12 +132,11 @@ function ff_put_pixels8_y2_armv6, export=1
         uhadd8          r9,  r5,  r7
         eor             r11, r5,  r7
         and             r10, r10, r12
-        ldrc_pre        ne,  r4,  r1,  r2
+        ldr_pre         r4,  r1,  r2
         uadd8           r8,  r8,  r10
         and             r11, r11, r12
         uadd8           r9,  r9,  r11
-        it              ne
-        ldrne           r5,  [r1, #4]
+        ldr             r5,  [r1, #4]
         uhadd8          r10, r4,  r6
         eor             r6,  r4,  r6
         uhadd8          r11, r5,  r7
@@ -194,10 +193,9 @@ function ff_put_pixels8_y2_no_rnd_armv6, export=1
 1:
         subs            r3,  r3,  #2
         uhadd8          r8,  r4,  r6
-        ldrc_pre        ne,  r4,  r1,  r2
+        ldr_pre         r4,  r1,  r2
         uhadd8          r9,  r5,  r7
-        it              ne
-        ldrne           r5,  [r1, #4]
+        ldr             r5,  [r1, #4]
         uhadd8          r12, r4,  r6
         ldrc_pre        ne,  r6,  r1,  r2
         uhadd8          r14, r5,  r7
