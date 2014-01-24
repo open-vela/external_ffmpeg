@@ -3772,8 +3772,7 @@ static int vp9_decode_update_thread_context(AVCodecContext *dst, const AVCodecCo
     VP9Context *s = dst->priv_data, *ssrc = src->priv_data;
 
     // detect size changes in other threads
-    if (s->above_partition_ctx &&
-        (!ssrc->above_partition_ctx || s->cols != ssrc->cols || s->rows != ssrc->rows)) {
+    if (s->above_partition_ctx && (s->cols != ssrc->cols || s->rows != ssrc->rows)) {
         free_buffers(s);
     }
 
