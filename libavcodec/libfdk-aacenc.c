@@ -2,20 +2,20 @@
  * AAC encoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -151,6 +151,16 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     case 4: mode = MODE_1_2_1;   sce = 2; cpe = 1; break;
     case 5: mode = MODE_1_2_2;   sce = 1; cpe = 2; break;
     case 6: mode = MODE_1_2_2_1; sce = 2; cpe = 2; break;
+    case 8:
+        sce = 2;
+        cpe = 3;
+        if (avctx->channel_layout == AV_CH_LAYOUT_7POINT1) {
+            mode = MODE_7_1_REAR_SURROUND;
+        } else {
+            // MODE_1_2_2_2_1 and MODE_7_1_FRONT_CENTER use the same channel layout
+            mode = MODE_7_1_FRONT_CENTER;
+        }
+        break;
     default:
         av_log(avctx, AV_LOG_ERROR,
                "Unsupported number of channels %d\n", avctx->channels);
@@ -330,10 +340,8 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
 
     /* The maximum packet size is 6144 bits aka 768 bytes per channel. */
-    if ((ret = ff_alloc_packet(avpkt, FFMAX(8192, 768 * avctx->channels)))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, FFMAX(8192, 768 * avctx->channels))) < 0)
         return ret;
-    }
 
     out_ptr                   = avpkt->data;
     out_buffer_size           = avpkt->size;
@@ -386,6 +394,8 @@ static const uint64_t aac_channel_layout[] = {
     AV_CH_LAYOUT_4POINT0,
     AV_CH_LAYOUT_5POINT0_BACK,
     AV_CH_LAYOUT_5POINT1_BACK,
+    AV_CH_LAYOUT_7POINT1_WIDE_BACK,
+    AV_CH_LAYOUT_7POINT1,
     0,
 };
 
