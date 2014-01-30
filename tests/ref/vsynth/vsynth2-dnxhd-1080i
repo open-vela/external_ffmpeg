@@ -1,4 +1,4 @@
-d680a5eed77c5b8dc6b5ef3bcf6e87e8 *tests/data/fate/vsynth2-dnxhd-1080i.mov
-3031911 tests/data/fate/vsynth2-dnxhd-1080i.mov
-744ba46da5d4c19a28562ea31061d170 *tests/data/fate/vsynth2-dnxhd-1080i.out.rawvideo
+c456f2a7ac9435ea5bfea86bc69c1c41 *tests/data/fate/vsynth2-dnxhd-1080i.mov
+3031875 tests/data/fate/vsynth2-dnxhd-1080i.mov
+42262a2325441b38b3b3c8a42d888e7d *tests/data/fate/vsynth2-dnxhd-1080i.out.rawvideo
 stddev:    1.31 PSNR: 45.77 MAXDIFF:   23 bytes:  7603200/   760320
