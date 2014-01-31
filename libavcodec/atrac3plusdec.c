@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -77,42 +77,35 @@ static av_cold int set_channel_params(ATRAC3PContext *ctx,
 {
     memset(ctx->channel_blocks, 0, sizeof(ctx->channel_blocks));
 
-    switch (avctx->channels) {
-    case 1:
-        if (avctx->channel_layout != AV_CH_FRONT_LEFT)
-            avctx->channel_layout = AV_CH_LAYOUT_MONO;
-
+    switch (avctx->channel_layout) {
+    case AV_CH_FRONT_LEFT:
+    case AV_CH_LAYOUT_MONO:
         ctx->num_channel_blocks = 1;
         ctx->channel_blocks[0]  = CH_UNIT_MONO;
         break;
-    case 2:
-        avctx->channel_layout   = AV_CH_LAYOUT_STEREO;
+    case AV_CH_LAYOUT_STEREO:
         ctx->num_channel_blocks = 1;
         ctx->channel_blocks[0]  = CH_UNIT_STEREO;
         break;
-    case 3:
-        avctx->channel_layout   = AV_CH_LAYOUT_SURROUND;
+    case AV_CH_LAYOUT_SURROUND:
         ctx->num_channel_blocks = 2;
         ctx->channel_blocks[0]  = CH_UNIT_STEREO;
         ctx->channel_blocks[1]  = CH_UNIT_MONO;
         break;
-    case 4:
-        avctx->channel_layout   = AV_CH_LAYOUT_4POINT0;
+    case AV_CH_LAYOUT_4POINT0:
         ctx->num_channel_blocks = 3;
         ctx->channel_blocks[0]  = CH_UNIT_STEREO;
         ctx->channel_blocks[1]  = CH_UNIT_MONO;
         ctx->channel_blocks[2]  = CH_UNIT_MONO;
         break;
-    case 6:
-        avctx->channel_layout   = AV_CH_LAYOUT_5POINT1_BACK;
+    case AV_CH_LAYOUT_5POINT1_BACK:
         ctx->num_channel_blocks = 4;
         ctx->channel_blocks[0]  = CH_UNIT_STEREO;
         ctx->channel_blocks[1]  = CH_UNIT_MONO;
         ctx->channel_blocks[2]  = CH_UNIT_STEREO;
         ctx->channel_blocks[3]  = CH_UNIT_MONO;
         break;
-    case 7:
-        avctx->channel_layout   = AV_CH_LAYOUT_6POINT1_BACK;
+    case AV_CH_LAYOUT_6POINT1_BACK:
         ctx->num_channel_blocks = 5;
         ctx->channel_blocks[0]  = CH_UNIT_STEREO;
         ctx->channel_blocks[1]  = CH_UNIT_MONO;
@@ -120,8 +113,7 @@ static av_cold int set_channel_params(ATRAC3PContext *ctx,
         ctx->channel_blocks[3]  = CH_UNIT_MONO;
         ctx->channel_blocks[4]  = CH_UNIT_MONO;
         break;
-    case 8:
-        avctx->channel_layout   = AV_CH_LAYOUT_7POINT1;
+    case AV_CH_LAYOUT_7POINT1:
         ctx->num_channel_blocks = 5;
         ctx->channel_blocks[0]  = CH_UNIT_STEREO;
         ctx->channel_blocks[1]  = CH_UNIT_MONO;
@@ -131,7 +123,7 @@ static av_cold int set_channel_params(ATRAC3PContext *ctx,
         break;
     default:
         av_log(avctx, AV_LOG_ERROR,
-               "Unsupported channel count: %d!\n", avctx->channels);
+               "Unsupported channel layout: %"PRIx64"!\n", avctx->channel_layout);
         return AVERROR_INVALIDDATA;
     }
 
@@ -147,6 +139,8 @@ static av_cold int atrac3p_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "block_align is not set\n");
         return AVERROR(EINVAL);
     }
+
+    ff_atrac3p_init_vlcs();
 
     avpriv_float_dsp_init(&ctx->fdsp, avctx->flags & CODEC_FLAG_BITEXACT);
 
@@ -383,13 +377,12 @@ static int atrac3p_decode_frame(AVCodecContext *avctx, void *data,
 }
 
 AVCodec ff_atrac3p_decoder = {
-    .name             = "atrac3plus",
-    .long_name        = NULL_IF_CONFIG_SMALL("ATRAC3+ (Adaptive TRansform Acoustic Coding 3+)"),
-    .type             = AVMEDIA_TYPE_AUDIO,
-    .id               = AV_CODEC_ID_ATRAC3P,
-    .priv_data_size   = sizeof(ATRAC3PContext),
-    .init             = atrac3p_decode_init,
-    .init_static_data = ff_atrac3p_init_vlcs,
-    .close            = atrac3p_decode_close,
-    .decode           = atrac3p_decode_frame,
+    .name           = "atrac3plus",
+    .long_name      = NULL_IF_CONFIG_SMALL("ATRAC3+ (Adaptive TRansform Acoustic Coding 3+)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_ATRAC3P,
+    .priv_data_size = sizeof(ATRAC3PContext),
+    .init           = atrac3p_decode_init,
+    .close          = atrac3p_decode_close,
+    .decode         = atrac3p_decode_frame,
 };
