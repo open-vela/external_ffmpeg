@@ -2,20 +2,20 @@
  * RTP H264 Protocol (RFC3984)
  * Copyright (c) 2006 Ryan Martell
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,7 +64,8 @@ struct PayloadContext {
 
 static const uint8_t start_sequence[] = { 0, 0, 0, 1 };
 
-static int sdp_parse_fmtp_config_h264(AVStream *stream,
+static int sdp_parse_fmtp_config_h264(AVFormatContext *s,
+                                      AVStream *stream,
                                       PayloadContext *h264_data,
                                       char *attr, char *value)
 {
@@ -73,7 +74,7 @@ static int sdp_parse_fmtp_config_h264(AVStream *stream,
     assert(h264_data != NULL);
 
     if (!strcmp(attr, "packetization-mode")) {
-        av_log(codec, AV_LOG_DEBUG, "RTP Packetization Mode: %d\n", atoi(value));
+        av_log(s, AV_LOG_DEBUG, "RTP Packetization Mode: %d\n", atoi(value));
         h264_data->packetization_mode = atoi(value);
         /*
          * Packetization Mode:
@@ -83,7 +84,7 @@ static int sdp_parse_fmtp_config_h264(AVStream *stream,
          *                      and 29 (FU-B) are allowed.
          */
         if (h264_data->packetization_mode > 1)
-            av_log(codec, AV_LOG_ERROR,
+            av_log(s, AV_LOG_ERROR,
                    "Interleaved RTP mode is not supported yet.\n");
     } else if (!strcmp(attr, "profile-level-id")) {
         if (strlen(value) == 6) {
@@ -104,7 +105,7 @@ static int sdp_parse_fmtp_config_h264(AVStream *stream,
             buffer[1]   = value[5];
             level_idc   = strtol(buffer, NULL, 16);
 
-            av_log(codec, AV_LOG_DEBUG,
+            av_log(s, AV_LOG_DEBUG,
                    "RTP Profile IDC: %x Profile IOP: %x Level: %x\n",
                    profile_idc, profile_iop, level_idc);
             h264_data->profile_idc = profile_idc;
@@ -137,7 +138,7 @@ static int sdp_parse_fmtp_config_h264(AVStream *stream,
                                           codec->extradata_size +
                                           FF_INPUT_BUFFER_PADDING_SIZE);
                 if (!dest) {
-                    av_log(codec, AV_LOG_ERROR,
+                    av_log(s, AV_LOG_ERROR,
                            "Unable to allocate memory for extradata!\n");
                     return AVERROR(ENOMEM);
                 }
@@ -157,7 +158,7 @@ static int sdp_parse_fmtp_config_h264(AVStream *stream,
                 codec->extradata_size += sizeof(start_sequence) + packet_size;
             }
         }
-        av_log(codec, AV_LOG_DEBUG, "Extradata set to %p (size: %d)!\n",
+        av_log(s, AV_LOG_DEBUG, "Extradata set to %p (size: %d)!\n",
                codec->extradata, codec->extradata_size);
     }
     return 0;
@@ -385,7 +386,7 @@ static int parse_h264_sdp_line(AVFormatContext *s, int st_index,
         codec->width   = atoi(buf1);
         codec->height  = atoi(p + 1); // skip the -
     } else if (av_strstart(p, "fmtp:", &p)) {
-        return ff_parse_fmtp(stream, h264_data, p, sdp_parse_fmtp_config_h264);
+        return ff_parse_fmtp(s, stream, h264_data, p, sdp_parse_fmtp_config_h264);
     } else if (av_strstart(p, "cliprect:", &p)) {
         // could use this if we wanted.
     }
