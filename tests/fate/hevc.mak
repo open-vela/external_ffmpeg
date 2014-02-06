@@ -141,12 +141,12 @@ HEVC_SAMPLES_10BIT =            \
 
 define FATE_HEVC_TEST
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -vsync drop -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit
+fate-hevc-conformance-$(1): CMD = framecrc -vsync 0 -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit
 endef
 
 define FATE_HEVC_TEST_10BIT
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -vsync drop -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
+fate-hevc-conformance-$(1): CMD = framecrc -vsync 0 -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
 endef
 
 $(foreach N,$(HEVC_SAMPLES),$(eval $(call FATE_HEVC_TEST,$(N))))
