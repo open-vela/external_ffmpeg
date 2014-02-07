@@ -2,20 +2,20 @@
  * Interface to libmp3lame for mp3 encoding
  * Copyright (c) 2002 Lennert Buytenhek <buytenh@gnu.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,7 +38,7 @@
 #include "mpegaudio.h"
 #include "mpegaudiodecheader.h"
 
-#define BUFFER_SIZE (7200 + 2 * MPA_FRAME_SIZE + MPA_FRAME_SIZE / 4+1000) // FIXME: Buffer size to small? Adding 1000 to make up for it.
+#define BUFFER_SIZE (7200 + 2 * MPA_FRAME_SIZE + MPA_FRAME_SIZE / 4)
 
 typedef struct LAMEContext {
     AVClass *class;
@@ -96,7 +96,6 @@ static av_cold int mp3lame_encode_init(AVCodecContext *avctx)
     /* initialize LAME and get defaults */
     if ((s->gfp = lame_init()) == NULL)
         return AVERROR(ENOMEM);
-
 
     lame_set_num_channels(s->gfp, avctx->channels);
     lame_set_mode(s->gfp, avctx->channels > 1 ? s->joint_stereo ? JOINT_STEREO : STEREO : MONO);
@@ -209,8 +208,6 @@ static int mp3lame_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         default:
             return AVERROR_BUG;
         }
-    } else if (!s->afq.frame_alloc) {
-        lame_result = 0;
     } else {
         lame_result = lame_encode_flush(s->gfp, s->buffer + s->buffer_index,
                                         s->buffer_size - s->buffer_index);
@@ -254,8 +251,10 @@ static int mp3lame_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     av_dlog(avctx, "in:%d packet-len:%d index:%d\n", avctx->frame_size, len,
             s->buffer_index);
     if (len <= s->buffer_index) {
-        if ((ret = ff_alloc_packet2(avctx, avpkt, len)) < 0)
+        if ((ret = ff_alloc_packet(avpkt, len))) {
+            av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
             return ret;
+        }
         memcpy(avpkt->data, s->buffer, len);
         s->buffer_index -= len;
         memmove(s->buffer, s->buffer + len, s->buffer_index);
@@ -273,9 +272,9 @@ static int mp3lame_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 #define OFFSET(x) offsetof(LAMEContext, x)
 #define AE AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "reservoir",    "use bit reservoir", OFFSET(reservoir),    AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, AE },
-    { "joint_stereo", "use joint stereo",  OFFSET(joint_stereo), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, AE },
-    { "abr",          "use ABR",           OFFSET(abr),          AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AE },
+    { "reservoir", "Use bit reservoir.", OFFSET(reservoir), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, AE },
+    { "joint_stereo", "Use joint stereo.", OFFSET(joint_stereo), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, AE },
+    { "abr", "Use ABR", OFFSET(abr), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AE },
     { NULL },
 };
 

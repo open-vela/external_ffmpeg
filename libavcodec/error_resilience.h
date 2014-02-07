@@ -1,19 +1,19 @@
 /*
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 #include "avcodec.h"
-#include "dsputil.h"
+#include "me_cmp.h"
 #include "thread.h"
 
 ///< current MB is the first after a resync marker
@@ -42,7 +42,7 @@ typedef struct ERPicture {
     AVFrame *f;
     ThreadFrame *tf;
 
-    // it's the caller's responsibility to allocate these buffers
+    // it's the caller responsability to allocate these buffers
     int16_t (*motion_val[2])[2];
     int8_t *ref_index[2];
 
@@ -52,7 +52,7 @@ typedef struct ERPicture {
 
 typedef struct ERContext {
     AVCodecContext *avctx;
-    DSPContext *dsp;
+    MECmpContext *mecc;
 
     int *mb_index2xy;
     int mb_num;
@@ -71,9 +71,6 @@ typedef struct ERContext {
     ERPicture cur_pic;
     ERPicture last_pic;
     ERPicture next_pic;
-
-    AVBufferRef *ref_index_buf[2];
-    AVBufferRef *motion_val_buf[2];
 
     uint16_t pp_time;
     uint16_t pb_time;

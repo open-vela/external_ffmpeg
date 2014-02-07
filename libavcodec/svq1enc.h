@@ -1,20 +1,20 @@
 /*
  * SVQ1 encoder
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,9 +25,9 @@
 
 #include "libavutil/frame.h"
 #include "avcodec.h"
-#include "dsputil.h"
 #include "get_bits.h"
 #include "hpeldsp.h"
+#include "me_cmp.h"
 #include "mpegvideo.h"
 #include "put_bits.h"
 
@@ -37,7 +37,7 @@ typedef struct SVQ1EncContext {
      * of MpegEncContext, so this will be removed then. */
     MpegEncContext m;
     AVCodecContext *avctx;
-    DSPContext dsp;
+    MECmpContext mecc;
     HpelDSPContext hdsp;
     AVFrame *current_picture;
     AVFrame *last_picture;
@@ -69,7 +69,7 @@ typedef struct SVQ1EncContext {
     uint8_t *scratchbuf;
 
     int (*ssd_int8_vs_int16)(const int8_t *pix1, const int16_t *pix2,
-                             intptr_t size);
+                             int size);
 } SVQ1EncContext;
 
 void ff_svq1enc_init_ppc(SVQ1EncContext *c);
