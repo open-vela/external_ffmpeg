@@ -24,6 +24,7 @@
 POUT          .req    a1
 PIN           .req    a2
 PCOEF         .req    a3
+DECIFACTOR    .req    a4
 OLDFPSCR      .req    a4
 COUNTER       .req    ip
 
@@ -128,15 +129,6 @@ POST3         .req    s27
 .endm
 
 .macro dca_lfe_fir  decifactor
-function ff_dca_lfe_fir\decifactor\()_vfp, export=1
-NOVFP   vmov    s0, r3
-        fmrx    OLDFPSCR, FPSCR
-        ldr     ip, =0x03030000         @ RunFast mode, short vectors of length 4, stride 1
-        fmxr    FPSCR, ip
-        vldr    IN0, [PIN, #-0*4]
-        vldr    IN1, [PIN, #-1*4]
-        vldr    IN2, [PIN, #-2*4]
-        vldr    IN3, [PIN, #-3*4]
  .if \decifactor == 32
   .set JMAX, 8
         vpush   {s16-s31}
@@ -173,16 +165,32 @@ NOVFP   vmov    s0, r3
  .endif
         fmxr    FPSCR, OLDFPSCR
         bx      lr
-endfunc
 .endm
 
-        dca_lfe_fir  64
+
+/* void ff_dca_lfe_fir_vfp(float *out, const float *in, const float *coefs,
+ *                         int decifactor, float scale)
+ */
+function ff_dca_lfe_fir_vfp, export=1
+        teq     DECIFACTOR, #32
+        fmrx    OLDFPSCR, FPSCR
+        ldr     ip, =0x03030000         @ RunFast mode, short vectors of length 4, stride 1
+        fmxr    FPSCR, ip
+NOVFP   vldr    s0, [sp]
+        vldr    IN0, [PIN, #-0*4]
+        vldr    IN1, [PIN, #-1*4]
+        vldr    IN2, [PIN, #-2*4]
+        vldr    IN3, [PIN, #-3*4]
+        beq     32f
+64:     dca_lfe_fir  64
  .ltorg
-        dca_lfe_fir  32
+32:     dca_lfe_fir  32
+endfunc
 
         .unreq  POUT
         .unreq  PIN
         .unreq  PCOEF
+        .unreq  DECIFACTOR
         .unreq  OLDFPSCR
         .unreq  COUNTER
 
