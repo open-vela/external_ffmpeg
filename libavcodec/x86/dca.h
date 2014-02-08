@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,6 @@
 #if ARCH_X86_64 && HAVE_SSE2_INLINE
 # include "libavutil/x86/asm.h"
 # include "libavutil/mem.h"
-#include "libavcodec/dcadsp.h"
 
 # define int8x8_fmul_int32 int8x8_fmul_int32
 static inline void int8x8_fmul_int32(av_unused DCADSPContext *dsp,
