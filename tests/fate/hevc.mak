@@ -37,7 +37,7 @@ HEVC_SAMPLES =                  \
     ENTP_A_LG_2                 \
     ENTP_B_LG_2                 \
     ENTP_C_LG_3                 \
-    EXT_A_ericsson_4            \
+    EXT_A_ericsson_3            \
     ipcm_A_NEC_3                \
     ipcm_B_NEC_3                \
     ipcm_C_NEC_3                \
@@ -48,7 +48,6 @@ HEVC_SAMPLES =                  \
     IPRED_C_Mitsubishi_2        \
     LS_A_Orange_2               \
     LS_B_ORANGE_4               \
-    LTRPSPS_A_Qualcomm_1        \
     MAXBINS_A_TI_4              \
     MAXBINS_B_TI_4              \
     MAXBINS_C_TI_4              \
@@ -62,7 +61,7 @@ HEVC_SAMPLES =                  \
     MVCLIP_A_qualcomm_3         \
     MVDL1ZERO_A_docomo_3        \
     MVEDGE_A_qualcomm_3         \
-    NUT_A_ericsson_5            \
+    NUT_A_ericsson_4            \
     PICSIZE_A_Bossen_1          \
     PICSIZE_B_Bossen_1          \
     PICSIZE_C_Bossen_1          \
@@ -82,8 +81,8 @@ HEVC_SAMPLES =                  \
     RPLM_B_qualcomm_4           \
     RPS_A_docomo_4              \
     RPS_B_qualcomm_5            \
-    RPS_C_ericsson_5            \
-    RPS_D_ericsson_6            \
+    RPS_C_ericsson_4            \
+    RPS_D_ericsson_5            \
     RPS_E_qualcomm_5            \
     RPS_F_docomo_1              \
     RQT_A_HHI_4                 \
@@ -106,7 +105,6 @@ HEVC_SAMPLES =                  \
     SLIST_B_Sony_8              \
     SLIST_C_Sony_3              \
     SLIST_D_Sony_9              \
-    SLPPLP_A_VIDYO_1            \
     STRUCT_A_Samsung_5          \
     STRUCT_B_Samsung_4          \
     TILES_A_Cisco_2             \
@@ -116,7 +114,6 @@ HEVC_SAMPLES =                  \
     TSCL_B_VIDYO_4              \
     TSKIP_A_MS_3                \
     TUSIZE_A_Samsung_1          \
-    VPSID_A_VIDYO_1             \
     WP_A_Toshiba_3              \
     WP_B_Toshiba_3              \
     WPP_A_ericsson_MAIN_2       \
@@ -144,12 +141,12 @@ HEVC_SAMPLES_10BIT =            \
 
 define FATE_HEVC_TEST
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -vsync 0 -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit
+fate-hevc-conformance-$(1): CMD = framecrc -vsync drop -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit
 endef
 
 define FATE_HEVC_TEST_10BIT
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -vsync 0 -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
+fate-hevc-conformance-$(1): CMD = framecrc -vsync drop -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
 endef
 
 $(foreach N,$(HEVC_SAMPLES),$(eval $(call FATE_HEVC_TEST,$(N))))
