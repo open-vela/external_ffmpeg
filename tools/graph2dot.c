@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008-2010 Stefano Sabatini
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,7 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/audioconvert.h"
 #include "libavfilter/avfilter.h"
 
 #if !HAVE_GETOPT
@@ -62,7 +63,7 @@ static void print_digraph(FILE *outfile, AVFilterGraph *graph)
         char filter_ctx_label[128];
         const AVFilterContext *filter_ctx = graph->filters[i];
 
-        snprintf(filter_ctx_label, sizeof(filter_ctx_label), "%s\\n(%s)",
+        snprintf(filter_ctx_label, sizeof(filter_ctx_label), "%s (%s)",
                  filter_ctx->name,
                  filter_ctx->filter->name);
 
@@ -73,32 +74,28 @@ static void print_digraph(FILE *outfile, AVFilterGraph *graph)
                 const AVFilterContext *dst_filter_ctx = link->dst;
 
                 snprintf(dst_filter_ctx_label, sizeof(dst_filter_ctx_label),
-                         "%s\\n(%s)",
+                         "%s (%s)",
                          dst_filter_ctx->name,
                          dst_filter_ctx->filter->name);
 
-                fprintf(outfile, "\"%s\" -> \"%s\" [ label= \"inpad:%s -> outpad:%s\\n",
-                        filter_ctx_label, dst_filter_ctx_label,
-                        link->srcpad->name, link->dstpad->name);
-
+                fprintf(outfile, "\"%s\" -> \"%s\"",
+                        filter_ctx_label, dst_filter_ctx_label);
                 if (link->type == AVMEDIA_TYPE_VIDEO) {
                     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(link->format);
                     fprintf(outfile,
-                            "fmt:%s w:%d h:%d tb:%d/%d",
-                            desc->name,
-                            link->w, link->h,
-                            link->time_base.num, link->time_base.den);
+                            " [ label= \"fmt:%s w:%d h:%d tb:%d/%d\" ]",
+                            desc->name, link->w, link->h, link->time_base.num,
+                            link->time_base.den);
                 } else if (link->type == AVMEDIA_TYPE_AUDIO) {
                     char buf[255];
                     av_get_channel_layout_string(buf, sizeof(buf), -1,
                                                  link->channel_layout);
                     fprintf(outfile,
-                            "fmt:%s sr:%d cl:%s tb:%d/%d",
+                            " [ label= \"fmt:%s sr:%d cl:%s\" ]",
                             av_get_sample_fmt_name(link->format),
-                            link->sample_rate, buf,
-                            link->time_base.num, link->time_base.den);
+                            link->sample_rate, buf);
                 }
-                fprintf(outfile, "\" ];\n");
+                fprintf(outfile, ";\n");
             }
         }
     }
