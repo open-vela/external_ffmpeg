@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,6 +37,7 @@
 #define X86_SSE4(flags)             CPUEXT(flags, SSE4)
 #define X86_SSE42(flags)            CPUEXT(flags, SSE42)
 #define X86_AVX(flags)              CPUEXT(flags, AVX)
+#define X86_XOP(flags)              CPUEXT(flags, XOP)
 #define X86_FMA4(flags)             CPUEXT(flags, FMA4)
 #define X86_AVX2(flags)             CPUEXT(flags, AVX2)
 
@@ -51,6 +52,7 @@
 #define EXTERNAL_SSE4(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, SSE4)
 #define EXTERNAL_SSE42(flags)       CPUEXT_SUFFIX(flags, _EXTERNAL, SSE42)
 #define EXTERNAL_AVX(flags)         CPUEXT_SUFFIX(flags, _EXTERNAL, AVX)
+#define EXTERNAL_XOP(flags)         CPUEXT_SUFFIX(flags, _EXTERNAL, XOP)
 #define EXTERNAL_FMA4(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, FMA4)
 #define EXTERNAL_AVX2(flags)        CPUEXT_SUFFIX(flags, _EXTERNAL, AVX2)
 
@@ -65,6 +67,7 @@
 #define INLINE_SSE4(flags)          CPUEXT_SUFFIX(flags, _INLINE, SSE4)
 #define INLINE_SSE42(flags)         CPUEXT_SUFFIX(flags, _INLINE, SSE42)
 #define INLINE_AVX(flags)           CPUEXT_SUFFIX(flags, _INLINE, AVX)
+#define INLINE_XOP(flags)           CPUEXT_SUFFIX(flags, _INLINE, XOP)
 #define INLINE_FMA4(flags)          CPUEXT_SUFFIX(flags, _INLINE, FMA4)
 #define INLINE_AVX2(flags)          CPUEXT_SUFFIX(flags, _INLINE, AVX2)
 
