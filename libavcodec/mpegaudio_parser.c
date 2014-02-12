@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,6 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
             int inc= FFMIN(buf_size - i, s->frame_size);
             i += inc;
             s->frame_size -= inc;
-            state = 0;
 
             if(!s->frame_size){
                 next= i;
@@ -64,11 +63,10 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
         }else{
             while(i<buf_size){
                 int ret, sr, channels, bit_rate, frame_size;
-                enum AVCodecID codec_id;
 
                 state= (state<<8) + buf[i++];
 
-                ret = avpriv_mpa_decode_header2(state, &sr, &channels, &frame_size, &bit_rate, &codec_id);
+                ret = avpriv_mpa_decode_header(avctx, state, &sr, &channels, &frame_size, &bit_rate);
                 if (ret < 4) {
                     if (i > 4)
                         s->header_count = -2;
@@ -79,11 +77,10 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
                     s->header_count++;
                     s->frame_size = ret-4;
 
-                    if (s->header_count > 0 + (avctx->codec_id != AV_CODEC_ID_NONE && avctx->codec_id != codec_id)) {
+                    if (s->header_count > 0) {
                         avctx->sample_rate= sr;
                         avctx->channels   = channels;
                         s1->duration      = frame_size;
-                        avctx->codec_id   = codec_id;
                         if (s->no_bitrate || !avctx->bit_rate) {
                             s->no_bitrate = 1;
                             avctx->bit_rate += (bit_rate - avctx->bit_rate) / s->header_count;

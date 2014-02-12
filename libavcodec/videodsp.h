@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2012 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,25 +29,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define EMULATED_EDGE(depth) \
-void ff_emulated_edge_mc_ ## depth(uint8_t *dst, const uint8_t *src, \
-                                   ptrdiff_t dst_stride, ptrdiff_t src_stride, \
-                                   int block_w, int block_h,\
-                                   int src_x, int src_y, int w, int h);
-
-EMULATED_EDGE(8)
-EMULATED_EDGE(16)
-
 typedef struct VideoDSPContext {
     /**
      * Copy a rectangular area of samples to a temporary buffer and replicate
      * the border samples.
      *
-     * @param dst destination buffer
-     * @param dst_stride number of bytes between 2 vertically adjacent samples
-     *                   in destination buffer
+     * @param buf destination buffer
      * @param src source buffer
-     * @param dst_linesize number of bytes between 2 vertically adjacent
+     * @param buf_linesize number of bytes between 2 vertically adjacent
      *                     samples in the destination buffer
      * @param src_linesize number of bytes between 2 vertically adjacent
      *                     samples in both the source buffer
@@ -60,8 +49,8 @@ typedef struct VideoDSPContext {
      * @param w width of the source buffer
      * @param h height of the source buffer
      */
-    void (*emulated_edge_mc)(uint8_t *dst, const uint8_t *src,
-                             ptrdiff_t dst_linesize,
+    void (*emulated_edge_mc)(uint8_t *buf, const uint8_t *src,
+                             ptrdiff_t buf_linesize,
                              ptrdiff_t src_linesize,
                              int block_w, int block_h,
                              int src_x, int src_y, int w, int h);
