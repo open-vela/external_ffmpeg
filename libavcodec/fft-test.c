@@ -1,20 +1,20 @@
 /*
  * (c) 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,10 +55,6 @@
 #   define RANGE 1.0
 #   define REF_SCALE(x, bits)  (x)
 #   define FMT "%10.6f"
-#elif FFT_FIXED_32
-#   define RANGE 8388608
-#   define REF_SCALE(x, bits) (x)
-#   define FMT "%6d"
 #else
 #   define RANGE 16384
 #   define REF_SCALE(x, bits) ((x) / (1<<(bits)))
@@ -153,7 +149,7 @@ static void mdct_ref(FFTSample *output, FFTSample *input, int nbits)
 }
 
 #if FFT_FLOAT
-static void idct_ref(FFTSample *output, FFTSample *input, int nbits)
+static void idct_ref(float *output, float *input, int nbits)
 {
     int n = 1<<nbits;
     int k, i;
@@ -169,7 +165,7 @@ static void idct_ref(FFTSample *output, FFTSample *input, int nbits)
         output[i] = 2 * s / n;
     }
 }
-static void dct_ref(FFTSample *output, FFTSample *input, int nbits)
+static void dct_ref(float *output, float *input, int nbits)
 {
     int n = 1<<nbits;
     int k, i;
@@ -210,7 +206,7 @@ static int check_diff(FFTSample *tab1, FFTSample *tab2, int n, double scale)
         error+= e*e;
         if(e>max) max= e;
     }
-    av_log(NULL, AV_LOG_INFO, "max:%f e:%g\n", max, sqrt(error/n));
+    av_log(NULL, AV_LOG_INFO, "max:%f e:%g\n", max, sqrt(error)/n);
     return err;
 }
 
@@ -293,12 +289,10 @@ int main(int argc, char **argv)
             scale = atof(optarg);
             break;
         case 'c':
-            cpuflags = av_get_cpu_flags();
-
-            if (av_parse_cpu_caps(&cpuflags, optarg) < 0)
+            cpuflags = av_parse_cpu_flags(optarg);
+            if (cpuflags < 0)
                 return 1;
-
-            av_force_cpu_flags(cpuflags);
+            av_set_cpu_flags_mask(cpuflags);
             break;
         }
     }
@@ -335,7 +329,6 @@ int main(int argc, char **argv)
         ff_rdft_init(r, fft_nbits, do_inverse ? IDFT_C2R : DFT_R2C);
         fft_ref_init(fft_nbits, do_inverse);
         break;
-#    if CONFIG_DCT
     case TRANSFORM_DCT:
         if (do_inverse)
             av_log(NULL, AV_LOG_INFO,"DCT_III");
@@ -343,7 +336,6 @@ int main(int argc, char **argv)
             av_log(NULL, AV_LOG_INFO,"DCT_II");
         ff_dct_init(d, fft_nbits, do_inverse ? DCT_III : DCT_II);
         break;
-#    endif
 #endif
     default:
         av_log(NULL, AV_LOG_ERROR, "Requested transform not supported\n");
@@ -417,11 +409,11 @@ int main(int argc, char **argv)
         break;
     case TRANSFORM_DCT:
         memcpy(tab, tab1, fft_size * sizeof(FFTComplex));
-        d->dct_calc(d, (FFTSample *)tab);
+        d->dct_calc(d, tab);
         if (do_inverse) {
-            idct_ref((FFTSample*)tab_ref, (FFTSample *)tab1, fft_nbits);
+            idct_ref(tab_ref, tab1, fft_nbits);
         } else {
-            dct_ref((FFTSample*)tab_ref, (FFTSample *)tab1, fft_nbits);
+            dct_ref(tab_ref, tab1, fft_nbits);
         }
         err = check_diff((float *)tab_ref, (float *)tab, fft_size, 1.0);
         break;
@@ -486,11 +478,9 @@ int main(int argc, char **argv)
     case TRANSFORM_RDFT:
         ff_rdft_end(r);
         break;
-#    if CONFIG_DCT
     case TRANSFORM_DCT:
         ff_dct_end(d);
         break;
-#    endif
 #endif
     }
 
