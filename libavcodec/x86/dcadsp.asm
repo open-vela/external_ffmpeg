@@ -2,20 +2,20 @@
 ;* SSE-optimized functions for the DCA decoder
 ;* Copyright (C) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -26,35 +26,18 @@ pf_inv16:  times 4 dd 0x3D800000 ; 1/16
 
 SECTION_TEXT
 
-; void decode_hf(float dst[DCA_SUBBANDS][8], const int32_t vq_num[DCA_SUBBANDS],
-;                const int8_t hf_vq[1024][32], intptr_t vq_offset,
-;                int32_t scale[DCA_SUBBANDS][2], intptr_t start, intptr_t end)
-
-%macro DECODE_HF 0
-cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
-    lea       srcq, [srcq + offsetq]
-    shl     startq, 2
-    mov    offsetd, endm
-%define DICT offsetq
-    shl    offsetq, 2
-    mov       endm, offsetq
-.loop:
-%if ARCH_X86_64
-    mov    offsetd, [scaleq + 2 * startq]
-    cvtsi2ss    m0, offsetd
-%else
-    cvtsi2ss    m0, [scaleq + 2 * startq]
-%endif
-    mov    offsetd, [numq + startq]
+; void int8x8_fmul_int32_sse2(float *dst, const int8_t *src, int scale)
+%macro INT8X8_FMUL_INT32 0
+cglobal int8x8_fmul_int32, 3,3,5, dst, src, scale
+    cvtsi2ss    m0, scalem
     mulss       m0, [pf_inv16]
-    shl       DICT, 5
     shufps      m0, m0, 0
 %if cpuflag(sse2)
 %if cpuflag(sse4)
-    pmovsxbd    m1, [srcq + DICT + 0]
-    pmovsxbd    m2, [srcq + DICT + 4]
+    pmovsxbd    m1, [srcq+0]
+    pmovsxbd    m2, [srcq+4]
 %else
-    movq        m1, [srcq + DICT]
+    movq        m1, [srcq]
     punpcklbw   m1, m1
     mova        m2, m1
     punpcklwd   m1, m1
@@ -65,8 +48,8 @@ cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
     cvtdq2ps    m1, m1
     cvtdq2ps    m2, m2
 %else
-    movd       mm0, [srcq + DICT + 0]
-    movd       mm1, [srcq + DICT + 4]
+    movd       mm0, [srcq+0]
+    movd       mm1, [srcq+4]
     punpcklbw  mm0, mm0
     punpcklbw  mm1, mm1
     movq       mm2, mm0
@@ -84,33 +67,27 @@ cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
     cvtpi2ps    m3, mm2
     cvtpi2ps    m4, mm3
     shufps      m0, m0, 0
+    emms
     shufps      m1, m3, q1010
     shufps      m2, m4, q1010
 %endif
     mulps       m1, m0
     mulps       m2, m0
-    mova [dstq + 8 * startq +  0], m1
-    mova [dstq + 8 * startq + 16], m2
-    add     startq, 4
-    cmp     startq, endm
-    jl       .loop
-.end:
-%if notcpuflag(sse2)
-    emms
-%endif
+    mova [dstq+ 0], m1
+    mova [dstq+16], m2
     REP_RET
 %endmacro
 
 %if ARCH_X86_32
 INIT_XMM sse
-DECODE_HF
+INT8X8_FMUL_INT32
 %endif
 
 INIT_XMM sse2
-DECODE_HF
+INT8X8_FMUL_INT32
 
 INIT_XMM sse4
-DECODE_HF
+INT8X8_FMUL_INT32
 
 ; %1=v0/v1  %2=in1  %3=in2
 %macro FIR_LOOP 2-3
@@ -122,7 +99,7 @@ DECODE_HF
 %else
 %define OFFSET      NUM_COEF*count
 %endif
-; for v0, incrementing and for v1, decrementing
+; for v0, incrementint and for v1, decrementing
     mova        va, [cf0q + OFFSET]
     mova        vb, [cf0q + OFFSET + 4*NUM_COEF]
 %if %0 == 3
@@ -156,7 +133,7 @@ DECODE_HF
     jl   .loop%1
 %endmacro
 
-; void dca_lfe_fir(float *out, float *in, float *coefs)
+; dca_lfe_fir(float *out, float *in, float *coefs)
 %macro DCA_LFE_FIR 1
 cglobal dca_lfe_fir%1, 3,3,6-%1, out, in, cf0
 %define IN1       m3
@@ -198,155 +175,3 @@ cglobal dca_lfe_fir%1, 3,3,6-%1, out, in, cf0
 INIT_XMM sse
 DCA_LFE_FIR 0
 DCA_LFE_FIR 1
-
-INIT_XMM sse2
-%macro INNER_LOOP   1
-    ; reading backwards:  ptr1 = synth_buf + j + i; ptr2 = synth_buf + j - i
-    ;~ a += window[i + j]      * (-synth_buf[15 - i + j])
-    ;~ b += window[i + j + 16] * (synth_buf[i + j])
-    pshufd        m5, [ptr2 + j + (15 - 3) * 4], q0123
-    mova          m6, [ptr1 + j]
-%if ARCH_X86_64
-    pshufd       m11, [ptr2 + j + (15 - 3) * 4 - mmsize], q0123
-    mova         m12, [ptr1 + j + mmsize]
-%endif
-    mulps         m6, [win  + %1 + j + 16 * 4]
-    mulps         m5, [win  + %1 + j]
-%if ARCH_X86_64
-    mulps        m12, [win  + %1 + j + mmsize + 16 * 4]
-    mulps        m11, [win  + %1 + j + mmsize]
-%endif
-    addps         m2, m6
-    subps         m1, m5
-%if ARCH_X86_64
-    addps         m8, m12
-    subps         m7, m11
-%endif
-    ;~ c += window[i + j + 32] * (synth_buf[16 + i + j])
-    ;~ d += window[i + j + 48] * (synth_buf[31 - i + j])
-    pshufd        m6, [ptr2 + j + (31 - 3) * 4], q0123
-    mova          m5, [ptr1 + j + 16 * 4]
-%if ARCH_X86_64
-    pshufd       m12, [ptr2 + j + (31 - 3) * 4 - mmsize], q0123
-    mova         m11, [ptr1 + j + mmsize + 16 * 4]
-%endif
-    mulps         m5, [win  + %1 + j + 32 * 4]
-    mulps         m6, [win  + %1 + j + 48 * 4]
-%if ARCH_X86_64
-    mulps        m11, [win  + %1 + j + mmsize + 32 * 4]
-    mulps        m12, [win  + %1 + j + mmsize + 48 * 4]
-%endif
-    addps         m3, m5
-    addps         m4, m6
-%if ARCH_X86_64
-    addps         m9, m11
-    addps        m10, m12
-%endif
-    sub            j, 64 * 4
-%endmacro
-
-; void ff_synth_filter_inner_sse2(float *synth_buf, float synth_buf2[32],
-;                                 const float window[512], float out[32],
-;                                 intptr_t offset, float scale)
-cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
-                              synth_buf, synth_buf2, window, out, off, scale
-%define scale m0
-%if ARCH_X86_32 || WIN64
-    movd       scale, scalem
-; Make sure offset is in a register and not on the stack
-%define OFFQ  r4q
-%else
-%define OFFQ  offq
-%endif
-    pshufd        m0, m0, 0
-    ; prepare inner counter limit 1
-    mov          r5q, 480
-    sub          r5q, offmp
-    and          r5q, -64
-    shl          r5q, 2
-    mov         OFFQ, r5q
-%define i        r5q
-    mov            i, 16 * 4 - (ARCH_X86_64 + 1) * mmsize  ; main loop counter
-
-%define buf2     synth_buf2q
-%if ARCH_X86_32
-    mov         buf2, synth_buf2mp
-%endif
-.mainloop
-    ; m1 = a  m2 = b  m3 = c  m4 = d
-    pxor          m3, m3
-    pxor          m4, m4
-    mova          m1, [buf2 + i]
-    mova          m2, [buf2 + i + 16 * 4]
-%if ARCH_X86_32
-%define ptr1     r0q
-%define ptr2     r1q
-%define win      r2q
-%define j        r3q
-    mov          win, windowm
-    mov         ptr1, synth_bufm
-    add          win, i
-    add         ptr1, i
-%else ; ARCH_X86_64
-%define ptr1     r6q
-%define ptr2     r7q ; must be loaded
-%define win      r8q
-%define j        r9q
-    pxor          m9, m9
-    pxor         m10, m10
-    mova          m7, [buf2 + i + mmsize]
-    mova          m8, [buf2 + i + mmsize + 16 * 4]
-    lea          win, [windowq + i]
-    lea         ptr1, [synth_bufq + i]
-%endif
-    mov         ptr2, synth_bufmp
-    ; prepare the inner loop counter
-    mov            j, OFFQ
-    sub         ptr2, i
-.loop1:
-    INNER_LOOP  0
-    jge       .loop1
-
-    mov            j, 448 * 4
-    sub            j, OFFQ
-    jz          .end
-    sub         ptr1, j
-    sub         ptr2, j
-    add          win, OFFQ ; now at j-64, so define OFFSET
-    sub            j, 64 * 4
-.loop2:
-    INNER_LOOP  64 * 4
-    jge       .loop2
-
-.end:
-%if ARCH_X86_32
-    mov         buf2, synth_buf2m ; needed for next iteration anyway
-    mov         outq, outmp       ; j, which will be set again during it
-%endif
-    ;~ out[i]      = a * scale;
-    ;~ out[i + 16] = b * scale;
-    mulps         m1, scale
-    mulps         m2, scale
-%if ARCH_X86_64
-    mulps         m7, scale
-    mulps         m8, scale
-%endif
-    ;~ synth_buf2[i]      = c;
-    ;~ synth_buf2[i + 16] = d;
-    mova   [buf2 + i +  0 * 4], m3
-    mova   [buf2 + i + 16 * 4], m4
-%if ARCH_X86_64
-    mova   [buf2 + i +  0 * 4 + mmsize], m9
-    mova   [buf2 + i + 16 * 4 + mmsize], m10
-%endif
-    ;~ out[i]      = a;
-    ;~ out[i + 16] = a;
-    mova   [outq + i +  0 * 4], m1
-    mova   [outq + i + 16 * 4], m2
-%if ARCH_X86_64
-    mova   [outq + i +  0 * 4 + mmsize], m7
-    mova   [outq + i + 16 * 4 + mmsize], m8
-%endif
-    sub            i, (ARCH_X86_64 + 1) * mmsize
-    jge    .mainloop
-    RET
