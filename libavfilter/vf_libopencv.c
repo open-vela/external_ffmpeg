@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010 Stefano Sabatini
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -259,18 +259,17 @@ static av_cold int dilate_init(AVFilterContext *ctx, const char *args)
     const char *buf = args;
     int ret;
 
+    dilate->nb_iterations = 1;
+
     if (args)
         kernel_str = av_get_token(&buf, "|");
-    else
-        kernel_str = av_strdup(default_kernel_str);
-    if (!kernel_str)
-        return AVERROR(ENOMEM);
-    if ((ret = parse_iplconvkernel(&dilate->kernel, kernel_str, ctx)) < 0)
+    if ((ret = parse_iplconvkernel(&dilate->kernel,
+                                   *kernel_str ? kernel_str : default_kernel_str,
+                                   ctx)) < 0)
         return ret;
     av_free(kernel_str);
 
-    if (!buf || sscanf(buf, "|%d", &dilate->nb_iterations) != 1)
-        dilate->nb_iterations = 1;
+    sscanf(buf, "|%d", &dilate->nb_iterations);
     av_log(ctx, AV_LOG_VERBOSE, "iterations_nb:%d\n", dilate->nb_iterations);
     if (dilate->nb_iterations <= 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid non-positive value '%d' for nb_iterations\n",
@@ -321,10 +320,6 @@ static av_cold int init(AVFilterContext *ctx)
     OCVContext *s = ctx->priv;
     int i;
 
-    if (!s->name) {
-        av_log(ctx, AV_LOG_ERROR, "No libopencv filter name specified\n");
-        return AVERROR(EINVAL);
-    }
     for (i = 0; i < FF_ARRAY_ELEMS(ocv_filter_entries); i++) {
         OCVFilterEntry *entry = &ocv_filter_entries[i];
         if (!strcmp(s->name, entry->name)) {
@@ -377,19 +372,24 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 }
 
 #define OFFSET(x) offsetof(OCVContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
-static const AVOption ocv_options[] = {
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption options[] = {
     { "filter_name",   NULL, OFFSET(name),   AV_OPT_TYPE_STRING, .flags = FLAGS },
     { "filter_params", NULL, OFFSET(params), AV_OPT_TYPE_STRING, .flags = FLAGS },
-    { NULL }
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(ocv);
+static const AVClass ocv_class = {
+    .class_name = "ocv",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_ocv_inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_VIDEO,
+        .name       = "default",
+        .type       = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
     { NULL }
@@ -404,13 +404,17 @@ static const AVFilterPad avfilter_vf_ocv_outputs[] = {
 };
 
 AVFilter ff_vf_ocv = {
-    .name          = "ocv",
-    .description   = NULL_IF_CONFIG_SMALL("Apply transform using libopencv."),
-    .priv_size     = sizeof(OCVContext),
-    .priv_class    = &ocv_class,
+    .name        = "ocv",
+    .description = NULL_IF_CONFIG_SMALL("Apply transform using libopencv."),
+
+    .priv_size = sizeof(OCVContext),
+    .priv_class = &ocv_class,
+
     .query_formats = query_formats,
-    .init          = init,
-    .uninit        = uninit,
-    .inputs        = avfilter_vf_ocv_inputs,
-    .outputs       = avfilter_vf_ocv_outputs,
+    .init = init,
+    .uninit = uninit,
+
+    .inputs    = avfilter_vf_ocv_inputs,
+
+    .outputs   = avfilter_vf_ocv_outputs,
 };

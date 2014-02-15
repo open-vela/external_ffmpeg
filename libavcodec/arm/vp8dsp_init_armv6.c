@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,9 +40,8 @@ VP8_BILIN(16, armv6);
 VP8_BILIN(8,  armv6);
 VP8_BILIN(4,  armv6);
 
-av_cold void ff_vp8dsp_init_armv6(VP8DSPContext *dsp, int vp7)
+av_cold void ff_vp8dsp_init_armv6(VP8DSPContext *dsp)
 {
-    if (!vp7) {
     dsp->vp8_luma_dc_wht    = ff_vp8_luma_dc_wht_armv6;
     dsp->vp8_luma_dc_wht_dc = ff_vp8_luma_dc_wht_dc_armv6;
 
@@ -63,7 +62,6 @@ av_cold void ff_vp8dsp_init_armv6(VP8DSPContext *dsp, int vp7)
 
     dsp->vp8_v_loop_filter_simple = ff_vp8_v_loop_filter16_simple_armv6;
     dsp->vp8_h_loop_filter_simple = ff_vp8_h_loop_filter16_simple_armv6;
-    }
 
     dsp->put_vp8_epel_pixels_tab[0][0][0] = ff_put_vp8_pixels16_armv6;
     dsp->put_vp8_epel_pixels_tab[0][0][2] = ff_put_vp8_epel16_h6_armv6;
