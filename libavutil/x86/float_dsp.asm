@@ -1,22 +1,20 @@
 ;*****************************************************************************
 ;* x86-optimized Float DSP functions
 ;*
-;* Copyright 2006 Loren Merritt
+;* This file is part of Libav.
 ;*
-;* This file is part of FFmpeg.
-;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -29,31 +27,25 @@ SECTION .text
 ;-----------------------------------------------------------------------------
 %macro VECTOR_FMUL 0
 cglobal vector_fmul, 4,4,2, dst, src0, src1, len
-    lea       lenq, [lend*4 - 64]
+    lea       lenq, [lend*4 - 2*mmsize]
 ALIGN 16
 .loop:
-%assign a 0
-%rep 32/mmsize
-    mova      m0,   [src0q + lenq + (a+0)*mmsize]
-    mova      m1,   [src0q + lenq + (a+1)*mmsize]
-    mulps     m0, m0, [src1q + lenq + (a+0)*mmsize]
-    mulps     m1, m1, [src1q + lenq + (a+1)*mmsize]
-    mova      [dstq + lenq + (a+0)*mmsize], m0
-    mova      [dstq + lenq + (a+1)*mmsize], m1
-%assign a a+2
-%endrep
+    mova      m0,   [src0q + lenq]
+    mova      m1,   [src0q + lenq + mmsize]
+    mulps     m0, m0, [src1q + lenq]
+    mulps     m1, m1, [src1q + lenq + mmsize]
+    mova      [dstq + lenq], m0
+    mova      [dstq + lenq + mmsize], m1
 
-    sub       lenq, 64
+    sub       lenq, 2*mmsize
     jge       .loop
     REP_RET
 %endmacro
 
 INIT_XMM sse
 VECTOR_FMUL
-%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 VECTOR_FMUL
-%endif
 
 ;------------------------------------------------------------------------------
 ; void ff_vector_fmac_scalar(float *dst, const float *src, float mul, int len)
@@ -76,29 +68,23 @@ cglobal vector_fmac_scalar, 4,4,3, dst, src, mul, len
     vinsertf128  m0, m0, xmm0, 1
 %endif
 %endif
-    lea    lenq, [lend*4-64]
+    lea    lenq, [lend*4-2*mmsize]
 .loop:
-%assign a 0
-%rep 32/mmsize
-    mulps    m1, m0, [srcq+lenq+(a+0)*mmsize]
-    mulps    m2, m0, [srcq+lenq+(a+1)*mmsize]
-    addps    m1, m1, [dstq+lenq+(a+0)*mmsize]
-    addps    m2, m2, [dstq+lenq+(a+1)*mmsize]
-    mova  [dstq+lenq+(a+0)*mmsize], m1
-    mova  [dstq+lenq+(a+1)*mmsize], m2
-%assign a a+2
-%endrep
-    sub    lenq, 64
+    mulps    m1, m0, [srcq+lenq       ]
+    mulps    m2, m0, [srcq+lenq+mmsize]
+    addps    m1, m1, [dstq+lenq       ]
+    addps    m2, m2, [dstq+lenq+mmsize]
+    mova  [dstq+lenq       ], m1
+    mova  [dstq+lenq+mmsize], m2
+    sub    lenq, 2*mmsize
     jge .loop
     REP_RET
 %endmacro
 
 INIT_XMM sse
 VECTOR_FMAC_SCALAR
-%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 VECTOR_FMAC_SCALAR
-%endif
 
 ;------------------------------------------------------------------------------
 ; void ff_vector_fmul_scalar(float *dst, const float *src, float mul, int len)
@@ -202,10 +188,8 @@ ALIGN 16
 
 INIT_XMM sse
 VECTOR_FMUL_ADD
-%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 VECTOR_FMUL_ADD
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void vector_fmul_reverse(float *dst, const float *src0, const float *src1,
@@ -241,10 +225,8 @@ ALIGN 16
 
 INIT_XMM sse
 VECTOR_FMUL_REVERSE
-%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 VECTOR_FMUL_REVERSE
-%endif
 
 ; float scalarproduct_float_sse(const float *v1, const float *v2, int len)
 INIT_XMM sse
@@ -282,8 +264,8 @@ cglobal butterflies_float, 3,3,3, src0, src1, len
     test      lenq, lenq
     jz .end
     shl       lenq, 2
-    add      src0q, lenq
-    add      src1q, lenq
+    lea      src0q, [src0q +   lenq]
+    lea      src1q, [src1q +   lenq]
     neg       lenq
 .loop:
     mova        m0, [src0q + lenq]
