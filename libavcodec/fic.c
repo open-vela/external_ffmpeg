@@ -4,20 +4,20 @@
  * Copyright (c) 2014 Konstantin Shishkov
  * Copyright (c) 2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -261,7 +261,6 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
         av_log(avctx, AV_LOG_ERROR, "Could not allocate slice data.\n");
         return AVERROR(ENOMEM);
     }
-    memset(ctx->slice_data, 0, nslices * sizeof(ctx->slice_data[0]));
 
     for (slice = 0; slice < nslices; slice++) {
         unsigned slice_off = AV_RB32(src + tsize + FIC_HEADER_SIZE + slice * 4);
@@ -291,8 +290,8 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
         ctx->slice_data[slice].y_off    = y_off;
     }
 
-    if ((ret = avctx->execute(avctx, fic_decode_slice, ctx->slice_data,
-                              NULL, nslices, sizeof(ctx->slice_data[0]))) < 0)
+    if (ret = avctx->execute(avctx, fic_decode_slice, ctx->slice_data,
+                             NULL, nslices, sizeof(ctx->slice_data[0])) < 0)
         return ret;
 
 skip:
