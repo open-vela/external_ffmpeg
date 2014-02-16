@@ -261,7 +261,6 @@
 
 struct AVFormatContext;
 
-struct AVDeviceInfoList;
 
 /**
  * @defgroup metadata_api Public Metadata API
@@ -524,11 +523,6 @@ typedef struct AVOutputFormat {
      */
     int (*write_uncoded_frame)(struct AVFormatContext *, int stream_index,
                                AVFrame **frame, unsigned flags);
-    /**
-     * Returns device list with it properties.
-     * @see avdevice_list_devices() for more details.
-     */
-    int (*get_device_list)(struct AVFormatContext *s, struct AVDeviceInfoList *device_list);
 } AVOutputFormat;
 /**
  * @}
@@ -657,12 +651,6 @@ typedef struct AVInputFormat {
      * Active streams are all streams that have AVStream.discard < AVDISCARD_ALL.
      */
     int (*read_seek2)(struct AVFormatContext *s, int stream_index, int64_t min_ts, int64_t ts, int64_t max_ts, int flags);
-
-    /**
-     * Returns device list with it properties.
-     * @see avdevice_list_devices() for more details.
-     */
-    int (*get_device_list)(struct AVFormatContext *s, struct AVDeviceInfoList *device_list);
 } AVInputFormat;
 /**
  * @}
