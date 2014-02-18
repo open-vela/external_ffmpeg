@@ -2,20 +2,20 @@
  * H26L/H264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,7 +51,7 @@ static const uint8_t golomb_to_inter_cbp[48] = {
     17, 18, 20, 24, 19, 21, 26, 28, 23, 27, 29, 30, 22, 25, 38, 41
 };
 
-static const uint8_t zigzag_scan[16] = {
+static const uint8_t zigzag_scan[16+1] = {
     0 + 0 * 4, 1 + 0 * 4, 0 + 1 * 4, 0 + 2 * 4,
     1 + 1 * 4, 2 + 0 * 4, 3 + 0 * 4, 2 + 1 * 4,
     1 + 2 * 4, 0 + 3 * 4, 1 + 3 * 4, 2 + 2 * 4,
