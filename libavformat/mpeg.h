@@ -2,20 +2,20 @@
  * MPEG1/2 muxer and demuxer common defines
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,7 @@
 #define AUDIO_ID 0xc0
 #define VIDEO_ID 0xe0
 #define AC3_ID   0x80
-#define DTS_ID   0x88
+#define DTS_ID   0x8a
 #define LPCM_ID  0xa0
 #define SUB_ID   0x20
 
@@ -57,6 +57,7 @@
 #define STREAM_TYPE_VIDEO_CAVS      0x42
 
 #define STREAM_TYPE_AUDIO_AC3       0x81
+#define STREAM_TYPE_AUDIO_DTS       0x8a
 
 static const int lpcm_freq_tab[4] = { 48000, 96000, 44100, 32000 };
 

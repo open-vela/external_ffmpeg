@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,9 +22,9 @@
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/idctdsp.h"
-#include "libavcodec/simple_idct.h"
 #include "idct_xvid.h"
 #include "idctdsp.h"
+#include "simple_idct.h"
 
 /* Input permutation for the simple_idct_mmx */
 static const uint8_t simple_mmx_permutation[64] = {
@@ -66,12 +66,12 @@ av_cold void ff_idctdsp_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
 
     if (INLINE_MMX(cpu_flags)) {
         c->put_pixels_clamped        = ff_put_pixels_clamped_mmx;
+        c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_mmx;
         c->add_pixels_clamped        = ff_add_pixels_clamped_mmx;
 
-        if (avctx->lowres == 0 && !high_bit_depth) {
+        if (!high_bit_depth) {
             switch (avctx->idct_algo) {
             case FF_IDCT_AUTO:
-            case FF_IDCT_SIMPLEAUTO:
             case FF_IDCT_SIMPLEMMX:
                 c->idct_put  = ff_simple_idct_put_mmx;
                 c->idct_add  = ff_simple_idct_add_mmx;
@@ -86,12 +86,9 @@ av_cold void ff_idctdsp_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
             }
         }
     }
-    if (EXTERNAL_MMX(cpu_flags)) {
-        c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_mmx;
-    }
 
     if (INLINE_MMXEXT(cpu_flags)) {
-        if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
+        if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX) {
             c->idct_put = ff_idct_xvid_mmxext_put;
             c->idct_add = ff_idct_xvid_mmxext_add;
             c->idct     = ff_idct_xvid_mmxext;
@@ -99,14 +96,11 @@ av_cold void ff_idctdsp_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
     }
 
     if (INLINE_SSE2(cpu_flags)) {
-        if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX && avctx->lowres == 0) {
+        if (!high_bit_depth && avctx->idct_algo == FF_IDCT_XVIDMMX) {
             c->idct_put  = ff_idct_xvid_sse2_put;
             c->idct_add  = ff_idct_xvid_sse2_add;
             c->idct      = ff_idct_xvid_sse2;
             c->perm_type = FF_IDCT_PERM_SSE2;
         }
-    }
-    if (EXTERNAL_SSE2(cpu_flags)) {
-        c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_sse2;
     }
 }

@@ -4,20 +4,20 @@
  * Copyright (C) 2012 - 2013 Guillaume Martres
  * Copyright (C) 2012 - 2013 Gildas Cocherel
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -109,9 +109,8 @@ static HEVCFrame *alloc_frame(HEVCContext *s)
         for (j = 0; j < frame->ctb_count; j++)
             frame->rpl_tab[j] = (RefPicListTab *)frame->rpl_buf->data;
 
-        frame->frame->top_field_first  = s->picture_struct == AV_PICTURE_STRUCTURE_TOP_FIELD;
-        frame->frame->interlaced_frame = (s->picture_struct == AV_PICTURE_STRUCTURE_TOP_FIELD) || (s->picture_struct == AV_PICTURE_STRUCTURE_BOTTOM_FIELD);
         return frame;
+
 fail:
         ff_hevc_unref_frame(s, frame, ~0);
         return NULL;
@@ -163,16 +162,6 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
         int min_poc   = INT_MAX;
         int i, min_idx, ret;
 
-        if (s->sh.no_output_of_prior_pics_flag == 1) {
-            for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-                HEVCFrame *frame = &s->DPB[i];
-                if ((frame->flags & HEVC_FRAME_FLAG_OUTPUT) && frame->poc != s->poc &&
-                        frame->sequence == s->seq_output) {
-                    frame->flags &= ~(HEVC_FRAME_FLAG_OUTPUT);
-                }
-            }
-        }
-
         for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
             HEVCFrame *frame = &s->DPB[i];
             if ((frame->flags & HEVC_FRAME_FLAG_OUTPUT) &&
@@ -192,12 +181,15 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
 
         if (nb_output) {
             HEVCFrame *frame = &s->DPB[min_idx];
-            AVFrame *dst = out;
-            AVFrame *src = frame->frame;
-            const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(src->format);
-            int pixel_shift = !!(desc->comp[0].depth_minus1 > 7);
+            const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->frame->format);
+            int pixel_shift;
 
-            ret = av_frame_ref(out, src);
+            if (!desc)
+                return AVERROR_BUG;
+
+            pixel_shift = desc->comp[0].depth_minus1 > 7;
+
+            ret = av_frame_ref(out, frame->frame);
             ff_hevc_unref_frame(s, frame, HEVC_FRAME_FLAG_OUTPUT);
             if (ret < 0)
                 return ret;
@@ -206,8 +198,8 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
                 int hshift = (i > 0) ? desc->log2_chroma_w : 0;
                 int vshift = (i > 0) ? desc->log2_chroma_h : 0;
                 int off = ((frame->window.left_offset >> hshift) << pixel_shift) +
-                          (frame->window.top_offset   >> vshift) * dst->linesize[i];
-                dst->data[i] += off;
+                          (frame->window.top_offset   >> vshift) * out->linesize[i];
+                out->data[i] += off;
             }
             av_log(s->avctx, AV_LOG_DEBUG,
                    "Output frame with POC %d.\n", frame->poc);
@@ -369,8 +361,7 @@ static HEVCFrame *generate_missing_ref(HEVCContext *s, int poc)
     frame->sequence = s->seq_decode;
     frame->flags    = 0;
 
-    if (s->threads_type == FF_THREAD_FRAME)
-        ff_thread_report_progress(&frame->tf, INT_MAX, 0);
+    ff_thread_report_progress(&frame->tf, INT_MAX, 0);
 
     return frame;
 }
