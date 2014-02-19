@@ -853,14 +853,6 @@ SECTION .note.GNU-stack noalloc noexec nowrite progbits
     INIT_CPUFLAGS %1
 %endmacro
 
-; FIXME: INIT_AVX can be replaced by INIT_XMM avx
-%macro INIT_AVX 0
-    INIT_XMM
-    %assign avx_enabled 1
-    %define PALIGNR PALIGNR_SSSE3
-    %define RESET_MM_PERMUTATION INIT_AVX
-%endmacro
-
 %macro INIT_YMM 0-1+
     %assign avx_enabled 1
     %define RESET_MM_PERMUTATION INIT_YMM %1
@@ -1406,6 +1398,21 @@ AVX_INSTR pfmul, 1, 0, 1
 %endrep
 %undef i
 %undef j
+
+%macro FMA_INSTR 3
+    %macro %1 4-7 %1, %2, %3
+        %if cpuflag(xop)
+            v%5 %1, %2, %3, %4
+        %else
+            %6 %1, %2, %3
+            %7 %1, %4
+        %endif
+    %endmacro
+%endmacro
+
+FMA_INSTR  pmacsdd,  pmulld, paddd
+FMA_INSTR  pmacsww,  pmullw, paddw
+FMA_INSTR pmadcswd, pmaddwd, paddd
 
 ; tzcnt is equivalent to "rep bsf" and is backwards-compatible with bsf.
 ; This lets us use tzcnt without bumping the yasm version requirement yet.
