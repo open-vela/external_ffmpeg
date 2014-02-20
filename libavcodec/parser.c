@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "parser.h"
+#include "libavutil/atomic.h"
 #include "libavutil/mem.h"
 
 static AVCodecParser *av_first_parser = NULL;
@@ -35,13 +36,14 @@ AVCodecParser* av_parser_next(AVCodecParser *p){
 
 void av_register_codec_parser(AVCodecParser *parser)
 {
-    parser->next = av_first_parser;
-    av_first_parser = parser;
+    do {
+        parser->next = av_first_parser;
+    } while (parser->next != avpriv_atomic_ptr_cas((void * volatile *)&av_first_parser, parser->next, parser));
 }
 
 AVCodecParserContext *av_parser_init(int codec_id)
 {
-    AVCodecParserContext *s;
+    AVCodecParserContext *s = NULL;
     AVCodecParser *parser;
     int ret;
 
@@ -60,31 +62,30 @@ AVCodecParserContext *av_parser_init(int codec_id)
  found:
     s = av_mallocz(sizeof(AVCodecParserContext));
     if (!s)
-        return NULL;
+        goto err_out;
     s->parser = parser;
-    if (parser->priv_data_size) {
-        s->priv_data = av_mallocz(parser->priv_data_size);
-        if (!s->priv_data) {
-            av_free(s);
-            return NULL;
-        }
-    }
-    if (parser->parser_init) {
-        ret = parser->parser_init(s);
-        if (ret != 0) {
-            av_free(s->priv_data);
-            av_free(s);
-            return NULL;
-        }
-    }
+    s->priv_data = av_mallocz(parser->priv_data_size);
+    if (!s->priv_data)
+        goto err_out;
     s->fetch_timestamp=1;
     s->pict_type = AV_PICTURE_TYPE_I;
+    if (parser->parser_init) {
+        ret = parser->parser_init(s);
+        if (ret != 0)
+            goto err_out;
+    }
     s->key_frame = -1;
     s->convergence_duration = 0;
     s->dts_sync_point       = INT_MIN;
     s->dts_ref_dts_delta    = INT_MIN;
     s->pts_dts_delta        = INT_MIN;
     return s;
+
+err_out:
+    if (s)
+        av_freep(&s->priv_data);
+    av_free(s);
+    return NULL;
 }
 
 void ff_fetch_timestamp(AVCodecParserContext *s, int off, int remove){
@@ -237,8 +238,10 @@ int ff_combine_frame(ParseContext *pc, int next, const uint8_t **buf, int *buf_s
     if(next == END_NOT_FOUND){
         void* new_buffer = av_fast_realloc(pc->buffer, &pc->buffer_size, (*buf_size) + pc->index + FF_INPUT_BUFFER_PADDING_SIZE);
 
-        if(!new_buffer)
+        if(!new_buffer) {
+            pc->index = 0;
             return AVERROR(ENOMEM);
+        }
         pc->buffer = new_buffer;
         memcpy(&pc->buffer[pc->index], *buf, *buf_size);
         pc->index += *buf_size;
@@ -251,9 +254,11 @@ int ff_combine_frame(ParseContext *pc, int next, const uint8_t **buf, int *buf_s
     /* append to buffer */
     if(pc->index){
         void* new_buffer = av_fast_realloc(pc->buffer, &pc->buffer_size, next + pc->index + FF_INPUT_BUFFER_PADDING_SIZE);
-
-        if(!new_buffer)
+        if(!new_buffer) {
+            pc->overread_index =
+            pc->index = 0;
             return AVERROR(ENOMEM);
+        }
         pc->buffer = new_buffer;
         if (next > -FF_INPUT_BUFFER_PADDING_SIZE)
             memcpy(&pc->buffer[pc->index], *buf,
