@@ -2,20 +2,20 @@
  * ASCII/ANSI art decoder
  * Copyright (c) 2010 Peter Ross <pross@xvid.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
 #include "libavutil/common.h"
 #include "libavutil/frame.h"
 #include "libavutil/lfg.h"
+#include "libavutil/xga_font_data.h"
 #include "avcodec.h"
 #include "cga_data.h"
 #include "internal.h"
@@ -60,6 +61,7 @@ typedef struct {
     int attributes;       /**< attribute flags */
     int fg;               /**< foreground color */
     int bg;               /**< background color */
+    int first_frame;
 
     /* ansi parser state machine */
     enum {
@@ -83,7 +85,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     /* defaults */
-    s->font        = ff_vga16_font;
+    s->font        = avpriv_vga16_font;
     s->font_height = 16;
     s->fg          = DEFAULT_FG_COLOR;
     s->bg          = DEFAULT_BG_COLOR;
@@ -94,12 +96,27 @@ static av_cold int decode_init(AVCodecContext *avctx)
     return 0;
 }
 
+static void set_palette(uint32_t *pal)
+{
+    int r, g, b;
+    memcpy(pal, ff_cga_palette, 16 * 4);
+    pal += 16;
+#define COLOR(x) ((x) * 40 + 55)
+    for (r = 0; r < 6; r++)
+        for (g = 0; g < 6; g++)
+            for (b = 0; b < 6; b++)
+                *pal++ = 0xFF000000 | (COLOR(r) << 16) | (COLOR(g) << 8) | COLOR(b);
+#define GRAY(x) ((x) * 10 + 8)
+    for (g = 0; g < 24; g++)
+        *pal++ = 0xFF000000 | (GRAY(g) << 16) | (GRAY(g) << 8) | GRAY(g);
+}
+
 static void hscroll(AVCodecContext *avctx)
 {
     AnsiContext *s = avctx->priv_data;
     int i;
 
-    if (s->y < avctx->height - s->font_height) {
+    if (s->y <= avctx->height - 2*s->font_height) {
         s->y += s->font_height;
         return;
     }
@@ -152,7 +169,7 @@ static void draw_char(AVCodecContext *avctx, int c)
     ff_draw_pc_font(s->frame->data[0] + s->y * s->frame->linesize[0] + s->x,
                     s->frame->linesize[0], s->font, s->font_height, c, fg, bg);
     s->x += FONT_WIDTH;
-    if (s->x >= avctx->width) {
+    if (s->x > avctx->width - FONT_WIDTH) {
         s->x = 0;
         hscroll(avctx);
     }
@@ -166,8 +183,8 @@ static int execute_code(AVCodecContext * avctx, int c)
 {
     AnsiContext *s = avctx->priv_data;
     int ret, i;
-    int width = 0;
-    int height = 0;
+    int width  = avctx->width;
+    int height = avctx->height;
 
     switch(c) {
     case 'A': //Cursor Up
@@ -193,19 +210,19 @@ static int execute_code(AVCodecContext * avctx, int c)
             s->args[0] = DEFAULT_SCREEN_MODE;
         switch(s->args[0]) {
         case 0: case 1: case 4: case 5: case 13: case 19: //320x200 (25 rows)
-            s->font = ff_cga_font;
+            s->font = avpriv_cga_font;
             s->font_height = 8;
             width  = 40<<3;
             height = 25<<3;
             break;
         case 2: case 3: //640x400 (25 rows)
-            s->font = ff_vga16_font;
+            s->font = avpriv_vga16_font;
             s->font_height = 16;
             width  = 80<<3;
             height = 25<<4;
             break;
         case 6: case 14: //640x200 (25 rows)
-            s->font = ff_cga_font;
+            s->font = avpriv_cga_font;
             s->font_height = 8;
             width  = 80<<3;
             height = 25<<3;
@@ -213,13 +230,13 @@ static int execute_code(AVCodecContext * avctx, int c)
         case 7: //set line wrapping
             break;
         case 15: case 16: //640x350 (43 rows)
-            s->font = ff_cga_font;
+            s->font = avpriv_cga_font;
             s->font_height = 8;
             width  = 80<<3;
             height = 43<<3;
             break;
         case 17: case 18: //640x480 (60 rows)
-            s->font = ff_cga_font;
+            s->font = avpriv_cga_font;
             s->font_height = 8;
             width  = 80<<3;
             height = 60<<4;
@@ -227,20 +244,19 @@ static int execute_code(AVCodecContext * avctx, int c)
         default:
             avpriv_request_sample(avctx, "Unsupported screen mode");
         }
-        if (width != 0 && height != 0 &&
-            (width != avctx->width || height != avctx->height)) {
+        s->x = av_clip(s->x, 0, width  - FONT_WIDTH);
+        s->y = av_clip(s->y, 0, height - s->font_height);
+        if (width != avctx->width || height != avctx->height) {
             av_frame_unref(s->frame);
             ret = ff_set_dimensions(avctx, width, height);
             if (ret < 0)
                 return ret;
-            ret = ff_get_buffer(avctx, s->frame, AV_GET_BUFFER_FLAG_REF);
-            if (ret < 0) {
-                av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            if ((ret = ff_get_buffer(avctx, s->frame,
+                                     AV_GET_BUFFER_FLAG_REF)) < 0)
                 return ret;
-            }
             s->frame->pict_type           = AV_PICTURE_TYPE_I;
             s->frame->palette_has_changed = 1;
-            memcpy(s->frame->data[1], ff_cga_palette, 16 * 4);
+            set_palette((uint32_t *)s->frame->data[1]);
             erase_screen(avctx);
         } else if (c == 'l') {
             erase_screen(avctx);
@@ -288,12 +304,20 @@ static int execute_code(AVCodecContext * avctx, int c)
                 s->bg = DEFAULT_BG_COLOR;
             } else if (m == 1 || m == 2 || m == 4 || m == 5 || m == 7 || m == 8) {
                 s->attributes |= 1 << (m - 1);
-            } else if (m >= 30 && m <= 38) {
+            } else if (m >= 30 && m <= 37) {
                 s->fg = ansi_to_cga[m - 30];
+            } else if (m == 38 && i + 2 < FFMIN(s->nb_args, MAX_NB_ARGS) && s->args[i + 1] == 5 && s->args[i + 2] < 256) {
+                int index = s->args[i + 2];
+                s->fg = index < 16 ? ansi_to_cga[index] : index;
+                i += 2;
             } else if (m == 39) {
                 s->fg = ansi_to_cga[DEFAULT_FG_COLOR];
             } else if (m >= 40 && m <= 47) {
                 s->bg = ansi_to_cga[m - 40];
+            } else if (m == 48 && i + 2 < FFMIN(s->nb_args, MAX_NB_ARGS) && s->args[i + 1] == 5 && s->args[i + 2] < 256) {
+                int index = s->args[i + 2];
+                s->bg = index < 16 ? ansi_to_cga[index] : index;
+                i += 2;
             } else if (m == 49) {
                 s->fg = ansi_to_cga[DEFAULT_BG_COLOR];
             } else {
@@ -317,6 +341,8 @@ static int execute_code(AVCodecContext * avctx, int c)
         avpriv_request_sample(avctx, "Unknown escape code");
         break;
     }
+    s->x = av_clip(s->x, 0, avctx->width  - FONT_WIDTH);
+    s->y = av_clip(s->y, 0, avctx->height - s->font_height);
     return 0;
 }
 
@@ -330,19 +356,21 @@ static int decode_frame(AVCodecContext *avctx,
     const uint8_t *buf_end   = buf+buf_size;
     int ret, i, count;
 
-    ret = ff_reget_buffer(avctx, s->frame);
-    if (ret < 0){
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
-    }
     if (!avctx->frame_number) {
-        memset(s->frame->data[0], 0, avctx->height * FFABS(s->frame->linesize[0]));
+        for (i=0; i<avctx->height; i++)
+            memset(s->frame->data[0]+ i*s->frame->linesize[0], 0, avctx->width);
         memset(s->frame->data[1], 0, AVPALETTE_SIZE);
     }
 
     s->frame->pict_type           = AV_PICTURE_TYPE_I;
     s->frame->palette_has_changed = 1;
-    memcpy(s->frame->data[1], ff_cga_palette, 16 * 4);
+    set_palette((uint32_t *)s->frame->data[1]);
+    if (!s->first_frame) {
+        erase_screen(avctx);
+        s->first_frame = 1;
+    }
 
     while(buf < buf_end) {
         switch(s->state) {
@@ -381,7 +409,7 @@ static int decode_frame(AVCodecContext *avctx,
             if (buf[0] == '[') {
                 s->state   = STATE_CODE;
                 s->nb_args = 0;
-                s->args[0] = 0;
+                s->args[0] = -1;
             } else {
                 s->state = STATE_NORMAL;
                 draw_char(avctx, 0x1B);
@@ -392,8 +420,8 @@ static int decode_frame(AVCodecContext *avctx,
             switch(buf[0]) {
             case '0': case '1': case '2': case '3': case '4':
             case '5': case '6': case '7': case '8': case '9':
-                if (s->nb_args < MAX_NB_ARGS)
-                    s->args[s->nb_args] = s->args[s->nb_args] * 10 + buf[0] - '0';
+                if (s->nb_args < MAX_NB_ARGS && s->args[s->nb_args] < 6553)
+                    s->args[s->nb_args] = FFMAX(s->args[s->nb_args], 0) * 10 + buf[0] - '0';
                 break;
             case ';':
                 s->nb_args++;
@@ -409,7 +437,7 @@ static int decode_frame(AVCodecContext *avctx,
             default:
                 if (s->nb_args > MAX_NB_ARGS)
                     av_log(avctx, AV_LOG_WARNING, "args overflow (%i)\n", s->nb_args);
-                if (s->nb_args < MAX_NB_ARGS && s->args[s->nb_args])
+                if (s->nb_args < MAX_NB_ARGS && s->args[s->nb_args] >= 0)
                     s->nb_args++;
                 if ((ret = execute_code(avctx, buf[0])) < 0)
                     return ret;
