@@ -8,7 +8,7 @@
  * is in front of the data, thus facilitating network streaming.
  *
  * To compile this program, start from the base directory from which you
- * are building FFmpeg and type:
+ * are building Libav and type:
  *  make tools/qt-faststart
  * The qt-faststart program will be built in the tools/ directory. If you
  * do not build the program in this manner, correct results are not
@@ -36,8 +36,6 @@
 #define fseeko(x, y, z) _fseeki64(x, y, z)
 #define ftello(x)       _ftelli64(x)
 #endif
-
-#define FFMIN(a,b) ((a) > (b) ? (b) : (a))
 
 #define BE_16(x) ((((uint8_t*)(x))[0] <<  8) | ((uint8_t*)(x))[1])
 
@@ -79,7 +77,7 @@
 #define CO64_ATOM QT_ATOM('c', 'o', '6', '4')
 
 #define ATOM_PREAMBLE_SIZE    8
-#define COPY_BUFFER_SIZE   33554432
+#define COPY_BUFFER_SIZE   1024
 
 int main(int argc, char *argv[])
 {
@@ -97,13 +95,12 @@ int main(int argc, char *argv[])
     uint64_t i, j;
     uint32_t offset_count;
     uint64_t current_offset;
-    int64_t start_offset = 0;
-    unsigned char *copy_buffer = NULL;
+    uint64_t start_offset = 0;
+    unsigned char copy_buffer[COPY_BUFFER_SIZE];
     int bytes_to_copy;
 
     if (argc != 3) {
-        printf("Usage: qt-faststart <infile.mov> <outfile.mov>\n"
-               "Note: alternatively you can use -movflags +faststart in ffmpeg\n");
+        printf("Usage: qt-faststart <infile.mov> <outfile.mov>\n");
         return 0;
     }
 
@@ -137,27 +134,22 @@ int main(int argc, char *argv[])
                        atom_size);
                 goto error_out;
             }
-            if (   fseeko(infile, -ATOM_PREAMBLE_SIZE, SEEK_CUR)
-                || fread(ftyp_atom, atom_size, 1, infile) != 1
-                || (start_offset = ftello(infile))<0) {
+            fseeko(infile, -ATOM_PREAMBLE_SIZE, SEEK_CUR);
+            if (fread(ftyp_atom, atom_size, 1, infile) != 1) {
                 perror(argv[1]);
                 goto error_out;
             }
+            start_offset = ftello(infile);
         } else {
-            int ret;
             /* 64-bit special case */
             if (atom_size == 1) {
                 if (fread(atom_bytes, ATOM_PREAMBLE_SIZE, 1, infile) != 1) {
                     break;
                 }
                 atom_size = BE_64(&atom_bytes[0]);
-                ret = fseeko(infile, atom_size - ATOM_PREAMBLE_SIZE * 2, SEEK_CUR);
+                fseeko(infile, atom_size - ATOM_PREAMBLE_SIZE * 2, SEEK_CUR);
             } else {
-                ret = fseeko(infile, atom_size - ATOM_PREAMBLE_SIZE, SEEK_CUR);
-            }
-            if(ret) {
-                perror(argv[1]);
-                goto error_out;
+                fseeko(infile, atom_size - ATOM_PREAMBLE_SIZE, SEEK_CUR);
             }
         }
         printf("%c%c%c%c %10"PRIu64" %"PRIu64"\n",
@@ -198,10 +190,7 @@ int main(int argc, char *argv[])
 
     /* moov atom was, in fact, the last atom in the chunk; load the whole
      * moov atom */
-    if (fseeko(infile, -atom_size, SEEK_END)) {
-        perror(argv[1]);
-        goto error_out;
-    }
+    fseeko(infile, -atom_size, SEEK_END);
     last_offset    = ftello(infile);
     moov_atom_size = atom_size;
     moov_atom      = malloc(moov_atom_size);
@@ -230,18 +219,14 @@ int main(int argc, char *argv[])
         atom_type = BE_32(&moov_atom[i]);
         if (atom_type == STCO_ATOM) {
             printf(" patching stco atom...\n");
-            atom_size = (uint32_t)BE_32(&moov_atom[i - 4]);
+            atom_size = BE_32(&moov_atom[i - 4]);
             if (i + atom_size - 4 > moov_atom_size) {
                 printf(" bad atom size\n");
                 goto error_out;
             }
             offset_count = BE_32(&moov_atom[i + 8]);
-            if (i + 12LL + offset_count * 4LL > moov_atom_size) {
-                printf(" bad atom size\n");
-                goto error_out;
-            }
             for (j = 0; j < offset_count; j++) {
-                current_offset  = (uint32_t)BE_32(&moov_atom[i + 12 + j * 4]);
+                current_offset  = BE_32(&moov_atom[i + 12 + j * 4]);
                 current_offset += moov_atom_size;
                 moov_atom[i + 12 + j * 4 + 0] = (current_offset >> 24) & 0xFF;
                 moov_atom[i + 12 + j * 4 + 1] = (current_offset >> 16) & 0xFF;
@@ -251,16 +236,12 @@ int main(int argc, char *argv[])
             i += atom_size - 4;
         } else if (atom_type == CO64_ATOM) {
             printf(" patching co64 atom...\n");
-            atom_size = (uint32_t)BE_32(&moov_atom[i - 4]);
+            atom_size = BE_32(&moov_atom[i - 4]);
             if (i + atom_size - 4 > moov_atom_size) {
                 printf(" bad atom size\n");
                 goto error_out;
             }
             offset_count = BE_32(&moov_atom[i + 8]);
-            if (i + 12LL + offset_count * 8LL > moov_atom_size) {
-                printf(" bad atom size\n");
-                goto error_out;
-            }
             for (j = 0; j < offset_count; j++) {
                 current_offset  = BE_64(&moov_atom[i + 12 + j * 8]);
                 current_offset += moov_atom_size;
@@ -285,11 +266,7 @@ int main(int argc, char *argv[])
     }
 
     if (start_offset > 0) { /* seek after ftyp atom */
-        if (fseeko(infile, start_offset, SEEK_SET)) {
-            perror(argv[1]);
-            goto error_out;
-        }
-
+        fseeko(infile, start_offset, SEEK_SET);
         last_offset -= start_offset;
     }
 
@@ -316,15 +293,12 @@ int main(int argc, char *argv[])
     }
 
     /* copy the remainder of the infile, from offset 0 -> last_offset - 1 */
-    bytes_to_copy = FFMIN(COPY_BUFFER_SIZE, last_offset);
-    copy_buffer = malloc(bytes_to_copy);
-    if (!copy_buffer) {
-        printf("could not allocate %d bytes for copy_buffer\n", bytes_to_copy);
-        goto error_out;
-    }
     printf(" copying rest of file...\n");
     while (last_offset) {
-        bytes_to_copy = FFMIN(bytes_to_copy, last_offset);
+        if (last_offset > COPY_BUFFER_SIZE)
+            bytes_to_copy = COPY_BUFFER_SIZE;
+        else
+            bytes_to_copy = last_offset;
 
         if (fread(copy_buffer, bytes_to_copy, 1, infile) != 1) {
             perror(argv[1]);
@@ -341,7 +315,6 @@ int main(int argc, char *argv[])
     fclose(outfile);
     free(moov_atom);
     free(ftyp_atom);
-    free(copy_buffer);
 
     return 0;
 
@@ -352,6 +325,5 @@ error_out:
         fclose(outfile);
     free(moov_atom);
     free(ftyp_atom);
-    free(copy_buffer);
     return 1;
 }
