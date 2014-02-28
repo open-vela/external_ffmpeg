@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,7 +49,7 @@
  * Use av_buffer_unref() to free a reference (this will automatically free the
  * data once all the references are freed).
  *
- * The convention throughout this API and the rest of Libav is such that the
+ * The convention throughout this API and the rest of FFmpeg is such that the
  * buffer is considered writable if there exists only one reference to it (and
  * it has not been marked as read-only). The av_buffer_is_writable() function is
  * provided to check whether this is true and av_buffer_make_writable() will
@@ -122,7 +122,7 @@ AVBufferRef *av_buffer_allocz(int size);
  * @param data   data array
  * @param size   size of data in bytes
  * @param free   a callback for freeing this buffer's data
- * @param opaque parameter to be passed to free
+ * @param opaque parameter to be got for processing or passed to free
  * @param flags  a combination of AV_BUFFER_FLAG_*
  *
  * @return an AVBufferRef referring to data on success, NULL on failure.
@@ -155,12 +155,31 @@ AVBufferRef *av_buffer_ref(AVBufferRef *buf);
 void av_buffer_unref(AVBufferRef **buf);
 
 /**
+ * Free a given reference and pass underlaying data to user provided pointer.
+ * If there is more than one reference then data is copied.
+ *
+ * @param buf  the reference to be released. The pointer is set to NULL on return.
+ * @param data pointer to be passed with underlaying data.
+ * @return 0 on success, a negative AVERROR on failure.
+ *
+ * @note on error buffer is properly released and *data is set to NULL.
+ */
+int av_buffer_release(AVBufferRef **buf, uint8_t **data);
+
+/**
  * @return 1 if the caller may write to the data referred to by buf (which is
  * true if and only if buf is the only reference to the underlying AVBuffer).
  * Return 0 otherwise.
  * A positive answer is valid until av_buffer_ref() is called on buf.
  */
 int av_buffer_is_writable(const AVBufferRef *buf);
+
+/**
+ * @return the opaque parameter set by av_buffer_create.
+ */
+void *av_buffer_get_opaque(const AVBufferRef *buf);
+
+int av_buffer_get_ref_count(const AVBufferRef *buf);
 
 /**
  * Create a writable reference from a given buffer reference, avoiding data copy
