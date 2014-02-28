@@ -2,20 +2,20 @@
 ;* SSE-optimized functions for the DCA decoder
 ;* Copyright (C) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -26,35 +26,18 @@ pf_inv16:  times 4 dd 0x3D800000 ; 1/16
 
 SECTION_TEXT
 
-; void decode_hf(float dst[DCA_SUBBANDS][8], const int32_t vq_num[DCA_SUBBANDS],
-;                const int8_t hf_vq[1024][32], intptr_t vq_offset,
-;                int32_t scale[DCA_SUBBANDS][2], intptr_t start, intptr_t end)
-
-%macro DECODE_HF 0
-cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
-    lea       srcq, [srcq + offsetq]
-    shl     startq, 2
-    mov    offsetd, endm
-%define DICT offsetq
-    shl    offsetq, 2
-    mov       endm, offsetq
-.loop:
-%if ARCH_X86_64
-    mov    offsetd, [scaleq + 2 * startq]
-    cvtsi2ss    m0, offsetd
-%else
-    cvtsi2ss    m0, [scaleq + 2 * startq]
-%endif
-    mov    offsetd, [numq + startq]
+; void int8x8_fmul_int32_sse2(float *dst, const int8_t *src, int scale)
+%macro INT8X8_FMUL_INT32 0
+cglobal int8x8_fmul_int32, 3,3,5, dst, src, scale
+    cvtsi2ss    m0, scalem
     mulss       m0, [pf_inv16]
-    shl       DICT, 5
     shufps      m0, m0, 0
 %if cpuflag(sse2)
 %if cpuflag(sse4)
-    pmovsxbd    m1, [srcq + DICT + 0]
-    pmovsxbd    m2, [srcq + DICT + 4]
+    pmovsxbd    m1, [srcq+0]
+    pmovsxbd    m2, [srcq+4]
 %else
-    movq        m1, [srcq + DICT]
+    movq        m1, [srcq]
     punpcklbw   m1, m1
     mova        m2, m1
     punpcklwd   m1, m1
@@ -65,8 +48,8 @@ cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
     cvtdq2ps    m1, m1
     cvtdq2ps    m2, m2
 %else
-    movd       mm0, [srcq + DICT + 0]
-    movd       mm1, [srcq + DICT + 4]
+    movd       mm0, [srcq+0]
+    movd       mm1, [srcq+4]
     punpcklbw  mm0, mm0
     punpcklbw  mm1, mm1
     movq       mm2, mm0
@@ -84,33 +67,27 @@ cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
     cvtpi2ps    m3, mm2
     cvtpi2ps    m4, mm3
     shufps      m0, m0, 0
+    emms
     shufps      m1, m3, q1010
     shufps      m2, m4, q1010
 %endif
     mulps       m1, m0
     mulps       m2, m0
-    mova [dstq + 8 * startq +  0], m1
-    mova [dstq + 8 * startq + 16], m2
-    add     startq, 4
-    cmp     startq, endm
-    jl       .loop
-.end:
-%if notcpuflag(sse2)
-    emms
-%endif
+    mova [dstq+ 0], m1
+    mova [dstq+16], m2
     REP_RET
 %endmacro
 
 %if ARCH_X86_32
 INIT_XMM sse
-DECODE_HF
+INT8X8_FMUL_INT32
 %endif
 
 INIT_XMM sse2
-DECODE_HF
+INT8X8_FMUL_INT32
 
 INIT_XMM sse4
-DECODE_HF
+INT8X8_FMUL_INT32
 
 ; %1=v0/v1  %2=in1  %3=in2
 %macro FIR_LOOP 2-3
