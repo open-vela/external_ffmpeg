@@ -1,21 +1,21 @@
 /*
  * WMA compatible codec
- * Copyright (c) 2002-2007 The Libav Project
+ * Copyright (c) 2002-2007 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -135,6 +135,10 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
 
     bps = (float)avctx->bit_rate / (float)(avctx->channels * avctx->sample_rate);
     s->byte_offset_bits = av_log2((int)(bps * s->frame_len / 8.0 + 0.5)) + 2;
+    if (s->byte_offset_bits + 3 > MIN_CACHE_BITS) {
+        av_log(avctx, AV_LOG_ERROR, "byte_offset_bits %d is too large\n", s->byte_offset_bits);
+        return AVERROR_PATCHWELCOME;
+    }
 
     /* compute high frequency value and choose if noise coding should
        be activated */
