@@ -3,28 +3,27 @@
  *
  * Copyright (C) 2012 - 2013 Guillaume Martres
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/pixdesc.h"
 
-#include "hevc.h"
-
 #include "bit_depth_template.c"
+#include "hevcpred.h"
 
 #define POS(x, y) src[(x) + stride * (y)]
 
@@ -67,7 +66,7 @@ static void FUNC(intra_pred)(HEVCContext *s, int x0, int y0, int log2_size, int 
         for (i = (start); i < (start) + (length); i++) \
             if (!IS_INTRA(-1, i)) \
                 ptr[i] = ptr[i - 1]
-    HEVCLocalContext *lc = &s->HEVClc;
+    HEVCLocalContext *lc = s->HEVClc;
     int i;
     int hshift = s->sps->hshift[c_idx];
     int vshift = s->sps->vshift[c_idx];
@@ -297,8 +296,8 @@ static void FUNC(intra_pred)(HEVCContext *s, int x0, int y0, int log2_size, int 
     // Filtering process
     if (c_idx == 0 && mode != INTRA_DC && size != 4) {
         int intra_hor_ver_dist_thresh[] = { 7, 1, 0 };
-        int min_dist_vert_hor = FFMIN(FFABS((int)mode - 26),
-                                      FFABS((int)mode - 10));
+        int min_dist_vert_hor = FFMIN(FFABS((int)(mode - 26U)),
+                                      FFABS((int)(mode - 10U)));
         if (min_dist_vert_hor > intra_hor_ver_dist_thresh[log2_size - 3]) {
             int threshold = 1 << (BIT_DEPTH - 5);
             if (s->sps->sps_strong_intra_smoothing_enable_flag &&
