@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2004-2005 Michael Niedermayer, Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -210,7 +210,6 @@ H264_BIWEIGHT_10_SSE(4,  10)
 av_cold void ff_h264dsp_init_x86(H264DSPContext *c, const int bit_depth,
                                  const int chroma_format_idc)
 {
-#if HAVE_YASM
     int cpu_flags = av_get_cpu_flags();
 
     if (chroma_format_idc <= 1 && EXTERNAL_MMXEXT(cpu_flags))
@@ -366,5 +365,4 @@ av_cold void ff_h264dsp_init_x86(H264DSPContext *c, const int bit_depth,
 #endif /* HAVE_ALIGNED_STACK */
         }
     }
-#endif
 }

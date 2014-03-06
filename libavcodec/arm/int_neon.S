@@ -1,21 +1,21 @@
 /*
  * ARM NEON optimised integer operations
- * Copyright (c) 2009 Konstantin Shishkov
+ * Copyright (c) 2009 Kostya Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,7 @@ function ff_scalarproduct_int16_neon, export=1
         vmlal.s16       q2,  d18,  d22
         vmlal.s16       q3,  d19,  d23
         subs            r2,  r2,   #16
-        bgt             1b
+        bne             1b
 
         vpadd.s32       d16, d0,   d1
         vpadd.s32       d17, d2,   d3
@@ -75,7 +75,7 @@ function ff_scalarproduct_and_madd_int16_neon, export=1
         vst1.16         {q10},     [r12,:128]!
         subs            r3,  r3,   #16
         vst1.16         {q13},     [r12,:128]!
-        bgt             1b
+        bne             1b
 
         vpadd.s32       d16, d0,   d1
         vpadd.s32       d17, d2,   d3
