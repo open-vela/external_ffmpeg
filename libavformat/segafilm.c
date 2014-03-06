@@ -2,20 +2,20 @@
  * Sega FILM Format (CPK) Demuxer
  * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +30,7 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
+#include "avio_internal.h"
 
 #define FILM_TAG MKBETAG('F', 'I', 'L', 'M')
 #define FDSC_TAG MKBETAG('F', 'D', 'S', 'C')
@@ -61,15 +62,14 @@ typedef struct FilmDemuxContext {
 
     unsigned int base_clock;
     unsigned int version;
-
-    /* buffer used for interleaving stereo PCM data */
-    unsigned char *stereo_buffer;
-    int stereo_buffer_size;
 } FilmDemuxContext;
 
 static int film_probe(AVProbeData *p)
 {
     if (AV_RB32(&p->buf[0]) != FILM_TAG)
+        return 0;
+
+    if (AV_RB32(&p->buf[16]) != FDSC_TAG)
         return 0;
 
     return AVPROBE_SCORE_MAX;
@@ -80,7 +80,6 @@ static int film_read_close(AVFormatContext *s)
     FilmDemuxContext *film = s->priv_data;
 
     av_freep(&film->sample_table);
-    av_freep(&film->stereo_buffer);
 
     return 0;
 }
@@ -96,8 +95,6 @@ static int film_read_header(AVFormatContext *s)
     unsigned int audio_frame_counter;
 
     film->sample_table = NULL;
-    film->stereo_buffer = NULL;
-    film->stereo_buffer_size = 0;
 
     /* load the main FILM header */
     if (avio_read(pb, scratch, 16) != 16)
@@ -121,19 +118,14 @@ static int film_read_header(AVFormatContext *s)
             return AVERROR(EIO);
         film->audio_samplerate = AV_RB16(&scratch[24]);
         film->audio_channels = scratch[21];
-        if (!film->audio_channels || film->audio_channels > 2) {
-            av_log(s, AV_LOG_ERROR,
-                   "Invalid number of channels: %d\n", film->audio_channels);
-            return AVERROR_INVALIDDATA;
-        }
         film->audio_bits = scratch[22];
-        if (scratch[23] == 2)
+        if (scratch[23] == 2 && film->audio_channels > 0)
             film->audio_type = AV_CODEC_ID_ADPCM_ADX;
         else if (film->audio_channels > 0) {
             if (film->audio_bits == 8)
-                film->audio_type = AV_CODEC_ID_PCM_S8;
+                film->audio_type = AV_CODEC_ID_PCM_S8_PLANAR;
             else if (film->audio_bits == 16)
-                film->audio_type = AV_CODEC_ID_PCM_S16BE;
+                film->audio_type = AV_CODEC_ID_PCM_S16BE_PLANAR;
             else
                 film->audio_type = AV_CODEC_ID_NONE;
         } else
@@ -265,66 +257,19 @@ static int film_read_packet(AVFormatContext *s,
     AVIOContext *pb = s->pb;
     film_sample *sample;
     int ret = 0;
-    int i;
-    int left, right;
 
     if (film->current_sample >= film->sample_count)
-        return AVERROR(EIO);
+        return AVERROR_EOF;
 
     sample = &film->sample_table[film->current_sample];
 
     /* position the stream (will probably be there anyway) */
     avio_seek(pb, sample->sample_offset, SEEK_SET);
 
-    /* do a special song and dance when loading FILM Cinepak chunks */
-    if ((sample->stream == film->video_stream_index) &&
-        (film->video_type == AV_CODEC_ID_CINEPAK)) {
-        pkt->pos= avio_tell(pb);
-        if (av_new_packet(pkt, sample->sample_size))
-            return AVERROR(ENOMEM);
-        avio_read(pb, pkt->data, sample->sample_size);
-    } else if ((sample->stream == film->audio_stream_index) &&
-        (film->audio_channels == 2) &&
-        (film->audio_type != AV_CODEC_ID_ADPCM_ADX)) {
-        /* stereo PCM needs to be interleaved */
 
-        if (av_new_packet(pkt, sample->sample_size))
-            return AVERROR(ENOMEM);
-
-        /* make sure the interleave buffer is large enough */
-        if (sample->sample_size > film->stereo_buffer_size) {
-            av_free(film->stereo_buffer);
-            film->stereo_buffer_size = sample->sample_size;
-            film->stereo_buffer = av_malloc(film->stereo_buffer_size);
-            if (!film->stereo_buffer) {
-                film->stereo_buffer_size = 0;
-                return AVERROR(ENOMEM);
-            }
-        }
-
-        pkt->pos= avio_tell(pb);
-        ret = avio_read(pb, film->stereo_buffer, sample->sample_size);
-        if (ret != sample->sample_size)
-            ret = AVERROR(EIO);
-
-        left = 0;
-        right = sample->sample_size / 2;
-        for (i = 0; i < sample->sample_size; ) {
-            if (film->audio_bits == 8) {
-                pkt->data[i++] = film->stereo_buffer[left++];
-                pkt->data[i++] = film->stereo_buffer[right++];
-            } else {
-                pkt->data[i++] = film->stereo_buffer[left++];
-                pkt->data[i++] = film->stereo_buffer[left++];
-                pkt->data[i++] = film->stereo_buffer[right++];
-                pkt->data[i++] = film->stereo_buffer[right++];
-            }
-        }
-    } else {
-        ret= av_get_packet(pb, pkt, sample->sample_size);
-        if (ret != sample->sample_size)
-            ret = AVERROR(EIO);
-    }
+    ret= av_get_packet(pb, pkt, sample->sample_size);
+    if (ret != sample->sample_size)
+        ret = AVERROR(EIO);
 
     pkt->stream_index = sample->stream;
     pkt->pts = sample->pts;
