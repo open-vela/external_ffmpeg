@@ -2,20 +2,20 @@
  * Winnov WNV1 codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,8 @@
 
 
 typedef struct WNV1Context {
+    AVCodecContext *avctx;
+
     int shift;
     GetBitContext gb;
 } WNV1Context;
@@ -68,8 +70,8 @@ static int decode_frame(AVCodecContext *avctx,
     int prev_y = 0, prev_u = 0, prev_v = 0;
     uint8_t *rbuf;
 
-    if (buf_size <= 8) {
-        av_log(avctx, AV_LOG_ERROR, "Packet size %d is too small\n", buf_size);
+    if (buf_size < 8) {
+        av_log(avctx, AV_LOG_ERROR, "Packet is too short\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -78,9 +80,9 @@ static int decode_frame(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer\n");
         return AVERROR(ENOMEM);
     }
-    memset(rbuf + buf_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
 
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         av_free(rbuf);
         return ret;
     }
@@ -132,8 +134,10 @@ static int decode_frame(AVCodecContext *avctx,
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
+    WNV1Context * const l = avctx->priv_data;
     static VLC_TYPE code_table[1 << CODE_VLC_BITS][2];
 
+    l->avctx       = avctx;
     avctx->pix_fmt = AV_PIX_FMT_YUV422P;
 
     code_vlc.table           = code_table;
