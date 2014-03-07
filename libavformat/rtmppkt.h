@@ -2,20 +2,20 @@
  * RTMP packet utilities
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,7 +78,7 @@ typedef struct RTMPPacket {
     int            channel_id; ///< RTMP channel ID (nothing to do with audio/video channels though)
     RTMPPacketType type;       ///< packet payload type
     uint32_t       timestamp;  ///< packet full timestamp
-    uint32_t       ts_field;   ///< 24-bit timestamp or increment to the previous one, in milliseconds (latter only for media packets). Clipped to a maximum of 0xFFFFFF, indicating an extended timestamp field.
+    uint32_t       ts_delta;   ///< timestamp increment to the previous one in milliseconds (latter only for media packets)
     uint32_t       extra;      ///< probably an additional channel ID used during streaming data
     uint8_t        *data;      ///< packet payload
     int            size;       ///< packet payload size
