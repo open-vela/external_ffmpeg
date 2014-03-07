@@ -2,20 +2,20 @@
  * RTMP input format
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -196,7 +196,7 @@ static int rtmp_packet_read_one_chunk(URLContext *h, RTMPPacket *p,
 
     hdr >>= 6; // header size indicator
     if (hdr == RTMP_PS_ONEBYTE) {
-        ts_field = prev_pkt[channel_id].ts_delta;
+        ts_field = prev_pkt[channel_id].ts_field;
     } else {
         if (ffurl_read_complete(h, buf, 3) != 3)
             return AVERROR(EIO);
@@ -235,7 +235,7 @@ static int rtmp_packet_read_one_chunk(URLContext *h, RTMPPacket *p,
             return ret;
         p->read = written;
         p->offset = 0;
-        prev_pkt[channel_id].ts_delta   = ts_field;
+        prev_pkt[channel_id].ts_field   = ts_field;
         prev_pkt[channel_id].timestamp  = timestamp;
     } else {
         // previous packet in this channel hasn't completed reading
@@ -244,7 +244,7 @@ static int rtmp_packet_read_one_chunk(URLContext *h, RTMPPacket *p,
         p->size          = prev->size;
         p->channel_id    = prev->channel_id;
         p->type          = prev->type;
-        p->ts_delta      = prev->ts_delta;
+        p->ts_field      = prev->ts_field;
         p->extra         = prev->extra;
         p->offset        = prev->offset;
         p->read          = prev->read + written;
@@ -323,16 +323,16 @@ int ff_rtmp_packet_write(URLContext *h, RTMPPacket *pkt,
         timestamp -= prev_pkt[pkt->channel_id].timestamp;
     }
     if (timestamp >= 0xFFFFFF) {
-        pkt->ts_delta = 0xFFFFFF;
+        pkt->ts_field = 0xFFFFFF;
     } else {
-        pkt->ts_delta = timestamp;
+        pkt->ts_field = timestamp;
     }
 
     if (use_delta) {
         if (pkt->type == prev_pkt[pkt->channel_id].type &&
             pkt->size == prev_pkt[pkt->channel_id].size) {
             mode = RTMP_PS_FOURBYTES;
-            if (pkt->ts_delta == prev_pkt[pkt->channel_id].ts_delta)
+            if (pkt->ts_field == prev_pkt[pkt->channel_id].ts_field)
                 mode = RTMP_PS_ONEBYTE;
         } else {
             mode = RTMP_PS_EIGHTBYTES;
@@ -349,7 +349,7 @@ int ff_rtmp_packet_write(URLContext *h, RTMPPacket *pkt,
         bytestream_put_le16(&p, pkt->channel_id - 64);
     }
     if (mode != RTMP_PS_ONEBYTE) {
-        bytestream_put_be24(&p, pkt->ts_delta);
+        bytestream_put_be24(&p, pkt->ts_field);
         if (mode != RTMP_PS_FOURBYTES) {
             bytestream_put_be24(&p, pkt->size);
             bytestream_put_byte(&p, pkt->type);
@@ -357,14 +357,14 @@ int ff_rtmp_packet_write(URLContext *h, RTMPPacket *pkt,
                 bytestream_put_le32(&p, pkt->extra);
         }
     }
-    if (pkt->ts_delta == 0xFFFFFF)
+    if (pkt->ts_field == 0xFFFFFF)
         bytestream_put_be32(&p, timestamp);
     // save history
     prev_pkt[pkt->channel_id].channel_id = pkt->channel_id;
     prev_pkt[pkt->channel_id].type       = pkt->type;
     prev_pkt[pkt->channel_id].size       = pkt->size;
     prev_pkt[pkt->channel_id].timestamp  = pkt->timestamp;
-    prev_pkt[pkt->channel_id].ts_delta   = pkt->ts_delta;
+    prev_pkt[pkt->channel_id].ts_field   = pkt->ts_field;
     prev_pkt[pkt->channel_id].extra      = pkt->extra;
 
     if ((ret = ffurl_write(h, pkt_hdr, p - pkt_hdr)) < 0)
@@ -398,7 +398,7 @@ int ff_rtmp_packet_create(RTMPPacket *pkt, int channel_id, RTMPPacketType type,
     pkt->type       = type;
     pkt->timestamp  = timestamp;
     pkt->extra      = 0;
-    pkt->ts_delta   = 0;
+    pkt->ts_field   = 0;
 
     return 0;
 }
