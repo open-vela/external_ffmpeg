@@ -2,20 +2,20 @@
  * Common code between the AC-3 encoder and decoder
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,8 +39,6 @@
 #define AC3_CRITICAL_BANDS 50
 #define AC3_MAX_CPL_BANDS  18
 
-#include "libavutil/opt.h"
-#include "avcodec.h"
 #include "ac3tab.h"
 
 /* exponent encoding strategy */
@@ -142,9 +140,7 @@ typedef struct AC3HeaderInfo {
     int surround_mix_level;                 ///< Surround mix level index
     uint16_t channel_map;
     int num_blocks;                         ///< number of audio blocks
-#if AV_HAVE_INCOMPATIBLE_LIBAV_ABI
     int dolby_surround_mode;
-#endif
     /** @} */
 
     /** @name Derived values
@@ -157,9 +153,6 @@ typedef struct AC3HeaderInfo {
     uint16_t frame_size;
     uint64_t channel_layout;
     /** @} */
-#if !AV_HAVE_INCOMPATIBLE_LIBAV_ABI
-    int dolby_surround_mode;
-#endif
 } AC3HeaderInfo;
 
 typedef enum {
