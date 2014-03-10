@@ -2,22 +2,24 @@
  * Motion Pixels MVI Demuxer
  * Copyright (c) 2008 Gregory Montoir (cyx@users.sourceforge.net)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include <inttypes.h>
 
 #include "libavutil/channel_layout.h"
 #include "avformat.h"
@@ -52,8 +54,8 @@ static int read_header(AVFormatContext *s)
     if (!vst)
         return AVERROR(ENOMEM);
 
-    if (ff_alloc_extradata(vst->codec, 2))
-        return AVERROR(ENOMEM);
+    vst->codec->extradata_size = 2;
+    vst->codec->extradata = av_mallocz(2 + FF_INPUT_BUFFER_PADDING_SIZE);
 
     version                  = avio_r8(pb);
     vst->codec->extradata[0] = avio_r8(pb);
@@ -95,7 +97,8 @@ static int read_header(AVFormatContext *s)
 
     mvi->audio_frame_size   = ((uint64_t)mvi->audio_data_size << MVI_FRAC_BITS) / frames_count;
     if (mvi->audio_frame_size <= 1 << MVI_FRAC_BITS - 1) {
-        av_log(s, AV_LOG_ERROR, "Invalid audio_data_size (%d) or frames_count (%d)\n",
+        av_log(s, AV_LOG_ERROR,
+               "Invalid audio_data_size (%"PRIu32") or frames_count (%u)\n",
                mvi->audio_data_size, frames_count);
         return AVERROR_INVALIDDATA;
     }
