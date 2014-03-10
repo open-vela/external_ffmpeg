@@ -2,20 +2,20 @@
  * VC1 Test Bitstreams Format Demuxer
  * Copyright (c) 2006, 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -61,8 +61,9 @@ static int vc1t_read_header(AVFormatContext *s)
     st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     st->codec->codec_id = AV_CODEC_ID_WMV3;
 
-    if (ff_get_extradata(st->codec, pb, VC1_EXTRADATA_SIZE) < 0)
-        return AVERROR(ENOMEM);
+    st->codec->extradata = av_malloc(VC1_EXTRADATA_SIZE);
+    st->codec->extradata_size = VC1_EXTRADATA_SIZE;
+    avio_read(pb, st->codec->extradata, VC1_EXTRADATA_SIZE);
     st->codec->height = avio_rl32(pb);
     st->codec->width = avio_rl32(pb);
     if(avio_rl32(pb) != 0xC)
@@ -91,7 +92,7 @@ static int vc1t_read_packet(AVFormatContext *s,
     int keyframe = 0;
     uint32_t pts;
 
-    if(url_feof(pb))
+    if(pb->eof_reached)
         return AVERROR(EIO);
 
     frame_size = avio_rl24(pb);
