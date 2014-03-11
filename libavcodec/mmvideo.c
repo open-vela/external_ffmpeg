@@ -2,20 +2,20 @@
  * American Laser Games MM Video Decoder
  * Copyright (c) 2006,2008 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -74,7 +74,7 @@ static int mm_decode_pal(MmContext *s)
 
     bytestream2_skip(&s->gb, 4);
     for (i = 0; i < 128; i++) {
-        s->palette[i] = 0xFFU << 24 | bytestream2_get_be24(&s->gb);
+        s->palette[i] = bytestream2_get_be24(&s->gb);
         s->palette[i+128] = s->palette[i]<<2;
     }
 
@@ -106,9 +106,6 @@ static int mm_decode_intra(MmContext * s, int half_horiz, int half_vert)
         if (half_horiz)
             run_length *=2;
 
-        if (run_length > s->avctx->width - x)
-            return AVERROR_INVALIDDATA;
-
         if (color) {
             memset(s->frame->data[0] + y*s->frame->linesize[0] + x, color, run_length);
             if (half_vert)
@@ -125,7 +122,7 @@ static int mm_decode_intra(MmContext * s, int half_horiz, int half_vert)
     return 0;
 }
 
-/**
+/*
  * @param half_horiz Half horizontal resolution (0 or 1)
  * @param half_vert Half vertical resolution (0 or 1)
  */
@@ -157,8 +154,6 @@ static int mm_decode_inter(MmContext * s, int half_horiz, int half_vert)
             int replace_array = bytestream2_get_byte(&s->gb);
             for(j=0; j<8; j++) {
                 int replace = (replace_array >> (7-j)) & 1;
-                if (x + half_horiz >= s->avctx->width)
-                    return AVERROR_INVALIDDATA;
                 if (replace) {
                     int color = bytestream2_get_byte(&data_ptr);
                     s->frame->data[0][y*s->frame->linesize[0] + x] = color;
@@ -196,11 +191,13 @@ static int mm_decode_frame(AVCodecContext *avctx,
     buf_size -= MM_PREAMBLE_SIZE;
     bytestream2_init(&s->gb, buf, buf_size);
 
-    if ((res = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((res = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return res;
+    }
 
     switch(type) {
-    case MM_TYPE_PALETTE   : res = mm_decode_pal(s); return avpkt->size;
+    case MM_TYPE_PALETTE   : res = mm_decode_pal(s); return buf_size;
     case MM_TYPE_INTRA     : res = mm_decode_intra(s, 0, 0); break;
     case MM_TYPE_INTRA_HH  : res = mm_decode_intra(s, 1, 0); break;
     case MM_TYPE_INTRA_HHV : res = mm_decode_intra(s, 1, 1); break;
@@ -221,7 +218,7 @@ static int mm_decode_frame(AVCodecContext *avctx,
 
     *got_frame      = 1;
 
-    return avpkt->size;
+    return buf_size;
 }
 
 static av_cold int mm_decode_end(AVCodecContext *avctx)
