@@ -2,20 +2,20 @@
  * MACE decoder
  * Copyright (c) 2002 Laszlo Torok <torokl@alpha.dfmk.hu>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -244,17 +244,12 @@ static int mace_decode_frame(AVCodecContext *avctx, void *data,
     int i, j, k, l, ret;
     int is_mace3 = (avctx->codec_id == AV_CODEC_ID_MACE3);
 
-    if (buf_size % (avctx->channels << is_mace3)) {
-        av_log(avctx, AV_LOG_ERROR, "buffer size %d is odd\n", buf_size);
-        buf_size -= buf_size % (avctx->channels << is_mace3);
-        if (!buf_size)
-            return AVERROR_INVALIDDATA;
-    }
-
     /* get output buffer */
     frame->nb_samples = 3 * (buf_size << (1 - is_mace3)) / avctx->channels;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     samples = (int16_t **)frame->extended_data;
 
     for(i = 0; i < avctx->channels; i++) {
