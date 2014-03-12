@@ -4,20 +4,20 @@
 ;* Copyright (c) 2000, 2001 Fabrice Bellard
 ;* Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;*****************************************************************************
 
@@ -209,8 +209,8 @@ hadamard8x8_diff %+ SUFFIX:
 hadamard8_16_wrapper %1, 3
 %elif cpuflag(mmx)
 ALIGN 16
-; int hadamard8_diff_##cpu(void *s, uint8_t *src1, uint8_t *src2,
-;                          int stride, int h)
+; int ff_hadamard8_diff_ ## cpu(void *s, uint8_t *src1, uint8_t *src2,
+;                               int stride, int h)
 ; r0 = void *s = unused, int h = unused (always 8)
 ; note how r1, r2 and r3 are not clobbered in this function, so 16x16
 ; can simply call this 2x2x (and that's why we access rsp+gprsize
@@ -275,7 +275,7 @@ INIT_XMM ssse3
 HADAMARD8_DIFF 9
 
 INIT_XMM sse2
-; sse16_sse2(void *v, uint8_t * pix1, uint8_t * pix2, int line_size, int h)
+; int ff_sse16_sse2(void *v, uint8_t *pix1, uint8_t *pix2, int line_size, int h);
 cglobal sse16, 5, 5, 8
     shr      r4d, 1
     pxor      m0, m0         ; mm0 = 0
@@ -335,7 +335,7 @@ cglobal sse16, 5, 5, 8
     RET
 
 INIT_MMX mmx
-; get_pixels_mmx(int16_t *block, const uint8_t *pixels, int line_size)
+; void ff_get_pixels_mmx(int16_t *block, const uint8_t *pixels, int line_size)
 cglobal get_pixels, 3,4
     movsxdifnidn r2, r2d
     add          r0, 128
@@ -392,7 +392,8 @@ cglobal get_pixels, 3, 4
     RET
 
 INIT_MMX mmx
-; diff_pixels_mmx(int16_t *block, const uint8_t *s1, const unint8_t *s2, stride)
+; void ff_diff_pixels_mmx(int16_t *block, const uint8_t *s1, const uint8_t *s2,
+;                         int stride);
 cglobal diff_pixels, 4,5
     movsxdifnidn r3, r3d
     pxor         m7, m7
@@ -418,7 +419,7 @@ cglobal diff_pixels, 4,5
     REP_RET
 
 INIT_MMX mmx
-; pix_sum16_mmx(uint8_t * pix, int line_size)
+; int ff_pix_sum16_mmx(uint8_t *pix, int line_size)
 cglobal pix_sum16, 2, 3
     movsxdifnidn r1, r1d
     mov          r2, r1
@@ -453,7 +454,7 @@ cglobal pix_sum16, 2, 3
     RET
 
 INIT_MMX mmx
-; pix_norm1_mmx(uint8_t *pix, int line_size)
+; int ff_pix_norm1_mmx(uint8_t *pix, int line_size)
 cglobal pix_norm1, 2, 4
     movsxdifnidn r1, r1d
     mov          r2, 16

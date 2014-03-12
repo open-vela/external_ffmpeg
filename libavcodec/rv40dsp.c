@@ -2,20 +2,20 @@
  * RV40 decoder motion compensation functions
  * Copyright (c) 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,13 +27,12 @@
 #include "avcodec.h"
 #include "h264qpel.h"
 #include "rv34dsp.h"
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 
 #define RV40_LOWPASS(OPNAME, OP) \
 static av_unused void OPNAME ## rv40_qpel8_h_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride,\
                                                      const int h, const int C1, const int C2, const int SHIFT){\
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
     for(i = 0; i < h; i++)\
     {\
@@ -52,7 +51,7 @@ static av_unused void OPNAME ## rv40_qpel8_h_lowpass(uint8_t *dst, uint8_t *src,
 \
 static void OPNAME ## rv40_qpel8_v_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride,\
                                            const int w, const int C1, const int C2, const int SHIFT){\
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
     for(i = 0; i < w; i++)\
     {\
@@ -219,7 +218,7 @@ static void OPNAME ## rv40_chroma_mc4_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
     int i;\
     int bias = rv40_bias[y>>1][x>>1];\
     \
-    av_assert2(x<8 && y<8 && x>=0 && y>=0);\
+    assert(x<8 && y<8 && x>=0 && y>=0);\
 \
     if(D){\
         for(i = 0; i < h; i++){\
@@ -252,7 +251,7 @@ static void OPNAME ## rv40_chroma_mc8_c(uint8_t *dst/*align 8*/, uint8_t *src/*a
     int i;\
     int bias = rv40_bias[y>>1][x>>1];\
     \
-    av_assert2(x<8 && y<8 && x>=0 && y>=0);\
+    assert(x<8 && y<8 && x>=0 && y>=0);\
 \
     if(D){\
         for(i = 0; i < h; i++){\
@@ -351,7 +350,7 @@ static av_always_inline void rv40_weak_loop_filter(uint8_t *src,
                                                    const int lim_q1,
                                                    const int lim_p1)
 {
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
     int i, t, u, diff;
 
     for (i = 0; i < 4; i++, src += stride) {

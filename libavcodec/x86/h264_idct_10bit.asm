@@ -5,20 +5,20 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -32,7 +32,7 @@ pd_32:        times 4 dd 32
 SECTION .text
 
 ;-----------------------------------------------------------------------------
-; void h264_idct_add(pixel *dst, dctcoef *block, int stride)
+; void ff_h264_idct_add_10(pixel *dst, int16_t *block, int stride)
 ;-----------------------------------------------------------------------------
 %macro STORE_DIFFx2 6
     psrad       %1, 6
@@ -83,13 +83,13 @@ cglobal h264_idct_add_10, 3,3
 
 INIT_XMM sse2
 IDCT_ADD_10
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD_10
-%endif
 
 ;-----------------------------------------------------------------------------
-; h264_idct_add16(pixel *dst, const int *block_offset, dctcoef *block, int stride, const uint8_t nnzc[6*8])
+; void ff_h264_idct_add16_10(pixel *dst, const int *block_offset,
+;                            int16_t *block, int stride,
+;                            const uint8_t nnzc[6*8])
 ;-----------------------------------------------------------------------------
 ;;;;;;; NO FATE SAMPLES TRIGGER THIS
 %macro ADD4x4IDCT 0
@@ -117,11 +117,9 @@ add4x4_idct %+ SUFFIX:
 INIT_XMM sse2
 ALIGN 16
 ADD4x4IDCT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 ALIGN 16
 ADD4x4IDCT
-%endif
 
 %macro ADD16_OP 2
     cmp          byte [r4+%2], 0
@@ -157,13 +155,11 @@ cglobal h264_idct_add16_10, 5,6
 
 INIT_XMM sse2
 IDCT_ADD16_10
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD16_10
-%endif
 
 ;-----------------------------------------------------------------------------
-; void h264_idct_dc_add(pixel *dst, dctcoef *block, int stride)
+; void ff_h264_idct_dc_add_10(pixel *dst, int16_t *block, int stride)
 ;-----------------------------------------------------------------------------
 %macro IDCT_DC_ADD_OP_10 3
     pxor      m5, m5
@@ -205,7 +201,7 @@ cglobal h264_idct_dc_add_10,3,3
     RET
 
 ;-----------------------------------------------------------------------------
-; void h264_idct8_dc_add(pixel *dst, dctcoef *block, int stride)
+; void ff_h264_idct8_dc_add_10(pixel *dst, int16_t *block, int stride)
 ;-----------------------------------------------------------------------------
 %macro IDCT8_DC_ADD 0
 cglobal h264_idct8_dc_add_10,3,4,7
@@ -224,13 +220,13 @@ cglobal h264_idct8_dc_add_10,3,4,7
 
 INIT_XMM sse2
 IDCT8_DC_ADD
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT8_DC_ADD
-%endif
 
 ;-----------------------------------------------------------------------------
-; h264_idct_add16intra(pixel *dst, const int *block_offset, dctcoef *block, int stride, const uint8_t nnzc[6*8])
+; void ff_h264_idct_add16intra_10(pixel *dst, const int *block_offset,
+;                                 int16_t *block, int stride,
+;                                 const uint8_t nnzc[6*8])
 ;-----------------------------------------------------------------------------
 %macro AC 1
 .ac%1:
@@ -297,14 +293,14 @@ cglobal h264_idct_add16intra_10,5,7,8
 
 INIT_XMM sse2
 IDCT_ADD16INTRA_10
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD16INTRA_10
-%endif
 
 %assign last_block 36
 ;-----------------------------------------------------------------------------
-; h264_idct_add8(pixel **dst, const int *block_offset, dctcoef *block, int stride, const uint8_t nnzc[6*8])
+; void ff_h264_idct_add8_10(pixel **dst, const int *block_offset,
+;                           int16_t *block, int stride,
+;                           const uint8_t nnzc[6*8])
 ;-----------------------------------------------------------------------------
 %macro IDCT_ADD8 0
 cglobal h264_idct_add8_10,5,8,7
@@ -334,13 +330,11 @@ cglobal h264_idct_add8_10,5,8,7
 
 INIT_XMM sse2
 IDCT_ADD8
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD8
-%endif
 
 ;-----------------------------------------------------------------------------
-; void h264_idct8_add(pixel *dst, dctcoef *block, int stride)
+; void ff_h264_idct8_add_10(pixel *dst, int16_t *block, int stride)
 ;-----------------------------------------------------------------------------
 %macro IDCT8_1D 2
     SWAP      0, 1
@@ -543,13 +537,13 @@ h264_idct8_add1_10 %+ SUFFIX:
 
 INIT_XMM sse2
 IDCT8_ADD
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT8_ADD
-%endif
 
 ;-----------------------------------------------------------------------------
-; h264_idct8_add4(pixel **dst, const int *block_offset, dctcoef *block, int stride, const uint8_t nnzc[6*8])
+; void ff_h264_idct8_add4_10(pixel **dst, const int *block_offset,
+;                            int16_t *block, int stride,
+;                            const uint8_t nnzc[6*8])
 ;-----------------------------------------------------------------------------
 ;;;;;;; NO FATE SAMPLES TRIGGER THIS
 %macro IDCT8_ADD4_OP 2
@@ -583,7 +577,5 @@ cglobal h264_idct8_add4_10, 0,7,16
 
 INIT_XMM sse2
 IDCT8_ADD4
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT8_ADD4
-%endif

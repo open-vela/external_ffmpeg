@@ -5,20 +5,20 @@
  *
  * Copyright (c) 2006  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -186,7 +186,7 @@ static void cavs_filter_ch_c(uint8_t *d, int stride, int alpha, int beta, int tc
 static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, int stride) {
     int i;
     int16_t (*src)[8] = (int16_t(*)[8])block;
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
 
     src[0][0] += 8;
 
@@ -261,7 +261,7 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, int stride) {
 #define CAVS_SUBPIX(OPNAME, OP, NAME, A, B, C, D, E, F) \
 static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int h=8;\
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
     for(i=0; i<h; i++)\
     {\
@@ -280,7 +280,7 @@ static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, uint8_t *src, int dstS
 \
 static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int w=8;\
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
     for(i=0; i<w; i++)\
     {\
@@ -334,7 +334,7 @@ static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, uint8_t *src1, uint8_
     int16_t *tmp = temp;\
     const int h=8;\
     const int w=8;\
-    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
     src1 -= 2*srcStride;\
     for(i=0; i<h+5; i++)\
