@@ -5,20 +5,20 @@
  * Copyright (c) 2010 Rob Clark <rob@ti.com>
  * Copyright (c) 2011 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
  * This code was partially ported from libvpx, which uses this license:
@@ -1204,7 +1204,7 @@ function ff_put_vp8_\name\size\()_\hv\()_armv6, export=1
         mov             r4,  #\size
         stm             r12, {r4, r5}
         orr             r12, r6,  r7
-        b               bl_put_\name\()_\hv\()_armv6
+        b               vp8_put_\name\()_\hv\()_armv6 + 4
 endfunc
 .endm
 
@@ -1300,7 +1300,6 @@ vp8_mc_hv               bilin,  4, h,  v,  2
 
 function vp8_put_epel_h6_armv6
         push            {r1, r4-r11, lr}
-bl_put_epel_h6_armv6:
         sub             r2,  r2,  #2
         movrel          lr,  sixtap_filters_13245600 - 16
         add             lr,  lr,  r12, lsl #3
@@ -1359,7 +1358,6 @@ endfunc
 
 function vp8_put_epel_v6_armv6
         push            {r1, r4-r11, lr}
-bl_put_epel_v6_armv6:
         movrel          lr,  sixtap_filters_13245600 - 16
         add             lr,  lr,  r12, lsl #3
         str             r3,  [sp, #48]
@@ -1439,7 +1437,6 @@ endfunc
 
 function vp8_put_epel_h4_armv6
         push            {r1, r4-r11, lr}
-bl_put_epel_h4_armv6:
         subs            r2,  r2,  #1
         movrel          lr,  fourtap_filters_1324 - 4
         add             lr,  lr,  r12, lsl #2
@@ -1486,7 +1483,6 @@ endfunc
 
 function vp8_put_epel_v4_armv6
         push            {r1, r4-r11, lr}
-bl_put_epel_v4_armv6:
         movrel          lr,  fourtap_filters_1324 - 4
         add             lr,  lr,  r12, lsl #2
         ldm             lr,  {r5, r6}
@@ -1548,7 +1544,6 @@ endfunc
 
 function vp8_put_bilin_h_armv6
         push            {r1, r4-r11, lr}
-bl_put_bilin_h_armv6:
         rsb             r5,  r12, r12, lsl #16
         ldr             r12, [sp, #44]
         sub             r3,  r3,  r4
@@ -1594,7 +1589,6 @@ endfunc
 
 function vp8_put_bilin_v_armv6
         push            {r1, r4-r11, lr}
-bl_put_bilin_v_armv6:
         rsb             r5,  r12, r12, lsl #16
         ldr             r12, [sp, #44]
         add             r5,  r5,  #8
