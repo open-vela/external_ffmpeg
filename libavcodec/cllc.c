@@ -3,22 +3,24 @@
  *
  * Copyright (c) 2012-2013 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include <inttypes.h>
 
 #include "libavutil/intreadwrite.h"
 #include "dsputil.h"
@@ -367,7 +369,7 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         info_offset = AV_RL32(src + 4);
         if (info_offset > UINT32_MAX - 8 || info_offset + 8 > avpkt->size) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Invalid INFO header offset: 0x%08X is too large.\n",
+                   "Invalid INFO header offset: 0x%08"PRIX32" is too large.\n",
                    info_offset);
             return AVERROR_INVALIDDATA;
         }
@@ -410,8 +412,11 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_YUV422P;
         avctx->bits_per_raw_sample = 8;
 
-        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
+        ret = ff_get_buffer(avctx, pic, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
+        }
 
         ret = decode_yuv_frame(ctx, &gb, pic);
         if (ret < 0)
@@ -423,8 +428,11 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_RGB24;
         avctx->bits_per_raw_sample = 8;
 
-        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
+        ret = ff_get_buffer(avctx, pic, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
+        }
 
         ret = decode_rgb24_frame(ctx, &gb, pic);
         if (ret < 0)
@@ -435,8 +443,11 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_ARGB;
         avctx->bits_per_raw_sample = 8;
 
-        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
+        ret = ff_get_buffer(avctx, pic, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
+        }
 
         ret = decode_argb_frame(ctx, &gb, pic);
         if (ret < 0)
