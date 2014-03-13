@@ -2,20 +2,20 @@
 ;* x86 optimized Format Conversion Utils
 ;* Copyright (c) 2008 Loren Merritt
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -31,10 +31,9 @@ SECTION_TEXT
 %endif
 %endmacro
 
-;------------------------------------------------------------------------------
-; void ff_int32_to_float_fmul_scalar(float *dst, const int32_t *src, float mul,
-;                                    int len);
-;------------------------------------------------------------------------------
+;---------------------------------------------------------------------------------
+; void int32_to_float_fmul_scalar(float *dst, const int32_t *src, float mul, int len);
+;---------------------------------------------------------------------------------
 %macro INT32_TO_FLOAT_FMUL_SCALAR 1
 %if UNIX64
 cglobal int32_to_float_fmul_scalar, 3, 3, %1, dst, src, len
@@ -244,10 +243,8 @@ FLOAT_TO_INT16_INTERLEAVE2
 INIT_XMM sse2
 FLOAT_TO_INT16_INTERLEAVE2
 
-;-----------------------------------------------------------------------------
-; void ff_float_to_int16_interleave6(int16_t *dst, const float **src, int len)
-;-----------------------------------------------------------------------------
 %macro FLOAT_TO_INT16_INTERLEAVE6 0
+; void float_to_int16_interleave6_sse(int16_t *dst, const float **src, int len)
 cglobal float_to_int16_interleave6, 2, 8, 0, dst, src, src1, src2, src3, src4, src5, len
 %if ARCH_X86_64
     mov     lend, r2d

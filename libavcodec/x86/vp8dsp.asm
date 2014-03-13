@@ -3,20 +3,20 @@
 ;* Copyright (c) 2010 Ronald S. Bultje <rsbultje@gmail.com>
 ;* Copyright (c) 2010 Jason Garrett-Glaser <darkshikari@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -153,13 +153,13 @@ cextern pw_64
 
 SECTION .text
 
-;-------------------------------------------------------------------------------
+;-----------------------------------------------------------------------------
 ; subpel MC functions:
 ;
-; void ff_put_vp8_epel<size>_h<htap>v<vtap>_<opt>(uint8_t *dst, int deststride,
-;                                                 uint8_t *src, int srcstride,
-;                                                 int height,   int mx, int my);
-;-------------------------------------------------------------------------------
+; void put_vp8_epel<size>_h<htap>v<vtap>_<opt>(uint8_t *dst, int deststride,
+;                                              uint8_t *src, int srcstride,
+;                                              int height,   int mx, int my);
+;-----------------------------------------------------------------------------
 
 %macro FILTER_SSSE3 1
 cglobal put_vp8_epel%1_h6, 6, 6 + npicregs, 8, dst, dststride, src, srcstride, height, mx, picreg
@@ -884,7 +884,7 @@ cglobal put_vp8_pixels16, 5, 5, 2, dst, dststride, src, srcstride, height
     REP_RET
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_idct_dc_add_<opt>(uint8_t *dst, int16_t block[16], int stride);
+; void vp8_idct_dc_add_<opt>(uint8_t *dst, int16_t block[16], int stride);
 ;-----------------------------------------------------------------------------
 
 %macro ADD_DC 4
@@ -962,7 +962,7 @@ cglobal vp8_idct_dc_add, 3, 3, 6, dst, block, stride
     RET
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_idct_dc_add4y_<opt>(uint8_t *dst, int16_t block[4][16], int stride);
+; void vp8_idct_dc_add4y_<opt>(uint8_t *dst, int16_t block[4][16], int stride);
 ;-----------------------------------------------------------------------------
 
 %if ARCH_X86_32
@@ -1035,7 +1035,7 @@ cglobal vp8_idct_dc_add4y, 3, 3, 6, dst, block, stride
     RET
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_idct_dc_add4uv_<opt>(uint8_t *dst, int16_t block[4][16], int stride);
+; void vp8_idct_dc_add4uv_<opt>(uint8_t *dst, int16_t block[4][16], int stride);
 ;-----------------------------------------------------------------------------
 
 INIT_MMX mmx
@@ -1077,7 +1077,7 @@ cglobal vp8_idct_dc_add4uv, 3, 3, 0, dst, block, stride
     RET
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_idct_add_<opt>(uint8_t *dst, int16_t block[16], int stride);
+; void vp8_idct_add_<opt>(uint8_t *dst, int16_t block[16], int stride);
 ;-----------------------------------------------------------------------------
 
 ; calculate %1=mul_35468(%1)-mul_20091(%2); %2=mul_20091(%1)+mul_35468(%2)
@@ -1157,7 +1157,7 @@ INIT_MMX sse
 VP8_IDCT_ADD
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_luma_dc_wht(int16_t block[4][4][16], int16_t dc[16])
+; void vp8_luma_dc_wht_mmxext(int16_t block[4][4][16], int16_t dc[16])
 ;-----------------------------------------------------------------------------
 
 %macro SCATTER_WHT 3

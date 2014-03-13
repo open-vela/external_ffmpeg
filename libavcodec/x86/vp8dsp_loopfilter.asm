@@ -3,20 +3,20 @@
 ;* Copyright (c) 2010 Ronald S. Bultje <rsbultje@gmail.com>
 ;* Copyright (c) 2010 Jason Garrett-Glaser <darkshikari@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -43,7 +43,7 @@ cextern pb_80
 SECTION .text
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_h/v_loop_filter_simple_<opt>(uint8_t *dst, int stride, int flim);
+; void vp8_h/v_loop_filter_simple_<opt>(uint8_t *dst, int stride, int flim);
 ;-----------------------------------------------------------------------------
 
 ; macro called with 7 mm register indexes as argument, and 4 regular registers
@@ -429,8 +429,8 @@ INIT_XMM sse4
 SIMPLE_LOOPFILTER h, 5
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_h/v_loop_filter<size>_inner_<opt>(uint8_t *dst, [uint8_t *v,] int stride,
-;                                               int flimE, int flimI, int hev_thr);
+; void vp8_h/v_loop_filter<size>_inner_<opt>(uint8_t *dst, [uint8_t *v,] int stride,
+;                                            int flimE, int flimI, int hev_thr);
 ;-----------------------------------------------------------------------------
 
 %macro INNER_LOOPFILTER 2
@@ -921,8 +921,8 @@ INNER_LOOPFILTER v,  8
 INNER_LOOPFILTER h,  8
 
 ;-----------------------------------------------------------------------------
-; void ff_vp8_h/v_loop_filter<size>_mbedge_<opt>(uint8_t *dst, [uint8_t *v,] int stride,
-;                                                int flimE, int flimI, int hev_thr);
+; void vp8_h/v_loop_filter<size>_mbedge_<opt>(uint8_t *dst, [uint8_t *v,] int stride,
+;                                            int flimE, int flimI, int hev_thr);
 ;-----------------------------------------------------------------------------
 
 %macro MBEDGE_LOOPFILTER 2

@@ -2,20 +2,20 @@
  * AAC decoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -229,10 +229,8 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (s->initialized) {
         frame->nb_samples = avctx->frame_size;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             return ret;
-        }
         buf = frame->extended_data[0];
         buf_size = avctx->channels * frame->nb_samples *
                    av_get_bytes_per_sample(avctx->sample_fmt);
@@ -264,10 +262,8 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (tmpptr) {
         frame->nb_samples = avctx->frame_size;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             goto end;
-        }
         memcpy(frame->extended_data[0], tmpptr,
                avctx->channels * avctx->frame_size *
                av_get_bytes_per_sample(avctx->sample_fmt));
