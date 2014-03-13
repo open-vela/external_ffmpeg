@@ -5,20 +5,20 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -57,10 +57,11 @@ SECTION .text
 %endmacro
 
 ;-----------------------------------------------------------------------------
-; void ff_put/avg_h264_chroma_mc8(pixel *dst, pixel *src, int stride, int h,
-;                                 int mx, int my)
+; void put/avg_h264_chroma_mc8(pixel *dst, pixel *src, int stride, int h, int mx, int my)
 ;-----------------------------------------------------------------------------
 %macro CHROMA_MC8 1
+; put/avg_h264_chroma_mc8_*(uint8_t *dst /*align 8*/, uint8_t *src /*align 1*/,
+;                              int stride, int h, int mx, int my)
 cglobal %1_h264_chroma_mc8_10, 6,7,8
     movsxdifnidn  r2, r2d
     mov          r6d, r5d
@@ -149,8 +150,7 @@ cglobal %1_h264_chroma_mc8_10, 6,7,8
 %endmacro
 
 ;-----------------------------------------------------------------------------
-; void ff_put/avg_h264_chroma_mc4(pixel *dst, pixel *src, int stride, int h,
-;                                 int mx, int my)
+; void put/avg_h264_chroma_mc4(pixel *dst, pixel *src, int stride, int h, int mx, int my)
 ;-----------------------------------------------------------------------------
 ;TODO: xmm mc4
 %macro MC4_OP 2
@@ -200,8 +200,7 @@ cglobal %1_h264_chroma_mc4_10, 6,6,7
 %endmacro
 
 ;-----------------------------------------------------------------------------
-; void ff_put/avg_h264_chroma_mc2(pixel *dst, pixel *src, int stride, int h,
-;                                 int mx, int my)
+; void put/avg_h264_chroma_mc2(pixel *dst, pixel *src, int stride, int h, int mx, int my)
 ;-----------------------------------------------------------------------------
 %macro CHROMA_MC2 1
 cglobal %1_h264_chroma_mc2_10, 6,7
@@ -252,8 +251,10 @@ cglobal %1_h264_chroma_mc2_10, 6,7
 %define CHROMAMC_AVG  NOTHING
 INIT_XMM sse2
 CHROMA_MC8 put
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 CHROMA_MC8 put
+%endif
 INIT_MMX mmxext
 CHROMA_MC4 put
 CHROMA_MC2 put
@@ -261,8 +262,10 @@ CHROMA_MC2 put
 %define CHROMAMC_AVG  AVG
 INIT_XMM sse2
 CHROMA_MC8 avg
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 CHROMA_MC8 avg
+%endif
 INIT_MMX mmxext
 CHROMA_MC4 avg
 CHROMA_MC2 avg

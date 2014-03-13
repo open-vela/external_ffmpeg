@@ -1,23 +1,23 @@
 ;******************************************************************************
-;* SIMD-optimized quarterpel functions
+;* MMX optimized DSP utils
 ;* Copyright (c) 2008 Loren Merritt
 ;* Copyright (c) 2003-2013 Michael Niedermayer
 ;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -44,8 +44,7 @@ SECTION .text
     mova   %2, %1
 %endmacro
 
-; void ff_put/avg_pixels4_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-;                                   int dstStride, int src1Stride, int h)
+; void pixels4_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2, int dstStride, int src1Stride, int h)
 %macro PIXELS4_L2 1
 %define OP op_%1h
 cglobal %1_pixels4_l2, 6,6
@@ -88,8 +87,7 @@ INIT_MMX mmxext
 PIXELS4_L2 put
 PIXELS4_L2 avg
 
-; void ff_put/avg_pixels8_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-;                                   int dstStride, int src1Stride, int h)
+; void pixels8_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2, int dstStride, int src1Stride, int h)
 %macro PIXELS8_L2 1
 %define OP op_%1
 cglobal %1_pixels8_l2, 6,6
@@ -132,8 +130,7 @@ INIT_MMX mmxext
 PIXELS8_L2 put
 PIXELS8_L2 avg
 
-; void ff_put/avg_pixels16_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2,
-;                                    int dstStride, int src1Stride, int h)
+; void pixels16_l2_mmxext(uint8_t *dst, uint8_t *src1, uint8_t *src2, int dstStride, int src1Stride, int h)
 %macro PIXELS16_L2 1
 %define OP op_%1
 cglobal %1_pixels16_l2, 6,6
