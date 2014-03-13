@@ -2,20 +2,20 @@
  * RV30 decoder motion compensation functions
  * Copyright (c) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,7 @@
 #define RV30_LOWPASS(OPNAME, OP) \
 static av_unused void OPNAME ## rv30_tpel8_h_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride, const int C1, const int C2){\
     const int h = 8;\
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
     int i;\
     for(i = 0; i < h; i++)\
     {\
@@ -51,7 +51,7 @@ static av_unused void OPNAME ## rv30_tpel8_h_lowpass(uint8_t *dst, uint8_t *src,
 \
 static void OPNAME ## rv30_tpel8_v_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride, const int C1, const int C2){\
     const int w = 8;\
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
     int i;\
     for(i = 0; i < w; i++)\
     {\
@@ -82,7 +82,7 @@ static void OPNAME ## rv30_tpel8_v_lowpass(uint8_t *dst, uint8_t *src, int dstSt
 static void OPNAME ## rv30_tpel8_hv_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int w = 8;\
     const int h = 8;\
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
     int i, j;\
     for(j = 0; j < h; j++){\
         for(i = 0; i < w; i++){\
@@ -101,7 +101,7 @@ static void OPNAME ## rv30_tpel8_hv_lowpass(uint8_t *dst, uint8_t *src, int dstS
 static void OPNAME ## rv30_tpel8_hhv_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int w = 8;\
     const int h = 8;\
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
     int i, j;\
     for(j = 0; j < h; j++){\
         for(i = 0; i < w; i++){\
@@ -120,7 +120,7 @@ static void OPNAME ## rv30_tpel8_hhv_lowpass(uint8_t *dst, uint8_t *src, int dst
 static void OPNAME ## rv30_tpel8_hvv_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int w = 8;\
     const int h = 8;\
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
     int i, j;\
     for(j = 0; j < h; j++){\
         for(i = 0; i < w; i++){\
@@ -139,7 +139,7 @@ static void OPNAME ## rv30_tpel8_hvv_lowpass(uint8_t *dst, uint8_t *src, int dst
 static void OPNAME ## rv30_tpel8_hhvv_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int w = 8;\
     const int h = 8;\
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
+    const uint8_t *cm = ff_cropTbl + MAX_NEG_CROP;\
     int i, j;\
     for(j = 0; j < h; j++){\
         for(i = 0; i < w; i++){\

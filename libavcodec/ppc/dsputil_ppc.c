@@ -3,20 +3,20 @@
  * Copyright (c) 2002 Dieter Shirley
  * Copyright (c) 2003-2004 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,6 @@
 #include "libavutil/cpu.h"
 #include "libavutil/mem.h"
 #include "libavutil/ppc/cpu.h"
-#include "libavcodec/avcodec.h"
-#include "libavcodec/dsputil.h"
 #include "dsputil_altivec.h"
 
 /* ***** WARNING ***** WARNING ***** WARNING ***** */
@@ -143,6 +141,7 @@ static long check_dcbzl_effect(void)
 av_cold void ff_dsputil_init_ppc(DSPContext *c, AVCodecContext *avctx)
 {
     const int high_bit_depth = avctx->bits_per_raw_sample > 8;
+    int mm_flags = av_get_cpu_flags();
 
     // Common optimizations whether AltiVec is available or not
     if (!high_bit_depth) {
@@ -158,7 +157,7 @@ av_cold void ff_dsputil_init_ppc(DSPContext *c, AVCodecContext *avctx)
     }
     }
 
-    if (PPC_ALTIVEC(av_get_cpu_flags())) {
+    if (PPC_ALTIVEC(mm_flags)) {
         ff_dsputil_init_altivec(c, avctx);
         ff_int_init_altivec(c, avctx);
         c->gmc1 = ff_gmc1_altivec;
@@ -171,7 +170,7 @@ av_cold void ff_dsputil_init_ppc(DSPContext *c, AVCodecContext *avctx)
         }
 #endif //CONFIG_ENCODERS
 
-        if (avctx->bits_per_raw_sample <= 8) {
+        if (avctx->lowres == 0 && avctx->bits_per_raw_sample <= 8) {
             if ((avctx->idct_algo == FF_IDCT_AUTO) ||
                 (avctx->idct_algo == FF_IDCT_ALTIVEC)) {
                 c->idct_put = ff_idct_put_altivec;
