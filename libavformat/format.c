@@ -2,27 +2,29 @@
  * Format register and lookup
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "avformat.h"
-#include "internal.h"
-#include "libavutil/atomic.h"
 #include "libavutil/avstring.h"
+
+#include "avio_internal.h"
+#include "avformat.h"
+#include "id3v2.h"
+#include "internal.h"
 
 /**
  * @file
@@ -32,9 +34,6 @@
 static AVInputFormat *first_iformat = NULL;
 /** head of registered output format linked list */
 static AVOutputFormat *first_oformat = NULL;
-
-static AVInputFormat **last_iformat = &first_iformat;
-static AVOutputFormat **last_oformat = &first_oformat;
 
 AVInputFormat *av_iformat_next(const AVInputFormat *f)
 {
@@ -54,22 +53,24 @@ AVOutputFormat *av_oformat_next(const AVOutputFormat *f)
 
 void av_register_input_format(AVInputFormat *format)
 {
-    AVInputFormat **p = last_iformat;
+    AVInputFormat **p = &first_iformat;
 
-    format->next = NULL;
-    while(*p || avpriv_atomic_ptr_cas((void * volatile *)p, NULL, format))
+    while (*p != NULL)
         p = &(*p)->next;
-    last_iformat = &format->next;
+
+    *p = format;
+    format->next = NULL;
 }
 
 void av_register_output_format(AVOutputFormat *format)
 {
-    AVOutputFormat **p = last_oformat;
+    AVOutputFormat **p = &first_oformat;
 
-    format->next = NULL;
-    while(*p || avpriv_atomic_ptr_cas((void * volatile *)p, NULL, format))
+    while (*p != NULL)
         p = &(*p)->next;
-    last_oformat = &format->next;
+
+    *p = format;
+    format->next = NULL;
 }
 
 int av_match_ext(const char *filename, const char *extensions)
@@ -136,7 +137,7 @@ AVOutputFormat *av_guess_format(const char *short_name, const char *filename,
     score_max = 0;
     while ((fmt = av_oformat_next(fmt))) {
         score = 0;
-        if (fmt->name && short_name && match_format(short_name, fmt->name))
+        if (fmt->name && short_name && !av_strcasecmp(fmt->name, short_name))
             score += 100;
         if (fmt->mime_type && mime_type && !strcmp(fmt->mime_type, mime_type))
             score += 10;
@@ -156,10 +157,6 @@ enum AVCodecID av_guess_codec(AVOutputFormat *fmt, const char *short_name,
                               const char *filename, const char *mime_type,
                               enum AVMediaType type)
 {
-    if (!strcmp(fmt->name, "segment") || !strcmp(fmt->name, "ssegment")) {
-        fmt = av_guess_format(NULL, filename, NULL);
-    }
-
     if (type == AVMEDIA_TYPE_VIDEO) {
         enum AVCodecID codec_id = AV_CODEC_ID_NONE;
 
@@ -186,4 +183,138 @@ AVInputFormat *av_find_input_format(const char *short_name)
         if (match_format(short_name, fmt->name))
             return fmt;
     return NULL;
+}
+
+AVInputFormat *av_probe_input_format2(AVProbeData *pd, int is_opened,
+                                      int *score_max)
+{
+    AVProbeData lpd = *pd;
+    AVInputFormat *fmt1 = NULL, *fmt;
+    int score, id3 = 0;
+
+    if (lpd.buf_size > 10 && ff_id3v2_match(lpd.buf, ID3v2_DEFAULT_MAGIC)) {
+        int id3len = ff_id3v2_tag_len(lpd.buf);
+        if (lpd.buf_size > id3len + 16) {
+            lpd.buf      += id3len;
+            lpd.buf_size -= id3len;
+        }
+        id3 = 1;
+    }
+
+    fmt = NULL;
+    while ((fmt1 = av_iformat_next(fmt1))) {
+        if (!is_opened == !(fmt1->flags & AVFMT_NOFILE))
+            continue;
+        score = 0;
+        if (fmt1->read_probe) {
+            score = fmt1->read_probe(&lpd);
+        } else if (fmt1->extensions) {
+            if (av_match_ext(lpd.filename, fmt1->extensions))
+                score = AVPROBE_SCORE_EXTENSION;
+        }
+        if (score > *score_max) {
+            *score_max = score;
+            fmt        = fmt1;
+        } else if (score == *score_max)
+            fmt = NULL;
+    }
+
+    // A hack for files with huge id3v2 tags -- try to guess by file extension.
+    if (!fmt && is_opened && *score_max < AVPROBE_SCORE_EXTENSION / 2) {
+        while ((fmt = av_iformat_next(fmt)))
+            if (fmt->extensions &&
+                av_match_ext(lpd.filename, fmt->extensions)) {
+                *score_max = AVPROBE_SCORE_EXTENSION / 2;
+                break;
+            }
+    }
+
+    if (!fmt && id3 && *score_max < AVPROBE_SCORE_EXTENSION / 2 - 1) {
+        while ((fmt = av_iformat_next(fmt)))
+            if (fmt->extensions && av_match_ext("mp3", fmt->extensions)) {
+                *score_max = AVPROBE_SCORE_EXTENSION / 2 - 1;
+                break;
+            }
+    }
+
+    return fmt;
+}
+
+AVInputFormat *av_probe_input_format(AVProbeData *pd, int is_opened)
+{
+    int score = 0;
+    return av_probe_input_format2(pd, is_opened, &score);
+}
+
+/* size of probe buffer, for guessing file type from file contents */
+#define PROBE_BUF_MIN 2048
+#define PROBE_BUF_MAX (1 << 20)
+
+int av_probe_input_buffer(AVIOContext *pb, AVInputFormat **fmt,
+                          const char *filename, void *logctx,
+                          unsigned int offset, unsigned int max_probe_size)
+{
+    AVProbeData pd = { filename ? filename : "" };
+    uint8_t *buf = NULL;
+    int ret = 0, probe_size;
+
+    if (!max_probe_size)
+        max_probe_size = PROBE_BUF_MAX;
+    else if (max_probe_size > PROBE_BUF_MAX)
+        max_probe_size = PROBE_BUF_MAX;
+    else if (max_probe_size < PROBE_BUF_MIN)
+        return AVERROR(EINVAL);
+
+    if (offset >= max_probe_size)
+        return AVERROR(EINVAL);
+    avio_skip(pb, offset);
+    max_probe_size -= offset;
+
+    for (probe_size = PROBE_BUF_MIN; probe_size <= max_probe_size && !*fmt;
+         probe_size = FFMIN(probe_size << 1,
+                            FFMAX(max_probe_size, probe_size + 1))) {
+        int score = probe_size < max_probe_size ? AVPROBE_SCORE_MAX / 4 : 0;
+
+        /* Read probe data. */
+        if ((ret = av_reallocp(&buf, probe_size + AVPROBE_PADDING_SIZE)) < 0)
+            return ret;
+        if ((ret = avio_read(pb, buf + pd.buf_size,
+                             probe_size - pd.buf_size)) < 0) {
+            /* Fail if error was not end of file, otherwise, lower score. */
+            if (ret != AVERROR_EOF) {
+                av_free(buf);
+                return ret;
+            }
+            score = 0;
+            ret   = 0;          /* error was end of file, nothing read */
+        }
+        pd.buf_size += ret;
+        pd.buf       = buf;
+
+        memset(pd.buf + pd.buf_size, 0, AVPROBE_PADDING_SIZE);
+
+        /* Guess file format. */
+        *fmt = av_probe_input_format2(&pd, 1, &score);
+        if (*fmt) {
+            /* This can only be true in the last iteration. */
+            if (score <= AVPROBE_SCORE_MAX / 4) {
+                av_log(logctx, AV_LOG_WARNING,
+                       "Format detected only with low score of %d, "
+                       "misdetection possible!\n", score);
+            } else
+                av_log(logctx, AV_LOG_DEBUG,
+                       "Probed with size=%d and score=%d\n", probe_size, score);
+        }
+    }
+
+    if (!*fmt) {
+        av_free(buf);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Rewind. Reuse probe buffer to avoid seeking. */
+    if ((ret = ffio_rewind_with_probe_data(pb, buf, pd.buf_size)) < 0)
+        av_free(buf);
+
+    return ret;
 }

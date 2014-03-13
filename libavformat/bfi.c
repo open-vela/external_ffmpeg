@@ -2,20 +2,20 @@
  * Brute Force & Ignorance (BFI) demuxer
  * Copyright (c) 2008 Sisir Koppaka
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,8 +81,6 @@ static int bfi_read_header(AVFormatContext * s)
     /*Load the palette to extradata */
     avio_skip(pb, 8);
     vstream->codec->extradata      = av_malloc(768);
-    if (!vstream->codec->extradata)
-        return AVERROR(ENOMEM);
     vstream->codec->extradata_size = 768;
     avio_read(pb, vstream->codec->extradata,
                vstream->codec->extradata_size);
@@ -94,8 +92,6 @@ static int bfi_read_header(AVFormatContext * s)
     vstream->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     vstream->codec->codec_id   = AV_CODEC_ID_BFI;
     vstream->codec->pix_fmt    = AV_PIX_FMT_PAL8;
-    vstream->nb_frames         =
-    vstream->duration          = bfi->nframes;
 
     /* Set up the audio codec now... */
     astream->codec->codec_type      = AVMEDIA_TYPE_AUDIO;
@@ -116,15 +112,15 @@ static int bfi_read_packet(AVFormatContext * s, AVPacket * pkt)
     BFIContext *bfi = s->priv_data;
     AVIOContext *pb = s->pb;
     int ret, audio_offset, video_offset, chunk_size, audio_size = 0;
-    if (bfi->nframes == 0 || url_feof(pb)) {
-        return AVERROR_EOF;
+    if (bfi->nframes == 0 || pb->eof_reached) {
+        return AVERROR(EIO);
     }
 
     /* If all previous chunks were completely read, then find a new one... */
     if (!bfi->avflag) {
         uint32_t state = 0;
         while(state != MKTAG('S','A','V','I')){
-            if (url_feof(pb))
+            if (pb->eof_reached)
                 return AVERROR(EIO);
             state = 256*state + avio_r8(pb);
         }
