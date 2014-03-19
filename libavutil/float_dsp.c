@@ -148,9 +148,7 @@ av_cold void avpriv_float_dsp_init(AVFloatDSPContext *fdsp, int bit_exact)
 #include <stdlib.h>
 #include <string.h>
 
-#include "common.h"
 #include "cpu.h"
-#include "internal.h"
 #include "lfg.h"
 #include "log.h"
 #include "mem.h"
@@ -213,8 +211,8 @@ static int compare_doubles(const double *a, const double *b, int len,
 static int test_vector_fmul(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                             const float *v1, const float *v2)
 {
-    LOCAL_ALIGNED(32, float, cdst, [LEN]);
-    LOCAL_ALIGNED(32, float, odst, [LEN]);
+    DECLARE_ALIGNED(32, float, cdst)[LEN];
+    DECLARE_ALIGNED(32, float, odst)[LEN];
     int ret;
 
     cdsp->vector_fmul(cdst, v1, v2, LEN);
@@ -230,8 +228,8 @@ static int test_vector_fmul(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
 static int test_vector_fmac_scalar(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                    const float *v1, const float *src0, float scale)
 {
-    LOCAL_ALIGNED(32, float, cdst, [LEN]);
-    LOCAL_ALIGNED(32, float, odst, [LEN]);
+    DECLARE_ALIGNED(32, float, cdst)[LEN];
+    DECLARE_ALIGNED(32, float, odst)[LEN];
     int ret;
 
     memcpy(cdst, v1, LEN * sizeof(*v1));
@@ -249,8 +247,8 @@ static int test_vector_fmac_scalar(AVFloatDSPContext *fdsp, AVFloatDSPContext *c
 static int test_vector_fmul_scalar(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                    const float *v1, float scale)
 {
-    LOCAL_ALIGNED(32, float, cdst, [LEN]);
-    LOCAL_ALIGNED(32, float, odst, [LEN]);
+    DECLARE_ALIGNED(32, float, cdst)[LEN];
+    DECLARE_ALIGNED(32, float, odst)[LEN];
     int ret;
 
     cdsp->vector_fmul_scalar(cdst, v1, scale, LEN);
@@ -265,8 +263,8 @@ static int test_vector_fmul_scalar(AVFloatDSPContext *fdsp, AVFloatDSPContext *c
 static int test_vector_dmul_scalar(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                    const double *v1, double scale)
 {
-    LOCAL_ALIGNED(32, double, cdst, [LEN]);
-    LOCAL_ALIGNED(32, double, odst, [LEN]);
+    DECLARE_ALIGNED(32, double, cdst)[LEN];
+    DECLARE_ALIGNED(32, double, odst)[LEN];
     int ret;
 
     cdsp->vector_dmul_scalar(cdst, v1, scale, LEN);
@@ -282,8 +280,8 @@ static int test_vector_dmul_scalar(AVFloatDSPContext *fdsp, AVFloatDSPContext *c
 static int test_vector_fmul_window(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                    const float *v1, const float *v2, const float *v3)
 {
-    LOCAL_ALIGNED(32, float, cdst, [LEN]);
-    LOCAL_ALIGNED(32, float, odst, [LEN]);
+    DECLARE_ALIGNED(32, float, cdst)[LEN];
+    DECLARE_ALIGNED(32, float, odst)[LEN];
     int ret;
 
     cdsp->vector_fmul_window(cdst, v1, v2, v3, LEN / 2);
@@ -299,8 +297,8 @@ static int test_vector_fmul_window(AVFloatDSPContext *fdsp, AVFloatDSPContext *c
 static int test_vector_fmul_add(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                 const float *v1, const float *v2, const float *v3)
 {
-    LOCAL_ALIGNED(32, float, cdst, [LEN]);
-    LOCAL_ALIGNED(32, float, odst, [LEN]);
+    DECLARE_ALIGNED(32, float, cdst)[LEN];
+    DECLARE_ALIGNED(32, float, odst)[LEN];
     int ret;
 
     cdsp->vector_fmul_add(cdst, v1, v2, v3, LEN);
@@ -315,8 +313,8 @@ static int test_vector_fmul_add(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp
 static int test_vector_fmul_reverse(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                     const float *v1, const float *v2)
 {
-    LOCAL_ALIGNED(32, float, cdst, [LEN]);
-    LOCAL_ALIGNED(32, float, odst, [LEN]);
+    DECLARE_ALIGNED(32, float, cdst)[LEN];
+    DECLARE_ALIGNED(32, float, odst)[LEN];
     int ret;
 
     cdsp->vector_fmul_reverse(cdst, v1, v2, LEN);
@@ -331,10 +329,10 @@ static int test_vector_fmul_reverse(AVFloatDSPContext *fdsp, AVFloatDSPContext *
 static int test_butterflies_float(AVFloatDSPContext *fdsp, AVFloatDSPContext *cdsp,
                                   const float *v1, const float *v2)
 {
-    LOCAL_ALIGNED(32, float, cv1, [LEN]);
-    LOCAL_ALIGNED(32, float, cv2, [LEN]);
-    LOCAL_ALIGNED(32, float, ov1, [LEN]);
-    LOCAL_ALIGNED(32, float, ov2, [LEN]);
+    DECLARE_ALIGNED(32, float, cv1)[LEN];
+    DECLARE_ALIGNED(32, float, cv2)[LEN];
+    DECLARE_ALIGNED(32, float, ov1)[LEN];
+    DECLARE_ALIGNED(32, float, ov2)[LEN];
     int ret;
 
     memcpy(cv1, v1, LEN * sizeof(*v1));
@@ -375,11 +373,11 @@ int main(int argc, char **argv)
     AVFloatDSPContext fdsp, cdsp;
     AVLFG lfg;
 
-    LOCAL_ALIGNED(32, float, src0, [LEN]);
-    LOCAL_ALIGNED(32, float, src1, [LEN]);
-    LOCAL_ALIGNED(32, float, src2, [LEN]);
-    LOCAL_ALIGNED(32, double, dbl_src0, [LEN]);
-    LOCAL_ALIGNED(32, double, dbl_src1, [LEN]);
+    DECLARE_ALIGNED(32, float, src0)[LEN];
+    DECLARE_ALIGNED(32, float, src1)[LEN];
+    DECLARE_ALIGNED(32, float, src2)[LEN];
+    DECLARE_ALIGNED(32, double, dbl_src0)[LEN];
+    DECLARE_ALIGNED(32, double, dbl_src1)[LEN];
 
     if (argc > 2 && !strcmp(argv[1], "-s"))
         seed = strtoul(argv[2], NULL, 10);
