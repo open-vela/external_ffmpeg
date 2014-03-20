@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software Foundation,
+ * License along with Libav; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,7 +50,7 @@ static void vdpau_h264_clear_rf(VdpReferenceFrameH264 *rf)
 static void vdpau_h264_set_rf(VdpReferenceFrameH264 *rf, H264Picture *pic,
                               int pic_structure)
 {
-    VdpVideoSurface surface = ff_vdpau_get_surface_id(&pic->f);
+    VdpVideoSurface surface = ff_vdpau_get_surface_id(pic);
 
     if (pic_structure == 0)
         pic_structure = pic->reference;
@@ -87,7 +87,7 @@ static void vdpau_h264_set_reference_frames(AVCodecContext *avctx)
             if (!pic || !pic->reference)
                 continue;
             pic_frame_idx = pic->long_ref ? pic->pic_id : pic->frame_num;
-            surface_ref = ff_vdpau_get_surface_id(&pic->f);
+            surface_ref = ff_vdpau_get_surface_id(pic);
 
             rf2 = &info->referenceFrames[0];
             while (rf2 != rf) {
@@ -162,7 +162,7 @@ static int vdpau_h264_start_frame(AVCodecContext *avctx,
 
     vdpau_h264_set_reference_frames(avctx);
 
-    return ff_vdpau_common_start_frame(pic, buffer, size);
+    return ff_vdpau_common_start_frame(pic_ctx, buffer, size);
 }
 
 static const uint8_t start_code_prefix[3] = { 0x00, 0x00, 0x01 };
@@ -175,11 +175,11 @@ static int vdpau_h264_decode_slice(AVCodecContext *avctx,
     struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
     int val;
 
-    val = ff_vdpau_add_buffer(pic, start_code_prefix, 3);
+    val = ff_vdpau_add_buffer(pic_ctx, start_code_prefix, 3);
     if (val)
         return val;
 
-    val = ff_vdpau_add_buffer(pic, buffer, size);
+    val = ff_vdpau_add_buffer(pic_ctx, buffer, size);
     if (val)
         return val;
 
@@ -189,41 +189,19 @@ static int vdpau_h264_decode_slice(AVCodecContext *avctx,
 
 static int vdpau_h264_end_frame(AVCodecContext *avctx)
 {
-    int res = 0;
     AVVDPAUContext *hwctx = avctx->hwaccel_context;
     H264Context *h = avctx->priv_data;
     H264Picture *pic = h->cur_pic_ptr;
     struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
-    VdpVideoSurface surf = ff_vdpau_get_surface_id(&pic->f);
+    VdpVideoSurface surf = ff_vdpau_get_surface_id(pic);
 
-#if FF_API_BUFS_VDPAU
-FF_DISABLE_DEPRECATION_WARNINGS
-    hwctx->info = pic_ctx->info;
-    hwctx->bitstream_buffers = pic_ctx->bitstream_buffers;
-    hwctx->bitstream_buffers_used = pic_ctx->bitstream_buffers_used;
-    hwctx->bitstream_buffers_allocated = pic_ctx->bitstream_buffers_allocated;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
-    if (!hwctx->render) {
-        res = hwctx->render2(avctx, &pic->f, (void *)&pic_ctx->info,
-                             pic_ctx->bitstream_buffers_used, pic_ctx->bitstream_buffers);
-    } else
     hwctx->render(hwctx->decoder, surf, (void *)&pic_ctx->info,
                   pic_ctx->bitstream_buffers_used, pic_ctx->bitstream_buffers);
 
     ff_h264_draw_horiz_band(h, 0, h->avctx->height);
     av_freep(&pic_ctx->bitstream_buffers);
 
-#if FF_API_BUFS_VDPAU
-FF_DISABLE_DEPRECATION_WARNINGS
-    hwctx->bitstream_buffers = NULL;
-    hwctx->bitstream_buffers_used = 0;
-    hwctx->bitstream_buffers_allocated = 0;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
-    return res;
+    return 0;
 }
 
 AVHWAccel ff_h264_vdpau_hwaccel = {

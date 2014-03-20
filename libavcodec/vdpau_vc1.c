@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software Foundation,
+ * License along with Libav; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,18 +44,14 @@ static int vdpau_vc1_start_frame(AVCodecContext *avctx,
 
     switch (s->pict_type) {
     case AV_PICTURE_TYPE_B:
-        if (s->next_picture_ptr) {
-        ref = ff_vdpau_get_surface_id(&s->next_picture.f);
+        ref = ff_vdpau_get_surface_id(&s->next_picture);
         assert(ref != VDP_INVALID_HANDLE);
         info->backward_reference = ref;
-        }
         /* fall-through */
     case AV_PICTURE_TYPE_P:
-        if (s->last_picture_ptr) {
-        ref = ff_vdpau_get_surface_id(&s->last_picture.f);
+        ref = ff_vdpau_get_surface_id(&s->last_picture);
         assert(ref != VDP_INVALID_HANDLE);
         info->forward_reference  = ref;
-        }
     }
 
     info->slice_count       = 0;
@@ -93,7 +89,7 @@ static int vdpau_vc1_start_frame(AVCodecContext *avctx,
     info->deblockEnable     = v->postprocflag & 1;
     info->pquant            = v->pq;
 
-    return ff_vdpau_common_start_frame(pic, buffer, size);
+    return ff_vdpau_common_start_frame(pic_ctx, buffer, size);
 }
 
 static int vdpau_vc1_decode_slice(AVCodecContext *avctx,
@@ -105,7 +101,7 @@ static int vdpau_vc1_decode_slice(AVCodecContext *avctx,
     struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
     int val;
 
-    val = ff_vdpau_add_buffer(pic, buffer, size);
+    val = ff_vdpau_add_buffer(pic_ctx, buffer, size);
     if (val < 0)
         return val;
 
