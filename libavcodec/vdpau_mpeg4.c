@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -77,8 +77,8 @@ static int vdpau_mpeg4_start_frame(AVCodecContext *avctx,
         info->non_intra_quantizer_matrix[i] = s->inter_matrix[i];
     }
 
-    ff_vdpau_common_start_frame(pic_ctx, buffer, size);
-    return ff_vdpau_add_buffer(pic_ctx, buffer, size);
+    ff_vdpau_common_start_frame(pic, buffer, size);
+    return ff_vdpau_add_buffer(pic, buffer, size);
 }
 
 static int vdpau_mpeg4_decode_slice(av_unused AVCodecContext *avctx,
