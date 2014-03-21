@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,8 +22,6 @@
  * @file
  * Common functions for Microsoft Screen 1 and 2
  */
-
-#include <inttypes.h>
 
 #include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
@@ -450,7 +448,7 @@ static int decode_pivot(SliceContext *sc, ArithCoder *acoder, int base)
         val = acoder->get_number(acoder, (base + 1) / 2 - 2) + 3;
     }
 
-    if (val >= base)
+    if ((unsigned)val >= base)
         return -1;
 
     return inv ? base - val : val;
@@ -575,7 +573,7 @@ av_cold int ff_mss12_decode_init(MSS12Context *c, int version,
 
     if (AV_RB32(avctx->extradata) < avctx->extradata_size) {
         av_log(avctx, AV_LOG_ERROR,
-               "Insufficient extradata size: expected %"PRIu32" got %d\n",
+               "Insufficient extradata size: expected %d got %d\n",
                AV_RB32(avctx->extradata),
                avctx->extradata_size);
         return AVERROR_INVALIDDATA;
@@ -588,8 +586,13 @@ av_cold int ff_mss12_decode_init(MSS12Context *c, int version,
                avctx->coded_width, avctx->coded_height);
         return AVERROR_INVALIDDATA;
     }
+    if (avctx->coded_width < 1 || avctx->coded_height < 1) {
+        av_log(avctx, AV_LOG_ERROR, "Frame dimensions %dx%d too small",
+               avctx->coded_width, avctx->coded_height);
+        return AVERROR_INVALIDDATA;
+    }
 
-    av_log(avctx, AV_LOG_DEBUG, "Encoder version %"PRIu32".%"PRIu32"\n",
+    av_log(avctx, AV_LOG_DEBUG, "Encoder version %d.%d\n",
            AV_RB32(avctx->extradata + 4), AV_RB32(avctx->extradata + 8));
     if (version != AV_RB32(avctx->extradata + 4) > 1) {
         av_log(avctx, AV_LOG_ERROR,
@@ -606,13 +609,13 @@ av_cold int ff_mss12_decode_init(MSS12Context *c, int version,
     }
     av_log(avctx, AV_LOG_DEBUG, "%d free colour(s)\n", c->free_colours);
 
-    av_log(avctx, AV_LOG_DEBUG, "Display dimensions %"PRIu32"x%"PRIu32"\n",
+    av_log(avctx, AV_LOG_DEBUG, "Display dimensions %dx%d\n",
            AV_RB32(avctx->extradata + 12), AV_RB32(avctx->extradata + 16));
     av_log(avctx, AV_LOG_DEBUG, "Coded dimensions %dx%d\n",
            avctx->coded_width, avctx->coded_height);
     av_log(avctx, AV_LOG_DEBUG, "%g frames per second\n",
            av_int2float(AV_RB32(avctx->extradata + 28)));
-    av_log(avctx, AV_LOG_DEBUG, "Bitrate %"PRIu32" bps\n",
+    av_log(avctx, AV_LOG_DEBUG, "Bitrate %d bps\n",
            AV_RB32(avctx->extradata + 32));
     av_log(avctx, AV_LOG_DEBUG, "Max. lead time %g ms\n",
            av_int2float(AV_RB32(avctx->extradata + 36)));
@@ -647,7 +650,7 @@ av_cold int ff_mss12_decode_init(MSS12Context *c, int version,
     }
 
     for (i = 0; i < 256; i++)
-        c->pal[i] = AV_RB24(avctx->extradata + 52 +
+        c->pal[i] = 0xFFU << 24 | AV_RB24(avctx->extradata + 52 +
                             (version ? 8 : 0) + i * 3);
 
     c->mask_stride = FFALIGN(avctx->width, 16);

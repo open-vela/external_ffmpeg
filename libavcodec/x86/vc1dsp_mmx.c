@@ -25,13 +25,12 @@
  */
 
 #include "libavutil/cpu.h"
-#include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/vc1dsp.h"
 #include "constants.h"
-#include "fpel.h"
+#include "dsputil_x86.h"
 #include "vc1dsp.h"
 
 #if HAVE_INLINE_ASM
@@ -111,6 +110,7 @@ static void vc1_put_ver_16b_shift2_mmx(int16_t *dst,
         : "+r"(src), "+r"(dst)
         : "r"(stride), "r"(-2*stride),
           "m"(shift), "m"(rnd), "r"(9*stride-4)
+          NAMED_CONSTRAINTS_ADD(ff_pw_9)
         : "%"REG_c, "memory"
     );
 }
@@ -155,6 +155,7 @@ static void OPNAME ## vc1_hor_16b_shift2_mmx(uint8_t *dst, x86_reg stride,\
         "jnz 1b                            \n\t"\
         : "+r"(h), "+r" (src),  "+r" (dst)\
         : "r"(stride), "m"(rnd)\
+          NAMED_CONSTRAINTS_ADD(ff_pw_128,ff_pw_9)\
         : "memory"\
     );\
 }
@@ -213,6 +214,7 @@ static void OPNAME ## vc1_shift2_mmx(uint8_t *dst, const uint8_t *src,\
         : "+r"(src),  "+r"(dst)\
         : "r"(offset), "r"(-2*offset), "g"(stride), "m"(rnd),\
           "g"(stride-offset)\
+          NAMED_CONSTRAINTS_ADD(ff_pw_9)\
         : "%"REG_c, "memory"\
     );\
 }
@@ -315,6 +317,7 @@ vc1_put_ver_16b_ ## NAME ## _mmx(int16_t *dst, const uint8_t *src,      \
         : "+r"(h), "+r" (src),  "+r" (dst)                              \
         : "r"(src_stride), "r"(3*src_stride),                           \
           "m"(rnd), "m"(shift)                                          \
+          NAMED_CONSTRAINTS_ADD(ff_pw_3,ff_pw_53,ff_pw_18)              \
         : "memory"                                                      \
     );                                                                  \
 }
@@ -352,6 +355,7 @@ OPNAME ## vc1_hor_16b_ ## NAME ## _mmx(uint8_t *dst, x86_reg stride,    \
         "jnz 1b                    \n\t"                                \
         : "+r"(h), "+r" (src),  "+r" (dst)                              \
         : "r"(stride), "m"(rnd)                                         \
+          NAMED_CONSTRAINTS_ADD(ff_pw_3,ff_pw_18,ff_pw_53,ff_pw_128)    \
         : "memory"                                                      \
     );                                                                  \
 }
@@ -387,6 +391,7 @@ OPNAME ## vc1_## NAME ## _mmx(uint8_t *dst, const uint8_t *src,         \
         "jnz 1b                    \n\t"                                \
         : "+r"(h), "+r" (src),  "+r" (dst)                              \
         : "r"(offset), "r"(3*offset), "g"(stride), "m"(rnd)             \
+          NAMED_CONSTRAINTS_ADD(ff_pw_53,ff_pw_18,ff_pw_3)              \
         : "memory"                                                      \
     );                                                                  \
 }
