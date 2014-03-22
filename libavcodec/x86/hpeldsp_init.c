@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
  * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
@@ -28,7 +28,9 @@
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/hpeldsp.h"
-#include "dsputil_x86.h"
+#include "libavcodec/pixels.h"
+#include "fpel.h"
+#include "hpeldsp.h"
 
 void ff_put_pixels8_x2_mmxext(uint8_t *block, const uint8_t *pixels,
                               ptrdiff_t line_size, int h);
@@ -109,11 +111,11 @@ void ff_avg_pixels8_xy2_3dnow(uint8_t *block, const uint8_t *pixels,
 #undef PAVGB
 #undef STATIC
 
-PIXELS16(static, avg_no_rnd, , _y2, _mmx)
-PIXELS16(static, put_no_rnd, , _y2, _mmx)
+CALL_2X_PIXELS(avg_no_rnd_pixels16_y2_mmx, avg_no_rnd_pixels8_y2_mmx, 8)
+CALL_2X_PIXELS(put_no_rnd_pixels16_y2_mmx, put_no_rnd_pixels8_y2_mmx, 8)
 
-PIXELS16(static, avg_no_rnd, , _xy2, _mmx)
-PIXELS16(static, put_no_rnd, , _xy2, _mmx)
+CALL_2X_PIXELS(avg_no_rnd_pixels16_xy2_mmx, avg_no_rnd_pixels8_xy2_mmx, 8)
+CALL_2X_PIXELS(put_no_rnd_pixels16_xy2_mmx, put_no_rnd_pixels8_xy2_mmx, 8)
 
 /***********************************/
 /* MMX rounding */
@@ -130,22 +132,22 @@ PIXELS16(static, put_no_rnd, , _xy2, _mmx)
 #undef PAVGBP
 #undef PAVGB
 
-PIXELS16(static, avg, , _y2, _mmx)
-PIXELS16(static, put, , _y2, _mmx)
+CALL_2X_PIXELS(avg_pixels16_y2_mmx, avg_pixels8_y2_mmx, 8)
+CALL_2X_PIXELS(put_pixels16_y2_mmx, put_pixels8_y2_mmx, 8)
 
 #endif /* HAVE_INLINE_ASM */
 
 
 #if HAVE_YASM
 
-#define HPELDSP_AVG_PIXELS16(CPUEXT)                \
-    PIXELS16(static, put_no_rnd, ff_,  _x2, CPUEXT) \
-    PIXELS16(static, put,        ff_,  _y2, CPUEXT) \
-    PIXELS16(static, put_no_rnd, ff_,  _y2, CPUEXT) \
-    PIXELS16(static, avg,        ff_,     , CPUEXT) \
-    PIXELS16(static, avg,        ff_,  _x2, CPUEXT) \
-    PIXELS16(static, avg,        ff_,  _y2, CPUEXT) \
-    PIXELS16(static, avg,        ff_, _xy2, CPUEXT)
+#define HPELDSP_AVG_PIXELS16(CPUEXT)                      \
+    CALL_2X_PIXELS(put_no_rnd_pixels16_x2 ## CPUEXT, ff_put_no_rnd_pixels8_x2 ## CPUEXT, 8) \
+    CALL_2X_PIXELS(put_pixels16_y2        ## CPUEXT, ff_put_pixels8_y2        ## CPUEXT, 8) \
+    CALL_2X_PIXELS(put_no_rnd_pixels16_y2 ## CPUEXT, ff_put_no_rnd_pixels8_y2 ## CPUEXT, 8) \
+    CALL_2X_PIXELS(avg_pixels16           ## CPUEXT, ff_avg_pixels8           ## CPUEXT, 8) \
+    CALL_2X_PIXELS(avg_pixels16_x2        ## CPUEXT, ff_avg_pixels8_x2        ## CPUEXT, 8) \
+    CALL_2X_PIXELS(avg_pixels16_y2        ## CPUEXT, ff_avg_pixels8_y2        ## CPUEXT, 8) \
+    CALL_2X_PIXELS(avg_pixels16_xy2       ## CPUEXT, ff_avg_pixels8_xy2       ## CPUEXT, 8)
 
 HPELDSP_AVG_PIXELS16(_3dnow)
 HPELDSP_AVG_PIXELS16(_mmxext)

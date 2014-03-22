@@ -2,20 +2,20 @@
  * TechSmith Screen Codec 2 (aka Dora) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,8 @@
  * @file
  * TechSmith Screen Codec 2 decoder
  */
+
+#include <inttypes.h>
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
@@ -192,8 +194,7 @@ static int tscc2_decode_slice(TSCC2Context *c, int mb_y,
     int i, mb_x, q, ret;
     int off;
 
-    if ((ret = init_get_bits8(&c->gb, buf, buf_size)) < 0)
-        return ret;
+    init_get_bits(&c->gb, buf, buf_size * 8);
 
     for (mb_x = 0; mb_x < c->mb_width; mb_x++) {
         q = c->slice_quants[mb_x + c->mb_width * mb_y];
@@ -227,11 +228,13 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
     bytestream2_init(&gb, buf, buf_size);
     frame_type = bytestream2_get_byte(&gb);
     if (frame_type > 1) {
-        av_log(avctx, AV_LOG_ERROR, "Incorrect frame type %d\n", frame_type);
+        av_log(avctx, AV_LOG_ERROR, "Incorrect frame type %"PRIu32"\n",
+               frame_type);
         return AVERROR_INVALIDDATA;
     }
 
     if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
     }
 
@@ -309,7 +312,7 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
             }
         }
         if (bytestream2_get_bytes_left(&gb) < size) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid slice size (%d/%d)\n",
+            av_log(avctx, AV_LOG_ERROR, "Invalid slice size (%"PRIu32"/%u)\n",
                    size, bytestream2_get_bytes_left(&gb));
             return AVERROR_INVALIDDATA;
         }

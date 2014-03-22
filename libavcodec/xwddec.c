@@ -3,22 +3,24 @@
  *
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include <inttypes.h>
 
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
@@ -75,9 +77,11 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     ncolors       = bytestream2_get_be32u(&gb);
     bytestream2_skipu(&gb, header_size - (XWD_HEADER_SIZE - 20));
 
-    av_log(avctx, AV_LOG_DEBUG, "pixformat %d, pixdepth %d, bunit %d, bitorder %d, bpad %d\n",
+    av_log(avctx, AV_LOG_DEBUG,
+           "pixformat %"PRIu32", pixdepth %"PRIu32", bunit %"PRIu32", bitorder %"PRIu32", bpad %"PRIu32"\n",
            pixformat, pixdepth, bunit, bitorder, bpad);
-    av_log(avctx, AV_LOG_DEBUG, "vclass %d, ncolors %d, bpp %d, be %d, lsize %d, xoffset %d\n",
+    av_log(avctx, AV_LOG_DEBUG,
+           "vclass %"PRIu32", ncolors %"PRIu32", bpp %"PRIu32", be %"PRIu32", lsize %"PRIu32", xoffset %"PRIu32"\n",
            vclass, ncolors, bpp, be, lsize, xoffset);
     av_log(avctx, AV_LOG_DEBUG, "red %0x, green %0x, blue %0x\n", rgb[0], rgb[1], rgb[2]);
 
@@ -92,7 +96,7 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (xoffset) {
-        avpriv_request_sample(avctx, "xoffset %d", xoffset);
+        avpriv_request_sample(avctx, "xoffset %"PRIu32"", xoffset);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -141,7 +145,7 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (pixformat != XWD_Z_PIXMAP) {
-        avpriv_report_missing_feature(avctx, "Pixmap format %d", pixformat);
+        av_log(avctx, AV_LOG_ERROR, "pixmap format %"PRIu32" unsupported\n", pixformat);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -149,13 +153,10 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     switch (vclass) {
     case XWD_STATIC_GRAY:
     case XWD_GRAY_SCALE:
-        if (bpp != 1 && bpp != 8)
+        if (bpp != 1)
             return AVERROR_INVALIDDATA;
-        if (pixdepth == 1) {
+        if (pixdepth == 1)
             avctx->pix_fmt = AV_PIX_FMT_MONOWHITE;
-        } else if (pixdepth == 8) {
-            avctx->pix_fmt = AV_PIX_FMT_GRAY8;
-        }
         break;
     case XWD_STATIC_COLOR:
     case XWD_PSEUDO_COLOR:
@@ -196,13 +197,15 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
 
     if (avctx->pix_fmt == AV_PIX_FMT_NONE) {
         avpriv_request_sample(avctx,
-                              "Unknown file: bpp %d, pixdepth %d, vclass %d",
+                              "Unknown file: bpp %"PRIu32", pixdepth %"PRIu32", vclass %"PRIu32"",
                               bpp, pixdepth, vclass);
         return AVERROR_PATCHWELCOME;
     }
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     p->key_frame = 1;
     p->pict_type = AV_PICTURE_TYPE_I;

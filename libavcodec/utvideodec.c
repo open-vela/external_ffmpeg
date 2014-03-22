@@ -2,20 +2,20 @@
  * Ut Video decoder
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,7 @@
  * Ut Video decoder
  */
 
+#include <inttypes.h>
 #include <stdlib.h>
 
 #include "libavutil/intreadwrite.h"
@@ -70,7 +71,7 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
         code += 0x80000000u >> (he[i].len - 1);
     }
 
-    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 10), last + 1,
+    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 9), last + 1,
                               bits,  sizeof(*bits),  sizeof(*bits),
                               codes, sizeof(*codes), sizeof(*codes),
                               syms,  sizeof(*syms),  sizeof(*syms), 0);
@@ -333,8 +334,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     GetByteContext gb;
     ThreadFrame frame = { .f = data };
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
+
+    ff_thread_finish_setup(avctx);
 
     /* parse plane structure to get frame flags and validate slice offsets */
     bytestream2_init(&gb, buf, buf_size);
@@ -367,7 +372,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_INVALIDDATA;
     }
     c->frame_info = bytestream2_get_le32u(&gb);
-    av_log(avctx, AV_LOG_DEBUG, "frame information flags %X\n", c->frame_info);
+    av_log(avctx, AV_LOG_DEBUG, "frame information flags %"PRIX32"\n",
+           c->frame_info);
 
     c->frame_pred = (c->frame_info >> 8) & 3;
 
@@ -488,7 +494,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     if (c->frame_info_size != 4)
         avpriv_request_sample(avctx, "Frame info not 4 bytes");
-    av_log(avctx, AV_LOG_DEBUG, "Encoding parameters %08X\n", c->flags);
+    av_log(avctx, AV_LOG_DEBUG, "Encoding parameters %08"PRIX32"\n", c->flags);
     c->slices      = (c->flags >> 24) + 1;
     c->compression = c->flags & 1;
     c->interlaced  = c->flags & 0x800;
