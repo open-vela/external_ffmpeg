@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,13 +31,20 @@
 #define AVCODEC_DSPUTIL_H
 
 #include "avcodec.h"
+#include "rnd_avg.h"
 
 /* encoding scans */
 extern const uint8_t ff_alternate_horizontal_scan[64];
 extern const uint8_t ff_alternate_vertical_scan[64];
+extern const uint8_t ff_zigzag_direct[64];
 extern const uint8_t ff_zigzag248_direct[64];
 
+/* pixel operations */
+#define MAX_NEG_CROP 1024
+
+/* temporary */
 extern uint32_t ff_square_tab[512];
+extern const uint8_t ff_crop_tab[256 + 2 * MAX_NEG_CROP];
 
 void ff_put_pixels8x8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
 void ff_avg_pixels8x8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
@@ -57,7 +64,7 @@ void ff_gmc_c(uint8_t *dst, uint8_t *src, int stride, int h, int ox, int oy,
 /* minimum alignment rules ;)
  * If you notice errors in the align stuff, need more alignment for some ASM code
  * for some CPU or need to use a function with less aligned data then send a mail
- * to the libav-devel mailing list, ...
+ * to the ffmpeg-devel mailing list, ...
  *
  * !warning These alignments might not match reality, (missing attribute((align))
  * stuff somewhere possible).
@@ -71,6 +78,9 @@ void ff_gmc_c(uint8_t *dst, uint8_t *src, int stride, int h, int ox, int oy,
  * Block sizes for op_pixels_func are 8x4,8x8 16x8 16x16.
  * h for op_pixels_func is limited to { width / 2, width },
  * but never larger than 16 and never smaller than 4. */
+typedef void (*tpel_mc_func)(uint8_t *block /* align width (8 or 16) */,
+                             const uint8_t *pixels /* align 1 */,
+                             int line_size, int w, int h);
 typedef void (*qpel_mc_func)(uint8_t *dst /* align width (8 or 16) */,
                              uint8_t *src /* align 1 */, ptrdiff_t stride);
 
@@ -172,6 +182,8 @@ typedef struct DSPContext {
     me_cmp_func vsad[6];
     me_cmp_func vsse[6];
     me_cmp_func nsse[6];
+    me_cmp_func w53[6];
+    me_cmp_func w97[6];
     me_cmp_func dct_max[6];
     me_cmp_func dct264_sad[6];
 
@@ -185,6 +197,19 @@ typedef struct DSPContext {
     int (*ssd_int8_vs_int16)(const int8_t *pix1, const int16_t *pix2,
                              int size);
 
+    /**
+     * Thirdpel motion compensation with rounding (a + b + 1) >> 1.
+     * this is an array[12] of motion compensation functions for the
+     * 9 thirdpel positions<br>
+     * *pixels_tab[xthirdpel + 4 * ythirdpel]
+     * @param block destination where the result is stored
+     * @param pixels source
+     * @param line_size number of bytes in a horizontal line of block
+     * @param h height
+     */
+    tpel_mc_func put_tpel_pixels_tab[11]; // FIXME individual func ptr per width?
+    tpel_mc_func avg_tpel_pixels_tab[11]; // FIXME individual func ptr per width?
+
     qpel_mc_func put_qpel_pixels_tab[2][16];
     qpel_mc_func avg_qpel_pixels_tab[2][16];
     qpel_mc_func put_no_rnd_qpel_pixels_tab[2][16];
@@ -197,8 +222,8 @@ typedef struct DSPContext {
                       uint8_t *src /* align 16 */,
                       int w);
     void (*diff_bytes)(uint8_t *dst /* align 16 */,
-                       uint8_t *src1 /* align 16 */,
-                       uint8_t *src2 /* align 1 */,
+                       const uint8_t *src1 /* align 16 */,
+                       const uint8_t *src2 /* align 1 */,
                        int w);
     /**
      * Subtract HuffYUV's variant of median prediction.
@@ -215,6 +240,7 @@ typedef struct DSPContext {
     void (*add_hfyu_left_prediction_bgr32)(uint8_t *dst, const uint8_t *src,
                                            int w, int *red, int *green,
                                            int *blue, int *alpha);
+    /* this might write to dst[w] */
     void (*bswap_buf)(uint32_t *dst, const uint32_t *src, int w);
     void (*bswap16_buf)(uint16_t *dst, const uint16_t *src, int len);
 
@@ -322,9 +348,14 @@ typedef struct DSPContext {
 
 void ff_dsputil_static_init(void);
 void ff_dsputil_init(DSPContext *p, AVCodecContext *avctx);
+void avpriv_dsputil_init(DSPContext* p, AVCodecContext *avctx);
+attribute_deprecated void dsputil_init(DSPContext* c, AVCodecContext *avctx);
+
+int ff_check_alignment(void);
 
 void ff_set_cmp(DSPContext *c, me_cmp_func *cmp, int type);
 
+void ff_dsputil_init_alpha(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_arm(DSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_dsputil_init_bfin(DSPContext *c, AVCodecContext *avctx,
@@ -333,5 +364,7 @@ void ff_dsputil_init_ppc(DSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_dsputil_init_x86(DSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
+
+void ff_dsputil_init_dwt(DSPContext *c);
 
 #endif /* AVCODEC_DSPUTIL_H */

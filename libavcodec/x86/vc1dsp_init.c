@@ -28,7 +28,7 @@
 #include "libavutil/cpu.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/vc1dsp.h"
-#include "fpel.h"
+#include "dsputil_x86.h"
 #include "vc1dsp.h"
 #include "config.h"
 
