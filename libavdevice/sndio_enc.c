@@ -2,28 +2,27 @@
  * sndio play and grab interface
  * Copyright (c) 2010 Jacob Meuser
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdint.h>
 #include <sndio.h>
 
-#include "libavformat/avformat.h"
-
+#include "avdevice.h"
 #include "sndio_common.h"
 
 static av_cold int audio_write_header(AVFormatContext *s1)
@@ -77,6 +76,13 @@ static int audio_write_trailer(AVFormatContext *s1)
     return 0;
 }
 
+static const AVClass sndio_muxer_class = {
+    .class_name     = "sndio outdev",
+    .item_name      = av_default_item_name,
+    .version        = LIBAVUTIL_VERSION_INT,
+    .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+};
+
 AVOutputFormat ff_sndio_muxer = {
     .name           = "sndio",
     .long_name      = NULL_IF_CONFIG_SMALL("sndio audio playback"),
@@ -90,4 +96,5 @@ AVOutputFormat ff_sndio_muxer = {
     .write_packet   = audio_write_packet,
     .write_trailer  = audio_write_trailer,
     .flags          = AVFMT_NOFILE,
+    .priv_class     = &sndio_muxer_class,
 };
