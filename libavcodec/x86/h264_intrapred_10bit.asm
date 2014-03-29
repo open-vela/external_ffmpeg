@@ -5,20 +5,20 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -82,10 +82,8 @@ INIT_XMM sse2
 PRED4x4_DR
 INIT_XMM ssse3
 PRED4x4_DR
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_DR
-%endif
 
 ;------------------------------------------------------------------------------
 ; void ff_pred4x4_vertical_right(pixel *src, const pixel *topright, int stride)
@@ -121,10 +119,8 @@ INIT_XMM sse2
 PRED4x4_VR
 INIT_XMM ssse3
 PRED4x4_VR
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_VR
-%endif
 
 ;-------------------------------------------------------------------------------
 ; void ff_pred4x4_horizontal_down(pixel *src, const pixel *topright, int stride)
@@ -163,10 +159,8 @@ INIT_XMM sse2
 PRED4x4_HD
 INIT_XMM ssse3
 PRED4x4_HD
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_HD
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred4x4_dc(pixel *src, const pixel *topright, int stride)
@@ -234,10 +228,8 @@ cglobal pred4x4_down_left_10, 3, 3
 
 INIT_XMM sse2
 PRED4x4_DL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_DL
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred4x4_vertical_left(pixel *src, const pixel *topright, int stride)
@@ -263,10 +255,8 @@ cglobal pred4x4_vertical_left_10, 3, 3
 
 INIT_XMM sse2
 PRED4x4_VL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED4x4_VL
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred4x4_horizontal_up(pixel *src, const pixel *topright, int stride)
@@ -575,10 +565,8 @@ cglobal pred8x8l_top_dc_10, 4, 4, 6
 
 INIT_XMM sse2
 PRED8x8L_TOP_DC
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_TOP_DC
-%endif
 
 ;-------------------------------------------------------------------------------
 ; void ff_pred8x8l_dc(pixel *src, int has_topleft, int has_topright, int stride)
@@ -634,10 +622,8 @@ cglobal pred8x8l_dc_10, 4, 6, 6
 
 INIT_XMM sse2
 PRED8x8L_DC
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_DC
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred8x8l_vertical(pixel *src, int has_topleft, int has_topright,
@@ -670,10 +656,8 @@ cglobal pred8x8l_vertical_10, 4, 4, 6
 
 INIT_XMM sse2
 PRED8x8L_VERTICAL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_VERTICAL
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred8x8l_horizontal(uint8_t *src, int has_topleft, int has_topright,
@@ -727,10 +711,8 @@ INIT_XMM sse2
 PRED8x8L_HORIZONTAL
 INIT_XMM ssse3
 PRED8x8L_HORIZONTAL
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_HORIZONTAL
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred8x8l_down_left(pixel *src, int has_topleft, int has_topright,
@@ -796,10 +778,8 @@ INIT_XMM sse2
 PRED8x8L_DOWN_LEFT
 INIT_XMM ssse3
 PRED8x8L_DOWN_LEFT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_DOWN_LEFT
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred8x8l_down_right(pixel *src, int has_topleft, int has_topright,
@@ -871,10 +851,8 @@ INIT_XMM sse2
 PRED8x8L_DOWN_RIGHT
 INIT_XMM ssse3
 PRED8x8L_DOWN_RIGHT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_DOWN_RIGHT
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred8x8l_vertical_right(pixel *src, int has_topleft,
@@ -942,10 +920,8 @@ INIT_XMM sse2
 PRED8x8L_VERTICAL_RIGHT
 INIT_XMM ssse3
 PRED8x8L_VERTICAL_RIGHT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_VERTICAL_RIGHT
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred8x8l_horizontal_up(pixel *src, int has_topleft,
@@ -1004,10 +980,8 @@ INIT_XMM sse2
 PRED8x8L_HORIZONTAL_UP
 INIT_XMM ssse3
 PRED8x8L_HORIZONTAL_UP
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 PRED8x8L_HORIZONTAL_UP
-%endif
 
 
 ;-----------------------------------------------------------------------------
