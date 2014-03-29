@@ -2,20 +2,20 @@
  * Copyright (C) 2010 David Conrad
  * Copyright (C) 2010 Ronald S. Bultje
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,8 +30,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef void (*vp8_mc_func)(uint8_t *dst /* align 8 */, ptrdiff_t dstStride,
-                            uint8_t *src /* align 1 */, ptrdiff_t srcStride,
+typedef void (*vp8_mc_func)(uint8_t *dst/*align 8*/, ptrdiff_t dstStride,
+                            uint8_t *src/*align 1*/, ptrdiff_t srcStride,
                             int h, int x, int y);
 
 typedef struct VP8DSPContext {
@@ -88,9 +88,9 @@ void ff_put_vp8_pixels8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride,
 void ff_put_vp8_pixels4_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride,
                           int h, int x, int y);
 
-void ff_vp8dsp_init(VP8DSPContext *c);
-void ff_vp8dsp_init_x86(VP8DSPContext *c);
-void ff_vp8dsp_init_arm(VP8DSPContext *c);
+void ff_vp8dsp_init(VP8DSPContext *c, int vp7);
+void ff_vp8dsp_init_x86(VP8DSPContext *c, int vp7);
+void ff_vp8dsp_init_arm(VP8DSPContext *c, int vp7);
 void ff_vp8dsp_init_ppc(VP8DSPContext *c);
 
 #endif /* AVCODEC_VP8DSP_H */
