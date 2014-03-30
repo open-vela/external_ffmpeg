@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,8 @@ typedef struct libx265Context {
 
     x265_encoder *encoder;
     x265_param   *params;
+    uint8_t      *header;
+    int           header_size;
 
     char *preset;
     char *tune;
@@ -64,6 +66,7 @@ static av_cold int libx265_encode_close(AVCodecContext *avctx)
     libx265Context *ctx = avctx->priv_data;
 
     av_frame_free(&avctx->coded_frame);
+    av_freep(&ctx->header);
 
     x265_param_free(ctx->params);
 
@@ -79,6 +82,8 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     x265_nal *nal;
     int sar_num, sar_den;
     int nnal;
+    int ret;
+    int i;
 
     if (avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL &&
         !av_pix_fmt_desc_get(avctx->pix_fmt)->log2_chroma_w &&
@@ -142,9 +147,6 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
         ctx->params->rc.rateControlMode = X265_RC_ABR;
     }
 
-    if (!(avctx->flags & CODEC_FLAG_GLOBAL_HEADER))
-        ctx->params->bRepeatHeaders = 1;
-
     if (ctx->x265_opts) {
         AVDictionary *dict    = NULL;
         AVDictionaryEntry *en = NULL;
@@ -177,23 +179,32 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
     }
 
+    ret = x265_encoder_headers(ctx->encoder, &nal, &nnal);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Cannot encode headers.\n");
+        libx265_encode_close(avctx);
+        return AVERROR_INVALIDDATA;
+    }
+
+    for (i = 0; i < nnal; i++)
+        ctx->header_size += nal[i].sizeBytes;
+
+    ctx->header = av_malloc(ctx->header_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!ctx->header) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Cannot allocate HEVC header of size %d.\n", ctx->header_size);
+        libx265_encode_close(avctx);
+        return AVERROR(ENOMEM);
+    }
+
+    memcpy(ctx->header, nal[0].payload, ctx->header_size);
+
     if (avctx->flags & CODEC_FLAG_GLOBAL_HEADER) {
-        avctx->extradata_size = x265_encoder_headers(ctx->encoder, &nal, &nnal);
-        if (avctx->extradata_size <= 0) {
-            av_log(avctx, AV_LOG_ERROR, "Cannot encode headers.\n");
-            libx265_encode_close(avctx);
-            return AVERROR_INVALIDDATA;
-        }
+        avctx->extradata_size = ctx->header_size;
+        avctx->extradata      = ctx->header;
 
-        avctx->extradata = av_malloc(avctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
-        if (!avctx->extradata) {
-            av_log(avctx, AV_LOG_ERROR,
-                   "Cannot allocate HEVC header of size %d.\n", avctx->extradata_size);
-            libx265_encode_close(avctx);
-            return AVERROR(ENOMEM);
-        }
-
-        memcpy(avctx->extradata, nal[0].payload, avctx->extradata_size);
+        ctx->header_size = 0;
+        ctx->header      = NULL;
     }
 
     return 0;
@@ -227,7 +238,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = x265_encoder_encode(ctx->encoder, &nal, &nnal,
                               pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
 
     if (!nnal)
         return 0;
@@ -235,12 +246,22 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     for (i = 0; i < nnal; i++)
         payload += nal[i].sizeBytes;
 
+    payload += ctx->header_size;
+
     ret = ff_alloc_packet(pkt, payload);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
     }
     dst = pkt->data;
+
+    if (ctx->header) {
+        memcpy(dst, ctx->header, ctx->header_size);
+        dst += ctx->header_size;
+
+        av_freep(&ctx->header);
+        ctx->header_size = 0;
+    }
 
     for (i = 0; i < nnal; i++) {
         memcpy(dst, nal[i].payload, nal[i].sizeBytes);
