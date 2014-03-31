@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Anssi Hannula
  * Copyright (c) 2010 Carl Eugen Hoyos
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -94,7 +94,7 @@ static const AVOption options[] = {
 { NULL },
 };
 
-static const AVClass spdif_class = {
+static const AVClass class = {
     .class_name     = "spdif",
     .item_name      = av_default_item_name,
     .option         = options,
@@ -397,15 +397,15 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
 {
     IEC61937Context *ctx = s->priv_data;
     int mat_code_length = 0;
-    static const char mat_end_code[16] = { 0xC3, 0xC2, 0xC0, 0xC4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x11 };
+    const char mat_end_code[16] = { 0xC3, 0xC2, 0xC0, 0xC4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x11 };
 
     if (!ctx->hd_buf_count) {
-        static const char mat_start_code[20] = { 0x07, 0x9E, 0x00, 0x03, 0x84, 0x01, 0x01, 0x01, 0x80, 0x00, 0x56, 0xA5, 0x3B, 0xF4, 0x81, 0x83, 0x49, 0x80, 0x77, 0xE0 };
+        const char mat_start_code[20] = { 0x07, 0x9E, 0x00, 0x03, 0x84, 0x01, 0x01, 0x01, 0x80, 0x00, 0x56, 0xA5, 0x3B, 0xF4, 0x81, 0x83, 0x49, 0x80, 0x77, 0xE0 };
         mat_code_length = sizeof(mat_start_code) + BURST_HEADER_SIZE;
         memcpy(ctx->hd_buf, mat_start_code, sizeof(mat_start_code));
 
     } else if (ctx->hd_buf_count == 12) {
-        static const char mat_middle_code[12] = { 0xC3, 0xC1, 0x42, 0x49, 0x3B, 0xFA, 0x82, 0x83, 0x49, 0x80, 0x77, 0xE0 };
+        const char mat_middle_code[12] = { 0xC3, 0xC1, 0x42, 0x49, 0x3B, 0xFA, 0x82, 0x83, 0x49, 0x80, 0x77, 0xE0 };
         mat_code_length = sizeof(mat_middle_code) + MAT_MIDDLE_CODE_OFFSET;
         memcpy(&ctx->hd_buf[12 * TRUEHD_FRAME_OFFSET - BURST_HEADER_SIZE + MAT_MIDDLE_CODE_OFFSET],
                mat_middle_code, sizeof(mat_middle_code));
@@ -522,13 +522,13 @@ static int spdif_write_packet(struct AVFormatContext *s, AVPacket *pkt)
     }
 
     if (ctx->extra_bswap ^ (ctx->spdif_flags & SPDIF_FLAG_BIGENDIAN)) {
-        avio_write(s->pb, ctx->out_buf, ctx->out_bytes & ~1);
+    avio_write(s->pb, ctx->out_buf, ctx->out_bytes & ~1);
     } else {
-        av_fast_malloc(&ctx->buffer, &ctx->buffer_size, ctx->out_bytes + FF_INPUT_BUFFER_PADDING_SIZE);
-        if (!ctx->buffer)
-            return AVERROR(ENOMEM);
-        ff_spdif_bswap_buf16((uint16_t *)ctx->buffer, (uint16_t *)ctx->out_buf, ctx->out_bytes >> 1);
-        avio_write(s->pb, ctx->buffer, ctx->out_bytes & ~1);
+    av_fast_malloc(&ctx->buffer, &ctx->buffer_size, ctx->out_bytes + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!ctx->buffer)
+        return AVERROR(ENOMEM);
+    ff_spdif_bswap_buf16((uint16_t *)ctx->buffer, (uint16_t *)ctx->out_buf, ctx->out_bytes >> 1);
+    avio_write(s->pb, ctx->buffer, ctx->out_bytes & ~1);
     }
 
     /* a final lone byte has to be MSB aligned */
@@ -554,5 +554,5 @@ AVOutputFormat ff_spdif_muxer = {
     .write_packet      = spdif_write_packet,
     .write_trailer     = spdif_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
-    .priv_class        = &spdif_class,
+    .priv_class        = &class,
 };
