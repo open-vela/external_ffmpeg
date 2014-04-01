@@ -1,20 +1,20 @@
 /*
  * MMX/SSE constants used across x86 dsp optimizations.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@ extern const xmm_reg  ff_pw_3;
 extern const xmm_reg  ff_pw_4;
 extern const xmm_reg  ff_pw_5;
 extern const xmm_reg  ff_pw_8;
-extern const xmm_reg  ff_pw_9;
 extern const uint64_t ff_pw_15;
 extern const xmm_reg  ff_pw_16;
 extern const xmm_reg  ff_pw_18;
@@ -46,7 +45,6 @@ extern const uint64_t ff_pw_255;
 
 extern const xmm_reg  ff_pb_1;
 extern const xmm_reg  ff_pb_3;
-extern const xmm_reg  ff_pb_80;
 extern const xmm_reg  ff_pb_F8;
 extern const uint64_t ff_pb_FC;
 

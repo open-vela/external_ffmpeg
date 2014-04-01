@@ -2,20 +2,20 @@
  * Bitmap Brothers JV demuxer
  * Copyright (c) 2005, 2011 Peter Ross <pross@xvid.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,10 +34,10 @@
 #define JV_PREAMBLE_SIZE 5
 
 typedef struct {
-    int audio_size;    /**< audio packet size (bytes) */
-    int video_size;    /**< video packet size (bytes) */
-    int palette_size;  /**< palette size (bytes) */
-    int video_type;    /**< per-frame video compression type */
+    int audio_size;    /** audio packet size (bytes) */
+    int video_size;    /** video packet size (bytes) */
+    int palette_size;  /** palette size (bytes) */
+    int video_type;    /** per-frame video compression type */
 } JVFrame;
 
 typedef struct {
@@ -54,8 +54,8 @@ typedef struct {
 
 static int read_probe(AVProbeData *pd)
 {
-    if (pd->buf[0] == 'J' && pd->buf[1] == 'V' && strlen(MAGIC) <= pd->buf_size - 4 &&
-        !memcmp(pd->buf + 4, MAGIC, strlen(MAGIC)))
+    if (pd->buf[0] == 'J' && pd->buf[1] == 'V' &&
+        !memcmp(pd->buf + 4, MAGIC, FFMIN(strlen(MAGIC), pd->buf_size - 4)))
         return AVPROBE_SCORE_MAX;
     return 0;
 }
@@ -166,7 +166,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     AVIOContext *pb = s->pb;
     AVStream *ast = s->streams[0];
 
-    while (!url_feof(s->pb) && jv->pts < ast->nb_index_entries) {
+    while (!s->pb->eof_reached && jv->pts < ast->nb_index_entries) {
         const AVIndexEntry *e   = ast->index_entries + jv->pts;
         const JVFrame      *jvf = jv->frames + jv->pts;
 
