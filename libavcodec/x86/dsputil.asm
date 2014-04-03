@@ -1,23 +1,21 @@
 ;******************************************************************************
 ;* MMX optimized DSP utils
 ;* Copyright (c) 2008 Loren Merritt
-;* Copyright (c) 2003-2013 Michael Niedermayer
-;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -61,9 +59,6 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
 %endif
     paddd   m2, m0
     movd   eax, m2
-%if mmsize == 8
-    emms
-%endif
     RET
 
 ; int ff_scalarproduct_and_madd_int16(int16_t *v1, int16_t *v2, int16_t *v3,
@@ -473,7 +468,6 @@ cglobal add_hfyu_left_prediction, 3,3,7, dst, src, w, left
 .src_unaligned:
     ADD_HFYU_LEFT_LOOP 0, 0
 
-
 ;-----------------------------------------------------------------------------
 ; void ff_vector_clip_int32(int32_t *dst, const int32_t *src, int32_t min,
 ;                           int32_t max, unsigned int len)
@@ -616,7 +610,6 @@ cglobal bswap32_buf, 3,4,3
 cglobal bswap32_buf, 3,4,5
     mov      r3, r1
 %endif
-    or       r3, r0
     and      r3, 15
     jz       .start_align
     BSWAP_LOOPS  u
