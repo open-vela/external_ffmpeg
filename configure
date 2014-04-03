@@ -4149,6 +4149,7 @@ check_cflags -Wtype-limits
 check_cflags -Wundef
 check_cflags -Wmissing-prototypes
 check_cflags -Wstrict-prototypes
+check_cflags -Wempty-body
 enabled extra_warnings && check_cflags -Winline
 
 check_disable_warning(){
