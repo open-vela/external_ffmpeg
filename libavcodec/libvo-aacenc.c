@@ -2,20 +2,20 @@
  * AAC encoder wrapper
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -153,8 +153,10 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
             return ret;
     }
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, FFMAX(8192, 768 * avctx->channels))) < 0)
+    if ((ret = ff_alloc_packet(avpkt, FFMAX(8192, 768 * avctx->channels)))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     input.Buffer  = samples;
     input.Length  = 2 * avctx->channels * avctx->frame_size;
@@ -177,13 +179,6 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     return 0;
 }
 
-/* duplicated from avpriv_mpeg4audio_sample_rates to avoid shared build
- * failures */
-static const int mpeg4audio_sample_rates[16] = {
-    96000, 88200, 64000, 48000, 44100, 32000,
-    24000, 22050, 16000, 12000, 11025, 8000, 7350
-};
-
 AVCodec ff_libvo_aacenc_encoder = {
     .name           = "libvo_aacenc",
     .long_name      = NULL_IF_CONFIG_SMALL("Android VisualOn AAC (Advanced Audio Coding)"),
@@ -193,7 +188,6 @@ AVCodec ff_libvo_aacenc_encoder = {
     .init           = aac_encode_init,
     .encode2        = aac_encode_frame,
     .close          = aac_encode_close,
-    .supported_samplerates = mpeg4audio_sample_rates,
     .capabilities   = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },

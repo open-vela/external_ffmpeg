@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,7 +39,7 @@ static int dxtory_decode_v1_rgb(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *dst;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * (int64_t)bpp) {
+    if (src_size < avctx->width * avctx->height * bpp) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -65,7 +65,7 @@ static int dxtory_decode_v1_410(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y1, *Y2, *Y3, *Y4, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 9L / 8) {
+    if (src_size < avctx->width * avctx->height * 18 / 16) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -108,7 +108,7 @@ static int dxtory_decode_v1_420(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y1, *Y2, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 3L / 2) {
+    if (src_size < avctx->width * avctx->height * 3 / 2) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -145,7 +145,7 @@ static int dxtory_decode_v1_444(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 3L) {
+    if (src_size < avctx->width * avctx->height * 3) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -171,9 +171,9 @@ static int dxtory_decode_v1_444(AVCodecContext *avctx, AVFrame *pic,
     return 0;
 }
 
-static const uint8_t def_lru[8] = { 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xFF };
-static const uint8_t def_lru_555[8] = { 0x00, 0x08, 0x10, 0x18, 0x1F };
-static const uint8_t def_lru_565[8] = { 0x00, 0x08, 0x10, 0x20, 0x30, 0x3F };
+const uint8_t def_lru[8] = { 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xFF };
+const uint8_t def_lru_555[8] = { 0x00, 0x08, 0x10, 0x18, 0x1F };
+const uint8_t def_lru_565[8] = { 0x00, 0x08, 0x10, 0x20, 0x30, 0x3F };
 
 static inline uint8_t decode_sym(GetBitContext *gb, uint8_t lru[8])
 {
