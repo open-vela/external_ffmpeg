@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,10 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "dsputil.h"
 #include "h264pred.h"
+#include "avcodec.h" // for AV_CODEC_ID_*
 
 #define BIT_DEPTH 8
 #include "h264pred_template.c"
@@ -38,6 +40,14 @@
 #undef BIT_DEPTH
 
 #define BIT_DEPTH 10
+#include "h264pred_template.c"
+#undef BIT_DEPTH
+
+#define BIT_DEPTH 12
+#include "h264pred_template.c"
+#undef BIT_DEPTH
+
+#define BIT_DEPTH 14
 #include "h264pred_template.c"
 #undef BIT_DEPTH
 
@@ -400,7 +410,7 @@ static void pred8x8_tm_vp8_c(uint8_t *src, ptrdiff_t stride)
  */
 av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
                                const int bit_depth,
-                               const int chroma_format_idc)
+                               int chroma_format_idc)
 {
 #undef FUNC
 #undef FUNCC
@@ -410,7 +420,7 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
 
 #define H264_PRED(depth) \
     if(codec_id != AV_CODEC_ID_RV40){\
-        if (codec_id == AV_CODEC_ID_VP7 || codec_id == AV_CODEC_ID_VP8) {\
+        if(codec_id == AV_CODEC_ID_VP7 || codec_id == AV_CODEC_ID_VP8) {\
             h->pred4x4[VERT_PRED       ]= FUNCD(pred4x4_vertical_vp8);\
             h->pred4x4[HOR_PRED        ]= FUNCD(pred4x4_horizontal_vp8);\
         } else {\
@@ -430,7 +440,7 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
         } else\
             h->pred4x4[VERT_LEFT_PRED  ]= FUNCC(pred4x4_vertical_left     , depth);\
         h->pred4x4[HOR_UP_PRED         ]= FUNCC(pred4x4_horizontal_up     , depth);\
-        if (codec_id != AV_CODEC_ID_VP7 && codec_id != AV_CODEC_ID_VP8) {\
+        if(codec_id != AV_CODEC_ID_VP7 && codec_id != AV_CODEC_ID_VP8) {\
             h->pred4x4[LEFT_DC_PRED    ]= FUNCC(pred4x4_left_dc           , depth);\
             h->pred4x4[TOP_DC_PRED     ]= FUNCC(pred4x4_top_dc            , depth);\
         } else {\
@@ -488,8 +498,7 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
         }\
     } else\
         h->pred8x8[PLANE_PRED8x8]= FUNCD(pred8x8_tm_vp8);\
-    if (codec_id != AV_CODEC_ID_RV40 && codec_id != AV_CODEC_ID_VP7 && \
-        codec_id != AV_CODEC_ID_VP8) {\
+    if(codec_id != AV_CODEC_ID_RV40 && codec_id != AV_CODEC_ID_VP7 && codec_id != AV_CODEC_ID_VP8){\
         if (chroma_format_idc <= 1) {\
             h->pred8x8[DC_PRED8x8     ]= FUNCC(pred8x8_dc                     , depth);\
             h->pred8x8[LEFT_DC_PRED8x8]= FUNCC(pred8x8_left_dc                , depth);\
@@ -551,6 +560,8 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
     h->pred4x4_add  [ HOR_PRED   ]= FUNCC(pred4x4_horizontal_add          , depth);\
     h->pred8x8l_add [VERT_PRED   ]= FUNCC(pred8x8l_vertical_add           , depth);\
     h->pred8x8l_add [ HOR_PRED   ]= FUNCC(pred8x8l_horizontal_add         , depth);\
+    h->pred8x8l_filter_add [VERT_PRED   ]= FUNCC(pred8x8l_vertical_filter_add           , depth);\
+    h->pred8x8l_filter_add [ HOR_PRED   ]= FUNCC(pred8x8l_horizontal_filter_add         , depth);\
     if (chroma_format_idc <= 1) {\
     h->pred8x8_add  [VERT_PRED8x8]= FUNCC(pred8x8_vertical_add            , depth);\
     h->pred8x8_add  [ HOR_PRED8x8]= FUNCC(pred8x8_horizontal_add          , depth);\
@@ -568,7 +579,14 @@ av_cold void ff_h264_pred_init(H264PredContext *h, int codec_id,
         case 10:
             H264_PRED(10)
             break;
+        case 12:
+            H264_PRED(12)
+            break;
+        case 14:
+            H264_PRED(14)
+            break;
         default:
+            av_assert0(bit_depth<=8);
             H264_PRED(8)
             break;
     }
