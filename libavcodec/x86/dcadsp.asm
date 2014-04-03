@@ -2,20 +2,20 @@
 ;* SSE-optimized functions for the DCA decoder
 ;* Copyright (C) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -292,7 +292,7 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
 %define scale m0
 %if ARCH_X86_32 || WIN64
 %if cpuflag(sse2) && notcpuflag(avx)
-    movd       scale, scalem
+    movd          m0, scalem
     SPLATD        m0
 %else
     VBROADCASTSS  m0, scalem
@@ -311,14 +311,9 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
     sub          r5q, offmp
     and          r5q, -64
     shl          r5q, 2
-%if ARCH_X86_32 || notcpuflag(avx)
     mov         OFFQ, r5q
 %define i        r5q
     mov            i, 16 * 4 - (ARCH_X86_64 + 1) * mmsize  ; main loop counter
-%else
-%define i 0
-%define OFFQ  r5q
-%endif
 
 %define buf2     synth_buf2q
 %if ARCH_X86_32
@@ -337,10 +332,8 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
 %define j        r3q
     mov          win, windowm
     mov         ptr1, synth_bufm
-%if ARCH_X86_32 || notcpuflag(avx)
     add          win, i
     add         ptr1, i
-%endif
 %else ; ARCH_X86_64
 %define ptr1     r6q
 %define ptr2     r7q ; must be loaded
@@ -356,9 +349,7 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
     mov         ptr2, synth_bufmp
     ; prepare the inner loop counter
     mov            j, OFFQ
-%if ARCH_X86_32 || notcpuflag(avx)
     sub         ptr2, i
-%endif
 .loop1:
     INNER_LOOP  0
     jge       .loop1
@@ -403,10 +394,8 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
     mova   [outq + i +  0 * 4 + mmsize], m7
     mova   [outq + i + 16 * 4 + mmsize], m8
 %endif
-%if ARCH_X86_32 || notcpuflag(avx)
     sub            i, (ARCH_X86_64 + 1) * mmsize
     jge    .mainloop
-%endif
     RET
 %endmacro
 
@@ -416,8 +405,10 @@ SYNTH_FILTER
 %endif
 INIT_XMM sse2
 SYNTH_FILTER
+%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 SYNTH_FILTER
+%endif
 %if HAVE_FMA3_EXTERNAL
 INIT_YMM fma3
 SYNTH_FILTER
