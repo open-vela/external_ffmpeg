@@ -5,20 +5,20 @@
  *
  * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -451,8 +451,8 @@ static int vsad_intra16_mmx(MpegEncContext *v, uint8_t *pix, uint8_t *dummy,
 {
     int tmp;
 
-    assert((((int) pix) & 7) == 0);
-    assert((line_size & 7) == 0);
+    av_assert2((((int) pix) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
 #define SUM(in0, in1, out0, out1)               \
     "movq (%0), %%mm2\n"                        \
@@ -515,8 +515,8 @@ static int vsad_intra16_mmxext(MpegEncContext *v, uint8_t *pix, uint8_t *dummy,
 {
     int tmp;
 
-    assert((((int) pix) & 7) == 0);
-    assert((line_size & 7) == 0);
+    av_assert2((((int) pix) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
 #define SUM(in0, in1, out0, out1)               \
     "movq (%0), " #out0 "\n"                    \
@@ -558,9 +558,9 @@ static int vsad16_mmx(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 {
     int tmp;
 
-    assert((((int) pix1) & 7) == 0);
-    assert((((int) pix2) & 7) == 0);
-    assert((line_size & 7) == 0);
+    av_assert2((((int) pix1) & 7) == 0);
+    av_assert2((((int) pix2) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
 #define SUM(in0, in1, out0, out1)       \
     "movq (%0), %%mm2\n"                \
@@ -639,9 +639,9 @@ static int vsad16_mmxext(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 {
     int tmp;
 
-    assert((((int) pix1) & 7) == 0);
-    assert((((int) pix2) & 7) == 0);
-    assert((line_size & 7) == 0);
+    av_assert2((((int) pix1) & 7) == 0);
+    av_assert2((((int) pix2) & 7) == 0);
+    av_assert2((line_size & 7) == 0);
 
 #define SUM(in0, in1, out0, out1)               \
     "movq (%0), " #out0 "\n"                    \
@@ -694,10 +694,11 @@ static int vsad16_mmxext(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 }
 #undef SUM
 
-static void diff_bytes_mmx(uint8_t *dst, uint8_t *src1, uint8_t *src2, int w)
+static void diff_bytes_mmx(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int w)
 {
     x86_reg i = 0;
 
+    if (w >= 16)
     __asm__ volatile (
         "1:                             \n\t"
         "movq  (%2, %0), %%mm0          \n\t"
@@ -992,6 +993,7 @@ av_cold void ff_dsputilenc_init_mmx(DSPContext *c, AVCodecContext *avctx,
     int cpu_flags = av_get_cpu_flags();
     const int dct_algo = avctx->dct_algo;
 
+#if HAVE_YASM
     if (EXTERNAL_MMX(cpu_flags)) {
         if (!high_bit_depth)
             c->get_pixels = ff_get_pixels_mmx;
@@ -1003,6 +1005,7 @@ av_cold void ff_dsputilenc_init_mmx(DSPContext *c, AVCodecContext *avctx,
     if (EXTERNAL_SSE2(cpu_flags))
         if (!high_bit_depth)
             c->get_pixels = ff_get_pixels_sse2;
+#endif /* HAVE_YASM */
 
 #if HAVE_INLINE_ASM
     if (INLINE_MMX(cpu_flags)) {

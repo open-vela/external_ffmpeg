@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,23 +35,19 @@
 #include "avformat.h"
 #include "replaygain.h"
 
-static int32_t parse_value(const char *value, int32_t min)
+static int32_t parse_gain(const char *gain)
 {
     char *fraction;
     int  scale = 10000;
     int32_t mb = 0;
-    int sign   = 1;
     int db;
 
-    if (!value)
-        return min;
+    if (!gain)
+        return INT32_MIN;
 
-    value += strspn(value, " \t");
+    gain += strspn(gain, " \t");
 
-    if (*value == '-')
-        sign = -1;
-
-    db = strtol(value, &fraction, 0);
+    db = strtol(gain, &fraction, 0);
     if (*fraction++ == '.') {
         while (av_isdigit(*fraction) && scale) {
             mb += scale * (*fraction - '0');
@@ -61,9 +57,41 @@ static int32_t parse_value(const char *value, int32_t min)
     }
 
     if (abs(db) > (INT32_MAX - mb) / 100000)
-        return min;
+        return INT32_MIN;
 
-    return db * 100000 + sign * mb;
+    return db * 100000 + FFSIGN(db) * mb;
+}
+
+static uint32_t parse_peak(const uint8_t *peak)
+{
+    int64_t val = 0;
+    int64_t scale = 1;
+
+    if (!peak)
+        return 0;
+
+    peak += strspn(peak, " \t");
+
+    if (peak[0] == '1' && peak[1] == '.')
+        return UINT32_MAX;
+    else if (!(peak[0] == '0' && peak[1] == '.'))
+        return 0;
+
+    peak += 2;
+
+    while (av_isdigit(*peak)) {
+        int digit = *peak - '0';
+
+        if (scale > INT64_MAX / 10)
+            break;
+
+        val    = 10 * val + digit;
+        scale *= 10;
+
+        peak++;
+    }
+
+    return av_rescale(val, UINT32_MAX, scale);
 }
 
 static int replaygain_export(AVStream *st,
@@ -75,10 +103,10 @@ static int replaygain_export(AVStream *st,
     int32_t tg, ag;
     uint32_t tp, ap;
 
-    tg = parse_value(track_gain, INT32_MIN);
-    ag = parse_value(album_gain, INT32_MIN);
-    tp = parse_value(track_peak, 0);
-    ap = parse_value(album_peak, 0);
+    tg = parse_gain(track_gain);
+    ag = parse_gain(album_gain);
+    tp = parse_peak(track_peak);
+    ap = parse_peak(album_peak);
 
     if (tg == INT32_MIN && ag == INT32_MIN)
         return 0;

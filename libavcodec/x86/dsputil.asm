@@ -1,21 +1,23 @@
 ;******************************************************************************
 ;* MMX optimized DSP utils
 ;* Copyright (c) 2008 Loren Merritt
+;* Copyright (c) 2003-2013 Michael Niedermayer
+;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -27,6 +29,8 @@ pb_zzzzzzzz77777777: times 8 db -1
 pb_7: times 8 db 7
 pb_zzzz3333zzzzbbbb: db -1,-1,-1,-1,3,3,3,3,-1,-1,-1,-1,11,11,11,11
 pb_zz11zz55zz99zzdd: db -1,-1,1,1,-1,-1,5,5,-1,-1,9,9,-1,-1,13,13
+pb_revwords: SHUFFLE_MASK_W 7, 6, 5, 4, 3, 2, 1, 0
+pd_16384: times 4 dd 16384
 pb_bswap32: db 3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
 
 SECTION_TEXT
@@ -57,6 +61,9 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
 %endif
     paddd   m2, m0
     movd   eax, m2
+%if mmsize == 8
+    emms
+%endif
     RET
 
 ; int ff_scalarproduct_and_madd_int16(int16_t *v1, int16_t *v2, int16_t *v3,
@@ -203,6 +210,134 @@ SCALARPRODUCT_LOOP 0
     RET
 
 
+;-----------------------------------------------------------------------------
+; void ff_apply_window_int16(int16_t *output, const int16_t *input,
+;                            const int16_t *window, unsigned int len)
+;-----------------------------------------------------------------------------
+
+%macro REVERSE_WORDS 1-2
+%if cpuflag(ssse3) && notcpuflag(atom)
+    pshufb  %1, %2
+%elif cpuflag(sse2)
+    pshuflw  %1, %1, 0x1B
+    pshufhw  %1, %1, 0x1B
+    pshufd   %1, %1, 0x4E
+%elif cpuflag(mmxext)
+    pshufw   %1, %1, 0x1B
+%endif
+%endmacro
+
+%macro MUL16FIXED 3
+%if cpuflag(ssse3) ; dst, src, unused
+; dst = ((dst * src) + (1<<14)) >> 15
+    pmulhrsw   %1, %2
+%elif cpuflag(mmxext) ; dst, src, temp
+; dst = (dst * src) >> 15
+; pmulhw cuts off the bottom bit, so we have to lshift by 1 and add it back
+; in from the pmullw result.
+    mova    %3, %1
+    pmulhw  %1, %2
+    pmullw  %3, %2
+    psrlw   %3, 15
+    psllw   %1, 1
+    por     %1, %3
+%endif
+%endmacro
+
+%macro APPLY_WINDOW_INT16 1 ; %1 bitexact version
+%if %1
+cglobal apply_window_int16, 4,5,6, output, input, window, offset, offset2
+%else
+cglobal apply_window_int16_round, 4,5,6, output, input, window, offset, offset2
+%endif
+    lea     offset2q, [offsetq-mmsize]
+%if cpuflag(ssse3) && notcpuflag(atom)
+    mova          m5, [pb_revwords]
+    ALIGN 16
+%elif %1
+    mova          m5, [pd_16384]
+%endif
+.loop:
+%if cpuflag(ssse3)
+    ; This version does the 16x16->16 multiplication in-place without expanding
+    ; to 32-bit. The ssse3 version is bit-identical.
+    mova          m0, [windowq+offset2q]
+    mova          m1, [ inputq+offset2q]
+    pmulhrsw      m1, m0
+    REVERSE_WORDS m0, m5
+    pmulhrsw      m0, [ inputq+offsetq ]
+    mova  [outputq+offset2q], m1
+    mova  [outputq+offsetq ], m0
+%elif %1
+    ; This version expands 16-bit to 32-bit, multiplies by the window,
+    ; adds 16384 for rounding, right shifts 15, then repacks back to words to
+    ; save to the output. The window is reversed for the second half.
+    mova          m3, [windowq+offset2q]
+    mova          m4, [ inputq+offset2q]
+    pxor          m0, m0
+    punpcklwd     m0, m3
+    punpcklwd     m1, m4
+    pmaddwd       m0, m1
+    paddd         m0, m5
+    psrad         m0, 15
+    pxor          m2, m2
+    punpckhwd     m2, m3
+    punpckhwd     m1, m4
+    pmaddwd       m2, m1
+    paddd         m2, m5
+    psrad         m2, 15
+    packssdw      m0, m2
+    mova  [outputq+offset2q], m0
+    REVERSE_WORDS m3
+    mova          m4, [ inputq+offsetq]
+    pxor          m0, m0
+    punpcklwd     m0, m3
+    punpcklwd     m1, m4
+    pmaddwd       m0, m1
+    paddd         m0, m5
+    psrad         m0, 15
+    pxor          m2, m2
+    punpckhwd     m2, m3
+    punpckhwd     m1, m4
+    pmaddwd       m2, m1
+    paddd         m2, m5
+    psrad         m2, 15
+    packssdw      m0, m2
+    mova  [outputq+offsetq], m0
+%else
+    ; This version does the 16x16->16 multiplication in-place without expanding
+    ; to 32-bit. The mmxext and sse2 versions do not use rounding, and
+    ; therefore are not bit-identical to the C version.
+    mova          m0, [windowq+offset2q]
+    mova          m1, [ inputq+offset2q]
+    mova          m2, [ inputq+offsetq ]
+    MUL16FIXED    m1, m0, m3
+    REVERSE_WORDS m0
+    MUL16FIXED    m2, m0, m3
+    mova  [outputq+offset2q], m1
+    mova  [outputq+offsetq ], m2
+%endif
+    add      offsetd, mmsize
+    sub     offset2d, mmsize
+    jae .loop
+    REP_RET
+%endmacro
+
+INIT_MMX mmxext
+APPLY_WINDOW_INT16 0
+INIT_XMM sse2
+APPLY_WINDOW_INT16 0
+
+INIT_MMX mmxext
+APPLY_WINDOW_INT16 1
+INIT_XMM sse2
+APPLY_WINDOW_INT16 1
+INIT_XMM ssse3
+APPLY_WINDOW_INT16 1
+INIT_XMM ssse3, atom
+APPLY_WINDOW_INT16 1
+
+
 ; void ff_add_hfyu_median_prediction_mmxext(uint8_t *dst, const uint8_t *top,
 ;                                           const uint8_t *diff, int w,
 ;                                           int *left, int *left_top)
@@ -337,6 +472,7 @@ cglobal add_hfyu_left_prediction, 3,3,7, dst, src, w, left
     ADD_HFYU_LEFT_LOOP 0, 1
 .src_unaligned:
     ADD_HFYU_LEFT_LOOP 0, 0
+
 
 ;-----------------------------------------------------------------------------
 ; void ff_vector_clip_int32(int32_t *dst, const int32_t *src, int32_t min,
@@ -480,6 +616,7 @@ cglobal bswap32_buf, 3,4,3
 cglobal bswap32_buf, 3,4,5
     mov      r3, r1
 %endif
+    or       r3, r0
     and      r3, 15
     jz       .start_align
     BSWAP_LOOPS  u
