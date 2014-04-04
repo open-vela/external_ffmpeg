@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@
 #include <assert.h>
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/avassert.h"
 
 typedef struct PutBitContext {
     uint32_t bit_buf;
@@ -137,7 +136,7 @@ static inline void put_bits(PutBitContext *s, int n, unsigned int value)
     unsigned int bit_buf;
     int bit_left;
 
-    av_assert2(n <= 31 && value < (1U << n));
+    assert(n <= 31 && value < (1U << n));
 
     bit_buf  = s->bit_buf;
     bit_left = s->bit_left;
@@ -146,7 +145,6 @@ static inline void put_bits(PutBitContext *s, int n, unsigned int value)
 #ifdef BITSTREAM_WRITER_LE
     bit_buf |= value << (32 - bit_left);
     if (n >= bit_left) {
-        av_assert2(s->buf_ptr+3<s->buf_end);
         AV_WL32(s->buf_ptr, bit_buf);
         s->buf_ptr += 4;
         bit_buf     = (bit_left == 32) ? 0 : value >> bit_left;
@@ -160,7 +158,6 @@ static inline void put_bits(PutBitContext *s, int n, unsigned int value)
     } else {
         bit_buf   <<= bit_left;
         bit_buf    |= value >> (n - bit_left);
-        av_assert2(s->buf_ptr+3<s->buf_end);
         AV_WB32(s->buf_ptr, bit_buf);
         s->buf_ptr += 4;
         bit_left   += 32 - n;
@@ -174,7 +171,7 @@ static inline void put_bits(PutBitContext *s, int n, unsigned int value)
 
 static inline void put_sbits(PutBitContext *pb, int n, int32_t value)
 {
-    av_assert2(n >= 0 && n <= 31);
+    assert(n >= 0 && n <= 31);
 
     put_bits(pb, n, value & ((1 << n) - 1));
 }
@@ -210,8 +207,8 @@ static inline uint8_t *put_bits_ptr(PutBitContext *s)
  */
 static inline void skip_put_bytes(PutBitContext *s, int n)
 {
-    av_assert2((put_bits_count(s) & 7) == 0);
-    av_assert2(s->bit_left == 32);
+    assert((put_bits_count(s) & 7) == 0);
+    assert(s->bit_left == 32);
     s->buf_ptr += n;
 }
 
