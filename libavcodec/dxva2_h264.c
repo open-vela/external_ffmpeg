@@ -3,20 +3,20 @@
  *
  * copyright (c) 2009 Laurent Aimar
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -96,7 +96,7 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
                                         ((h->sps.mb_aff &&
                                         (h->picture_structure == PICT_FRAME)) <<  1) |
                                         (h->sps.residual_color_transform_flag <<  2) |
-                                        /* sp_for_switch_flag (not implemented by FFmpeg) */
+                                        /* sp_for_switch_flag (not implemented by Libav) */
                                         (0                                    <<  3) |
                                         (h->sps.chroma_format_idc             <<  4) |
                                         ((h->nal_ref_idc != 0)                <<  6) |
@@ -152,8 +152,8 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
     pp->deblocking_filter_control_present_flag = h->pps.deblocking_filter_parameters_present;
     pp->redundant_pic_cnt_present_flag= h->pps.redundant_pic_cnt_present;
     pp->Reserved8BitsB                = 0;
-    pp->slice_group_change_rate_minus1= 0;  /* XXX not implemented by FFmpeg */
-    //pp->SliceGroupMap[810];               /* XXX not implemented by FFmpeg */
+    pp->slice_group_change_rate_minus1= 0;  /* XXX not implemented by Libav */
+    //pp->SliceGroupMap[810];               /* XXX not implemented by Libav */
 }
 
 static void fill_scaling_lists(struct dxva_context *ctx, const H264Context *h, DXVA_Qmatrix_H264 *qm)
@@ -274,7 +274,7 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
             }
         }
     }
-    slice->slice_qs_delta    = 0; /* XXX not implemented by FFmpeg */
+    slice->slice_qs_delta    = 0; /* XXX not implemented by Libav */
     slice->slice_qp_delta    = h->qscale - h->pps.init_qp;
     slice->redundant_pic_cnt = h->redundant_pic_count;
     if (h->slice_type == AV_PICTURE_TYPE_B)
@@ -307,7 +307,7 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
     /* Create an annex B bitstream buffer with only slice NAL and finalize slice */
     if (FAILED(IDirectXVideoDecoder_GetBuffer(ctx->decoder,
                                                DXVA2_BitStreamDateBufferType,
-                                               (void **)&dxva_data, &dxva_size)))
+                                               &dxva_data, &dxva_size)))
         return -1;
     current = dxva_data;
     end = dxva_data + dxva_size;
