@@ -2,20 +2,20 @@
  * AMR wideband decoder
  * Copyright (c) 2010 Marcelo Galvao Povoa
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A particular PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,6 +32,7 @@
 #include "avcodec.h"
 #include "lsp.h"
 #include "celp_filters.h"
+#include "celp_math.h"
 #include "acelp_filters.h"
 #include "acelp_vectors.h"
 #include "acelp_pitch_delay.h"
@@ -41,6 +42,7 @@
 #include "amr.h"
 
 #include "amrwbdata.h"
+#include "mips/amrwbdec_mips.h"
 
 typedef struct {
     AMRWBFrame                             frame; ///< AMRWB parameters decoded from bitstream
@@ -84,6 +86,11 @@ typedef struct {
 
     AVLFG                                   prng; ///< random number generator for white noise excitation
     uint8_t                          first_frame; ///< flag active during decoding of the first frame
+    ACELPFContext                     acelpf_ctx; ///< context for filters for ACELP-based codecs
+    ACELPVContext                     acelpv_ctx; ///< context for vector operations for ACELP-based codecs
+    CELPFContext                       celpf_ctx; ///< context for filters for CELP-based codecs
+    CELPMContext                       celpm_ctx; ///< context for fixed point math operations
+
 } AMRWBContext;
 
 static av_cold int amrwb_decode_init(AVCodecContext *avctx)
@@ -98,7 +105,8 @@ static av_cold int amrwb_decode_init(AVCodecContext *avctx)
 
     avctx->channels       = 1;
     avctx->channel_layout = AV_CH_LAYOUT_MONO;
-    avctx->sample_rate    = 16000;
+    if (!avctx->sample_rate)
+        avctx->sample_rate = 16000;
     avctx->sample_fmt     = AV_SAMPLE_FMT_FLT;
 
     av_lfg_init(&ctx->prng, 1);
@@ -111,6 +119,11 @@ static av_cold int amrwb_decode_init(AVCodecContext *avctx)
 
     for (i = 0; i < 4; i++)
         ctx->prediction_error[i] = MIN_ENERGY;
+
+    ff_acelp_filter_init(&ctx->acelpf_ctx);
+    ff_acelp_vectors_init(&ctx->acelpv_ctx);
+    ff_celp_filter_init(&ctx->celpf_ctx);
+    ff_celp_math_init(&ctx->celpm_ctx);
 
     return 0;
 }
@@ -326,7 +339,8 @@ static void decode_pitch_vector(AMRWBContext *ctx,
 
     /* Calculate the pitch vector by interpolating the past excitation at the
        pitch lag using a hamming windowed sinc function */
-    ff_acelp_interpolatef(exc, exc + 1 - pitch_lag_int,
+    ctx->acelpf_ctx.acelp_interpolatef(exc,
+                          exc + 1 - pitch_lag_int,
                           ac_inter, 4,
                           pitch_lag_frac + (pitch_lag_frac > 0 ? 0 : 4),
                           LP_ORDER, AMRWB_SFR_SIZE + 1);
@@ -585,16 +599,18 @@ static void pitch_sharpening(AMRWBContext *ctx, float *fixed_vector)
  *
  * @param[in] p_vector, f_vector   Pitch and fixed excitation vectors
  * @param[in] p_gain, f_gain       Pitch and fixed gains
+ * @param[in] ctx                  The context
  */
 // XXX: There is something wrong with the precision here! The magnitudes
 // of the energies are not correct. Please check the reference code carefully
 static float voice_factor(float *p_vector, float p_gain,
-                          float *f_vector, float f_gain)
+                          float *f_vector, float f_gain,
+                          CELPMContext *ctx)
 {
-    double p_ener = (double) avpriv_scalarproduct_float_c(p_vector, p_vector,
+    double p_ener = (double) ctx->dot_productf(p_vector, p_vector,
                                                           AMRWB_SFR_SIZE) *
                     p_gain * p_gain;
-    double f_ener = (double) avpriv_scalarproduct_float_c(f_vector, f_vector,
+    double f_ener = (double) ctx->dot_productf(f_vector, f_vector,
                                                           AMRWB_SFR_SIZE) *
                     f_gain * f_gain;
 
@@ -758,13 +774,13 @@ static void synthesis(AMRWBContext *ctx, float *lpc, float *excitation,
                       float fixed_gain, const float *fixed_vector,
                       float *samples)
 {
-    ff_weighted_vector_sumf(excitation, ctx->pitch_vector, fixed_vector,
+    ctx->acelpv_ctx.weighted_vector_sumf(excitation, ctx->pitch_vector, fixed_vector,
                             ctx->pitch_gain[0], fixed_gain, AMRWB_SFR_SIZE);
 
     /* emphasize pitch vector contribution in low bitrate modes */
     if (ctx->pitch_gain[0] > 0.5 && ctx->fr_cur_mode <= MODE_8k85) {
         int i;
-        float energy = avpriv_scalarproduct_float_c(excitation, excitation,
+        float energy = ctx->celpm_ctx.dot_productf(excitation, excitation,
                                                     AMRWB_SFR_SIZE);
 
         // XXX: Weird part in both ref code and spec. A unknown parameter
@@ -778,7 +794,7 @@ static void synthesis(AMRWBContext *ctx, float *lpc, float *excitation,
                                                 energy, AMRWB_SFR_SIZE);
     }
 
-    ff_celp_lp_synthesis_filterf(samples, lpc, excitation,
+    ctx->celpf_ctx.celp_lp_synthesis_filterf(samples, lpc, excitation,
                                  AMRWB_SFR_SIZE, LP_ORDER);
 }
 
@@ -810,8 +826,9 @@ static void de_emphasis(float *out, float *in, float m, float mem[1])
  * @param[out] out                 Buffer for interpolated signal
  * @param[in]  in                  Current signal data (length 0.8*o_size)
  * @param[in]  o_size              Output signal length
+ * @param[in] ctx                  The context
  */
-static void upsample_5_4(float *out, const float *in, int o_size)
+static void upsample_5_4(float *out, const float *in, int o_size, CELPMContext *ctx)
 {
     const float *in0 = in - UPS_FIR_SIZE + 1;
     int i, j, k;
@@ -824,7 +841,7 @@ static void upsample_5_4(float *out, const float *in, int o_size)
         i++;
 
         for (k = 1; k < 5; k++) {
-            out[i] = avpriv_scalarproduct_float_c(in0 + int_part,
+            out[i] = ctx->dot_productf(in0 + int_part,
                                                   upsample_fir[4 - frac_part],
                                                   UPS_MEM_SIZE);
             int_part++;
@@ -852,8 +869,8 @@ static float find_hb_gain(AMRWBContext *ctx, const float *synth,
     if (ctx->fr_cur_mode == MODE_23k85)
         return qua_hb_gain[hb_idx] * (1.0f / (1 << 14));
 
-    tilt = avpriv_scalarproduct_float_c(synth, synth + 1, AMRWB_SFR_SIZE - 1) /
-           avpriv_scalarproduct_float_c(synth, synth, AMRWB_SFR_SIZE);
+    tilt = ctx->celpm_ctx.dot_productf(synth, synth + 1, AMRWB_SFR_SIZE - 1) /
+           ctx->celpm_ctx.dot_productf(synth, synth, AMRWB_SFR_SIZE);
 
     /* return gain bounded by [0.1, 1.0] */
     return av_clipf((1.0 - FFMAX(0.0, tilt)) * (1.25 - 0.25 * wsp), 0.1, 1.0);
@@ -872,7 +889,7 @@ static void scaled_hb_excitation(AMRWBContext *ctx, float *hb_exc,
                                  const float *synth_exc, float hb_gain)
 {
     int i;
-    float energy = avpriv_scalarproduct_float_c(synth_exc, synth_exc,
+    float energy = ctx->celpm_ctx.dot_productf(synth_exc, synth_exc,
                                                 AMRWB_SFR_SIZE);
 
     /* Generate a white-noise excitation */
@@ -1003,7 +1020,7 @@ static void hb_synthesis(AMRWBContext *ctx, int subframe, float *samples,
         float e_isf[LP_ORDER_16k]; // ISF vector for extrapolation
         double e_isp[LP_ORDER_16k];
 
-        ff_weighted_vector_sumf(e_isf, isf_past, isf, isfp_inter[subframe],
+        ctx->acelpv_ctx.weighted_vector_sumf(e_isf, isf_past, isf, isfp_inter[subframe],
                                 1.0 - isfp_inter[subframe], LP_ORDER);
 
         extrapolate_isf(e_isf);
@@ -1017,7 +1034,7 @@ static void hb_synthesis(AMRWBContext *ctx, int subframe, float *samples,
         lpc_weighting(hb_lpc, ctx->lp_coef[subframe], 0.6, LP_ORDER);
     }
 
-    ff_celp_lp_synthesis_filterf(samples, hb_lpc, exc, AMRWB_SFR_SIZE_16k,
+    ctx->celpf_ctx.celp_lp_synthesis_filterf(samples, hb_lpc, exc, AMRWB_SFR_SIZE_16k,
                                  (mode == MODE_6k60) ? LP_ORDER_16k : LP_ORDER);
 }
 
@@ -1032,6 +1049,8 @@ static void hb_synthesis(AMRWBContext *ctx, int subframe, float *samples,
  *
  * @remark It is safe to pass the same array in in and out parameters
  */
+
+#ifndef hb_fir_filter
 static void hb_fir_filter(float *out, const float fir_coef[HB_FIR_SIZE + 1],
                           float mem[HB_FIR_SIZE], const float *in)
 {
@@ -1049,6 +1068,7 @@ static void hb_fir_filter(float *out, const float fir_coef[HB_FIR_SIZE + 1],
 
     memcpy(mem, data + AMRWB_SFR_SIZE_16k, HB_FIR_SIZE * sizeof(float));
 }
+#endif /* hb_fir_filter */
 
 /**
  * Update context state before the next subframe.
@@ -1092,10 +1112,8 @@ static int amrwb_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = 4 * AMRWB_SFR_SIZE_16k;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     buf_out = (float *)frame->data[0];
 
     header_size      = decode_mime_header(ctx, buf);
@@ -1166,7 +1184,7 @@ static int amrwb_decode_frame(AVCodecContext *avctx, void *data,
 
         ctx->fixed_gain[0] =
             ff_amr_set_fixed_gain(fixed_gain_factor,
-                                  avpriv_scalarproduct_float_c(ctx->fixed_vector,
+                                  ctx->celpm_ctx.dot_productf(ctx->fixed_vector,
                                                                ctx->fixed_vector,
                                                                AMRWB_SFR_SIZE) /
                                   AMRWB_SFR_SIZE,
@@ -1175,7 +1193,8 @@ static int amrwb_decode_frame(AVCodecContext *avctx, void *data,
 
         /* Calculate voice factor and store tilt for next subframe */
         voice_fac      = voice_factor(ctx->pitch_vector, ctx->pitch_gain[0],
-                                      ctx->fixed_vector, ctx->fixed_gain[0]);
+                                      ctx->fixed_vector, ctx->fixed_gain[0],
+                                      &ctx->celpm_ctx);
         ctx->tilt_coef = voice_fac * 0.25 + 0.25;
 
         /* Construct current excitation */
@@ -1201,15 +1220,15 @@ static int amrwb_decode_frame(AVCodecContext *avctx, void *data,
         de_emphasis(&ctx->samples_up[UPS_MEM_SIZE],
                     &ctx->samples_az[LP_ORDER], PREEMPH_FAC, ctx->demph_mem);
 
-        ff_acelp_apply_order_2_transfer_function(&ctx->samples_up[UPS_MEM_SIZE],
+        ctx->acelpf_ctx.acelp_apply_order_2_transfer_function(&ctx->samples_up[UPS_MEM_SIZE],
             &ctx->samples_up[UPS_MEM_SIZE], hpf_zeros, hpf_31_poles,
             hpf_31_gain, ctx->hpf_31_mem, AMRWB_SFR_SIZE);
 
         upsample_5_4(sub_buf, &ctx->samples_up[UPS_FIR_SIZE],
-                     AMRWB_SFR_SIZE_16k);
+                     AMRWB_SFR_SIZE_16k, &ctx->celpm_ctx);
 
         /* High frequency band (6.4 - 7.0 kHz) generation part */
-        ff_acelp_apply_order_2_transfer_function(hb_samples,
+        ctx->acelpf_ctx.acelp_apply_order_2_transfer_function(hb_samples,
             &ctx->samples_up[UPS_MEM_SIZE], hpf_zeros, hpf_400_poles,
             hpf_400_gain, ctx->hpf_400_mem, AMRWB_SFR_SIZE);
 
