@@ -2,44 +2,50 @@
  * Packed Animation File video and audio decoder
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 
+#include "libavcodec/paf.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "copy_block.h"
 #include "internal.h"
 #include "mathops.h"
 
-#define PAF_SOUND_SAMPLES     2205
-#define PAF_SOUND_FRAME_SIZE  ((256 + PAF_SOUND_SAMPLES) * 2)
-
 static const uint8_t block_sequences[16][8] = {
-    { 0, 0, 0, 0, 0, 0, 0, 0 }, { 2, 0, 0, 0, 0, 0, 0, 0 },
-    { 5, 7, 0, 0, 0, 0, 0, 0 }, { 5, 0, 0, 0, 0, 0, 0, 0 },
-    { 6, 0, 0, 0, 0, 0, 0, 0 }, { 5, 7, 5, 7, 0, 0, 0, 0 },
-    { 5, 7, 5, 0, 0, 0, 0, 0 }, { 5, 7, 6, 0, 0, 0, 0, 0 },
-    { 5, 5, 0, 0, 0, 0, 0, 0 }, { 3, 0, 0, 0, 0, 0, 0, 0 },
-    { 6, 6, 0, 0, 0, 0, 0, 0 }, { 2, 4, 0, 0, 0, 0, 0, 0 },
-    { 2, 4, 5, 7, 0, 0, 0, 0 }, { 2, 4, 5, 0, 0, 0, 0, 0 },
-    { 2, 4, 6, 0, 0, 0, 0, 0 }, { 2, 4, 5, 7, 5, 7, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 2, 0, 0, 0, 0, 0, 0, 0 },
+    { 5, 7, 0, 0, 0, 0, 0, 0 },
+    { 5, 0, 0, 0, 0, 0, 0, 0 },
+    { 6, 0, 0, 0, 0, 0, 0, 0 },
+    { 5, 7, 5, 7, 0, 0, 0, 0 },
+    { 5, 7, 5, 0, 0, 0, 0, 0 },
+    { 5, 7, 6, 0, 0, 0, 0, 0 },
+    { 5, 5, 0, 0, 0, 0, 0, 0 },
+    { 3, 0, 0, 0, 0, 0, 0, 0 },
+    { 6, 6, 0, 0, 0, 0, 0, 0 },
+    { 2, 4, 0, 0, 0, 0, 0, 0 },
+    { 2, 4, 5, 7, 0, 0, 0, 0 },
+    { 2, 4, 5, 0, 0, 0, 0, 0 },
+    { 2, 4, 6, 0, 0, 0, 0, 0 },
+    { 2, 4, 5, 7, 5, 7, 0, 0 },
 };
 
 typedef struct PAFVideoDecContext {
@@ -161,9 +167,11 @@ static int decode_0(PAFVideoDecContext *c, uint8_t *pkt, uint8_t code)
     i = bytestream2_get_byte(&c->gb);
     if (i) {
         if (code & 0x10) {
-            int pos = bytestream2_tell(&c->gb) & 3;
-            if (pos)
-                bytestream2_skip(&c->gb, 4 - pos);
+            int align;
+
+            align = bytestream2_tell(&c->gb) & 3;
+            if (align)
+                bytestream2_skip(&c->gb, 4 - align);
         }
         do {
             int page, val, x, y;
