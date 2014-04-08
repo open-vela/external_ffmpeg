@@ -2,20 +2,20 @@
  * Copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,8 +52,6 @@ struct ResampleContext {
     int padding_size;
     int initial_padding_filled;
     int initial_padding_samples;
-    int final_padding_filled;
-    int final_padding_samples;
 };
 
 
@@ -435,56 +433,26 @@ int ff_audio_resample(ResampleContext *c, AudioData *dst, AudioData *src)
         ret = ff_audio_data_combine(c->buffer, in_leftover, src, 0, in_samples);
         if (ret < 0)
             return ret;
-    } else if (in_leftover <= c->final_padding_samples) {
+    } else if (!in_leftover) {
         /* no remaining samples to flush */
         return 0;
+    } else {
+        /* TODO: pad buffer to flush completely */
     }
 
     if (!c->initial_padding_filled) {
         int bps = av_get_bytes_per_sample(c->avr->internal_sample_fmt);
         int i;
 
-        if (src && c->buffer->nb_samples < 2 * c->padding_size)
+        if (c->buffer->nb_samples < 2 * c->padding_size)
             return 0;
 
         for (i = 0; i < c->padding_size; i++)
-            for (ch = 0; ch < c->buffer->channels; ch++) {
-                if (c->buffer->nb_samples > 2 * c->padding_size - i) {
-                    memcpy(c->buffer->data[ch] + bps * i,
-                           c->buffer->data[ch] + bps * (2 * c->padding_size - i), bps);
-                } else {
-                    memset(c->buffer->data[ch] + bps * i, 0, bps);
-                }
-            }
+            for (ch = 0; ch < c->buffer->channels; ch++)
+                memcpy(c->buffer->data[ch] + bps * i,
+                       c->buffer->data[ch] + bps * (2 * c->padding_size - i), bps);
         c->initial_padding_filled = 1;
     }
-
-    if (!src && !c->final_padding_filled) {
-        int bps = av_get_bytes_per_sample(c->avr->internal_sample_fmt);
-        int i;
-
-        ret = ff_audio_data_realloc(c->buffer, in_samples + c->padding_size);
-        if (ret < 0) {
-            av_log(c->avr, AV_LOG_ERROR, "Error reallocating resampling buffer\n");
-            return AVERROR(ENOMEM);
-        }
-
-        for (i = 0; i < c->padding_size; i++)
-            for (ch = 0; ch < c->buffer->channels; ch++) {
-                if (in_leftover > i) {
-                    memcpy(c->buffer->data[ch] + bps * (in_leftover + i),
-                           c->buffer->data[ch] + bps * (in_leftover - i - 1),
-                           bps);
-                } else {
-                    memset(c->buffer->data[ch] + bps * (in_leftover + i),
-                           0, bps);
-                }
-            }
-        c->buffer->nb_samples   += c->padding_size;
-        c->final_padding_samples = c->padding_size;
-        c->final_padding_filled  = 1;
-    }
-
 
     /* calculate output size and reallocate output buffer if needed */
     /* TODO: try to calculate this without the dummy resample() run */
