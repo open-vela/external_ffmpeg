@@ -5,25 +5,25 @@
  *
  * mostly by Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
-#include "libavutil/avassert.h"
+#include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
@@ -42,7 +42,7 @@ DECLARE_ASM_CONST(8, uint64_t, bone) = 0x0101010101010101LL;
 
 static inline void sad8_1_mmx(uint8_t *blk1, uint8_t *blk2, int stride, int h)
 {
-    x86_reg len = -(x86_reg)stride * h;
+    x86_reg len = -(stride * h);
     __asm__ volatile (
         ".p2align 4                     \n\t"
         "1:                             \n\t"
@@ -195,14 +195,13 @@ static inline void sad8_4_mmxext(uint8_t *blk1, uint8_t *blk2,
         "sub $2, %0                     \n\t"
         " jg 1b                         \n\t"
         : "+r" (h), "+r" (blk1), "+r" (blk2)
-        : "r" ((x86_reg) stride)
-          NAMED_CONSTRAINTS_ADD(bone));
+        : "r" ((x86_reg) stride));
 }
 
 static inline void sad8_2_mmx(uint8_t *blk1a, uint8_t *blk1b, uint8_t *blk2,
                               int stride, int h)
 {
-    x86_reg len = -(x86_reg)stride * h;
+    x86_reg len = -(stride * h);
     __asm__ volatile (
         ".p2align 4                     \n\t"
         "1:                             \n\t"
@@ -240,7 +239,7 @@ static inline void sad8_2_mmx(uint8_t *blk1a, uint8_t *blk1b, uint8_t *blk2,
 
 static inline void sad8_4_mmx(uint8_t *blk1, uint8_t *blk2, int stride, int h)
 {
-    x86_reg len = -(x86_reg)stride * h;
+    x86_reg len = -(stride * h);
     __asm__ volatile (
         "movq  (%1, %%"REG_a"), %%mm0   \n\t"
         "movq 1(%1, %%"REG_a"), %%mm2   \n\t"
@@ -264,7 +263,7 @@ static inline void sad8_4_mmx(uint8_t *blk1, uint8_t *blk2, int stride, int h)
         "punpckhbw %%mm7, %%mm5         \n\t"
         "paddw %%mm4, %%mm2             \n\t"
         "paddw %%mm5, %%mm3             \n\t"
-        "movq %5, %%mm5                 \n\t"
+        "movq 16+"MANGLE(round_tab)", %%mm5 \n\t"
         "paddw %%mm2, %%mm0             \n\t"
         "paddw %%mm3, %%mm1             \n\t"
         "paddw %%mm5, %%mm0             \n\t"
@@ -288,7 +287,7 @@ static inline void sad8_4_mmx(uint8_t *blk1, uint8_t *blk2, int stride, int h)
         " js 1b                         \n\t"
         : "+a" (len)
         : "r" (blk1 - len), "r" (blk1 - len + stride), "r" (blk2 - len),
-          "r" ((x86_reg) stride), "m" (round_tab[2]));
+          "r" ((x86_reg) stride));
 }
 
 static inline int sum_mmx(void)
@@ -329,7 +328,7 @@ static inline void sad8_y2a_mmx(uint8_t *blk1, uint8_t *blk2, int stride, int h)
 static int sad8_ ## suf(MpegEncContext *v, uint8_t *blk2,               \
                         uint8_t *blk1, int stride, int h)               \
 {                                                                       \
-    av_assert2(h == 8);                                                     \
+    assert(h == 8);                                                     \
     __asm__ volatile (                                                  \
         "pxor %%mm7, %%mm7     \n\t"                                    \
         "pxor %%mm6, %%mm6     \n\t"                                    \
@@ -343,7 +342,7 @@ static int sad8_ ## suf(MpegEncContext *v, uint8_t *blk2,               \
 static int sad8_x2_ ## suf(MpegEncContext *v, uint8_t *blk2,            \
                            uint8_t *blk1, int stride, int h)            \
 {                                                                       \
-    av_assert2(h == 8);                                                     \
+    assert(h == 8);                                                     \
     __asm__ volatile (                                                  \
         "pxor %%mm7, %%mm7     \n\t"                                    \
         "pxor %%mm6, %%mm6     \n\t"                                    \
@@ -358,7 +357,7 @@ static int sad8_x2_ ## suf(MpegEncContext *v, uint8_t *blk2,            \
 static int sad8_y2_ ## suf(MpegEncContext *v, uint8_t *blk2,            \
                            uint8_t *blk1, int stride, int h)            \
 {                                                                       \
-    av_assert2(h == 8);                                                     \
+    assert(h == 8);                                                     \
     __asm__ volatile (                                                  \
         "pxor %%mm7, %%mm7     \n\t"                                    \
         "pxor %%mm6, %%mm6     \n\t"                                    \
@@ -373,7 +372,7 @@ static int sad8_y2_ ## suf(MpegEncContext *v, uint8_t *blk2,            \
 static int sad8_xy2_ ## suf(MpegEncContext *v, uint8_t *blk2,           \
                             uint8_t *blk1, int stride, int h)           \
 {                                                                       \
-    av_assert2(h == 8);                                                     \
+    assert(h == 8);                                                     \
     __asm__ volatile (                                                  \
         "pxor %%mm7, %%mm7     \n\t"                                    \
         "pxor %%mm6, %%mm6     \n\t"                                    \
@@ -481,7 +480,7 @@ av_cold void ff_dsputil_init_pix_mmx(DSPContext *c, AVCodecContext *avctx)
             c->pix_abs[1][3] = sad8_xy2_mmxext;
         }
     }
-    if (INLINE_SSE2(cpu_flags) && !(cpu_flags & AV_CPU_FLAG_3DNOW) && avctx->codec_id != AV_CODEC_ID_SNOW) {
+    if (INLINE_SSE2(cpu_flags) && !(cpu_flags & AV_CPU_FLAG_3DNOW)) {
         c->sad[0] = sad16_sse2;
     }
 #endif /* HAVE_INLINE_ASM */
