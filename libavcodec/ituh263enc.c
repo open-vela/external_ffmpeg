@@ -5,20 +5,20 @@
  * Copyright (c) 2001 Juan J. Sierralta P
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -226,7 +226,7 @@ void ff_h263_encode_picture_header(MpegEncContext * s, int picture_number)
     if(s->h263_slice_structured){
         put_bits(&s->pb, 1, 1);
 
-        av_assert1(s->mb_x == 0 && s->mb_y == 0);
+        assert(s->mb_x == 0 && s->mb_y == 0);
         ff_h263_encode_mba(s);
 
         put_bits(&s->pb, 1, 1);
@@ -268,7 +268,7 @@ void ff_h263_encode_gob_header(MpegEncContext * s, int mb_line)
 }
 
 /**
- * modify qscale so that encoding is actually possible in h263 (limit difference to -2..2)
+ * modify qscale so that encoding is acually possible in h263 (limit difference to -2..2)
  */
 void ff_clean_h263_qscales(MpegEncContext *s){
     int i;
@@ -393,7 +393,7 @@ static void h263_encode_block(MpegEncContext * s, int16_t * block, int n)
                 put_bits(&s->pb, 1, last);
                 put_bits(&s->pb, 6, run);
 
-                av_assert2(slevel != 0);
+                assert(slevel != 0);
 
                 if(level < 128)
                     put_sbits(&s->pb, 8, slevel);
@@ -546,7 +546,7 @@ void ff_h263_encode_mb(MpegEncContext * s,
             s->mv_bits+= get_bits_diff(s);
         }
     } else {
-        av_assert2(s->mb_intra);
+        assert(s->mb_intra);
 
         cbp = 0;
         if (s->h263_aic) {
@@ -725,8 +725,8 @@ static av_cold void init_uni_h263_rl_tab(RLTable *rl, uint32_t *bits_tab,
 {
     int slevel, run, last;
 
-    av_assert0(MAX_LEVEL >= 64);
-    av_assert0(MAX_RUN   >= 63);
+    assert(MAX_LEVEL >= 64);
+    assert(MAX_RUN   >= 63);
 
     for(slevel=-64; slevel<64; slevel++){
         if(slevel==0) continue;
