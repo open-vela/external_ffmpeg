@@ -1,21 +1,23 @@
 ;******************************************************************************
 ;* MMX optimized DSP utils
 ;* Copyright (c) 2008 Loren Merritt
+;* Copyright (c) 2003-2013 Michael Niedermayer
+;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -48,15 +50,11 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
     paddd   m2, m1
     add     orderq, mmsize*2
     jl .loop
-%if mmsize == 16
-    movhlps m0, m2
-    paddd   m2, m0
-    pshuflw m0, m2, 0x4e
-%else
-    pshufw  m0, m2, 0x4e
-%endif
-    paddd   m2, m0
+    HADDD   m2, m0
     movd   eax, m2
+%if mmsize == 8
+    emms
+%endif
     RET
 
 ; int ff_scalarproduct_and_madd_int16(int16_t *v1, int16_t *v2, int16_t *v3,
@@ -94,14 +92,7 @@ cglobal scalarproduct_and_madd_int16, 4,4,8, v1, v2, v3, order, mul
     mova    [v1q + orderq + mmsize], m3
     add     orderq, mmsize*2
     jl .loop
-%if mmsize == 16
-    movhlps m0, m6
-    paddd   m6, m0
-    pshuflw m0, m6, 0x4e
-%else
-    pshufw  m0, m6, 0x4e
-%endif
-    paddd   m6, m0
+    HADDD   m6, m0
     movd   eax, m6
     RET
 %endmacro
@@ -195,10 +186,7 @@ SCALARPRODUCT_LOOP 4
 SCALARPRODUCT_LOOP 2
 SCALARPRODUCT_LOOP 0
 .end:
-    movhlps m0, m6
-    paddd   m6, m0
-    pshuflw m0, m6, 0x4e
-    paddd   m6, m0
+    HADDD   m6, m0
     movd   eax, m6
     RET
 
@@ -337,6 +325,7 @@ cglobal add_hfyu_left_prediction, 3,3,7, dst, src, w, left
     ADD_HFYU_LEFT_LOOP 0, 1
 .src_unaligned:
     ADD_HFYU_LEFT_LOOP 0, 0
+
 
 ;-----------------------------------------------------------------------------
 ; void ff_vector_clip_int32(int32_t *dst, const int32_t *src, int32_t min,
@@ -480,6 +469,7 @@ cglobal bswap32_buf, 3,4,3
 cglobal bswap32_buf, 3,4,5
     mov      r3, r1
 %endif
+    or       r3, r0
     and      r3, 15
     jz       .start_align
     BSWAP_LOOPS  u
