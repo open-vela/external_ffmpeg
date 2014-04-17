@@ -724,7 +724,7 @@ static int pulse_control_message(AVFormatContext *h, int type,
         ret = pulse_update_sink_input_info(h);
         pa_threaded_mainloop_unlock(s->mainloop);
         return ret;
-    case AV_APP_TO_DEV_GET_MUTE:        
+    case AV_APP_TO_DEV_GET_MUTE:
         s->mute = -1;
         pa_threaded_mainloop_lock(s->mainloop);
         ret = pulse_update_sink_input_info(h);
