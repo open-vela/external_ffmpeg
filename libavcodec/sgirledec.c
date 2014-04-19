@@ -1,32 +1,28 @@
 /*
- * Silicon Graphics RLE 8-bit video decoder
+ * SGI RLE 8-bit decoder
  * Copyright (c) 2012 Peter Ross
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
- * Silicon Graphics RLE 8-bit video decoder
- * @note Data is packed in rbg323 with rle, contained in mv or mov.
- * The algorithm and pixfmt are subtly different from SGI images.
+ * SGI RLE 8-bit decoder
  */
-
-#include "libavutil/common.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -46,44 +42,39 @@ static av_cold int sgirle_decode_init(AVCodecContext *avctx)
 }
 
 /**
- * Convert SGI RBG323 pixel into AV_PIX_FMT_BGR8
- * SGI RGB data is packed as 8bpp, (msb)3R 2B 3G(lsb)
+ * Convert SGI RGB332 pixel into AV_PIX_FMT_BGR8
+ * SGI RGB332 is packed RGB 3:3:2, 8bpp, (msb)3R 2B 3G(lsb)
  */
-#define RBG323_TO_BGR8(x) (((x << 3) & 0xC0) |                                \
-                           ((x << 3) & 0x38) |                                \
-                           ((x >> 5) & 7))
-static av_always_inline
-void rbg323_to_bgr8(uint8_t *dst, const uint8_t *src, int size)
+#define RGB332_TO_BGR8(x) (((x << 3) & 0xC0) | ((x << 3) & 0x38) | ((x >> 5) & 7))
+
+static av_always_inline void memcpy_rgb332_to_bgr8(uint8_t *dst, const uint8_t *src, int size)
 {
     int i;
     for (i = 0; i < size; i++)
-        dst[i] = RBG323_TO_BGR8(src[i]);
+        dst[i] = RGB332_TO_BGR8(src[i]);
 }
 
 /**
  * @param[out] dst Destination buffer
- * @param[in] src  Source buffer
+ * @param[in] src Source buffer
  * @param src_size Source buffer size (bytes)
- * @param width    Width of destination buffer (pixels)
- * @param height   Height of destination buffer (pixels)
+ * @param width Width of destination buffer (pixels)
+ * @param height Height of destination buffer (pixels)
  * @param linesize Line size of destination buffer (bytes)
- *
  * @return <0 on error
  */
-static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst,
-                          const uint8_t *src, int src_size,
-                          int width, int height, ptrdiff_t linesize)
+static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst, const uint8_t *src, int src_size, int width, int height, int linesize)
 {
     const uint8_t *src_end = src + src_size;
     int x = 0, y = 0;
 
-#define INC_XY(n)                                                             \
-    x += n;                                                                   \
-    if (x >= width) {                                                         \
-        y++;                                                                  \
-        if (y >= height)                                                      \
-            return 0;                                                         \
-        x = 0;                                                                \
+#define INC_XY(n) \
+    x += n; \
+    if (x >= width) { \
+        y++; \
+        if (y >= height) \
+            return 0; \
+        x = 0; \
     }
 
     while (src_end - src >= 2) {
@@ -93,9 +84,9 @@ static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst,
                 int length = FFMIN(v, width - x);
                 if (length <= 0)
                     break;
-                memset(dst + y * linesize + x, RBG323_TO_BGR8(*src), length);
+                memset(dst + y*linesize + x, RGB332_TO_BGR8(*src), length);
                 INC_XY(length);
-                v -= length;
+                v   -= length;
             } while (v > 0);
             src++;
         } else if (v >= 0xC1) {
@@ -104,21 +95,22 @@ static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst,
                 int length = FFMIN3(v, width - x, src_end - src);
                 if (src_end - src < length || length <= 0)
                     break;
-                rbg323_to_bgr8(dst + y * linesize + x, src, length);
+                memcpy_rgb332_to_bgr8(dst + y*linesize + x, src, length);
                 INC_XY(length);
                 src += length;
                 v   -= length;
             } while (v > 0);
         } else {
-            av_log(avctx, AV_LOG_ERROR, "Invalid opcode %d.\n", v);
-            return AVERROR_INVALIDDATA;
+            avpriv_request_sample(avctx, "opcode %d", v);
+            return AVERROR_PATCHWELCOME;
         }
     }
     return 0;
 }
 
-static int sgirle_decode_frame(AVCodecContext *avctx, void *data,
-                               int *got_frame, AVPacket *avpkt)
+static int sgirle_decode_frame(AVCodecContext *avctx,
+                            void *data, int *got_frame,
+                            AVPacket *avpkt)
 {
     SGIRLEContext *s = avctx->priv_data;
     int ret;
@@ -126,12 +118,11 @@ static int sgirle_decode_frame(AVCodecContext *avctx, void *data,
     if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
 
-    ret = decode_sgirle8(avctx, s->frame->data[0], avpkt->data, avpkt->size,
-                         avctx->width, avctx->height, s->frame->linesize[0]);
+    ret = decode_sgirle8(avctx, s->frame->data[0], avpkt->data, avpkt->size, avctx->width, avctx->height, s->frame->linesize[0]);
     if (ret < 0)
         return ret;
 
-    *got_frame = 1;
+    *got_frame      = 1;
     if ((ret = av_frame_ref(data, s->frame)) < 0)
         return ret;
 
@@ -149,7 +140,7 @@ static av_cold int sgirle_decode_end(AVCodecContext *avctx)
 
 AVCodec ff_sgirle_decoder = {
     .name           = "sgirle",
-    .long_name      = NULL_IF_CONFIG_SMALL("Silicon Graphics RLE 8-bit video"),
+    .long_name      = NULL_IF_CONFIG_SMALL("SGI RLE 8-bit"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_SGIRLE,
     .priv_data_size = sizeof(SGIRLEContext),
