@@ -19,14 +19,8 @@ fate-vp61: CMD = framecrc -flags +bitexact -i $(TARGET_SAMPLES)/ea-vp6/MovieSkir
 FATE_VP6-$(call DEMDEC, FLV, VP6A) += fate-vp6a
 fate-vp6a: CMD = framecrc -flags +bitexact -i $(TARGET_SAMPLES)/flash-vp6/300x180-Scr-f8-056alpha.flv
 
-FATE_VP6-$(call DEMDEC, FLV, VP6A) += fate-vp6a-skip_alpha
-fate-vp6a-skip_alpha: CMD = framecrc -flags +bitexact -skip_alpha 1 -i $(TARGET_SAMPLES)/flash-vp6/300x180-Scr-f8-056alpha.flv
-
 FATE_VP6-$(call DEMDEC, FLV, VP6F) += fate-vp6f
 fate-vp6f: CMD = framecrc -flags +bitexact -i $(TARGET_SAMPLES)/flash-vp6/clip1024.flv
-
-FATE_VP8-$(call DEMDEC, FLV, VP8) += fate-vp8-alpha
-fate-vp8-alpha: CMD = framecrc -i $(TARGET_SAMPLES)/vp8_alpha/vp8_video_with_alpha.webm -vcodec copy
 
 FATE_SAMPLES_AVCONV += $(FATE_VP6-yes)
 fate-vp6: $(FATE_VP6-yes)
@@ -46,17 +40,17 @@ define FATE_VP8_FULL
 $(foreach N,$(VP8_SUITE),$(eval $(call FATE_VP8_SUITE,$(N),$(1),$(2))))
 
 # FIXME this file contains two frames with identical timestamps,
-# so ffmpeg drops one of them
+# so avconv drops one of them
 FATE_VP8-$(CONFIG_IVF_DEMUXER) += fate-vp8-sign-bias$(1)
 fate-vp8-sign-bias$(1): CMD = framemd5 $(2) -i $(TARGET_SAMPLES)/vp8/sintel-signbias.ivf
 fate-vp8-sign-bias$(1): REF = $(SRC_PATH)/tests/ref/fate/vp8-sign-bias
 
 FATE_VP8-$(CONFIG_MATROSKA_DEMUXER) += fate-vp8-size-change$(1)
-fate-vp8-size-change$(1): CMD = framemd5 $(2) -flags +bitexact -i $(TARGET_SAMPLES)/vp8/frame_size_change.webm -frames:v 30 -sws_flags bitexact+bilinear
+fate-vp8-size-change$(1): CMD = framemd5 $(2) -i $(TARGET_SAMPLES)/vp8/frame_size_change.webm -frames:v 30
 fate-vp8-size-change$(1): REF = $(SRC_PATH)/tests/ref/fate/vp8-size-change
 endef
 
-$(eval $(call FATE_VP8_FULL))
+$(call FATE_VP8_FULL)
 
 FATE_SAMPLES_AVCONV-$(CONFIG_VP8_DECODER) += $(FATE_VP8-yes)
 fate-vp8: $(FATE_VP8-yes)
