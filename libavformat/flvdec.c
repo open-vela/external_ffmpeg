@@ -934,7 +934,7 @@ retry_duration:
             // sign extension
             int32_t cts = (avio_rb24(s->pb) + 0xff800000) ^ 0xff800000;
             pts = dts + cts;
-            if (cts < 0 && !flv->wrong_dts) { // dts might be wrong
+            if (cts < 0) { // dts are wrong
                 flv->wrong_dts = 1;
                 av_log(s, AV_LOG_WARNING,
                        "negative cts, previous timestamps might be wrong\n");
@@ -943,6 +943,8 @@ retry_duration:
                        "invalid timestamps %"PRId64" %"PRId64"\n", dts, pts);
                 dts = pts = AV_NOPTS_VALUE;
             }
+            if (flv->wrong_dts)
+                dts = AV_NOPTS_VALUE;
         }
         if (type == 0 && (!st->codec->extradata || st->codec->codec_id == AV_CODEC_ID_AAC)) {
             AVDictionaryEntry *t;
