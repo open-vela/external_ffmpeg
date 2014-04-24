@@ -782,7 +782,7 @@ static int jpeg2000_decode_packet(Jpeg2000DecoderContext *s,
                 return ret;
             if (ret > sizeof(cblk->data)) {
                 avpriv_request_sample(s->avctx,
-                                      "Block with lengthinc greater than %"SIZE_SPECIFIER"",
+                                      "Block with lengthinc greater than %zu",
                                       sizeof(cblk->data));
                 return AVERROR_PATCHWELCOME;
             }
