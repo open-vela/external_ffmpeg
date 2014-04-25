@@ -2,20 +2,20 @@
  * TechSmith Screen Codec 2 (aka Dora) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -194,7 +194,8 @@ static int tscc2_decode_slice(TSCC2Context *c, int mb_y,
     int i, mb_x, q, ret;
     int off;
 
-    init_get_bits(&c->gb, buf, buf_size * 8);
+    if ((ret = init_get_bits8(&c->gb, buf, buf_size)) < 0)
+        return ret;
 
     for (mb_x = 0; mb_x < c->mb_width; mb_x++) {
         q = c->slice_quants[mb_x + c->mb_width * mb_y];
@@ -234,7 +235,6 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
     }
 
