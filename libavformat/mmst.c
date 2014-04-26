@@ -4,20 +4,20 @@
  * Copyright (c) 2007 Björn Axelsson
  * Copyright (c) 2010 Zhentan Feng <spyfeng at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -152,7 +152,7 @@ static int send_command_packet(MMSTContext *mmst)
     return 0;
 }
 
-static int mms_put_utf16(MMSContext *mms, const uint8_t *src)
+static void mms_put_utf16(MMSContext *mms, uint8_t *src)
 {
     AVIOContext bic;
     int size = mms->write_out_ptr - mms->out_buffer;
@@ -161,10 +161,7 @@ static int mms_put_utf16(MMSContext *mms, const uint8_t *src)
             sizeof(mms->out_buffer) - size, 1, NULL, NULL, NULL, NULL);
 
     len = avio_put_str16le(&bic, src);
-    if (len < 0)
-        return len;
     mms->write_out_ptr += len;
-    return 0;
 }
 
 static int send_time_test_data(MMSTContext *mmst)
@@ -176,7 +173,6 @@ static int send_time_test_data(MMSTContext *mmst)
 
 static int send_protocol_select(MMSTContext *mmst)
 {
-    int ret;
     char data_string[256];
     MMSContext *mms = &mmst->mms;
 
@@ -193,21 +189,18 @@ static int send_protocol_select(MMSTContext *mmst)
             "TCP",                                        // or UDP
             LOCAL_PORT);
 
-    if ((ret = mms_put_utf16(mms, data_string)) < 0)
-        return ret;
+    mms_put_utf16(mms, data_string);
     return send_command_packet(mmst);
 }
 
 static int send_media_file_request(MMSTContext *mmst)
 {
-    int ret;
     MMSContext *mms = &mmst->mms;
     start_command_packet(mmst, CS_PKT_MEDIA_FILE_REQUEST);
     insert_command_prefixes(mms, 1, 0xffffffff);
     bytestream_put_le32(&mms->write_out_ptr, 0);
     bytestream_put_le32(&mms->write_out_ptr, 0);
-    if ((ret = mms_put_utf16(mms, mmst->path + 1)) < 0) // +1 for skip "/"
-        return ret;
+    mms_put_utf16(mms, mmst->path + 1); // +1 for skip "/"
 
     return send_command_packet(mmst);
 }
@@ -284,7 +277,7 @@ static MMSSCPacketType get_tcp_server_response(MMSTContext *mmst)
             if (length_remaining < 0
                 || length_remaining > sizeof(mms->in_buffer) - 12) {
                 av_log(NULL, AV_LOG_ERROR,
-                       "Incoming packet length %d exceeds bufsize %"SIZE_SPECIFIER"\n",
+                       "Incoming packet length %d exceeds bufsize %zu\n",
                        length_remaining, sizeof(mms->in_buffer) - 12);
                 return AVERROR_INVALIDDATA;
             }
@@ -320,7 +313,7 @@ static MMSSCPacketType get_tcp_server_response(MMSTContext *mmst)
             if (length_remaining < 0
                 || length_remaining > sizeof(mms->in_buffer) - 8) {
                 av_log(NULL, AV_LOG_ERROR,
-                       "Data length %d is invalid or too large (max=%"SIZE_SPECIFIER")\n",
+                       "Data length %d is invalid or too large (max=%zu)\n",
                        length_remaining, sizeof(mms->in_buffer));
                 return AVERROR_INVALIDDATA;
             }
@@ -424,7 +417,6 @@ static int send_media_header_request(MMSTContext *mmst)
 static int send_startup_packet(MMSTContext *mmst)
 {
     char data_string[256];
-    int ret;
     MMSContext *mms = &mmst->mms;
     // SubscriberName is defined in MS specification linked below.
     // The guid value can be any valid value.
@@ -437,8 +429,7 @@ static int send_startup_packet(MMSTContext *mmst)
     start_command_packet(mmst, CS_PKT_INITIAL);
     insert_command_prefixes(mms, 0, 0x0004000b);
     bytestream_put_le32(&mms->write_out_ptr, 0x0003001c);
-    if ((ret = mms_put_utf16(mms, data_string)) < 0)
-        return ret;
+    mms_put_utf16(mms, data_string);
     return send_command_packet(mmst);
 }
 
