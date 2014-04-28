@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2004 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,6 +34,7 @@ static const IdStrMap img_tags[] = {
     { AV_CODEC_ID_MJPEG,      "jps"      },
     { AV_CODEC_ID_MJPEG,      "mpo"      },
     { AV_CODEC_ID_LJPEG,      "ljpg"     },
+    { AV_CODEC_ID_JPEGLS,     "jls"      },
     { AV_CODEC_ID_PNG,        "png"      },
     { AV_CODEC_ID_PNG,        "pns"      },
     { AV_CODEC_ID_PNG,        "mng"      },
@@ -49,8 +50,8 @@ static const IdStrMap img_tags[] = {
     { AV_CODEC_ID_MPEG4,      "mpg4-img" },
     { AV_CODEC_ID_FFV1,       "ffv1-img" },
     { AV_CODEC_ID_RAWVIDEO,   "y"        },
+    { AV_CODEC_ID_RAWVIDEO,   "raw"      },
     { AV_CODEC_ID_BMP,        "bmp"      },
-    { AV_CODEC_ID_GIF,        "gif"      },
     { AV_CODEC_ID_TARGA,      "tga"      },
     { AV_CODEC_ID_TIFF,       "tiff"     },
     { AV_CODEC_ID_TIFF,       "tif"      },
@@ -64,6 +65,7 @@ static const IdStrMap img_tags[] = {
     { AV_CODEC_ID_SUNRAST,    "im1"      },
     { AV_CODEC_ID_SUNRAST,    "im8"      },
     { AV_CODEC_ID_SUNRAST,    "im24"     },
+    { AV_CODEC_ID_SUNRAST,    "im32"     },
     { AV_CODEC_ID_SUNRAST,    "sunras"   },
     { AV_CODEC_ID_JPEG2000,   "j2c"      },
     { AV_CODEC_ID_JPEG2000,   "jp2"      },
@@ -72,8 +74,10 @@ static const IdStrMap img_tags[] = {
     { AV_CODEC_ID_DPX,        "dpx"      },
     { AV_CODEC_ID_EXR,        "exr"      },
     { AV_CODEC_ID_PICTOR,     "pic"      },
+    { AV_CODEC_ID_V210X,      "yuv10"    },
     { AV_CODEC_ID_WEBP,       "webp"     },
     { AV_CODEC_ID_XBM,        "xbm"      },
+    { AV_CODEC_ID_XFACE,      "xface"    },
     { AV_CODEC_ID_XWD,        "xwd"      },
     { AV_CODEC_ID_NONE,       NULL       }
 };
