@@ -16,20 +16,20 @@
  * Many thanks to Dan Dennedy <dan@dennedy.org> for providing wealth
  * of DV technical info.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -175,58 +175,54 @@ static const uint8_t dv100_qstep[16] = {
 
 static const uint8_t dv_quant_areas[4]  = { 6, 21, 43, 64 };
 
-int ff_dv_init_dynamic_tables(const DVprofile *d)
+int ff_dv_init_dynamic_tables(DVVideoContext *ctx, const DVprofile *d)
 {
     int j,i,c,s,p;
     uint32_t *factor1, *factor2;
     const int *iweight1, *iweight2;
 
-    if (!d->work_chunks[dv_work_pool_size(d)-1].buf_offset) {
-        p = i = 0;
-        for (c=0; c<d->n_difchan; c++) {
-            for (s=0; s<d->difseg_size; s++) {
-                p += 6;
-                for (j=0; j<27; j++) {
-                    p += !(j%3);
-                    if (!(DV_PROFILE_IS_1080i50(d) && c != 0 && s == 11) &&
-                        !(DV_PROFILE_IS_720p50(d) && s > 9)) {
-                          dv_calc_mb_coordinates(d, c, s, j, &d->work_chunks[i].mb_coordinates[0]);
-                          d->work_chunks[i++].buf_offset = p;
-                    }
-                    p += 5;
+    p = i = 0;
+    for (c = 0; c < d->n_difchan; c++) {
+        for (s = 0; s < d->difseg_size; s++) {
+            p += 6;
+            for (j = 0; j < 27; j++) {
+                p += !(j % 3);
+                if (!(DV_PROFILE_IS_1080i50(d) && c != 0 && s == 11) &&
+                    !(DV_PROFILE_IS_720p50(d) && s > 9)) {
+                      dv_calc_mb_coordinates(d, c, s, j, &ctx->work_chunks[i].mb_coordinates[0]);
+                      ctx->work_chunks[i++].buf_offset = p;
                 }
+                p += 5;
             }
         }
     }
 
-    if (!d->idct_factor[DV_PROFILE_IS_HD(d)?8191:5631]) {
-        factor1 = &d->idct_factor[0];
-        factor2 = &d->idct_factor[DV_PROFILE_IS_HD(d)?4096:2816];
-        if (d->height == 720) {
-            iweight1 = &ff_dv_iweight_720_y[0];
-            iweight2 = &ff_dv_iweight_720_c[0];
-        } else {
-            iweight1 = &ff_dv_iweight_1080_y[0];
-            iweight2 = &ff_dv_iweight_1080_c[0];
-        }
-        if (DV_PROFILE_IS_HD(d)) {
-            for (c = 0; c < 4; c++) {
-                for (s = 0; s < 16; s++) {
-                    for (i = 0; i < 64; i++) {
-                        *factor1++ = (dv100_qstep[s] << (c + 9)) * iweight1[i];
-                        *factor2++ = (dv100_qstep[s] << (c + 9)) * iweight2[i];
-                    }
+    factor1 = &ctx->idct_factor[0];
+    factor2 = &ctx->idct_factor[DV_PROFILE_IS_HD(d) ? 4096 : 2816];
+    if (d->height == 720) {
+        iweight1 = &ff_dv_iweight_720_y[0];
+        iweight2 = &ff_dv_iweight_720_c[0];
+    } else {
+        iweight1 = &ff_dv_iweight_1080_y[0];
+        iweight2 = &ff_dv_iweight_1080_c[0];
+    }
+    if (DV_PROFILE_IS_HD(d)) {
+        for (c = 0; c < 4; c++) {
+            for (s = 0; s < 16; s++) {
+                for (i = 0; i < 64; i++) {
+                    *factor1++ = (dv100_qstep[s] << (c + 9)) * iweight1[i];
+                    *factor2++ = (dv100_qstep[s] << (c + 9)) * iweight2[i];
                 }
             }
-        } else {
-            iweight1 = &ff_dv_iweight_88[0];
-            for (j = 0; j < 2; j++, iweight1 = &ff_dv_iweight_248[0]) {
-                for (s = 0; s < 22; s++) {
-                    for (i = c = 0; c < 4; c++) {
-                        for (; i < dv_quant_areas[c]; i++) {
-                            *factor1   = iweight1[i] << (ff_dv_quant_shifts[s][c] + 1);
-                            *factor2++ = (*factor1++) << 1;
-                        }
+        }
+    } else {
+        iweight1 = &ff_dv_iweight_88[0];
+        for (j = 0; j < 2; j++, iweight1 = &ff_dv_iweight_248[0]) {
+            for (s = 0; s < 22; s++) {
+                for (i = c = 0; c < 4; c++) {
+                    for (; i < dv_quant_areas[c]; i++) {
+                        *factor1   = iweight1[i] << (ff_dv_quant_shifts[s][c] + 1);
+                        *factor2++ = (*factor1++) << 1;
                     }
                 }
             }
@@ -275,7 +271,7 @@ av_cold int ff_dvvideo_init(AVCodecContext *avctx)
            to accelerate the parsing of partial codes */
         init_vlc(&dv_vlc, TEX_VLC_BITS, j,
                  new_dv_vlc_len, 1, 1, new_dv_vlc_bits, 2, 2, 0);
-        av_assert1(dv_vlc.table_size == 1184);
+        assert(dv_vlc.table_size == 1184);
 
         for (i = 0; i < dv_vlc.table_size; i++){
             int code = dv_vlc.table[i][0];
@@ -297,7 +293,6 @@ av_cold int ff_dvvideo_init(AVCodecContext *avctx)
     }
 
     /* Generic DSP setup */
-    memset(&dsp,0, sizeof(dsp));
     ff_dsputil_init(&dsp, avctx);
     ff_set_cmp(&dsp, dsp.ildct_cmp, avctx->ildct_cmp);
     s->get_pixels = dsp.get_pixels;
@@ -312,17 +307,10 @@ av_cold int ff_dvvideo_init(AVCodecContext *avctx)
     /* 248DCT setup */
     s->fdct[1]     = dsp.fdct248;
     s->idct_put[1] = ff_simple_idct248_put;  // FIXME: need to add it to DSP
-    if (avctx->lowres){
-        for (i = 0; i < 64; i++){
-            int j = ff_dv_zigzag248_direct[i];
-            s->dv_zigzag[1][i] = dsp.idct_permutation[(j & 7) + (j & 8) * 4 + (j & 48) / 2];
-        }
-    }else
-        memcpy(s->dv_zigzag[1], ff_dv_zigzag248_direct, 64);
+    memcpy(s->dv_zigzag[1], ff_dv_zigzag248_direct, 64);
 
     s->avctx = avctx;
     avctx->chroma_sample_location = AVCHROMA_LOC_TOPLEFT;
 
     return 0;
 }
-

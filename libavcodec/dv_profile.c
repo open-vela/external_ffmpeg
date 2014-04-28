@@ -1,43 +1,28 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdint.h>
 
 #include "libavutil/common.h"
-#include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
 #include "dv_profile.h"
-
-static DVwork_chunk work_chunks_dv25pal   [1*12*27];
-static DVwork_chunk work_chunks_dv25pal411[1*12*27];
-static DVwork_chunk work_chunks_dv25ntsc  [1*10*27];
-static DVwork_chunk work_chunks_dv50pal   [2*12*27];
-static DVwork_chunk work_chunks_dv50ntsc  [2*10*27];
-static DVwork_chunk work_chunks_dv100palp [2*12*27];
-static DVwork_chunk work_chunks_dv100ntscp[2*10*27];
-static DVwork_chunk work_chunks_dv100pali [4*12*27];
-static DVwork_chunk work_chunks_dv100ntsci[4*10*27];
-
-static uint32_t dv_idct_factor_sd    [2*2*22*64];
-static uint32_t dv_idct_factor_hd1080[2*4*16*64];
-static uint32_t dv_idct_factor_hd720 [2*4*16*64];
 
 static const uint8_t dv_audio_shuffle525[10][9] = {
   {  0, 30, 60, 20, 50, 80, 10, 40, 70 }, /* 1st channel */
@@ -89,8 +74,6 @@ static const DVprofile dv_profiles[] = {
       .height = 480,
       .width = 720,
       .sar = {{8, 9}, {32, 27}},
-      .work_chunks = &work_chunks_dv25ntsc[0],
-      .idct_factor = &dv_idct_factor_sd[0],
       .pix_fmt = AV_PIX_FMT_YUV411P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
@@ -109,8 +92,6 @@ static const DVprofile dv_profiles[] = {
       .height = 576,
       .width = 720,
       .sar = {{16, 15}, {64, 45}},
-      .work_chunks = &work_chunks_dv25pal[0],
-      .idct_factor = &dv_idct_factor_sd[0],
       .pix_fmt = AV_PIX_FMT_YUV420P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
@@ -129,8 +110,6 @@ static const DVprofile dv_profiles[] = {
       .height = 576,
       .width = 720,
       .sar = {{16, 15}, {64, 45}},
-      .work_chunks = &work_chunks_dv25pal411[0],
-      .idct_factor = &dv_idct_factor_sd[0],
       .pix_fmt = AV_PIX_FMT_YUV411P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
@@ -149,8 +128,6 @@ static const DVprofile dv_profiles[] = {
       .height = 480,
       .width = 720,
       .sar = {{8, 9}, {32, 27}},
-      .work_chunks = &work_chunks_dv50ntsc[0],
-      .idct_factor = &dv_idct_factor_sd[0],
       .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
@@ -169,8 +146,6 @@ static const DVprofile dv_profiles[] = {
       .height = 576,
       .width = 720,
       .sar = {{16, 15}, {64, 45}},
-      .work_chunks = &work_chunks_dv50pal[0],
-      .idct_factor = &dv_idct_factor_sd[0],
       .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
@@ -189,8 +164,6 @@ static const DVprofile dv_profiles[] = {
       .height = 1080,
       .width = 1280,
       .sar = {{1, 1}, {3, 2}},
-      .work_chunks = &work_chunks_dv100ntsci[0],
-      .idct_factor = &dv_idct_factor_hd1080[0],
       .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
@@ -209,8 +182,6 @@ static const DVprofile dv_profiles[] = {
       .height = 1080,
       .width = 1440,
       .sar = {{1, 1}, {4, 3}},
-      .work_chunks = &work_chunks_dv100pali[0],
-      .idct_factor = &dv_idct_factor_hd1080[0],
       .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
@@ -229,8 +200,6 @@ static const DVprofile dv_profiles[] = {
       .height = 720,
       .width = 960,
       .sar = {{1, 1}, {4, 3}},
-      .work_chunks = &work_chunks_dv100ntscp[0],
-      .idct_factor = &dv_idct_factor_hd720[0],
       .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
@@ -249,8 +218,6 @@ static const DVprofile dv_profiles[] = {
       .height = 720,
       .width = 960,
       .sar = {{1, 1}, {4, 3}},
-      .work_chunks = &work_chunks_dv100palp[0],
-      .idct_factor = &dv_idct_factor_hd720[0],
       .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
@@ -269,8 +236,6 @@ static const DVprofile dv_profiles[] = {
       .height = 576,
       .width = 720,
       .sar = {{16, 15}, {64, 45}},
-      .work_chunks = &work_chunks_dv25pal[0],
-      .idct_factor = &dv_idct_factor_sd[0],
       .pix_fmt = AV_PIX_FMT_YUV420P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
@@ -281,29 +246,21 @@ static const DVprofile dv_profiles[] = {
     }
 };
 
-const DVprofile* avpriv_dv_frame_profile2(AVCodecContext* codec, const DVprofile *sys,
+const DVprofile* avpriv_dv_frame_profile(const DVprofile *sys,
                                   const uint8_t* frame, unsigned buf_size)
 {
     int i, dsf, stype;
 
-    if(buf_size < DV_PROFILE_BYTES)
+    if (buf_size < 80 * 5 + 48 + 4)
         return NULL;
 
     dsf = (frame[3] & 0x80) >> 7;
     stype = frame[80 * 5 + 48 + 3] & 0x1f;
 
     /* 576i50 25Mbps 4:1:1 is a special case */
-    if ((dsf == 1 && stype == 0 && frame[4] & 0x07 /* the APT field */) ||
-        (stype == 31 && codec && codec->codec_tag==AV_RL32("SL25") && codec->coded_width==720 && codec->coded_height==576)) {
+    if (dsf == 1 && stype == 0 && frame[4] & 0x07 /* the APT field */) {
         return &dv_profiles[2];
     }
-
-    if(   stype == 0
-       && codec
-       && (codec->codec_tag==AV_RL32("dvsd") || codec->codec_tag==AV_RL32("CDVC"))
-       && codec->coded_width ==720
-       && codec->coded_height==576)
-        return &dv_profiles[1];
 
     for (i = 0; i < FF_ARRAY_ELEMS(dv_profiles); i++)
         if (dsf == dv_profiles[i].dsf && stype == dv_profiles[i].video_stype)
@@ -313,36 +270,17 @@ const DVprofile* avpriv_dv_frame_profile2(AVCodecContext* codec, const DVprofile
     if (sys && buf_size == sys->frame_size)
         return sys;
 
-    /* hack for trac issue #217, dv files created with QuickTime 3 */
-    if ((frame[3] & 0x7f) == 0x3f && frame[80 * 5 + 48 + 3] == 0xff)
-        return &dv_profiles[dsf];
-
     return NULL;
-}
-
-const DVprofile* avpriv_dv_frame_profile(const DVprofile *sys,
-                                  const uint8_t* frame, unsigned buf_size)
-{
-    return avpriv_dv_frame_profile2(NULL, sys, frame, buf_size);
 }
 
 const DVprofile* avpriv_dv_codec_profile(AVCodecContext* codec)
 {
     int i;
-    int w, h;
-
-    if (codec->coded_width || codec->coded_height) {
-        w = codec->coded_width;
-        h = codec->coded_height;
-    } else {
-        w = codec->width;
-        h = codec->height;
-    }
 
     for (i=0; i<FF_ARRAY_ELEMS(dv_profiles); i++)
-       if (h == dv_profiles[i].height  &&
+       if (codec->height  == dv_profiles[i].height  &&
            codec->pix_fmt == dv_profiles[i].pix_fmt &&
-           w == dv_profiles[i].width)
+           codec->width   == dv_profiles[i].width)
                return &dv_profiles[i];
 
     return NULL;
