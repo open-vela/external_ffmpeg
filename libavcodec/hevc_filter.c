@@ -5,20 +5,20 @@
  * Copyright (C) 2013 Seppo Tomperi
  * Copyright (C) 2013 Wassim Hamidouche
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,8 @@
 #include "cabac_functions.h"
 #include "golomb.h"
 #include "hevc.h"
+
+#include "bit_depth_template.c"
 
 #define LUMA 0
 #define CB 1
@@ -73,14 +75,13 @@ static int chroma_tc(HEVCContext *s, int qp_y, int c_idx, int tc_offset)
 static int get_qPy_pred(HEVCContext *s, int xC, int yC,
                         int xBase, int yBase, int log2_cb_size)
 {
-    HEVCLocalContext *lc     = &s->HEVClc;
+    HEVCLocalContext *lc     = s->HEVClc;
     int ctb_size_mask        = (1 << s->sps->log2_ctb_size) - 1;
     int MinCuQpDeltaSizeMask = (1 << (s->sps->log2_ctb_size -
                                       s->pps->diff_cu_qp_delta_depth)) - 1;
     int xQgBase              = xBase - (xBase & MinCuQpDeltaSizeMask);
     int yQgBase              = yBase - (yBase & MinCuQpDeltaSizeMask);
     int min_cb_width         = s->sps->min_cb_width;
-    int min_cb_height        = s->sps->min_cb_height;
     int x_cb                 = xQgBase >> s->sps->log2_min_cb_size;
     int y_cb                 = yQgBase >> s->sps->log2_min_cb_size;
     int availableA           = (xBase   & ctb_size_mask) &&
@@ -94,46 +95,7 @@ static int get_qPy_pred(HEVCContext *s, int xC, int yC,
         lc->first_qp_group = !lc->tu.is_cu_qp_delta_coded;
         qPy_pred = s->sh.slice_qp;
     } else {
-        qPy_pred = lc->qp_y;
-        if (log2_cb_size < s->sps->log2_ctb_size -
-                           s->pps->diff_cu_qp_delta_depth) {
-            static const int offsetX[8][8] = {
-                { -1, 1, 3, 1, 7, 1, 3, 1 },
-                {  0, 0, 0, 0, 0, 0, 0, 0 },
-                {  1, 3, 1, 3, 1, 3, 1, 3 },
-                {  2, 2, 2, 2, 2, 2, 2, 2 },
-                {  3, 5, 7, 5, 3, 5, 7, 5 },
-                {  4, 4, 4, 4, 4, 4, 4, 4 },
-                {  5, 7, 5, 7, 5, 7, 5, 7 },
-                {  6, 6, 6, 6, 6, 6, 6, 6 }
-            };
-            static const int offsetY[8][8] = {
-                { 7, 0, 1, 2, 3, 4, 5, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 },
-                { 1, 0, 3, 2, 5, 4, 7, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 },
-                { 3, 0, 1, 2, 7, 4, 5, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 },
-                { 1, 0, 3, 2, 5, 4, 7, 6 },
-                { 0, 1, 2, 3, 4, 5, 6, 7 }
-            };
-            int xC0b = (xC - (xC & ctb_size_mask)) >> s->sps->log2_min_cb_size;
-            int yC0b = (yC - (yC & ctb_size_mask)) >> s->sps->log2_min_cb_size;
-            int idxX = (xQgBase  & ctb_size_mask)  >> s->sps->log2_min_cb_size;
-            int idxY = (yQgBase  & ctb_size_mask)  >> s->sps->log2_min_cb_size;
-            int idx_mask = ctb_size_mask >> s->sps->log2_min_cb_size;
-            int x, y;
-
-            x = FFMIN(xC0b +  offsetX[idxX][idxY],             min_cb_width  - 1);
-            y = FFMIN(yC0b + (offsetY[idxX][idxY] & idx_mask), min_cb_height - 1);
-
-            if (xC0b == (lc->start_of_tiles_x >> s->sps->log2_min_cb_size) &&
-                offsetX[idxX][idxY] == -1) {
-                x = (lc->end_of_tiles_x >> s->sps->log2_min_cb_size) - 1;
-                y = yC0b - 1;
-            }
-            qPy_pred = s->qp_y_tab[y * min_cb_width + x];
-        }
+        qPy_pred = lc->qPy_pred;
     }
 
     // qPy_a
@@ -148,6 +110,9 @@ static int get_qPy_pred(HEVCContext *s, int xC, int yC,
     else
         qPy_b = s->qp_y_tab[x_cb + (y_cb - 1) * min_cb_width];
 
+    av_assert2(qPy_a >= -s->sps->qp_bd_offset && qPy_a < 52);
+    av_assert2(qPy_b >= -s->sps->qp_bd_offset && qPy_b < 52);
+
     return (qPy_a + qPy_b + 1) >> 1;
 }
 
@@ -156,12 +121,12 @@ void ff_hevc_set_qPy(HEVCContext *s, int xC, int yC,
 {
     int qp_y = get_qPy_pred(s, xC, yC, xBase, yBase, log2_cb_size);
 
-    if (s->HEVClc.tu.cu_qp_delta != 0) {
+    if (s->HEVClc->tu.cu_qp_delta != 0) {
         int off = s->sps->qp_bd_offset;
-        s->HEVClc.qp_y = FFUMOD(qp_y + s->HEVClc.tu.cu_qp_delta + 52 + 2 * off,
-                                52 + off) - off;
+        s->HEVClc->qp_y = FFUMOD(qp_y + s->HEVClc->tu.cu_qp_delta + 52 + 2 * off,
+                                 52 + off) - off;
     } else
-        s->HEVClc.qp_y = qp_y;
+        s->HEVClc->qp_y = qp_y;
 }
 
 static int get_qPy(HEVCContext *s, int xC, int yC)
@@ -208,7 +173,8 @@ static void sao_filter_CTB(HEVCContext *s, int x, int y)
     uint8_t lfase[3]; // current, above, left
     uint8_t no_tile_filter = s->pps->tiles_enabled_flag &&
                              !s->pps->loop_filter_across_tiles_enabled_flag;
-    uint8_t left_tile_edge = 0, up_tile_edge = 0;
+    uint8_t left_tile_edge = 0;
+    uint8_t up_tile_edge = 0;
 
     sao[0]     = &CTB(s->sao, x_ctb, y_ctb);
     edges[0]   = x_ctb == 0;
@@ -338,18 +304,21 @@ static int get_pcm(HEVCContext *s, int x, int y)
 static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
 {
     uint8_t *src;
-    int x, y, x_end, y_end, chroma;
+    int x, y;
+    int chroma;
     int c_tc[2], beta[2], tc[2];
     uint8_t no_p[2] = { 0 };
     uint8_t no_q[2] = { 0 };
 
     int log2_ctb_size = s->sps->log2_ctb_size;
+    int x_end, y_end;
     int ctb_size        = 1 << log2_ctb_size;
     int ctb             = (x0 >> log2_ctb_size) +
                           (y0 >> log2_ctb_size) * s->sps->ctb_width;
     int cur_tc_offset   = s->deblock[ctb].tc_offset;
     int cur_beta_offset = s->deblock[ctb].beta_offset;
-    int tc_offset, left_tc_offset, beta_offset, left_beta_offset;
+    int left_tc_offset, left_beta_offset;
+    int tc_offset, beta_offset;
     int pcmf = (s->sps->pcm_enabled_flag &&
                 s->sps->pcm.loop_filter_disable_flag) ||
                s->pps->transquant_bypass_enable_flag;
@@ -742,7 +711,8 @@ void ff_hevc_hls_filters(HEVCContext *s, int x_ctb, int y_ctb, int ctb_size)
         ff_hevc_hls_filter(s, x_ctb - ctb_size, y_ctb - ctb_size);
     if (y_ctb && x_ctb >= s->sps->width - ctb_size) {
         ff_hevc_hls_filter(s, x_ctb, y_ctb - ctb_size);
-        ff_thread_report_progress(&s->ref->tf, y_ctb - ctb_size, 0);
+        if (s->threads_type == FF_THREAD_FRAME )
+            ff_thread_report_progress(&s->ref->tf, y_ctb - ctb_size, 0);
     }
     if (x_ctb && y_ctb >= s->sps->height - ctb_size)
         ff_hevc_hls_filter(s, x_ctb - ctb_size, y_ctb);
