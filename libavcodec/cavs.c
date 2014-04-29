@@ -2,20 +2,20 @@
  * Chinese AVS video (AVS1-P2, JiZhun profile) decoder.
  * Copyright (c) 2006  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -525,7 +525,7 @@ void ff_cavs_inter(AVSContext *h, enum cavs_mb mb_type)
 static inline void scale_mv(AVSContext *h, int *d_x, int *d_y,
                             cavs_vector *src, int distp)
 {
-    int den = h->scale_den[FFMAX(src->ref, 0)];
+    int den = h->scale_den[src->ref];
 
     *d_x = (src->x * distp * den + 256 + (src->x >> 31)) >> 9;
     *d_y = (src->y * distp * den + 256 + (src->y >> 31)) >> 9;
@@ -702,7 +702,7 @@ int ff_cavs_next_mb(AVSContext *h)
  *
  ****************************************************************************/
 
-int ff_cavs_init_pic(AVSContext *h)
+void ff_cavs_init_pic(AVSContext *h)
 {
     int i;
 
@@ -723,8 +723,6 @@ int ff_cavs_init_pic(AVSContext *h)
     h->luma_scan[3]   = 8 * h->l_stride + 8;
     h->mbx            = h->mby = h->mbidx = 0;
     h->flags          = 0;
-
-    return 0;
 }
 
 /*****************************************************************************
