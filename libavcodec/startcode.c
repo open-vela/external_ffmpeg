@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,19 +36,19 @@ int ff_startcode_find_candidate_c(const uint8_t *buf, int size)
      * simpler and there must be FF_INPUT_BUFFER_PADDING_SIZE
      * bytes at the end.
      */
-#       if HAVE_FAST_64BIT
+#if HAVE_FAST_64BIT
     while (i < size &&
             !((~*(const uint64_t *)(buf + i) &
                     (*(const uint64_t *)(buf + i) - 0x0101010101010101ULL)) &
                     0x8080808080808080ULL))
         i += 8;
-#       else
+#else
     while (i < size &&
             !((~*(const uint32_t *)(buf + i) &
                     (*(const uint32_t *)(buf + i) - 0x01010101U)) &
                     0x80808080U))
         i += 4;
-#       endif
+#endif
 #endif
     for (; i < size; i++)
         if (!buf[i])
