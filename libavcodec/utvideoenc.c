@@ -2,20 +2,20 @@
  * Ut Video encoder
  * Copyright (c) 2012 Jan Ekström
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -399,7 +399,6 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     uint32_t offset = 0, slice_len = 0;
     int      i, sstart, send = 0;
     int      symbol;
-    int      ret;
 
     /* Do prediction / make planes */
     switch (c->frame_pred) {
@@ -442,7 +441,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
         /* If non-zero count is found, see if it matches width * height */
         if (counts[symbol]) {
             /* Special case if only one symbol was used */
-            if (counts[symbol] == width * (int64_t)height) {
+            if (counts[symbol] == width * height) {
                 /*
                  * Write a zero for the single symbol
                  * used in the plane, else 0xFF.
@@ -466,8 +465,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     }
 
     /* Calculate huffman lengths */
-    if ((ret = ff_huff_gen_len_table(lengths, counts, 256)) < 0)
-        return ret;
+    ff_huff_gen_len_table(lengths, counts);
 
     /*
      * Write the plane's header into the output packet:
@@ -494,7 +492,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
          * get the offset in bits and convert to bytes.
          */
         offset += write_huff_codes(dst + sstart * width, c->slice_bits,
-                                   width * height + 4, width,
+                                   width * (send - sstart), width,
                                    send - sstart, he) >> 3;
 
         slice_len = offset - slice_len;
@@ -541,17 +539,22 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int i, ret = 0;
 
     /* Allocate a new packet if needed, and set it to the pointer dst */
-    ret = ff_alloc_packet2(avctx, pkt, (256 + 4 * c->slices + width * height) *
-                           c->planes + 4);
+    ret = ff_alloc_packet(pkt, (256 + 4 * c->slices + width * height) *
+                          c->planes + 4);
 
-    if (ret < 0)
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Error allocating the output packet, or the provided packet "
+               "was too small.\n");
         return ret;
+    }
 
     dst = pkt->data;
 
     bytestream2_init_writer(&pb, dst, pkt->size);
 
-    av_fast_padded_malloc(&c->slice_bits, &c->slice_bits_size, width * height + 4);
+    av_fast_malloc(&c->slice_bits, &c->slice_bits_size,
+                   width * height + FF_INPUT_BUFFER_PADDING_SIZE);
 
     if (!c->slice_bits) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer 2.\n");
