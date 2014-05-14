@@ -1834,7 +1834,7 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
     AVPacket pkt1, *pkt = &pkt1;
     AVStream *st;
     int read_size, i, ret;
-    int64_t end_time;
+    int all_duration_valid = 0;
     int64_t filesize, offset, duration;
     int retry = 0;
 
@@ -1856,7 +1856,6 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
     /* estimate the end time (duration) */
     /* XXX: may need to support wrapping */
     filesize = ic->pb ? avio_size(ic->pb) : 0;
-    end_time = AV_NOPTS_VALUE;
     do {
         offset = filesize - (DURATION_MAX_READ_SIZE << retry);
         if (offset < 0)
@@ -1878,7 +1877,7 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
             if (pkt->pts != AV_NOPTS_VALUE &&
                 (st->start_time != AV_NOPTS_VALUE ||
                  st->first_dts  != AV_NOPTS_VALUE)) {
-                duration = end_time = pkt->pts + pkt->duration;
+                duration = pkt->pts + pkt->duration;
                 if (st->start_time != AV_NOPTS_VALUE)
                     duration -= st->start_time;
                 else
@@ -1892,7 +1891,19 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
             }
             av_free_packet(pkt);
         }
-    } while (end_time == AV_NOPTS_VALUE &&
+
+        /* check if all audio/video streams have valid duration */
+        all_duration_valid = 1;
+        for (i = 0; i < ic->nb_streams; i++) {
+            st = ic->streams[i];
+            switch (st->codec->codec_type) {
+                case AVMEDIA_TYPE_VIDEO:
+                case AVMEDIA_TYPE_AUDIO:
+                    if (st->duration == AV_NOPTS_VALUE)
+                        all_duration_valid = 0;
+            }
+        }
+    } while (!all_duration_valid &&
              offset &&
              ++retry <= DURATION_MAX_RETRY);
 
