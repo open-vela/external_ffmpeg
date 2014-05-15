@@ -2,20 +2,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include "libavutil/float_dsp.h"
 
 #include "opus.h"
-#include "opus_imdct.h"
 
 enum CeltSpread {
     CELT_SPREAD_NONE,
@@ -2096,8 +2095,8 @@ int ff_celt_decode_frame(CeltContext *s, OpusRangeCoder *rc,
         for (j = 0; j < s->blocks; j++) {
             float *dst  = frame->buf + 1024 + j * s->blocksize;
 
-            imdct->imdct_half(imdct, dst + CELT_OVERLAP / 2, s->coeffs[i] + j,
-                              s->blocks, imdct_scale);
+            ff_celt_imdct_half(imdct, dst + CELT_OVERLAP / 2, s->coeffs[i] + j,
+                               s->blocks, imdct_scale);
             s->dsp.vector_fmul_window(dst, dst, dst + CELT_OVERLAP / 2,
                                       celt_window, CELT_OVERLAP / 2);
         }

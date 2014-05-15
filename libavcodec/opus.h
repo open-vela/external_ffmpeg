@@ -3,20 +3,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -91,6 +91,8 @@ typedef struct OpusRangeCoder {
 } OpusRangeCoder;
 
 typedef struct SilkContext SilkContext;
+
+typedef struct CeltIMDCTContext CeltIMDCTContext;
 
 typedef struct CeltContext CeltContext;
 
@@ -395,6 +397,22 @@ int ff_silk_decode_superframe(SilkContext *s, OpusRangeCoder *rc,
                               float *output[2],
                               enum OpusBandwidth bandwidth, int coded_channels,
                               int duration_ms);
+
+/**
+ * Init an iMDCT of the length 2 * 15 * (2^N)
+ */
+int ff_celt_imdct_init(CeltIMDCTContext **s, int N);
+
+/**
+ * Free an iMDCT.
+ */
+void ff_celt_imdct_uninit(CeltIMDCTContext **s);
+
+/**
+ * Calculate the middle half of the iMDCT
+ */
+void ff_celt_imdct_half(CeltIMDCTContext *s, float *dst, const float *src,
+                        int src_stride, float scale);
 
 int ff_celt_init(AVCodecContext *avctx, CeltContext **s, int output_channels);
 

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,19 +25,12 @@
 
 #include <float.h>
 #include <math.h>
-#include <stddef.h>
-
-#include "config.h"
 
 #include "libavutil/attributes.h"
 #include "libavutil/common.h"
 
-#include "avfft.h"
+#include "fft.h"
 #include "opus.h"
-#include "opus_imdct.h"
-
-// minimal iMDCT size to make SIMD opts easier
-#define CELT_MIN_IMDCT_SIZE 120
 
 // complex c = a * b
 #define CMUL3(cre, cim, are, aim, bre, bim)          \
@@ -66,6 +59,18 @@ do {                                                 \
     (d).im = -ri + ir;                               \
 } while (0)
 
+struct CeltIMDCTContext {
+    int fft_n;
+    int len2;
+    int len4;
+
+    FFTComplex *tmp;
+
+    FFTComplex *twiddle_exptab;
+
+    FFTComplex *exptab[6];
+};
+
 av_cold void ff_celt_imdct_uninit(CeltIMDCTContext **ps)
 {
     CeltIMDCTContext *s = *ps;
@@ -84,9 +89,6 @@ av_cold void ff_celt_imdct_uninit(CeltIMDCTContext **ps)
     av_freep(ps);
 }
 
-static void celt_imdct_half(CeltIMDCTContext *s, float *dst, const float *src,
-                            ptrdiff_t stride, float scale);
-
 av_cold int ff_celt_imdct_init(CeltIMDCTContext **ps, int N)
 {
     CeltIMDCTContext *s;
@@ -94,7 +96,7 @@ av_cold int ff_celt_imdct_init(CeltIMDCTContext **ps, int N)
     int len  = 2 * len2;
     int i, j;
 
-    if (len2 > CELT_MAX_FRAME_SIZE || len2 < CELT_MIN_IMDCT_SIZE)
+    if (len2 > CELT_MAX_FRAME_SIZE)
         return AVERROR(EINVAL);
 
     s = av_mallocz(sizeof(*s));
@@ -134,11 +136,6 @@ av_cold int ff_celt_imdct_init(CeltIMDCTContext **ps, int N)
     for (j = 15; j < 19; j++)
         s->exptab[0][j] = s->exptab[0][j - 15];
 
-    s->imdct_half = celt_imdct_half;
-
-    if (ARCH_AARCH64)
-        ff_celt_imdct_init_aarch64(s);
-
     *ps = s;
 
     return 0;
@@ -147,7 +144,7 @@ fail:
     return AVERROR(ENOMEM);
 }
 
-static void fft5(FFTComplex *out, const FFTComplex *in, ptrdiff_t stride)
+static void fft5(FFTComplex *out, const FFTComplex *in, int stride)
 {
     // [0] = exp(2 * i * pi / 5), [1] = exp(2 * i * pi * 2 / 5)
     static const FFTComplex fact[] = { { 0.30901699437494745,  0.95105651629515353 },
@@ -180,7 +177,7 @@ static void fft5(FFTComplex *out, const FFTComplex *in, ptrdiff_t stride)
     out[4].im = in[0].im + z[0][3].im + z[1][2].im + z[2][1].im + z[3][0].im;
 }
 
-static void fft15(CeltIMDCTContext *s, FFTComplex *out, const FFTComplex *in, ptrdiff_t stride)
+static void fft15(CeltIMDCTContext *s, FFTComplex *out, const FFTComplex *in, int stride)
 {
     const FFTComplex *exptab = s->exptab[0];
     FFTComplex tmp[5];
@@ -215,8 +212,7 @@ static void fft15(CeltIMDCTContext *s, FFTComplex *out, const FFTComplex *in, pt
 /*
  * FFT of the length 15 * (2^N)
  */
-static void fft_calc(CeltIMDCTContext *s, FFTComplex *out, const FFTComplex *in,
-                     int N, ptrdiff_t stride)
+static void fft_calc(CeltIMDCTContext *s, FFTComplex *out, const FFTComplex *in, int N, int stride)
 {
     if (N) {
         const FFTComplex *exptab = s->exptab[N];
@@ -241,8 +237,8 @@ static void fft_calc(CeltIMDCTContext *s, FFTComplex *out, const FFTComplex *in,
         fft15(s, out, in, stride);
 }
 
-static void celt_imdct_half(CeltIMDCTContext *s, float *dst, const float *src,
-                            ptrdiff_t stride, float scale)
+void ff_celt_imdct_half(CeltIMDCTContext *s, float *dst, const float *src,
+                        int stride, float scale)
 {
     FFTComplex *z = (FFTComplex *)dst;
     const int len8 = s->len4 / 2;

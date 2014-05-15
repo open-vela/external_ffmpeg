@@ -2,20 +2,20 @@
  * SIMD-optimized MP3 decoding functions
  * Copyright (c) 2010 Vitor Sessak
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,11 +26,18 @@
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/mpegaudiodsp.h"
 
-void ff_imdct36_float_sse(float *out, float *buf, float *in, float *win);
-void ff_imdct36_float_sse2(float *out, float *buf, float *in, float *win);
-void ff_imdct36_float_sse3(float *out, float *buf, float *in, float *win);
-void ff_imdct36_float_ssse3(float *out, float *buf, float *in, float *win);
-void ff_imdct36_float_avx(float *out, float *buf, float *in, float *win);
+#define DECL(CPU)\
+static void imdct36_blocks_ ## CPU(float *out, float *buf, float *in, int count, int switch_point, int block_type);\
+void ff_imdct36_float_ ## CPU(float *out, float *buf, float *in, float *win);
+
+#if ARCH_X86_32
+DECL(sse)
+#endif
+DECL(sse2)
+DECL(sse3)
+DECL(ssse3)
+DECL(avx)
+
 void ff_four_imdct36_float_sse(float *out, float *buf, float *in, float *win,
                                float *tmpbuf);
 void ff_four_imdct36_float_avx(float *out, float *buf, float *in, float *win,
@@ -38,7 +45,7 @@ void ff_four_imdct36_float_avx(float *out, float *buf, float *in, float *win,
 
 DECLARE_ALIGNED(16, static float, mdct_win_sse)[2][4][4*40];
 
-#if HAVE_SSE2_INLINE
+#if HAVE_6REGS && HAVE_SSE_INLINE
 
 #define MACS(rt, ra, rb) rt+=(ra)*(rb)
 #define MLSS(rt, ra, rb) rt-=(ra)*(rb)
@@ -182,7 +189,7 @@ static void apply_window_mp3(float *in, float *win, int *unused, float *out,
     *out = sum;
 }
 
-#endif /* HAVE_SSE2_INLINE */
+#endif /* HAVE_6REGS && HAVE_SSE_INLINE */
 
 #if HAVE_YASM
 #define DECL_IMDCT_BLOCKS(CPU1, CPU2)                                       \
@@ -217,11 +224,17 @@ static void imdct36_blocks_ ## CPU1(float *out, float *buf, float *in,      \
     }                                                                   \
 }
 
+#if HAVE_SSE
+#if ARCH_X86_32
 DECL_IMDCT_BLOCKS(sse,sse)
+#endif
 DECL_IMDCT_BLOCKS(sse2,sse)
 DECL_IMDCT_BLOCKS(sse3,sse)
 DECL_IMDCT_BLOCKS(ssse3,sse)
+#endif
+#if HAVE_AVX_EXTERNAL
 DECL_IMDCT_BLOCKS(avx,avx)
+#endif
 #endif /* HAVE_YASM */
 
 av_cold void ff_mpadsp_init_x86(MPADSPContext *s)
@@ -242,16 +255,19 @@ av_cold void ff_mpadsp_init_x86(MPADSPContext *s)
         }
     }
 
-#if HAVE_SSE2_INLINE
-    if (INLINE_SSE2(cpu_flags)) {
+#if HAVE_6REGS && HAVE_SSE_INLINE
+    if (INLINE_SSE(cpu_flags)) {
         s->apply_window_float = apply_window_mp3;
     }
-#endif /* HAVE_SSE2_INLINE */
+#endif /* HAVE_SSE_INLINE */
 
 #if HAVE_YASM
+#if HAVE_SSE
+#if ARCH_X86_32
     if (EXTERNAL_SSE(cpu_flags)) {
         s->imdct36_blocks_float = imdct36_blocks_sse;
     }
+#endif
     if (EXTERNAL_SSE2(cpu_flags)) {
         s->imdct36_blocks_float = imdct36_blocks_sse2;
     }
@@ -261,8 +277,11 @@ av_cold void ff_mpadsp_init_x86(MPADSPContext *s)
     if (EXTERNAL_SSSE3(cpu_flags)) {
         s->imdct36_blocks_float = imdct36_blocks_ssse3;
     }
+#endif
+#if HAVE_AVX_EXTERNAL
     if (EXTERNAL_AVX(cpu_flags)) {
         s->imdct36_blocks_float = imdct36_blocks_avx;
     }
+#endif
 #endif /* HAVE_YASM */
 }
