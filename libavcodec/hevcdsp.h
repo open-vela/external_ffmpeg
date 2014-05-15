@@ -2,21 +2,23 @@
  * HEVC video decoder
  *
  * Copyright (C) 2012 - 2013 Guillaume Martres
+ * Copyright (C) 2013 - 2014 Pierre-Edouard Lepere
  *
- * This file is part of Libav.
  *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -58,25 +60,34 @@ typedef struct HEVCDSPContext {
                                int height, int c_idx, uint8_t vert_edge,
                                uint8_t horiz_edge, uint8_t diag_edge);
 
-    void (*put_hevc_qpel[4][4])(int16_t *dst, ptrdiff_t dststride, uint8_t *src,
-                                ptrdiff_t srcstride, int width, int height,
-                                int16_t *mcbuffer);
-    void (*put_hevc_epel[2][2])(int16_t *dst, ptrdiff_t dststride, uint8_t *src,
-                                ptrdiff_t srcstride, int width, int height,
-                                int mx, int my, int16_t *mcbuffer);
+    void (*put_hevc_qpel[10][2][2])(int16_t *dst, ptrdiff_t dststride, uint8_t *src, ptrdiff_t srcstride,
+                                    int height, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_qpel_uni[10][2][2])(uint8_t *dst, ptrdiff_t dststride, uint8_t *src, ptrdiff_t srcstride,
+                                        int height, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_qpel_uni_w[10][2][2])(uint8_t *_dst, ptrdiff_t _dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                          int height, int denom, int wx, int ox, intptr_t mx, intptr_t my, int width);
 
-    void (*put_unweighted_pred)(uint8_t *dst, ptrdiff_t dststride, int16_t *src,
-                                ptrdiff_t srcstride, int width, int height);
-    void (*put_weighted_pred_avg)(uint8_t *dst, ptrdiff_t dststride,
-                                  int16_t *src1, int16_t *src2,
-                                  ptrdiff_t srcstride, int width, int height);
-    void (*weighted_pred)(uint8_t denom, int16_t wlxFlag, int16_t olxFlag,
-                          uint8_t *dst, ptrdiff_t dststride, int16_t *src,
-                          ptrdiff_t srcstride, int width, int height);
-    void (*weighted_pred_avg)(uint8_t denom, int16_t wl0Flag, int16_t wl1Flag,
-                              int16_t ol0Flag, int16_t ol1Flag, uint8_t *dst,
-                              ptrdiff_t dststride, int16_t *src1, int16_t *src2,
-                              ptrdiff_t srcstride, int width, int height);
+    void (*put_hevc_qpel_bi[10][2][2])(uint8_t *dst, ptrdiff_t dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                       int16_t *src2, ptrdiff_t src2stride,
+                                       int height, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_qpel_bi_w[10][2][2])(uint8_t *dst, ptrdiff_t dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                         int16_t *src2, ptrdiff_t src2stride,
+                                         int height, int denom, int wx0, int wx1,
+                                         int ox0, int ox1, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_epel[10][2][2])(int16_t *dst, ptrdiff_t dststride, uint8_t *src, ptrdiff_t srcstride,
+                                    int height, intptr_t mx, intptr_t my, int width);
+
+    void (*put_hevc_epel_uni[10][2][2])(uint8_t *dst, ptrdiff_t dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                        int height, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_epel_uni_w[10][2][2])(uint8_t *_dst, ptrdiff_t _dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                          int height, int denom, int wx, int ox, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_epel_bi[10][2][2])(uint8_t *dst, ptrdiff_t dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                       int16_t *src2, ptrdiff_t src2stride,
+                                       int height, intptr_t mx, intptr_t my, int width);
+    void (*put_hevc_epel_bi_w[10][2][2])(uint8_t *dst, ptrdiff_t dststride, uint8_t *_src, ptrdiff_t _srcstride,
+                                         int16_t *src2, ptrdiff_t src2stride,
+                                         int height, int denom, int wx0, int ox0, int wx1,
+                                         int ox1, intptr_t mx, intptr_t my, int width);
 
     void (*hevc_h_loop_filter_luma)(uint8_t *pix, ptrdiff_t stride,
                                     int *beta, int *tc,
@@ -104,6 +115,9 @@ typedef struct HEVCDSPContext {
 
 void ff_hevc_dsp_init(HEVCDSPContext *hpc, int bit_depth);
 
-extern const int8_t ff_hevc_epel_filters[7][16];
+extern const int8_t ff_hevc_epel_filters[7][4];
+extern const int8_t ff_hevc_qpel_filters[3][16];
+
+void ff_hevcdsp_init_x86(HEVCDSPContext *c, const int bit_depth);
 
 #endif /* AVCODEC_HEVCDSP_H */
