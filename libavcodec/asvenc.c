@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,6 @@
 
 #include "asv.h"
 #include "avcodec.h"
-#include "internal.h"
 #include "mathops.h"
 #include "mpeg12data.h"
 
@@ -115,7 +114,7 @@ static inline void asv2_encode_block(ASV1Context *a, int16_t block[64]){
         if( (block[index + 1] = (block[index + 1]*a->q_intra_matrix[index + 1] + (1<<15))>>16) ) ccp |= 2;
         if( (block[index + 9] = (block[index + 9]*a->q_intra_matrix[index + 9] + (1<<15))>>16) ) ccp |= 1;
 
-        av_assert2(i || ccp<8);
+        assert(i || ccp<8);
         if(i) put_bits(&a->pb, ff_asv_ac_ccp_tab[ccp][1], ff_asv_ac_ccp_tab[ccp][0]);
         else  put_bits(&a->pb, ff_asv_dc_ccp_tab[ccp][1], ff_asv_dc_ccp_tab[ccp][0]);
 
@@ -181,9 +180,12 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int size, ret;
     int mb_x, mb_y;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, a->mb_height*a->mb_width*MAX_MB_SIZE +
-                                  FF_MIN_BUFFER_SIZE)) < 0)
+    if (!pkt->data &&
+        (ret = av_new_packet(pkt, a->mb_height*a->mb_width*MAX_MB_SIZE +
+                                  FF_MIN_BUFFER_SIZE)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
+    }
 
     init_put_bits(&a->pb, pkt->data, pkt->size);
 
@@ -237,9 +239,15 @@ static av_cold int encode_init(AVCodecContext *avctx){
     int i;
     const int scale= avctx->codec_id == AV_CODEC_ID_ASV1 ? 1 : 2;
 
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+    avctx->coded_frame->key_frame = 1;
+
     ff_asv_common_init(avctx);
 
-    if(avctx->global_quality <= 0) avctx->global_quality= 4*FF_QUALITY_SCALE;
+    if(avctx->global_quality == 0) avctx->global_quality= 4*FF_QUALITY_SCALE;
 
     a->inv_qscale= (32*scale*FF_QUALITY_SCALE +  avctx->global_quality/2) / avctx->global_quality;
 
@@ -255,6 +263,12 @@ static av_cold int encode_init(AVCodecContext *avctx){
 
     return 0;
 }
+static av_cold int asv_encode_close(AVCodecContext *avctx)
+{
+    av_frame_free(&avctx->coded_frame);
+
+    return 0;
+}
 
 #if CONFIG_ASV1_ENCODER
 AVCodec ff_asv1_encoder = {
@@ -265,6 +279,7 @@ AVCodec ff_asv1_encoder = {
     .priv_data_size = sizeof(ASV1Context),
     .init           = encode_init,
     .encode2        = encode_frame,
+    .close          = asv_encode_close,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV420P,
                                                     AV_PIX_FMT_NONE },
 };
@@ -279,6 +294,7 @@ AVCodec ff_asv2_encoder = {
     .priv_data_size = sizeof(ASV1Context),
     .init           = encode_init,
     .encode2        = encode_frame,
+    .close          = asv_encode_close,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV420P,
                                                     AV_PIX_FMT_NONE },
 };
