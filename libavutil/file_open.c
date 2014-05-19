@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@ static int win32_open(const char *filename_utf8, int oflag, int pmode)
     num_chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename_utf8, -1, NULL, 0);
     if (num_chars <= 0)
         goto fallback;
-    filename_w = av_mallocz(sizeof(wchar_t) * num_chars);
+    filename_w = av_mallocz_array(num_chars, sizeof(wchar_t));
     if (!filename_w) {
         errno = ENOMEM;
         return -1;
@@ -62,7 +62,7 @@ static int win32_open(const char *filename_utf8, int oflag, int pmode)
         return fd;
 
 fallback:
-    /* filename may be be in CP_ACP */
+    /* filename may be in CP_ACP */
     return _sopen(filename_utf8, oflag, SH_DENYNO, pmode);
 }
 #define open win32_open
@@ -85,9 +85,45 @@ int avpriv_open(const char *filename, int flags, ...)
 
     fd = open(filename, flags, mode);
 #if HAVE_FCNTL
-    if (fd != -1)
-        fcntl(fd, F_SETFD, FD_CLOEXEC);
+    if (fd != -1) {
+        if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+            av_log(NULL, AV_LOG_DEBUG, "Failed to set close on exec\n");
+    }
 #endif
 
     return fd;
+}
+
+FILE *av_fopen_utf8(const char *path, const char *mode)
+{
+    int fd;
+    int access;
+    const char *m = mode;
+
+    switch (*m++) {
+    case 'r': access = O_RDONLY; break;
+    case 'w': access = O_CREAT|O_WRONLY|O_TRUNC; break;
+    case 'a': access = O_CREAT|O_WRONLY|O_APPEND; break;
+    default :
+        errno = EINVAL;
+        return NULL;
+    }
+    while (*m) {
+        if (*m == '+') {
+            access &= ~(O_RDONLY | O_WRONLY);
+            access |= O_RDWR;
+        } else if (*m == 'b') {
+#ifdef O_BINARY
+            access |= O_BINARY;
+#endif
+        } else if (*m) {
+            errno = EINVAL;
+            return NULL;
+        }
+        m++;
+    }
+    fd = avpriv_open(path, access, 0666);
+    if (fd == -1)
+        return NULL;
+    return fdopen(fd, mode);
 }
