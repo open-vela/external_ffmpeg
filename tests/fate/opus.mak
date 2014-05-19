@@ -14,7 +14,7 @@ OPUS_SAMPLES        = $(addprefix testvector, 08 09 10 12)
 define FATE_OPUS_TEST
 FATE_OPUS     += fate-opus-$(1)
 FATE_OPUS$(2) += fate-opus-$(1)
-fate-opus-$(1): CMD = ffmpeg -i $(TARGET_SAMPLES)/opus/$(1).mka -f f32le -
+fate-opus-$(1): CMD = avconv -i $(TARGET_SAMPLES)/opus/$(1).mka -f f32le -
 fate-opus-$(1): REF = $(TARGET_SAMPLES)/opus/$(1).f32
 endef
 
@@ -32,7 +32,7 @@ $(FATE_OPUS): FUZZ = 3
 $(FATE_OPUS_CELT): CMP = oneoff
 $(FATE_OPUS_CELT): FUZZ = 6
 
-#FATE_SAMPLES_AVCONV-$(call DEMDEC, MATROSKA, OPUS) += $(FATE_OPUS)
+FATE_SAMPLES_AVCONV-$(call DEMDEC, MATROSKA, OPUS) += $(FATE_OPUS)
 fate-opus-celt: $(FATE_OPUS_CELT)
 fate-opus-hybrid: $(FATE_OPUS_HYBRID)
 fate-opus-silk: $(FATE_OPUS_SILK)
