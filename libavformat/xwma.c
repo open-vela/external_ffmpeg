@@ -2,20 +2,20 @@
  * xWMA demuxer
  * Copyright (c) 2011 Max Horn
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ static int xwma_read_header(AVFormatContext *s)
     int64_t size;
     int ret;
     uint32_t dpds_table_size = 0;
-    uint32_t *dpds_table = NULL;
+    uint32_t *dpds_table = 0;
     unsigned int tag;
     AVIOContext *pb = s->pb;
     AVStream *st;
@@ -130,10 +130,8 @@ static int xwma_read_header(AVFormatContext *s)
 
     /* parse the remaining RIFF chunks */
     for (;;) {
-        if (pb->eof_reached) {
-            ret = AVERROR_EOF;
-            goto end;
-        }
+        if (pb->eof_reached)
+            return -1;
         /* read next chunk tag */
         tag = avio_rl32(pb);
         size = avio_rl32(pb);
@@ -154,8 +152,7 @@ static int xwma_read_header(AVFormatContext *s)
             /* Error out if there is more than one dpds chunk. */
             if (dpds_table) {
                 av_log(s, AV_LOG_ERROR, "two dpds chunks present\n");
-                ret = AVERROR_INVALIDDATA;
-                goto end;
+                return -1;
             }
 
             /* Compute the number of entries in the dpds chunk. */
@@ -167,7 +164,7 @@ static int xwma_read_header(AVFormatContext *s)
             if (dpds_table_size == 0 || dpds_table_size >= INT_MAX / 4) {
                 av_log(s, AV_LOG_ERROR,
                        "dpds chunk size %"PRId64" invalid\n", size);
-                return AVERROR_INVALIDDATA;
+                return -1;
             }
 
             /* Allocate some temporary storage to keep the dpds data around.
@@ -187,10 +184,8 @@ static int xwma_read_header(AVFormatContext *s)
     }
 
     /* Determine overall data length */
-    if (size < 0) {
-        ret = AVERROR_INVALIDDATA;
-        goto end;
-    }
+    if (size < 0)
+        return -1;
     if (!size) {
         xwma->data_end = INT64_MAX;
     } else
@@ -209,8 +204,7 @@ static int xwma_read_header(AVFormatContext *s)
             av_log(s, AV_LOG_ERROR,
                    "Invalid bits_per_coded_sample %d for %d channels\n",
                    st->codec->bits_per_coded_sample, st->codec->channels);
-            ret = AVERROR_INVALIDDATA;
-            goto end;
+            return AVERROR_INVALIDDATA;
         }
 
         st->duration = total_decoded_bytes / bytes_per_sample;
@@ -245,10 +239,9 @@ static int xwma_read_header(AVFormatContext *s)
         st->duration = (size<<3) * st->codec->sample_rate / st->codec->bit_rate;
     }
 
-end:
     av_free(dpds_table);
 
-    return ret;
+    return 0;
 }
 
 static int xwma_read_packet(AVFormatContext *s, AVPacket *pkt)

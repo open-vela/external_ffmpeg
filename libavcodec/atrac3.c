@@ -3,20 +3,20 @@
  * Copyright (c) 2006-2008 Maxim Poliakovski
  * Copyright (c) 2006-2008 Benjamin Larsson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,7 +38,6 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/float_dsp.h"
-#include "libavutil/libm.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "fft.h"
@@ -106,8 +105,8 @@ typedef struct ATRAC3Context {
     int scrambled_stream;
     //@}
 
-    AtracGCContext    gainc_ctx;
-    FFTContext        mdct_ctx;
+    AtracGCContext  gainc_ctx;
+    FFTContext mdct_ctx;
     FmtConvertContext fmt_conv;
     AVFloatDSPContext fdsp;
 } ATRAC3Context;
@@ -410,17 +409,17 @@ static int decode_tonal_components(GetBitContext *gb,
 static int decode_gain_control(GetBitContext *gb, GainBlock *block,
                                int num_bands)
 {
-    int b, j;
+    int i, j;
     int *level, *loc;
 
     AtracGainInfo *gain = block->g_block;
 
-    for (b = 0; b <= num_bands; b++) {
-        gain[b].num_points = get_bits(gb, 3);
-        level              = gain[b].lev_code;
-        loc                = gain[b].loc_code;
+    for (i = 0; i <= num_bands; i++) {
+        gain[i].num_points    = get_bits(gb, 3);
+        level                 = gain[i].lev_code;
+        loc                   = gain[i].loc_code;
 
-        for (j = 0; j < gain[b].num_points; j++) {
+        for (j = 0; j < gain[i].num_points; j++) {
             level[j] = get_bits(gb, 4);
             loc[j]   = get_bits(gb, 5);
             if (j && loc[j] <= loc[j - 1])
@@ -429,8 +428,8 @@ static int decode_gain_control(GetBitContext *gb, GainBlock *block,
     }
 
     /* Clear the unused blocks. */
-    for (; b < 4 ; b++)
-        gain[b].num_points = 0;
+    for (; i < 4 ; i++)
+        gain[i].num_points = 0;
 
     return 0;
 }
@@ -521,7 +520,7 @@ static void reverse_matrixing(float *su1, float *su2, int *prev_code,
             }
             break;
         default:
-            av_assert1(0);
+            assert(0);
         }
     }
 }
@@ -676,7 +675,7 @@ static int decode_frame(AVCodecContext *avctx, const uint8_t *databuf,
 
 
         /* set the bitstream reader at the start of the second Sound Unit*/
-        init_get_bits8(&q->gb, ptr1, q->decoded_bytes_buffer + avctx->block_align - ptr1);
+        init_get_bits(&q->gb, ptr1, (avctx->block_align - i) * 8);
 
         /* Fill the Weighting coeffs delay buffer */
         memmove(q->weighting_delay, &q->weighting_delay[2],
@@ -750,8 +749,10 @@ static int atrac3_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = SAMPLES_PER_FRAME;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     /* Check if we need to descramble and what buffer to pass on. */
     if (q->scrambled_stream) {
@@ -772,7 +773,7 @@ static int atrac3_decode_frame(AVCodecContext *avctx, void *data,
     return avctx->block_align;
 }
 
-static av_cold void atrac3_init_static_data(void)
+static av_cold void atrac3_init_static_data(AVCodec *codec)
 {
     int i;
 
@@ -792,7 +793,6 @@ static av_cold void atrac3_init_static_data(void)
 
 static av_cold int atrac3_decode_init(AVCodecContext *avctx)
 {
-    static int static_init_done;
     int i, ret;
     int version, delay, samples_per_frame, frame_factor;
     const uint8_t *edata_ptr = avctx->extradata;
@@ -802,10 +802,6 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Channel configuration error!\n");
         return AVERROR(EINVAL);
     }
-
-    if (!static_init_done)
-        atrac3_init_static_data();
-    static_init_done = 1;
 
     /* Take care of the codec-specific extradata. */
     if (avctx->extradata_size == 14) {
@@ -835,7 +831,7 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
                    avctx->channels, frame_factor);
             return AVERROR_INVALIDDATA;
         }
-    } else if (avctx->extradata_size == 12 || avctx->extradata_size == 10) {
+    } else if (avctx->extradata_size == 10) {
         /* Parse the extradata, RM format. */
         version                = bytestream_get_be32(&edata_ptr);
         samples_per_frame      = bytestream_get_be16(&edata_ptr);
@@ -872,10 +868,8 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     if (q->coding_mode == STEREO)
         av_log(avctx, AV_LOG_DEBUG, "Normal stereo detected.\n");
     else if (q->coding_mode == JOINT_STEREO) {
-        if (avctx->channels != 2) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid coding mode\n");
+        if (avctx->channels != 2)
             return AVERROR_INVALIDDATA;
-        }
         av_log(avctx, AV_LOG_DEBUG, "Joint stereo detected.\n");
     } else {
         av_log(avctx, AV_LOG_ERROR, "Unknown channel coding mode %x!\n",
@@ -918,7 +912,7 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     avpriv_float_dsp_init(&q->fdsp, avctx->flags & CODEC_FLAG_BITEXACT);
     ff_fmt_convert_init(&q->fmt_conv, avctx);
 
-    q->units = av_mallocz_array(avctx->channels, sizeof(*q->units));
+    q->units = av_mallocz(sizeof(*q->units) * avctx->channels);
     if (!q->units) {
         atrac3_decode_close(avctx);
         return AVERROR(ENOMEM);
@@ -934,6 +928,7 @@ AVCodec ff_atrac3_decoder = {
     .id               = AV_CODEC_ID_ATRAC3,
     .priv_data_size   = sizeof(ATRAC3Context),
     .init             = atrac3_decode_init,
+    .init_static_data = atrac3_init_static_data,
     .close            = atrac3_decode_close,
     .decode           = atrac3_decode_frame,
     .capabilities     = CODEC_CAP_SUBFRAMES | CODEC_CAP_DR1,
