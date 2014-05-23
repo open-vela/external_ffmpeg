@@ -2,20 +2,20 @@
  * Maxis XA (.xa) File Demuxer
  * Copyright (c) 2008 Robert Marston
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -83,9 +83,6 @@ static int xa_read_header(AVFormatContext *s)
     avio_skip(pb, 4);       /* Skip average byte rate */
     avio_skip(pb, 2);       /* Skip block align */
     avio_skip(pb, 2);       /* Skip bits-per-sample */
-
-    if (!st->codec->channels || !st->codec->sample_rate)
-        return AVERROR_INVALIDDATA;
 
     st->codec->bit_rate = av_clip(15LL * st->codec->channels * 8 *
                                   st->codec->sample_rate / 28, 0, INT_MAX);
