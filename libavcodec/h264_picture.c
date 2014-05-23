@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,6 +43,7 @@
 #include "mpegutils.h"
 #include "rectangle.h"
 #include "thread.h"
+#include "vdpau_internal.h"
 
 void ff_h264_unref_picture(H264Context *h, H264Picture *pic)
 {
@@ -116,7 +117,12 @@ int ff_h264_ref_picture(H264Context *h, H264Picture *dst, H264Picture *src)
     dst->field_picture = src->field_picture;
     dst->needs_realloc = src->needs_realloc;
     dst->reference     = src->reference;
+    dst->crop          = src->crop;
+    dst->crop_left     = src->crop_left;
+    dst->crop_top      = src->crop_top;
     dst->recovered     = src->recovered;
+    dst->invalid_gap   = src->invalid_gap;
+    dst->sei_recovery_frame_cnt = src->sei_recovery_frame_cnt;
 
     return 0;
 fail:
@@ -124,10 +130,12 @@ fail:
     return ret;
 }
 
-#if CONFIG_ERROR_RESILIENCE
-static void h264_set_erpic(ERPicture *dst, H264Picture *src)
+void ff_h264_set_erpic(ERPicture *dst, H264Picture *src)
 {
+#if CONFIG_ERROR_RESILIENCE
     int i;
+
+    memset(dst, 0, sizeof(*dst));
 
     if (!src)
         return;
@@ -142,8 +150,8 @@ static void h264_set_erpic(ERPicture *dst, H264Picture *src)
 
     dst->mb_type = src->mb_type;
     dst->field_picture = src->field_picture;
-}
 #endif /* CONFIG_ERROR_RESILIENCE */
+}
 
 int ff_h264_field_end(H264Context *h, int in_setup)
 {
@@ -151,9 +159,9 @@ int ff_h264_field_end(H264Context *h, int in_setup)
     int err = 0;
     h->mb_y = 0;
 
-    if (!in_setup && !h->droppable)
-        ff_thread_report_progress(&h->cur_pic_ptr->tf, INT_MAX,
-                                  h->picture_structure == PICT_BOTTOM_FIELD);
+    if (CONFIG_H264_VDPAU_DECODER &&
+        h->avctx->codec->capabilities & CODEC_CAP_HWACCEL_VDPAU)
+        ff_vdpau_h264_set_reference_frames(h);
 
     if (in_setup || !(avctx->active_thread_type & FF_THREAD_FRAME)) {
         if (!h->droppable) {
@@ -172,6 +180,10 @@ int ff_h264_field_end(H264Context *h, int in_setup)
                    "hardware accelerator failed to decode picture\n");
     }
 
+    if (CONFIG_H264_VDPAU_DECODER &&
+        h->avctx->codec->capabilities & CODEC_CAP_HWACCEL_VDPAU)
+        ff_vdpau_h264_picture_complete(h);
+
     /*
      * FIXME: Error handling code does not seem to support interlaced
      * when slices span multiple rows
@@ -184,14 +196,13 @@ int ff_h264_field_end(H264Context *h, int in_setup)
      * past end by one (callers fault) and resync_mb_y != 0
      * causes problems for the first MB line, too.
      */
-    if (CONFIG_ERROR_RESILIENCE && !FIELD_PICTURE(h)) {
-        h264_set_erpic(&h->er.cur_pic, h->cur_pic_ptr);
-        h264_set_erpic(&h->er.last_pic,
-                       h->ref_count[0] ? &h->ref_list[0][0] : NULL);
-        h264_set_erpic(&h->er.next_pic,
-                       h->ref_count[1] ? &h->ref_list[1][0] : NULL);
+    if (CONFIG_ERROR_RESILIENCE && !FIELD_PICTURE(h) && h->current_slice && !h->sps.new) {
+        ff_h264_set_erpic(&h->er.cur_pic, h->cur_pic_ptr);
         ff_er_frame_end(&h->er);
     }
+    if (!in_setup && !h->droppable)
+        ff_thread_report_progress(&h->cur_pic_ptr->tf, INT_MAX,
+                                  h->picture_structure == PICT_BOTTOM_FIELD);
     emms_c();
 
     h->current_slice = 0;
