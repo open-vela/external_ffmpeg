@@ -4,20 +4,20 @@
 ;* Copyright (c) 2000, 2001 Fabrice Bellard
 ;* Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;*****************************************************************************
 
@@ -487,39 +487,3 @@ cglobal pix_norm1, 2, 4
     movd        eax, m1
     RET
 
-;-----------------------------------------------
-;int ff_sum_abs_dctelem(int16_t *block)
-;-----------------------------------------------
-; %1 = number of xmm registers used
-; %2 = number of inline loops
-
-%macro SUM_ABS_DCTELEM 2
-cglobal sum_abs_dctelem, 1, 1, %1, block
-    pxor    m0, m0
-    pxor    m1, m1
-%assign %%i 0
-%rep %2
-    mova      m2, [blockq+mmsize*(0+%%i)]
-    mova      m3, [blockq+mmsize*(1+%%i)]
-    mova      m4, [blockq+mmsize*(2+%%i)]
-    mova      m5, [blockq+mmsize*(3+%%i)]
-    ABS1_SUM  m2, m6, m0
-    ABS1_SUM  m3, m6, m1
-    ABS1_SUM  m4, m6, m0
-    ABS1_SUM  m5, m6, m1
-%assign %%i %%i+4
-%endrep
-    paddusw m0, m1
-    HSUM    m0, m1, eax
-    and     eax, 0xFFFF
-    RET
-%endmacro
-
-INIT_MMX mmx
-SUM_ABS_DCTELEM 0, 4
-INIT_MMX mmxext
-SUM_ABS_DCTELEM 0, 4
-INIT_XMM sse2
-SUM_ABS_DCTELEM 7, 2
-INIT_XMM ssse3
-SUM_ABS_DCTELEM 6, 2
