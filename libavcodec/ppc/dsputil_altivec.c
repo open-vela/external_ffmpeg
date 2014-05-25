@@ -3,20 +3,20 @@
  * Copyright (c) 2002 Dieter Shirley
  * Copyright (c) 2003-2004 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -571,23 +571,6 @@ static void clear_block_altivec(int16_t *block)
     vec_st(zero_s16v, 112, block);
 }
 
-static void add_bytes_altivec(uint8_t *dst, uint8_t *src, int w)
-{
-    register int i;
-    register vector unsigned char vdst, vsrc;
-
-    /* dst and src are 16 bytes-aligned (guaranteed). */
-    for (i = 0; i + 15 < w; i += 16) {
-        vdst = vec_ld(i, (unsigned char *) dst);
-        vsrc = vec_ld(i, (unsigned char *) src);
-        vdst = vec_add(vsrc, vdst);
-        vec_st(vdst, i, (unsigned char *) dst);
-    }
-    /* If w is not a multiple of 16. */
-    for (; i < w; i++)
-        dst[i] = src[i];
-}
-
 static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
                                      uint8_t *src, int stride, int h)
 {
@@ -945,7 +928,6 @@ av_cold void ff_dsputil_init_altivec(DSPContext *c, AVCodecContext *avctx,
     c->pix_sum   = pix_sum_altivec;
 
     c->diff_pixels = diff_pixels_altivec;
-    c->add_bytes   = add_bytes_altivec;
 
     if (!high_bit_depth) {
         c->get_pixels = get_pixels_altivec;
