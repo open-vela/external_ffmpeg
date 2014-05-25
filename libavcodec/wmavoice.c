@@ -2,20 +2,20 @@
  * Windows Media Audio Voice decoder.
  * Copyright (c) 2009 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,8 @@
  * @brief Windows Media Audio Voice compatible decoder
  * @author Ronald S. Bultje <rsbultje@gmail.com>
  */
+
+#define UNCHECKED_BITSTREAM_READER 1
 
 #include <math.h>
 
@@ -518,7 +520,7 @@ static int kalman_smoothen(WMAVoiceContext *s, int pitch,
     float optimal_gain = 0, dot;
     const float *ptr = &in[-FFMAX(s->min_pitch_val, pitch - 3)],
                 *end = &in[-FFMIN(s->max_pitch_val, pitch + 3)],
-                *best_hist_ptr = NULL;
+                *best_hist_ptr;
 
     /* find best fitting point in history */
     do {
@@ -778,7 +780,7 @@ static void postfilter(WMAVoiceContext *s, const float *synth,
           *synth_pf = &s->synth_filter_out_buf[MAX_LSPS_ALIGN16],
           *synth_filter_in = zero_exc_pf;
 
-    av_assert0(size <= MAX_FRAMESIZE / 2);
+    assert(size <= MAX_FRAMESIZE / 2);
 
     /* generate excitation from input signal */
     ff_celp_lp_zero_synthesis_filterf(zero_exc_pf, lpcs, synth, size, s->lsps);
@@ -1247,7 +1249,7 @@ static void synth_block_hardcoded(WMAVoiceContext *s, GetBitContext *gb,
     float gain;
     int n, r_idx;
 
-    av_assert0(size <= MAX_FRAMESIZE);
+    assert(size <= MAX_FRAMESIZE);
 
     /* Set the offset from which we start reading wmavoice_std_codebook */
     if (frame_desc->fcb_type == FCB_TYPE_SILENCE) {
@@ -1283,7 +1285,7 @@ static void synth_block_fcb_acb(WMAVoiceContext *s, GetBitContext *gb,
     int n, idx, gain_weight;
     AMRFixed fcb;
 
-    av_assert0(size <= MAX_FRAMESIZE / 2);
+    assert(size <= MAX_FRAMESIZE / 2);
     memset(pulses, 0, sizeof(*pulses) * size);
 
     fcb.pitch_lag      = block_pitch_sh2 >> 2;
@@ -1454,8 +1456,8 @@ static int synth_frame(AVCodecContext *ctx, GetBitContext *gb, int frame_idx,
                        float *excitation, float *synth)
 {
     WMAVoiceContext *s = ctx->priv_data;
-    int n, n_blocks_x2, log_n_blocks_x2, av_uninit(cur_pitch_val);
-    int pitch[MAX_BLOCKS], av_uninit(last_block_pitch);
+    int n, n_blocks_x2, log_n_blocks_x2, cur_pitch_val;
+    int pitch[MAX_BLOCKS], last_block_pitch;
 
     /* Parse frame type ("frame header"), see frame_descs */
     int bd_idx = s->vbm_tree[get_vlc2(gb, frame_type_vlc.table, 6, 3)], block_nsamples;
@@ -1672,7 +1674,7 @@ static int check_bits_for_superframe(GetBitContext *orig_gb,
     /* initialize a copy */
     init_get_bits(gb, orig_gb->buffer, orig_gb->size_in_bits);
     skip_bits_long(gb, get_bits_count(orig_gb));
-    av_assert1(get_bits_left(gb) == get_bits_left(orig_gb));
+    assert(get_bits_left(gb) == get_bits_left(orig_gb));
 
     /* superframe header */
     if (get_bits_left(gb) < 14)
@@ -1818,8 +1820,10 @@ static int synth_superframe(AVCodecContext *ctx, AVFrame *frame,
 
     /* get output buffer */
     frame->nb_samples = 480;
-    if ((res = ff_get_buffer(ctx, frame, 0)) < 0)
+    if ((res = ff_get_buffer(ctx, frame, 0)) < 0) {
+        av_log(ctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return res;
+    }
     frame->nb_samples = n_samples;
     samples = (float *)frame->data[0];
 
@@ -1951,7 +1955,7 @@ static int wmavoice_decode_packet(AVCodecContext *ctx, void *data,
     int size, res, pos;
 
     /* Packets are sometimes a multiple of ctx->block_align, with a packet
-     * header at each ctx->block_align bytes. However, FFmpeg's ASF demuxer
+     * header at each ctx->block_align bytes. However, Libav's ASF demuxer
      * feeds us ASF packets, which may concatenate multiple "codec" packets
      * in a single "muxer" packet, so we artificially emulate that by
      * capping the packet size at ctx->block_align. */
@@ -2006,7 +2010,7 @@ static int wmavoice_decode_packet(AVCodecContext *ctx, void *data,
         /* rewind bit reader to start of last (incomplete) superframe... */
         init_get_bits(gb, avpkt->data, size << 3);
         skip_bits_long(gb, (size << 3) - pos);
-        av_assert1(get_bits_left(gb) == pos);
+        assert(get_bits_left(gb) == pos);
 
         /* ...and cache it for spillover in next packet */
         init_put_bits(&s->pb, s->sframe_cache, SFRAME_CACHE_MAXSIZE);
