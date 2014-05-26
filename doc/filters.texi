@@ -154,6 +154,11 @@ aformat=sample_fmts=u8|s16:channel_layouts=stereo
 
 Mixes multiple audio inputs into a single output.
 
+Note that this filter only supports float samples (the @var{amerge}
+and @var{pan} audio filters support many formats). If the @var{amix}
+input has integer samples then @ref{aresample} will be automatically
+inserted to perform the conversion to float samples.
+
 For example
 @example
 avconv -i INPUT1 -i INPUT2 -i INPUT3 -filter_complex amix=inputs=3:duration=first:dropout_transition=3 OUTPUT
