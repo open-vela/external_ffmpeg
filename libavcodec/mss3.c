@@ -2,20 +2,20 @@
  * Microsoft Screen 3 (aka Microsoft ATC Screen) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -296,7 +296,7 @@ static void rac_normalise(RangeCoder *c)
             c->low |= *c->src++;
         } else if (!c->low) {
             c->got_error = 1;
-            return;
+            c->low = 1;
         }
         if (c->range >= RAC_BOTTOM)
             return;
@@ -731,10 +731,8 @@ static int mss3_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return buf_size;
     c->got_error = 0;
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
         return ret;
-    }
     c->pic->key_frame = keyframe;
     c->pic->pict_type = keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
     if (!bytestream2_get_bytes_left(&gb)) {
@@ -840,6 +838,7 @@ static av_cold int mss3_decode_init(AVCodecContext *avctx)
                                             b_width * b_height);
         if (!c->dct_coder[i].prev_dc) {
             av_log(avctx, AV_LOG_ERROR, "Cannot allocate buffer\n");
+            av_frame_free(&c->pic);
             while (i >= 0) {
                 av_freep(&c->dct_coder[i].prev_dc);
                 i--;

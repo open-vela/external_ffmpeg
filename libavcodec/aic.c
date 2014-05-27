@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -203,7 +203,8 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
     int has_skips, coeff_type, coeff_bits, skip_type, skip_bits;
     const int num_coeffs = aic_num_band_coeffs[band];
     const uint8_t *scan = aic_scan[band | force_chroma];
-    int mb, idx, val;
+    int mb, idx;
+    unsigned val;
 
     has_skips  = get_bits1(gb);
     coeff_type = get_bits1(gb);
@@ -217,14 +218,14 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
             idx = -1;
             do {
                 GET_CODE(val, skip_type, skip_bits);
-                if (val < 0)
+                if (val >= 0x10000)
                     return AVERROR_INVALIDDATA;
                 idx += val + 1;
                 if (idx >= num_coeffs)
                     break;
                 GET_CODE(val, coeff_type, coeff_bits);
                 val++;
-                if (val >= 0x10000 || val < 0)
+                if (val >= 0x10000)
                     return AVERROR_INVALIDDATA;
                 dst[scan[idx]] = val;
             } while (idx < num_coeffs - 1);
@@ -234,7 +235,7 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
         for (mb = 0; mb < slice_width; mb++) {
             for (idx = 0; idx < num_coeffs; idx++) {
                 GET_CODE(val, coeff_type, coeff_bits);
-                if (val >= 0x10000 || val < 0)
+                if (val >= 0x10000)
                     return AVERROR_INVALIDDATA;
                 dst[scan[idx]] = val;
             }

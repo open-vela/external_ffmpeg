@@ -2,20 +2,20 @@
  * "NUT" Container Format (de)muxer
  * Copyright (c) 2006 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,9 +36,7 @@
 
 #define MAX_DISTANCE (1024*32-1)
 
-#define NUT_MAX_VERSION 4
-#define NUT_STABLE_VERSION 3
-#define NUT_MIN_VERSION 2
+#define NUT_VERSION 3
 
 typedef enum{
     FLAG_KEY        =   1, ///<if set, frame is keyframe
@@ -48,6 +46,7 @@ typedef enum{
     FLAG_SIZE_MSB   =  32, ///<if set, data_size_msb is at frame header, otherwise data_size_msb is 0
     FLAG_CHECKSUM   =  64, ///<if set, the frame header contains a checksum
     FLAG_RESERVED   = 128, ///<if set, reserved_count is coded in the frame header
+    FLAG_SM_DATA    = 256, ///<if set, side / meta data is stored in the frame header.
     FLAG_HEADER_IDX =1024, ///<If set, header_idx is coded in the frame header.
     FLAG_MATCH_TIME =2048, ///<If set, match_time_delta is coded in the frame header
     FLAG_CODED      =4096, ///<if set, coded_flags are stored in the frame header
@@ -80,6 +79,7 @@ typedef struct StreamContext {
     int msb_pts_shift;
     int max_pts_distance;
     int decode_delay; //FIXME duplicate of has_b_frames
+    int64_t *keyframe_pts;
 } StreamContext;
 
 typedef struct ChapterContext {
@@ -87,7 +87,6 @@ typedef struct ChapterContext {
 } ChapterContext;
 
 typedef struct NUTContext {
-    const AVClass *av_class;
     AVFormatContext *avf;
 //    int written_packet_size;
 //    int64_t packet_start;
@@ -103,15 +102,17 @@ typedef struct NUTContext {
     int header_count;
     AVRational *time_base;
     struct AVTreeNode *syncpoints;
-#define NUT_BROADCAST 1 // use extended syncpoints
-#define NUT_PIPE 2      // do not write syncpoints
-    int flags;
-    int version; // version currently in use
+    int sp_count;
+    int64_t max_pts;
+    AVRational *max_pts_tb;
+    int version;
+    int minor_version;
 } NUTContext;
 
 extern const AVCodecTag ff_nut_subtitle_tags[];
 extern const AVCodecTag ff_nut_video_tags[];
 extern const AVCodecTag ff_nut_audio_tags[];
+extern const AVCodecTag ff_nut_audio_extra_tags[];
 extern const AVCodecTag ff_nut_data_tags[];
 
 extern const AVCodecTag * const ff_nut_codec_tags[];
