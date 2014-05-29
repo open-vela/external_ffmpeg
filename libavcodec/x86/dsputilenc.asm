@@ -4,24 +4,28 @@
 ;* Copyright (c) 2000, 2001 Fabrice Bellard
 ;* Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;*****************************************************************************
 
 %include "libavutil/x86/x86util.asm"
+
+SECTION_RODATA
+
+cextern pw_1
 
 SECTION .text
 
@@ -326,12 +330,7 @@ cglobal sse16, 5, 5, 8
     dec       r4
     jnz .next2lines
 
-    mova      m1, m7
-    psrldq    m7, 8          ; shift hi qword to lo
-    paddd     m7, m1
-    mova      m1, m7
-    psrldq    m7, 4          ; shift hi dword to lo
-    paddd     m7, m1
+    HADDD     m7, m1
     movd     eax, m7         ; return value
     RET
 
@@ -361,7 +360,7 @@ cglobal get_pixels, 3,4
     REP_RET
 
 INIT_XMM sse2
-cglobal get_pixels, 3, 4
+cglobal get_pixels, 3, 4, 5
     movsxdifnidn r2, r2d
     lea          r3, [r2*3]
     pxor         m4, m4
@@ -419,71 +418,150 @@ cglobal diff_pixels, 4,5
     jne .loop
     REP_RET
 
-INIT_MMX mmx
-; int ff_pix_sum16_mmx(uint8_t *pix, int line_size)
-cglobal pix_sum16, 2, 3
-    movsxdifnidn r1, r1d
-    mov          r2, r1
-    neg          r2
-    shl          r2, 4
-    sub          r0, r2
-    pxor         m7, m7
-    pxor         m6, m6
+INIT_XMM sse2
+cglobal diff_pixels, 4, 5, 5
+    movsxdifnidn r3, r3d
+    pxor         m4, m4
+    add          r0,  128
+    mov          r4, -128
 .loop:
-    mova         m0, [r0+r2+0]
-    mova         m1, [r0+r2+0]
-    mova         m2, [r0+r2+8]
-    mova         m3, [r0+r2+8]
-    punpcklbw    m0, m7
-    punpckhbw    m1, m7
-    punpcklbw    m2, m7
-    punpckhbw    m3, m7
+    movh         m0, [r1]
+    movh         m2, [r2]
+    movh         m1, [r1+r3]
+    movh         m3, [r2+r3]
+    punpcklbw    m0, m4
+    punpcklbw    m1, m4
+    punpcklbw    m2, m4
+    punpcklbw    m3, m4
+    psubw        m0, m2
+    psubw        m1, m3
+    mova [r0+r4+0 ], m0
+    mova [r0+r4+16], m1
+    lea          r1, [r1+r3*2]
+    lea          r2, [r2+r3*2]
+    add          r4, 32
+    jne .loop
+    RET
+
+; int ff_pix_sum16_mmx(uint8_t *pix, int line_size)
+; %1 = number of xmm registers used
+; %2 = number of loops
+%macro PIX_SUM16 2
+cglobal pix_sum16, 2, 3, %1
+    movsxdifnidn r1, r1d
+    mov          r2, %2
+    pxor         m5, m5
+    pxor         m4, m4
+.loop:
+    mova         m0, [r0]
+%if mmsize == 8
+    mova         m1, [r0+8]
+%else
+    mova         m1, [r0+r1]
+%endif
+    punpckhbw    m2, m0, m5
+    punpcklbw    m0, m5
+    punpckhbw    m3, m1, m5
+    punpcklbw    m1, m5
     paddw        m1, m0
     paddw        m3, m2
     paddw        m3, m1
-    paddw        m6, m3
-    add          r2, r1
-    js .loop
-    mova         m5, m6
-    psrlq        m6, 32
-    paddw        m6, m5
-    mova         m5, m6
-    psrlq        m6, 16
-    paddw        m6, m5
-    movd        eax, m6
-    and         eax, 0xffff
+    paddw        m4, m3
+%if mmsize == 8
+    add          r0, r1
+%else
+    lea          r0, [r0+r1*2]
+%endif
+    dec r2
+    jne .loop
+    HADDW        m4, m5
+    movd        eax, m4
     RET
+%endmacro
 
 INIT_MMX mmx
+PIX_SUM16 0, 16
+INIT_XMM sse2
+PIX_SUM16 6, 8
+
 ; int ff_pix_norm1_mmx(uint8_t *pix, int line_size)
-cglobal pix_norm1, 2, 4
+; %1 = number of xmm registers used
+; %2 = number of loops
+%macro PIX_NORM1 2
+cglobal pix_norm1, 2, 3, %1
     movsxdifnidn r1, r1d
-    mov          r2, 16
+    mov          r2, %2
     pxor         m0, m0
-    pxor         m7, m7
+    pxor         m5, m5
 .loop:
     mova         m2, [r0+0]
+%if mmsize == 8
     mova         m3, [r0+8]
-    mova         m1, m2
-    punpckhbw    m1, m0
+%else
+    mova         m3, [r0+r1]
+%endif
+    punpckhbw    m1, m2, m0
     punpcklbw    m2, m0
-    mova         m4, m3
-    punpckhbw    m3, m0
-    punpcklbw    m4, m0
+    punpckhbw    m4, m3, m0
+    punpcklbw    m3, m0
     pmaddwd      m1, m1
     pmaddwd      m2, m2
     pmaddwd      m3, m3
     pmaddwd      m4, m4
     paddd        m2, m1
     paddd        m4, m3
-    paddd        m7, m2
+    paddd        m5, m2
+    paddd        m5, m4
+%if mmsize == 8
     add          r0, r1
-    paddd        m7, m4
+%else
+    lea          r0, [r0+r1*2]
+%endif
     dec r2
     jne .loop
-    mova         m1, m7
-    psrlq        m7, 32
-    paddd        m1, m7
-    movd        eax, m1
+    HADDD        m5, m1
+    movd        eax, m5
     RET
+%endmacro
 
+INIT_MMX mmx
+PIX_NORM1 0, 16
+INIT_XMM sse2
+PIX_NORM1 6, 8
+
+;-----------------------------------------------
+;int ff_sum_abs_dctelem(int16_t *block)
+;-----------------------------------------------
+; %1 = number of xmm registers used
+; %2 = number of inline loops
+
+%macro SUM_ABS_DCTELEM 2
+cglobal sum_abs_dctelem, 1, 1, %1, block
+    pxor    m0, m0
+    pxor    m1, m1
+%assign %%i 0
+%rep %2
+    mova      m2, [blockq+mmsize*(0+%%i)]
+    mova      m3, [blockq+mmsize*(1+%%i)]
+    mova      m4, [blockq+mmsize*(2+%%i)]
+    mova      m5, [blockq+mmsize*(3+%%i)]
+    ABS1_SUM  m2, m6, m0
+    ABS1_SUM  m3, m6, m1
+    ABS1_SUM  m4, m6, m0
+    ABS1_SUM  m5, m6, m1
+%assign %%i %%i+4
+%endrep
+    paddusw m0, m1
+    HSUM    m0, m1, eax
+    and     eax, 0xFFFF
+    RET
+%endmacro
+
+INIT_MMX mmx
+SUM_ABS_DCTELEM 0, 4
+INIT_MMX mmxext
+SUM_ABS_DCTELEM 0, 4
+INIT_XMM sse2
+SUM_ABS_DCTELEM 7, 2
+INIT_XMM ssse3
+SUM_ABS_DCTELEM 6, 2

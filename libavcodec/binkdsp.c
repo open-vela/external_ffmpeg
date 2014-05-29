@@ -2,20 +2,20 @@
  * Bink DSP routines
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,6 @@
  * Bink DSP routines
  */
 
-#include "config.h"
 #include "libavutil/attributes.h"
 #include "binkdsp.h"
 
@@ -129,29 +128,9 @@ static void scale_block_c(const uint8_t src[64]/*align 8*/, uint8_t *dst/*align 
     }
 }
 
-static void add_pixels8_c(uint8_t *restrict pixels, int16_t *block,
-                          int line_size)
-{
-    int i;
-
-    for (i = 0; i < 8; i++) {
-        pixels[0] += block[0];
-        pixels[1] += block[1];
-        pixels[2] += block[2];
-        pixels[3] += block[3];
-        pixels[4] += block[4];
-        pixels[5] += block[5];
-        pixels[6] += block[6];
-        pixels[7] += block[7];
-        pixels    += line_size;
-        block     += 8;
-    }
-}
-
 av_cold void ff_binkdsp_init(BinkDSPContext *c)
 {
     c->idct_add    = bink_idct_add_c;
     c->idct_put    = bink_idct_put_c;
     c->scale_block = scale_block_c;
-    c->add_pixels8 = add_pixels8_c;
 }
