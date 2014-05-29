@@ -4,25 +4,27 @@
  * Copyright (c) 2010 Rob Clark <rob@ti.com>
  * Copyright (c) 2011 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/arm/asm.S"
 #include "neon.S"
+
+#include "config.h"
 
 @ Transpose rows into columns of a matrix of 16-bit elements. For 4x4, pass
 @ double-word registers, for 8x4, pass quad-word registers.
@@ -661,6 +663,7 @@ function ff_vc1_inv_trans_4x4_neon, export=1
         bx              lr
 endfunc
 
+#if HAVE_AS_DN_DIRECTIVE
 @ The absolute value of multiplication constants from vc1_mspel_filter and vc1_mspel_{ver,hor}_filter_16bits.
 @ The sign is embedded in the code below that carries out the multiplication (mspel_filter{,.16}).
 #define MSPEL_MODE_1_MUL_CONSTANTS  4 53 18 3
@@ -984,6 +987,7 @@ PUT_VC1_MSPEL_MC_V_ONLY(2)
 PUT_VC1_MSPEL_MC_V_ONLY(3)
 
 #undef PUT_VC1_MSPEL_MC_V_ONLY
+#endif
 
 function ff_put_pixels8x8_neon, export=1
         vld1.64         {d0}, [r1], r2

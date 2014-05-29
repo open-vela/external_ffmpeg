@@ -2,20 +2,20 @@
  * VMware Screen Codec (VMnc) decoder
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -291,11 +291,6 @@ static int decode_hextile(VmncContext *c, uint8_t* dst, GetByteContext *gb,
                         fg = vmnc_get_pixel(gb, bpp, c->bigendian);
                     xy = bytestream2_get_byte(gb);
                     wh = bytestream2_get_byte(gb);
-                    if (   (xy >> 4) + (wh >> 4) + 1 > w - i
-                        || (xy & 0xF) + (wh & 0xF)+1 > h - j) {
-                        av_log(c->avctx, AV_LOG_ERROR, "Rectangle outside picture\n");
-                        return AVERROR_INVALIDDATA;
-                    }
                     paint_rect(dst2, xy >> 4, xy & 0xF,
                                (wh>>4)+1, (wh & 0xF)+1, fg, bpp, stride);
                 }
@@ -312,8 +307,6 @@ static void reset_buffers(VmncContext *c)
     av_freep(&c->curmask);
     av_freep(&c->screendta);
     c->cur_w = c->cur_h = 0;
-    c->cur_hx = c->cur_hy = 0;
-
 }
 
 static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
@@ -326,8 +319,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     uint8_t *outptr;
     int dx, dy, w, h, depth, enc, chunks, res, size_left, ret;
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     bytestream2_init(gb, buf, buf_size);
 
@@ -365,10 +360,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     bytestream2_skip(gb, 2);
     chunks = bytestream2_get_be16(gb);
     while (chunks--) {
-        if (bytestream2_get_bytes_left(gb) < 12) {
-            av_log(avctx, AV_LOG_ERROR, "Premature end of data!\n");
-            return -1;
-        }
         dx  = bytestream2_get_be16(gb);
         dy  = bytestream2_get_be16(gb);
         w   = bytestream2_get_be16(gb);
@@ -378,10 +369,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         size_left = bytestream2_get_bytes_left(gb);
         switch (enc) {
         case MAGIC_WMVd: // cursor
-            if (w*(int64_t)h*c->bpp2 > INT_MAX/2 - 2) {
-                av_log(avctx, AV_LOG_ERROR, "dimensions too large\n");
-                return AVERROR_INVALIDDATA;
-            }
             if (size_left < 2 + w * h * c->bpp2 * 2) {
                 av_log(avctx, AV_LOG_ERROR,
                        "Premature end of data! (need %i got %i)\n",
@@ -558,9 +545,9 @@ static av_cold int decode_end(AVCodecContext *avctx)
 
     av_frame_free(&c->pic);
 
-    av_freep(&c->curbits);
-    av_freep(&c->curmask);
-    av_freep(&c->screendta);
+    av_free(c->curbits);
+    av_free(c->curmask);
+    av_free(c->screendta);
     return 0;
 }
 
