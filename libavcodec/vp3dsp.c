@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2004 the ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,6 +25,7 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 
@@ -289,8 +290,6 @@ av_cold void ff_vp3dsp_init(VP3DSPContext *c, int flags)
 
     if (ARCH_ARM)
         ff_vp3dsp_init_arm(c, flags);
-    if (ARCH_BFIN)
-        ff_vp3dsp_init_bfin(c, flags);
     if (ARCH_PPC)
         ff_vp3dsp_init_ppc(c, flags);
     if (ARCH_X86)
