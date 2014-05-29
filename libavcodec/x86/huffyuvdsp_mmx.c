@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2009 Loren Merritt <lorenm@u.washington.edu>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,7 +22,9 @@
 #include "libavutil/x86/asm.h"
 #include "huffyuvdsp.h"
 
-#if HAVE_INLINE_ASM && HAVE_7REGS && ARCH_X86_32
+#if HAVE_INLINE_ASM
+
+#if HAVE_7REGS
 void ff_add_hfyu_median_pred_cmov(uint8_t *dst, const uint8_t *top,
                                   const uint8_t *diff, int w,
                                   int *left, int *left_top)
@@ -59,3 +61,31 @@ void ff_add_hfyu_median_pred_cmov(uint8_t *dst, const uint8_t *top,
     *left_top = tl;
 }
 #endif
+
+void ff_add_bytes_mmx(uint8_t *dst, uint8_t *src, int w)
+{
+    x86_reg i = 0;
+
+    __asm__ volatile (
+        "jmp          2f                \n\t"
+        "1:                             \n\t"
+        "movq   (%1, %0), %%mm0         \n\t"
+        "movq   (%2, %0), %%mm1         \n\t"
+        "paddb     %%mm0, %%mm1         \n\t"
+        "movq      %%mm1, (%2, %0)      \n\t"
+        "movq  8(%1, %0), %%mm0         \n\t"
+        "movq  8(%2, %0), %%mm1         \n\t"
+        "paddb     %%mm0, %%mm1         \n\t"
+        "movq      %%mm1, 8(%2, %0)     \n\t"
+        "add         $16, %0            \n\t"
+        "2:                             \n\t"
+        "cmp          %3, %0            \n\t"
+        "js           1b                \n\t"
+        : "+r" (i)
+        : "r" (src), "r" (dst), "r" ((x86_reg) w - 15));
+
+    for (; i < w; i++)
+        dst[i + 0] += src[i + 0];
+}
+
+#endif /* HAVE_INLINE_ASM */
