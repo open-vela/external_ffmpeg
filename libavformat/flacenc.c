@@ -2,20 +2,20 @@
  * raw FLAC muxer
  * Copyright (c) 2006-2009 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,7 @@
 #include "libavutil/opt.h"
 #include "libavcodec/flac.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "flacenc.h"
 #include "vorbiscomment.h"
 #include "libavcodec/bytestream.h"
@@ -38,17 +39,14 @@ static int flac_write_block_padding(AVIOContext *pb, unsigned int n_padding_byte
 {
     avio_w8(pb, last_block ? 0x81 : 0x01);
     avio_wb24(pb, n_padding_bytes);
-    while (n_padding_bytes > 0) {
-        avio_w8(pb, 0);
-        n_padding_bytes--;
-    }
+    ffio_fill(pb, 0, n_padding_bytes);
     return 0;
 }
 
 static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
                                     int last_block, int bitexact)
 {
-    const char *vendor = bitexact ? "Libav" : LIBAVFORMAT_IDENT;
+    const char *vendor = bitexact ? "ffmpeg" : LIBAVFORMAT_IDENT;
     unsigned int len;
     uint8_t *p, *p0;
 
@@ -74,11 +72,27 @@ static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
 static int flac_write_header(struct AVFormatContext *s)
 {
     int ret;
+    int padding = s->metadata_header_padding;
     AVCodecContext *codec = s->streams[0]->codec;
     FlacMuxerContext *c   = s->priv_data;
 
     if (!c->write_header)
         return 0;
+
+    if (s->nb_streams > 1) {
+        av_log(s, AV_LOG_ERROR, "only one stream is supported\n");
+        return AVERROR(EINVAL);
+    }
+    if (codec->codec_id != AV_CODEC_ID_FLAC) {
+        av_log(s, AV_LOG_ERROR, "unsupported codec\n");
+        return AVERROR(EINVAL);
+    }
+
+    if (padding < 0)
+        padding = 8192;
+    /* The FLAC specification states that 24 bits are used to represent the
+     * size of a metadata block so we must clip this value to 2^24-1. */
+    padding = av_clip_c(padding, 0, 16777215);
 
     ret = ff_flac_write_header(s->pb, codec, 0);
     if (ret)
@@ -101,7 +115,7 @@ static int flac_write_header(struct AVFormatContext *s)
         }
     }
 
-    ret = flac_write_block_comment(s->pb, &s->metadata, 0,
+    ret = flac_write_block_comment(s->pb, &s->metadata, !padding,
                                    s->flags & AVFMT_FLAG_BITEXACT);
     if (ret)
         return ret;
@@ -109,8 +123,9 @@ static int flac_write_header(struct AVFormatContext *s)
     /* The command line flac encoder defaults to placing a seekpoint
      * every 10s.  So one might add padding to allow that later
      * but there seems to be no simple way to get the duration here.
-     * So let's try the flac default of 8192 bytes */
-    flac_write_block_padding(s->pb, 8192, 1);
+     * So just add the amount requested by the user. */
+    if (padding)
+        flac_write_block_padding(s->pb, padding, 1);
 
     return ret;
 }
