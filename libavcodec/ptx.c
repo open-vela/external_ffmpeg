@@ -2,20 +2,20 @@
  * V.Flash PTX (.ptx) image decoder
  * Copyright (c) 2007 Ivo van Poorten
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ static int ptx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_PATCHWELCOME;
     }
 
-    avctx->pix_fmt = AV_PIX_FMT_RGB555;
+    avctx->pix_fmt = AV_PIX_FMT_BGR555LE;
 
     if (buf_end - buf < offset)
         return AVERROR_INVALIDDATA;
@@ -58,10 +58,8 @@ static int ptx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
         return ret;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
 
     p->pict_type = AV_PICTURE_TYPE_I;
 
@@ -69,13 +67,7 @@ static int ptx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     stride = p->linesize[0];
 
     for (y = 0; y < h && buf_end - buf >= w * bytes_per_pixel; y++) {
-#if HAVE_BIGENDIAN
-        unsigned int x;
-        for (x=0; x<w*bytes_per_pixel; x+=bytes_per_pixel)
-            AV_WN16(ptr+x, AV_RL16(buf+x));
-#else
         memcpy(ptr, buf, w*bytes_per_pixel);
-#endif
         ptr += stride;
         buf += w*bytes_per_pixel;
     }
