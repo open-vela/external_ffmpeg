@@ -2,20 +2,20 @@
 ;* SSE-optimized functions for the DCA decoder
 ;* Copyright (C) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -132,10 +132,15 @@ DECODE_HF
     mulps       va, %2
     mulps       vb, %2
 %if %0 == 3
+%if cpuflag(fma3)
+    fmaddps     va, m4, %3, va
+    fmaddps     vb, m0, %3, vb
+%else
     mulps       m4, %3
     mulps       m0, %3
     addps       va, m4
     addps       vb, m0
+%endif
 %endif
     ; va = va1 va2 va3 va4
     ; vb = vb1 vb2 vb3 vb4
@@ -148,7 +153,7 @@ DECODE_HF
     addps       m4, va ; va1+3 vb1+3 va2+4 vb2+4
     movhlps     vb, m4 ; va1+3  vb1+3
     addps       vb, m4 ; va0..4 vb0..4
-    movh    [outq + count], vb
+    movlps  [outq + count], vb
 %if %1
     sub       cf0q, 8*NUM_COEF
 %endif
@@ -198,6 +203,10 @@ cglobal dca_lfe_fir%1, 3,3,6-%1, out, in, cf0
 INIT_XMM sse
 DCA_LFE_FIR 0
 DCA_LFE_FIR 1
+%if HAVE_FMA3_EXTERNAL
+INIT_XMM fma3
+DCA_LFE_FIR 0
+%endif
 
 %macro SETZERO 1
 %if cpuflag(sse2) && notcpuflag(avx)
