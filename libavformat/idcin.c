@@ -2,20 +2,20 @@
  * id Quake II CIN File Demuxer
  * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -93,7 +93,9 @@ typedef struct IdcinDemuxContext {
 
 static int idcin_probe(AVProbeData *p)
 {
-    unsigned int number;
+    unsigned int number, sample_rate;
+    unsigned int w, h;
+    int i;
 
     /*
      * This is what you could call a "probabilistic" file check: id CIN
@@ -108,33 +110,40 @@ static int idcin_probe(AVProbeData *p)
 
     /* check we have enough data to do all checks, otherwise the
        0-padding may cause a wrong recognition */
-    if (p->buf_size < 20)
+    if (p->buf_size < 20 + HUFFMAN_TABLE_SIZE + 12)
         return 0;
 
     /* check the video width */
-    number = AV_RL32(&p->buf[0]);
-    if ((number == 0) || (number > 1024))
+    w = AV_RL32(&p->buf[0]);
+    if ((w == 0) || (w > 1024))
        return 0;
 
     /* check the video height */
-    number = AV_RL32(&p->buf[4]);
-    if ((number == 0) || (number > 1024))
+    h = AV_RL32(&p->buf[4]);
+    if ((h == 0) || (h > 1024))
        return 0;
 
     /* check the audio sample rate */
-    number = AV_RL32(&p->buf[8]);
-    if ((number != 0) && ((number < 8000) | (number > 48000)))
+    sample_rate = AV_RL32(&p->buf[8]);
+    if (sample_rate && (sample_rate < 8000 || sample_rate > 48000))
         return 0;
 
     /* check the audio bytes/sample */
     number = AV_RL32(&p->buf[12]);
-    if (number > 2)
+    if (number > 2 || sample_rate && !number)
         return 0;
 
     /* check the audio channels */
     number = AV_RL32(&p->buf[16]);
-    if (number > 2)
+    if (number > 2 || sample_rate && !number)
         return 0;
+
+    i = 20 + HUFFMAN_TABLE_SIZE;
+    if (AV_RL32(&p->buf[i]) == 1)
+        i += 768;
+
+    if (i+12 > p->buf_size || AV_RL32(&p->buf[i+8]) != w*h)
+        return 1;
 
     /* return half certainty since this check is a bit sketchy */
     return AVPROBE_SCORE_EXTENSION;
@@ -196,15 +205,8 @@ static int idcin_read_header(AVFormatContext *s)
     st->codec->height = height;
 
     /* load up the Huffman tables into extradata */
-    st->codec->extradata_size = HUFFMAN_TABLE_SIZE;
-    st->codec->extradata = av_malloc(HUFFMAN_TABLE_SIZE);
-    ret = avio_read(pb, st->codec->extradata, HUFFMAN_TABLE_SIZE);
-    if (ret < 0) {
+    if ((ret = ff_get_extradata(st->codec, pb, HUFFMAN_TABLE_SIZE)) < 0)
         return ret;
-    } else if (ret != HUFFMAN_TABLE_SIZE) {
-        av_log(s, AV_LOG_ERROR, "incomplete header\n");
-        return AVERROR(EIO);
-    }
 
     if (idcin->audio_present) {
         idcin->audio_present = 1;
@@ -260,7 +262,7 @@ static int idcin_read_packet(AVFormatContext *s,
     unsigned char palette_buffer[768];
     uint32_t palette[256];
 
-    if (s->pb->eof_reached)
+    if (url_feof(s->pb))
         return s->pb->error ? s->pb->error : AVERROR_EOF;
 
     if (idcin->next_chunk_is_video) {
@@ -288,7 +290,9 @@ static int idcin_read_packet(AVFormatContext *s,
                 r = palette_buffer[i * 3    ] << palette_scale;
                 g = palette_buffer[i * 3 + 1] << palette_scale;
                 b = palette_buffer[i * 3 + 2] << palette_scale;
-                palette[i] = (r << 16) | (g << 8) | (b);
+                palette[i] = (0xFFU << 24) | (r << 16) | (g << 8) | (b);
+                if (palette_scale == 2)
+                    palette[i] |= palette[i] >> 6 & 0x30303;
             }
         }
 
@@ -303,6 +307,8 @@ static int idcin_read_packet(AVFormatContext *s,
         }
         /* skip the number of decoded bytes (always equal to width * height) */
         avio_skip(pb, 4);
+        if (chunk_size < 4)
+            return AVERROR_INVALIDDATA;
         chunk_size -= 4;
         ret= av_get_packet(pb, pkt, chunk_size);
         if (ret < 0)
@@ -317,9 +323,9 @@ static int idcin_read_packet(AVFormatContext *s,
 
             pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE,
                                           AVPALETTE_SIZE);
-            if (ret < 0) {
+            if (!pal) {
                 av_free_packet(pkt);
-                return ret;
+                return AVERROR(ENOMEM);
             }
             memcpy(pal, palette, AVPALETTE_SIZE);
             pkt->flags |= AV_PKT_FLAG_KEY;
