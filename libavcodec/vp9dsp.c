@@ -4,27 +4,28 @@
  * Copyright (C) 2013 Ronald S. Bultje <rsbultje gmail com>
  * Copyright (C) 2013 Clément Bœsch <u pkh me>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
-#include "vp9dsp.h"
+
 #include "rnd_avg.h"
+#include "vp9.h"
 
 // FIXME see whether we can merge parts of this (perhaps at least 4x4 and 8x8)
 // back with h264pred.[ch]
@@ -84,10 +85,10 @@ static void vert_32x32_c(uint8_t *dst, ptrdiff_t stride,
 static void hor_4x4_c(uint8_t *dst, ptrdiff_t stride,
                       const uint8_t *left, const uint8_t *top)
 {
-    AV_WN32A(dst + stride * 0, left[3] * 0x01010101U);
-    AV_WN32A(dst + stride * 1, left[2] * 0x01010101U);
-    AV_WN32A(dst + stride * 2, left[1] * 0x01010101U);
-    AV_WN32A(dst + stride * 3, left[0] * 0x01010101U);
+    AV_WN32A(dst + stride * 0, left[0] * 0x01010101U);
+    AV_WN32A(dst + stride * 1, left[1] * 0x01010101U);
+    AV_WN32A(dst + stride * 2, left[2] * 0x01010101U);
+    AV_WN32A(dst + stride * 3, left[3] * 0x01010101U);
 }
 
 static void hor_8x8_c(uint8_t *dst, ptrdiff_t stride,
@@ -96,7 +97,7 @@ static void hor_8x8_c(uint8_t *dst, ptrdiff_t stride,
     int y;
 
     for (y = 0; y < 8; y++) {
-        AV_WN64A(dst, left[7 - y] * 0x0101010101010101ULL);
+        AV_WN64A(dst, left[y] * 0x0101010101010101ULL);
         dst += stride;
     }
 }
@@ -107,7 +108,7 @@ static void hor_16x16_c(uint8_t *dst, ptrdiff_t stride,
     int y;
 
     for (y = 0; y < 16; y++) {
-        uint64_t p8 = left[15 - y] * 0x0101010101010101ULL;
+        uint64_t p8 = left[y] * 0x0101010101010101ULL;
 
         AV_WN64A(dst + 0, p8);
         AV_WN64A(dst + 8, p8);
@@ -121,7 +122,7 @@ static void hor_32x32_c(uint8_t *dst, ptrdiff_t stride,
     int y;
 
     for (y = 0; y < 32; y++) {
-        uint64_t p8 = left[31 - y] * 0x0101010101010101ULL;
+        uint64_t p8 = left[y] * 0x0101010101010101ULL;
 
         AV_WN64A(dst +  0, p8);
         AV_WN64A(dst +  8, p8);
@@ -137,13 +138,13 @@ static void tm_4x4_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 4; y++) {
-        int l_m_tl = left[3 - y] - tl;
+        int l_m_tl = left[y] - tl;
 
         dst[0] = av_clip_uint8(top[0] + l_m_tl);
         dst[1] = av_clip_uint8(top[1] + l_m_tl);
         dst[2] = av_clip_uint8(top[2] + l_m_tl);
         dst[3] = av_clip_uint8(top[3] + l_m_tl);
-        dst += stride;
+        dst   += stride;
     }
 }
 
@@ -153,7 +154,7 @@ static void tm_8x8_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 8; y++) {
-        int l_m_tl = left[7 - y] - tl;
+        int l_m_tl = left[y] - tl;
 
         dst[0] = av_clip_uint8(top[0] + l_m_tl);
         dst[1] = av_clip_uint8(top[1] + l_m_tl);
@@ -163,7 +164,7 @@ static void tm_8x8_c(uint8_t *dst, ptrdiff_t stride,
         dst[5] = av_clip_uint8(top[5] + l_m_tl);
         dst[6] = av_clip_uint8(top[6] + l_m_tl);
         dst[7] = av_clip_uint8(top[7] + l_m_tl);
-        dst += stride;
+        dst   += stride;
     }
 }
 
@@ -173,25 +174,25 @@ static void tm_16x16_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 16; y++) {
-        int l_m_tl = left[15 - y] - tl;
+        int l_m_tl = left[y] - tl;
 
-        dst[ 0] = av_clip_uint8(top[ 0] + l_m_tl);
-        dst[ 1] = av_clip_uint8(top[ 1] + l_m_tl);
-        dst[ 2] = av_clip_uint8(top[ 2] + l_m_tl);
-        dst[ 3] = av_clip_uint8(top[ 3] + l_m_tl);
-        dst[ 4] = av_clip_uint8(top[ 4] + l_m_tl);
-        dst[ 5] = av_clip_uint8(top[ 5] + l_m_tl);
-        dst[ 6] = av_clip_uint8(top[ 6] + l_m_tl);
-        dst[ 7] = av_clip_uint8(top[ 7] + l_m_tl);
-        dst[ 8] = av_clip_uint8(top[ 8] + l_m_tl);
-        dst[ 9] = av_clip_uint8(top[ 9] + l_m_tl);
+        dst[0]  = av_clip_uint8(top[0]  + l_m_tl);
+        dst[1]  = av_clip_uint8(top[1]  + l_m_tl);
+        dst[2]  = av_clip_uint8(top[2]  + l_m_tl);
+        dst[3]  = av_clip_uint8(top[3]  + l_m_tl);
+        dst[4]  = av_clip_uint8(top[4]  + l_m_tl);
+        dst[5]  = av_clip_uint8(top[5]  + l_m_tl);
+        dst[6]  = av_clip_uint8(top[6]  + l_m_tl);
+        dst[7]  = av_clip_uint8(top[7]  + l_m_tl);
+        dst[8]  = av_clip_uint8(top[8]  + l_m_tl);
+        dst[9]  = av_clip_uint8(top[9]  + l_m_tl);
         dst[10] = av_clip_uint8(top[10] + l_m_tl);
         dst[11] = av_clip_uint8(top[11] + l_m_tl);
         dst[12] = av_clip_uint8(top[12] + l_m_tl);
         dst[13] = av_clip_uint8(top[13] + l_m_tl);
         dst[14] = av_clip_uint8(top[14] + l_m_tl);
         dst[15] = av_clip_uint8(top[15] + l_m_tl);
-        dst += stride;
+        dst    += stride;
     }
 }
 
@@ -201,18 +202,18 @@ static void tm_32x32_c(uint8_t *dst, ptrdiff_t stride,
     int y, tl = top[-1];
 
     for (y = 0; y < 32; y++) {
-        int l_m_tl = left[31 - y] - tl;
+        int l_m_tl = left[y] - tl;
 
-        dst[ 0] = av_clip_uint8(top[ 0] + l_m_tl);
-        dst[ 1] = av_clip_uint8(top[ 1] + l_m_tl);
-        dst[ 2] = av_clip_uint8(top[ 2] + l_m_tl);
-        dst[ 3] = av_clip_uint8(top[ 3] + l_m_tl);
-        dst[ 4] = av_clip_uint8(top[ 4] + l_m_tl);
-        dst[ 5] = av_clip_uint8(top[ 5] + l_m_tl);
-        dst[ 6] = av_clip_uint8(top[ 6] + l_m_tl);
-        dst[ 7] = av_clip_uint8(top[ 7] + l_m_tl);
-        dst[ 8] = av_clip_uint8(top[ 8] + l_m_tl);
-        dst[ 9] = av_clip_uint8(top[ 9] + l_m_tl);
+        dst[0]  = av_clip_uint8(top[0]  + l_m_tl);
+        dst[1]  = av_clip_uint8(top[1]  + l_m_tl);
+        dst[2]  = av_clip_uint8(top[2]  + l_m_tl);
+        dst[3]  = av_clip_uint8(top[3]  + l_m_tl);
+        dst[4]  = av_clip_uint8(top[4]  + l_m_tl);
+        dst[5]  = av_clip_uint8(top[5]  + l_m_tl);
+        dst[6]  = av_clip_uint8(top[6]  + l_m_tl);
+        dst[7]  = av_clip_uint8(top[7]  + l_m_tl);
+        dst[8]  = av_clip_uint8(top[8]  + l_m_tl);
+        dst[9]  = av_clip_uint8(top[9]  + l_m_tl);
         dst[10] = av_clip_uint8(top[10] + l_m_tl);
         dst[11] = av_clip_uint8(top[11] + l_m_tl);
         dst[12] = av_clip_uint8(top[12] + l_m_tl);
@@ -235,15 +236,16 @@ static void tm_32x32_c(uint8_t *dst, ptrdiff_t stride,
         dst[29] = av_clip_uint8(top[29] + l_m_tl);
         dst[30] = av_clip_uint8(top[30] + l_m_tl);
         dst[31] = av_clip_uint8(top[31] + l_m_tl);
-        dst += stride;
+        dst    += stride;
     }
 }
 
 static void dc_4x4_c(uint8_t *dst, ptrdiff_t stride,
                      const uint8_t *left, const uint8_t *top)
 {
-    unsigned dc = 0x01010101U * ((left[0] + left[1] + left[2] + left[3] +
-                                  top[0] + top[1] + top[2] + top[3] + 4) >> 3);
+    unsigned dc = 0x01010101U *
+                  ((left[0] + left[1] + left[2] + left[3] +
+                    top[0]  + top[1]  + top[2]  + top[3]  + 4) >> 3);
 
     AV_WN32A(dst + stride * 0, dc);
     AV_WN32A(dst + stride * 1, dc);
@@ -255,9 +257,10 @@ static void dc_8x8_c(uint8_t *dst, ptrdiff_t stride,
                      const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((left[0] + left[1] + left[2] + left[3] + left[4] + left[5] +
-          left[6] + left[7] + top[0] + top[1] + top[2] + top[3] +
-          top[4] + top[5] + top[6] + top[7] + 8) >> 4);
+                  ((left[0] + left[1] + left[2] + left[3] +
+                    left[4] + left[5] + left[6] + left[7] +
+                    top[0]  + top[1]  + top[2]  + top[3]  +
+                    top[4]  + top[5]  + top[6]  + top[7]  + 8) >> 4);
     int y;
 
     for (y = 0; y < 8; y++) {
@@ -270,11 +273,14 @@ static void dc_16x16_c(uint8_t *dst, ptrdiff_t stride,
                        const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((left[0] + left[1] + left[2] + left[3] + left[4] + left[5] + left[6] +
-          left[7] + left[8] + left[9] + left[10] + left[11] + left[12] +
-          left[13] + left[14] + left[15] + top[0] + top[1] + top[2] + top[3] +
-          top[4] + top[5] + top[6] + top[7] + top[8] + top[9] + top[10] +
-          top[11] + top[12] + top[13] + top[14] + top[15] + 16) >> 5);
+                  ((left[0]  + left[1]  + left[2]  + left[3]  +
+                    left[4]  + left[5]  + left[6]  + left[7]  +
+                    left[8]  + left[9]  + left[10] + left[11] +
+                    left[12] + left[13] + left[14] + left[15] +
+                    top[0]   + top[1]   + top[2]   + top[3]   +
+                    top[4]   + top[5]   + top[6]   + top[7]   +
+                    top[8]   + top[9]   + top[10]  + top[11]  +
+                    top[12]  + top[13]  + top[14]  + top[15]  + 16) >> 5);
     int y;
 
     for (y = 0; y < 16; y++) {
@@ -288,16 +294,22 @@ static void dc_32x32_c(uint8_t *dst, ptrdiff_t stride,
                        const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((left[0] + left[1] + left[2] + left[3] + left[4] + left[5] + left[6] +
-          left[7] + left[8] + left[9] + left[10] + left[11] + left[12] +
-          left[13] + left[14] + left[15] + left[16] + left[17] + left[18] +
-          left[19] + left[20] + left[21] + left[22] + left[23] + left[24] +
-          left[25] + left[26] + left[27] + left[28] + left[29] + left[30] +
-          left[31] + top[0] + top[1] + top[2] + top[3] + top[4] + top[5] +
-          top[6] + top[7] + top[8] + top[9] + top[10] + top[11] + top[12] +
-          top[13] + top[14] + top[15] + top[16] + top[17] + top[18] + top[19] +
-          top[20] + top[21] + top[22] + top[23] + top[24] + top[25] + top[26] +
-          top[27] + top[28] + top[29] + top[30] + top[31] + 32) >> 6);
+                  ((left[0]  + left[1]  + left[2]  + left[3]  +
+                    left[4]  + left[5]  + left[6]  + left[7]  +
+                    left[8]  + left[9]  + left[10] + left[11] +
+                    left[12] + left[13] + left[14] + left[15] +
+                    left[16] + left[17] + left[18] + left[19] +
+                    left[20] + left[21] + left[22] + left[23] +
+                    left[24] + left[25] + left[26] + left[27] +
+                    left[28] + left[29] + left[30] + left[31] +
+                    top[0]   + top[1]   + top[2]   + top[3]   +
+                    top[4]   + top[5]   + top[6]   + top[7]   +
+                    top[8]   + top[9]   + top[10]  + top[11]  +
+                    top[12]  + top[13]  + top[14]  + top[15]  +
+                    top[16]  + top[17]  + top[18]  + top[19]  +
+                    top[20]  + top[21]  + top[22]  + top[23]  +
+                    top[24]  + top[25]  + top[26]  + top[27]  +
+                    top[28]  + top[29]  + top[30]  + top[31]  + 32) >> 6);
     int y;
 
     for (y = 0; y < 32; y++) {
@@ -312,7 +324,8 @@ static void dc_32x32_c(uint8_t *dst, ptrdiff_t stride,
 static void dc_left_4x4_c(uint8_t *dst, ptrdiff_t stride,
                           const uint8_t *left, const uint8_t *top)
 {
-    unsigned dc = 0x01010101U * ((left[0] + left[1] + left[2] + left[3] + 2) >> 2);
+    unsigned dc = 0x01010101U *
+                  ((left[0] + left[1] + left[2] + left[3] + 2) >> 2);
 
     AV_WN32A(dst + stride * 0, dc);
     AV_WN32A(dst + stride * 1, dc);
@@ -324,8 +337,8 @@ static void dc_left_8x8_c(uint8_t *dst, ptrdiff_t stride,
                           const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((left[0] + left[1] + left[2] + left[3] +
-          left[4] + left[5] + left[6] + left[7] + 4) >> 3);
+                  ((left[0] + left[1] + left[2] + left[3] +
+                    left[4] + left[5] + left[6] + left[7] + 4) >> 3);
     int y;
 
     for (y = 0; y < 8; y++) {
@@ -338,9 +351,10 @@ static void dc_left_16x16_c(uint8_t *dst, ptrdiff_t stride,
                             const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((left[0] + left[1] + left[2] + left[3] + left[4] + left[5] +
-          left[6] + left[7] + left[8] + left[9] + left[10] + left[11] +
-          left[12] + left[13] + left[14] + left[15] + 8) >> 4);
+                  ((left[0]  + left[1]  + left[2]  + left[3]  +
+                    left[4]  + left[5]  + left[6]  + left[7]  +
+                    left[8]  + left[9]  + left[10] + left[11] +
+                    left[12] + left[13] + left[14] + left[15] + 8) >> 4);
     int y;
 
     for (y = 0; y < 16; y++) {
@@ -354,12 +368,14 @@ static void dc_left_32x32_c(uint8_t *dst, ptrdiff_t stride,
                             const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((left[0] + left[1] + left[2] + left[3] + left[4] + left[5] +
-          left[6] + left[7] + left[8] + left[9] + left[10] + left[11] +
-          left[12] + left[13] + left[14] + left[15] + left[16] + left[17] +
-          left[18] + left[19] + left[20] + left[21] + left[22] + left[23] +
-          left[24] + left[25] + left[26] + left[27] + left[28] + left[29] +
-          left[30] + left[31] + 16) >> 5);
+                  ((left[0]  + left[1]  + left[2]  + left[3]  +
+                    left[4]  + left[5]  + left[6]  + left[7]  +
+                    left[8]  + left[9]  + left[10] + left[11] +
+                    left[12] + left[13] + left[14] + left[15] +
+                    left[16] + left[17] + left[18] + left[19] +
+                    left[20] + left[21] + left[22] + left[23] +
+                    left[24] + left[25] + left[26] + left[27] +
+                    left[28] + left[29] + left[30] + left[31] + 16) >> 5);
     int y;
 
     for (y = 0; y < 32; y++) {
@@ -386,8 +402,8 @@ static void dc_top_8x8_c(uint8_t *dst, ptrdiff_t stride,
                          const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((top[0] + top[1] + top[2] + top[3] +
-          top[4] + top[5] + top[6] + top[7] + 4) >> 3);
+                  ((top[0] + top[1] + top[2] + top[3] +
+                    top[4] + top[5] + top[6] + top[7] + 4) >> 3);
     int y;
 
     for (y = 0; y < 8; y++) {
@@ -400,9 +416,10 @@ static void dc_top_16x16_c(uint8_t *dst, ptrdiff_t stride,
                            const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((top[0] + top[1] + top[2] + top[3] + top[4] + top[5] +
-          top[6] + top[7] + top[8] + top[9] + top[10] + top[11] +
-          top[12] + top[13] + top[14] + top[15] + 8) >> 4);
+                  ((top[0]  + top[1]  + top[2]  + top[3]  +
+                    top[4]  + top[5]  + top[6]  + top[7]  +
+                    top[8]  + top[9]  + top[10] + top[11] +
+                    top[12] + top[13] + top[14] + top[15] + 8) >> 4);
     int y;
 
     for (y = 0; y < 16; y++) {
@@ -416,12 +433,14 @@ static void dc_top_32x32_c(uint8_t *dst, ptrdiff_t stride,
                            const uint8_t *left, const uint8_t *top)
 {
     uint64_t dc = 0x0101010101010101ULL *
-        ((top[0] + top[1] + top[2] + top[3] + top[4] + top[5] +
-          top[6] + top[7] + top[8] + top[9] + top[10] + top[11] +
-          top[12] + top[13] + top[14] + top[15] + top[16] + top[17] +
-          top[18] + top[19] + top[20] + top[21] + top[22] + top[23] +
-          top[24] + top[25] + top[26] + top[27] + top[28] + top[29] +
-          top[30] + top[31] + 16) >> 5);
+                  ((top[0]  + top[1]  + top[2]  + top[3]  +
+                    top[4]  + top[5]  + top[6]  + top[7]  +
+                    top[8]  + top[9]  + top[10] + top[11] +
+                    top[12] + top[13] + top[14] + top[15] +
+                    top[16] + top[17] + top[18] + top[19] +
+                    top[20] + top[21] + top[22] + top[23] +
+                    top[24] + top[25] + top[26] + top[27] +
+                    top[28] + top[29] + top[30] + top[31] + 16) >> 5);
     int y;
 
     for (y = 0; y < 32; y++) {
@@ -579,30 +598,41 @@ static void diag_downleft_4x4_c(uint8_t *dst, ptrdiff_t stride,
     int a0 = top[0], a1 = top[1], a2 = top[2], a3 = top[3],
         a4 = top[4], a5 = top[5], a6 = top[6], a7 = top[7];
 
-    DST(0,0) = (a0 + a1 * 2 + a2 + 2) >> 2;
-    DST(1,0) = DST(0,1) = (a1 + a2 * 2 + a3 + 2) >> 2;
-    DST(2,0) = DST(1,1) = DST(0,2) = (a2 + a3 * 2 + a4 + 2) >> 2;
-    DST(3,0) = DST(2,1) = DST(1,2) = DST(0,3) = (a3 + a4 * 2 + a5 + 2) >> 2;
-    DST(3,1) = DST(2,2) = DST(1,3) = (a4 + a5 * 2 + a6 + 2) >> 2;
-    DST(3,2) = DST(2,3) = (a5 + a6 * 2 + a7 + 2) >> 2;
-    DST(3,3) = a7;  // note: this is different from vp8 and such
+    DST(0, 0) = (a0 + a1 * 2 + a2 + 2) >> 2;
+    DST(1, 0) =
+    DST(0, 1) = (a1 + a2 * 2 + a3 + 2) >> 2;
+    DST(2, 0) =
+    DST(1, 1) =
+    DST(0, 2) = (a2 + a3 * 2 + a4 + 2) >> 2;
+    DST(3, 0) =
+    DST(2, 1) =
+    DST(1, 2) =
+    DST(0, 3) = (a3 + a4 * 2 + a5 + 2) >> 2;
+    DST(3, 1) =
+    DST(2, 2) =
+    DST(1, 3) = (a4 + a5 * 2 + a6 + 2) >> 2;
+    DST(3, 2) =
+    DST(2, 3) = (a5 + a6 * 2 + a7 + 2) >> 2;
+    DST(3, 3) = a7;  // note: this is different from vp8 and such
 }
 
-#define def_diag_downleft(size) \
-static void diag_downleft_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
-                                              const uint8_t *left, const uint8_t *top) \
-{ \
-    int i, j; \
-    uint8_t v[size - 1]; \
-\
-    for (i = 0; i < size - 2; i++) \
-        v[i] = (top[i] + top[i + 1] * 2 + top[i + 2] + 2) >> 2; \
-    v[size - 2] = (top[size - 2] + top[size - 1] * 3 + 2) >> 2; \
-\
-    for (j = 0; j < size; j++) { \
-        memcpy(dst + j*stride, v + j, size - 1 - j); \
-        memset(dst + j*stride + size - 1 - j, top[size - 1], j + 1); \
-    } \
+#define def_diag_downleft(size)                                             \
+static void diag_downleft_ ## size ## x ## size ## _c(uint8_t *dst,         \
+                                                      ptrdiff_t stride,     \
+                                                      const uint8_t *left,  \
+                                                      const uint8_t *top)   \
+{                                                                           \
+    int i, j;                                                               \
+    uint8_t v[size - 1];                                                    \
+                                                                            \
+    for (i = 0; i < size - 2; i++)                                          \
+        v[i] = (top[i] + top[i + 1] * 2 + top[i + 2] + 2) >> 2;             \
+    v[size - 2] = (top[size - 2] + top[size - 1] * 3 + 2) >> 2;             \
+                                                                            \
+    for (j = 0; j < size; j++) {                                            \
+        memcpy(dst + j * stride, v + j, size - 1 - j);                      \
+        memset(dst + j * stride + size - 1 - j, top[size - 1], j + 1);      \
+    }                                                                       \
 }
 
 def_diag_downleft(8)
@@ -613,34 +643,49 @@ static void diag_downright_4x4_c(uint8_t *dst, ptrdiff_t stride,
                                  const uint8_t *left, const uint8_t *top)
 {
     int tl = top[-1], a0 = top[0], a1 = top[1], a2 = top[2], a3 = top[3],
-        l0 = left[3], l1 = left[2], l2 = left[1], l3 = left[0];
+        l0 = left[0], l1 = left[1], l2 = left[2], l3 = left[3];
 
-    DST(0,3) = (l1 + l2 * 2 + l3 + 2) >> 2;
-    DST(0,2) = DST(1,3) = (l0 + l1 * 2 + l2 + 2) >> 2;
-    DST(0,1) = DST(1,2) = DST(2,3) = (tl + l0 * 2 + l1 + 2) >> 2;
-    DST(0,0) = DST(1,1) = DST(2,2) = DST(3,3) = (l0 + tl * 2 + a0 + 2) >> 2;
-    DST(1,0) = DST(2,1) = DST(3,2) = (tl + a0 * 2 + a1 + 2) >> 2;
-    DST(2,0) = DST(3,1) = (a0 + a1 * 2 + a2 + 2) >> 2;
-    DST(3,0) = (a1 + a2 * 2 + a3 + 2) >> 2;
+    DST(0, 3) = (l1 + l2 * 2 + l3 + 2) >> 2;
+    DST(0, 2) =
+    DST(1, 3) = (l0 + l1 * 2 + l2 + 2) >> 2;
+    DST(0, 1) =
+    DST(1, 2) =
+    DST(2, 3) = (tl + l0 * 2 + l1 + 2) >> 2;
+    DST(0, 0) =
+    DST(1, 1) =
+    DST(2, 2) =
+    DST(3, 3) = (l0 + tl * 2 + a0 + 2) >> 2;
+    DST(1, 0) =
+    DST(2, 1) =
+    DST(3, 2) = (tl + a0 * 2 + a1 + 2) >> 2;
+    DST(2, 0) =
+    DST(3, 1) = (a0 + a1 * 2 + a2 + 2) >> 2;
+    DST(3, 0) = (a1 + a2 * 2 + a3 + 2) >> 2;
 }
 
-#define def_diag_downright(size) \
-static void diag_downright_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
-                                               const uint8_t *left, const uint8_t *top) \
-{ \
-    int i, j; \
-    uint8_t v[size + size - 1]; \
-\
-    for (i = 0; i < size - 2; i++) { \
-        v[i           ] = (left[i] + left[i + 1] * 2 + left[i + 2] + 2) >> 2; \
-        v[size + 1 + i] = (top[i]  + top[i + 1]  * 2 + top[i + 2]  + 2) >> 2; \
-    } \
-    v[size - 2] = (left[size - 2] + left[size - 1] * 2 + top[-1] + 2) >> 2; \
-    v[size - 1] = (left[size - 1] + top[-1] * 2 + top[ 0] + 2) >> 2; \
-    v[size    ] = (top[-1] + top[0]  * 2 + top[ 1] + 2) >> 2; \
-\
-    for (j = 0; j < size; j++) \
-        memcpy(dst + j*stride, v + size - 1 - j, size); \
+#define def_diag_downright(size)                                            \
+static void diag_downright_ ## size ## x ## size ## _c(uint8_t *dst,        \
+                                                       ptrdiff_t stride,    \
+                                                       const uint8_t *left, \
+                                                       const uint8_t *top)  \
+{                                                                           \
+    int i, j;                                                               \
+    uint8_t v[size + size - 1];                                             \
+                                                                            \
+    for (i = 0; i < size - 2; i++) {                                        \
+        v[i]            = (left[size - 1 - i] +                             \
+                           left[size - 2 - i] * 2 +                         \
+                           left[size - 3 - i] + 2) >> 2;                    \
+        v[size + 1 + i] = (top[i]             +                             \
+                           top[i + 1]         * 2 +                         \
+                           top[i + 2]         + 2) >> 2;                    \
+    }                                                                       \
+    v[size - 2] = (left[1] + left[0] * 2 + top[-1] + 2) >> 2;               \
+    v[size - 1] = (left[0] + top[-1] * 2 + top[0]  + 2) >> 2;               \
+    v[size]     = (top[-1] + top[0]  * 2 + top[1]  + 2) >> 2;               \
+                                                                            \
+    for (j = 0; j < size; j++)                                              \
+        memcpy(dst + j * stride, v + size - 1 - j, size);                   \
 }
 
 def_diag_downright(8)
@@ -651,45 +696,57 @@ static void vert_right_4x4_c(uint8_t *dst, ptrdiff_t stride,
                              const uint8_t *left, const uint8_t *top)
 {
     int tl = top[-1], a0 = top[0], a1 = top[1], a2 = top[2], a3 = top[3],
-        l0 = left[3], l1 = left[2], l2 = left[1];
+        l0 = left[0], l1 = left[1], l2 = left[2];
 
-    DST(0,3) = (l0 + l1 * 2 + l2 + 2) >> 2;
-    DST(0,2) = (tl + l0 * 2 + l1 + 2) >> 2;
-    DST(0,0) = DST(1,2) = (tl + a0 + 1) >> 1;
-    DST(0,1) = DST(1,3) = (l0 + tl * 2 + a0 + 2) >> 2;
-    DST(1,0) = DST(2,2) = (a0 + a1 + 1) >> 1;
-    DST(1,1) = DST(2,3) = (tl + a0 * 2 + a1 + 2) >> 2;
-    DST(2,0) = DST(3,2) = (a1 + a2 + 1) >> 1;
-    DST(2,1) = DST(3,3) = (a0 + a1 * 2 + a2 + 2) >> 2;
-    DST(3,0) = (a2 + a3 + 1) >> 1;
-    DST(3,1) = (a1 + a2 * 2 + a3 + 2) >> 2;
+    DST(0, 3) = (l0 + l1 * 2 + l2 + 2) >> 2;
+    DST(0, 2) = (tl + l0 * 2 + l1 + 2) >> 2;
+    DST(0, 0) =
+    DST(1, 2) = (tl + a0          + 1) >> 1;
+    DST(0, 1) =
+    DST(1, 3) = (l0 + tl * 2 + a0 + 2) >> 2;
+    DST(1, 0) =
+    DST(2, 2) = (a0 + a1          + 1) >> 1;
+    DST(1, 1) =
+    DST(2, 3) = (tl + a0 * 2 + a1 + 2) >> 2;
+    DST(2, 0) =
+    DST(3, 2) = (a1 + a2          + 1) >> 1;
+    DST(2, 1) =
+    DST(3, 3) = (a0 + a1 * 2 + a2 + 2) >> 2;
+    DST(3, 0) = (a2 + a3          + 1) >> 1;
+    DST(3, 1) = (a1 + a2 * 2 + a3 + 2) >> 2;
 }
 
-#define def_vert_right(size) \
-static void vert_right_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
-                                           const uint8_t *left, const uint8_t *top) \
-{ \
-    int i, j; \
-    uint8_t ve[size + size/2 - 1], vo[size + size/2 - 1]; \
-\
-    for (i = 0; i < size/2 - 2; i++) { \
-        vo[i] = (left[i*2 + 3] + left[i*2 + 2] * 2 + left[i*2 + 1] + 2) >> 2; \
-        ve[i] = (left[i*2 + 4] + left[i*2 + 3] * 2 + left[i*2 + 2] + 2) >> 2; \
-    } \
-    vo[size/2 - 2] = (left[size - 1] + left[size - 2] * 2 + left[size - 3] + 2) >> 2; \
-    ve[size/2 - 2] = (top[-1] + left[size - 1] * 2 + left[size - 2] + 2) >> 2; \
-\
-    ve[size/2 - 1] = (top[-1] + top[0] + 1) >> 1; \
-    vo[size/2 - 1] = (left[size - 1] + top[-1] * 2 + top[0] + 2) >> 2; \
-    for (i = 0; i < size - 1; i++) { \
-        ve[size/2 + i] = (top[i] + top[i + 1] + 1) >> 1; \
-        vo[size/2 + i] = (top[i - 1] + top[i] * 2 + top[i + 1] + 2) >> 2; \
-    } \
-\
-    for (j = 0; j < size / 2; j++) { \
-        memcpy(dst +  j*2     *stride, ve + size/2 - 1 - j, size); \
-        memcpy(dst + (j*2 + 1)*stride, vo + size/2 - 1 - j, size); \
-    } \
+#define def_vert_right(size)                                                \
+static void vert_right_ ## size ## x ## size ## _c(uint8_t *dst,            \
+                                                   ptrdiff_t stride,        \
+                                                   const uint8_t *left,     \
+                                                   const uint8_t *top)      \
+{                                                                           \
+    int i, j;                                                               \
+    uint8_t ve[size + size / 2 - 1], vo[size + size / 2 - 1];               \
+                                                                            \
+    for (i = 0; i < size / 2 - 2; i++) {                                    \
+        vo[i] = (left[size - 4 - i * 2] +                                   \
+                 left[size - 3 - i * 2] * 2 +                               \
+                 left[size - 2 - i * 2] + 2) >> 2;                          \
+        ve[i] = (left[size - 5 - i * 2] +                                   \
+                 left[size - 4 - i * 2] * 2 +                               \
+                 left[size - 3 - i * 2] + 2) >> 2;                          \
+    }                                                                       \
+    vo[size / 2 - 2] = (left[0] + left[1] * 2 + left[2] + 2) >> 2;          \
+    ve[size / 2 - 2] = (top[-1] + left[0] * 2 + left[1] + 2) >> 2;          \
+                                                                            \
+    ve[size / 2 - 1] = (top[-1] + top[0] + 1) >> 1;                         \
+    vo[size / 2 - 1] = (left[0] + top[-1] * 2 + top[0] + 2) >> 2;           \
+    for (i = 0; i < size - 1; i++) {                                        \
+        ve[size / 2 + i] = (top[i] + top[i + 1] + 1) >> 1;                  \
+        vo[size / 2 + i] = (top[i - 1] + top[i] * 2 + top[i + 1] + 2) >> 2; \
+    }                                                                       \
+                                                                            \
+    for (j = 0; j < size / 2; j++) {                                        \
+        memcpy(dst +  j * 2      * stride, ve + size / 2 - 1 - j, size);    \
+        memcpy(dst + (j * 2 + 1) * stride, vo + size / 2 - 1 - j, size);    \
+    }                                                                       \
 }
 
 def_vert_right(8)
@@ -699,40 +756,53 @@ def_vert_right(32)
 static void hor_down_4x4_c(uint8_t *dst, ptrdiff_t stride,
                            const uint8_t *left, const uint8_t *top)
 {
-    int l0 = left[3], l1 = left[2], l2 = left[1], l3 = left[0],
+    int l0 = left[0], l1 = left[1], l2 = left[2], l3 = left[3],
         tl = top[-1], a0 = top[0], a1 = top[1], a2 = top[2];
 
-    DST(2,0) = (tl + a0 * 2 + a1 + 2) >> 2;
-    DST(3,0) = (a0 + a1 * 2 + a2 + 2) >> 2;
-    DST(0,0) = DST(2,1) = (tl + l0 + 1) >> 1;
-    DST(1,0) = DST(3,1) = (a0 + tl * 2 + l0 + 2) >> 2;
-    DST(0,1) = DST(2,2) = (l0 + l1 + 1) >> 1;
-    DST(1,1) = DST(3,2) = (tl + l0 * 2 + l1 + 2) >> 2;
-    DST(0,2) = DST(2,3) = (l1 + l2 + 1) >> 1;
-    DST(1,2) = DST(3,3) = (l0 + l1 * 2 + l2 + 2) >> 2;
-    DST(0,3) = (l2 + l3 + 1) >> 1;
-    DST(1,3) = (l1 + l2 * 2 + l3 + 2) >> 2;
+    DST(2, 0) = (tl + a0 * 2 + a1 + 2) >> 2;
+    DST(3, 0) = (a0 + a1 * 2 + a2 + 2) >> 2;
+    DST(0, 0) =
+    DST(2, 1) = (tl + l0          + 1) >> 1;
+    DST(1, 0) =
+    DST(3, 1) = (a0 + tl * 2 + l0 + 2) >> 2;
+    DST(0, 1) =
+    DST(2, 2) = (l0 + l1          + 1) >> 1;
+    DST(1, 1) =
+    DST(3, 2) = (tl + l0 * 2 + l1 + 2) >> 2;
+    DST(0, 2) =
+    DST(2, 3) = (l1 + l2          + 1) >> 1;
+    DST(1, 2) =
+    DST(3, 3) = (l0 + l1 * 2 + l2 + 2) >> 2;
+    DST(0, 3) = (l2 + l3          + 1) >> 1;
+    DST(1, 3) = (l1 + l2 * 2 + l3 + 2) >> 2;
 }
 
-#define def_hor_down(size) \
-static void hor_down_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
-                                         const uint8_t *left, const uint8_t *top) \
-{ \
-    int i, j; \
-    uint8_t v[size * 3 - 2]; \
-\
-    for (i = 0; i < size - 2; i++) { \
-        v[i*2       ] = (left[i + 1] + left[i + 0] + 1) >> 1; \
-        v[i*2    + 1] = (left[i + 2] + left[i + 1] * 2 + left[i + 0] + 2) >> 2; \
-        v[size*2 + i] = (top[i - 1] + top[i] * 2 + top[i + 1] + 2) >> 2; \
-    } \
-    v[size*2 - 2] = (top[-1] + left[size - 1] + 1) >> 1; \
-    v[size*2 - 4] = (left[size - 1] + left[size - 2] + 1) >> 1; \
-    v[size*2 - 1] = (top[0]  + top[-1] * 2 + left[size - 1] + 2) >> 2; \
-    v[size*2 - 3] = (top[-1] + left[size - 1] * 2 + left[size - 2] + 2) >> 2; \
-\
-    for (j = 0; j < size; j++) \
-        memcpy(dst + j*stride, v + size*2 - 2 - j*2, size); \
+#define def_hor_down(size)                                              \
+static void hor_down_ ## size ## x ## size ## _c(uint8_t *dst,          \
+                                                 ptrdiff_t stride,      \
+                                                 const uint8_t *left,   \
+                                                 const uint8_t *top)    \
+{                                                                       \
+    int i, j;                                                           \
+    uint8_t v[size * 3 - 2];                                            \
+                                                                        \
+    for (i = 0; i < size - 2; i++) {                                    \
+        v[i * 2]        = (left[size - 2 - i] +                         \
+                           left[size - 1 - i] + 1) >> 1;                \
+        v[i * 2    + 1] = (left[size - 3 - i] +                         \
+                           left[size - 2 - i] * 2 +                     \
+                           left[size - 1 - i] + 2) >> 2;                \
+        v[size * 2 + i] = (top[i - 1] +                                 \
+                           top[i] * 2 +                                 \
+                           top[i + 1] + 2) >> 2;                        \
+    }                                                                   \
+    v[size * 2 - 2] = (top[-1] + left[0] + 1) >> 1;                     \
+    v[size * 2 - 4] = (left[0] + left[1] + 1) >> 1;                     \
+    v[size * 2 - 1] = (top[0]  + top[-1] * 2 + left[0] + 2) >> 2;       \
+    v[size * 2 - 3] = (top[-1] + left[0] * 2 + left[1] + 2) >> 2;       \
+                                                                        \
+    for (j = 0; j < size; j++)                                          \
+        memcpy(dst + j * stride, v + size * 2 - 2 - j * 2, size);       \
 }
 
 def_hor_down(8)
@@ -745,38 +815,48 @@ static void vert_left_4x4_c(uint8_t *dst, ptrdiff_t stride,
     int a0 = top[0], a1 = top[1], a2 = top[2], a3 = top[3],
         a4 = top[4], a5 = top[5], a6 = top[6];
 
-    DST(0,0) = (a0 + a1 + 1) >> 1;
-    DST(0,1) = (a0 + a1 * 2 + a2 + 2) >> 2;
-    DST(1,0) = DST(0,2) = (a1 + a2 + 1) >> 1;
-    DST(1,1) = DST(0,3) = (a1 + a2 * 2 + a3 + 2) >> 2;
-    DST(2,0) = DST(1,2) = (a2 + a3 + 1) >> 1;
-    DST(2,1) = DST(1,3) = (a2 + a3 * 2 + a4 + 2) >> 2;
-    DST(3,0) = DST(2,2) = (a3 + a4 + 1) >> 1;
-    DST(3,1) = DST(2,3) = (a3 + a4 * 2 + a5 + 2) >> 2;
-    DST(3,2) = (a4 + a5 + 1) >> 1;
-    DST(3,3) = (a4 + a5 * 2 + a6 + 2) >> 2;
+    DST(0, 0) = (a0 + a1          + 1) >> 1;
+    DST(0, 1) = (a0 + a1 * 2 + a2 + 2) >> 2;
+    DST(1, 0) =
+    DST(0, 2) = (a1 + a2          + 1) >> 1;
+    DST(1, 1) =
+    DST(0, 3) = (a1 + a2 * 2 + a3 + 2) >> 2;
+    DST(2, 0) =
+    DST(1, 2) = (a2 + a3          + 1) >> 1;
+    DST(2, 1) =
+    DST(1, 3) = (a2 + a3 * 2 + a4 + 2) >> 2;
+    DST(3, 0) =
+    DST(2, 2) = (a3 + a4          + 1) >> 1;
+    DST(3, 1) =
+    DST(2, 3) = (a3 + a4 * 2 + a5 + 2) >> 2;
+    DST(3, 2) = (a4 + a5          + 1) >> 1;
+    DST(3, 3) = (a4 + a5 * 2 + a6 + 2) >> 2;
 }
 
-#define def_vert_left(size) \
-static void vert_left_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
-                                          const uint8_t *left, const uint8_t *top) \
-{ \
-    int i, j; \
-    uint8_t ve[size - 1], vo[size - 1]; \
-\
-    for (i = 0; i < size - 2; i++) { \
-        ve[i] = (top[i] + top[i + 1] + 1) >> 1; \
-        vo[i] = (top[i] + top[i + 1] * 2 + top[i + 2] + 2) >> 2; \
-    } \
-    ve[size - 2] = (top[size - 2] + top[size - 1] + 1) >> 1; \
-    vo[size - 2] = (top[size - 2] + top[size - 1] * 3 + 2) >> 2; \
-\
-    for (j = 0; j < size / 2; j++) { \
-        memcpy(dst +  j*2      * stride, ve + j, size - j - 1); \
-        memset(dst +  j*2      * stride + size - j - 1, top[size - 1], j + 1); \
-        memcpy(dst + (j*2 + 1) * stride, vo + j, size - j - 1); \
-        memset(dst + (j*2 + 1) * stride + size - j - 1, top[size - 1], j + 1); \
-    } \
+#define def_vert_left(size)                                             \
+static void vert_left_ ## size ## x ## size ## _c(uint8_t *dst,         \
+                                                  ptrdiff_t stride,     \
+                                                  const uint8_t *left,  \
+                                                  const uint8_t *top)   \
+{                                                                       \
+    int i, j;                                                           \
+    uint8_t ve[size - 1], vo[size - 1];                                 \
+                                                                        \
+    for (i = 0; i < size - 2; i++) {                                    \
+        ve[i] = (top[i] + top[i + 1] + 1) >> 1;                         \
+        vo[i] = (top[i] + top[i + 1] * 2 + top[i + 2] + 2) >> 2;        \
+    }                                                                   \
+    ve[size - 2] = (top[size - 2] + top[size - 1] + 1) >> 1;            \
+    vo[size - 2] = (top[size - 2] + top[size - 1] * 3 + 2) >> 2;        \
+                                                                        \
+    for (j = 0; j < size / 2; j++) {                                    \
+        memcpy(dst +  j * 2      * stride, ve + j, size - (j + 1));     \
+        memset(dst +  j * 2      * stride + size - j - 1,               \
+               top[size - 1], j + 1);                                   \
+        memcpy(dst + (j * 2 + 1) * stride, vo + j, size - (j + 1));     \
+        memset(dst + (j * 2 + 1) * stride + size - j - 1,               \
+               top[size - 1], j + 1);                                   \
+    }                                                                   \
 }
 
 def_vert_left(8)
@@ -786,38 +866,49 @@ def_vert_left(32)
 static void hor_up_4x4_c(uint8_t *dst, ptrdiff_t stride,
                          const uint8_t *left, const uint8_t *top)
 {
-    int l0 = left[3], l1 = left[2], l2 = left[1], l3 = left[0];
+    int l0 = left[0], l1 = left[1], l2 = left[2], l3 = left[3];
 
-    DST(0,0) = (l0 + l1 + 1) >> 1;
-    DST(1,0) = (l0 + l1 * 2 + l2 + 2) >> 2;
-    DST(0,1) = DST(2,0) = (l1 + l2 + 1) >> 1;
-    DST(1,1) = DST(3,0) = (l1 + l2 * 2 + l3 + 2) >> 2;
-    DST(0,2) = DST(2,1) = (l2 + l3 + 1) >> 1;
-    DST(1,2) = DST(3,1) = (l2 + l3 * 3 + 2) >> 2;
-    DST(0,3) = DST(1,3) = DST(2,2) = DST(2,3) = DST(3,2) = DST(3,3) = l3;
+    DST(0, 0) = (l0 + l1          + 1) >> 1;
+    DST(1, 0) = (l0 + l1 * 2 + l2 + 2) >> 2;
+    DST(0, 1) =
+    DST(2, 0) = (l1 + l2          + 1) >> 1;
+    DST(1, 1) =
+    DST(3, 0) = (l1 + l2 * 2 + l3 + 2) >> 2;
+    DST(0, 2) =
+    DST(2, 1) = (l2 + l3          + 1) >> 1;
+    DST(1, 2) =
+    DST(3, 1) = (l2 + l3 * 3      + 2) >> 2;
+    DST(0, 3) =
+    DST(1, 3) =
+    DST(2, 2) =
+    DST(2, 3) =
+    DST(3, 2) =
+    DST(3, 3) = l3;
 }
 
-#define def_hor_up(size) \
-static void hor_up_##size##x##size##_c(uint8_t *dst, ptrdiff_t stride, \
-                                       const uint8_t *left, const uint8_t *top) \
-{ \
-    int i, j; \
-    uint8_t v[size*2 - 2]; \
-\
-    for (i = 0; i < size - 2; i++) { \
-        v[i*2    ] = (left[size - i - 1] + left[size - i - 2] + 1) >> 1; \
-        v[i*2 + 1] = (left[size - i - 1] + left[size - i - 2] * 2 + left[size - i - 3] + 2) >> 2; \
-    } \
-    v[size*2 - 4] = (left[1] + left[0] + 1) >> 1; \
-    v[size*2 - 3] = (left[1] + left[0] * 3 + 2) >> 2; \
-\
-    for (j = 0; j < size / 2; j++) \
-        memcpy(dst + j*stride, v + j*2, size); \
-    for (j = size / 2; j < size; j++) { \
-        memcpy(dst + j*stride, v + j*2, size*2 - 2 - j*2); \
-        memset(dst + j*stride + size*2 - 2 - j*2, left[0], \
-               2 + j*2 - size); \
-    } \
+#define def_hor_up(size)                                                    \
+static void hor_up_ ## size ## x ## size ## _c(uint8_t *dst,                \
+                                               ptrdiff_t stride,            \
+                                               const uint8_t *left,         \
+                                               const uint8_t *top)          \
+{                                                                           \
+    int i, j;                                                               \
+    uint8_t v[size * 2 - 2];                                                \
+                                                                            \
+    for (i = 0; i < size - 2; i++) {                                        \
+        v[i * 2]     = (left[i] + left[i + 1] + 1) >> 1;                    \
+        v[i * 2 + 1] = (left[i] + left[i + 1] * 2 + left[i + 2] + 2) >> 2;  \
+    }                                                                       \
+    v[size * 2 - 4] = (left[size - 2] + left[size - 1]     + 1) >> 1;       \
+    v[size * 2 - 3] = (left[size - 2] + left[size - 1] * 3 + 2) >> 2;       \
+                                                                            \
+    for (j = 0; j < size / 2; j++)                                          \
+        memcpy(dst + j * stride, v + j * 2, size);                          \
+    for (j = size / 2; j < size; j++) {                                     \
+        memcpy(dst + j * stride, v + j * 2, size * 2 - 2 - j * 2);          \
+        memset(dst + j * stride + size * 2 - 2 - j * 2, left[size - 1],     \
+               2 + j * 2 - size);                                           \
+    }                                                                       \
 }
 
 def_hor_up(8)
@@ -828,22 +919,22 @@ def_hor_up(32)
 
 static av_cold void vp9dsp_intrapred_init(VP9DSPContext *dsp)
 {
-#define init_intra_pred(tx, sz) \
-    dsp->intra_pred[tx][VERT_PRED]            = vert_##sz##_c; \
-    dsp->intra_pred[tx][HOR_PRED]             = hor_##sz##_c; \
-    dsp->intra_pred[tx][DC_PRED]              = dc_##sz##_c; \
-    dsp->intra_pred[tx][DIAG_DOWN_LEFT_PRED]  = diag_downleft_##sz##_c; \
-    dsp->intra_pred[tx][DIAG_DOWN_RIGHT_PRED] = diag_downright_##sz##_c; \
-    dsp->intra_pred[tx][VERT_RIGHT_PRED]      = vert_right_##sz##_c; \
-    dsp->intra_pred[tx][HOR_DOWN_PRED]        = hor_down_##sz##_c; \
-    dsp->intra_pred[tx][VERT_LEFT_PRED]       = vert_left_##sz##_c; \
-    dsp->intra_pred[tx][HOR_UP_PRED]          = hor_up_##sz##_c; \
-    dsp->intra_pred[tx][TM_VP8_PRED]          = tm_##sz##_c; \
-    dsp->intra_pred[tx][LEFT_DC_PRED]         = dc_left_##sz##_c; \
-    dsp->intra_pred[tx][TOP_DC_PRED]          = dc_top_##sz##_c; \
-    dsp->intra_pred[tx][DC_128_PRED]          = dc_128_##sz##_c; \
-    dsp->intra_pred[tx][DC_127_PRED]          = dc_127_##sz##_c; \
-    dsp->intra_pred[tx][DC_129_PRED]          = dc_129_##sz##_c
+#define init_intra_pred(tx, sz)                                              \
+    dsp->intra_pred[tx][VERT_PRED]            = vert_           ## sz ## _c; \
+    dsp->intra_pred[tx][HOR_PRED]             = hor_            ## sz ## _c; \
+    dsp->intra_pred[tx][DC_PRED]              = dc_             ## sz ## _c; \
+    dsp->intra_pred[tx][DIAG_DOWN_LEFT_PRED]  = diag_downleft_  ## sz ## _c; \
+    dsp->intra_pred[tx][DIAG_DOWN_RIGHT_PRED] = diag_downright_ ## sz ## _c; \
+    dsp->intra_pred[tx][VERT_RIGHT_PRED]      = vert_right_     ## sz ## _c; \
+    dsp->intra_pred[tx][HOR_DOWN_PRED]        = hor_down_       ## sz ## _c; \
+    dsp->intra_pred[tx][VERT_LEFT_PRED]       = vert_left_      ## sz ## _c; \
+    dsp->intra_pred[tx][HOR_UP_PRED]          = hor_up_         ## sz ## _c; \
+    dsp->intra_pred[tx][TM_VP8_PRED]          = tm_             ## sz ## _c; \
+    dsp->intra_pred[tx][LEFT_DC_PRED]         = dc_left_        ## sz ## _c; \
+    dsp->intra_pred[tx][TOP_DC_PRED]          = dc_top_         ## sz ## _c; \
+    dsp->intra_pred[tx][DC_128_PRED]          = dc_128_         ## sz ## _c; \
+    dsp->intra_pred[tx][DC_127_PRED]          = dc_127_         ## sz ## _c; \
+    dsp->intra_pred[tx][DC_129_PRED]          = dc_129_         ## sz ## _c
 
     init_intra_pred(TX_4X4,   4x4);
     init_intra_pred(TX_8X8,   8x8);
@@ -853,60 +944,46 @@ static av_cold void vp9dsp_intrapred_init(VP9DSPContext *dsp)
 #undef init_intra_pred
 }
 
-#define itxfm_wrapper(type_a, type_b, sz, bits, has_dconly) \
-static void type_a##_##type_b##_##sz##x##sz##_add_c(uint8_t *dst, \
-                                                    ptrdiff_t stride, \
-                                                    int16_t *block, int eob) \
-{ \
-    int i, j; \
-    int16_t tmp[sz * sz], out[sz]; \
-\
-    if (has_dconly && eob == 1) { \
-        const int t  = (((block[0] * 11585 + (1 << 13)) >> 14) \
-                                   * 11585 + (1 << 13)) >> 14; \
-        block[0] = 0; \
-        for (i = 0; i < sz; i++) { \
-            for (j = 0; j < sz; j++) \
-                dst[j * stride] = av_clip_uint8(dst[j * stride] + \
-                                                (bits ? \
-                                                 (t + (1 << (bits - 1))) >> bits : \
-                                                 t)); \
-            dst++; \
-        } \
-        return; \
-    } \
-\
-    for (i = 0; i < sz; i++) \
-        type_a##sz##_1d(block + i, sz, tmp + i * sz, 0); \
-    memset(block, 0, sz * sz * sizeof(*block)); \
-    for (i = 0; i < sz; i++) { \
-        type_b##sz##_1d(tmp + i, sz, out, 1); \
-        for (j = 0; j < sz; j++) \
-            dst[j * stride] = av_clip_uint8(dst[j * stride] + \
-                                            (bits ? \
-                                             (out[j] + (1 << (bits - 1))) >> bits : \
-                                             out[j])); \
-        dst++; \
-    } \
+#define itxfm_wrapper(type_a, type_b, sz, bits)                             \
+static void                                                                 \
+type_a ## _ ## type_b ## _ ## sz ## x ## sz ## _add_c(uint8_t *dst,         \
+                                                      ptrdiff_t stride,     \
+                                                      int16_t *block,       \
+                                                      int eob)              \
+{                                                                           \
+    int i, j;                                                               \
+    int16_t tmp[sz * sz], out[sz];                                          \
+    for (i = 0; i < sz; i++)                                                \
+        type_a ## sz ## _1d(tmp + i * sz, block + i, sz, 0);                \
+    memset(block, 0, sz * sz * sizeof(*block));                             \
+    for (i = 0; i < sz; i++) {                                              \
+        type_b ## sz ## _1d(out, tmp + i, sz, 1);                           \
+        for (j = 0; j < sz; j++)                                            \
+            dst[j * stride] =                                               \
+                av_clip_uint8(dst[j * stride] +                             \
+                              (bits ? (out[j] + (1 << (bits - 1))) >> bits  \
+                                    : out[j]));                             \
+        dst++;                                                              \
+    }                                                                       \
 }
 
-#define itxfm_wrap(sz, bits) \
-itxfm_wrapper(idct,  idct,  sz, bits, 1) \
-itxfm_wrapper(iadst, idct,  sz, bits, 0) \
-itxfm_wrapper(idct,  iadst, sz, bits, 0) \
-itxfm_wrapper(iadst, iadst, sz, bits, 0)
+#define itxfm_wrap(sz, bits)             \
+    itxfm_wrapper(idct, idct, sz, bits)  \
+    itxfm_wrapper(iadst, idct, sz, bits) \
+    itxfm_wrapper(idct, iadst, sz, bits) \
+    itxfm_wrapper(iadst, iadst, sz, bits)
 
 #define IN(x) in[x * stride]
 
-static av_always_inline void idct4_1d(const int16_t *in, ptrdiff_t stride,
-                                      int16_t *out, int pass)
+static av_always_inline void idct4_1d(int16_t *out, const int16_t *in,
+                                      ptrdiff_t stride, int pass)
 {
     int t0, t1, t2, t3;
 
-    t0 = ((IN(0) + IN(2)) * 11585 + (1 << 13)) >> 14;
-    t1 = ((IN(0) - IN(2)) * 11585 + (1 << 13)) >> 14;
-    t2 = (IN(1) *  6270 - IN(3) * 15137 + (1 << 13)) >> 14;
-    t3 = (IN(1) * 15137 + IN(3) *  6270 + (1 << 13)) >> 14;
+    t0 = ((IN(0)        + IN(2)) * 11585 + (1 << 13)) >> 14;
+    t1 = ((IN(0)        - IN(2)) * 11585 + (1 << 13)) >> 14;
+    t2 = (IN(1) *  6270 - IN(3)  * 15137 + (1 << 13)) >> 14;
+    t3 = (IN(1) * 15137 + IN(3)  *  6270 + (1 << 13)) >> 14;
 
     out[0] = t0 + t3;
     out[1] = t1 + t2;
@@ -914,8 +991,8 @@ static av_always_inline void idct4_1d(const int16_t *in, ptrdiff_t stride,
     out[3] = t0 - t3;
 }
 
-static av_always_inline void iadst4_1d(const int16_t *in, ptrdiff_t stride,
-                                       int16_t *out, int pass)
+static av_always_inline void iadst4_1d(int16_t *out, const int16_t *in,
+                                       ptrdiff_t stride, int pass)
 {
     int t0, t1, t2, t3;
 
@@ -932,19 +1009,19 @@ static av_always_inline void iadst4_1d(const int16_t *in, ptrdiff_t stride,
 
 itxfm_wrap(4, 4)
 
-static av_always_inline void idct8_1d(const int16_t *in, ptrdiff_t stride,
-                                      int16_t *out, int pass)
+static av_always_inline void idct8_1d(int16_t *out, const int16_t *in,
+                                      ptrdiff_t stride, int pass)
 {
     int t0, t0a, t1, t1a, t2, t2a, t3, t3a, t4, t4a, t5, t5a, t6, t6a, t7, t7a;
 
-    t0a = ((IN(0) + IN(4)) * 11585 + (1 << 13)) >> 14;
-    t1a = ((IN(0) - IN(4)) * 11585 + (1 << 13)) >> 14;
-    t2a = (IN(2) *  6270 - IN(6) * 15137 + (1 << 13)) >> 14;
-    t3a = (IN(2) * 15137 + IN(6) *  6270 + (1 << 13)) >> 14;
-    t4a = (IN(1) *  3196 - IN(7) * 16069 + (1 << 13)) >> 14;
-    t5a = (IN(5) * 13623 - IN(3) *  9102 + (1 << 13)) >> 14;
-    t6a = (IN(5) *  9102 + IN(3) * 13623 + (1 << 13)) >> 14;
-    t7a = (IN(1) * 16069 + IN(7) *  3196 + (1 << 13)) >> 14;
+    t0a = ((IN(0)        + IN(4)) * 11585 + (1 << 13)) >> 14;
+    t1a = ((IN(0)        - IN(4)) * 11585 + (1 << 13)) >> 14;
+    t2a = (IN(2) *  6270 - IN(6)  * 15137 + (1 << 13)) >> 14;
+    t3a = (IN(2) * 15137 + IN(6)  *  6270 + (1 << 13)) >> 14;
+    t4a = (IN(1) *  3196 - IN(7)  * 16069 + (1 << 13)) >> 14;
+    t5a = (IN(5) * 13623 - IN(3)  *  9102 + (1 << 13)) >> 14;
+    t6a = (IN(5) *  9102 + IN(3)  * 13623 + (1 << 13)) >> 14;
+    t7a = (IN(1) * 16069 + IN(7)  *  3196 + (1 << 13)) >> 14;
 
     t0  = t0a + t3a;
     t1  = t1a + t2a;
@@ -968,8 +1045,8 @@ static av_always_inline void idct8_1d(const int16_t *in, ptrdiff_t stride,
     out[7] = t0 - t7;
 }
 
-static av_always_inline void iadst8_1d(const int16_t *in, ptrdiff_t stride,
-                                       int16_t *out, int pass)
+static av_always_inline void iadst8_1d(int16_t *out, const int16_t *in,
+                                       ptrdiff_t stride, int pass)
 {
     int t0, t0a, t1, t1a, t2, t2a, t3, t3a, t4, t4a, t5, t5a, t6, t6a, t7, t7a;
 
@@ -982,14 +1059,14 @@ static av_always_inline void iadst8_1d(const int16_t *in, ptrdiff_t stride,
     t6a =  4756 * IN(1) + 15679 * IN(6);
     t7a = 15679 * IN(1) -  4756 * IN(6);
 
-    t0 = (t0a + t4a + (1 << 13)) >> 14;
-    t1 = (t1a + t5a + (1 << 13)) >> 14;
-    t2 = (t2a + t6a + (1 << 13)) >> 14;
-    t3 = (t3a + t7a + (1 << 13)) >> 14;
-    t4 = (t0a - t4a + (1 << 13)) >> 14;
-    t5 = (t1a - t5a + (1 << 13)) >> 14;
-    t6 = (t2a - t6a + (1 << 13)) >> 14;
-    t7 = (t3a - t7a + (1 << 13)) >> 14;
+    t0  = (t0a + t4a + (1 << 13)) >> 14;
+    t1  = (t1a + t5a + (1 << 13)) >> 14;
+    t2  = (t2a + t6a + (1 << 13)) >> 14;
+    t3  = (t3a + t7a + (1 << 13)) >> 14;
+    t4  = (t0a - t4a + (1 << 13)) >> 14;
+    t5  = (t1a - t5a + (1 << 13)) >> 14;
+    t6  = (t2a - t6a + (1 << 13)) >> 14;
+    t7  = (t3a - t7a + (1 << 13)) >> 14;
 
     t4a = 15137 * t4 +  6270 * t5;
     t5a =  6270 * t4 - 15137 * t5;
@@ -1014,15 +1091,15 @@ static av_always_inline void iadst8_1d(const int16_t *in, ptrdiff_t stride,
 
 itxfm_wrap(8, 5)
 
-static av_always_inline void idct16_1d(const int16_t *in, ptrdiff_t stride,
-                                       int16_t *out, int pass)
+static av_always_inline void idct16_1d(int16_t *out, const int16_t *in,
+                                       ptrdiff_t stride, int pass)
 {
     int t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15;
     int t0a, t1a, t2a, t3a, t4a, t5a, t6a, t7a;
     int t8a, t9a, t10a, t11a, t12a, t13a, t14a, t15a;
 
-    t0a  = ((IN(0) + IN(8)) * 11585 + (1 << 13)) >> 14;
-    t1a  = ((IN(0) - IN(8)) * 11585 + (1 << 13)) >> 14;
+    t0a  = ((IN(0)         + IN(8)) * 11585 + (1 << 13)) >> 14;
+    t1a  = ((IN(0)         - IN(8)) * 11585 + (1 << 13)) >> 14;
     t2a  = (IN(4)  *  6270 - IN(12) * 15137 + (1 << 13)) >> 14;
     t3a  = (IN(4)  * 15137 + IN(12) *  6270 + (1 << 13)) >> 14;
     t4a  = (IN(2)  *  3196 - IN(14) * 16069 + (1 << 13)) >> 14;
@@ -1038,29 +1115,29 @@ static av_always_inline void idct16_1d(const int16_t *in, ptrdiff_t stride,
     t11a = (IN(13) * 15679 - IN(3)  *  4756 + (1 << 13)) >> 14;
     t12a = (IN(13) *  4756 + IN(3)  * 15679 + (1 << 13)) >> 14;
 
-    t0  = t0a  + t3a;
-    t1  = t1a  + t2a;
-    t2  = t1a  - t2a;
-    t3  = t0a  - t3a;
-    t4  = t4a  + t5a;
-    t5  = t4a  - t5a;
-    t6  = t7a  - t6a;
-    t7  = t7a  + t6a;
-    t8  = t8a  + t9a;
-    t9  = t8a  - t9a;
-    t10 = t11a - t10a;
-    t11 = t11a + t10a;
-    t12 = t12a + t13a;
-    t13 = t12a - t13a;
-    t14 = t15a - t14a;
-    t15 = t15a + t14a;
+    t0   = t0a  + t3a;
+    t1   = t1a  + t2a;
+    t2   = t1a  - t2a;
+    t3   = t0a  - t3a;
+    t4   = t4a  + t5a;
+    t5   = t4a  - t5a;
+    t6   = t7a  - t6a;
+    t7   = t7a  + t6a;
+    t8   = t8a  + t9a;
+    t9   = t8a  - t9a;
+    t10  = t11a - t10a;
+    t11  = t11a + t10a;
+    t12  = t12a + t13a;
+    t13  = t12a - t13a;
+    t14  = t15a - t14a;
+    t15  = t15a + t14a;
 
-    t5a  = ((t6 - t5) * 11585 + (1 << 13)) >> 14;
-    t6a  = ((t6 + t5) * 11585 + (1 << 13)) >> 14;
-    t9a  = (  t14 *  6270 - t9  * 15137  + (1 << 13)) >> 14;
-    t14a = (  t14 * 15137 + t9  *  6270  + (1 << 13)) >> 14;
+    t5a  =   ((t6         - t5) * 11585  + (1 << 13)) >> 14;
+    t6a  =   ((t6         + t5) * 11585  + (1 << 13)) >> 14;
+    t9a  =   (t14 *  6270 - t9  * 15137  + (1 << 13)) >> 14;
+    t14a =   (t14 * 15137 + t9  *  6270  + (1 << 13)) >> 14;
     t10a = (-(t13 * 15137 + t10 *  6270) + (1 << 13)) >> 14;
-    t13a = (  t13 *  6270 - t10 * 15137  + (1 << 13)) >> 14;
+    t13a =   (t13 *  6270 - t10 * 15137  + (1 << 13)) >> 14;
 
     t0a  = t0   + t7;
     t1a  = t1   + t6a;
@@ -1084,16 +1161,16 @@ static av_always_inline void idct16_1d(const int16_t *in, ptrdiff_t stride,
     t11  = ((t12a - t11a) * 11585 + (1 << 13)) >> 14;
     t12  = ((t12a + t11a) * 11585 + (1 << 13)) >> 14;
 
-    out[ 0] = t0a + t15a;
-    out[ 1] = t1a + t14;
-    out[ 2] = t2a + t13a;
-    out[ 3] = t3a + t12;
-    out[ 4] = t4  + t11;
-    out[ 5] = t5  + t10a;
-    out[ 6] = t6  + t9;
-    out[ 7] = t7  + t8a;
-    out[ 8] = t7  - t8a;
-    out[ 9] = t6  - t9;
+    out[0]  = t0a + t15a;
+    out[1]  = t1a + t14;
+    out[2]  = t2a + t13a;
+    out[3]  = t3a + t12;
+    out[4]  = t4  + t11;
+    out[5]  = t5  + t10a;
+    out[6]  = t6  + t9;
+    out[7]  = t7  + t8a;
+    out[8]  = t7  - t8a;
+    out[9]  = t6  - t9;
     out[10] = t5  - t10a;
     out[11] = t4  - t11;
     out[12] = t3a - t12;
@@ -1102,8 +1179,8 @@ static av_always_inline void idct16_1d(const int16_t *in, ptrdiff_t stride,
     out[15] = t0a - t15a;
 }
 
-static av_always_inline void iadst16_1d(const int16_t *in, ptrdiff_t stride,
-                                        int16_t *out, int pass)
+static av_always_inline void iadst16_1d(int16_t *out, const int16_t *in,
+                                        ptrdiff_t stride, int pass)
 {
     int t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15;
     int t0a, t1a, t2a, t3a, t4a, t5a, t6a, t7a;
@@ -1152,14 +1229,14 @@ static av_always_inline void iadst16_1d(const int16_t *in, ptrdiff_t stride,
     t14  = t15a *  9102 - t14a * 13623;
     t15  = t15a * 13623 + t14a *  9102;
 
-    t0   = t0a + t4a;
-    t1   = t1a + t5a;
-    t2   = t2a + t6a;
-    t3   = t3a + t7a;
-    t4   = t0a - t4a;
-    t5   = t1a - t5a;
-    t6   = t2a - t6a;
-    t7   = t3a - t7a;
+    t0   = t0a  + t4a;
+    t1   = t1a  + t5a;
+    t2   = t2a  + t6a;
+    t3   = t3a  + t7a;
+    t4   = t0a  - t4a;
+    t5   = t1a  - t5a;
+    t6   = t2a  - t6a;
+    t7   = t3a  - t7a;
     t8a  = (t8  + t12 + (1 << 13)) >> 14;
     t9a  = (t9  + t13 + (1 << 13)) >> 14;
     t10a = (t10 + t14 + (1 << 13)) >> 14;
@@ -1169,79 +1246,79 @@ static av_always_inline void iadst16_1d(const int16_t *in, ptrdiff_t stride,
     t14a = (t10 - t14 + (1 << 13)) >> 14;
     t15a = (t11 - t15 + (1 << 13)) >> 14;
 
-    t4a  = t4 * 15137 + t5 *  6270;
-    t5a  = t4 *  6270 - t5 * 15137;
-    t6a  = t7 * 15137 - t6 *  6270;
-    t7a  = t7 *  6270 + t6 * 15137;
+    t4a  = t4   * 15137 + t5   *  6270;
+    t5a  = t4   *  6270 - t5   * 15137;
+    t6a  = t7   * 15137 - t6   *  6270;
+    t7a  = t7   *  6270 + t6   * 15137;
     t12  = t12a * 15137 + t13a *  6270;
     t13  = t12a *  6270 - t13a * 15137;
     t14  = t15a * 15137 - t14a *  6270;
     t15  = t15a *  6270 + t14a * 15137;
 
-    out[ 0] =   t0 + t2;
-    out[15] = -(t1 + t3);
-    t2a     =   t0 - t2;
-    t3a     =   t1 - t3;
-    out[ 3] = -((t4a + t6a + (1 << 13)) >> 14);
+    out[0]  =     t0 + t2;
+    out[15] =   -(t1 + t3);
+    t2a     =     t0 - t2;
+    t3a     =     t1 - t3;
+    out[3]  = -((t4a + t6a + (1 << 13)) >> 14);
     out[12] =   (t5a + t7a + (1 << 13)) >> 14;
     t6      =   (t4a - t6a + (1 << 13)) >> 14;
     t7      =   (t5a - t7a + (1 << 13)) >> 14;
-    out[ 1] = -(t8a + t10a);
-    out[14] =   t9a + t11a;
-    t10     =   t8a - t10a;
-    t11     =   t9a - t11a;
-    out[ 2] =   (t12 + t14 + (1 << 13)) >> 14;
+    out[1]  =  -(t8a + t10a);
+    out[14] =    t9a + t11a;
+    t10     =    t8a - t10a;
+    t11     =    t9a - t11a;
+    out[2]  =   (t12 + t14 + (1 << 13)) >> 14;
     out[13] = -((t13 + t15 + (1 << 13)) >> 14);
     t14a    =   (t12 - t14 + (1 << 13)) >> 14;
     t15a    =   (t13 - t15 + (1 << 13)) >> 14;
 
-    out[ 7] = ((t2a  + t3a)  * -11585 + (1 << 13)) >> 14;
-    out[ 8] = ((t2a  - t3a)  *  11585 + (1 << 13)) >> 14;
-    out[ 4] = ((t7   + t6)   *  11585 + (1 << 13)) >> 14;
+    out[7]  = ((t2a  + t3a)  * -11585 + (1 << 13)) >> 14;
+    out[8]  = ((t2a  - t3a)  *  11585 + (1 << 13)) >> 14;
+    out[4]  = ((t7   + t6)   *  11585 + (1 << 13)) >> 14;
     out[11] = ((t7   - t6)   *  11585 + (1 << 13)) >> 14;
-    out[ 6] = ((t11  + t10)  *  11585 + (1 << 13)) >> 14;
-    out[ 9] = ((t11  - t10)  *  11585 + (1 << 13)) >> 14;
-    out[ 5] = ((t14a + t15a) * -11585 + (1 << 13)) >> 14;
+    out[6]  = ((t11  + t10)  *  11585 + (1 << 13)) >> 14;
+    out[9]  = ((t11  - t10)  *  11585 + (1 << 13)) >> 14;
+    out[5]  = ((t14a + t15a) * -11585 + (1 << 13)) >> 14;
     out[10] = ((t14a - t15a) *  11585 + (1 << 13)) >> 14;
 }
 
 itxfm_wrap(16, 6)
 
-static av_always_inline void idct32_1d(const int16_t *in, ptrdiff_t stride,
-                                       int16_t *out, int pass)
+static av_always_inline void idct32_1d(int16_t *out, const int16_t *in,
+                                       ptrdiff_t stride, int pass)
 {
-    int t0a  = ((IN(0) + IN(16)) * 11585 + (1 << 13)) >> 14;
-    int t1a  = ((IN(0) - IN(16)) * 11585 + (1 << 13)) >> 14;
-    int t2a  = (IN( 8) *  6270 - IN(24) * 15137 + (1 << 13)) >> 14;
-    int t3a  = (IN( 8) * 15137 + IN(24) *  6270 + (1 << 13)) >> 14;
-    int t4a  = (IN( 4) *  3196 - IN(28) * 16069 + (1 << 13)) >> 14;
-    int t7a  = (IN( 4) * 16069 + IN(28) *  3196 + (1 << 13)) >> 14;
-    int t5a  = (IN(20) * 13623 - IN(12) *  9102 + (1 << 13)) >> 14;
-    int t6a  = (IN(20) *  9102 + IN(12) * 13623 + (1 << 13)) >> 14;
-    int t8a  = (IN( 2) *  1606 - IN(30) * 16305 + (1 << 13)) >> 14;
-    int t15a = (IN( 2) * 16305 + IN(30) *  1606 + (1 << 13)) >> 14;
-    int t9a  = (IN(18) * 12665 - IN(14) * 10394 + (1 << 13)) >> 14;
-    int t14a = (IN(18) * 10394 + IN(14) * 12665 + (1 << 13)) >> 14;
-    int t10a = (IN(10) *  7723 - IN(22) * 14449 + (1 << 13)) >> 14;
-    int t13a = (IN(10) * 14449 + IN(22) *  7723 + (1 << 13)) >> 14;
-    int t11a = (IN(26) * 15679 - IN( 6) *  4756 + (1 << 13)) >> 14;
-    int t12a = (IN(26) *  4756 + IN( 6) * 15679 + (1 << 13)) >> 14;
-    int t16a = (IN( 1) *   804 - IN(31) * 16364 + (1 << 13)) >> 14;
-    int t31a = (IN( 1) * 16364 + IN(31) *   804 + (1 << 13)) >> 14;
-    int t17a = (IN(17) * 12140 - IN(15) * 11003 + (1 << 13)) >> 14;
-    int t30a = (IN(17) * 11003 + IN(15) * 12140 + (1 << 13)) >> 14;
-    int t18a = (IN( 9) *  7005 - IN(23) * 14811 + (1 << 13)) >> 14;
-    int t29a = (IN( 9) * 14811 + IN(23) *  7005 + (1 << 13)) >> 14;
-    int t19a = (IN(25) * 15426 - IN( 7) *  5520 + (1 << 13)) >> 14;
-    int t28a = (IN(25) *  5520 + IN( 7) * 15426 + (1 << 13)) >> 14;
-    int t20a = (IN( 5) *  3981 - IN(27) * 15893 + (1 << 13)) >> 14;
-    int t27a = (IN( 5) * 15893 + IN(27) *  3981 + (1 << 13)) >> 14;
-    int t21a = (IN(21) * 14053 - IN(11) *  8423 + (1 << 13)) >> 14;
-    int t26a = (IN(21) *  8423 + IN(11) * 14053 + (1 << 13)) >> 14;
-    int t22a = (IN(13) *  9760 - IN(19) * 13160 + (1 << 13)) >> 14;
-    int t25a = (IN(13) * 13160 + IN(19) *  9760 + (1 << 13)) >> 14;
-    int t23a = (IN(29) * 16207 - IN( 3) *  2404 + (1 << 13)) >> 14;
-    int t24a = (IN(29) *  2404 + IN( 3) * 16207 + (1 << 13)) >> 14;
+    int t0a  = ((IN(0)         + IN(16)) * 11585 + (1 << 13)) >> 14;
+    int t1a  = ((IN(0)         - IN(16)) * 11585 + (1 << 13)) >> 14;
+    int t2a  = (IN(8)  *  6270 - IN(24)  * 15137 + (1 << 13)) >> 14;
+    int t3a  = (IN(8)  * 15137 + IN(24)  *  6270 + (1 << 13)) >> 14;
+    int t4a  = (IN(4)  *  3196 - IN(28)  * 16069 + (1 << 13)) >> 14;
+    int t7a  = (IN(4)  * 16069 + IN(28)  *  3196 + (1 << 13)) >> 14;
+    int t5a  = (IN(20) * 13623 - IN(12)  *  9102 + (1 << 13)) >> 14;
+    int t6a  = (IN(20) *  9102 + IN(12)  * 13623 + (1 << 13)) >> 14;
+    int t8a  = (IN(2)  *  1606 - IN(30)  * 16305 + (1 << 13)) >> 14;
+    int t15a = (IN(2)  * 16305 + IN(30)  *  1606 + (1 << 13)) >> 14;
+    int t9a  = (IN(18) * 12665 - IN(14)  * 10394 + (1 << 13)) >> 14;
+    int t14a = (IN(18) * 10394 + IN(14)  * 12665 + (1 << 13)) >> 14;
+    int t10a = (IN(10) *  7723 - IN(22)  * 14449 + (1 << 13)) >> 14;
+    int t13a = (IN(10) * 14449 + IN(22)  *  7723 + (1 << 13)) >> 14;
+    int t11a = (IN(26) * 15679 - IN(6)   *  4756 + (1 << 13)) >> 14;
+    int t12a = (IN(26) *  4756 + IN(6)   * 15679 + (1 << 13)) >> 14;
+    int t16a = (IN(1)  *   804 - IN(31)  * 16364 + (1 << 13)) >> 14;
+    int t31a = (IN(1)  * 16364 + IN(31)  *   804 + (1 << 13)) >> 14;
+    int t17a = (IN(17) * 12140 - IN(15)  * 11003 + (1 << 13)) >> 14;
+    int t30a = (IN(17) * 11003 + IN(15)  * 12140 + (1 << 13)) >> 14;
+    int t18a = (IN(9)  *  7005 - IN(23)  * 14811 + (1 << 13)) >> 14;
+    int t29a = (IN(9)  * 14811 + IN(23)  *  7005 + (1 << 13)) >> 14;
+    int t19a = (IN(25) * 15426 - IN(7)   *  5520 + (1 << 13)) >> 14;
+    int t28a = (IN(25) *  5520 + IN(7)   * 15426 + (1 << 13)) >> 14;
+    int t20a = (IN(5)  *  3981 - IN(27)  * 15893 + (1 << 13)) >> 14;
+    int t27a = (IN(5)  * 15893 + IN(27)  *  3981 + (1 << 13)) >> 14;
+    int t21a = (IN(21) * 14053 - IN(11)  *  8423 + (1 << 13)) >> 14;
+    int t26a = (IN(21) *  8423 + IN(11)  * 14053 + (1 << 13)) >> 14;
+    int t22a = (IN(13) *  9760 - IN(19)  * 13160 + (1 << 13)) >> 14;
+    int t25a = (IN(13) * 13160 + IN(19)  *  9760 + (1 << 13)) >> 14;
+    int t23a = (IN(29) * 16207 - IN(3)   *  2404 + (1 << 13)) >> 14;
+    int t24a = (IN(29) *  2404 + IN(3)   * 16207 + (1 << 13)) >> 14;
 
     int t0  = t0a  + t3a;
     int t1  = t1a  + t2a;
@@ -1276,20 +1353,20 @@ static av_always_inline void idct32_1d(const int16_t *in, ptrdiff_t stride,
     int t30 = t31a - t30a;
     int t31 = t31a + t30a;
 
-    t5a = ((t6 - t5) * 11585 + (1 << 13)) >> 14;
-    t6a = ((t6 + t5) * 11585 + (1 << 13)) >> 14;
-    t9a  = (  t14 *  6270 - t9  * 15137  + (1 << 13)) >> 14;
-    t14a = (  t14 * 15137 + t9  *  6270  + (1 << 13)) >> 14;
+    t5a  =   ((t6         - t5) * 11585  + (1 << 13)) >> 14;
+    t6a  =   ((t6         + t5) * 11585  + (1 << 13)) >> 14;
+    t9a  =   (t14 *  6270 - t9  * 15137  + (1 << 13)) >> 14;
+    t14a =   (t14 * 15137 + t9  *  6270  + (1 << 13)) >> 14;
     t10a = (-(t13 * 15137 + t10 *  6270) + (1 << 13)) >> 14;
-    t13a = (  t13 *  6270 - t10 * 15137  + (1 << 13)) >> 14;
-    t17a = (  t30 *  3196 - t17 * 16069  + (1 << 13)) >> 14;
-    t30a = (  t30 * 16069 + t17 *  3196  + (1 << 13)) >> 14;
+    t13a =   (t13 *  6270 - t10 * 15137  + (1 << 13)) >> 14;
+    t17a =   (t30 *  3196 - t17 * 16069  + (1 << 13)) >> 14;
+    t30a =   (t30 * 16069 + t17 *  3196  + (1 << 13)) >> 14;
     t18a = (-(t29 * 16069 + t18 *  3196) + (1 << 13)) >> 14;
-    t29a = (  t29 *  3196 - t18 * 16069  + (1 << 13)) >> 14;
-    t21a = (  t26 * 13623 - t21 *  9102  + (1 << 13)) >> 14;
-    t26a = (  t26 *  9102 + t21 * 13623  + (1 << 13)) >> 14;
+    t29a =   (t29 *  3196 - t18 * 16069  + (1 << 13)) >> 14;
+    t21a =   (t26 * 13623 - t21 *  9102  + (1 << 13)) >> 14;
+    t26a =   (t26 *  9102 + t21 * 13623  + (1 << 13)) >> 14;
     t22a = (-(t25 *  9102 + t22 * 13623) + (1 << 13)) >> 14;
-    t25a = (  t25 * 13623 - t22 *  9102  + (1 << 13)) >> 14;
+    t25a =   (t25 * 13623 - t22 *  9102  + (1 << 13)) >> 14;
 
     t0a  = t0   + t7;
     t1a  = t1   + t6a;
@@ -1324,35 +1401,35 @@ static av_always_inline void idct32_1d(const int16_t *in, ptrdiff_t stride,
     t30  = t30a + t29a;
     t31a = t31  + t28;
 
-    t10a = ((t13  - t10)  * 11585 + (1 << 13)) >> 14;
-    t13a = ((t13  + t10)  * 11585 + (1 << 13)) >> 14;
-    t11  = ((t12a - t11a) * 11585 + (1 << 13)) >> 14;
-    t12  = ((t12a + t11a) * 11585 + (1 << 13)) >> 14;
-    t18a = (  t29  *  6270 - t18  * 15137  + (1 << 13)) >> 14;
-    t29a = (  t29  * 15137 + t18  *  6270  + (1 << 13)) >> 14;
-    t19  = (  t28a *  6270 - t19a * 15137  + (1 << 13)) >> 14;
-    t28  = (  t28a * 15137 + t19a *  6270  + (1 << 13)) >> 14;
-    t20  = (-(t27a * 15137 + t20a *  6270) + (1 << 13)) >> 14;
-    t27  = (  t27a *  6270 - t20a * 15137  + (1 << 13)) >> 14;
-    t21a = (-(t26  * 15137 + t21  *  6270) + (1 << 13)) >> 14;
-    t26a = (  t26  *  6270 - t21  * 15137  + (1 << 13)) >> 14;
+    t10a = ((t13           - t10)  * 11585  + (1 << 13)) >> 14;
+    t13a = ((t13           + t10)  * 11585  + (1 << 13)) >> 14;
+    t11  = ((t12a          - t11a) * 11585  + (1 << 13)) >> 14;
+    t12  = ((t12a          + t11a) * 11585  + (1 << 13)) >> 14;
+    t18a =   (t29  *  6270 - t18   * 15137  + (1 << 13)) >> 14;
+    t29a =   (t29  * 15137 + t18   *  6270  + (1 << 13)) >> 14;
+    t19  =   (t28a *  6270 - t19a  * 15137  + (1 << 13)) >> 14;
+    t28  =   (t28a * 15137 + t19a  *  6270  + (1 << 13)) >> 14;
+    t20  = (-(t27a * 15137 + t20a  *  6270) + (1 << 13)) >> 14;
+    t27  =   (t27a *  6270 - t20a  * 15137  + (1 << 13)) >> 14;
+    t21a = (-(t26  * 15137 + t21   *  6270) + (1 << 13)) >> 14;
+    t26a =   (t26  *  6270 - t21   * 15137  + (1 << 13)) >> 14;
 
-    t0   = t0a + t15a;
-    t1   = t1a + t14;
-    t2   = t2a + t13a;
-    t3   = t3a + t12;
-    t4   = t4a + t11;
-    t5a  = t5  + t10a;
-    t6a  = t6  + t9;
-    t7   = t7a + t8a;
-    t8   = t7a - t8a;
-    t9a  = t6  - t9;
-    t10  = t5  - t10a;
-    t11a = t4a - t11;
-    t12a = t3a - t12;
-    t13  = t2a - t13a;
-    t14a = t1a - t14;
-    t15  = t0a - t15a;
+    t0   = t0a  + t15a;
+    t1   = t1a  + t14;
+    t2   = t2a  + t13a;
+    t3   = t3a  + t12;
+    t4   = t4a  + t11;
+    t5a  = t5   + t10a;
+    t6a  = t6   + t9;
+    t7   = t7a  + t8a;
+    t8   = t7a  - t8a;
+    t9a  = t6   - t9;
+    t10  = t5   - t10a;
+    t11a = t4a  - t11;
+    t12a = t3a  - t12;
+    t13  = t2a  - t13a;
+    t14a = t1a  - t14;
+    t15  = t0a  - t15a;
     t16  = t16a + t23a;
     t17a = t17  + t22;
     t18  = t18a + t21a;
@@ -1372,23 +1449,23 @@ static av_always_inline void idct32_1d(const int16_t *in, ptrdiff_t stride,
 
     t20  = ((t27a - t20a) * 11585 + (1 << 13)) >> 14;
     t27  = ((t27a + t20a) * 11585 + (1 << 13)) >> 14;
-    t21a = ((t26  - t21 ) * 11585 + (1 << 13)) >> 14;
-    t26a = ((t26  + t21 ) * 11585 + (1 << 13)) >> 14;
+    t21a = ((t26  - t21)  * 11585 + (1 << 13)) >> 14;
+    t26a = ((t26  + t21)  * 11585 + (1 << 13)) >> 14;
     t22  = ((t25a - t22a) * 11585 + (1 << 13)) >> 14;
     t25  = ((t25a + t22a) * 11585 + (1 << 13)) >> 14;
-    t23a = ((t24  - t23 ) * 11585 + (1 << 13)) >> 14;
-    t24a = ((t24  + t23 ) * 11585 + (1 << 13)) >> 14;
+    t23a = ((t24  - t23)  * 11585 + (1 << 13)) >> 14;
+    t24a = ((t24  + t23)  * 11585 + (1 << 13)) >> 14;
 
-    out[ 0] = t0   + t31;
-    out[ 1] = t1   + t30a;
-    out[ 2] = t2   + t29;
-    out[ 3] = t3   + t28a;
-    out[ 4] = t4   + t27;
-    out[ 5] = t5a  + t26a;
-    out[ 6] = t6a  + t25;
-    out[ 7] = t7   + t24a;
-    out[ 8] = t8   + t23a;
-    out[ 9] = t9a  + t22;
+    out[0]  = t0   + t31;
+    out[1]  = t1   + t30a;
+    out[2]  = t2   + t29;
+    out[3]  = t3   + t28a;
+    out[4]  = t4   + t27;
+    out[5]  = t5a  + t26a;
+    out[6]  = t6a  + t25;
+    out[7]  = t7   + t24a;
+    out[8]  = t8   + t23a;
+    out[9]  = t9a  + t22;
     out[10] = t10  + t21a;
     out[11] = t11a + t20;
     out[12] = t12a + t19a;
@@ -1413,10 +1490,10 @@ static av_always_inline void idct32_1d(const int16_t *in, ptrdiff_t stride,
     out[31] = t0   - t31;
 }
 
-itxfm_wrapper(idct, idct, 32, 6, 1)
+itxfm_wrapper(idct, idct, 32, 6)
 
-static av_always_inline void iwht4_1d(const int16_t *in, ptrdiff_t stride,
-                                      int16_t *out, int pass)
+static av_always_inline void iwht4_1d(int16_t *out, const int16_t *in,
+                                      ptrdiff_t stride, int pass)
 {
     int t0, t1, t2, t3, t4;
 
@@ -1446,7 +1523,7 @@ static av_always_inline void iwht4_1d(const int16_t *in, ptrdiff_t stride,
     out[3] = t3;
 }
 
-itxfm_wrapper(iwht, iwht, 4, 0, 0)
+itxfm_wrapper(iwht, iwht, 4, 0)
 
 #undef IN
 #undef itxfm_wrapper
@@ -1454,29 +1531,30 @@ itxfm_wrapper(iwht, iwht, 4, 0, 0)
 
 static av_cold void vp9dsp_itxfm_init(VP9DSPContext *dsp)
 {
-#define init_itxfm(tx, sz) \
-    dsp->itxfm_add[tx][DCT_DCT]   = idct_idct_##sz##_add_c; \
-    dsp->itxfm_add[tx][DCT_ADST]  = iadst_idct_##sz##_add_c; \
-    dsp->itxfm_add[tx][ADST_DCT]  = idct_iadst_##sz##_add_c; \
-    dsp->itxfm_add[tx][ADST_ADST] = iadst_iadst_##sz##_add_c
+#define init_itxfm(tx, sz)                                        \
+    dsp->itxfm_add[tx][DCT_DCT]   = idct_idct_   ## sz ## _add_c; \
+    dsp->itxfm_add[tx][DCT_ADST]  = iadst_idct_  ## sz ## _add_c; \
+    dsp->itxfm_add[tx][ADST_DCT]  = idct_iadst_  ## sz ## _add_c; \
+    dsp->itxfm_add[tx][ADST_ADST] = iadst_iadst_ ## sz ## _add_c
 
-#define init_idct(tx, nm) \
-    dsp->itxfm_add[tx][DCT_DCT]   = \
-    dsp->itxfm_add[tx][ADST_DCT]  = \
-    dsp->itxfm_add[tx][DCT_ADST]  = \
-    dsp->itxfm_add[tx][ADST_ADST] = nm##_add_c
+#define init_idct(tx, nm)                               \
+    dsp->itxfm_add[tx][DCT_DCT]   =                     \
+    dsp->itxfm_add[tx][ADST_DCT]  =                     \
+    dsp->itxfm_add[tx][DCT_ADST]  =                     \
+    dsp->itxfm_add[tx][ADST_ADST] = nm ## _add_c
 
-    init_itxfm(TX_4X4,   4x4);
-    init_itxfm(TX_8X8,   8x8);
+    init_itxfm(TX_4X4, 4x4);
+    init_itxfm(TX_8X8, 8x8);
     init_itxfm(TX_16X16, 16x16);
-    init_idct(TX_32X32,  idct_idct_32x32);
+    init_idct(TX_32X32, idct_idct_32x32);
     init_idct(4 /* lossless */, iwht_iwht_4x4);
 
 #undef init_itxfm
 #undef init_idct
 }
 
-static av_always_inline void loop_filter(uint8_t *dst, int E, int I, int H,
+static av_always_inline void loop_filter(uint8_t *dst, ptrdiff_t stride,
+                                         int E, int I, int H,
                                          ptrdiff_t stridea, ptrdiff_t strideb,
                                          int wd)
 {
@@ -1559,18 +1637,16 @@ static av_always_inline void loop_filter(uint8_t *dst, int E, int I, int H,
             int hev = FFABS(p1 - p0) > H || FFABS(q1 - q0) > H;
 
             if (hev) {
-                int f = av_clip_int8(3 * (q0 - p0) + av_clip_int8(p1 - q1)), f1, f2;
-
-                f1 = FFMIN(f + 4, 127) >> 3;
-                f2 = FFMIN(f + 3, 127) >> 3;
+                int f = av_clip_int8(3 * (q0 - p0) + av_clip_int8(p1 - q1));
+                int f1 = FFMIN(f + 4, 127) >> 3;
+                int f2 = FFMIN(f + 3, 127) >> 3;
 
                 dst[strideb * -1] = av_clip_uint8(p0 + f2);
                 dst[strideb * +0] = av_clip_uint8(q0 - f1);
             } else {
-                int f = av_clip_int8(3 * (q0 - p0)), f1, f2;
-
-                f1 = FFMIN(f + 4, 127) >> 3;
-                f2 = FFMIN(f + 3, 127) >> 3;
+                int f = av_clip_int8(3 * (q0 - p0));
+                int f1 = FFMIN(f + 4, 127) >> 3;
+                int f2 = FFMIN(f + 3, 127) >> 3;
 
                 dst[strideb * -1] = av_clip_uint8(p0 + f2);
                 dst[strideb * +0] = av_clip_uint8(q0 - f1);
@@ -1583,17 +1659,17 @@ static av_always_inline void loop_filter(uint8_t *dst, int E, int I, int H,
     }
 }
 
-#define lf_8_fn(dir, wd, stridea, strideb) \
-static void loop_filter_##dir##_##wd##_8_c(uint8_t *dst, \
-                                           ptrdiff_t stride, \
-                                           int E, int I, int H) \
-{ \
-    loop_filter(dst, E, I, H, stridea, strideb, wd); \
+#define lf_8_fn(dir, wd, stridea, strideb)                                  \
+static void loop_filter_ ## dir ## _ ## wd  ## _8_c(uint8_t *dst,           \
+                                                    ptrdiff_t stride,       \
+                                                    int E, int I, int H)    \
+{                                                                           \
+    loop_filter(dst, stride, E, I, H, stridea, strideb, wd);                \
 }
 
-#define lf_8_fns(wd) \
-lf_8_fn(h, wd, stride, 1) \
-lf_8_fn(v, wd, 1, stride)
+#define lf_8_fns(wd)          \
+    lf_8_fn(h, wd, stride, 1) \
+    lf_8_fn(v, wd, 1, stride)
 
 lf_8_fns(4)
 lf_8_fns(8)
@@ -1602,13 +1678,13 @@ lf_8_fns(16)
 #undef lf_8_fn
 #undef lf_8_fns
 
-#define lf_16_fn(dir, stridea) \
-static void loop_filter_##dir##_16_16_c(uint8_t *dst, \
-                                        ptrdiff_t stride, \
-                                        int E, int I, int H) \
-{ \
-    loop_filter_##dir##_16_8_c(dst, stride, E, I, H); \
-    loop_filter_##dir##_16_8_c(dst + 8 * stridea, stride, E, I, H); \
+#define lf_16_fn(dir, stridea)                                          \
+static void loop_filter_ ## dir ## _16_16_c(uint8_t *dst,               \
+                                            ptrdiff_t stride,           \
+                                            int E, int I, int H)        \
+{                                                                       \
+    loop_filter_ ## dir ## _16_8_c(dst, stride, E, I, H);               \
+    loop_filter_ ## dir ## _16_8_c(dst + 8 * stridea, stride, E, I, H); \
 }
 
 lf_16_fn(h, stride)
@@ -1616,18 +1692,21 @@ lf_16_fn(v, 1)
 
 #undef lf_16_fn
 
-#define lf_mix_fn(dir, wd1, wd2, stridea) \
-static void loop_filter_##dir##_##wd1##wd2##_16_c(uint8_t *dst, \
-                                                  ptrdiff_t stride, \
-                                                  int E, int I, int H) \
-{ \
-    loop_filter_##dir##_##wd1##_8_c(dst, stride, E & 0xff, I & 0xff, H & 0xff); \
-    loop_filter_##dir##_##wd2##_8_c(dst + 8 * stridea, stride, E >> 8, I >> 8, H >> 8); \
+#define lf_mix_fn(dir, wd1, wd2, stridea)                                     \
+static void loop_filter_ ## dir ## _ ## wd1 ## wd2 ## _16_c(uint8_t *dst,     \
+                                                            ptrdiff_t stride, \
+                                                            int E, int I,     \
+                                                            int H)            \
+{                                                                             \
+    loop_filter_ ## dir ## _ ## wd1 ## _8_c(dst, stride, E & 0xff,            \
+                                            I & 0xff, H & 0xff);              \
+    loop_filter_ ## dir ## _ ## wd2 ## _8_c(dst + 8 * stridea, stride,        \
+                                            E >> 8, I >> 8, H >> 8);          \
 }
 
-#define lf_mix_fns(wd1, wd2) \
-lf_mix_fn(h, wd1, wd2, stride) \
-lf_mix_fn(v, wd1, wd2, 1)
+#define lf_mix_fns(wd1, wd2)       \
+    lf_mix_fn(h, wd1, wd2, stride) \
+    lf_mix_fn(v, wd1, wd2, 1)
 
 lf_mix_fns(4, 4)
 lf_mix_fns(4, 8)
@@ -1659,8 +1738,9 @@ static av_cold void vp9dsp_loopfilter_init(VP9DSPContext *dsp)
     dsp->loop_filter_mix2[1][1][1] = loop_filter_v_88_16_c;
 }
 
-static av_always_inline void copy_c(uint8_t *dst, ptrdiff_t dst_stride,
-                                    const uint8_t *src, ptrdiff_t src_stride,
+static av_always_inline void copy_c(uint8_t *dst, const uint8_t *src,
+                                    ptrdiff_t dst_stride,
+                                    ptrdiff_t src_stride,
                                     int w, int h)
 {
     do {
@@ -1671,8 +1751,9 @@ static av_always_inline void copy_c(uint8_t *dst, ptrdiff_t dst_stride,
     } while (--h);
 }
 
-static av_always_inline void avg_c(uint8_t *dst, ptrdiff_t dst_stride,
-                                   const uint8_t *src, ptrdiff_t src_stride,
+static av_always_inline void avg_c(uint8_t *dst, const uint8_t *src,
+                                   ptrdiff_t dst_stride,
+                                   ptrdiff_t src_stride,
                                    int w, int h)
 {
     do {
@@ -1686,17 +1767,18 @@ static av_always_inline void avg_c(uint8_t *dst, ptrdiff_t dst_stride,
     } while (--h);
 }
 
-#define fpel_fn(type, sz) \
-static void type##sz##_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                         const uint8_t *src, ptrdiff_t src_stride, \
-                         int h, int mx, int my) \
-{ \
-    type##_c(dst, dst_stride, src, src_stride, sz, h); \
+#define fpel_fn(type, sz)                                      \
+static void type ## sz ## _c(uint8_t *dst, const uint8_t *src, \
+                             ptrdiff_t dst_stride,             \
+                             ptrdiff_t src_stride,             \
+                             int h, int mx, int my)            \
+{                                                              \
+    type ## _c(dst, src, dst_stride, src_stride, sz, h);       \
 }
 
 #define copy_avg_fn(sz) \
-fpel_fn(copy, sz) \
-fpel_fn(avg,  sz)
+    fpel_fn(copy, sz)   \
+    fpel_fn(avg, sz)
 
 copy_avg_fn(64)
 copy_avg_fn(32)
@@ -1759,18 +1841,19 @@ static const int8_t vp9_subpel_filters[3][15][8] = {
     }
 };
 
-#define FILTER_8TAP(src, x, F, stride) \
-    av_clip_uint8((F[0] * src[x + -3 * stride] + \
-                   F[1] * src[x + -2 * stride] + \
-                   F[2] * src[x + -1 * stride] + \
-                   F[3] * src[x + +0 * stride] + \
-                   F[4] * src[x + +1 * stride] + \
-                   F[5] * src[x + +2 * stride] + \
-                   F[6] * src[x + +3 * stride] + \
+#define FILTER_8TAP(src, x, F, stride)              \
+    av_clip_uint8((F[0] * src[x + -3 * stride] +    \
+                   F[1] * src[x + -2 * stride] +    \
+                   F[2] * src[x + -1 * stride] +    \
+                   F[3] * src[x + +0 * stride] +    \
+                   F[4] * src[x + +1 * stride] +    \
+                   F[5] * src[x + +2 * stride] +    \
+                   F[6] * src[x + +3 * stride] +    \
                    F[7] * src[x + +4 * stride] + 64) >> 7)
 
-static av_always_inline void do_8tap_1d_c(uint8_t *dst, ptrdiff_t dst_stride,
-                                          const uint8_t *src, ptrdiff_t src_stride,
+static av_always_inline void do_8tap_1d_c(uint8_t *dst, const uint8_t *src,
+                                          ptrdiff_t dst_stride,
+                                          ptrdiff_t src_stride,
                                           int w, int h, ptrdiff_t ds,
                                           const int8_t *filter, int avg)
 {
@@ -1778,23 +1861,25 @@ static av_always_inline void do_8tap_1d_c(uint8_t *dst, ptrdiff_t dst_stride,
         int x;
 
         for (x = 0; x < w; x++)
-            if (avg) {
+            if (avg)
                 dst[x] = (dst[x] + FILTER_8TAP(src, x, filter, ds) + 1) >> 1;
-            } else {
+            else
                 dst[x] = FILTER_8TAP(src, x, filter, ds);
-            }
 
         dst += dst_stride;
         src += src_stride;
     } while (--h);
 }
 
-#define filter_8tap_1d_fn(opn, opa, dir, ds) \
-static av_noinline void opn##_8tap_1d_##dir##_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                                const uint8_t *src, ptrdiff_t src_stride, \
-                                                int w, int h, const int8_t *filter) \
-{ \
-    do_8tap_1d_c(dst, dst_stride, src, src_stride, w, h, ds, filter, opa); \
+#define filter_8tap_1d_fn(opn, opa, dir, ds)                                \
+static av_noinline void opn ## _8tap_1d_ ## dir ## _c(uint8_t *dst,         \
+                                                      const uint8_t *src,   \
+                                                      ptrdiff_t dst_stride, \
+                                                      ptrdiff_t src_stride, \
+                                                      int w, int h,         \
+                                                      const int8_t *filter) \
+{                                                                           \
+    do_8tap_1d_c(dst, src, dst_stride, src_stride, w, h, ds, filter, opa);  \
 }
 
 filter_8tap_1d_fn(put, 0, v, src_stride)
@@ -1804,8 +1889,9 @@ filter_8tap_1d_fn(avg, 1, h, 1)
 
 #undef filter_8tap_1d_fn
 
-static av_always_inline void do_8tap_2d_c(uint8_t *dst, ptrdiff_t dst_stride,
-                                          const uint8_t *src, ptrdiff_t src_stride,
+static av_always_inline void do_8tap_2d_c(uint8_t *dst, const uint8_t *src,
+                                          ptrdiff_t dst_stride,
+                                          ptrdiff_t src_stride,
                                           int w, int h, const int8_t *filterx,
                                           const int8_t *filtery, int avg)
 {
@@ -1820,7 +1906,7 @@ static av_always_inline void do_8tap_2d_c(uint8_t *dst, ptrdiff_t dst_stride,
             tmp_ptr[x] = FILTER_8TAP(src, x, filterx, 1);
 
         tmp_ptr += 64;
-        src += src_stride;
+        src     += src_stride;
     } while (--tmp_h);
 
     tmp_ptr = tmp + 64 * 3;
@@ -1828,24 +1914,27 @@ static av_always_inline void do_8tap_2d_c(uint8_t *dst, ptrdiff_t dst_stride,
         int x;
 
         for (x = 0; x < w; x++)
-            if (avg) {
+            if (avg)
                 dst[x] = (dst[x] + FILTER_8TAP(tmp_ptr, x, filtery, 64) + 1) >> 1;
-            } else {
+            else
                 dst[x] = FILTER_8TAP(tmp_ptr, x, filtery, 64);
-            }
 
         tmp_ptr += 64;
         dst += dst_stride;
     } while (--h);
 }
 
-#define filter_8tap_2d_fn(opn, opa) \
-static av_noinline void opn##_8tap_2d_hv_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                           const uint8_t *src, ptrdiff_t src_stride, \
-                                           int w, int h, const int8_t *filterx, \
-                                           const int8_t *filtery) \
-{ \
-    do_8tap_2d_c(dst, dst_stride, src, src_stride, w, h, filterx, filtery, opa); \
+#define filter_8tap_2d_fn(opn, opa)                                     \
+static av_noinline void opn ## _8tap_2d_hv_c(uint8_t *dst,              \
+                                             const uint8_t *src,        \
+                                             ptrdiff_t dst_stride,      \
+                                             ptrdiff_t src_stride,      \
+                                             int w, int h,              \
+                                             const int8_t *filterx,     \
+                                             const int8_t *filtery)     \
+{                                                                       \
+    do_8tap_2d_c(dst, src, dst_stride, src_stride,                      \
+                 w, h, filterx, filtery, opa);                          \
 }
 
 filter_8tap_2d_fn(put, 0)
@@ -1855,53 +1944,62 @@ filter_8tap_2d_fn(avg, 1)
 
 #undef FILTER_8TAP
 
-#define filter_fn_1d(sz, dir, dir_m, type, type_idx, avg) \
-static void avg##_8tap_##type##_##sz##dir##_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                              const uint8_t *src, ptrdiff_t src_stride, \
-                                              int h, int mx, int my) \
-{ \
-    avg##_8tap_1d_##dir##_c(dst, dst_stride, src, src_stride, sz, h, \
-                            vp9_subpel_filters[type_idx][dir_m - 1]); \
+#define filter_fn_1d(sz, dir, dir_m, type, type_idx, avg)                   \
+static void                                                                 \
+avg ## _8tap_ ## type ## _ ## sz ## dir ## _c(uint8_t *dst,                 \
+                                              const uint8_t *src,           \
+                                              ptrdiff_t dst_stride,         \
+                                              ptrdiff_t src_stride,         \
+                                              int h, int mx, int my)        \
+{                                                                           \
+    avg ## _8tap_1d_ ## dir ## _c(dst, src, dst_stride, src_stride, sz, h,  \
+                                  vp9_subpel_filters[type_idx][dir_m - 1]); \
 }
 
-#define filter_fn_2d(sz, type, type_idx, avg) \
-static void avg##_8tap_##type##_##sz##hv_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                           const uint8_t *src, ptrdiff_t src_stride, \
-                                           int h, int mx, int my) \
-{ \
-    avg##_8tap_2d_hv_c(dst, dst_stride, src, src_stride, sz, h, \
-                       vp9_subpel_filters[type_idx][mx - 1], \
-                       vp9_subpel_filters[type_idx][my - 1]); \
+#define filter_fn_2d(sz, type, type_idx, avg)                               \
+static void avg ## _8tap_ ## type ## _ ## sz ## hv_c(uint8_t *dst,          \
+                                                     const uint8_t *src,    \
+                                                     ptrdiff_t dst_stride,  \
+                                                     ptrdiff_t src_stride,  \
+                                                     int h, int mx, int my) \
+{                                                                           \
+    avg ## _8tap_2d_hv_c(dst, src, dst_stride, src_stride, sz, h,           \
+                         vp9_subpel_filters[type_idx][mx - 1],              \
+                         vp9_subpel_filters[type_idx][my - 1]);             \
 }
 
-#define FILTER_BILIN(src, x, mxy, stride) \
+#define FILTER_BILIN(src, x, mxy, stride)                       \
     (src[x] + ((mxy * (src[x + stride] - src[x]) + 8) >> 4))
 
-static av_always_inline void do_bilin_1d_c(uint8_t *dst, ptrdiff_t dst_stride,
-                                           const uint8_t *src, ptrdiff_t src_stride,
-                                           int w, int h, ptrdiff_t ds, int mxy, int avg)
+static av_always_inline void do_bilin_1d_c(uint8_t *dst,
+                                           const uint8_t *src,
+                                           ptrdiff_t dst_stride,
+                                           ptrdiff_t src_stride,
+                                           int w, int h, ptrdiff_t ds,
+                                           int mxy, int avg)
 {
     do {
         int x;
 
         for (x = 0; x < w; x++)
-            if (avg) {
+            if (avg)
                 dst[x] = (dst[x] + FILTER_BILIN(src, x, mxy, ds) + 1) >> 1;
-            } else {
+            else
                 dst[x] = FILTER_BILIN(src, x, mxy, ds);
-            }
 
         dst += dst_stride;
         src += src_stride;
     } while (--h);
 }
 
-#define bilin_1d_fn(opn, opa, dir, ds) \
-static av_noinline void opn##_bilin_1d_##dir##_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                                 const uint8_t *src, ptrdiff_t src_stride, \
-                                                 int w, int h, int mxy) \
-{ \
-    do_bilin_1d_c(dst, dst_stride, src, src_stride, w, h, ds, mxy, opa); \
+#define bilin_1d_fn(opn, opa, dir, ds)                                        \
+static av_noinline void opn ## _bilin_1d_ ## dir ## _c(uint8_t *dst,          \
+                                                       const uint8_t *src,    \
+                                                       ptrdiff_t dst_stride,  \
+                                                       ptrdiff_t src_stride,  \
+                                                       int w, int h, int mxy) \
+{                                                                             \
+    do_bilin_1d_c(dst, src, dst_stride, src_stride, w, h, ds, mxy, opa);      \
 }
 
 bilin_1d_fn(put, 0, v, src_stride)
@@ -1911,9 +2009,12 @@ bilin_1d_fn(avg, 1, h, 1)
 
 #undef bilin_1d_fn
 
-static av_always_inline void do_bilin_2d_c(uint8_t *dst, ptrdiff_t dst_stride,
-                                           const uint8_t *src, ptrdiff_t src_stride,
-                                           int w, int h, int mx, int my, int avg)
+static av_always_inline void do_bilin_2d_c(uint8_t *dst,
+                                           const uint8_t *src,
+                                           ptrdiff_t dst_stride,
+                                           ptrdiff_t src_stride,
+                                           int w, int h, int mx, int my,
+                                           int avg)
 {
     uint8_t tmp[64 * 65], *tmp_ptr = tmp;
     int tmp_h = h + 1;
@@ -1925,7 +2026,7 @@ static av_always_inline void do_bilin_2d_c(uint8_t *dst, ptrdiff_t dst_stride,
             tmp_ptr[x] = FILTER_BILIN(src, x, mx, 1);
 
         tmp_ptr += 64;
-        src += src_stride;
+        src     += src_stride;
     } while (--tmp_h);
 
     tmp_ptr = tmp;
@@ -1933,23 +2034,25 @@ static av_always_inline void do_bilin_2d_c(uint8_t *dst, ptrdiff_t dst_stride,
         int x;
 
         for (x = 0; x < w; x++)
-            if (avg) {
+            if (avg)
                 dst[x] = (dst[x] + FILTER_BILIN(tmp_ptr, x, my, 64) + 1) >> 1;
-            } else {
+            else
                 dst[x] = FILTER_BILIN(tmp_ptr, x, my, 64);
-            }
 
         tmp_ptr += 64;
         dst += dst_stride;
     } while (--h);
 }
 
-#define bilin_2d_fn(opn, opa) \
-static av_noinline void opn##_bilin_2d_hv_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                            const uint8_t *src, ptrdiff_t src_stride, \
-                                            int w, int h, int mx, int my) \
-{ \
-    do_bilin_2d_c(dst, dst_stride, src, src_stride, w, h, mx, my, opa); \
+#define bilin_2d_fn(opn, opa)                                           \
+static av_noinline void opn ## _bilin_2d_hv_c(uint8_t *dst,             \
+                                              const uint8_t *src,       \
+                                              ptrdiff_t dst_stride,     \
+                                              ptrdiff_t src_stride,     \
+                                              int w, int h,             \
+                                              int mx, int my)           \
+{                                                                       \
+    do_bilin_2d_c(dst, src, dst_stride, src_stride, w, h, mx, my, opa); \
 }
 
 bilin_2d_fn(put, 0)
@@ -1959,42 +2062,48 @@ bilin_2d_fn(avg, 1)
 
 #undef FILTER_BILIN
 
-#define bilinf_fn_1d(sz, dir, dir_m, avg) \
-static void avg##_bilin_##sz##dir##_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                      const uint8_t *src, ptrdiff_t src_stride, \
-                                      int h, int mx, int my) \
-{ \
-    avg##_bilin_1d_##dir##_c(dst, dst_stride, src, src_stride, sz, h, dir_m); \
+#define bilinf_fn_1d(sz, dir, dir_m, avg)                               \
+static void avg ## _bilin_ ## sz ## dir ## _c(uint8_t *dst,             \
+                                              const uint8_t *src,       \
+                                              ptrdiff_t dst_stride,     \
+                                              ptrdiff_t src_stride,     \
+                                              int h, int mx, int my)    \
+{                                                                       \
+    avg ## _bilin_1d_ ## dir ## _c(dst, src, dst_stride, src_stride,    \
+                                   sz, h, dir_m);                       \
 }
 
-#define bilinf_fn_2d(sz, avg) \
-static void avg##_bilin_##sz##hv_c(uint8_t *dst, ptrdiff_t dst_stride, \
-                                   const uint8_t *src, ptrdiff_t src_stride, \
-                                   int h, int mx, int my) \
-{ \
-    avg##_bilin_2d_hv_c(dst, dst_stride, src, src_stride, sz, h, mx, my); \
+#define bilinf_fn_2d(sz, avg)                                        \
+static void avg ## _bilin_ ## sz ## hv_c(uint8_t *dst,               \
+                                         const uint8_t *src,         \
+                                         ptrdiff_t dst_stride,       \
+                                         ptrdiff_t src_stride,       \
+                                         int h, int mx, int my)      \
+{                                                                    \
+    avg ## _bilin_2d_hv_c(dst, src, dst_stride, src_stride,          \
+                          sz, h, mx, my);                            \
 }
 
-#define filter_fn(sz, avg) \
-filter_fn_1d(sz, h, mx, regular, FILTER_8TAP_REGULAR, avg) \
-filter_fn_1d(sz, v, my, regular, FILTER_8TAP_REGULAR, avg) \
-filter_fn_2d(sz,        regular, FILTER_8TAP_REGULAR, avg) \
-filter_fn_1d(sz, h, mx, smooth,  FILTER_8TAP_SMOOTH,  avg) \
-filter_fn_1d(sz, v, my, smooth,  FILTER_8TAP_SMOOTH,  avg) \
-filter_fn_2d(sz,        smooth,  FILTER_8TAP_SMOOTH,  avg) \
-filter_fn_1d(sz, h, mx, sharp,   FILTER_8TAP_SHARP,   avg) \
-filter_fn_1d(sz, v, my, sharp,   FILTER_8TAP_SHARP,   avg) \
-filter_fn_2d(sz,        sharp,   FILTER_8TAP_SHARP,   avg) \
-bilinf_fn_1d(sz, h, mx,                               avg) \
-bilinf_fn_1d(sz, v, my,                               avg) \
-bilinf_fn_2d(sz,                                      avg)
+#define filter_fn(sz, avg)                                     \
+    filter_fn_1d(sz, h, mx, regular, FILTER_8TAP_REGULAR, avg) \
+    filter_fn_1d(sz, v, my, regular, FILTER_8TAP_REGULAR, avg) \
+    filter_fn_2d(sz, regular, FILTER_8TAP_REGULAR, avg)        \
+    filter_fn_1d(sz, h, mx, smooth, FILTER_8TAP_SMOOTH, avg)   \
+    filter_fn_1d(sz, v, my, smooth, FILTER_8TAP_SMOOTH, avg)   \
+    filter_fn_2d(sz, smooth, FILTER_8TAP_SMOOTH, avg)          \
+    filter_fn_1d(sz, h, mx, sharp, FILTER_8TAP_SHARP, avg)     \
+    filter_fn_1d(sz, v, my, sharp, FILTER_8TAP_SHARP, avg)     \
+    filter_fn_2d(sz, sharp, FILTER_8TAP_SHARP, avg)            \
+    bilinf_fn_1d(sz, h, mx, avg)                               \
+    bilinf_fn_1d(sz, v, my, avg)                               \
+    bilinf_fn_2d(sz, avg)
 
 #define filter_fn_set(avg) \
-filter_fn(64, avg) \
-filter_fn(32, avg) \
-filter_fn(16, avg) \
-filter_fn(8,  avg) \
-filter_fn(4,  avg)
+    filter_fn(64, avg)     \
+    filter_fn(32, avg)     \
+    filter_fn(16, avg)     \
+    filter_fn(8, avg)      \
+    filter_fn(4, avg)
 
 filter_fn_set(put)
 filter_fn_set(avg)
@@ -2008,14 +2117,14 @@ filter_fn_set(avg)
 
 static av_cold void vp9dsp_mc_init(VP9DSPContext *dsp)
 {
-#define init_fpel(idx1, idx2, sz, type) \
-    dsp->mc[idx1][FILTER_8TAP_SMOOTH ][idx2][0][0] = type##sz##_c; \
-    dsp->mc[idx1][FILTER_8TAP_REGULAR][idx2][0][0] = type##sz##_c; \
-    dsp->mc[idx1][FILTER_8TAP_SHARP  ][idx2][0][0] = type##sz##_c; \
-    dsp->mc[idx1][FILTER_BILINEAR    ][idx2][0][0] = type##sz##_c
+#define init_fpel(idx1, idx2, sz, type)                                \
+    dsp->mc[idx1][FILTER_8TAP_SMOOTH][idx2][0][0]  = type ## sz ## _c; \
+    dsp->mc[idx1][FILTER_8TAP_REGULAR][idx2][0][0] = type ## sz ## _c; \
+    dsp->mc[idx1][FILTER_8TAP_SHARP][idx2][0][0]   = type ## sz ## _c; \
+    dsp->mc[idx1][FILTER_BILINEAR][idx2][0][0]     = type ## sz ## _c
 
-#define init_copy_avg(idx, sz) \
-    init_fpel(idx, 0, sz, copy); \
+#define init_copy_avg(idx, sz)          \
+    init_fpel(idx, 0, sz, copy);        \
     init_fpel(idx, 1, sz, avg)
 
     init_copy_avg(0, 64);
@@ -2027,22 +2136,22 @@ static av_cold void vp9dsp_mc_init(VP9DSPContext *dsp)
 #undef init_copy_avg
 #undef init_fpel
 
-#define init_subpel1(idx1, idx2, idxh, idxv, sz, dir, type) \
-    dsp->mc[idx1][FILTER_8TAP_SMOOTH ][idx2][idxh][idxv] = type##_8tap_smooth_##sz##dir##_c; \
-    dsp->mc[idx1][FILTER_8TAP_REGULAR][idx2][idxh][idxv] = type##_8tap_regular_##sz##dir##_c; \
-    dsp->mc[idx1][FILTER_8TAP_SHARP  ][idx2][idxh][idxv] = type##_8tap_sharp_##sz##dir##_c; \
-    dsp->mc[idx1][FILTER_BILINEAR    ][idx2][idxh][idxv] = type##_bilin_##sz##dir##_c
+#define init_subpel1(idx1, idx2, idxh, idxv, sz, dir, type)             \
+    dsp->mc[idx1][FILTER_8TAP_SMOOTH][idx2][idxh][idxv]  = type ## _8tap_smooth_  ## sz ## dir ## _c; \
+    dsp->mc[idx1][FILTER_8TAP_REGULAR][idx2][idxh][idxv] = type ## _8tap_regular_ ## sz ## dir ## _c; \
+    dsp->mc[idx1][FILTER_8TAP_SHARP][idx2][idxh][idxv]   = type ## _8tap_sharp_   ## sz ## dir ## _c; \
+    dsp->mc[idx1][FILTER_BILINEAR][idx2][idxh][idxv]     = type ## _bilin_        ## sz ## dir ## _c
 
-#define init_subpel2(idx, idxh, idxv, dir, type) \
+#define init_subpel2(idx, idxh, idxv, dir, type)     \
     init_subpel1(0, idx, idxh, idxv, 64, dir, type); \
     init_subpel1(1, idx, idxh, idxv, 32, dir, type); \
     init_subpel1(2, idx, idxh, idxv, 16, dir, type); \
     init_subpel1(3, idx, idxh, idxv,  8, dir, type); \
     init_subpel1(4, idx, idxh, idxv,  4, dir, type)
 
-#define init_subpel3(idx, type) \
-    init_subpel2(idx, 1, 1, hv, type); \
-    init_subpel2(idx, 0, 1, v, type); \
+#define init_subpel3(idx, type)         \
+    init_subpel2(idx, 1, 1, hv, type);  \
+    init_subpel2(idx, 0, 1, v, type);   \
     init_subpel2(idx, 1, 0, h, type)
 
     init_subpel3(0, put);
@@ -2060,5 +2169,6 @@ av_cold void ff_vp9dsp_init(VP9DSPContext *dsp)
     vp9dsp_loopfilter_init(dsp);
     vp9dsp_mc_init(dsp);
 
-    if (ARCH_X86) ff_vp9dsp_init_x86(dsp);
+    if (ARCH_X86)
+        ff_vp9dsp_init_x86(dsp);
 }

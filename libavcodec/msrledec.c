@@ -2,20 +2,20 @@
  * Microsoft RLE decoder
  * Copyright (C) 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -138,8 +138,7 @@ static int msrle_decode_8_16_24_32(AVCodecContext *avctx, AVPicture *pic,
     unsigned int width= FFABS(pic->linesize[0]) / (depth >> 3);
 
     output     = pic->data[0] + (avctx->height - 1) * pic->linesize[0];
-    output_end = output + FFABS(pic->linesize[0]);
-
+    output_end = pic->data[0] +  avctx->height      * pic->linesize[0];
     while (bytestream2_get_bytes_left(gb) > 0) {
         p1 = bytestream2_get_byteu(gb);
         if(p1 == 0) { //Escape code
@@ -156,7 +155,6 @@ static int msrle_decode_8_16_24_32(AVCodecContext *avctx, AVPicture *pic,
                     }
                 }
                 output = pic->data[0] + line * pic->linesize[0];
-                output_end = output + FFABS(pic->linesize[0]);
                 pos = 0;
                 continue;
             } else if(p2 == 1) { //End-of-picture
@@ -171,11 +169,11 @@ static int msrle_decode_8_16_24_32(AVCodecContext *avctx, AVPicture *pic,
                     return -1;
                 }
                 output = pic->data[0] + line * pic->linesize[0] + pos * (depth >> 3);
-                output_end = pic->data[0] + line * pic->linesize[0] + FFABS(pic->linesize[0]);
                 continue;
             }
             // Copy data
-            if (output + p2 * (depth >> 3) > output_end) {
+            if ((pic->linesize[0] > 0 && output + p2 * (depth >> 3) > output_end) ||
+                (pic->linesize[0] < 0 && output + p2 * (depth >> 3) < output_end)) {
                 bytestream2_skip(gb, 2 * (depth >> 3));
                 continue;
             } else if (bytestream2_get_bytes_left(gb) < p2 * (depth >> 3)) {
@@ -184,9 +182,9 @@ static int msrle_decode_8_16_24_32(AVCodecContext *avctx, AVPicture *pic,
             }
 
             if ((depth == 8) || (depth == 24)) {
-                bytestream2_get_bufferu(gb, output, p2 * (depth >> 3));
-                output += p2 * (depth >> 3);
-
+                for(i = 0; i < p2 * (depth >> 3); i++) {
+                    *output++ = bytestream2_get_byteu(gb);
+                }
                 // RLE8 copy is actually padded - and runs are not!
                 if(depth == 8 && (p2 & 1)) {
                     bytestream2_skip(gb, 1);
@@ -205,39 +203,36 @@ static int msrle_decode_8_16_24_32(AVCodecContext *avctx, AVPicture *pic,
             pos += p2;
         } else { //run of pixels
             uint8_t pix[3]; //original pixel
-            if (output + p1 * (depth >> 3) > output_end)
-                continue;
-
             switch(depth){
-            case  8:
-                pix[0] = bytestream2_get_byte(gb);
-                memset(output, pix[0], p1);
-                output += p1;
-                break;
-            case 16:
-                pix16  = bytestream2_get_le16(gb);
-                for(i = 0; i < p1; i++) {
-                        *(uint16_t*)output = pix16;
-                        output += 2;
+            case  8: pix[0] = bytestream2_get_byte(gb);
+                     break;
+            case 16: pix16  = bytestream2_get_le16(gb);
+                     break;
+            case 24: pix[0] = bytestream2_get_byte(gb);
+                     pix[1] = bytestream2_get_byte(gb);
+                     pix[2] = bytestream2_get_byte(gb);
+                     break;
+            case 32: pix32  = bytestream2_get_le32(gb);
+                     break;
+            }
+            if ((pic->linesize[0] > 0 && output + p1 * (depth >> 3) > output_end) ||
+                (pic->linesize[0] < 0 && output + p1 * (depth >> 3) < output_end))
+                continue;
+            for(i = 0; i < p1; i++) {
+                switch(depth){
+                case  8: *output++ = pix[0];
+                         break;
+                case 16: *(uint16_t*)output = pix16;
+                         output += 2;
+                         break;
+                case 24: *output++ = pix[0];
+                         *output++ = pix[1];
+                         *output++ = pix[2];
+                         break;
+                case 32: *(uint32_t*)output = pix32;
+                         output += 4;
+                         break;
                 }
-                break;
-            case 24:
-                pix[0] = bytestream2_get_byte(gb);
-                pix[1] = bytestream2_get_byte(gb);
-                pix[2] = bytestream2_get_byte(gb);
-                for(i = 0; i < p1; i++) {
-                        *output++ = pix[0];
-                        *output++ = pix[1];
-                        *output++ = pix[2];
-                }
-                break;
-            case 32:
-                pix32  = bytestream2_get_le32(gb);
-                for(i = 0; i < p1; i++) {
-                        *(uint32_t*)output = pix32;
-                        output += 4;
-                }
-                break;
             }
             pos += p1;
         }
