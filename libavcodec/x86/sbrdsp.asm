@@ -2,20 +2,20 @@
 ;* AAC Spectral Band Replication decoding functions
 ;* Copyright (C) 2012 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -26,6 +26,12 @@ SECTION_RODATA
 ps_mask         times 2 dd 1<<31, 0
 ps_mask2        times 2 dd 0, 1<<31
 ps_neg          times 4 dd 1<<31
+ps_noise0       times 2 dd  1.0,  0.0,
+ps_noise2       times 2 dd -1.0,  0.0
+ps_noise13      dd  0.0,  1.0, 0.0, -1.0
+                dd  0.0, -1.0, 0.0,  1.0
+                dd  0.0,  1.0, 0.0, -1.0
+cextern         sbr_noise_table
 
 SECTION_TEXT
 
@@ -136,7 +142,6 @@ cglobal sbr_hf_gen, 4,4,8, X_high, X_low, alpha0, alpha1, BW, S, E
     mulps      m2, bw             ; (a1[0] a1[1])*bw*bw = (a0 a1)
     mova       m3, m1
     mova       m4, m2
-    mova       m7, [ps_mask]
 
     ; Set pointers
 %if ARCH_X86_64 == 0 || WIN64
@@ -156,30 +161,28 @@ cglobal sbr_hf_gen, 4,4,8, X_high, X_low, alpha0, alpha1, BW, S, E
     shl      start, 3            ; offset from num loops
 
     mova        m0, [X_lowq + start]
-    movlhps     m1, m1           ; (a2 a3 a2 a3)
-    movlhps     m2, m2           ; (a0 a1 a0 a1)
-    shufps      m3, m3, q0101    ; (a3 a2 a3 a2)
-    shufps      m4, m4, q0101    ; (a1 a0 a1 a0)
-    xorps       m3, m7           ; (-a3 a2 -a3 a2)
-    xorps       m4, m7           ; (-a1 a0 -a1 a0)
+    shufps      m3, m3, q1111
+    shufps      m4, m4, q1111
+    xorps       m3, [ps_mask]
+    shufps      m1, m1, q0000
+    shufps      m2, m2, q0000
+    xorps       m4, [ps_mask]
 .loop2:
-    mova        m5, m0
+    movu        m7, [X_lowq + start + 8]        ; BbCc
     mova        m6, m0
-    shufps      m0, m0, q2200    ; {Xl[-2][0],",Xl[-1][0],"}
-    shufps      m5, m5, q3311    ; {Xl[-2][1],",Xl[-1][1],"}
-    mulps       m0, m2
-    mulps       m5, m4
-    mova        m7, m6
-    addps       m5, m0
-    mova        m0, [X_lowq + start + 2*2*4]
-    shufps      m6, m0, q0022    ; {Xl[-1][0],",Xl[0][0],"}
-    shufps      m7, m0, q1133    ; {Xl[-1][1],",Xl[1][1],"}
-    mulps       m6, m1
+    mova        m5, m7
+    shufps      m0, m0, q2301                   ; aAbB
+    shufps      m7, m7, q2301                   ; bBcC
+    mulps       m0, m4
     mulps       m7, m3
-    addps       m5, m6
+    mulps       m6, m2
+    mulps       m5, m1
     addps       m7, m0
-    addps       m5, m7
-    mova  [X_highq + start], m5
+    mova        m0, [X_lowq + start +16]        ; CcDd
+    addps       m7, m0
+    addps       m6, m5
+    addps       m7, m6
+    mova  [X_highq + start], m7
     add     start, 16
     jnz         .loop2
     RET
@@ -246,33 +249,47 @@ cglobal sbr_neg_odd_64, 1,2,4,z
     jne      .loop
     REP_RET
 
-INIT_XMM sse2
 ; void ff_sbr_qmf_deint_bfly_sse2(float *v, const float *src0, const float *src1)
+%macro SBR_QMF_DEINT_BFLY  0
 cglobal sbr_qmf_deint_bfly, 3,5,8, v,src0,src1,vrev,c
     mov               cq, 64*4-2*mmsize
     lea            vrevq, [vq + 64*4]
 .loop:
     mova              m0, [src0q+cq]
     mova              m1, [src1q]
-    mova              m2, [src0q+cq+mmsize]
-    mova              m3, [src1q+mmsize]
-    pshufd            m4, m0, q0123
-    pshufd            m5, m1, q0123
-    pshufd            m6, m2, q0123
-    pshufd            m7, m3, q0123
-    addps             m3, m4
+    mova              m4, [src0q+cq+mmsize]
+    mova              m5, [src1q+mmsize]
+%if cpuflag(sse2)
+    pshufd            m2, m0, q0123
+    pshufd            m3, m1, q0123
+    pshufd            m6, m4, q0123
+    pshufd            m7, m5, q0123
+%else
+    shufps            m2, m0, m0, q0123
+    shufps            m3, m1, m1, q0123
+    shufps            m6, m4, m4, q0123
+    shufps            m7, m5, m5, q0123
+%endif
+    addps             m5, m2
     subps             m0, m7
     addps             m1, m6
-    subps             m2, m5
+    subps             m4, m3
     mova         [vrevq], m1
-    mova  [vrevq+mmsize], m3
+    mova  [vrevq+mmsize], m5
     mova         [vq+cq], m0
-    mova  [vq+cq+mmsize], m2
+    mova  [vq+cq+mmsize], m4
     add            src1q, 2*mmsize
     add            vrevq, 2*mmsize
     sub               cq, 2*mmsize
     jge            .loop
     REP_RET
+%endmacro
+
+INIT_XMM sse
+SBR_QMF_DEINT_BFLY
+
+INIT_XMM sse2
+SBR_QMF_DEINT_BFLY
 
 INIT_XMM sse2
 cglobal sbr_qmf_pre_shuffle, 1,4,6,z
@@ -302,4 +319,129 @@ cglobal sbr_qmf_pre_shuffle, 1,4,6,z
     jge      .loop
     movq       m2, [zq]
     movq    [r2q], m2
+    REP_RET
+
+%ifdef PIC
+%define NREGS 1
+%if UNIX64
+%define NOISE_TABLE r6q ; r5q is m_max
+%else
+%define NOISE_TABLE r5q
+%endif
+%else
+%define NREGS 0
+%define NOISE_TABLE sbr_noise_table
+%endif
+
+%macro LOAD_NST  1
+%ifdef PIC
+    lea  NOISE_TABLE, [%1]
+    mova          m0, [kxq + NOISE_TABLE]
+%else
+    mova          m0, [kxq + %1]
+%endif
+%endmacro
+
+INIT_XMM sse2
+; sbr_hf_apply_noise_0(float (*Y)[2], const float *s_m,
+;                      const float *q_filt, int noise,
+;                      int kx, int m_max)
+cglobal sbr_hf_apply_noise_0, 5,5+NREGS+UNIX64,8, Y,s_m,q_filt,noise,kx,m_max
+    mova       m0, [ps_noise0]
+    jmp apply_noise_main
+
+; sbr_hf_apply_noise_1(float (*Y)[2], const float *s_m,
+;                      const float *q_filt, int noise,
+;                      int kx, int m_max)
+cglobal sbr_hf_apply_noise_1, 5,5+NREGS+UNIX64,8, Y,s_m,q_filt,noise,kx,m_max
+    and       kxq, 1
+    shl       kxq, 4
+    LOAD_NST  ps_noise13
+    jmp apply_noise_main
+
+; sbr_hf_apply_noise_2(float (*Y)[2], const float *s_m,
+;                      const float *q_filt, int noise,
+;                      int kx, int m_max)
+cglobal sbr_hf_apply_noise_2, 5,5+NREGS+UNIX64,8, Y,s_m,q_filt,noise,kx,m_max
+    mova       m0, [ps_noise2]
+    jmp apply_noise_main
+
+; sbr_hf_apply_noise_3(float (*Y)[2], const float *s_m,
+;                      const float *q_filt, int noise,
+;                      int kx, int m_max)
+cglobal sbr_hf_apply_noise_3, 5,5+NREGS+UNIX64,8, Y,s_m,q_filt,noise,kx,m_max
+    and       kxq, 1
+    shl       kxq, 4
+    LOAD_NST  ps_noise13+16
+
+apply_noise_main:
+%if ARCH_X86_64 == 0 || WIN64
+    mov       kxd, m_maxm
+%define count kxq
+%else
+%define count m_maxq
+%endif
+    dec    noiseq
+    shl    count, 2
+%ifdef PIC
+    lea NOISE_TABLE, [sbr_noise_table]
+%endif
+    lea        Yq, [Yq + 2*count]
+    add      s_mq, count
+    add   q_filtq, count
+    shl    noiseq, 3
+    pxor       m5, m5
+    neg    count
+.loop:
+    mova       m1, [q_filtq + count]
+    movu       m3, [noiseq + NOISE_TABLE + 1*mmsize]
+    movu       m4, [noiseq + NOISE_TABLE + 2*mmsize]
+    add    noiseq, 2*mmsize
+    and    noiseq, 0x1ff<<3
+    punpckhdq  m2, m1, m1
+    punpckldq  m1, m1
+    mulps      m1, m3 ; m2 = q_filt[m] * ff_sbr_noise_table[noise]
+    mulps      m2, m4 ; m2 = q_filt[m] * ff_sbr_noise_table[noise]
+    mova       m3, [s_mq + count]
+    ; TODO: replace by a vpermd in AVX2
+    punpckhdq  m4, m3, m3
+    punpckldq  m3, m3
+    pcmpeqd    m6, m3, m5 ; m6 == 0
+    pcmpeqd    m7, m4, m5 ; m7 == 0
+    mulps      m3, m0 ; s_m[m] * phi_sign
+    mulps      m4, m0 ; s_m[m] * phi_sign
+    pand       m1, m6
+    pand       m2, m7
+    movu       m6, [Yq + 2*count]
+    movu       m7, [Yq + 2*count + mmsize]
+    addps      m3, m1
+    addps      m4, m2
+    addps      m6, m3
+    addps      m7, m4
+    movu    [Yq + 2*count], m6
+    movu    [Yq + 2*count + mmsize], m7
+    add    count, mmsize
+    jl      .loop
+    RET
+
+INIT_XMM sse
+cglobal sbr_qmf_deint_neg, 2,4,4,v,src,vrev,c
+%define COUNT  32*4
+%define OFFSET 32*4
+    mov        cq, -COUNT
+    lea     vrevq, [vq + OFFSET + COUNT]
+    add        vq, OFFSET-mmsize
+    add      srcq, 2*COUNT
+    mova       m3, [ps_neg]
+.loop:
+    mova       m0, [srcq + 2*cq + 0*mmsize]
+    mova       m1, [srcq + 2*cq + 1*mmsize]
+    shufps     m2, m0, m1, q2020
+    shufps     m1, m0, q1313
+    xorps      m2, m3
+    mova     [vq], m1
+    mova  [vrevq + cq], m2
+    sub        vq, mmsize
+    add        cq, mmsize
+    jl      .loop
     REP_RET
