@@ -2,20 +2,20 @@
  * MOV, 3GP, MP4 muxer RTP hinting
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -104,12 +104,11 @@ static void sample_queue_push(HintSampleQueue *queue, uint8_t *data, int size,
     if (size <= 14)
         return;
     if (!queue->samples || queue->len >= queue->size) {
-        HintSample *samples;
-        samples = av_realloc_array(queue->samples, queue->size + 10, sizeof(HintSample));
-        if (!samples)
-            return;
         queue->size += 10;
-        queue->samples = samples;
+        if (av_reallocp(&queue->samples, sizeof(*queue->samples) * queue->size) < 0) {
+            queue->len = queue->size = 0;
+            return;
+        }
     }
     queue->samples[queue->len].data = data;
     queue->samples[queue->len].size = size;
