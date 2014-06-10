@@ -2,20 +2,20 @@
  * E-AC-3 encoder
  * Copyright (c) 2011 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,13 +34,9 @@
 
 #define AC3ENC_TYPE AC3ENC_TYPE_EAC3
 #include "ac3enc_opts_template.c"
+static const AVClass eac3enc_class = { "E-AC-3 Encoder", av_default_item_name,
+                                       ac3_options, LIBAVUTIL_VERSION_INT };
 
-static const AVClass eac3enc_class = {
-    .class_name = "E-AC-3 Encoder",
-    .item_name  = av_default_item_name,
-    .option     = ac3_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
 
 /**
  * LUT for finding a matching frame exponent strategy index from a set of
@@ -251,7 +247,6 @@ void ff_eac3_output_frame_header(AC3EncodeContext *s)
 }
 
 
-#if CONFIG_EAC3_ENCODER
 AVCodec ff_eac3_encoder = {
     .name            = "eac3",
     .long_name       = NULL_IF_CONFIG_SMALL("ATSC A/52 E-AC-3"),
@@ -267,4 +262,3 @@ AVCodec ff_eac3_encoder = {
     .channel_layouts = ff_ac3_channel_layouts,
     .defaults        = ac3_defaults,
 };
-#endif

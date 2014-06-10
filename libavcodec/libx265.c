@@ -3,26 +3,22 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#if defined(_MSC_VER)
-#define X265_API_IMPORTS 1
-#endif
 
 #include <x265.h>
 
@@ -32,6 +28,10 @@
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
 #include "internal.h"
+
+#if defined(_MSC_VER)
+#define X265_API_IMPORTS 1
+#endif
 
 typedef struct libx265Context {
     const AVClass *class;
@@ -82,9 +82,10 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     int nnal;
 
     if (avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL &&
-        !av_pix_fmt_desc_get(avctx->pix_fmt)->log2_chroma_w) {
+        !av_pix_fmt_desc_get(avctx->pix_fmt)->log2_chroma_w &&
+        !av_pix_fmt_desc_get(avctx->pix_fmt)->log2_chroma_h) {
         av_log(avctx, AV_LOG_ERROR,
-               "4:2:2 and 4:4:4 support is not fully defined for HEVC yet. "
+               "4:4:4 support is not fully defined for HEVC yet. "
                "Set -strict experimental to encode anyway.\n");
         return AVERROR(ENOSYS);
     }
@@ -132,10 +133,6 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUV420P10:
         ctx->params->internalCsp = X265_CSP_I420;
-        break;
-    case AV_PIX_FMT_YUV422P:
-    case AV_PIX_FMT_YUV422P10:
-        ctx->params->internalCsp = X265_CSP_I422;
         break;
     case AV_PIX_FMT_YUV444P:
     case AV_PIX_FMT_YUV444P10:
@@ -233,7 +230,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = x265_encoder_encode(ctx->encoder, &nal, &nnal,
                               pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
 
     if (!nnal)
         return 0;
@@ -265,17 +262,14 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 static const enum AVPixelFormat x265_csp_eight[] = {
     AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_YUV422P,
     AV_PIX_FMT_YUV444P,
     AV_PIX_FMT_NONE
 };
 
 static const enum AVPixelFormat x265_csp_twelve[] = {
     AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_YUV422P,
     AV_PIX_FMT_YUV444P,
     AV_PIX_FMT_YUV420P10,
-    AV_PIX_FMT_YUV422P10,
     AV_PIX_FMT_YUV444P10,
     AV_PIX_FMT_NONE
 };
