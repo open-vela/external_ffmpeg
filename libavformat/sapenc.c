@@ -2,20 +2,20 @@
  * Session Announcement Protocol (RFC 2974) muxer
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -140,7 +140,8 @@ static int sap_write_header(AVFormatContext *s)
         goto fail;
     }
 
-    s->start_time_realtime = av_gettime();
+    if (s->start_time_realtime == 0  ||  s->start_time_realtime == AV_NOPTS_VALUE)
+        s->start_time_realtime = av_gettime();
     for (i = 0; i < s->nb_streams; i++) {
         URLContext *fd;
 
@@ -245,7 +246,7 @@ static int sap_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVFormatContext *rtpctx;
     struct SAPState *sap = s->priv_data;
-    int64_t now = av_gettime();
+    int64_t now = av_gettime_relative();
 
     if (!sap->last_time || now - sap->last_time > 5000000) {
         int ret = ffurl_write(sap->ann_fd, sap->ann, sap->ann_size);
