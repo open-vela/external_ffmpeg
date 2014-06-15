@@ -6,24 +6,25 @@
  * Copyright (C) 2012 - 2013 Gildas Cocherel
  * Copyright (C) 2013 Vittorio Giovara
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/imgutils.h"
+
 #include "golomb.h"
 #include "hevc.h"
 
@@ -72,7 +73,7 @@ static const AVRational vui_sar[] = {
 int ff_hevc_decode_short_term_rps(HEVCContext *s, ShortTermRPS *rps,
                                   const HEVCSPS *sps, int is_slice_header)
 {
-    HEVCLocalContext *lc = s->HEVClc;
+    HEVCLocalContext *lc = &s->HEVClc;
     uint8_t rps_predict = 0;
     int delta_poc;
     int k0 = 0;
@@ -195,8 +196,7 @@ int ff_hevc_decode_short_term_rps(HEVCContext *s, ShortTermRPS *rps,
 static void decode_profile_tier_level(HEVCContext *s, PTLCommon *ptl)
 {
     int i;
-    HEVCLocalContext *lc = s->HEVClc;
-    GetBitContext *gb = &lc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
 
     ptl->profile_space = get_bits(gb, 2);
     ptl->tier_flag     = get_bits1(gb);
@@ -225,8 +225,7 @@ static void decode_profile_tier_level(HEVCContext *s, PTLCommon *ptl)
 static void parse_ptl(HEVCContext *s, PTL *ptl, int max_num_sub_layers)
 {
     int i;
-    HEVCLocalContext *lc = s->HEVClc;
-    GetBitContext *gb = &lc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     decode_profile_tier_level(s, &ptl->general_ptl);
     ptl->general_ptl.level_idc = get_bits(gb, 8);
 
@@ -234,7 +233,7 @@ static void parse_ptl(HEVCContext *s, PTL *ptl, int max_num_sub_layers)
         ptl->sub_layer_profile_present_flag[i] = get_bits1(gb);
         ptl->sub_layer_level_present_flag[i]   = get_bits1(gb);
     }
-    if (max_num_sub_layers - 1> 0)
+    if (max_num_sub_layers - 1 > 0)
         for (i = max_num_sub_layers - 1; i < 8; i++)
             skip_bits(gb, 2); // reserved_zero_2bits[i]
     for (i = 0; i < max_num_sub_layers - 1; i++) {
@@ -248,7 +247,7 @@ static void parse_ptl(HEVCContext *s, PTL *ptl, int max_num_sub_layers)
 static void decode_sublayer_hrd(HEVCContext *s, unsigned int nb_cpb,
                                 int subpic_params_present)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     int i;
 
     for (i = 0; i < nb_cpb; i++) {
@@ -266,7 +265,7 @@ static void decode_sublayer_hrd(HEVCContext *s, unsigned int nb_cpb,
 static void decode_hrd(HEVCContext *s, int common_inf_present,
                        int max_sublayers)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     int nal_params_present = 0, vcl_params_present = 0;
     int subpic_params_present = 0;
     int i;
@@ -323,7 +322,7 @@ static void decode_hrd(HEVCContext *s, int common_inf_present,
 int ff_hevc_decode_nal_vps(HEVCContext *s)
 {
     int i,j;
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     int vps_id = 0;
     HEVCVPS *vps;
     AVBufferRef *vps_buf = av_buffer_allocz(sizeof(*vps));
@@ -378,7 +377,7 @@ int ff_hevc_decode_nal_vps(HEVCContext *s)
         if (vps->vps_num_reorder_pics[i] > vps->vps_max_dec_pic_buffering[i] - 1) {
             av_log(s->avctx, AV_LOG_WARNING, "vps_max_num_reorder_pics out of range: %d\n",
                    vps->vps_num_reorder_pics[i]);
-            if (s->avctx->strict_std_compliance > FF_COMPLIANCE_NORMAL)
+            if (s->avctx->err_recognition & AV_EF_EXPLODE)
                 goto err;
         }
     }
@@ -420,7 +419,7 @@ err:
 static void decode_vui(HEVCContext *s, HEVCSPS *sps)
 {
     VUI *vui          = &sps->vui;
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     int sar_present;
 
     av_log(s->avctx, AV_LOG_DEBUG, "Decoding VUI\n");
@@ -500,7 +499,6 @@ static void decode_vui(HEVCContext *s, HEVCSPS *sps)
     }
 
     vui->vui_timing_info_present_flag = get_bits1(gb);
-
     if (vui->vui_timing_info_present_flag) {
         vui->vui_num_units_in_tick               = get_bits_long(gb, 32);
         vui->vui_time_scale                      = get_bits_long(gb, 32);
@@ -553,7 +551,7 @@ static void set_default_scaling_list_data(ScalingList *sl)
 
 static int scaling_list_data(HEVCContext *s, ScalingList *sl)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     uint8_t scaling_list_pred_mode_flag[4][6];
     int32_t scaling_list_dc_coef[2][6];
     int size_id, matrix_id, i, pos;
@@ -611,7 +609,7 @@ static int scaling_list_data(HEVCContext *s, ScalingList *sl)
 int ff_hevc_decode_nal_sps(HEVCContext *s)
 {
     const AVPixFmtDescriptor *desc;
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     int ret = 0;
     unsigned int sps_id = 0;
     int log2_diff_max_min_transform_block_size;
@@ -763,9 +761,10 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
             goto err;
         }
         if (sps->temporal_layer[i].num_reorder_pics > sps->temporal_layer[i].max_dec_pic_buffering - 1) {
-            av_log(s->avctx, AV_LOG_ERROR, "sps_max_num_reorder_pics out of range: %d\n",
+            av_log(s->avctx, AV_LOG_WARNING, "sps_max_num_reorder_pics out of range: %d\n",
                    sps->temporal_layer[i].num_reorder_pics);
-            if (sps->temporal_layer[i].num_reorder_pics > MAX_DPB_SIZE - 1) {
+            if (s->avctx->err_recognition & AV_EF_EXPLODE ||
+                sps->temporal_layer[i].num_reorder_pics > MAX_DPB_SIZE - 1) {
                 ret = AVERROR_INVALIDDATA;
                 goto err;
             }
@@ -907,7 +906,6 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
     sps->min_tb_height = sps->height >> sps->log2_min_tb_size;
     sps->min_pu_width  = sps->width  >> sps->log2_min_pu_size;
     sps->min_pu_height = sps->height >> sps->log2_min_pu_size;
-    sps->tb_mask       = (1 << (sps->log2_ctb_size - sps->log2_min_tb_size)) - 1;
 
     sps->qp_bd_offset = 6 * (sps->bit_depth - 8);
 
@@ -982,16 +980,17 @@ static void hevc_pps_free(void *opaque, uint8_t *data)
     av_freep(&pps->ctb_addr_ts_to_rs);
     av_freep(&pps->tile_pos_rs);
     av_freep(&pps->tile_id);
-    av_freep(&pps->min_tb_addr_zs_tab);
+    av_freep(&pps->min_cb_addr_zs);
+    av_freep(&pps->min_tb_addr_zs);
 
     av_freep(&pps);
 }
 
 int ff_hevc_decode_nal_pps(HEVCContext *s)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
     HEVCSPS      *sps = NULL;
-    int pic_area_in_ctbs;
+    int pic_area_in_ctbs, pic_area_in_min_cbs, pic_area_in_min_tbs;
     int log2_diff_ctb_min_tb_size;
     int i, j, x, y, ctb_addr_rs, tile_id;
     int ret = 0;
@@ -1230,13 +1229,16 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
      * 6.5
      */
     pic_area_in_ctbs     = sps->ctb_width    * sps->ctb_height;
+    pic_area_in_min_cbs  = sps->min_cb_width * sps->min_cb_height;
+    pic_area_in_min_tbs  = sps->min_tb_width * sps->min_tb_height;
 
     pps->ctb_addr_rs_to_ts = av_malloc_array(pic_area_in_ctbs,    sizeof(*pps->ctb_addr_rs_to_ts));
     pps->ctb_addr_ts_to_rs = av_malloc_array(pic_area_in_ctbs,    sizeof(*pps->ctb_addr_ts_to_rs));
     pps->tile_id           = av_malloc_array(pic_area_in_ctbs,    sizeof(*pps->tile_id));
-    pps->min_tb_addr_zs_tab = av_malloc_array((sps->tb_mask+2) * (sps->tb_mask+2), sizeof(*pps->min_tb_addr_zs_tab));
+    pps->min_cb_addr_zs    = av_malloc_array(pic_area_in_min_cbs, sizeof(*pps->min_cb_addr_zs));
+    pps->min_tb_addr_zs    = av_malloc_array(pic_area_in_min_tbs, sizeof(*pps->min_tb_addr_zs));
     if (!pps->ctb_addr_rs_to_ts || !pps->ctb_addr_ts_to_rs ||
-        !pps->tile_id || !pps->min_tb_addr_zs_tab) {
+        !pps->tile_id || !pps->min_cb_addr_zs || !pps->min_tb_addr_zs) {
         ret = AVERROR(ENOMEM);
         goto err;
     }
@@ -1290,14 +1292,24 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
         for (i = 0; i < pps->num_tile_columns; i++)
             pps->tile_pos_rs[j * pps->num_tile_columns + i] = pps->row_bd[j] * sps->ctb_width + pps->col_bd[i];
 
-    log2_diff_ctb_min_tb_size = sps->log2_ctb_size - sps->log2_min_tb_size;
-    pps->min_tb_addr_zs = &pps->min_tb_addr_zs_tab[1*(sps->tb_mask+2)+1];
-    for (y = 0; y < sps->tb_mask+2; y++) {
-        pps->min_tb_addr_zs_tab[y*(sps->tb_mask+2)] = -1;
-        pps->min_tb_addr_zs_tab[y]    = -1;
+    for (y = 0; y < sps->min_cb_height; y++) {
+        for (x = 0; x < sps->min_cb_width; x++) {
+            int tb_x        = x >> sps->log2_diff_max_min_coding_block_size;
+            int tb_y        = y >> sps->log2_diff_max_min_coding_block_size;
+            int ctb_addr_rs = sps->ctb_width * tb_y + tb_x;
+            int val         = pps->ctb_addr_rs_to_ts[ctb_addr_rs] <<
+                              (sps->log2_diff_max_min_coding_block_size * 2);
+            for (i = 0; i < sps->log2_diff_max_min_coding_block_size; i++) {
+                int m = 1 << i;
+                val += (m & x ? m * m : 0) + (m & y ? 2 * m * m : 0);
+            }
+            pps->min_cb_addr_zs[y * sps->min_cb_width + x] = val;
+        }
     }
-    for (y = 0; y < sps->tb_mask+1; y++) {
-        for (x = 0; x < sps->tb_mask+1; x++) {
+
+    log2_diff_ctb_min_tb_size = sps->log2_ctb_size - sps->log2_min_tb_size;
+    for (y = 0; y < sps->min_tb_height; y++) {
+        for (x = 0; x < sps->min_tb_width; x++) {
             int tb_x        = x >> log2_diff_ctb_min_tb_size;
             int tb_y        = y >> log2_diff_ctb_min_tb_size;
             int ctb_addr_rs = sps->ctb_width * tb_y + tb_x;
@@ -1307,7 +1319,7 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
                 int m = 1 << i;
                 val += (m & x ? m * m : 0) + (m & y ? 2 * m * m : 0);
             }
-            pps->min_tb_addr_zs[y * (sps->tb_mask+2) + x] = val;
+            pps->min_tb_addr_zs[y * sps->min_tb_width + x] = val;
         }
     }
 
