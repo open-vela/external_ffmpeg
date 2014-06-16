@@ -15,7 +15,6 @@
 *.pdb
 *.so
 *.so.*
-*.swp
 *.ver
 *-example
 *-test
