@@ -3,20 +3,20 @@
  * Copyright (c) 2005-2006 Oded Shimon ( ods15 ods15 dyndns org )
  * Copyright (c) 2006-2007 Maxim Gavrilov ( maxim.gavrilov gmail com )
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,7 +81,7 @@ enum BandType {
     INTENSITY_BT   = 15,    ///< Scalefactor data are intensity stereo positions.
 };
 
-#define IS_CODEBOOK_UNSIGNED(x) (((x) - 1) & 10)
+#define IS_CODEBOOK_UNSIGNED(x) ((x - 1) & 10)
 
 enum ChannelPosition {
     AAC_CHANNEL_OFF   = 0,
@@ -259,8 +259,7 @@ typedef struct ChannelElement {
 /**
  * main AAC context
  */
-struct AACContext {
-    AVClass        *class;
+typedef struct AACContext {
     AVCodecContext *avctx;
     AVFrame *frame;
 
@@ -304,31 +303,9 @@ struct AACContext {
     SingleChannelElement *output_element[MAX_CHANNELS]; ///< Points to each SingleChannelElement
     /** @} */
 
-
-    /**
-     * @name Japanese DTV specific extension
-     * @{
-     */
-    int force_dmono_mode;///< 0->not dmono, 1->use first channel, 2->use second channel
-    int dmono_mode;      ///< 0->not dmono, 1->use first channel, 2->use second channel
-    /** @} */
-
     DECLARE_ALIGNED(32, float, temp)[128];
 
     OutputConfiguration oc[2];
-    int warned_num_aac_frames;
-
-    /* aacdec functions pointers */
-    void (*imdct_and_windowing)(AACContext *ac, SingleChannelElement *sce);
-    void (*apply_ltp)(AACContext *ac, SingleChannelElement *sce);
-    void (*apply_tns)(float coef[1024], TemporalNoiseShaping *tns,
-                      IndividualChannelStream *ics, int decode);
-    void (*windowing_and_mdct_ltp)(AACContext *ac, float *out,
-                                   float *in, IndividualChannelStream *ics);
-    void (*update_ltp)(AACContext *ac, SingleChannelElement *sce);
-
-};
-
-void ff_aacdec_init_mips(AACContext *c);
+} AACContext;
 
 #endif /* AVCODEC_AAC_H */
