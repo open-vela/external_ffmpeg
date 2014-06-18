@@ -1,23 +1,21 @@
 ;******************************************************************************
 ;* MMX optimized DSP utils
 ;* Copyright (c) 2008 Loren Merritt
-;* Copyright (c) 2003-2013 Michael Niedermayer
-;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -25,8 +23,6 @@
 
 SECTION_RODATA
 pb_bswap32: db 3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
-
-cextern pb_80
 
 SECTION_TEXT
 
@@ -47,11 +43,15 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
     paddd   m2, m1
     add     orderq, mmsize*2
     jl .loop
-    HADDD   m2, m0
-    movd   eax, m2
-%if mmsize == 8
-    emms
+%if mmsize == 16
+    movhlps m0, m2
+    paddd   m2, m0
+    pshuflw m0, m2, 0x4e
+%else
+    pshufw  m0, m2, 0x4e
 %endif
+    paddd   m2, m0
+    movd   eax, m2
     RET
 %endmacro
 
@@ -83,17 +83,17 @@ cglobal vector_clip_int32%5, 5,5,%1, dst, src, min, max, len
     SPLATD    m4
     SPLATD    m5
 .loop:
-%assign %%i 0
+%assign %%i 1
 %rep %2
-    mova      m0,  [srcq+mmsize*(0+%%i)]
-    mova      m1,  [srcq+mmsize*(1+%%i)]
-    mova      m2,  [srcq+mmsize*(2+%%i)]
-    mova      m3,  [srcq+mmsize*(3+%%i)]
+    mova      m0,  [srcq+mmsize*0*%%i]
+    mova      m1,  [srcq+mmsize*1*%%i]
+    mova      m2,  [srcq+mmsize*2*%%i]
+    mova      m3,  [srcq+mmsize*3*%%i]
 %if %3
-    mova      m7,  [srcq+mmsize*(4+%%i)]
-    mova      m8,  [srcq+mmsize*(5+%%i)]
-    mova      m9,  [srcq+mmsize*(6+%%i)]
-    mova      m10, [srcq+mmsize*(7+%%i)]
+    mova      m7,  [srcq+mmsize*4*%%i]
+    mova      m8,  [srcq+mmsize*5*%%i]
+    mova      m9,  [srcq+mmsize*6*%%i]
+    mova      m10, [srcq+mmsize*7*%%i]
 %endif
     CLIPD  m0,  m4, m5, m6
     CLIPD  m1,  m4, m5, m6
@@ -105,17 +105,17 @@ cglobal vector_clip_int32%5, 5,5,%1, dst, src, min, max, len
     CLIPD  m9,  m4, m5, m6
     CLIPD  m10, m4, m5, m6
 %endif
-    mova  [dstq+mmsize*(0+%%i)], m0
-    mova  [dstq+mmsize*(1+%%i)], m1
-    mova  [dstq+mmsize*(2+%%i)], m2
-    mova  [dstq+mmsize*(3+%%i)], m3
+    mova  [dstq+mmsize*0*%%i], m0
+    mova  [dstq+mmsize*1*%%i], m1
+    mova  [dstq+mmsize*2*%%i], m2
+    mova  [dstq+mmsize*3*%%i], m3
 %if %3
-    mova  [dstq+mmsize*(4+%%i)], m7
-    mova  [dstq+mmsize*(5+%%i)], m8
-    mova  [dstq+mmsize*(6+%%i)], m9
-    mova  [dstq+mmsize*(7+%%i)], m10
+    mova  [dstq+mmsize*4*%%i], m7
+    mova  [dstq+mmsize*5*%%i], m8
+    mova  [dstq+mmsize*6*%%i], m9
+    mova  [dstq+mmsize*7*%%i], m10
 %endif
-%assign %%i %%i+4*(%3+1)
+%assign %%i %%i+1
 %endrep
     add     srcq, mmsize*4*(%2+%3)
     add     dstq, mmsize*4*(%2+%3)
@@ -203,7 +203,6 @@ cglobal bswap32_buf, 3,4,3
 cglobal bswap32_buf, 3,4,5
     mov      r3, r1
 %endif
-    or       r3, r0
     and      r3, 15
     jz       .start_align
     BSWAP_LOOPS  u
@@ -247,157 +246,3 @@ BSWAP32_BUF
 
 INIT_XMM ssse3
 BSWAP32_BUF
-
-;----------------------------------------
-; void ff_clear_block(int16_t *blocks);
-;----------------------------------------
-; %1 = number of xmm registers used
-; %2 = number of inline store loops
-%macro CLEAR_BLOCK 2
-cglobal clear_block, 1, 1, %1, blocks
-    ZERO  m0, m0
-%assign %%i 0
-%rep %2
-    mova  [blocksq+mmsize*(0+%%i)], m0
-    mova  [blocksq+mmsize*(1+%%i)], m0
-    mova  [blocksq+mmsize*(2+%%i)], m0
-    mova  [blocksq+mmsize*(3+%%i)], m0
-    mova  [blocksq+mmsize*(4+%%i)], m0
-    mova  [blocksq+mmsize*(5+%%i)], m0
-    mova  [blocksq+mmsize*(6+%%i)], m0
-    mova  [blocksq+mmsize*(7+%%i)], m0
-%assign %%i %%i+8
-%endrep
-    RET
-%endmacro
-
-INIT_MMX mmx
-%define ZERO pxor
-CLEAR_BLOCK 0, 2
-INIT_XMM sse
-%define ZERO xorps
-CLEAR_BLOCK 1, 1
-
-;-----------------------------------------
-; void ff_clear_blocks(int16_t *blocks);
-;-----------------------------------------
-; %1 = number of xmm registers used
-%macro CLEAR_BLOCKS 1
-cglobal clear_blocks, 1, 2, %1, blocks, len
-    add   blocksq, 768
-    mov      lenq, -768
-    ZERO       m0, m0
-.loop
-    mova  [blocksq+lenq+mmsize*0], m0
-    mova  [blocksq+lenq+mmsize*1], m0
-    mova  [blocksq+lenq+mmsize*2], m0
-    mova  [blocksq+lenq+mmsize*3], m0
-    mova  [blocksq+lenq+mmsize*4], m0
-    mova  [blocksq+lenq+mmsize*5], m0
-    mova  [blocksq+lenq+mmsize*6], m0
-    mova  [blocksq+lenq+mmsize*7], m0
-    add   lenq, mmsize*8
-    js .loop
-    RET
-%endmacro
-
-INIT_MMX mmx
-%define ZERO pxor
-CLEAR_BLOCKS 0
-INIT_XMM sse
-%define ZERO xorps
-CLEAR_BLOCKS 1
-
-;--------------------------------------------------------------------------
-;void ff_put_signed_pixels_clamped(const int16_t *block, uint8_t *pixels,
-;                                  int line_size)
-;--------------------------------------------------------------------------
-
-%macro PUT_SIGNED_PIXELS_CLAMPED_HALF 1
-    mova     m1, [blockq+mmsize*0+%1]
-    mova     m2, [blockq+mmsize*2+%1]
-%if mmsize == 8
-    mova     m3, [blockq+mmsize*4+%1]
-    mova     m4, [blockq+mmsize*6+%1]
-%endif
-    packsswb m1, [blockq+mmsize*1+%1]
-    packsswb m2, [blockq+mmsize*3+%1]
-%if mmsize == 8
-    packsswb m3, [blockq+mmsize*5+%1]
-    packsswb m4, [blockq+mmsize*7+%1]
-%endif
-    paddb    m1, m0
-    paddb    m2, m0
-%if mmsize == 8
-    paddb    m3, m0
-    paddb    m4, m0
-    movq     [pixelsq+lsizeq*0], m1
-    movq     [pixelsq+lsizeq*1], m2
-    movq     [pixelsq+lsizeq*2], m3
-    movq     [pixelsq+lsize3q ], m4
-%else
-    movq     [pixelsq+lsizeq*0], m1
-    movhps   [pixelsq+lsizeq*1], m1
-    movq     [pixelsq+lsizeq*2], m2
-    movhps   [pixelsq+lsize3q ], m2
-%endif
-%endmacro
-
-%macro PUT_SIGNED_PIXELS_CLAMPED 1
-cglobal put_signed_pixels_clamped, 3, 4, %1, block, pixels, lsize, lsize3
-    mova     m0, [pb_80]
-    lea      lsize3q, [lsizeq*3]
-    PUT_SIGNED_PIXELS_CLAMPED_HALF 0
-    lea      pixelsq, [pixelsq+lsizeq*4]
-    PUT_SIGNED_PIXELS_CLAMPED_HALF 64
-    RET
-%endmacro
-
-INIT_MMX mmx
-PUT_SIGNED_PIXELS_CLAMPED 0
-INIT_XMM sse2
-PUT_SIGNED_PIXELS_CLAMPED 3
-
-;-----------------------------------------------------
-;void ff_vector_clipf(float *dst, const float *src,
-;                     float min, float max, int len)
-;-----------------------------------------------------
-INIT_XMM sse
-%if UNIX64
-cglobal vector_clipf, 3,3,6, dst, src, len
-%else
-cglobal vector_clipf, 5,5,6, dst, src, min, max, len
-%endif
-%if WIN64
-    SWAP 0, 2
-    SWAP 1, 3
-%elif ARCH_X86_32
-    movss   m0, minm
-    movss   m1, maxm
-%endif
-    SPLATD  m0
-    SPLATD  m1
-        shl lend, 2
-        add srcq, lenq
-        add dstq, lenq
-        neg lenq
-.loop:
-    mova    m2,  [srcq+lenq+mmsize*0]
-    mova    m3,  [srcq+lenq+mmsize*1]
-    mova    m4,  [srcq+lenq+mmsize*2]
-    mova    m5,  [srcq+lenq+mmsize*3]
-    maxps   m2, m0
-    maxps   m3, m0
-    maxps   m4, m0
-    maxps   m5, m0
-    minps   m2, m1
-    minps   m3, m1
-    minps   m4, m1
-    minps   m5, m1
-    mova    [dstq+lenq+mmsize*0], m2
-    mova    [dstq+lenq+mmsize*1], m3
-    mova    [dstq+lenq+mmsize*2], m4
-    mova    [dstq+lenq+mmsize*3], m5
-    add     lenq, mmsize*4
-    jl .loop
-    REP_RET
