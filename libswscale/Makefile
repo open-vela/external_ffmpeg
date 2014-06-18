@@ -1,3 +1,5 @@
+include $(SUBDIR)../config.mak
+
 NAME = swscale
 
 HEADERS = swscale.h                                                     \
@@ -11,6 +13,9 @@ OBJS = input.o                                          \
        swscale_unscaled.o                               \
        utils.o                                          \
        yuv2rgb.o                                        \
+
+# Windows resource file
+SLIBOBJS-$(HAVE_GNU_WINDRES) += swscaleres.o
 
 TESTPROGS = colorspace                                                  \
             swscale                                                     \

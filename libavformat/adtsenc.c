@@ -3,20 +3,20 @@
  * Copyright (c) 2006 Baptiste Coudurier <baptiste.coudurier@smartjog.com>
  *                    Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,16 +24,20 @@
 #include "libavcodec/put_bits.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/mpeg4audio.h"
+#include "libavutil/opt.h"
 #include "avformat.h"
+#include "apetag.h"
 
 #define ADTS_HEADER_SIZE 7
 
 typedef struct {
+    AVClass *class;
     int write_adts;
     int objecttype;
     int sample_rate_index;
     int channel_conf;
     int pce_size;
+    int apetag;
     uint8_t pce_data[MAX_PCE_SIZE];
 } ADTSContext;
 
@@ -162,6 +166,30 @@ static int adts_write_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
+static int adts_write_trailer(AVFormatContext *s)
+{
+    ADTSContext *adts = s->priv_data;
+
+    if (adts->apetag)
+        ff_ape_write_tag(s);
+
+    return 0;
+}
+
+#define ENC AV_OPT_FLAG_ENCODING_PARAM
+#define OFFSET(obj) offsetof(ADTSContext, obj)
+static const AVOption options[] = {
+    { "write_apetag", "Enable APE tag writing", OFFSET(apetag), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, ENC},
+    { NULL },
+};
+
+static const AVClass adts_muxer_class = {
+    .class_name     = "ADTS muxer",
+    .item_name      = av_default_item_name,
+    .option         = options,
+    .version        = LIBAVUTIL_VERSION_INT,
+};
+
 AVOutputFormat ff_adts_muxer = {
     .name              = "adts",
     .long_name         = NULL_IF_CONFIG_SMALL("ADTS AAC (Advanced Audio Coding)"),
@@ -172,5 +200,6 @@ AVOutputFormat ff_adts_muxer = {
     .video_codec       = AV_CODEC_ID_NONE,
     .write_header      = adts_write_header,
     .write_packet      = adts_write_packet,
-    .flags             = AVFMT_NOTIMESTAMPS,
+    .write_trailer     = adts_write_trailer,
+    .priv_class        = &adts_muxer_class,
 };
