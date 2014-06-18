@@ -2,20 +2,20 @@
  * RTP Depacketization of MP4A-LATM, RFC 3016
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -130,7 +130,10 @@ static int parse_fmtp_config(AVStream *st, char *value)
         goto end;
     }
     av_freep(&st->codec->extradata);
-    if (ff_alloc_extradata(st->codec, (get_bits_left(&gb) + 7)/8)) {
+    st->codec->extradata_size = (get_bits_left(&gb) + 7)/8;
+    st->codec->extradata = av_mallocz(st->codec->extradata_size +
+                                      FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!st->codec->extradata) {
         ret = AVERROR(ENOMEM);
         goto end;
     }
@@ -142,7 +145,8 @@ end:
     return ret;
 }
 
-static int parse_fmtp(AVStream *stream, PayloadContext *data,
+static int parse_fmtp(AVFormatContext *s,
+                      AVStream *stream, PayloadContext *data,
                       char *attr, char *value)
 {
     int res;
@@ -154,7 +158,7 @@ static int parse_fmtp(AVStream *stream, PayloadContext *data,
     } else if (!strcmp(attr, "cpresent")) {
         int cpresent = atoi(value);
         if (cpresent != 0)
-            avpriv_request_sample(NULL,
+            avpriv_request_sample(s,
                                   "RTP MP4A-LATM with in-band configuration");
     }
 
@@ -170,7 +174,7 @@ static int latm_parse_sdp_line(AVFormatContext *s, int st_index,
         return 0;
 
     if (av_strstart(line, "fmtp:", &p))
-        return ff_parse_fmtp(s->streams[st_index], data, p, parse_fmtp);
+        return ff_parse_fmtp(s, s->streams[st_index], data, p, parse_fmtp);
 
     return 0;
 }

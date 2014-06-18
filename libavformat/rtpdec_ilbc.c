@@ -2,20 +2,20 @@
  * RTP iLBC Depacketizer, RFC 3952
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,8 @@
 #include "rtpdec_formats.h"
 #include "libavutil/avstring.h"
 
-static int ilbc_parse_fmtp(AVStream *stream, PayloadContext *data,
+static int ilbc_parse_fmtp(AVFormatContext *s,
+                           AVStream *stream, PayloadContext *data,
                            char *attr, char *value)
 {
     if (!strcmp(attr, "mode")) {
@@ -36,7 +37,7 @@ static int ilbc_parse_fmtp(AVStream *stream, PayloadContext *data,
             stream->codec->block_align = 50;
             break;
         default:
-            av_log(NULL, AV_LOG_ERROR, "Unsupported iLBC mode %d\n", mode);
+            av_log(s, AV_LOG_ERROR, "Unsupported iLBC mode %d\n", mode);
             return AVERROR(EINVAL);
         }
     }
@@ -54,7 +55,7 @@ static int ilbc_parse_sdp_line(AVFormatContext *s, int st_index,
     st = s->streams[st_index];
 
     if (av_strstart(line, "fmtp:", &p)) {
-        int ret = ff_parse_fmtp(st, data, p, ilbc_parse_fmtp);
+        int ret = ff_parse_fmtp(s, st, data, p, ilbc_parse_fmtp);
         if (ret < 0)
             return ret;
         if (!st->codec->block_align) {
