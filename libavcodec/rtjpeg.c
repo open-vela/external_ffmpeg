@@ -2,20 +2,20 @@
  * RTJpeg decoding functions
  * Copyright (c) 2006 Reimar Doeffinger
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "libavutil/common.h"
@@ -121,7 +121,7 @@ int ff_rtjpeg_decode_frame_yuv420(RTJpegContext *c, AVFrame *f,
     if (res < 0) \
         return res; \
     if (res > 0) \
-        c->idsp.idct_put(dst, stride, block); \
+        c->dsp.idct_put(dst, stride, block); \
 } while (0)
             int16_t *block = c->block;
             BLOCK(c->lquant, y1, f->linesize[0]);
@@ -159,7 +159,7 @@ void ff_rtjpeg_decode_init(RTJpegContext *c, int width, int height,
                            const uint32_t *lquant, const uint32_t *cquant) {
     int i;
     for (i = 0; i < 64; i++) {
-        int p = c->idsp.idct_permutation[i];
+        int p = c->dsp.idct_permutation[i];
         c->lquant[p] = lquant[i];
         c->cquant[p] = cquant[i];
     }
@@ -171,13 +171,13 @@ void ff_rtjpeg_init(RTJpegContext *c, AVCodecContext *avctx)
 {
     int i;
 
-    ff_idctdsp_init(&c->idsp, avctx);
+    ff_dsputil_init(&c->dsp, avctx);
 
     for (i = 0; i < 64; i++) {
         int z = ff_zigzag_direct[i];
         z = ((z << 3) | (z >> 3)) & 63; // rtjpeg uses a transposed variant
 
         // permute the scan and quantization tables for the chosen idct
-        c->scan[i] = c->idsp.idct_permutation[z];
+        c->scan[i] = c->dsp.idct_permutation[z];
     }
 }

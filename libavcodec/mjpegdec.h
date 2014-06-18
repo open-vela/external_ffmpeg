@@ -4,20 +4,20 @@
  * Copyright (c) 2003 Alex Beregszaszi
  * Copyright (c) 2003-2004 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,12 +31,13 @@
 
 #include "libavutil/log.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/stereo3d.h"
 
 #include "avcodec.h"
 #include "blockdsp.h"
 #include "get_bits.h"
+#include "dsputil.h"
 #include "hpeldsp.h"
-#include "idctdsp.h"
 
 #define MAX_COMPONENTS 4
 
@@ -61,14 +62,20 @@ typedef struct MJpegDecodeContext {
     int ls;
     int progressive;
     int rgb;
+    int upscale_h;
+    int chroma_height;
+    int upscale_v;
     int rct;            /* standard rct */
     int pegasus_rct;    /* pegasus reversible colorspace transform */
     int bits;           /* bits per component */
+    int colr;
+    int xfrm;
+    int adobe_transform;
 
     int maxval;
     int near;         ///< near lossless bound (si 0 for lossless)
     int t1,t2,t3;
-    int reset;        ///< context halfing intervall ?rename
+    int reset;        ///< context halfing interval ?rename
 
     int width, height;
     int mb_width, mb_height;
@@ -83,6 +90,7 @@ typedef struct MJpegDecodeContext {
     int nb_blocks[MAX_COMPONENTS];
     int h_scount[MAX_COMPONENTS];
     int v_scount[MAX_COMPONENTS];
+    int quant_sindex[MAX_COMPONENTS];
     int h_max, v_max; /* maximum h and v counts */
     int quant_index[4];   /* quant table index for each component */
     int last_dc[MAX_COMPONENTS]; /* last DEQUANTIZED dc (XXX: am I right to do that ?) */
@@ -95,10 +103,11 @@ typedef struct MJpegDecodeContext {
     int16_t (*blocks[MAX_COMPONENTS])[64]; ///< intermediate sums (progressive mode)
     uint8_t *last_nnz[MAX_COMPONENTS];
     uint64_t coefs_finished[MAX_COMPONENTS]; ///< bitmask of which coefs have been completely decoded (progressive mode)
+    int palette_index;
     ScanTable scantable;
     BlockDSPContext bdsp;
+    DSPContext dsp;
     HpelDSPContext hdsp;
-    IDCTDSPContext idsp;
 
     int restart_interval;
     int restart_count;
@@ -116,6 +125,9 @@ typedef struct MJpegDecodeContext {
     unsigned int ljpeg_buffer_size;
 
     int extern_huff;
+    AVDictionary *exif_metadata;
+
+    AVStereo3D *stereo3d; ///!< stereoscopic information (cached, since it is read before frame allocation)
 
     const AVPixFmtDescriptor *pix_desc;
 } MJpegDecodeContext;
@@ -129,7 +141,8 @@ int ff_mjpeg_decode_dqt(MJpegDecodeContext *s);
 int ff_mjpeg_decode_dht(MJpegDecodeContext *s);
 int ff_mjpeg_decode_sof(MJpegDecodeContext *s);
 int ff_mjpeg_decode_sos(MJpegDecodeContext *s,
-                        const uint8_t *mb_bitmask, const AVFrame *reference);
+                        const uint8_t *mb_bitmask,int mb_bitmask_size,
+                        const AVFrame *reference);
 int ff_mjpeg_find_marker(MJpegDecodeContext *s,
                          const uint8_t **buf_ptr, const uint8_t *buf_end,
                          const uint8_t **unescaped_buf_ptr, int *unescaped_buf_size);

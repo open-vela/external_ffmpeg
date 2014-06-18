@@ -2,20 +2,20 @@
  * Copyright (C) 2005  Ole André Vadla Ravnås <oleavr@gmail.com>
  * Copyright (C) 2008  Ramiro Polla
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,8 +29,8 @@
 #include "get_bits.h"
 #include "bytestream.h"
 #include "bswapdsp.h"
+#include "dsputil.h"
 #include "hpeldsp.h"
-#include "idctdsp.h"
 #include "thread.h"
 
 #define MIMIC_HEADER_SIZE   20
@@ -56,8 +56,8 @@ typedef struct {
     ScanTable       scantable;
     BlockDSPContext bdsp;
     BswapDSPContext bbdsp;
+    DSPContext      dsp;
     HpelDSPContext  hdsp;
-    IDCTDSPContext  idsp;
     VLC             vlc;
 
     /* Kept in the context so multithreading can have a constant to read from */
@@ -120,7 +120,8 @@ static av_cold int mimic_decode_end(AVCodecContext *avctx)
     MimicContext *ctx = avctx->priv_data;
     int i;
 
-    av_free(ctx->swap_buf);
+    av_freep(&ctx->swap_buf);
+    ctx->swap_buf_size = 0;
 
     for (i = 0; i < FF_ARRAY_ELEMS(ctx->frames); i++) {
         if (ctx->frames[i].f)
@@ -151,9 +152,9 @@ static av_cold int mimic_decode_init(AVCodecContext *avctx)
     }
     ff_blockdsp_init(&ctx->bdsp, avctx);
     ff_bswapdsp_init(&ctx->bbdsp);
+    ff_dsputil_init(&ctx->dsp, avctx);
     ff_hpeldsp_init(&ctx->hdsp, avctx->flags);
-    ff_idctdsp_init(&ctx->idsp, avctx);
-    ff_init_scantable(ctx->idsp.idct_permutation, &ctx->scantable, col_zag);
+    ff_init_scantable(ctx->dsp.idct_permutation, &ctx->scantable, col_zag);
 
     for (i = 0; i < FF_ARRAY_ELEMS(ctx->frames); i++) {
         ctx->frames[i].f = av_frame_alloc();
@@ -181,7 +182,7 @@ static int mimic_decode_update_thread_context(AVCodecContext *avctx, const AVCod
 
     for (i = 0; i < FF_ARRAY_ELEMS(dst->frames); i++) {
         ff_thread_release_buffer(avctx, &dst->frames[i]);
-        if (src->frames[i].f->data[0]) {
+        if (i != src->next_cur_index && src->frames[i].f->data[0]) {
             ret = ff_thread_ref_frame(&dst->frames[i], &src->frames[i]);
             if (ret < 0)
                 return ret;
@@ -257,7 +258,7 @@ static int vlc_decode_block(MimicContext *ctx, int num_coeffs, int qscale)
 
         value = get_bits(&ctx->gb, num_bits);
 
-        /* Libav's IDCT behaves somewhat different from the original code, so
+        /* FFmpeg's IDCT behaves somewhat different from the original code, so
          * a factor of 4 was added to the input */
 
         coeff = vlcdec_lookup[num_bits][value];
@@ -302,7 +303,7 @@ static int decode(MimicContext *ctx, int quality, int num_coeffs,
                                    "block.\n");
                             return ret;
                         }
-                        ctx->idsp.idct_put(dst, stride, ctx->dct_block);
+                        ctx->dsp.idct_put(dst, stride, ctx->dct_block);
                     } else {
                         unsigned int backref = get_bits(&ctx->gb, 4);
                         int index            = (ctx->cur_index + backref) & 15;
@@ -394,8 +395,8 @@ static int mimic_decode_frame(AVCodecContext *avctx, void *data,
         avctx->height  = height;
         avctx->pix_fmt = AV_PIX_FMT_YUV420P;
         for (i = 0; i < 3; i++) {
-            ctx->num_vblocks[i] = -((-height) >> (3 + !!i));
-            ctx->num_hblocks[i] =     width   >> (3 + !!i);
+            ctx->num_vblocks[i] = FF_CEIL_RSHIFT(height,   3 + !!i);
+            ctx->num_hblocks[i] =                width >> (3 + !!i);
         }
     } else if (width != ctx->avctx->width || height != ctx->avctx->height) {
         avpriv_request_sample(avctx, "Resolution changing");
@@ -411,10 +412,8 @@ static int mimic_decode_frame(AVCodecContext *avctx, void *data,
     ctx->frames[ctx->cur_index].f->pict_type = is_pframe ? AV_PICTURE_TYPE_P :
                                                            AV_PICTURE_TYPE_I;
     if ((res = ff_thread_get_buffer(avctx, &ctx->frames[ctx->cur_index],
-                                    AV_GET_BUFFER_FLAG_REF)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+                                    AV_GET_BUFFER_FLAG_REF)) < 0)
         return res;
-    }
 
     ctx->next_prev_index = ctx->cur_index;
     ctx->next_cur_index  = (ctx->cur_index - 1) & 15;
