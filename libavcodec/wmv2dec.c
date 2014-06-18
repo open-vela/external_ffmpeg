@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -385,7 +385,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         wmv2_pred_motion(w, &mx, &my);
 
         if(cbp){
-            s->bdsp.clear_blocks(s->block[0]);
+            s->dsp.clear_blocks(s->block[0]);
             if(s->per_mb_rl_table){
                 s->rl_table_index = decode012(&s->gb);
                 s->rl_chroma_table_index = s->rl_table_index;
@@ -431,7 +431,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
             s->rl_chroma_table_index = s->rl_table_index;
         }
 
-        s->bdsp.clear_blocks(s->block[0]);
+        s->dsp.clear_blocks(s->block[0]);
         for (i = 0; i < 6; i++) {
             if (ff_msmpeg4_decode_block(s, block[i], i, (cbp >> (5 - i)) & 1, NULL) < 0)
             {
@@ -446,6 +446,8 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
 
 static av_cold int wmv2_decode_init(AVCodecContext *avctx){
     Wmv2Context * const w= avctx->priv_data;
+
+    avctx->flags |= CODEC_FLAG_EMU_EDGE;
 
     if(ff_msmpeg4_decode_init(avctx) < 0)
         return -1;

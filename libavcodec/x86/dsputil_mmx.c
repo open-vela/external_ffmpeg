@@ -3,28 +3,31 @@
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
+ * This file is part of FFmpeg.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
  */
 
 #include "config.h"
+#include "libavutil/avassert.h"
 #include "libavutil/cpu.h"
 #include "libavutil/x86/asm.h"
+#include "libavcodec/pixels.h"
+#include "libavcodec/videodsp.h"
 #include "constants.h"
 #include "dsputil_x86.h"
 #include "inline_asm.h"
@@ -89,41 +92,6 @@ void ff_put_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels,
         : "memory");
 }
 
-#define put_signed_pixels_clamped_mmx_half(off)             \
-    "movq          "#off"(%2), %%mm1        \n\t"           \
-    "movq     16 + "#off"(%2), %%mm2        \n\t"           \
-    "movq     32 + "#off"(%2), %%mm3        \n\t"           \
-    "movq     48 + "#off"(%2), %%mm4        \n\t"           \
-    "packsswb  8 + "#off"(%2), %%mm1        \n\t"           \
-    "packsswb 24 + "#off"(%2), %%mm2        \n\t"           \
-    "packsswb 40 + "#off"(%2), %%mm3        \n\t"           \
-    "packsswb 56 + "#off"(%2), %%mm4        \n\t"           \
-    "paddb              %%mm0, %%mm1        \n\t"           \
-    "paddb              %%mm0, %%mm2        \n\t"           \
-    "paddb              %%mm0, %%mm3        \n\t"           \
-    "paddb              %%mm0, %%mm4        \n\t"           \
-    "movq               %%mm1, (%0)         \n\t"           \
-    "movq               %%mm2, (%0, %3)     \n\t"           \
-    "movq               %%mm3, (%0, %3, 2)  \n\t"           \
-    "movq               %%mm4, (%0, %1)     \n\t"
-
-void ff_put_signed_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels,
-                                      int line_size)
-{
-    x86_reg line_skip = line_size;
-    x86_reg line_skip3;
-
-    __asm__ volatile (
-        "movq "MANGLE(ff_pb_80)", %%mm0     \n\t"
-        "lea         (%3, %3, 2), %1        \n\t"
-        put_signed_pixels_clamped_mmx_half(0)
-        "lea         (%0, %3, 4), %0        \n\t"
-        put_signed_pixels_clamped_mmx_half(64)
-        : "+&r" (pixels), "=&r" (line_skip3)
-        : "r" (block), "r" (line_skip)
-        : "memory");
-}
-
 void ff_add_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels,
                                int line_size)
 {
@@ -166,6 +134,7 @@ void ff_add_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels,
     } while (--i);
 }
 
+
 /* Draw the edges of width 'w' of an image of size width, height
  * this MMX version can only handle w == 8 || w == 16. */
 void ff_draw_edges_mmx(uint8_t *buf, int wrap, int width, int height,
@@ -196,7 +165,7 @@ void ff_draw_edges_mmx(uint8_t *buf, int wrap, int width, int height,
             : "+r" (ptr)
             : "r" ((x86_reg) wrap), "r" ((x86_reg) width),
               "r" (ptr + wrap * height));
-    } else {
+    } else if (w == 16) {
         __asm__ volatile (
             "1:                                 \n\t"
             "movd            (%0), %%mm0        \n\t"
@@ -214,6 +183,25 @@ void ff_draw_edges_mmx(uint8_t *buf, int wrap, int width, int height,
             "add               %1, %0           \n\t"
             "cmp               %3, %0           \n\t"
             "jb                1b               \n\t"
+            : "+r"(ptr)
+            : "r"((x86_reg)wrap), "r"((x86_reg)width), "r"(ptr + wrap * height)
+            );
+    } else {
+        av_assert1(w == 4);
+        __asm__ volatile (
+            "1:                             \n\t"
+            "movd            (%0), %%mm0    \n\t"
+            "punpcklbw      %%mm0, %%mm0    \n\t"
+            "punpcklwd      %%mm0, %%mm0    \n\t"
+            "movd           %%mm0, -4(%0)   \n\t"
+            "movd      -4(%0, %2), %%mm1    \n\t"
+            "punpcklbw      %%mm1, %%mm1    \n\t"
+            "punpckhwd      %%mm1, %%mm1    \n\t"
+            "punpckhdq      %%mm1, %%mm1    \n\t"
+            "movd           %%mm1, (%0, %2) \n\t"
+            "add               %1, %0       \n\t"
+            "cmp               %3, %0       \n\t"
+            "jb                1b           \n\t"
             : "+r" (ptr)
             : "r" ((x86_reg) wrap), "r" ((x86_reg) width),
               "r" (ptr + wrap * height));
@@ -261,10 +249,17 @@ void ff_draw_edges_mmx(uint8_t *buf, int wrap, int width, int height,
     }
 }
 
-void ff_gmc_mmx(uint8_t *dst, uint8_t *src,
-                int stride, int h, int ox, int oy,
-                int dxx, int dxy, int dyx, int dyy,
-                int shift, int r, int width, int height)
+typedef void emulated_edge_mc_func(uint8_t *dst, const uint8_t *src,
+                                   ptrdiff_t dst_stride,
+                                   ptrdiff_t src_linesize,
+                                   int block_w, int block_h,
+                                   int src_x, int src_y, int w, int h);
+
+static av_always_inline void gmc(uint8_t *dst, uint8_t *src,
+                                 int stride, int h, int ox, int oy,
+                                 int dxx, int dxy, int dyx, int dyy,
+                                 int shift, int r, int width, int height,
+                                 emulated_edge_mc_func *emu_edge_fn)
 {
     const int w    = 8;
     const int ix   = ox  >> (16 + shift);
@@ -279,20 +274,24 @@ void ff_gmc_mmx(uint8_t *dst, uint8_t *src,
     const uint16_t dxy4[4] = { dxys, dxys, dxys, dxys };
     const uint16_t dyy4[4] = { dyys, dyys, dyys, dyys };
     const uint64_t shift2  = 2 * shift;
+#define MAX_STRIDE 4096U
+#define MAX_H 8U
+    uint8_t edge_buf[(MAX_H + 1) * MAX_STRIDE];
     int x, y;
 
     const int dxw = (dxx - (1 << (16 + shift))) * (w - 1);
     const int dyh = (dyy - (1 << (16 + shift))) * (h - 1);
     const int dxh = dxy * (h - 1);
     const int dyw = dyx * (w - 1);
+    int need_emu  =  (unsigned) ix >= width  - w ||
+                     (unsigned) iy >= height - h;
 
     if ( // non-constant fullpel offset (3% of blocks)
         ((ox ^ (ox + dxw)) | (ox ^ (ox + dxh)) | (ox ^ (ox + dxw + dxh)) |
          (oy ^ (oy + dyw)) | (oy ^ (oy + dyh)) | (oy ^ (oy + dyw + dyh))) >> (16 + shift) ||
         // uses more than 16 bits of subpel mv (only at huge resolution)
         (dxx | dxy | dyx | dyy) & 15 ||
-        (unsigned) ix >= width  - w ||
-        (unsigned) iy >= height - h) {
+        (need_emu && (h > MAX_H || stride > MAX_STRIDE))) {
         // FIXME could still use mmx for some of the rows
         ff_gmc_c(dst, src, stride, h, ox, oy, dxx, dxy, dyx, dyy,
                  shift, r, width, height);
@@ -300,6 +299,10 @@ void ff_gmc_mmx(uint8_t *dst, uint8_t *src,
     }
 
     src += ix + iy * stride;
+    if (need_emu) {
+        emu_edge_fn(edge_buf, src, stride, stride, w + 1, h + 1, ix, iy, width, height);
+        src = edge_buf;
+    }
 
     __asm__ volatile (
         "movd         %0, %%mm6         \n\t"
@@ -375,37 +378,35 @@ void ff_gmc_mmx(uint8_t *dst, uint8_t *src,
     }
 }
 
-void ff_vector_clipf_sse(float *dst, const float *src,
-                         float min, float max, int len)
+#if CONFIG_VIDEODSP
+#if HAVE_YASM
+#if ARCH_X86_32
+void ff_gmc_mmx(uint8_t *dst, uint8_t *src,
+                int stride, int h, int ox, int oy,
+                int dxx, int dxy, int dyx, int dyy,
+                int shift, int r, int width, int height)
 {
-    x86_reg i = (len - 16) * 4;
-    __asm__ volatile (
-        "movss          %3, %%xmm4      \n\t"
-        "movss          %4, %%xmm5      \n\t"
-        "shufps $0, %%xmm4, %%xmm4      \n\t"
-        "shufps $0, %%xmm5, %%xmm5      \n\t"
-        "1:                             \n\t"
-        "movaps   (%2, %0), %%xmm0      \n\t" // 3/1 on intel
-        "movaps 16(%2, %0), %%xmm1      \n\t"
-        "movaps 32(%2, %0), %%xmm2      \n\t"
-        "movaps 48(%2, %0), %%xmm3      \n\t"
-        "maxps      %%xmm4, %%xmm0      \n\t"
-        "maxps      %%xmm4, %%xmm1      \n\t"
-        "maxps      %%xmm4, %%xmm2      \n\t"
-        "maxps      %%xmm4, %%xmm3      \n\t"
-        "minps      %%xmm5, %%xmm0      \n\t"
-        "minps      %%xmm5, %%xmm1      \n\t"
-        "minps      %%xmm5, %%xmm2      \n\t"
-        "minps      %%xmm5, %%xmm3      \n\t"
-        "movaps     %%xmm0,   (%1, %0)  \n\t"
-        "movaps     %%xmm1, 16(%1, %0)  \n\t"
-        "movaps     %%xmm2, 32(%1, %0)  \n\t"
-        "movaps     %%xmm3, 48(%1, %0)  \n\t"
-        "sub           $64, %0          \n\t"
-        "jge            1b              \n\t"
-        : "+&r" (i)
-        : "r" (dst), "r" (src), "m" (min), "m" (max)
-        : "memory");
+    gmc(dst, src, stride, h, ox, oy, dxx, dxy, dyx, dyy, shift, r,
+        width, height, &ff_emulated_edge_mc_8);
 }
-
+#endif
+void ff_gmc_sse(uint8_t *dst, uint8_t *src,
+                int stride, int h, int ox, int oy,
+                int dxx, int dxy, int dyx, int dyy,
+                int shift, int r, int width, int height)
+{
+    gmc(dst, src, stride, h, ox, oy, dxx, dxy, dyx, dyy, shift, r,
+        width, height, &ff_emulated_edge_mc_8);
+}
+#else
+void ff_gmc_mmx(uint8_t *dst, uint8_t *src,
+                int stride, int h, int ox, int oy,
+                int dxx, int dxy, int dyx, int dyy,
+                int shift, int r, int width, int height)
+{
+    gmc(dst, src, stride, h, ox, oy, dxx, dxy, dyx, dyy, shift, r,
+        width, height, &ff_emulated_edge_mc_8);
+}
+#endif
+#endif
 #endif /* HAVE_INLINE_ASM */
