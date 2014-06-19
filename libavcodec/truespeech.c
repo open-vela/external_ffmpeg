@@ -2,27 +2,27 @@
  * DSP Group TrueSpeech compatible decoder
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
 #include "get_bits.h"
 #include "internal.h"
 
@@ -36,7 +36,7 @@
  * TrueSpeech decoder context
  */
 typedef struct {
-    DSPContext dsp;
+    BswapDSPContext bdsp;
     /* input data */
     DECLARE_ALIGNED(16, uint8_t, buffer)[32];
     int16_t vector[8];  ///< input vector: 5/5/4/4/4/3/3/3
@@ -70,7 +70,7 @@ static av_cold int truespeech_decode_init(AVCodecContext * avctx)
     avctx->channel_layout = AV_CH_LAYOUT_MONO;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
-    ff_dsputil_init(&c->dsp, avctx);
+    ff_bswapdsp_init(&c->bdsp);
 
     return 0;
 }
@@ -79,7 +79,7 @@ static void truespeech_read_frame(TSContext *dec, const uint8_t *input)
 {
     GetBitContext gb;
 
-    dec->dsp.bswap_buf((uint32_t *)dec->buffer, (const uint32_t *)input, 8);
+    dec->bdsp.bswap_buf((uint32_t *) dec->buffer, (const uint32_t *) input, 8);
     init_get_bits(&gb, dec->buffer, 32 * 8);
 
     dec->vector[7] = ts_codebook[7][get_bits(&gb, 3)];
@@ -325,8 +325,10 @@ static int truespeech_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = iterations * 240;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     samples = (int16_t *)frame->data[0];
 
     memset(samples, 0, iterations * 240 * sizeof(*samples));

@@ -2,20 +2,20 @@
  * Electronic Arts TQI Video Decoder
  * Copyright (c) 2007-2009 Peter Ross <pross@xvid.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -28,6 +28,7 @@
 
 #include "avcodec.h"
 #include "blockdsp.h"
+#include "bswapdsp.h"
 #include "get_bits.h"
 #include "aandcttab.h"
 #include "eaidct.h"
@@ -37,6 +38,7 @@
 
 typedef struct TqiContext {
     MpegEncContext s;
+    BswapDSPContext bsdsp;
     void *bitstream_buf;
     unsigned int bitstream_buf_size;
     DECLARE_ALIGNED(16, int16_t, block)[6][64];
@@ -48,6 +50,7 @@ static av_cold int tqi_decode_init(AVCodecContext *avctx)
     MpegEncContext *s = &t->s;
     s->avctx = avctx;
     ff_blockdsp_init(&s->bdsp, avctx);
+    ff_bswapdsp_init(&t->bsdsp);
     ff_dsputil_init(&s->dsp, avctx);
     ff_init_scantable_permutation(s->dsp.idct_permutation, FF_NO_IDCT_PERM);
     ff_init_scantable(s->dsp.idct_permutation, &s->intra_scantable, ff_zigzag_direct);
@@ -117,14 +120,17 @@ static int tqi_decode_frame(AVCodecContext *avctx,
     if (ret < 0)
         return ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     av_fast_padded_malloc(&t->bitstream_buf, &t->bitstream_buf_size,
                           buf_end - buf);
     if (!t->bitstream_buf)
         return AVERROR(ENOMEM);
-    s->dsp.bswap_buf(t->bitstream_buf, (const uint32_t*)buf, (buf_end-buf)/4);
+    t->bsdsp.bswap_buf(t->bitstream_buf, (const uint32_t *) buf,
+                       (buf_end - buf) / 4);
     init_get_bits(&s->gb, t->bitstream_buf, 8*(buf_end-buf));
 
     s->last_dc[0] = s->last_dc[1] = s->last_dc[2] = 0;
@@ -132,10 +138,9 @@ static int tqi_decode_frame(AVCodecContext *avctx,
     for (s->mb_x=0; s->mb_x<(avctx->width+15)/16; s->mb_x++)
     {
         if (tqi_decode_mb(s, t->block) < 0)
-            goto end;
+            break;
         tqi_idct_put(t, frame, t->block);
     }
-    end:
 
     *got_frame = 1;
     return buf_size;

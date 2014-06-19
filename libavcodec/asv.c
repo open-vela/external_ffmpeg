@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
 
 #include "asv.h"
 #include "avcodec.h"
+#include "bswapdsp.h"
 
 const uint8_t ff_asv_scantab[64] = {
     0x00,0x08,0x01,0x09,0x10,0x18,0x11,0x19,
@@ -82,6 +83,7 @@ const uint8_t ff_asv2_level_tab[63][2] = {
 av_cold void ff_asv_common_init(AVCodecContext *avctx) {
     ASV1Context * const a = avctx->priv_data;
 
+    ff_bswapdsp_init(&a->bbdsp);
     ff_dsputil_init(&a->dsp, avctx);
 
     a->mb_width   = (avctx->width  + 15) / 16;
