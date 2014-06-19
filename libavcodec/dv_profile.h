@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,15 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/rational.h"
 #include "avcodec.h"
+
+/* minimum number of bytes to read from a DV stream in order to
+   determine the profile */
+#define DV_PROFILE_BYTES (6*80) /* 6 DIF blocks */
+
+typedef struct DVwork_chunk {
+    uint16_t  buf_offset;
+    uint16_t  mb_coordinates[5];
+} DVwork_chunk;
 
 /*
  * DVprofile is used to express the differences between various
@@ -42,6 +51,8 @@ typedef struct DVprofile {
     int              height;                /* picture height in pixels */
     int              width;                 /* picture width in pixels */
     AVRational       sar[2];                /* sample aspect ratios for 4:3 and 16:9 */
+    DVwork_chunk    *work_chunks;           /* each thread gets its own chunk of frame to work on */
+    uint32_t        *idct_factor;           /* set of iDCT factor tables */
     enum AVPixelFormat pix_fmt;             /* picture pixel format */
     int              bpm;                   /* blocks per macroblock */
     const uint8_t   *block_sizes;           /* AC block sizes, in bits */
@@ -55,6 +66,8 @@ typedef struct DVprofile {
 
 const DVprofile* avpriv_dv_frame_profile(const DVprofile *sys,
                                          const uint8_t* frame, unsigned buf_size);
+const DVprofile* avpriv_dv_frame_profile2(AVCodecContext* codec, const DVprofile *sys,
+                                  const uint8_t* frame, unsigned buf_size);
 const DVprofile* avpriv_dv_codec_profile(AVCodecContext* codec);
 
 /**
