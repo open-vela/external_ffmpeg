@@ -13,20 +13,20 @@
  * Many thanks to Dan Dennedy <dan@dennedy.org> for providing wealth
  * of DV technical info.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,8 +35,8 @@
  * DV decoder
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/internal.h"
-#include "libavutil/imgutils.h"
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
 #include "internal.h"
@@ -147,11 +147,11 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     LOCAL_ALIGNED_16(int16_t, sblock, [5*DV_MAX_BPM], [64]);
     LOCAL_ALIGNED_16(uint8_t, mb_bit_buffer, [  80 + FF_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
     LOCAL_ALIGNED_16(uint8_t, vs_bit_buffer, [5*80 + FF_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
-    const int log2_blocksize = 3;
+    const int log2_blocksize = 3-s->avctx->lowres;
     int is_field_mode[5];
 
-    assert((((int)mb_bit_buffer) & 7) == 0);
-    assert((((int)vs_bit_buffer) & 7) == 0);
+    av_assert1((((int)mb_bit_buffer) & 7) == 0);
+    av_assert1((((int)vs_bit_buffer) & 7) == 0);
 
     memset(sblock, 0, 5*DV_MAX_BPM*sizeof(*sblock));
 
@@ -238,7 +238,7 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     flush_put_bits(&vs_pb);
     for (mb_index = 0; mb_index < 5; mb_index++) {
         for (j = 0; j < s->sys->bpm; j++) {
-            if (mb->pos < 64) {
+            if (mb->pos < 64 && get_bits_left(&gb) > 0) {
                 av_dlog(avctx, "start %d:%d\n", mb_index, j);
                 dv_decode_ac(&gb, mb, block);
             }
@@ -288,9 +288,9 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
                   int x, y;
                   mb->idct_put(pixels, 8, block);
                   for (y = 0; y < (1 << log2_blocksize); y++, c_ptr += s->frame->linesize[j], pixels += 8) {
-                      ptr1   = pixels + (1 << (log2_blocksize - 1));
+                      ptr1   = pixels + ((1 << (log2_blocksize))>>1);
                       c_ptr1 = c_ptr + (s->frame->linesize[j] << log2_blocksize);
-                      for (x = 0; x < (1 << (log2_blocksize - 1)); x++) {
+                      for (x = 0; x < (1 << FFMAX(log2_blocksize - 1, 0)); x++) {
                           c_ptr[x]  = pixels[x];
                           c_ptr1[x] = ptr1[x];
                       }
@@ -323,7 +323,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx,
     int apt, is16_9, ret;
     const DVprofile *sys;
 
-    sys = avpriv_dv_frame_profile(s->sys, buf, buf_size);
+    sys = avpriv_dv_frame_profile2(avctx, s->sys, buf, buf_size);
     if (!sys || buf_size < sys->frame_size) {
         av_log(avctx, AV_LOG_ERROR, "could not find dv frame profile\n");
         return -1; /* NOTE: we only accept several full frames */
@@ -348,20 +348,19 @@ static int dvvideo_decode_frame(AVCodecContext *avctx,
     if (ret < 0)
         return ret;
 
-    /* Determine the codec's sample_aspect ratio from the packet */
+    if ((ret = ff_get_buffer(avctx, s->frame, 0)) < 0)
+        return ret;
+    s->frame->interlaced_frame = 1;
+    s->frame->top_field_first  = 0;
+
+    /* Determine the codec's sample_aspect ratio and field order from the packet */
     vsc_pack = buf + 80*5 + 48 + 5;
     if ( *vsc_pack == dv_video_control ) {
         apt = buf[4] & 0x07;
-        is16_9 = (vsc_pack && ((vsc_pack[2] & 0x07) == 0x02 || (!apt && (vsc_pack[2] & 0x07) == 0x07)));
-        ff_set_sar(avctx, s->sys->sar[is16_9]);
+        is16_9 = (vsc_pack[2] & 0x07) == 0x02 || (!apt && (vsc_pack[2] & 0x07) == 0x07);
+        avctx->sample_aspect_ratio = s->sys->sar[is16_9];
+        s->frame->top_field_first = !(vsc_pack[3] & 0x40);
     }
-
-    if (ff_get_buffer(avctx, s->frame, 0) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
-    }
-    s->frame->interlaced_frame = 1;
-    s->frame->top_field_first  = 0;
 
     s->buf = buf;
     avctx->execute(avctx, dv_decode_video_segment, s->work_chunks, NULL,
@@ -384,4 +383,5 @@ AVCodec ff_dvvideo_decoder = {
     .init           = ff_dvvideo_init,
     .decode         = dvvideo_decode_frame,
     .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_SLICE_THREADS,
+    .max_lowres     = 3,
 };
