@@ -3,20 +3,20 @@
  * Copyright (c) 2002 Dieter Shirley
  * Copyright (c) 2003-2004 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +30,7 @@
 void ff_fdct_altivec(int16_t *block);
 void ff_gmc1_altivec(uint8_t *dst, uint8_t *src, int stride, int h,
                      int x16, int y16, int rounder);
+void ff_idct_altivec(int16_t *block);
 void ff_idct_put_altivec(uint8_t *dest, int line_size, int16_t *block);
 void ff_idct_add_altivec(uint8_t *dest, int line_size, int16_t *block);
 
