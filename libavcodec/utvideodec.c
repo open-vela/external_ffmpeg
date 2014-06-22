@@ -2,20 +2,20 @@
  * Ut Video decoder
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,9 +29,9 @@
 
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "bswapdsp.h"
 #include "bytestream.h"
 #include "get_bits.h"
+#include "dsputil.h"
 #include "thread.h"
 #include "utvideo.h"
 
@@ -71,7 +71,7 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
         code += 0x80000000u >> (he[i].len - 1);
     }
 
-    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 9), last + 1,
+    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 11), last + 1,
                               bits,  sizeof(*bits),  sizeof(*bits),
                               codes, sizeof(*codes), sizeof(*codes),
                               syms,  sizeof(*syms),  sizeof(*syms), 0);
@@ -143,9 +143,8 @@ static int decode_plane(UtvideoContext *c, int plane_no,
         memcpy(c->slice_bits, src + slice_data_start + c->slices * 4,
                slice_size);
         memset(c->slice_bits + slice_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
-        c->bdsp.bswap_buf((uint32_t *) c->slice_bits,
-                          (uint32_t *) c->slice_bits,
-                          (slice_data_end - slice_data_start + 3) >> 2);
+        c->dsp.bswap_buf((uint32_t *) c->slice_bits, (uint32_t *) c->slice_bits,
+                         (slice_data_end - slice_data_start + 3) >> 2);
         init_get_bits(&gb, c->slice_bits, slice_size * 8);
 
         prev = 0x80;
@@ -156,7 +155,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
                            "Slice decoding ran out of bits\n");
                     goto fail;
                 }
-                pix = get_vlc2(&gb, vlc.table, vlc.bits, 4);
+                pix = get_vlc2(&gb, vlc.table, vlc.bits, 3);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
                     goto fail;
@@ -335,12 +334,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     GetByteContext gb;
     ThreadFrame frame = { .f = data };
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
-    }
-
-    ff_thread_finish_setup(avctx);
 
     /* parse plane structure to get frame flags and validate slice offsets */
     bytestream2_init(&gb, buf, buf_size);
@@ -476,7 +471,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     c->avctx = avctx;
 
-    ff_bswapdsp_init(&c->bdsp);
+    ff_dsputil_init(&c->dsp, avctx);
 
     if (avctx->extradata_size < 16) {
         av_log(avctx, AV_LOG_ERROR,

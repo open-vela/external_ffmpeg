@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,13 +40,13 @@ static inline int get_lowest_part_list_y(H264Context *h, H264Picture *pic, int n
                                          int height, int y_offset, int list)
 {
     int raw_my             = h->mv_cache[list][scan8[n]][1];
-    int filter_height_up   = (raw_my & 3) ? 2 : 0;
     int filter_height_down = (raw_my & 3) ? 3 : 0;
     int full_my            = (raw_my >> 2) + y_offset;
-    int top                = full_my - filter_height_up;
     int bottom             = full_my + filter_height_down + height;
 
-    return FFMAX(abs(top), bottom);
+    av_assert2(height >= 0);
+
+    return FFMAX(0, bottom);
 }
 
 static inline void get_lowest_part_y(H264Context *h, int refs[2][48], int n,
@@ -118,7 +118,7 @@ static void await_references(H264Context *h)
     } else {
         int i;
 
-        assert(IS_8X8(mb_type));
+        av_assert2(IS_8X8(mb_type));
 
         for (i = 0; i < 4; i++) {
             const int sub_mb_type = h->sub_mb_type[i];
@@ -150,7 +150,7 @@ static void await_references(H264Context *h)
                                   nrefs);
             } else {
                 int j;
-                assert(IS_SUB_4X4(sub_mb_type));
+                av_assert2(IS_SUB_4X4(sub_mb_type));
                 for (j = 0; j < 4; j++) {
                     int sub_y_offset = y_offset + 2 * (j & 2);
                     get_lowest_part_y(h, refs, n + j, 4, sub_y_offset,
@@ -487,9 +487,7 @@ static av_always_inline void prefetch_motion(H264Context *h, int list,
             h->vdsp.prefetch(src[1] + off, h->linesize, 4);
             h->vdsp.prefetch(src[2] + off, h->linesize, 4);
         } else {
-            off = ((mx >> 1) << pixel_shift) +
-                  ((my >> 1) + (h->mb_x & 7)) * h->uvlinesize +
-                  (64 << pixel_shift);
+            off= (((mx>>1)+64)<<pixel_shift) + ((my>>1) + (h->mb_x&7))*h->uvlinesize;
             h->vdsp.prefetch(src[1] + off, src[2] - src[1], 2);
         }
     }
@@ -555,10 +553,8 @@ static av_always_inline void xchg_mb_border(H264Context *h, uint8_t *src_y,
             XCHG(h->top_borders[top_idx][h->mb_x + 1],
                  src_y + (17 << pixel_shift), 1);
         }
-    }
-    if (simple || !CONFIG_GRAY || !(h->flags & CODEC_FLAG_GRAY)) {
-        if (chroma444) {
-            if (deblock_top) {
+        if (simple || !CONFIG_GRAY || !(h->flags & CODEC_FLAG_GRAY)) {
+            if (chroma444) {
                 if (deblock_topleft) {
                     XCHG(top_border_m1 + (24 << pixel_shift), src_cb - (7 << pixel_shift), 1);
                     XCHG(top_border_m1 + (40 << pixel_shift), src_cr - (7 << pixel_shift), 1);
@@ -571,9 +567,7 @@ static av_always_inline void xchg_mb_border(H264Context *h, uint8_t *src_y,
                     XCHG(h->top_borders[top_idx][h->mb_x + 1] + (16 << pixel_shift), src_cb + (17 << pixel_shift), 1);
                     XCHG(h->top_borders[top_idx][h->mb_x + 1] + (32 << pixel_shift), src_cr + (17 << pixel_shift), 1);
                 }
-            }
-        } else {
-            if (deblock_top) {
+            } else {
                 if (deblock_topleft) {
                     XCHG(top_border_m1 + (16 << pixel_shift), src_cb - (7 << pixel_shift), 1);
                     XCHG(top_border_m1 + (24 << pixel_shift), src_cr - (7 << pixel_shift), 1);
@@ -630,7 +624,12 @@ static av_always_inline void hl_decode_mb_predict_luma(H264Context *h,
                 uint8_t *const ptr = dest_y + block_offset[i];
                 const int dir      = h->intra4x4_pred_mode_cache[scan8[i]];
                 if (transform_bypass && h->sps.profile_idc == 244 && dir <= 1) {
-                    h->hpc.pred8x8l_add[dir](ptr, h->mb + (i * 16 + p * 256 << pixel_shift), linesize);
+                    if (h->x264_build != -1) {
+                        h->hpc.pred8x8l_add[dir](ptr, h->mb + (i * 16 + p * 256 << pixel_shift), linesize);
+                    } else
+                        h->hpc.pred8x8l_filter_add[dir](ptr, h->mb + (i * 16 + p * 256 << pixel_shift),
+                                                        (h-> topleft_samples_available << i) & 0x8000,
+                                                        (h->topright_samples_available << i) & 0x4000, linesize);
                 } else {
                     const int nnz = h->non_zero_count_cache[scan8[i + p * 16]];
                     h->hpc.pred8x8l[dir](ptr, (h->topleft_samples_available << i) & 0x8000,
@@ -663,7 +662,7 @@ static av_always_inline void hl_decode_mb_predict_luma(H264Context *h,
                     uint64_t tr_high;
                     if (dir == DIAG_DOWN_LEFT_PRED || dir == VERT_LEFT_PRED) {
                         const int topright_avail = (h->topright_samples_available << i) & 0x8000;
-                        assert(h->mb_y || linesize <= block_offset[i]);
+                        av_assert2(h->mb_y || linesize <= block_offset[i]);
                         if (!topright_avail) {
                             if (pixel_shift) {
                                 tr_high  = ((uint16_t *)ptr)[3 - linesize / 2] * 0x0001000100010001ULL;

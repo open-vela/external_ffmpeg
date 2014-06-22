@@ -3,34 +3,34 @@
  *
  * Copyright (c) 2012-2013 Derek Buitenhuis
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <inttypes.h>
 
 #include "libavutil/intreadwrite.h"
-#include "bswapdsp.h"
+#include "dsputil.h"
 #include "get_bits.h"
 #include "avcodec.h"
 #include "internal.h"
 
 typedef struct CLLCContext {
+    DSPContext dsp;
     AVCodecContext *avctx;
-    BswapDSPContext bdsp;
 
     uint8_t *swapped_buf;
     int      swapped_buf_size;
@@ -391,8 +391,8 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     /* bswap16 the buffer since CLLC's bitreader works in 16-bit words */
-    ctx->bdsp.bswap16_buf((uint16_t *) ctx->swapped_buf, (uint16_t *) src,
-                          data_size / 2);
+    ctx->dsp.bswap16_buf((uint16_t *) ctx->swapped_buf, (uint16_t *) src,
+                         data_size / 2);
 
     init_get_bits(&gb, ctx->swapped_buf, data_size * 8);
 
@@ -412,11 +412,8 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_YUV422P;
         avctx->bits_per_raw_sample = 8;
 
-        ret = ff_get_buffer(avctx, pic, 0);
-        if (ret < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
             return ret;
-        }
 
         ret = decode_yuv_frame(ctx, &gb, pic);
         if (ret < 0)
@@ -428,11 +425,8 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_RGB24;
         avctx->bits_per_raw_sample = 8;
 
-        ret = ff_get_buffer(avctx, pic, 0);
-        if (ret < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
             return ret;
-        }
 
         ret = decode_rgb24_frame(ctx, &gb, pic);
         if (ret < 0)
@@ -443,11 +437,8 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_ARGB;
         avctx->bits_per_raw_sample = 8;
 
-        ret = ff_get_buffer(avctx, pic, 0);
-        if (ret < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
             return ret;
-        }
 
         ret = decode_argb_frame(ctx, &gb, pic);
         if (ret < 0)
@@ -485,7 +476,7 @@ static av_cold int cllc_decode_init(AVCodecContext *avctx)
     ctx->swapped_buf      = NULL;
     ctx->swapped_buf_size = 0;
 
-    ff_bswapdsp_init(&ctx->bdsp);
+    ff_dsputil_init(&ctx->dsp, avctx);
 
     return 0;
 }
