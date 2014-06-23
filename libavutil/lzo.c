@@ -2,26 +2,27 @@
  * LZO 1x decompression
  * Copyright (c) 2006 Reimar Doeffinger
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <string.h>
 
 #include "avutil.h"
+#include "avassert.h"
 #include "common.h"
 #include "intreadwrite.h"
 #include "lzo.h"
@@ -65,8 +66,13 @@ static inline int get_len(LZOContext *c, int x, int mask)
 {
     int cnt = x & mask;
     if (!cnt) {
-        while (!(x = get_byte(c)))
+        while (!(x = get_byte(c))) {
+            if (cnt >= INT_MAX - 1000) {
+                c->error |= AV_LZO_ERROR;
+                break;
+            }
             cnt += 255;
+        }
         cnt += mask + x;
     }
     return cnt;
@@ -80,10 +86,7 @@ static inline void copy(LZOContext *c, int cnt)
 {
     register const uint8_t *src = c->in;
     register uint8_t *dst       = c->out;
-    if (cnt < 0) {
-        c->error |= AV_LZO_ERROR;
-        return;
-    }
+    av_assert0(cnt >= 0);
     if (cnt > c->in_end - src) {
         cnt       = FFMAX(c->in_end - src, 0);
         c->error |= AV_LZO_INPUT_DEPLETED;
@@ -106,7 +109,7 @@ static inline void copy(LZOContext *c, int cnt)
 
 /**
  * @brief Copies previously decoded bytes to current position.
- * @param back how many bytes back we start
+ * @param back how many bytes back we start, must be > 0
  * @param cnt number of bytes to copy, must be > 0
  *
  * cnt > back is valid, this will copy the bytes we just copied,
@@ -115,10 +118,7 @@ static inline void copy(LZOContext *c, int cnt)
 static inline void copy_backptr(LZOContext *c, int back, int cnt)
 {
     register uint8_t *dst       = c->out;
-    if (cnt <= 0) {
-        c->error |= AV_LZO_ERROR;
-        return;
-    }
+    av_assert0(cnt > 0);
     if (dst - c->out_start < back) {
         c->error |= AV_LZO_INVALID_BACKPTR;
         return;
@@ -136,11 +136,11 @@ int av_lzo1x_decode(void *out, int *outlen, const void *in, int *inlen)
     int state = 0;
     int x;
     LZOContext c;
-    if (!*outlen || !*inlen) {
+    if (*outlen <= 0 || *inlen <= 0) {
         int res = 0;
-        if (!*outlen)
+        if (*outlen <= 0)
             res |= AV_LZO_OUTPUT_FULL;
-        if (!*inlen)
+        if (*inlen <= 0)
             res |= AV_LZO_INPUT_DEPLETED;
         return res;
     }
@@ -203,3 +203,47 @@ int av_lzo1x_decode(void *out, int *outlen, const void *in, int *inlen)
     *outlen = c.out_end - c.out;
     return c.error;
 }
+
+#ifdef TEST
+#include <stdio.h>
+#include <lzo/lzo1x.h>
+#include "log.h"
+#define MAXSZ (10*1024*1024)
+
+/* Define one of these to 1 if you wish to benchmark liblzo
+ * instead of our native implementation. */
+#define BENCHMARK_LIBLZO_SAFE   0
+#define BENCHMARK_LIBLZO_UNSAFE 0
+
+int main(int argc, char *argv[]) {
+    FILE *in = fopen(argv[1], "rb");
+    uint8_t *orig = av_malloc(MAXSZ + 16);
+    uint8_t *comp = av_malloc(2*MAXSZ + 16);
+    uint8_t *decomp = av_malloc(MAXSZ + 16);
+    size_t s = fread(orig, 1, MAXSZ, in);
+    lzo_uint clen = 0;
+    long tmp[LZO1X_MEM_COMPRESS];
+    int inlen, outlen;
+    int i;
+    av_log_set_level(AV_LOG_DEBUG);
+    lzo1x_999_compress(orig, s, comp, &clen, tmp);
+    for (i = 0; i < 300; i++) {
+START_TIMER
+        inlen = clen; outlen = MAXSZ;
+#if BENCHMARK_LIBLZO_SAFE
+        if (lzo1x_decompress_safe(comp, inlen, decomp, &outlen, NULL))
+#elif BENCHMARK_LIBLZO_UNSAFE
+        if (lzo1x_decompress(comp, inlen, decomp, &outlen, NULL))
+#else
+        if (av_lzo1x_decode(decomp, &outlen, comp, &inlen))
+#endif
+            av_log(NULL, AV_LOG_ERROR, "decompression error\n");
+STOP_TIMER("lzod")
+    }
+    if (memcmp(orig, decomp, s))
+        av_log(NULL, AV_LOG_ERROR, "decompression incorrect\n");
+    else
+        av_log(NULL, AV_LOG_ERROR, "decompression OK\n");
+    return 0;
+}
+#endif

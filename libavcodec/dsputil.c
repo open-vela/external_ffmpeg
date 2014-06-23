@@ -3,20 +3,22 @@
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * gmc & q-pel & 32/64 bit based MC by Michael Niedermayer <michaelni@gmx.at>
  *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +29,7 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/internal.h"
 #include "avcodec.h"
 #include "copy_block.h"
 #include "dct.h"
@@ -255,7 +258,7 @@ static int sse16_c(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
     return s;
 }
 
-static void diff_pixels_c(int16_t *restrict block, const uint8_t *s1,
+static void diff_pixels_c(int16_t *av_restrict block, const uint8_t *s1,
                           const uint8_t *s2, int stride)
 {
     int i;
@@ -276,7 +279,7 @@ static void diff_pixels_c(int16_t *restrict block, const uint8_t *s1,
     }
 }
 
-static void put_pixels_clamped_c(const int16_t *block, uint8_t *restrict pixels,
+static void put_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixels,
                                  int line_size)
 {
     int i;
@@ -297,8 +300,40 @@ static void put_pixels_clamped_c(const int16_t *block, uint8_t *restrict pixels,
     }
 }
 
+static void put_pixels_clamped4_c(const int16_t *block, uint8_t *av_restrict pixels,
+                                 int line_size)
+{
+    int i;
+
+    /* read the pixels */
+    for(i=0;i<4;i++) {
+        pixels[0] = av_clip_uint8(block[0]);
+        pixels[1] = av_clip_uint8(block[1]);
+        pixels[2] = av_clip_uint8(block[2]);
+        pixels[3] = av_clip_uint8(block[3]);
+
+        pixels += line_size;
+        block += 8;
+    }
+}
+
+static void put_pixels_clamped2_c(const int16_t *block, uint8_t *av_restrict pixels,
+                                 int line_size)
+{
+    int i;
+
+    /* read the pixels */
+    for(i=0;i<2;i++) {
+        pixels[0] = av_clip_uint8(block[0]);
+        pixels[1] = av_clip_uint8(block[1]);
+
+        pixels += line_size;
+        block += 8;
+    }
+}
+
 static void put_signed_pixels_clamped_c(const int16_t *block,
-                                        uint8_t *restrict pixels,
+                                        uint8_t *av_restrict pixels,
                                         int line_size)
 {
     int i, j;
@@ -318,7 +353,7 @@ static void put_signed_pixels_clamped_c(const int16_t *block,
     }
 }
 
-static void add_pixels_clamped_c(const int16_t *block, uint8_t *restrict pixels,
+static void add_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixels,
                                  int line_size)
 {
     int i;
@@ -338,6 +373,36 @@ static void add_pixels_clamped_c(const int16_t *block, uint8_t *restrict pixels,
     }
 }
 
+static void add_pixels_clamped4_c(const int16_t *block, uint8_t *av_restrict pixels,
+                          int line_size)
+{
+    int i;
+
+    /* read the pixels */
+    for(i=0;i<4;i++) {
+        pixels[0] = av_clip_uint8(pixels[0] + block[0]);
+        pixels[1] = av_clip_uint8(pixels[1] + block[1]);
+        pixels[2] = av_clip_uint8(pixels[2] + block[2]);
+        pixels[3] = av_clip_uint8(pixels[3] + block[3]);
+        pixels += line_size;
+        block += 8;
+    }
+}
+
+static void add_pixels_clamped2_c(const int16_t *block, uint8_t *av_restrict pixels,
+                          int line_size)
+{
+    int i;
+
+    /* read the pixels */
+    for(i=0;i<2;i++) {
+        pixels[0] = av_clip_uint8(pixels[0] + block[0]);
+        pixels[1] = av_clip_uint8(pixels[1] + block[1]);
+        pixels += line_size;
+        block += 8;
+    }
+}
+
 static int sum_abs_dctelem_c(int16_t *block)
 {
     int sum = 0, i;
@@ -349,6 +414,92 @@ static int sum_abs_dctelem_c(int16_t *block)
 
 #define avg2(a, b) ((a + b + 1) >> 1)
 #define avg4(a, b, c, d) ((a + b + c + d + 2) >> 2)
+
+static void gmc1_c(uint8_t *dst, uint8_t *src, int stride, int h,
+                   int x16, int y16, int rounder)
+{
+    const int A = (16 - x16) * (16 - y16);
+    const int B = (x16)      * (16 - y16);
+    const int C = (16 - x16) * (y16);
+    const int D = (x16)      * (y16);
+    int i;
+
+    for (i = 0; i < h; i++) {
+        dst[0] = (A * src[0] + B * src[1] + C * src[stride + 0] + D * src[stride + 1] + rounder) >> 8;
+        dst[1] = (A * src[1] + B * src[2] + C * src[stride + 1] + D * src[stride + 2] + rounder) >> 8;
+        dst[2] = (A * src[2] + B * src[3] + C * src[stride + 2] + D * src[stride + 3] + rounder) >> 8;
+        dst[3] = (A * src[3] + B * src[4] + C * src[stride + 3] + D * src[stride + 4] + rounder) >> 8;
+        dst[4] = (A * src[4] + B * src[5] + C * src[stride + 4] + D * src[stride + 5] + rounder) >> 8;
+        dst[5] = (A * src[5] + B * src[6] + C * src[stride + 5] + D * src[stride + 6] + rounder) >> 8;
+        dst[6] = (A * src[6] + B * src[7] + C * src[stride + 6] + D * src[stride + 7] + rounder) >> 8;
+        dst[7] = (A * src[7] + B * src[8] + C * src[stride + 7] + D * src[stride + 8] + rounder) >> 8;
+        dst   += stride;
+        src   += stride;
+    }
+}
+
+void ff_gmc_c(uint8_t *dst, uint8_t *src, int stride, int h, int ox, int oy,
+              int dxx, int dxy, int dyx, int dyy, int shift, int r,
+              int width, int height)
+{
+    int y, vx, vy;
+    const int s = 1 << shift;
+
+    width--;
+    height--;
+
+    for (y = 0; y < h; y++) {
+        int x;
+
+        vx = ox;
+        vy = oy;
+        for (x = 0; x < 8; x++) { // FIXME: optimize
+            int index;
+            int src_x  = vx >> 16;
+            int src_y  = vy >> 16;
+            int frac_x = src_x & (s - 1);
+            int frac_y = src_y & (s - 1);
+
+            src_x >>= shift;
+            src_y >>= shift;
+
+            if ((unsigned) src_x < width) {
+                if ((unsigned) src_y < height) {
+                    index = src_x + src_y * stride;
+                    dst[y * stride + x] =
+                        ((src[index]                        * (s - frac_x) +
+                          src[index + 1]          * frac_x) * (s - frac_y) +
+                         (src[index + stride]               * (s - frac_x) +
+                          src[index + stride + 1] * frac_x) *      frac_y  +
+                         r) >> (shift * 2);
+                } else {
+                    index = src_x + av_clip(src_y, 0, height) * stride;
+                    dst[y * stride + x] =
+                        ((src[index]               * (s - frac_x) +
+                          src[index + 1] * frac_x) *  s           +
+                         r) >> (shift * 2);
+                }
+            } else {
+                if ((unsigned) src_y < height) {
+                    index = av_clip(src_x, 0, width) + src_y * stride;
+                    dst[y * stride + x] =
+                        ((src[index]                    * (s - frac_y) +
+                          src[index + stride] * frac_y) *  s           +
+                         r) >> (shift * 2);
+                } else {
+                    index = av_clip(src_x, 0, width) +
+                            av_clip(src_y, 0, height) * stride;
+                    dst[y * stride + x] = src[index];
+                }
+            }
+
+            vx += dxx;
+            vy += dyx;
+        }
+        ox += dxy;
+        oy += dyy;
+    }
+}
 
 static inline int pix_abs16_c(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                               int line_size, int h)
@@ -610,7 +761,7 @@ static int try_8x8basis_c(int16_t rem[64], int16_t weight[64],
                           (BASIS_SHIFT - RECON_SHIFT));
         int w = weight[i];
         b >>= RECON_SHIFT;
-        assert(-512 < b && b < 512);
+        av_assert2(-512 < b && b < 512);
 
         sum += (w * b) * (w * b) >> 4;
     }
@@ -680,6 +831,14 @@ void ff_set_cmp(DSPContext *c, me_cmp_func *cmp, int type)
         case FF_CMP_NSSE:
             cmp[i] = c->nsse[i];
             break;
+#if CONFIG_DWT
+        case FF_CMP_W53:
+            cmp[i]= c->w53[i];
+            break;
+        case FF_CMP_W97:
+            cmp[i]= c->w97[i];
+            break;
+#endif
         default:
             av_log(NULL, AV_LOG_ERROR,
                    "internal error in cmp function selection\n");
@@ -707,7 +866,7 @@ static int hadamard8_diff8x8_c(MpegEncContext *s, uint8_t *dst,
 {
     int i, temp[64], sum = 0;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     for (i = 0; i < 8; i++) {
         // FIXME: try pointer walks
@@ -759,7 +918,7 @@ static int hadamard8_intra8x8_c(MpegEncContext *s, uint8_t *src,
 {
     int i, temp[64], sum = 0;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     for (i = 0; i < 8; i++) {
         // FIXME: try pointer walks
@@ -811,7 +970,7 @@ static int dct_sad8x8_c(MpegEncContext *s, uint8_t *src1,
 {
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
     s->dsp.fdct(temp);
@@ -878,7 +1037,7 @@ static int dct_max8x8_c(MpegEncContext *s, uint8_t *src1,
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
     int sum = 0, i;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
     s->dsp.fdct(temp);
@@ -896,7 +1055,7 @@ static int quant_psnr8x8_c(MpegEncContext *s, uint8_t *src1,
     int16_t *const bak = temp + 64;
     int sum = 0, i;
 
-    assert(h == 8);
+    av_assert2(h == 8);
     s->mb_intra = 0;
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
@@ -925,7 +1084,7 @@ static int rd8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
     const int esc_length = s->ac_esc_length;
     uint8_t *length, *last_length;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     copy_block8(lsrc1, src1, 8, stride, 8);
     copy_block8(lsrc2, src2, 8, stride, 8);
@@ -969,7 +1128,7 @@ static int rd8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
         level = temp[i] + 64;
 
-        assert(level - 64);
+        av_assert2(level - 64);
 
         if ((level & (~127)) == 0) {
             bits += last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -1000,7 +1159,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
     const int esc_length = s->ac_esc_length;
     uint8_t *length, *last_length;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
 
@@ -1041,7 +1200,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
         level = temp[i] + 64;
 
-        assert(level - 64);
+        av_assert2(level - 64);
 
         if ((level & (~127)) == 0)
             bits += last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -1074,20 +1233,24 @@ static int vsad_intra ## size ## _c(MpegEncContext *c,                  \
 VSAD_INTRA(8)
 VSAD_INTRA(16)
 
-static int vsad16_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,
-                    int stride, int h)
-{
-    int score = 0, x, y;
-
-    for (y = 1; y < h; y++) {
-        for (x = 0; x < 16; x++)
-            score += FFABS(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);
-        s1 += stride;
-        s2 += stride;
-    }
-
-    return score;
+#define VSAD(size)                                                             \
+static int vsad ## size ## _c(MpegEncContext *c,                               \
+                              uint8_t *s1, uint8_t *s2,                        \
+                              int stride, int h)                               \
+{                                                                              \
+    int score = 0, x, y;                                                       \
+                                                                               \
+    for (y = 1; y < h; y++) {                                                  \
+        for (x = 0; x < size; x++)                                             \
+            score += FFABS(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);   \
+        s1 += stride;                                                          \
+        s2 += stride;                                                          \
+    }                                                                          \
+                                                                               \
+    return score;                                                              \
 }
+VSAD(8)
+VSAD(16)
 
 #define SQ(a) ((a) * (a))
 #define VSSE_INTRA(size)                                                \
@@ -1112,20 +1275,23 @@ static int vsse_intra ## size ## _c(MpegEncContext *c,                  \
 VSSE_INTRA(8)
 VSSE_INTRA(16)
 
-static int vsse16_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,
-                    int stride, int h)
-{
-    int score = 0, x, y;
-
-    for (y = 1; y < h; y++) {
-        for (x = 0; x < 16; x++)
-            score += SQ(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);
-        s1 += stride;
-        s2 += stride;
-    }
-
-    return score;
+#define VSSE(size)                                                             \
+static int vsse ## size ## _c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,     \
+                    int stride, int h)                                         \
+{                                                                              \
+    int score = 0, x, y;                                                       \
+                                                                               \
+    for (y = 1; y < h; y++) {                                                  \
+        for (x = 0; x < size; x++)                                             \
+            score += SQ(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);      \
+        s1 += stride;                                                          \
+        s2 += stride;                                                          \
+    }                                                                          \
+                                                                               \
+    return score;                                                              \
 }
+VSSE(8)
+VSSE(16)
 
 #define WRAPPER8_16_SQ(name8, name16)                                   \
 static int name16(MpegEncContext *s, uint8_t *dst, uint8_t *src,        \
@@ -1167,6 +1333,37 @@ static void jref_idct_add(uint8_t *dest, int line_size, int16_t *block)
     add_pixels_clamped_c(block, dest, line_size);
 }
 
+static void ff_jref_idct4_put(uint8_t *dest, int line_size, int16_t *block)
+{
+    ff_j_rev_dct4 (block);
+    put_pixels_clamped4_c(block, dest, line_size);
+}
+static void ff_jref_idct4_add(uint8_t *dest, int line_size, int16_t *block)
+{
+    ff_j_rev_dct4 (block);
+    add_pixels_clamped4_c(block, dest, line_size);
+}
+
+static void ff_jref_idct2_put(uint8_t *dest, int line_size, int16_t *block)
+{
+    ff_j_rev_dct2 (block);
+    put_pixels_clamped2_c(block, dest, line_size);
+}
+static void ff_jref_idct2_add(uint8_t *dest, int line_size, int16_t *block)
+{
+    ff_j_rev_dct2 (block);
+    add_pixels_clamped2_c(block, dest, line_size);
+}
+
+static void ff_jref_idct1_put(uint8_t *dest, int line_size, int16_t *block)
+{
+    dest[0] = av_clip_uint8((block[0] + 4)>>3);
+}
+static void ff_jref_idct1_add(uint8_t *dest, int line_size, int16_t *block)
+{
+    dest[0] = av_clip_uint8(dest[0] + ((block[0] + 4)>>3));
+}
+
 /* draw the edges of width 'w' of an image of size width, height */
 // FIXME: Check that this is OK for MPEG-4 interlaced.
 static void draw_edges_8_c(uint8_t *buf, int wrap, int width, int height,
@@ -1204,9 +1401,32 @@ av_cold void ff_dsputil_static_init(void)
         ff_square_tab[i] = (i - 256) * (i - 256);
 }
 
+int ff_check_alignment(void)
+{
+    static int did_fail = 0;
+    LOCAL_ALIGNED_16(int, aligned, [4]);
+
+    if ((intptr_t)aligned & 15) {
+        if (!did_fail) {
+#if HAVE_MMX || HAVE_ALTIVEC
+            av_log(NULL, AV_LOG_ERROR,
+                "Compiler did not align stack variables. Libavcodec has been miscompiled\n"
+                "and may be very slow or crash. This is not a bug in libavcodec,\n"
+                "but in the compiler. You may try recompiling using gcc >= 4.2.\n"
+                "Do not report crashes to FFmpeg developers.\n");
+#endif
+            did_fail=1;
+        }
+        return -1;
+    }
+    return 0;
+}
+
 av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
 {
     const unsigned high_bit_depth = avctx->bits_per_raw_sample > 8;
+
+    ff_check_alignment();
 
 #if CONFIG_ENCODERS
     if (avctx->bits_per_raw_sample == 10) {
@@ -1226,12 +1446,33 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
     }
 #endif /* CONFIG_ENCODERS */
 
-    if (avctx->bits_per_raw_sample == 10) {
-        c->idct_put              = ff_simple_idct_put_10;
-        c->idct_add              = ff_simple_idct_add_10;
-        c->idct                  = ff_simple_idct_10;
+    if (avctx->lowres==1) {
+        c->idct_put              = ff_jref_idct4_put;
+        c->idct_add              = ff_jref_idct4_add;
+        c->idct                  = ff_j_rev_dct4;
+        c->idct_permutation_type = FF_NO_IDCT_PERM;
+    } else if (avctx->lowres==2) {
+        c->idct_put              =  ff_jref_idct2_put;
+        c->idct_add              =  ff_jref_idct2_add;
+        c->idct                  =  ff_j_rev_dct2;
+        c->idct_permutation_type = FF_NO_IDCT_PERM;
+    } else if (avctx->lowres==3) {
+        c->idct_put              =  ff_jref_idct1_put;
+        c->idct_add              =  ff_jref_idct1_add;
+        c->idct                  =  ff_j_rev_dct1;
         c->idct_permutation_type = FF_NO_IDCT_PERM;
     } else {
+        if (avctx->bits_per_raw_sample == 10) {
+            c->idct_put              = ff_simple_idct_put_10;
+            c->idct_add              = ff_simple_idct_add_10;
+            c->idct                  = ff_simple_idct_10;
+            c->idct_permutation_type = FF_NO_IDCT_PERM;
+        } else if (avctx->bits_per_raw_sample == 12) {
+            c->idct_put              = ff_simple_idct_put_12;
+            c->idct_add              = ff_simple_idct_add_12;
+            c->idct                  = ff_simple_idct_12;
+            c->idct_permutation_type = FF_NO_IDCT_PERM;
+        } else {
         if (avctx->idct_algo == FF_IDCT_INT) {
             c->idct_put              = jref_idct_put;
             c->idct_add              = jref_idct_add;
@@ -1248,6 +1489,7 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
             c->idct                  = ff_simple_idct_8;
             c->idct_permutation_type = FF_NO_IDCT_PERM;
         }
+        }
     }
 
     c->diff_pixels = diff_pixels_c;
@@ -1257,6 +1499,9 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
     c->add_pixels_clamped        = add_pixels_clamped_c;
 
     c->sum_abs_dctelem = sum_abs_dctelem_c;
+
+    c->gmc1 = gmc1_c;
+    c->gmc  = ff_gmc_c;
 
     c->pix_sum   = pix_sum_c;
     c->pix_norm1 = pix_norm1_c;
@@ -1292,13 +1537,18 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
     SET_CMP_FUNC(rd)
     SET_CMP_FUNC(bit)
     c->vsad[0] = vsad16_c;
+    c->vsad[1] = vsad8_c;
     c->vsad[4] = vsad_intra16_c;
     c->vsad[5] = vsad_intra8_c;
     c->vsse[0] = vsse16_c;
+    c->vsse[1] = vsse8_c;
     c->vsse[4] = vsse_intra16_c;
     c->vsse[5] = vsse_intra8_c;
     c->nsse[0] = nsse16_c;
     c->nsse[1] = nsse8_c;
+#if CONFIG_SNOW_DECODER || CONFIG_SNOW_ENCODER
+    ff_dsputil_init_dwt(c);
+#endif
 
     c->try_8x8basis = try_8x8basis_c;
     c->add_8x8basis = add_8x8basis_c;
@@ -1313,13 +1563,20 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
     switch (avctx->bits_per_raw_sample) {
     case 9:
     case 10:
+    case 12:
+    case 14:
         c->get_pixels = get_pixels_16_c;
         break;
     default:
-        c->get_pixels = get_pixels_8_c;
+        if (avctx->bits_per_raw_sample<=8 || avctx->codec_type != AVMEDIA_TYPE_VIDEO) {
+            c->get_pixels = get_pixels_8_c;
+        }
         break;
     }
 
+
+    if (ARCH_ALPHA)
+        ff_dsputil_init_alpha(c, avctx);
     if (ARCH_ARM)
         ff_dsputil_init_arm(c, avctx, high_bit_depth);
     if (ARCH_PPC)
@@ -1329,4 +1586,14 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
 
     ff_init_scantable_permutation(c->idct_permutation,
                                   c->idct_permutation_type);
+}
+
+av_cold void dsputil_init(DSPContext* c, AVCodecContext *avctx)
+{
+    ff_dsputil_init(c, avctx);
+}
+
+av_cold void avpriv_dsputil_init(DSPContext *c, AVCodecContext *avctx)
+{
+    ff_dsputil_init(c, avctx);
 }
