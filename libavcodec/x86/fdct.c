@@ -13,20 +13,20 @@
  * a page about fdct at http://www.geocities.com/ssavekar/dct.htm
  * Skal's fdct at http://skal.planet-d.net/coding/dct.html
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -70,7 +70,7 @@ DECLARE_ALIGNED(16, static const int16_t, fdct_one_corr)[8] = { X8(1) };
 
 DECLARE_ALIGNED(8, static const int32_t, fdct_r_row)[2] = {RND_FRW_ROW, RND_FRW_ROW };
 
-static const struct
+static struct
 {
  DECLARE_ALIGNED(16, const int32_t, fdct_r_row_sse2)[4];
 } fdct_r_row_sse2 =
@@ -153,7 +153,7 @@ DECLARE_ALIGNED(8, static const int16_t, tab_frw_01234567)[] = {  // forward_dct
   29692,  -12299,   26722,  -31521,
 };
 
-static const struct
+static struct
 {
  DECLARE_ALIGNED(16, const int16_t, tab_frw_01234567_sse2)[256];
 } tab_frw_01234567_sse2 =
