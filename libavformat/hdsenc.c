@@ -2,20 +2,20 @@
  * Live HDS fragmenter
  * Copyright (c) 2013 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -204,7 +204,10 @@ static int write_manifest(AVFormatContext *s, int final)
     avio_printf(out, "</manifest>\n");
     avio_flush(out);
     avio_close(out);
-    rename(temp_filename, filename);
+    if (rename(temp_filename, filename) == -1) {
+        av_log(s, AV_LOG_ERROR, "failed to rename file %s to %s\n", temp_filename, filename);
+        return AVERROR(errno);
+    }
     return 0;
 }
 
@@ -286,7 +289,10 @@ static int write_abst(AVFormatContext *s, OutputStream *os, int final)
     update_size(out, afrt_pos);
     update_size(out, 0);
     avio_close(out);
-    rename(temp_filename, filename);
+    if (rename(temp_filename, filename) == -1) {
+        av_log(s, AV_LOG_ERROR, "failed to rename file %s to %s\n", temp_filename, filename);
+        return AVERROR(errno);
+    }
     return 0;
 }
 
@@ -323,7 +329,14 @@ static int hds_write_header(AVFormatContext *s)
     int ret = 0, i;
     AVOutputFormat *oformat;
 
-    mkdir(s->filename, 0777);
+    if (mkdir(s->filename, 0777)) {
+        int is_error = errno != EEXIST;
+        av_log(s, is_error ? AV_LOG_ERROR : AV_LOG_VERBOSE, "Failed to create directory %s\n", s->filename);
+        if (is_error) {
+            ret = AVERROR(errno);
+            goto fail;
+        }
+    }
 
     oformat = av_guess_format("flv", NULL, NULL);
     if (!oformat) {
@@ -477,7 +490,10 @@ static int hds_flush(AVFormatContext *s, OutputStream *os, int final,
 
     snprintf(target_filename, sizeof(target_filename),
              "%s/stream%dSeg1-Frag%d", s->filename, index, os->fragment_index);
-    rename(os->temp_filename, target_filename);
+    if (rename(os->temp_filename, target_filename) == -1) {
+        av_log(s, AV_LOG_ERROR, "failed to rename file %s to %s\n", os->temp_filename, target_filename);
+        return AVERROR(errno);
+    }
     add_fragment(os, target_filename, os->frag_start_ts, end_ts - os->frag_start_ts);
 
     if (!final) {
@@ -511,7 +527,7 @@ static int hds_write_packet(AVFormatContext *s, AVPacket *pkt)
     HDSContext *c = s->priv_data;
     AVStream *st = s->streams[pkt->stream_index];
     OutputStream *os = &c->streams[s->streams[pkt->stream_index]->id];
-    int64_t end_dts = os->fragment_index * (int64_t) c->min_frag_duration;
+    int64_t end_dts = os->fragment_index * (int64_t)c->min_frag_duration;
     int ret;
 
     if (st->first_dts == AV_NOPTS_VALUE)
