@@ -2,20 +2,20 @@
  * Intel Indeo 2 codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,7 +49,7 @@ static inline int ir2_get_code(GetBitContext *gb)
 }
 
 static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst,
-                            int stride, const uint8_t *table)
+                            int pitch, const uint8_t *table)
 {
     int i;
     int j;
@@ -74,7 +74,7 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
             dst[out++] = table[(c * 2) + 1];
         }
     }
-    dst += stride;
+    dst += pitch;
 
     for (j = 1; j < height; j++) {
         out = 0;
@@ -85,27 +85,27 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
                 if (out + c*2 > width)
                     return AVERROR_INVALIDDATA;
                 for (i = 0; i < c * 2; i++) {
-                    dst[out] = dst[out - stride];
+                    dst[out] = dst[out - pitch];
                     out++;
                 }
             } else { /* add two deltas from table */
-                t        = dst[out - stride] + (table[c * 2] - 128);
+                t        = dst[out - pitch] + (table[c * 2] - 128);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
                 out++;
-                t        = dst[out - stride] + (table[(c * 2) + 1] - 128);
+                t        = dst[out - pitch] + (table[(c * 2) + 1] - 128);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
                 out++;
             }
         }
-        dst += stride;
+        dst += pitch;
     }
     return 0;
 }
 
 static int ir2_decode_plane_inter(Ir2Context *ctx, int width, int height, uint8_t *dst,
-                                  int stride, const uint8_t *table)
+                                  int pitch, const uint8_t *table)
 {
     int j;
     int out = 0;
@@ -133,7 +133,7 @@ static int ir2_decode_plane_inter(Ir2Context *ctx, int width, int height, uint8_
                 out++;
             }
         }
-        dst += stride;
+        dst += pitch;
     }
     return 0;
 }
@@ -149,8 +149,10 @@ static int ir2_decode_frame(AVCodecContext *avctx,
     AVFrame * const p    = s->picture;
     int start, ret;
 
-    if ((ret = ff_reget_buffer(avctx, p)) < 0)
+    if ((ret = ff_reget_buffer(avctx, p)) < 0) {
+        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     start = 48; /* hardcoded for now */
 
