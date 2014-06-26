@@ -1,20 +1,21 @@
 /*
- * Various pretty-printing functions for use within Libav
+ * Various pretty-printing functions for use within FFmpeg
+ * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +27,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/avstring.h"
 #include "libavutil/replaygain.h"
 
 #include "avformat.h"
@@ -75,7 +77,7 @@ void av_hex_dump_log(void *avcl, int level, const uint8_t *buf, int size)
     hex_dump_internal(avcl, NULL, level, buf, size);
 }
 
-static void pkt_dump_internal(void *avcl, FILE *f, int level, AVPacket *pkt,
+static void pkt_dump_internal(void *avcl, FILE *f, int level, const AVPacket *pkt,
                               int dump_payload, AVRational time_base)
 {
     HEXDUMP_PRINT("stream #%d:\n", pkt->stream_index);
@@ -99,13 +101,13 @@ static void pkt_dump_internal(void *avcl, FILE *f, int level, AVPacket *pkt,
         av_hex_dump(f, pkt->data, pkt->size);
 }
 
-void av_pkt_dump2(FILE *f, AVPacket *pkt, int dump_payload, AVStream *st)
+void av_pkt_dump2(FILE *f, const AVPacket *pkt, int dump_payload, const AVStream *st)
 {
     pkt_dump_internal(NULL, f, 0, pkt, dump_payload, st->time_base);
 }
 
-void av_pkt_dump_log2(void *avcl, int level, AVPacket *pkt, int dump_payload,
-                      AVStream *st)
+void av_pkt_dump_log2(void *avcl, int level, const AVPacket *pkt, int dump_payload,
+                      const AVStream *st)
 {
     pkt_dump_internal(avcl, NULL, level, pkt, dump_payload, st->time_base);
 }
@@ -129,9 +131,22 @@ static void dump_metadata(void *ctx, AVDictionary *m, const char *indent)
 
         av_log(ctx, AV_LOG_INFO, "%sMetadata:\n", indent);
         while ((tag = av_dict_get(m, "", tag, AV_DICT_IGNORE_SUFFIX)))
-            if (strcmp("language", tag->key))
+            if (strcmp("language", tag->key)) {
+                const char *p = tag->value;
                 av_log(ctx, AV_LOG_INFO,
-                       "%s  %-16s: %s\n", indent, tag->key, tag->value);
+                       "%s  %-16s: ", indent, tag->key);
+                while (*p) {
+                    char tmp[256];
+                    size_t len = strcspn(p, "\x8\xa\xb\xc\xd");
+                    av_strlcpy(tmp, p, FFMIN(sizeof(tmp), len+1));
+                    av_log(ctx, AV_LOG_INFO, "%s", tmp);
+                    p += len;
+                    if (*p == 0xd) av_log(ctx, AV_LOG_INFO, " ");
+                    if (*p == 0xa) av_log(ctx, AV_LOG_INFO, "\n%s  %-16s: ", indent, "");
+                    if (*p) p++;
+                }
+                av_log(ctx, AV_LOG_INFO, "\n");
+            }
     }
 }
 
@@ -279,10 +294,14 @@ static void dump_stream_format(AVFormatContext *ic, int i,
     char buf[256];
     int flags = (is_output ? ic->oformat->flags : ic->iformat->flags);
     AVStream *st = ic->streams[i];
+    int g = av_gcd(st->time_base.num, st->time_base.den);
     AVDictionaryEntry *lang = av_dict_get(st->metadata, "language", NULL, 0);
 
+    if (!g)
+        g = 1;
+
     avcodec_string(buf, sizeof(buf), st->codec, is_output);
-    av_log(NULL, AV_LOG_INFO, "    Stream #%d.%d", index, i);
+    av_log(NULL, AV_LOG_INFO, "    Stream #%d:%d", index, i);
 
     /* the pid is an important information, so we display it */
     /* XXX: add a generic system */
@@ -291,7 +310,7 @@ static void dump_stream_format(AVFormatContext *ic, int i,
     if (lang)
         av_log(NULL, AV_LOG_INFO, "(%s)", lang->value);
     av_log(NULL, AV_LOG_DEBUG, ", %d, %d/%d", st->codec_info_nb_frames,
-           st->time_base.num, st->time_base.den);
+           st->time_base.num / g, st->time_base.den / g);
     av_log(NULL, AV_LOG_INFO, ": %s", buf);
 
     if (st->sample_aspect_ratio.num && // default
@@ -301,7 +320,7 @@ static void dump_stream_format(AVFormatContext *ic, int i,
                   st->codec->width  * st->sample_aspect_ratio.num,
                   st->codec->height * st->sample_aspect_ratio.den,
                   1024 * 1024);
-        av_log(NULL, AV_LOG_INFO, ", PAR %d:%d DAR %d:%d",
+        av_log(NULL, AV_LOG_INFO, ", SAR %d:%d DAR %d:%d",
                st->sample_aspect_ratio.num, st->sample_aspect_ratio.den,
                display_aspect_ratio.num, display_aspect_ratio.den);
     }
@@ -309,6 +328,10 @@ static void dump_stream_format(AVFormatContext *ic, int i,
     if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
         if (st->avg_frame_rate.den && st->avg_frame_rate.num)
             print_fps(av_q2d(st->avg_frame_rate), "fps");
+#if FF_API_R_FRAME_RATE
+        if (st->r_frame_rate.den && st->r_frame_rate.num)
+            print_fps(av_q2d(st->r_frame_rate), "tbr");
+#endif
         if (st->time_base.den && st->time_base.num)
             print_fps(1 / av_q2d(st->time_base), "tbn");
         if (st->codec->time_base.den && st->codec->time_base.num)
@@ -361,8 +384,9 @@ void av_dump_format(AVFormatContext *ic, int index,
         av_log(NULL, AV_LOG_INFO, "  Duration: ");
         if (ic->duration != AV_NOPTS_VALUE) {
             int hours, mins, secs, us;
-            secs  = ic->duration / AV_TIME_BASE;
-            us    = ic->duration % AV_TIME_BASE;
+            int64_t duration = ic->duration + 5000;
+            secs  = duration / AV_TIME_BASE;
+            us    = duration % AV_TIME_BASE;
             mins  = secs / 60;
             secs %= 60;
             hours = mins / 60;
