@@ -7,20 +7,20 @@
  * palette & YUV & runtime CPU stuff by Michael (michaelni@gmx.at)
  * lot of big-endian byte order fixes by Alex Beregszaszi
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -240,27 +240,6 @@ static inline void rgb24to15_c(const uint8_t *src, uint8_t *dst, int src_size)
     }
 }
 
-/*
- * I use less accurate approximation here by simply left-shifting the input
- * value and filling the low order bits with zeroes. This method improves PNG
- * compression but this scheme cannot reproduce white exactly, since it does
- * not generate an all-ones maximum value; the net effect is to darken the
- * image slightly.
- *
- * The better method should be "left bit replication":
- *
- *  4 3 2 1 0
- *  ---------
- *  1 1 0 1 1
- *
- *  7 6 5 4 3  2 1 0
- *  ----------------
- *  1 1 0 1 1  1 1 0
- *  |=======|  |===|
- *      |      leftmost bits repeated to fill open bits
- *      |
- *  original bits
- */
 static inline void rgb15tobgr24_c(const uint8_t *src, uint8_t *dst,
                                   int src_size)
 {
@@ -270,9 +249,9 @@ static inline void rgb15tobgr24_c(const uint8_t *src, uint8_t *dst,
 
     while (s < end) {
         register uint16_t bgr = *s++;
-        *d++ = (bgr & 0x1F)   << 3;
-        *d++ = (bgr & 0x3E0)  >> 2;
-        *d++ = (bgr & 0x7C00) >> 7;
+        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
+        *d++ = ((bgr&0x03E0)>>2) | ((bgr&0x03E0)>> 7);
+        *d++ = ((bgr&0x7C00)>>7) | ((bgr&0x7C00)>>12);
     }
 }
 
@@ -285,9 +264,9 @@ static inline void rgb16tobgr24_c(const uint8_t *src, uint8_t *dst,
 
     while (s < end) {
         register uint16_t bgr = *s++;
-        *d++ = (bgr & 0x1F)   << 3;
-        *d++ = (bgr & 0x7E0)  >> 3;
-        *d++ = (bgr & 0xF800) >> 8;
+        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
+        *d++ = ((bgr&0x07E0)>>3) | ((bgr&0x07E0)>> 9);
+        *d++ = ((bgr&0xF800)>>8) | ((bgr&0xF800)>>13);
     }
 }
 
@@ -301,13 +280,13 @@ static inline void rgb15to32_c(const uint8_t *src, uint8_t *dst, int src_size)
         register uint16_t bgr = *s++;
 #if HAVE_BIGENDIAN
         *d++ = 255;
-        *d++ = (bgr & 0x7C00) >> 7;
-        *d++ = (bgr & 0x3E0)  >> 2;
-        *d++ = (bgr & 0x1F)   << 3;
+        *d++ = ((bgr&0x7C00)>>7) | ((bgr&0x7C00)>>12);
+        *d++ = ((bgr&0x03E0)>>2) | ((bgr&0x03E0)>> 7);
+        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
 #else
-        *d++ = (bgr & 0x1F)   << 3;
-        *d++ = (bgr & 0x3E0)  >> 2;
-        *d++ = (bgr & 0x7C00) >> 7;
+        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
+        *d++ = ((bgr&0x03E0)>>2) | ((bgr&0x03E0)>> 7);
+        *d++ = ((bgr&0x7C00)>>7) | ((bgr&0x7C00)>>12);
         *d++ = 255;
 #endif
     }
@@ -323,13 +302,13 @@ static inline void rgb16to32_c(const uint8_t *src, uint8_t *dst, int src_size)
         register uint16_t bgr = *s++;
 #if HAVE_BIGENDIAN
         *d++ = 255;
-        *d++ = (bgr & 0xF800) >> 8;
-        *d++ = (bgr & 0x7E0)  >> 3;
-        *d++ = (bgr & 0x1F)   << 3;
+        *d++ = ((bgr&0xF800)>>8) | ((bgr&0xF800)>>13);
+        *d++ = ((bgr&0x07E0)>>3) | ((bgr&0x07E0)>> 9);
+        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
 #else
-        *d++ = (bgr & 0x1F)   << 3;
-        *d++ = (bgr & 0x7E0)  >> 3;
-        *d++ = (bgr & 0xF800) >> 8;
+        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
+        *d++ = ((bgr&0x07E0)>>3) | ((bgr&0x07E0)>> 9);
+        *d++ = ((bgr&0xF800)>>8) | ((bgr&0xF800)>>13);
         *d++ = 255;
 #endif
     }
@@ -376,9 +355,9 @@ static inline void yuvPlanartoyuy2_c(const uint8_t *ysrc, const uint8_t *usrc,
         const uint8_t *yc = ysrc, *uc = usrc, *vc = vsrc;
         for (i = 0; i < chromWidth; i += 2) {
             uint64_t k = yc[0] + (uc[0] << 8) +
-                         (yc[1] << 16) + (vc[0] << 24);
+                         (yc[1] << 16) + (unsigned)(vc[0] << 24);
             uint64_t l = yc[2] + (uc[1] << 8) +
-                         (yc[3] << 16) + (vc[1] << 24);
+                         (yc[3] << 16) + (unsigned)(vc[1] << 24);
             *ldst++ = k + (l << 32);
             yc     += 4;
             uc     += 2;
@@ -440,9 +419,9 @@ static inline void yuvPlanartouyvy_c(const uint8_t *ysrc, const uint8_t *usrc,
         const uint8_t *yc = ysrc, *uc = usrc, *vc = vsrc;
         for (i = 0; i < chromWidth; i += 2) {
             uint64_t k = uc[0] + (yc[0] << 8) +
-                         (vc[0] << 16) + (yc[1] << 24);
+                         (vc[0] << 16) + (unsigned)(yc[1] << 24);
             uint64_t l = uc[1] + (yc[2] << 8) +
-                         (vc[1] << 16) + (yc[3] << 24);
+                         (vc[1] << 16) + (unsigned)(yc[3] << 24);
             *ldst++ = k + (l << 32);
             yc     += 4;
             uc     += 2;
@@ -635,10 +614,13 @@ static inline void uyvytoyv12_c(const uint8_t *src, uint8_t *ydst,
  * others are ignored in the C version.
  * FIXME: Write HQ version.
  */
-void rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
+void ff_rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
                    uint8_t *vdst, int width, int height, int lumStride,
-                   int chromStride, int srcStride)
+                   int chromStride, int srcStride, int32_t *rgb2yuv)
 {
+    int32_t ry = rgb2yuv[RY_IDX], gy = rgb2yuv[GY_IDX], by = rgb2yuv[BY_IDX];
+    int32_t ru = rgb2yuv[RU_IDX], gu = rgb2yuv[GU_IDX], bu = rgb2yuv[BU_IDX];
+    int32_t rv = rgb2yuv[RV_IDX], gv = rgb2yuv[GV_IDX], bv = rgb2yuv[BV_IDX];
     int y;
     const int chromWidth = width >> 1;
 
@@ -649,9 +631,9 @@ void rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
             unsigned int g = src[6 * i + 1];
             unsigned int r = src[6 * i + 2];
 
-            unsigned int Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) +  16;
-            unsigned int V = ((RV * r + GV * g + BV * b) >> RGB2YUV_SHIFT) + 128;
-            unsigned int U = ((RU * r + GU * g + BU * b) >> RGB2YUV_SHIFT) + 128;
+            unsigned int Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) +  16;
+            unsigned int V = ((rv * r + gv * g + bv * b) >> RGB2YUV_SHIFT) + 128;
+            unsigned int U = ((ru * r + gu * g + bu * b) >> RGB2YUV_SHIFT) + 128;
 
             udst[i]     = U;
             vdst[i]     = V;
@@ -661,18 +643,21 @@ void rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
             g = src[6 * i + 4];
             r = src[6 * i + 5];
 
-            Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) + 16;
+            Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) + 16;
             ydst[2 * i + 1] = Y;
         }
         ydst += lumStride;
         src  += srcStride;
+
+        if (y+1 == height)
+            break;
 
         for (i = 0; i < chromWidth; i++) {
             unsigned int b = src[6 * i + 0];
             unsigned int g = src[6 * i + 1];
             unsigned int r = src[6 * i + 2];
 
-            unsigned int Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) + 16;
+            unsigned int Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) + 16;
 
             ydst[2 * i] = Y;
 
@@ -680,7 +665,7 @@ void rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
             g = src[6 * i + 4];
             r = src[6 * i + 5];
 
-            Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) + 16;
+            Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) + 16;
             ydst[2 * i + 1] = Y;
         }
         udst += chromStride;
@@ -856,7 +841,7 @@ static void yuyvtoyuv420_c(uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
                            int lumStride, int chromStride, int srcStride)
 {
     int y;
-    const int chromWidth = -((-width) >> 1);
+    const int chromWidth = FF_CEIL_RSHIFT(width, 1);
 
     for (y = 0; y < height; y++) {
         extract_even_c(src, ydst, width);
@@ -876,7 +861,7 @@ static void yuyvtoyuv422_c(uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
                            int lumStride, int chromStride, int srcStride)
 {
     int y;
-    const int chromWidth = -((-width) >> 1);
+    const int chromWidth = FF_CEIL_RSHIFT(width, 1);
 
     for (y = 0; y < height; y++) {
         extract_even_c(src, ydst, width);
@@ -894,7 +879,7 @@ static void uyvytoyuv420_c(uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
                            int lumStride, int chromStride, int srcStride)
 {
     int y;
-    const int chromWidth = -((-width) >> 1);
+    const int chromWidth = FF_CEIL_RSHIFT(width, 1);
 
     for (y = 0; y < height; y++) {
         extract_even_c(src + 1, ydst, width);
@@ -914,7 +899,7 @@ static void uyvytoyuv422_c(uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
                            int lumStride, int chromStride, int srcStride)
 {
     int y;
-    const int chromWidth = -((-width) >> 1);
+    const int chromWidth = FF_CEIL_RSHIFT(width, 1);
 
     for (y = 0; y < height; y++) {
         extract_even_c(src + 1, ydst, width);
@@ -953,7 +938,7 @@ static av_cold void rgb2rgb_init_c(void)
     yuv422ptouyvy      = yuv422ptouyvy_c;
     yuy2toyv12         = yuy2toyv12_c;
     planar2x           = planar2x_c;
-    rgb24toyv12        = rgb24toyv12_c;
+    ff_rgb24toyv12     = ff_rgb24toyv12_c;
     interleaveBytes    = interleaveBytes_c;
     deinterleaveBytes  = deinterleaveBytes_c;
     vu9_to_vu12        = vu9_to_vu12_c;
