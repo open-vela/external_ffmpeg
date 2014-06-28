@@ -2,20 +2,20 @@
  * RTP JPEG-compressed video Packetizer, RFC 2435
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@ void ff_rtp_send_jpeg(AVFormatContext *s1, const uint8_t *buf, int size)
     RTPMuxContext *s = s1->priv_data;
     const uint8_t *qtables = NULL;
     int nb_qtables = 0;
-    uint8_t type;
+    uint8_t type = 1; /* default pixel format is AV_PIX_FMT_YUVJ420P */
     uint8_t w, h;
     uint8_t *p;
     int off = 0; /* fragment offset of the current JPEG frame */
@@ -43,14 +43,10 @@ void ff_rtp_send_jpeg(AVFormatContext *s1, const uint8_t *buf, int size)
     w = s1->streams[0]->codec->width  >> 3;
     h = s1->streams[0]->codec->height >> 3;
 
-    /* get the pixel format type or fail */
-    if (s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUVJ422P ||
-        (s1->streams[0]->codec->color_range == AVCOL_RANGE_JPEG &&
-         s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUV422P)) {
+    /* check if pixel format is not the normal 420 case */
+    if (s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUVJ422P) {
         type = 0;
-    } else if (s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUVJ420P ||
-               (s1->streams[0]->codec->color_range == AVCOL_RANGE_JPEG &&
-                s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUV420P)) {
+    } else if (s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUVJ420P) {
         type = 1;
     } else {
         av_log(s1, AV_LOG_ERROR, "Unsupported pixel format\n");
