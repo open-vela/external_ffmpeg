@@ -1,25 +1,23 @@
 /*
  * Raw FLAC picture parser
- * Copyright (c) 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "avformat.h"
 #include "flac_picture.h"
 #include "id3v2.h"
@@ -45,7 +43,8 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     if (type >= FF_ARRAY_ELEMS(ff_id3v2_picture_types) || type < 0) {
         av_log(s, AV_LOG_ERROR, "Invalid picture type: %d.\n", type);
         if (s->error_recognition & AV_EF_EXPLODE) {
-            RETURN_ERROR(AVERROR_INVALIDDATA);
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
         }
         type = 0;
     }
@@ -60,7 +59,6 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
             ret = AVERROR_INVALIDDATA;
         goto fail;
     }
-    av_assert0(len < sizeof(mimetype));
     mimetype[len] = 0;
 
     while (mime->id != AV_CODEC_ID_NONE) {
@@ -82,7 +80,8 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     len = avio_rb32(pb);
     if (len > 0) {
         if (!(desc = av_malloc(len + 1))) {
-            RETURN_ERROR(AVERROR(ENOMEM));
+            ret = AVERROR(ENOMEM);
+            goto fail;
         }
 
         if (avio_read(pb, desc, len) != len) {
@@ -107,10 +106,10 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
             ret = AVERROR_INVALIDDATA;
         goto fail;
     }
-    if (!(data = av_buffer_alloc(len + FF_INPUT_BUFFER_PADDING_SIZE))) {
-        RETURN_ERROR(AVERROR(ENOMEM));
+    if (!(data = av_buffer_alloc(len))) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
     }
-    memset(data->data + len, 0, FF_INPUT_BUFFER_PADDING_SIZE);
     if (avio_read(pb, data->data, len) != len) {
         av_log(s, AV_LOG_ERROR, "Error reading attached picture data.\n");
         if (s->error_recognition & AV_EF_EXPLODE)
@@ -120,7 +119,8 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
 
     st = avformat_new_stream(s, NULL);
     if (!st) {
-        RETURN_ERROR(AVERROR(ENOMEM));
+        ret = AVERROR(ENOMEM);
+        goto fail;
     }
 
     av_init_packet(&st->attached_pic);
