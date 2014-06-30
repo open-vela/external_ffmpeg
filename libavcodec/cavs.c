@@ -2,20 +2,20 @@
  * Chinese AVS video (AVS1-P2, JiZhun profile) decoder.
  * Copyright (c) 2006  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -73,15 +73,16 @@ static inline int get_bs(cavs_vector *mvP, cavs_vector *mvQ, int b)
 {
     if ((mvP->ref == REF_INTRA) || (mvQ->ref == REF_INTRA))
         return 2;
-    if ((abs(mvP->x - mvQ->x) >= 4) || (abs(mvP->y - mvQ->y) >= 4))
+    if((abs(mvP->x - mvQ->x) >= 4) ||
+       (abs(mvP->y - mvQ->y) >= 4) ||
+       (mvP->ref != mvQ->ref))
         return 1;
     if (b) {
         mvP += MV_BWD_OFFS;
         mvQ += MV_BWD_OFFS;
-        if ((abs(mvP->x - mvQ->x) >= 4) || (abs(mvP->y - mvQ->y) >= 4))
-            return 1;
-    } else {
-        if (mvP->ref != mvQ->ref)
+        if((abs(mvP->x - mvQ->x) >= 4) ||
+           (abs(mvP->y - mvQ->y) >= 4) ||
+           (mvP->ref != mvQ->ref))
             return 1;
     }
     return 0;
@@ -147,6 +148,8 @@ void ff_cavs_filter(AVSContext *h, enum cavs_mb mb_type)
                 qp_avg = (h->qp + h->left_qp + 1) >> 1;
                 SET_PARAMS;
                 h->cdsp.cavs_filter_lv(h->cy, h->l_stride, alpha, beta, tc, bs[0], bs[1]);
+                qp_avg = (ff_cavs_chroma_qp[h->qp] + ff_cavs_chroma_qp[h->left_qp] + 1) >> 1;
+                SET_PARAMS;
                 h->cdsp.cavs_filter_cv(h->cu, h->c_stride, alpha, beta, tc, bs[0], bs[1]);
                 h->cdsp.cavs_filter_cv(h->cv, h->c_stride, alpha, beta, tc, bs[0], bs[1]);
             }
@@ -159,6 +162,8 @@ void ff_cavs_filter(AVSContext *h, enum cavs_mb mb_type)
                 qp_avg = (h->qp + h->top_qp[h->mbx] + 1) >> 1;
                 SET_PARAMS;
                 h->cdsp.cavs_filter_lh(h->cy, h->l_stride, alpha, beta, tc, bs[4], bs[5]);
+                qp_avg = (ff_cavs_chroma_qp[h->qp] + ff_cavs_chroma_qp[h->top_qp[h->mbx]] + 1) >> 1;
+                SET_PARAMS;
                 h->cdsp.cavs_filter_ch(h->cu, h->c_stride, alpha, beta, tc, bs[4], bs[5]);
                 h->cdsp.cavs_filter_ch(h->cv, h->c_stride, alpha, beta, tc, bs[4], bs[5]);
             }
@@ -232,9 +237,14 @@ void ff_cavs_load_intra_pred_chroma(AVSContext *h)
     /* extend borders by one pixel */
     h->left_border_u[9]              = h->left_border_u[8];
     h->left_border_v[9]              = h->left_border_v[8];
-    h->top_border_u[h->mbx * 10 + 9] = h->top_border_u[h->mbx * 10 + 8];
-    h->top_border_v[h->mbx * 10 + 9] = h->top_border_v[h->mbx * 10 + 8];
-    if (h->mbx && h->mby) {
+    if(h->flags & C_AVAIL) {
+        h->top_border_u[h->mbx*10 + 9] = h->top_border_u[h->mbx*10 + 11];
+        h->top_border_v[h->mbx*10 + 9] = h->top_border_v[h->mbx*10 + 11];
+    } else {
+        h->top_border_u[h->mbx * 10 + 9] = h->top_border_u[h->mbx * 10 + 8];
+        h->top_border_v[h->mbx * 10 + 9] = h->top_border_v[h->mbx * 10 + 8];
+    }
+    if((h->flags & A_AVAIL) && (h->flags & B_AVAIL)) {
         h->top_border_u[h->mbx * 10] = h->left_border_u[0] = h->topleft_border_u;
         h->top_border_v[h->mbx * 10] = h->left_border_v[0] = h->topleft_border_v;
     } else {
@@ -526,7 +536,7 @@ void ff_cavs_inter(AVSContext *h, enum cavs_mb mb_type)
 static inline void scale_mv(AVSContext *h, int *d_x, int *d_y,
                             cavs_vector *src, int distp)
 {
-    int den = h->scale_den[src->ref];
+    int den = h->scale_den[FFMAX(src->ref, 0)];
 
     *d_x = (src->x * distp * den + 256 + (src->x >> 31)) >> 9;
     *d_y = (src->y * distp * den + 256 + (src->y >> 31)) >> 9;
@@ -573,7 +583,7 @@ void ff_cavs_mv(AVSContext *h, enum cavs_mv_loc nP, enum cavs_mv_loc nC,
 
     mvP->ref  = ref;
     mvP->dist = h->dist[mvP->ref];
-    if (mvC->ref == NOT_AVAIL)
+    if (mvC->ref == NOT_AVAIL || (nP == MV_FWD_X3) || (nP == MV_BWD_X3 ))
         mvC = &h->mv[nP - 5];  // set to top-left (mvD)
     if (mode == MV_PRED_PSKIP &&
         (mvA->ref == NOT_AVAIL ||
@@ -703,7 +713,7 @@ int ff_cavs_next_mb(AVSContext *h)
  *
  ****************************************************************************/
 
-void ff_cavs_init_pic(AVSContext *h)
+int ff_cavs_init_pic(AVSContext *h)
 {
     int i;
 
@@ -724,6 +734,8 @@ void ff_cavs_init_pic(AVSContext *h)
     h->luma_scan[3]   = 8 * h->l_stride + 8;
     h->mbx            = h->mby = h->mbidx = 0;
     h->flags          = 0;
+
+    return 0;
 }
 
 /*****************************************************************************
@@ -741,16 +753,16 @@ void ff_cavs_init_top_lines(AVSContext *h)
 {
     /* alloc top line of predictors */
     h->top_qp       = av_mallocz(h->mb_width);
-    h->top_mv[0]    = av_mallocz((h->mb_width * 2 + 1) * sizeof(cavs_vector));
-    h->top_mv[1]    = av_mallocz((h->mb_width * 2 + 1) * sizeof(cavs_vector));
-    h->top_pred_Y   = av_mallocz(h->mb_width * 2 * sizeof(*h->top_pred_Y));
-    h->top_border_y = av_mallocz((h->mb_width + 1) * 16);
-    h->top_border_u = av_mallocz(h->mb_width * 10);
-    h->top_border_v = av_mallocz(h->mb_width * 10);
+    h->top_mv[0]    = av_mallocz_array(h->mb_width * 2 + 1,  sizeof(cavs_vector));
+    h->top_mv[1]    = av_mallocz_array(h->mb_width * 2 + 1,  sizeof(cavs_vector));
+    h->top_pred_Y   = av_mallocz_array(h->mb_width * 2,  sizeof(*h->top_pred_Y));
+    h->top_border_y = av_mallocz_array(h->mb_width + 1,  16);
+    h->top_border_u = av_mallocz_array(h->mb_width,  10);
+    h->top_border_v = av_mallocz_array(h->mb_width,  10);
 
     /* alloc space for co-located MVs and types */
-    h->col_mv        = av_mallocz(h->mb_width * h->mb_height * 4 *
-                                  sizeof(cavs_vector));
+    h->col_mv        = av_mallocz_array(h->mb_width * h->mb_height,
+                                        4 * sizeof(cavs_vector));
     h->col_type_base = av_mallocz(h->mb_width * h->mb_height);
     h->block         = av_mallocz(64 * sizeof(int16_t));
 }
