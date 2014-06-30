@@ -1,20 +1,18 @@
 /*
- * copyright (c) 2003 Fabrice Bellard
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,9 +53,9 @@
  * @{
  */
 
-#define LIBAVUTIL_VERSION_MAJOR  52
-#define LIBAVUTIL_VERSION_MINOR  90
-#define LIBAVUTIL_VERSION_MICRO 101
+#define LIBAVUTIL_VERSION_MAJOR 53
+#define LIBAVUTIL_VERSION_MINOR 17
+#define LIBAVUTIL_VERSION_MICRO  1
 
 #define LIBAVUTIL_VERSION_INT   AV_VERSION_INT(LIBAVUTIL_VERSION_MAJOR, \
                                                LIBAVUTIL_VERSION_MINOR, \
@@ -80,15 +78,6 @@
  * @{
  */
 
-#ifndef FF_API_GET_BITS_PER_SAMPLE_FMT
-#define FF_API_GET_BITS_PER_SAMPLE_FMT (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_FIND_OPT
-#define FF_API_FIND_OPT                 (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_OLD_AVOPTIONS
-#define FF_API_OLD_AVOPTIONS            (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
 #ifndef FF_API_PIX_FMT
 #define FF_API_PIX_FMT                  (LIBAVUTIL_VERSION_MAJOR < 54)
 #endif
@@ -107,14 +96,8 @@
 #ifndef FF_API_CPU_FLAG_MMX2
 #define FF_API_CPU_FLAG_MMX2            (LIBAVUTIL_VERSION_MAJOR < 54)
 #endif
-#ifndef FF_API_SAMPLES_UTILS_RETURN_ZERO
-#define FF_API_SAMPLES_UTILS_RETURN_ZERO (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
 #ifndef FF_API_LLS_PRIVATE
 #define FF_API_LLS_PRIVATE              (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_LLS1
-#define FF_API_LLS1                     (LIBAVUTIL_VERSION_MAJOR < 54)
 #endif
 #ifndef FF_API_AVFRAME_LAVC
 #define FF_API_AVFRAME_LAVC             (LIBAVUTIL_VERSION_MAJOR < 54)
@@ -122,37 +105,19 @@
 #ifndef FF_API_VDPAU
 #define FF_API_VDPAU                    (LIBAVUTIL_VERSION_MAJOR < 54)
 #endif
-#ifndef FF_API_GET_CHANNEL_LAYOUT_COMPAT
-#define FF_API_GET_CHANNEL_LAYOUT_COMPAT (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_OLD_OPENCL
-#define FF_API_OLD_OPENCL               (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
 #ifndef FF_API_XVMC
 #define FF_API_XVMC                     (LIBAVUTIL_VERSION_MAJOR < 54)
-#endif
-#ifndef FF_API_INTFLOAT
-#define FF_API_INTFLOAT                 (LIBAVUTIL_VERSION_MAJOR < 54)
 #endif
 #ifndef FF_API_OPT_TYPE_METADATA
 #define FF_API_OPT_TYPE_METADATA        (LIBAVUTIL_VERSION_MAJOR < 54)
 #endif
 #ifndef FF_API_AVFRAME_COLORSPACE
-#define FF_API_AVFRAME_COLORSPACE       (LIBAVUTIL_VERSION_MAJOR >= 52)
+#define FF_API_AVFRAME_COLORSPACE       (LIBAVUTIL_VERSION_MAJOR >= 54)
 #endif
 
-
-#ifndef FF_CONST_AVUTIL53
-#if LIBAVUTIL_VERSION_MAJOR >= 53
-#define FF_CONST_AVUTIL53 const
-#else
-#define FF_CONST_AVUTIL53
-#endif
-#endif
 
 /**
  * @}
  */
 
 #endif /* AVUTIL_VERSION_H */
-
