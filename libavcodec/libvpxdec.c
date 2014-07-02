@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010, Google, Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -97,7 +97,7 @@ static int vp8_decode(AVCodecContext *avctx,
         }
         if ((ret = ff_get_buffer(avctx, picture, 0)) < 0)
             return ret;
-        av_image_copy(picture->data, picture->linesize, (const uint8_t **)img->planes,
+        av_image_copy(picture->data, picture->linesize, img->planes,
                       img->stride, avctx->pix_fmt, img->d_w, img->d_h);
         *got_frame           = 1;
     }
@@ -133,6 +133,9 @@ AVCodec ff_libvpx_vp8_decoder = {
 #if CONFIG_LIBVPX_VP9_DECODER
 static av_cold int vp9_init(AVCodecContext *avctx)
 {
+    int ret;
+    if ((ret = ff_vp9_check_experimental(avctx)))
+        return ret;
     return vpx_init(avctx, &vpx_codec_vp9_dx_algo);
 }
 
@@ -145,7 +148,6 @@ AVCodec ff_libvpx_vp9_decoder = {
     .init           = vp9_init,
     .close          = vp8_free,
     .decode         = vp8_decode,
-    .capabilities   = CODEC_CAP_AUTO_THREADS | CODEC_CAP_DR1,
-    .init_static_data = ff_vp9_init_static,
+    .capabilities   = CODEC_CAP_AUTO_THREADS,
 };
 #endif /* CONFIG_LIBVPX_VP9_DECODER */
