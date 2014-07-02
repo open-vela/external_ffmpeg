@@ -4,20 +4,20 @@
  * Copyright (c) 2006 Julian Hall
  * Copyright (c) 2002-2003 Brian J. Murrell
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -32,6 +32,7 @@
 
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
+
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
@@ -43,7 +44,6 @@ typedef struct BlackFrameContext {
     int bthresh;          ///< black threshold
     unsigned int frame;   ///< frame number
     unsigned int nblack;  ///< number of black pixels counted so far
-    unsigned int last_keyframe; ///< frame number of the last received key-frame
 } BlackFrameContext;
 
 static int query_formats(AVFilterContext *ctx)
@@ -72,16 +72,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         p += frame->linesize[0];
     }
 
-    if (frame->key_frame)
-        s->last_keyframe = s->frame;
-
     pblack = s->nblack * 100 / (inlink->w * inlink->h);
     if (pblack >= s->bamount)
-        av_log(ctx, AV_LOG_INFO, "frame:%u pblack:%u pts:%"PRId64" t:%f "
-               "type:%c last_keyframe:%d\n",
+        av_log(ctx, AV_LOG_INFO, "frame:%u pblack:%u pts:%"PRId64" t:%f\n",
                s->frame, pblack, frame->pts,
-               frame->pts == AV_NOPTS_VALUE ? -1 : frame->pts * av_q2d(inlink->time_base),
-               av_get_picture_type_char(frame->pict_type), s->last_keyframe);
+               frame->pts == AV_NOPTS_VALUE ? -1 : frame->pts * av_q2d(inlink->time_base));
 
     s->frame++;
     s->nblack = 0;
@@ -89,24 +84,28 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 }
 
 #define OFFSET(x) offsetof(BlackFrameContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
-static const AVOption blackframe_options[] = {
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption options[] = {
     { "amount", "Percentage of the pixels that have to be below the threshold "
         "for the frame to be considered black.", OFFSET(bamount), AV_OPT_TYPE_INT, { .i64 = 98 }, 0, 100,     FLAGS },
     { "threshold", "threshold below which a pixel value is considered black",
-                                                 OFFSET(bthresh), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 255,     FLAGS },
-    { "thresh", "threshold below which a pixel value is considered black",
-                                                 OFFSET(bthresh), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 255,     FLAGS },
-    { NULL }
+                                                 OFFSET(bthresh), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, INT_MAX, FLAGS },
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(blackframe);
+static const AVClass blackframe_class = {
+    .class_name = "blackframe",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_blackframe_inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_VIDEO,
-        .filter_frame = filter_frame,
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
+        .filter_frame     = filter_frame,
     },
     { NULL }
 };
@@ -120,11 +119,15 @@ static const AVFilterPad avfilter_vf_blackframe_outputs[] = {
 };
 
 AVFilter ff_vf_blackframe = {
-    .name          = "blackframe",
-    .description   = NULL_IF_CONFIG_SMALL("Detect frames that are (almost) black."),
-    .priv_size     = sizeof(BlackFrameContext),
-    .priv_class    = &blackframe_class,
+    .name        = "blackframe",
+    .description = NULL_IF_CONFIG_SMALL("Detect frames that are (almost) black."),
+
+    .priv_size = sizeof(BlackFrameContext),
+    .priv_class = &blackframe_class,
+
     .query_formats = query_formats,
-    .inputs        = avfilter_vf_blackframe_inputs,
-    .outputs       = avfilter_vf_blackframe_outputs,
+
+    .inputs    = avfilter_vf_blackframe_inputs,
+
+    .outputs   = avfilter_vf_blackframe_outputs,
 };
