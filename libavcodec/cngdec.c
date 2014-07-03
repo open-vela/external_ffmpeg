@@ -2,20 +2,20 @@
  * RFC 3389 comfort noise generator
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,12 +59,12 @@ static av_cold int cng_decode_init(AVCodecContext *avctx)
 
     p->order            = 12;
     avctx->frame_size   = 640;
-    p->refl_coef        = av_mallocz(p->order * sizeof(*p->refl_coef));
-    p->target_refl_coef = av_mallocz(p->order * sizeof(*p->target_refl_coef));
-    p->lpc_coef         = av_mallocz(p->order * sizeof(*p->lpc_coef));
-    p->filter_out       = av_mallocz((avctx->frame_size + p->order) *
+    p->refl_coef        = av_mallocz_array(p->order, sizeof(*p->refl_coef));
+    p->target_refl_coef = av_mallocz_array(p->order, sizeof(*p->target_refl_coef));
+    p->lpc_coef         = av_mallocz_array(p->order, sizeof(*p->lpc_coef));
+    p->filter_out       = av_mallocz_array(avctx->frame_size + p->order,
                                      sizeof(*p->filter_out));
-    p->excitation       = av_mallocz(avctx->frame_size * sizeof(*p->excitation));
+    p->excitation       = av_mallocz_array(avctx->frame_size, sizeof(*p->excitation));
     if (!p->refl_coef || !p->target_refl_coef || !p->lpc_coef ||
         !p->filter_out || !p->excitation) {
         cng_decode_close(avctx);
@@ -142,10 +142,8 @@ static int cng_decode_frame(AVCodecContext *avctx, void *data,
                                  p->excitation, avctx->frame_size, p->order);
 
     frame->nb_samples = avctx->frame_size;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     buf_out = (int16_t *)frame->data[0];
     for (i = 0; i < avctx->frame_size; i++)
         buf_out[i] = p->filter_out[i + p->order];
