@@ -2,20 +2,20 @@
  * RTMP network protocol
  * Copyright (c) 2010 Howard Chu
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,6 +47,7 @@ typedef struct LibRTMPContext {
     char *pageurl;
     char *client_buffer_time;
     int live;
+    char *temp_filename;
 } LibRTMPContext;
 
 static void rtmp_log(int level, const char *fmt, va_list args)
@@ -71,6 +72,7 @@ static int rtmp_close(URLContext *s)
     RTMP *r = &ctx->rtmp;
 
     RTMP_Close(r);
+    av_freep(&ctx->temp_filename);
     return 0;
 }
 
@@ -149,7 +151,7 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
             len += strlen(ctx->swfurl);
     }
 
-    if (!(filename = av_malloc(len)))
+    if (!(ctx->temp_filename = filename = av_malloc(len)))
         return AVERROR(ENOMEM);
 
     av_strlcpy(filename, s->filename, len);
@@ -229,13 +231,9 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
     }
 
     s->is_streamed = 1;
-    rc = 0;
+    return 0;
 fail:
-    if (filename != s->filename)
-        av_freep(&filename);
-    if (rc)
-        RTMP_Close(r);
-
+    av_freep(&ctx->temp_filename);
     return rc;
 }
 
