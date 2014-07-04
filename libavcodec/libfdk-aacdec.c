@@ -2,7 +2,7 @@
  * AAC decoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -26,6 +26,7 @@
 #include "internal.h"
 
 enum ConcealMethod {
+    CONCEAL_METHOD_DEFAULT              = -1,
     CONCEAL_METHOD_SPECTRAL_MUTING      =  0,
     CONCEAL_METHOD_NOISE_SUBSTITUTION   =  1,
     CONCEAL_METHOD_ENERGY_INTERPOLATION =  2,
@@ -42,7 +43,8 @@ typedef struct FDKAACDecContext {
 #define OFFSET(x) offsetof(FDKAACDecContext, x)
 #define AD AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption fdk_aac_dec_options[] = {
-    { "conceal", "Error concealment method", OFFSET(conceal_method), AV_OPT_TYPE_INT, { .i64 = CONCEAL_METHOD_NOISE_SUBSTITUTION }, CONCEAL_METHOD_SPECTRAL_MUTING, CONCEAL_METHOD_NB - 1, AD, "conceal" },
+    { "conceal", "Error concealment method", OFFSET(conceal_method), AV_OPT_TYPE_INT, { .i64 = CONCEAL_METHOD_DEFAULT }, CONCEAL_METHOD_DEFAULT, CONCEAL_METHOD_NB - 1, AD, "conceal" },
+    { "default",  "Default",              0, AV_OPT_TYPE_CONST, { .i64 = CONCEAL_METHOD_DEFAULT },              INT_MIN, INT_MAX, AD, "conceal" },
     { "spectral", "Spectral muting",      0, AV_OPT_TYPE_CONST, { .i64 = CONCEAL_METHOD_SPECTRAL_MUTING },      INT_MIN, INT_MAX, AD, "conceal" },
     { "noise",    "Noise Substitution",   0, AV_OPT_TYPE_CONST, { .i64 = CONCEAL_METHOD_NOISE_SUBSTITUTION },   INT_MIN, INT_MAX, AD, "conceal" },
     { "energy",   "Energy Interpolation", 0, AV_OPT_TYPE_CONST, { .i64 = CONCEAL_METHOD_ENERGY_INTERPOLATION }, INT_MIN, INT_MAX, AD, "conceal" },
@@ -193,10 +195,12 @@ static av_cold int fdk_aac_decode_init(AVCodecContext *avctx)
         }
     }
 
-    if ((err = aacDecoder_SetParam(s->handle, AAC_CONCEAL_METHOD,
-                                   s->conceal_method)) != AAC_DEC_OK) {
-        av_log(avctx, AV_LOG_ERROR, "Unable to set error concealment method\n");
-        return AVERROR_UNKNOWN;
+    if (s->conceal_method != CONCEAL_METHOD_DEFAULT) {
+        if ((err = aacDecoder_SetParam(s->handle, AAC_CONCEAL_METHOD,
+                                       s->conceal_method)) != AAC_DEC_OK) {
+            av_log(avctx, AV_LOG_ERROR, "Unable to set error concealment method\n");
+            return AVERROR_UNKNOWN;
+        }
     }
 
     avctx->sample_fmt = AV_SAMPLE_FMT_S16;
@@ -223,10 +227,8 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (s->initialized) {
         frame->nb_samples = avctx->frame_size;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             return ret;
-        }
         buf = frame->extended_data[0];
         buf_size = avctx->channels * frame->nb_samples *
                    av_get_bytes_per_sample(avctx->sample_fmt);
@@ -258,10 +260,8 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (tmpptr) {
         frame->nb_samples = avctx->frame_size;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             goto end;
-        }
         memcpy(frame->extended_data[0], tmpptr,
                avctx->channels * avctx->frame_size *
                av_get_bytes_per_sample(avctx->sample_fmt));
