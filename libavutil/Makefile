@@ -23,6 +23,7 @@ HEADERS = adler32.h                                                     \
           fifo.h                                                        \
           file.h                                                        \
           frame.h                                                       \
+          hash.h                                                        \
           hmac.h                                                        \
           imgutils.h                                                    \
           intfloat.h                                                    \
