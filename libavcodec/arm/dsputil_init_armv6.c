@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2009 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,6 +43,9 @@ int ff_pix_abs8_armv6(MpegEncContext *s, uint8_t *blk1, uint8_t *blk2,
 int ff_sse16_armv6(MpegEncContext *s, uint8_t *blk1, uint8_t *blk2,
                    int line_size, int h);
 
+int ff_pix_norm1_armv6(uint8_t *pix, int line_size);
+int ff_pix_sum_armv6(uint8_t *pix, int line_size);
+
 av_cold void ff_dsputil_init_armv6(DSPContext *c, AVCodecContext *avctx,
                                    unsigned high_bit_depth)
 {
@@ -60,4 +63,7 @@ av_cold void ff_dsputil_init_armv6(DSPContext *c, AVCodecContext *avctx,
     c->sad[1] = ff_pix_abs8_armv6;
 
     c->sse[0] = ff_sse16_armv6;
+
+    c->pix_norm1 = ff_pix_norm1_armv6;
+    c->pix_sum   = ff_pix_sum_armv6;
 }
