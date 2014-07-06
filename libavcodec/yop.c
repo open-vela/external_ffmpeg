@@ -5,20 +5,20 @@
  * derived from the code by
  * Copyright (C) 2009 Thomas P. Higdon <thomas.p.higdon@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@
 
 typedef struct YopDecContext {
     AVCodecContext *avctx;
-    AVFrame *frame;
 
     int num_pal_colors;
     int first_color[2];
@@ -79,15 +78,6 @@ static const int8_t motion_vector[16][2] =
      { 4, -2}, {-2,  0},
     };
 
-static av_cold int yop_decode_close(AVCodecContext *avctx)
-{
-    YopDecContext *s = avctx->priv_data;
-
-    av_frame_free(&s->frame);
-
-    return 0;
-}
-
 static av_cold int yop_decode_init(AVCodecContext *avctx)
 {
     YopDecContext *s = avctx->priv_data;
@@ -113,13 +103,9 @@ static av_cold int yop_decode_init(AVCodecContext *avctx)
     if (s->num_pal_colors + s->first_color[0] > 256 ||
         s->num_pal_colors + s->first_color[1] > 256) {
         av_log(avctx, AV_LOG_ERROR,
-               "Palette parameters invalid, header probably corrupt\n");
+               "YOP: palette parameters invalid, header probably corrupt\n");
         return AVERROR_INVALIDDATA;
     }
-
-    s->frame = av_frame_alloc();
-    if (!s->frame)
-        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -158,7 +144,8 @@ static int yop_copy_previous_block(YopDecContext *s, int linesize, int copy_tag)
     bufptr = s->dstptr + motion_vector[copy_tag][0] +
              linesize * motion_vector[copy_tag][1];
     if (bufptr < s->dstbuf) {
-        av_log(s->avctx, AV_LOG_ERROR, "File probably corrupt\n");
+        av_log(s->avctx, AV_LOG_ERROR,
+               "YOP: cannot decode, file probably corrupt\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -192,7 +179,7 @@ static int yop_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                             AVPacket *avpkt)
 {
     YopDecContext *s = avctx->priv_data;
-    AVFrame *frame = s->frame;
+    AVFrame *frame = data;
     int tag, firstcolor, is_odd_frame;
     int ret, i, x, y;
     uint32_t *palette;
@@ -202,8 +189,11 @@ static int yop_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_reget_buffer(avctx, frame)) < 0)
+    ret = ff_get_buffer(avctx, frame, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     if (!avctx->frame_number)
         memset(frame->data[1], 0, AVPALETTE_SIZE);
@@ -215,20 +205,13 @@ static int yop_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     s->low_nibble = NULL;
 
     is_odd_frame = avpkt->data[0];
-    if(is_odd_frame>1){
-        av_log(avctx, AV_LOG_ERROR, "frame is too odd %d\n", is_odd_frame);
-        return AVERROR_INVALIDDATA;
-    }
     firstcolor   = s->first_color[is_odd_frame];
     palette      = (uint32_t *)frame->data[1];
 
-    for (i = 0; i < s->num_pal_colors; i++, s->srcptr += 3) {
+    for (i = 0; i < s->num_pal_colors; i++, s->srcptr += 3)
         palette[i + firstcolor] = (s->srcptr[0] << 18) |
                                   (s->srcptr[1] << 10) |
                                   (s->srcptr[2] << 2);
-        palette[i + firstcolor] |= 0xFFU << 24 |
-                                   (palette[i + firstcolor] >> 6) & 0x30303;
-    }
 
     frame->palette_has_changed = 1;
 
@@ -256,9 +239,6 @@ static int yop_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         s->dstptr += 2*frame->linesize[0] - x;
     }
 
-    if ((ret = av_frame_ref(data, s->frame)) < 0)
-        return ret;
-
     *got_frame = 1;
     return avpkt->size;
 }
@@ -270,6 +250,6 @@ AVCodec ff_yop_decoder = {
     .id             = AV_CODEC_ID_YOP,
     .priv_data_size = sizeof(YopDecContext),
     .init           = yop_decode_init,
-    .close          = yop_decode_close,
     .decode         = yop_decode_frame,
+    .capabilities   = CODEC_CAP_DR1,
 };
