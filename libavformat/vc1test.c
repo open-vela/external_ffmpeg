@@ -2,20 +2,20 @@
  * VC1 Test Bitstreams Format Demuxer
  * Copyright (c) 2006, 2008 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,25 +51,22 @@ static int vc1t_read_header(AVFormatContext *s)
 
     frames = avio_rl24(pb);
     if(avio_r8(pb) != 0xC5 || avio_rl32(pb) != 4)
-        return AVERROR_INVALIDDATA;
+        return -1;
 
     /* init video codec */
     st = avformat_new_stream(s, NULL);
     if (!st)
-        return AVERROR(ENOMEM);
+        return -1;
 
     st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     st->codec->codec_id = AV_CODEC_ID_WMV3;
 
-    st->codec->extradata = av_malloc(VC1_EXTRADATA_SIZE);
-    if (!st->codec->extradata)
+    if (ff_get_extradata(st->codec, pb, VC1_EXTRADATA_SIZE) < 0)
         return AVERROR(ENOMEM);
-    st->codec->extradata_size = VC1_EXTRADATA_SIZE;
-    avio_read(pb, st->codec->extradata, VC1_EXTRADATA_SIZE);
     st->codec->height = avio_rl32(pb);
     st->codec->width = avio_rl32(pb);
     if(avio_rl32(pb) != 0xC)
-        return AVERROR_INVALIDDATA;
+        return -1;
     avio_skip(pb, 8);
     fps = avio_rl32(pb);
     if(fps == 0xFFFFFFFF)
@@ -94,7 +91,7 @@ static int vc1t_read_packet(AVFormatContext *s,
     int keyframe = 0;
     uint32_t pts;
 
-    if(pb->eof_reached)
+    if(url_feof(pb))
         return AVERROR(EIO);
 
     frame_size = avio_rl24(pb);
