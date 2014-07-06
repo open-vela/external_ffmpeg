@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Kamil Nowosad
  * Copyright (c) 2013 Nicolas Bertrand <nicoinattendu@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -130,8 +130,8 @@ typedef struct Jpeg2000TgtNode {
 } Jpeg2000TgtNode;
 
 typedef struct Jpeg2000CodingStyle {
-    uint8_t nreslevels;       // number of resolution levels
-    uint8_t nreslevels2decode; // number of resolution levels to decode
+    int nreslevels;           // number of resolution levels
+    int nreslevels2decode;    // number of resolution levels to decode
     uint8_t log2_cblk_width,
             log2_cblk_height; // exponent of codeblock size
     uint8_t transform;        // DWT type
@@ -146,10 +146,15 @@ typedef struct Jpeg2000CodingStyle {
 
 typedef struct Jpeg2000QuantStyle {
     uint8_t expn[JPEG2000_MAX_DECLEVELS * 3];  // quantization exponent
-    uint32_t mant[JPEG2000_MAX_DECLEVELS * 3]; // quantization mantissa
+    uint16_t mant[JPEG2000_MAX_DECLEVELS * 3]; // quantization mantissa
     uint8_t quantsty;      // quantization style
     uint8_t nguardbits;    // number of guard bits
 } Jpeg2000QuantStyle;
+
+typedef struct Jpeg2000Pass {
+    uint16_t rate;
+    int64_t disto;
+} Jpeg2000Pass;
 
 typedef struct Jpeg2000Cblk {
     uint8_t npasses;
@@ -160,6 +165,7 @@ typedef struct Jpeg2000Cblk {
     uint8_t lblock;
     uint8_t zero;
     uint8_t data[8192];
+    Jpeg2000Pass passes[100];
     uint16_t coord[2][2]; // border coordinates {{x0, x1}, {y0, y1}}
 } Jpeg2000Cblk; // code block
 
@@ -251,6 +257,8 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
                                Jpeg2000QuantStyle *qntsty,
                                int cbps, int dx, int dy,
                                AVCodecContext *ctx);
+
+void ff_jpeg2000_reinit(Jpeg2000Component *comp, Jpeg2000CodingStyle *codsty);
 
 void ff_jpeg2000_cleanup(Jpeg2000Component *comp, Jpeg2000CodingStyle *codsty);
 
