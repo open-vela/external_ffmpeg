@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,12 +26,16 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/internal.h"
 #include "avcodec.h"
 #include "copy_block.h"
 #include "dct.h"
 #include "dsputil.h"
 #include "simple_idct.h"
 #include "faandct.h"
+#include "imgconvert.h"
+#include "mathops.h"
 #include "mpegvideo.h"
 #include "config.h"
 
@@ -43,6 +47,74 @@ uint32_t ff_square_tab[512] = { 0, };
 
 #define BIT_DEPTH 8
 #include "dsputilenc_template.c"
+
+static int pix_sum_c(uint8_t *pix, int line_size)
+{
+    int s = 0, i, j;
+
+    for (i = 0; i < 16; i++) {
+        for (j = 0; j < 16; j += 8) {
+            s   += pix[0];
+            s   += pix[1];
+            s   += pix[2];
+            s   += pix[3];
+            s   += pix[4];
+            s   += pix[5];
+            s   += pix[6];
+            s   += pix[7];
+            pix += 8;
+        }
+        pix += line_size - 16;
+    }
+    return s;
+}
+
+static int pix_norm1_c(uint8_t *pix, int line_size)
+{
+    int s = 0, i, j;
+    uint32_t *sq = ff_square_tab + 256;
+
+    for (i = 0; i < 16; i++) {
+        for (j = 0; j < 16; j += 8) {
+#if 0
+            s += sq[pix[0]];
+            s += sq[pix[1]];
+            s += sq[pix[2]];
+            s += sq[pix[3]];
+            s += sq[pix[4]];
+            s += sq[pix[5]];
+            s += sq[pix[6]];
+            s += sq[pix[7]];
+#else
+#if HAVE_FAST_64BIT
+            register uint64_t x = *(uint64_t *) pix;
+            s += sq[x         & 0xff];
+            s += sq[(x >>  8) & 0xff];
+            s += sq[(x >> 16) & 0xff];
+            s += sq[(x >> 24) & 0xff];
+            s += sq[(x >> 32) & 0xff];
+            s += sq[(x >> 40) & 0xff];
+            s += sq[(x >> 48) & 0xff];
+            s += sq[(x >> 56) & 0xff];
+#else
+            register uint32_t x = *(uint32_t *) pix;
+            s += sq[x         & 0xff];
+            s += sq[(x >>  8) & 0xff];
+            s += sq[(x >> 16) & 0xff];
+            s += sq[(x >> 24) & 0xff];
+            x  = *(uint32_t *) (pix + 4);
+            s += sq[x         & 0xff];
+            s += sq[(x >>  8) & 0xff];
+            s += sq[(x >> 16) & 0xff];
+            s += sq[(x >> 24) & 0xff];
+#endif
+#endif
+            pix += 8;
+        }
+        pix += line_size - 16;
+    }
+    return s;
+}
 
 static int sse4_c(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                   int line_size, int h)
@@ -112,7 +184,7 @@ static int sse16_c(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
     return s;
 }
 
-static void diff_pixels_c(int16_t *restrict block, const uint8_t *s1,
+static void diff_pixels_c(int16_t *av_restrict block, const uint8_t *s1,
                           const uint8_t *s2, int stride)
 {
     int i;
@@ -393,6 +465,35 @@ static int nsse8_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2, int stride, int 
         return score1 + FFABS(score2) * 8;
 }
 
+static int try_8x8basis_c(int16_t rem[64], int16_t weight[64],
+                          int16_t basis[64], int scale)
+{
+    int i;
+    unsigned int sum = 0;
+
+    for (i = 0; i < 8 * 8; i++) {
+        int b = rem[i] + ((basis[i] * scale +
+                           (1 << (BASIS_SHIFT - RECON_SHIFT - 1))) >>
+                          (BASIS_SHIFT - RECON_SHIFT));
+        int w = weight[i];
+        b >>= RECON_SHIFT;
+        av_assert2(-512 < b && b < 512);
+
+        sum += (w * b) * (w * b) >> 4;
+    }
+    return sum >> 2;
+}
+
+static void add_8x8basis_c(int16_t rem[64], int16_t basis[64], int scale)
+{
+    int i;
+
+    for (i = 0; i < 8 * 8; i++)
+        rem[i] += (basis[i] * scale +
+                   (1 << (BASIS_SHIFT - RECON_SHIFT - 1))) >>
+                  (BASIS_SHIFT - RECON_SHIFT);
+}
+
 static int zero_cmp(MpegEncContext *s, uint8_t *a, uint8_t *b,
                     int stride, int h)
 {
@@ -446,6 +547,14 @@ void ff_set_cmp(DSPContext *c, me_cmp_func *cmp, int type)
         case FF_CMP_NSSE:
             cmp[i] = c->nsse[i];
             break;
+#if CONFIG_DWT
+        case FF_CMP_W53:
+            cmp[i]= c->w53[i];
+            break;
+        case FF_CMP_W97:
+            cmp[i]= c->w97[i];
+            break;
+#endif
         default:
             av_log(NULL, AV_LOG_ERROR,
                    "internal error in cmp function selection\n");
@@ -473,7 +582,7 @@ static int hadamard8_diff8x8_c(MpegEncContext *s, uint8_t *dst,
 {
     int i, temp[64], sum = 0;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     for (i = 0; i < 8; i++) {
         // FIXME: try pointer walks
@@ -525,7 +634,7 @@ static int hadamard8_intra8x8_c(MpegEncContext *s, uint8_t *src,
 {
     int i, temp[64], sum = 0;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     for (i = 0; i < 8; i++) {
         // FIXME: try pointer walks
@@ -577,7 +686,7 @@ static int dct_sad8x8_c(MpegEncContext *s, uint8_t *src1,
 {
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
     s->dsp.fdct(temp);
@@ -644,7 +753,7 @@ static int dct_max8x8_c(MpegEncContext *s, uint8_t *src1,
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
     int sum = 0, i;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
     s->dsp.fdct(temp);
@@ -662,7 +771,7 @@ static int quant_psnr8x8_c(MpegEncContext *s, uint8_t *src1,
     int16_t *const bak = temp + 64;
     int sum = 0, i;
 
-    assert(h == 8);
+    av_assert2(h == 8);
     s->mb_intra = 0;
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
@@ -691,7 +800,7 @@ static int rd8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
     const int esc_length = s->ac_esc_length;
     uint8_t *length, *last_length;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     copy_block8(lsrc1, src1, 8, stride, 8);
     copy_block8(lsrc2, src2, 8, stride, 8);
@@ -735,7 +844,7 @@ static int rd8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
         level = temp[i] + 64;
 
-        assert(level - 64);
+        av_assert2(level - 64);
 
         if ((level & (~127)) == 0) {
             bits += last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -766,7 +875,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
     const int esc_length = s->ac_esc_length;
     uint8_t *length, *last_length;
 
-    assert(h == 8);
+    av_assert2(h == 8);
 
     s->dsp.diff_pixels(temp, src1, src2, stride);
 
@@ -807,7 +916,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
         level = temp[i] + 64;
 
-        assert(level - 64);
+        av_assert2(level - 64);
 
         if ((level & (~127)) == 0)
             bits += last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -840,20 +949,24 @@ static int vsad_intra ## size ## _c(MpegEncContext *c,                  \
 VSAD_INTRA(8)
 VSAD_INTRA(16)
 
-static int vsad16_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,
-                    int stride, int h)
-{
-    int score = 0, x, y;
-
-    for (y = 1; y < h; y++) {
-        for (x = 0; x < 16; x++)
-            score += FFABS(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);
-        s1 += stride;
-        s2 += stride;
-    }
-
-    return score;
+#define VSAD(size)                                                             \
+static int vsad ## size ## _c(MpegEncContext *c,                               \
+                              uint8_t *s1, uint8_t *s2,                        \
+                              int stride, int h)                               \
+{                                                                              \
+    int score = 0, x, y;                                                       \
+                                                                               \
+    for (y = 1; y < h; y++) {                                                  \
+        for (x = 0; x < size; x++)                                             \
+            score += FFABS(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);   \
+        s1 += stride;                                                          \
+        s2 += stride;                                                          \
+    }                                                                          \
+                                                                               \
+    return score;                                                              \
 }
+VSAD(8)
+VSAD(16)
 
 #define SQ(a) ((a) * (a))
 #define VSSE_INTRA(size)                                                \
@@ -878,20 +991,23 @@ static int vsse_intra ## size ## _c(MpegEncContext *c,                  \
 VSSE_INTRA(8)
 VSSE_INTRA(16)
 
-static int vsse16_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,
-                    int stride, int h)
-{
-    int score = 0, x, y;
-
-    for (y = 1; y < h; y++) {
-        for (x = 0; x < 16; x++)
-            score += SQ(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);
-        s1 += stride;
-        s2 += stride;
-    }
-
-    return score;
+#define VSSE(size)                                                             \
+static int vsse ## size ## _c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,     \
+                    int stride, int h)                                         \
+{                                                                              \
+    int score = 0, x, y;                                                       \
+                                                                               \
+    for (y = 1; y < h; y++) {                                                  \
+        for (x = 0; x < size; x++)                                             \
+            score += SQ(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);      \
+        s1 += stride;                                                          \
+        s2 += stride;                                                          \
+    }                                                                          \
+                                                                               \
+    return score;                                                              \
 }
+VSSE(8)
+VSSE(16)
 
 #define WRAPPER8_16_SQ(name8, name16)                                   \
 static int name16(MpegEncContext *s, uint8_t *dst, uint8_t *src,        \
@@ -958,9 +1074,32 @@ av_cold void ff_dsputil_static_init(void)
         ff_square_tab[i] = (i - 256) * (i - 256);
 }
 
+int ff_check_alignment(void)
+{
+    static int did_fail = 0;
+    LOCAL_ALIGNED_16(int, aligned, [4]);
+
+    if ((intptr_t)aligned & 15) {
+        if (!did_fail) {
+#if HAVE_MMX || HAVE_ALTIVEC
+            av_log(NULL, AV_LOG_ERROR,
+                "Compiler did not align stack variables. Libavcodec has been miscompiled\n"
+                "and may be very slow or crash. This is not a bug in libavcodec,\n"
+                "but in the compiler. You may try recompiling using gcc >= 4.2.\n"
+                "Do not report crashes to FFmpeg developers.\n");
+#endif
+            did_fail=1;
+        }
+        return -1;
+    }
+    return 0;
+}
+
 av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
 {
     const unsigned high_bit_depth = avctx->bits_per_raw_sample > 8;
+
+    ff_check_alignment();
 
 #if CONFIG_ENCODERS
     if (avctx->bits_per_raw_sample == 10) {
@@ -983,6 +1122,9 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
     c->diff_pixels = diff_pixels_c;
 
     c->sum_abs_dctelem = sum_abs_dctelem_c;
+
+    c->pix_sum   = pix_sum_c;
+    c->pix_norm1 = pix_norm1_c;
 
     /* TODO [0] 16  [1] 8 */
     c->pix_abs[0][0] = pix_abs16_c;
@@ -1015,30 +1157,60 @@ av_cold void ff_dsputil_init(DSPContext *c, AVCodecContext *avctx)
     SET_CMP_FUNC(rd)
     SET_CMP_FUNC(bit)
     c->vsad[0] = vsad16_c;
+    c->vsad[1] = vsad8_c;
     c->vsad[4] = vsad_intra16_c;
     c->vsad[5] = vsad_intra8_c;
     c->vsse[0] = vsse16_c;
+    c->vsse[1] = vsse8_c;
     c->vsse[4] = vsse_intra16_c;
     c->vsse[5] = vsse_intra8_c;
     c->nsse[0] = nsse16_c;
     c->nsse[1] = nsse8_c;
+#if CONFIG_SNOW_DECODER || CONFIG_SNOW_ENCODER
+    ff_dsputil_init_dwt(c);
+#endif
+
+    c->try_8x8basis = try_8x8basis_c;
+    c->add_8x8basis = add_8x8basis_c;
+
+    c->shrink[0] = av_image_copy_plane;
+    c->shrink[1] = ff_shrink22;
+    c->shrink[2] = ff_shrink44;
+    c->shrink[3] = ff_shrink88;
 
     c->draw_edges = draw_edges_8_c;
 
     switch (avctx->bits_per_raw_sample) {
     case 9:
     case 10:
+    case 12:
+    case 14:
         c->get_pixels = get_pixels_16_c;
         break;
     default:
-        c->get_pixels = get_pixels_8_c;
+        if (avctx->bits_per_raw_sample<=8 || avctx->codec_type != AVMEDIA_TYPE_VIDEO) {
+            c->get_pixels = get_pixels_8_c;
+        }
         break;
     }
 
+
+    if (ARCH_ALPHA)
+        ff_dsputil_init_alpha(c, avctx);
     if (ARCH_ARM)
         ff_dsputil_init_arm(c, avctx, high_bit_depth);
     if (ARCH_PPC)
         ff_dsputil_init_ppc(c, avctx, high_bit_depth);
     if (ARCH_X86)
         ff_dsputil_init_x86(c, avctx, high_bit_depth);
+}
+
+av_cold void dsputil_init(DSPContext* c, AVCodecContext *avctx)
+{
+    ff_dsputil_init(c, avctx);
+}
+
+av_cold void avpriv_dsputil_init(DSPContext *c, AVCodecContext *avctx)
+{
+    ff_dsputil_init(c, avctx);
 }
