@@ -2,20 +2,20 @@
  * TechSmith Screen Codec 2 (aka Dora) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -90,14 +90,14 @@ static av_cold int init_vlcs(TSCC2Context *c)
     return 0;
 }
 
-#define DEQUANT(val, q) (((q) * (val) + 0x80) >> 8)
+#define DEQUANT(val, q) ((q * val + 0x80) >> 8)
 #define DCT1D(d0, d1, d2, d3, s0, s1, s2, s3, OP) \
     OP(d0, 5 * ((s0) + (s1) + (s2)) + 2 * (s3));  \
     OP(d1, 5 * ((s0) - (s2) - (s3)) + 2 * (s1));  \
     OP(d2, 5 * ((s0) - (s2) + (s3)) - 2 * (s1));  \
     OP(d3, 5 * ((s0) - (s1) + (s2)) - 2 * (s3));  \
 
-#define COL_OP(a, b)  a = (b)
+#define COL_OP(a, b)  a = b
 #define ROW_OP(a, b)  a = ((b) + 0x20) >> 6
 
 static void tscc2_idct4_put(int *in, int q[3], uint8_t *dst, int stride)
@@ -194,8 +194,7 @@ static int tscc2_decode_slice(TSCC2Context *c, int mb_y,
     int i, mb_x, q, ret;
     int off;
 
-    if ((ret = init_get_bits8(&c->gb, buf, buf_size)) < 0)
-        return ret;
+    init_get_bits(&c->gb, buf, buf_size * 8);
 
     for (mb_x = 0; mb_x < c->mb_width; mb_x++) {
         q = c->slice_quants[mb_x + c->mb_width * mb_y];
@@ -235,6 +234,7 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
     }
 
