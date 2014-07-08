@@ -2,20 +2,20 @@
  * CD Graphics Demuxer
  * Copyright (c) 2009 Michael Tison
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -70,12 +70,6 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     pkt->stream_index = 0;
-    pkt->dts=
-    pkt->pts= pkt->pos / CDG_PACKET_SIZE;
-
-    if(ret>5 && (pkt->data[0]&0x3F) == 9 && (pkt->data[1]&0x3F)==1 && !(pkt->data[2+2+1] & 0x0F)){
-        pkt->flags = AV_PKT_FLAG_KEY;
-    }
     return ret;
 }
 
@@ -85,6 +79,5 @@ AVInputFormat ff_cdg_demuxer = {
     .priv_data_size = sizeof(CDGContext),
     .read_header    = read_header,
     .read_packet    = read_packet,
-    .flags          = AVFMT_GENERIC_INDEX,
     .extensions     = "cdg",
 };
