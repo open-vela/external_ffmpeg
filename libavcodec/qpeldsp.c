@@ -1,22 +1,20 @@
 /*
  * quarterpel DSP functions
- * Copyright (c) 2000, 2001 Fabrice Bellard
- * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +30,6 @@
 #include "libavutil/attributes.h"
 #include "copy_block.h"
 #include "qpeldsp.h"
-#include "diracdsp.h"
 
 #define BIT_DEPTH 8
 #include "hpel_template.c"
@@ -732,51 +729,6 @@ void ff_put_pixels8_l2_8(uint8_t *dst, const uint8_t *src1, const uint8_t *src2,
     put_pixels8_l2_8(dst, src1, src2, dst_stride, src_stride1, src_stride2, h);
 
 }
-
-#if CONFIG_DIRAC_DECODER
-#define DIRAC_MC(OPNAME)\
-void ff_ ## OPNAME ## _dirac_pixels8_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-     OPNAME ## _pixels8_8_c(dst, src[0], stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels16_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_8_c(dst, src[0], stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels32_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_8_c(dst   , src[0]   , stride, h);\
-    OPNAME ## _pixels16_8_c(dst+16, src[0]+16, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels8_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels8_l2_8(dst, src[0], src[1], stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels16_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l2_8(dst, src[0], src[1], stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels32_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l2_8(dst   , src[0]   , src[1]   , stride, stride, stride, h);\
-    OPNAME ## _pixels16_l2_8(dst+16, src[0]+16, src[1]+16, stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels8_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels8_l4_8(dst, src[0], src[1], src[2], src[3], stride, stride, stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels16_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l4_8(dst, src[0], src[1], src[2], src[3], stride, stride, stride, stride, stride, h);\
-}\
-void ff_ ## OPNAME ## _dirac_pixels32_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
-{\
-    OPNAME ## _pixels16_l4_8(dst   , src[0]   , src[1]   , src[2]   , src[3]   , stride, stride, stride, stride, stride, h);\
-    OPNAME ## _pixels16_l4_8(dst+16, src[0]+16, src[1]+16, src[2]+16, src[3]+16, stride, stride, stride, stride, stride, h);\
-}
-DIRAC_MC(put)
-DIRAC_MC(avg)
-#endif
 
 av_cold void ff_qpeldsp_init(QpelDSPContext *c)
 {

@@ -2,20 +2,20 @@
  * simple math operations
  * Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at> et al
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,6 @@
 
 #include "config.h"
 #include "libavutil/common.h"
-#include "libavutil/x86/asm.h"
 
 #if HAVE_INLINE_ASM
 
@@ -89,7 +88,6 @@ static inline av_const int mid_pred(int a, int b, int c)
     return i;
 }
 
-#if HAVE_6REGS
 #define COPY3_IF_LT(x, y, a, b, c, d)\
 __asm__ volatile(\
     "cmpl  %0, %3       \n\t"\
@@ -99,11 +97,10 @@ __asm__ volatile(\
     : "+&r" (x), "+&r" (a), "+r" (c)\
     : "r" (y), "r" (b), "r" (d)\
 );
-#endif /* HAVE_6REGS */
 #endif /* HAVE_I686 */
 
 #define MASK_ABS(mask, level)                   \
-    __asm__ ("cdq                    \n\t"      \
+    __asm__ ("cltd                   \n\t"      \
              "xorl %1, %0            \n\t"      \
              "subl %1, %0            \n\t"      \
              : "+a"(level), "=&d"(mask))
