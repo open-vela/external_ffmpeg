@@ -3,20 +3,20 @@
 ;*
 ;* Copyright (c) 2013 Loren Merritt
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -29,7 +29,7 @@ SECTION .text
 %define COVAR_STRIDE MAX_VARS_ALIGN*8
 %define COVAR(x,y) [covarq + (x)*8 + (y)*COVAR_STRIDE]
 
-struc LLSModel
+struc LLSModel2
     .covariance:  resq MAX_VARS_ALIGN*MAX_VARS_ALIGN
     .coeff:       resq MAX_VARS*MAX_VARS
     .variance:    resq MAX_VARS
@@ -49,7 +49,7 @@ INIT_XMM sse2
 %define movdqa movaps
 cglobal update_lls, 2,5,8, ctx, var, i, j, covar2
     %define covarq ctxq
-    mov     id, [ctxq + LLSModel.indep_count]
+    mov     id, [ctxq + LLSModel2.indep_count]
     lea   varq, [varq + iq*8]
     neg     iq
     mov covar2q, covarq
@@ -125,10 +125,11 @@ cglobal update_lls, 2,5,8, ctx, var, i, j, covar2
 .ret:
     REP_RET
 
+%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 cglobal update_lls, 3,6,8, ctx, var, count, i, j, count2
     %define covarq ctxq
-    mov  countd, [ctxq + LLSModel.indep_count]
+    mov  countd, [ctxq + LLSModel2.indep_count]
     lea count2d, [countq-2]
     xor     id, id
 .loopi:
@@ -194,7 +195,7 @@ cglobal update_lls, 3,6,8, ctx, var, count, i, j, count2
     jle .loop2x1
 .ret:
     REP_RET
-
+%endif
 
 INIT_XMM sse2
 cglobal evaluate_lls, 3,4,2, ctx, var, order, i
@@ -205,7 +206,7 @@ cglobal evaluate_lls, 3,4,2, ctx, var, order, i
     %define coefsq ctxq
     mov     id, orderd
     imul    orderd, MAX_VARS
-    lea     coefsq, [ctxq + LLSModel.coeff + orderq*8]
+    lea     coefsq, [ctxq + LLSModel2.coeff + orderq*8]
     movsd   m0, [varq]
     movhpd  m0, [varq + 8]
     mulpd   m0, [coefsq]
