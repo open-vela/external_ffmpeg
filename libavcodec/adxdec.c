@@ -2,20 +2,20 @@
  * ADX ADPCM codecs
  * Copyright (c) 2001,2003 BERO
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,9 +40,9 @@ static av_cold int adx_decode_init(AVCodecContext *avctx)
     int ret, header_size;
 
     if (avctx->extradata_size >= 24) {
-        if ((ret = ff_adx_decode_header(avctx, avctx->extradata,
-                                        avctx->extradata_size, &header_size,
-                                        c->coeff)) < 0) {
+        if ((ret = avpriv_adx_decode_header(avctx, avctx->extradata,
+                                            avctx->extradata_size, &header_size,
+                                            c->coeff)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "error parsing ADX header\n");
             return AVERROR_INVALIDDATA;
         }
@@ -101,6 +101,7 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
     int16_t **samples;
     int samples_offset;
     const uint8_t *buf  = avpkt->data;
+    const uint8_t *buf_end = buf + avpkt->size;
     int num_blocks, ch, ret;
 
     if (c->eof) {
@@ -110,8 +111,8 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
 
     if (!c->header_parsed && buf_size >= 2 && AV_RB16(buf) == 0x8000) {
         int header_size;
-        if ((ret = ff_adx_decode_header(avctx, buf, buf_size, &header_size,
-                                        c->coeff)) < 0) {
+        if ((ret = avpriv_adx_decode_header(avctx, buf, buf_size, &header_size,
+                                            c->coeff)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "error parsing ADX header\n");
             return AVERROR_INVALIDDATA;
         }
@@ -141,16 +142,14 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = num_blocks * BLOCK_SAMPLES;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     samples = (int16_t **)frame->extended_data;
     samples_offset = 0;
 
     while (num_blocks--) {
         for (ch = 0; ch < c->channels; ch++) {
-            if (adx_decode(c, samples[ch], samples_offset, buf, ch)) {
+            if (buf_end - buf < BLOCK_SIZE || adx_decode(c, samples[ch], samples_offset, buf, ch)) {
                 c->eof = 1;
                 buf = avpkt->data + avpkt->size;
                 break;
@@ -158,9 +157,11 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
             buf_size -= BLOCK_SIZE;
             buf      += BLOCK_SIZE;
         }
-        samples_offset += BLOCK_SAMPLES;
+        if (!c->eof)
+            samples_offset += BLOCK_SAMPLES;
     }
 
+    frame->nb_samples = samples_offset;
     *got_frame_ptr = 1;
 
     return buf - avpkt->data;
