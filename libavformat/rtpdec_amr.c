@@ -2,20 +2,20 @@
  * RTP AMR Depacketizer, RFC 3267
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -139,8 +139,7 @@ static int amr_handle_packet(AVFormatContext *ctx, PayloadContext *data,
     return 0;
 }
 
-static int amr_parse_fmtp(AVFormatContext *s,
-                          AVStream *stream, PayloadContext *data,
+static int amr_parse_fmtp(AVStream *stream, PayloadContext *data,
                           char *attr, char *value)
 {
     /* Some AMR SDP configurations contain "octet-align", without
@@ -148,8 +147,8 @@ static int amr_parse_fmtp(AVFormatContext *s,
      * interpret it as "1".
      */
     if (!strcmp(value, "")) {
-        av_log(s, AV_LOG_WARNING, "AMR fmtp attribute %s had "
-                                  "nonstandard empty value\n", attr);
+        av_log(NULL, AV_LOG_WARNING, "AMR fmtp attribute %s had "
+                                     "nonstandard empty value\n", attr);
         strcpy(value, "1");
     }
     if (!strcmp(attr, "octet-align"))
@@ -178,7 +177,7 @@ static int amr_parse_sdp_line(AVFormatContext *s, int st_index,
      * separated key/value pairs.
      */
     if (av_strstart(line, "fmtp:", &p)) {
-        ret = ff_parse_fmtp(s, s->streams[st_index], data, p, amr_parse_fmtp);
+        ret = ff_parse_fmtp(s->streams[st_index], data, p, amr_parse_fmtp);
         if (!data->octet_align || data->crc ||
             data->interleaving || data->channels != 1) {
             av_log(s, AV_LOG_ERROR, "Unsupported RTP/AMR configuration!\n");
