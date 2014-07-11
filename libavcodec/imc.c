@@ -4,20 +4,20 @@
  * Copyright (c) 2006 Benjamin Larsson
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,7 +38,6 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/internal.h"
-#include "libavutil/libm.h"
 #include "avcodec.h"
 #include "bswapdsp.h"
 #include "get_bits.h"
@@ -357,7 +356,7 @@ static void imc_decode_level_coefficients(IMCContext *q, int *levlCoeffBuf,
     float tmp, tmp2;
     // maybe some frequency division thingy
 
-    flcoeffs1[0] = 20000.0 / exp2 (levlCoeffBuf[0] * 0.18945); // 0.18945 = log2(10) * 0.05703125
+    flcoeffs1[0] = 20000.0 / pow (2, levlCoeffBuf[0] * 0.18945); // 0.18945 = log2(10) * 0.05703125
     flcoeffs2[0] = log2f(flcoeffs1[0]);
     tmp  = flcoeffs1[0];
     tmp2 = flcoeffs2[0];
@@ -451,13 +450,8 @@ static int bit_allocation(IMCContext *q, IMCChannel *chctx,
     for (i = 0; i < BANDS; i++)
         highest = FFMAX(highest, chctx->flcoeffs1[i]);
 
-    for (i = 0; i < BANDS - 1; i++) {
-        if (chctx->flcoeffs5[i] <= 0) {
-            av_log(NULL, AV_LOG_ERROR, "flcoeffs5 %f invalid\n", chctx->flcoeffs5[i]);
-            return AVERROR_INVALIDDATA;
-        }
+    for (i = 0; i < BANDS - 1; i++)
         chctx->flcoeffs4[i] = chctx->flcoeffs3[i] - log2f(chctx->flcoeffs5[i]);
-    }
     chctx->flcoeffs4[BANDS - 1] = limit;
 
     highest = highest * 0.25;
@@ -893,13 +887,6 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
         imc_decode_level_coefficients2(q, chctx->levlCoeffBuf, chctx->old_floor,
                                        chctx->flcoeffs1, chctx->flcoeffs2);
 
-    for(i=0; i<BANDS; i++) {
-        if(chctx->flcoeffs1[i] > INT_MAX) {
-            av_log(avctx, AV_LOG_ERROR, "scalefactor out of range\n");
-            return AVERROR_INVALIDDATA;
-        }
-    }
-
     memcpy(chctx->old_floor, chctx->flcoeffs1, 32 * sizeof(float));
 
     counter = 0;
@@ -1019,8 +1006,10 @@ static int imc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = COEFFS;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     for (i = 0; i < avctx->channels; i++) {
         q->out_samples = (float *)frame->extended_data[i];
@@ -1055,15 +1044,7 @@ static av_cold int imc_decode_close(AVCodecContext * avctx)
     return 0;
 }
 
-static av_cold void flush(AVCodecContext *avctx)
-{
-    IMCContext *q = avctx->priv_data;
 
-    q->chctx[0].decoder_reset =
-    q->chctx[1].decoder_reset = 1;
-}
-
-#if CONFIG_IMC_DECODER
 AVCodec ff_imc_decoder = {
     .name           = "imc",
     .long_name      = NULL_IF_CONFIG_SMALL("IMC (Intel Music Coder)"),
@@ -1073,13 +1054,11 @@ AVCodec ff_imc_decoder = {
     .init           = imc_decode_init,
     .close          = imc_decode_close,
     .decode         = imc_decode_frame,
-    .flush          = flush,
     .capabilities   = CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
-#endif
-#if CONFIG_IAC_DECODER
+
 AVCodec ff_iac_decoder = {
     .name           = "iac",
     .long_name      = NULL_IF_CONFIG_SMALL("IAC (Indeo Audio Coder)"),
@@ -1089,9 +1068,7 @@ AVCodec ff_iac_decoder = {
     .init           = imc_decode_init,
     .close          = imc_decode_close,
     .decode         = imc_decode_frame,
-    .flush          = flush,
     .capabilities   = CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
-#endif
