@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include "asv.h"
 #include "avcodec.h"
 #include "blockdsp.h"
-#include "put_bits.h"
 #include "idctdsp.h"
 #include "internal.h"
 #include "mathops.h"
@@ -212,10 +211,8 @@ static int decode_frame(AVCodecContext *avctx,
     AVFrame * const p     = data;
     int mb_x, mb_y, ret;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
 
@@ -278,8 +275,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     int i;
 
     if (avctx->extradata_size < 1) {
-        av_log(avctx, AV_LOG_ERROR, "No extradata provided\n");
-        return AVERROR_INVALIDDATA;
+        av_log(avctx, AV_LOG_WARNING, "No extradata provided\n");
     }
 
     ff_asv_common_init(avctx);
@@ -289,8 +285,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     ff_init_scantable(a->idsp.idct_permutation, &a->scantable, ff_asv_scantab);
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    a->inv_qscale = avctx->extradata[0];
-    if (a->inv_qscale == 0) {
+    if (avctx->extradata_size < 1 || (a->inv_qscale = avctx->extradata[0]) == 0) {
         av_log(avctx, AV_LOG_ERROR, "illegal qscale 0\n");
         if (avctx->codec_id == AV_CODEC_ID_ASV1)
             a->inv_qscale = 6;
@@ -317,6 +312,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
+#if CONFIG_ASV1_DECODER
 AVCodec ff_asv1_decoder = {
     .name           = "asv1",
     .long_name      = NULL_IF_CONFIG_SMALL("ASUS V1"),
@@ -328,7 +324,9 @@ AVCodec ff_asv1_decoder = {
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
 };
+#endif
 
+#if CONFIG_ASV2_DECODER
 AVCodec ff_asv2_decoder = {
     .name           = "asv2",
     .long_name      = NULL_IF_CONFIG_SMALL("ASUS V2"),
@@ -340,4 +338,5 @@ AVCodec ff_asv2_decoder = {
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
 };
+#endif
 
