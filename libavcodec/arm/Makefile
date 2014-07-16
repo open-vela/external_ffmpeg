@@ -19,7 +19,6 @@ OBJS-$(CONFIG_IDCTDSP)                 += arm/idctdsp_init_arm.o        \
                                           arm/idctdsp_arm.o             \
                                           arm/jrevdct_arm.o             \
                                           arm/simple_idct_arm.o
-OBJS-$(CONFIG_LLAUDDSP)                += arm/lossless_audiodsp_init_arm.o
 OBJS-$(CONFIG_MPEGAUDIODSP)            += arm/mpegaudiodsp_init_arm.o
 OBJS-$(CONFIG_MPEGVIDEO)               += arm/mpegvideo_arm.o
 OBJS-$(CONFIG_MPEGVIDEOENC)            += arm/mpegvideoencdsp_init_arm.o
@@ -30,10 +29,10 @@ OBJS-$(CONFIG_VP3DSP)                  += arm/vp3dsp_init_arm.o
 
 OBJS-$(CONFIG_AAC_DECODER)             += arm/aacpsdsp_init_arm.o       \
                                           arm/sbrdsp_init_arm.o
+OBJS-$(CONFIG_APE_DECODER)             += arm/apedsp_init_arm.o
 OBJS-$(CONFIG_DCA_DECODER)             += arm/dcadsp_init_arm.o
 OBJS-$(CONFIG_FLAC_DECODER)            += arm/flacdsp_init_arm.o        \
                                           arm/flacdsp_arm.o
-OBJS-$(CONFIG_FLAC_ENCODER)            += arm/flacdsp_init_arm.o
 OBJS-$(CONFIG_MLP_DECODER)             += arm/mlpdsp_init_arm.o
 OBJS-$(CONFIG_VC1_DECODER)             += arm/vc1dsp_init_arm.o
 OBJS-$(CONFIG_VORBIS_DECODER)          += arm/vorbisdsp_init_arm.o
@@ -55,7 +54,7 @@ ARMV5TE-OBJS-$(CONFIG_MLP_DECODER)     += arm/mlpdsp_armv5te.o
 
 ARMV6-OBJS-$(CONFIG_AC3DSP)            += arm/ac3dsp_armv6.o
 ARMV6-OBJS-$(CONFIG_DSPUTIL)           += arm/dsputil_armv6.o
-ARMV6-OBJS-$(CONFIG_H264DSP)           += arm/startcode_armv6.o
+ARMV6-OBJS-$(CONFIG_H264DSP)           += arm/h264dsp_armv6.o
 ARMV6-OBJS-$(CONFIG_HPELDSP)           += arm/hpeldsp_init_armv6.o      \
                                           arm/hpeldsp_armv6.o
 ARMV6-OBJS-$(CONFIG_IDCTDSP)           += arm/idctdsp_init_armv6.o      \
@@ -66,8 +65,6 @@ ARMV6-OBJS-$(CONFIG_MPEGVIDEOENC)      += arm/mpegvideoencdsp_armv6.o
 ARMV6-OBJS-$(CONFIG_PIXBLOCKDSP)       += arm/pixblockdsp_armv6.o
 
 ARMV6-OBJS-$(CONFIG_MLP_DECODER)       += arm/mlpdsp_armv6.o
-ARMV6-OBJS-$(CONFIG_VC1_DECODER)       += arm/startcode_armv6.o
-ARMV6-OBJS-$(CONFIG_VC1_PARSER)        += arm/startcode_armv6.o
 ARMV6-OBJS-$(CONFIG_VP7_DECODER)       += arm/vp8_armv6.o               \
                                           arm/vp8dsp_init_armv6.o       \
                                           arm/vp8dsp_armv6.o
@@ -113,7 +110,7 @@ NEON-OBJS-$(CONFIG_VP3DSP)             += arm/vp3dsp_neon.o
 
 NEON-OBJS-$(CONFIG_AAC_DECODER)        += arm/aacpsdsp_neon.o           \
                                           arm/sbrdsp_neon.o
-NEON-OBJS-$(CONFIG_LLAUDDSP)           += arm/lossless_audiodsp_neon.o
+NEON-OBJS-$(CONFIG_APE_DECODER)        += arm/apedsp_neon.o
 NEON-OBJS-$(CONFIG_DCA_DECODER)        += arm/dcadsp_neon.o             \
                                           arm/synth_filter_neon.o
 NEON-OBJS-$(CONFIG_RV30_DECODER)       += arm/rv34dsp_neon.o
