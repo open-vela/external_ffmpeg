@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,21 +32,12 @@ typedef struct ScanTable {
     uint8_t raster_end[64];
 } ScanTable;
 
-enum idct_permutation_type {
-    FF_IDCT_PERM_NONE,
-    FF_IDCT_PERM_LIBMPEG2,
-    FF_IDCT_PERM_SIMPLE,
-    FF_IDCT_PERM_TRANSPOSE,
-    FF_IDCT_PERM_PARTTRANS,
-    FF_IDCT_PERM_SSE2,
-};
-
 void ff_init_scantable(uint8_t *permutation, ScanTable *st,
                        const uint8_t *src_scantable);
 void ff_init_scantable_permutation(uint8_t *idct_permutation,
-                                   enum idct_permutation_type perm_type);
+                                   int idct_permutation_type);
 int ff_init_scantable_permutation_x86(uint8_t *idct_permutation,
-                                      enum idct_permutation_type perm_type);
+                                      int idct_permutation_type);
 
 typedef struct IDCTDSPContext {
     /* pixel ops : interface with DCT */
@@ -92,11 +83,19 @@ typedef struct IDCTDSPContext {
      *    -> simple_idct_mmx -> ...)
      */
     uint8_t idct_permutation[64];
-    enum idct_permutation_type perm_type;
+    int idct_permutation_type;
+#define FF_NO_IDCT_PERM 1
+#define FF_LIBMPEG2_IDCT_PERM 2
+#define FF_SIMPLE_IDCT_PERM 3
+#define FF_TRANSPOSE_IDCT_PERM 4
+#define FF_PARTTRANS_IDCT_PERM 5
+#define FF_SSE2_IDCT_PERM 6
 } IDCTDSPContext;
 
 void ff_idctdsp_init(IDCTDSPContext *c, AVCodecContext *avctx);
 
+void ff_idctdsp_init_alpha(IDCTDSPContext *c, AVCodecContext *avctx,
+                           unsigned high_bit_depth);
 void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_idctdsp_init_ppc(IDCTDSPContext *c, AVCodecContext *avctx,

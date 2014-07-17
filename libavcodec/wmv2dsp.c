@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -252,7 +252,7 @@ av_cold void ff_wmv2dsp_init(WMV2DSPContext *c)
 {
     c->idct_add  = wmv2_idct_add_c;
     c->idct_put  = wmv2_idct_put_c;
-    c->idct_perm = FF_IDCT_PERM_NONE;
+    c->idct_perm = FF_NO_IDCT_PERM;
 
     c->put_mspel_pixels_tab[0] = ff_put_pixels8x8_c;
     c->put_mspel_pixels_tab[1] = put_mspel8_mc10_c;

@@ -4,20 +4,20 @@
  *
  * VC-3 encoder funded by the British Broadcasting Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,8 +30,10 @@ void ff_get_pixels_8x4_sym_sse2(int16_t *block, const uint8_t *pixels,
 
 av_cold void ff_dnxhdenc_init_x86(DNXHDEncContext *ctx)
 {
+#if HAVE_SSE2_EXTERNAL
     if (EXTERNAL_SSE2(av_get_cpu_flags())) {
         if (ctx->cid_table->bit_depth == 8)
             ctx->get_pixels_8x4_sym = ff_get_pixels_8x4_sym_sse2;
     }
+#endif /* HAVE_SSE2_EXTERNAL */
 }
