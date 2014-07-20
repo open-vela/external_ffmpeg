@@ -1,18 +1,22 @@
-/*
- * This file is part of Libav.
+/**
+ * @file
+ * Common code for Vorbis I encoder and decoder
+ * @author Denes Balatoni  ( dbalatoni programozo hu )
  *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,7 +71,7 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
 
     codes[p] = 0;
     if (bits[p] > 32)
-        return 1;
+        return AVERROR_INVALIDDATA;
     for (i = 0; i < bits[p]; ++i)
         exit_at_level[i+1] = 1 << i;
 
@@ -81,9 +85,14 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
 
     ++p;
 
+    for (i = p; (bits[i] == 0) && (i < num); ++i)
+        ;
+    if (i == num)
+        return 0;
+
     for (; p < num; ++p) {
         if (bits[p] > 32)
-             return 1;
+             return AVERROR_INVALIDDATA;
         if (bits[p] == 0)
              continue;
         // find corresponding exit(node which the tree can grow further from)
@@ -91,7 +100,7 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
             if (exit_at_level[i])
                 break;
         if (!i) // overspecified tree
-             return 1;
+             return AVERROR_INVALIDDATA;
         code = exit_at_level[i];
         exit_at_level[i] = 0;
         // construct code (append 0s to end) and introduce new exits
@@ -112,7 +121,7 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
     //no exits should be left (underspecified tree - ie. unused valid vlcs - not allowed by SPEC)
     for (p = 1; p < 33; p++)
         if (exit_at_level[p])
-            return 1;
+            return AVERROR_INVALIDDATA;
 
     return 0;
 }
