@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,10 +29,6 @@
 #include "attributes.h"
 #include "intfloat.h"
 
-#if HAVE_MIPSFPU && HAVE_INLINE_ASM
-#include "libavutil/mips/libm_mips.h"
-#endif /* HAVE_MIPSFPU && HAVE_INLINE_ASM*/
-
 #if !HAVE_ATANF
 #undef atanf
 #define atanf(x) ((float)atan(x))
@@ -46,13 +42,6 @@
 #if !HAVE_POWF
 #undef powf
 #define powf(x, y) ((float)pow(x, y))
-#endif
-
-#if !HAVE_CBRT
-static av_always_inline double cbrt(double x)
-{
-    return x < 0 ? -pow(-x, 1.0 / 3.0) : pow(x, 1.0 / 3.0);
-}
 #endif
 
 #if !HAVE_CBRTF
@@ -81,16 +70,6 @@ static av_always_inline float cbrtf(float x)
 #undef exp2f
 #define exp2f(x) ((float)exp2(x))
 #endif /* HAVE_EXP2F */
-
-#if !HAVE_FMINF
-#undef fminf
-static av_always_inline av_const float fminf(float x, float y)
-{
-    //Note, the NaN special case is needed for C spec compliance, it should be
-    //optimized away if the users compiler is configured to assume no NaN
-    return x > y ? y : (x == x ? x : y);
-}
-#endif
 
 #if !HAVE_ISINF
 static av_always_inline av_const int isinf(float x)
