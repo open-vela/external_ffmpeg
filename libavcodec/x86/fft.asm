@@ -6,20 +6,20 @@
 ;* This algorithm (though not any of the implementation details) is
 ;* based on libdjbfft by D. J. Bernstein.
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -36,8 +36,6 @@
 %define pointer resd
 %endif
 
-SECTION_RODATA 32
-
 struc FFTContext
     .nbits:    resd 1
     .reverse:  resd 1
@@ -53,10 +51,13 @@ struc FFTContext
     .imdcthalf:pointer 1
 endstruc
 
+SECTION_RODATA
+
 %define M_SQRT1_2 0.70710678118654752440
 %define M_COS_PI_1_8 0.923879532511287
 %define M_COS_PI_3_8 0.38268343236509
 
+align 32
 ps_cos16_1: dd 1.0, M_COS_PI_1_8, M_SQRT1_2, M_COS_PI_3_8, 1.0, M_COS_PI_1_8, M_SQRT1_2, M_COS_PI_3_8
 ps_cos16_2: dd 0, M_COS_PI_3_8, M_SQRT1_2, M_COS_PI_1_8, 0, -M_COS_PI_3_8, -M_SQRT1_2, -M_COS_PI_1_8
 
@@ -304,7 +305,6 @@ IF%1 mova  Z(1), m5
 
 INIT_YMM avx
 
-%if HAVE_AVX_EXTERNAL
 align 16
 fft8_avx:
     mova      m0, Z(0)
@@ -393,8 +393,6 @@ fft32_interleave_avx:
     sub r2d, mmsize/4
     jg .deint_loop
     ret
-
-%endif
 
 INIT_XMM sse
 
@@ -539,7 +537,6 @@ DEFINE_ARGS zc, w, n, o1, o3
 
 INIT_YMM avx
 
-%if HAVE_AVX_EXTERNAL
 %macro INTERL_AVX 5
     vunpckhps      %3, %2, %1
     vunpcklps      %2, %2, %1
@@ -561,7 +558,6 @@ cglobal fft_calc, 2,5,8
     FFT_DISPATCH _interleave %+ SUFFIX, r1
     REP_RET
 
-%endif
 
 INIT_XMM sse
 
@@ -780,11 +776,9 @@ align 8
 dispatch_tab %+ fullsuffix: pointer list_of_fft
 %endmacro ; DECL_FFT
 
-%if HAVE_AVX_EXTERNAL
 INIT_YMM avx
 DECL_FFT 6
 DECL_FFT 6, _interleave
-%endif
 INIT_XMM sse
 DECL_FFT 5
 DECL_FFT 5, _interleave
@@ -1086,7 +1080,4 @@ DECL_IMDCT POSROTATESHUF_3DNOW
 %endif
 
 INIT_YMM avx
-
-%if HAVE_AVX_EXTERNAL
 DECL_IMDCT POSROTATESHUF_AVX
-%endif
