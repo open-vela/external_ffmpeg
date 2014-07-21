@@ -4,20 +4,20 @@
 ;* Copyright (c) 2000, 2001 Fabrice Bellard
 ;* Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;*****************************************************************************
 
@@ -51,7 +51,7 @@ cglobal get_pixels, 3,4
     REP_RET
 
 INIT_XMM sse2
-cglobal get_pixels, 3, 4, 5
+cglobal get_pixels, 3, 4
     movsxdifnidn r2, r2d
     lea          r3, [r2*3]
     pxor         m4, m4
@@ -108,28 +108,3 @@ cglobal diff_pixels, 4,5
     add          r4, 16
     jne .loop
     REP_RET
-
-INIT_XMM sse2
-cglobal diff_pixels, 4, 5, 5
-    movsxdifnidn r3, r3d
-    pxor         m4, m4
-    add          r0,  128
-    mov          r4, -128
-.loop:
-    movh         m0, [r1]
-    movh         m2, [r2]
-    movh         m1, [r1+r3]
-    movh         m3, [r2+r3]
-    punpcklbw    m0, m4
-    punpcklbw    m1, m4
-    punpcklbw    m2, m4
-    punpcklbw    m3, m4
-    psubw        m0, m2
-    psubw        m1, m3
-    mova [r0+r4+0 ], m0
-    mova [r0+r4+16], m1
-    lea          r1, [r1+r3*2]
-    lea          r2, [r2+r3*2]
-    add          r4, 32
-    jne .loop
-    RET

@@ -1,15 +1,10 @@
 # files from fate-acodec
 
-FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_IMA_QT,  AIFF)    += adpcm-ima_qt \
-                                                           adpcm-ima_qt-trellis
-FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_IMA_WAV, WAV)     += adpcm-ima_wav \
-                                                           adpcm-ima_wav-trellis
-FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_MS,      WAV)     += adpcm-ms      \
-                                                           adpcm-ms-trellis
-FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_SWF,     FLV)     += adpcm-swf     \
-                                                           adpcm-swf-trellis
-FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_YAMAHA,  WAV)     += adpcm-yamaha  \
-                                                           adpcm-yamaha-trellis
+FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_IMA_QT,  AIFF)    += adpcm-ima_qt
+FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_IMA_WAV, WAV)     += adpcm-ima_wav
+FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_MS,      WAV)     += adpcm-ms
+FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_SWF,     FLV)     += adpcm-swf
+FATE_SEEK_ACODEC-$(call ENCDEC, ADPCM_YAMAHA,  WAV)     += adpcm-yamaha
 FATE_SEEK_ACODEC-$(call ENCDEC, ALAC,          MOV)     += alac
 FATE_SEEK_ACODEC-$(call ENCDEC, FLAC,          FLAC)    += flac
 FATE_SEEK_ACODEC-$(call ENCDEC, MP2,           MP2 MP3) += mp2
@@ -33,11 +28,6 @@ fate-seek-acodec-adpcm-ima_wav: SRC = fate/acodec-adpcm-ima_wav.wav
 fate-seek-acodec-adpcm-ms:      SRC = fate/acodec-adpcm-ms.wav
 fate-seek-acodec-adpcm-swf:     SRC = fate/acodec-adpcm-swf.flv
 fate-seek-acodec-adpcm-yamaha:  SRC = fate/acodec-adpcm-yamaha.wav
-fate-seek-acodec-adpcm-ima_qt-trellis:  SRC = fate/acodec-adpcm-ima_qt-trellis.aiff
-fate-seek-acodec-adpcm-ima_wav-trellis: SRC = fate/acodec-adpcm-ima_wav-trellis.wav
-fate-seek-acodec-adpcm-ms-trellis:      SRC = fate/acodec-adpcm-ms-trellis.wav
-fate-seek-acodec-adpcm-swf-trellis:     SRC = fate/acodec-adpcm-swf-trellis.flv
-fate-seek-acodec-adpcm-yamaha-trellis:  SRC = fate/acodec-adpcm-yamaha-trellis.wav
 fate-seek-acodec-alac:          SRC = fate/acodec-alac.mov
 fate-seek-acodec-flac:          SRC = fate/acodec-flac.flac
 fate-seek-acodec-mp2:           SRC = fate/acodec-mp2.mp2
@@ -99,8 +89,6 @@ FATE_SEEK_VSYNTH2-$(call ENCDEC, RAWVIDEO,      AVI)     += rgb
 FATE_SEEK_VSYNTH2-$(call ENCDEC, ROQ,           ROQ)     += roqvideo
 FATE_SEEK_VSYNTH2-$(call ENCDEC, RV10,          RM)      += rv10
 FATE_SEEK_VSYNTH2-$(call ENCDEC, RV20,          RM)      += rv20
-FATE_SEEK_VSYNTH2-$(call ENCDEC, SNOW,          AVI)     += snow
-FATE_SEEK_VSYNTH2-$(call ENCDEC, SNOW,          AVI)     += snow-ll
 FATE_SEEK_VSYNTH2-$(call ENCDEC, SVQ1,          MOV)     += svq1
 FATE_SEEK_VSYNTH2-$(call ENCDEC, WMV1,          AVI)     += wmv1
 FATE_SEEK_VSYNTH2-$(call ENCDEC, WMV2,          AVI)     += wmv2
@@ -137,7 +125,6 @@ fate-seek-vsynth2-mpeg4-adap:        SRC = fate/vsynth2-mpeg4-adap.avi
 fate-seek-vsynth2-mpeg4-adv:         SRC = fate/vsynth2-mpeg4-adv.avi
 fate-seek-vsynth2-mpeg4-error:       SRC = fate/vsynth2-mpeg4-error.avi
 fate-seek-vsynth2-mpeg4-nr:          SRC = fate/vsynth2-mpeg4-nr.avi
-fate-seek-vsynth2-mpeg4-nsse:        SRC = fate/vsynth2-mpeg4-nsse.avi
 fate-seek-vsynth2-mpeg4-qpel:        SRC = fate/vsynth2-mpeg4-qpel.avi
 fate-seek-vsynth2-mpeg4-qprd:        SRC = fate/vsynth2-mpeg4-qprd.avi
 fate-seek-vsynth2-mpeg4-rc:          SRC = fate/vsynth2-mpeg4-rc.avi
@@ -148,8 +135,6 @@ fate-seek-vsynth2-rgb:               SRC = fate/vsynth2-rgb.avi
 fate-seek-vsynth2-roqvideo:          SRC = fate/vsynth2-roqvideo.roq
 fate-seek-vsynth2-rv10:              SRC = fate/vsynth2-rv10.rm
 fate-seek-vsynth2-rv20:              SRC = fate/vsynth2-rv20.rm
-fate-seek-vsynth2-snow:              SRC = fate/vsynth2-snow.avi
-fate-seek-vsynth2-snow-ll:           SRC = fate/vsynth2-snow-ll.avi
 fate-seek-vsynth2-svq1:              SRC = fate/vsynth2-svq1.mov
 fate-seek-vsynth2-wmv1:              SRC = fate/vsynth2-wmv1.avi
 fate-seek-vsynth2-wmv2:              SRC = fate/vsynth2-wmv2.avi
@@ -166,7 +151,6 @@ FATE_SEEK_LAVF-$(call ENCDEC,  PCM_S16BE,             AU)          += au
 FATE_SEEK_LAVF-$(call ENCDEC2, MPEG4,      MP2,       AVI)         += avi
 FATE_SEEK_LAVF-$(call ENCDEC,  BMP,                   IMAGE2)      += bmp
 FATE_SEEK_LAVF-$(call ENCDEC2, DVVIDEO,    PCM_S16LE, AVI)         += dv_fmt
-FATE_SEEK_LAVF-$(call ENCDEC2, MPEG1VIDEO, MP2,       FFM)         += ffm
 FATE_SEEK_LAVF-$(call ENCDEC,  FLV,                   FLV)         += flv_fmt
 FATE_SEEK_LAVF-$(call ENCDEC,  GIF,                   IMAGE2)      += gif
 FATE_SEEK_LAVF-$(call ENCDEC2, MPEG2VIDEO, PCM_S16LE, GXF)         += gxf
@@ -194,7 +178,6 @@ FATE_SEEK_LAVF-$(call ENCDEC,  TIFF,                  IMAGE2)      += tiff
 FATE_SEEK_LAVF-$(call ENCDEC2, MPEG2VIDEO, MP2,       MPEGTS)      += ts
 FATE_SEEK_LAVF-$(call ENCDEC,  PCM_U8,                VOC)         += voc
 FATE_SEEK_LAVF-$(call ENCDEC,  PCM_S16LE,             WAV)         += wav
-FATE_SEEK_LAVF-$(call ENCDEC,  MP2,                   WTV)         += wtv
 FATE_SEEK_LAVF-$(CONFIG_YUV4MPEGPIPE_MUXER)                        += yuv4mpeg
 
 fate-seek-lavf-aiff:     SRC = lavf/lavf.aif
@@ -204,7 +187,6 @@ fate-seek-lavf-au:       SRC = lavf/lavf.au
 fate-seek-lavf-avi:      SRC = lavf/lavf.avi
 fate-seek-lavf-bmp:      SRC = images/bmp/%02d.bmp
 fate-seek-lavf-dv_fmt:   SRC = lavf/lavf.dv
-fate-seek-lavf-ffm:      SRC = lavf/lavf.ffm
 fate-seek-lavf-flv_fmt:  SRC = lavf/lavf.flv
 fate-seek-lavf-gif:      SRC = lavf/lavf.gif
 fate-seek-lavf-gxf:      SRC = lavf/lavf.gxf
@@ -232,7 +214,6 @@ fate-seek-lavf-tiff:     SRC = images/tiff/%02d.tiff
 fate-seek-lavf-ts:       SRC = lavf/lavf.ts
 fate-seek-lavf-voc:      SRC = lavf/lavf.voc
 fate-seek-lavf-wav:      SRC = lavf/lavf.wav
-fate-seek-lavf-wtv:      SRC = lavf/lavf.wtv
 fate-seek-lavf-yuv4mpeg: SRC = lavf/lavf.y4m
 
 FATE_SEEK += $(FATE_SEEK_LAVF-yes:%=fate-seek-lavf-%)
