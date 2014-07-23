@@ -2,20 +2,20 @@
  * Kega Game Video (KGV1) decoder
  * Copyright (c) 2010 Daniel Verkamp
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,7 @@
 #include "internal.h"
 
 typedef struct {
+    AVCodecContext *avctx;
     uint16_t *frame_buffer;
     uint16_t *last_frame_buffer;
 } KgvContext;
@@ -51,7 +52,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     const uint8_t *buf_end = buf + avpkt->size;
     KgvContext * const c = avctx->priv_data;
     int offsets[8];
-    uint8_t *out, *prev;
+    uint16_t *out, *prev;
     int outcnt = 0, maxcnt;
     int w, h, i, res;
 
@@ -82,21 +83,22 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     if ((res = ff_get_buffer(avctx, frame, 0)) < 0)
         return res;
-    out  = (uint8_t*)c->frame_buffer;
-    prev = (uint8_t*)c->last_frame_buffer;
+    out  = c->frame_buffer;
+    prev = c->last_frame_buffer;
 
     for (i = 0; i < 8; i++)
         offsets[i] = -1;
 
-    while (outcnt < maxcnt && buf_end - 2 >= buf) {
+    while (outcnt < maxcnt && buf_end - 2 > buf) {
         int code = AV_RL16(buf);
         buf += 2;
 
         if (!(code & 0x8000)) {
-            AV_WN16A(&out[2 * outcnt], code); // rgb555 pixel coded directly
-            outcnt++;
+            out[outcnt++] = code; // rgb555 pixel coded directly
         } else {
             int count;
+            int inp_off;
+            uint16_t *inp;
 
             if ((code & 0x6000) == 0x6000) {
                 // copy from previous frame
@@ -114,7 +116,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
                 start = (outcnt + offsets[oidx]) % maxcnt;
 
-                if (maxcnt - start < count || maxcnt - outcnt < count)
+                if (maxcnt - start < count)
                     break;
 
                 if (!prev) {
@@ -123,7 +125,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                     break;
                 }
 
-                memcpy(out + 2 * outcnt, prev + 2 * start, 2 * count);
+                inp = prev;
+                inp_off = start;
             } else {
                 // copy from earlier in this frame
                 int offset = (code & 0x1FFF) + 1;
@@ -138,12 +141,19 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                     count = 4 + *buf++;
                 }
 
-                if (outcnt < offset || maxcnt - outcnt < count)
+                if (outcnt < offset)
                     break;
 
-                av_memcpy_backptr(out + 2 * outcnt, 2 * offset, 2 * count);
+                inp = out;
+                inp_off = outcnt - offset;
             }
-            outcnt += count;
+
+            if (maxcnt - outcnt < count)
+                break;
+
+            for (i = inp_off; i < count + inp_off; i++) {
+                out[outcnt++] = inp[i];
+            }
         }
     }
 
@@ -162,6 +172,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
+    KgvContext * const c = avctx->priv_data;
+
+    c->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_RGB555;
 
     return 0;
