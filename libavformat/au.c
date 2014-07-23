@@ -4,20 +4,20 @@
  *
  * first version by Francois Revol <revol@free.fr>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,12 +31,6 @@
 #include "internal.h"
 #include "avio_internal.h"
 #include "pcm.h"
-#include "libavutil/avassert.h"
-
-/* if we don't know the size in advance */
-#define AU_UNKNOWN_SIZE ((uint32_t)(~0))
-/* the specification requires an annotation field of at least eight bytes */
-#define AU_HEADER_SIZE (24+8)
 
 static const AVCodecTag codec_au_tags[] = {
     { AV_CODEC_ID_PCM_MULAW,  1 },
@@ -46,12 +40,7 @@ static const AVCodecTag codec_au_tags[] = {
     { AV_CODEC_ID_PCM_S32BE,  5 },
     { AV_CODEC_ID_PCM_F32BE,  6 },
     { AV_CODEC_ID_PCM_F64BE,  7 },
-    { AV_CODEC_ID_ADPCM_G726LE, 23 },
-    { AV_CODEC_ID_ADPCM_G722,24 },
-    { AV_CODEC_ID_ADPCM_G726LE, 25 },
-    { AV_CODEC_ID_ADPCM_G726LE, 26 },
     { AV_CODEC_ID_PCM_ALAW,  27 },
-    { AV_CODEC_ID_ADPCM_G726LE, MKBETAG('7','2','6','2') },
     { AV_CODEC_ID_NONE,       0 },
 };
 
@@ -70,7 +59,7 @@ static int au_probe(AVProbeData *p)
 
 static int au_read_header(AVFormatContext *s)
 {
-    int size, data_size = 0;
+    int size;
     unsigned int tag;
     AVIOContext *pb = s->pb;
     unsigned int id, channels, rate;
@@ -82,12 +71,7 @@ static int au_read_header(AVFormatContext *s)
     if (tag != MKTAG('.', 's', 'n', 'd'))
         return AVERROR_INVALIDDATA;
     size = avio_rb32(pb); /* header size */
-    data_size = avio_rb32(pb); /* data size in bytes */
-
-    if (data_size < 0 && data_size != AU_UNKNOWN_SIZE) {
-        av_log(s, AV_LOG_ERROR, "Invalid negative data size '%d' found\n", data_size);
-        return AVERROR_INVALIDDATA;
-    }
+    avio_rb32(pb);        /* data size */
 
     id       = avio_rb32(pb);
     rate     = avio_rb32(pb);
@@ -106,15 +90,7 @@ static int au_read_header(AVFormatContext *s)
     }
 
     bps = av_get_bits_per_sample(codec);
-    if (codec == AV_CODEC_ID_ADPCM_G726LE) {
-        if (id == MKBETAG('7','2','6','2')) {
-            bps = 2;
-        } else {
-            const uint8_t bpcss[] = {4, 0, 3, 5};
-            av_assert0(id >= 23 && id < 23 + 4);
-            bps = bpcss[id - 23];
-        }
-    } else if (!bps) {
+    if (!bps) {
         avpriv_request_sample(s, "Unknown bits per sample");
         return AVERROR_PATCHWELCOME;
     }
@@ -137,14 +113,26 @@ static int au_read_header(AVFormatContext *s)
     st->codec->codec_id    = codec;
     st->codec->channels    = channels;
     st->codec->sample_rate = rate;
-    st->codec->bits_per_coded_sample = bps;
     st->codec->bit_rate    = channels * rate * bps;
-    st->codec->block_align = FFMAX(bps * st->codec->channels / 8, 1);
-    if (data_size != AU_UNKNOWN_SIZE)
-    st->duration = (((int64_t)data_size)<<3) / (st->codec->channels * (int64_t)bps);
+    st->codec->block_align = channels * bps >> 3;
 
     st->start_time = 0;
     avpriv_set_pts_info(st, 64, 1, rate);
+
+    return 0;
+}
+
+static int au_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    int ret;
+
+    ret = av_get_packet(s->pb, pkt, BLOCK_SIZE *
+                        s->streams[0]->codec->block_align);
+    if (ret < 0)
+        return ret;
+
+    pkt->stream_index = 0;
+    pkt->duration     = ret / s->streams[0]->codec->block_align;
 
     return 0;
 }
@@ -154,7 +142,7 @@ AVInputFormat ff_au_demuxer = {
     .long_name   = NULL_IF_CONFIG_SMALL("Sun AU"),
     .read_probe  = au_probe,
     .read_header = au_read_header,
-    .read_packet = ff_pcm_read_packet,
+    .read_packet = au_read_packet,
     .read_seek   = ff_pcm_read_seek,
     .codec_tag   = (const AVCodecTag* const []) { codec_au_tags, 0 },
 };
@@ -165,29 +153,35 @@ AVInputFormat ff_au_demuxer = {
 
 #include "rawenc.h"
 
-static int au_write_header(AVFormatContext *s)
+/* if we don't know the size in advance */
+#define AU_UNKNOWN_SIZE ((uint32_t)(~0))
+
+/* AUDIO_FILE header */
+static int put_au_header(AVIOContext *pb, AVCodecContext *enc)
 {
-    AVIOContext *pb = s->pb;
-    AVCodecContext *enc = s->streams[0]->codec;
-
-    if (s->nb_streams != 1) {
-        av_log(s, AV_LOG_ERROR, "only one stream is supported\n");
+    if (!enc->codec_tag)
         return AVERROR(EINVAL);
-    }
-
-    enc->codec_tag = ff_codec_get_tag(codec_au_tags, enc->codec_id);
-    if (!enc->codec_tag) {
-        av_log(s, AV_LOG_ERROR, "unsupported codec\n");
-        return AVERROR(EINVAL);
-    }
 
     ffio_wfourcc(pb, ".snd");                   /* magic number */
-    avio_wb32(pb, AU_HEADER_SIZE);              /* header size */
+    avio_wb32(pb, 24);                          /* header size */
     avio_wb32(pb, AU_UNKNOWN_SIZE);             /* data size */
     avio_wb32(pb, enc->codec_tag);              /* codec ID */
     avio_wb32(pb, enc->sample_rate);
     avio_wb32(pb, enc->channels);
-    avio_wb64(pb, 0); /* annotation field */
+
+    return 0;
+}
+
+static int au_write_header(AVFormatContext *s)
+{
+    AVIOContext *pb = s->pb;
+    int ret;
+
+    s->priv_data = NULL;
+
+    if ((ret = put_au_header(pb, s->streams[0]->codec)) < 0)
+        return ret;
+
     avio_flush(pb);
 
     return 0;
@@ -196,12 +190,13 @@ static int au_write_header(AVFormatContext *s)
 static int au_write_trailer(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
-    int64_t file_size = avio_tell(pb);
+    int64_t file_size;
 
-    if (s->pb->seekable && file_size < INT32_MAX) {
+    if (s->pb->seekable) {
         /* update file size */
+        file_size = avio_tell(pb);
         avio_seek(pb, 8, SEEK_SET);
-        avio_wb32(pb, (uint32_t)(file_size - AU_HEADER_SIZE));
+        avio_wb32(pb, (uint32_t)(file_size - 24));
         avio_seek(pb, file_size, SEEK_SET);
         avio_flush(pb);
     }

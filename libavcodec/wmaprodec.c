@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Baptiste Coudurier, Benjamin Larsson, Ulion
  * Copyright (c) 2008 - 2011 Sascha Sommer, Benjamin Larsson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -308,10 +308,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     /** generic init */
     s->log2_frame_size = av_log2(avctx->block_align) + 4;
-    if (s->log2_frame_size > 25) {
-        avpriv_request_sample(avctx, "Large block align");
-        return AVERROR_PATCHWELCOME;
-    }
 
     /** frame info */
     s->skip_frame  = 1; /* skip first frame */
@@ -344,8 +340,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
     }
 
     if (s->min_samples_per_subframe < WMAPRO_BLOCK_MIN_SIZE) {
-        av_log(avctx, AV_LOG_ERROR, "min_samples_per_subframe of %d too small\n",
-               s->min_samples_per_subframe);
+        av_log(avctx, AV_LOG_ERROR, "Invalid minimum block size %"PRId8"\n",
+               s->max_num_subframes);
         return AVERROR_INVALIDDATA;
     }
 
@@ -425,10 +421,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
         }
         s->sfb_offsets[i][band - 1] = subframe_len;
         s->num_sfb[i]               = band - 1;
-        if (s->num_sfb[i] <= 0) {
-            av_log(avctx, AV_LOG_ERROR, "num_sfb invalid\n");
-            return AVERROR_INVALIDDATA;
-        }
     }
 
 
@@ -445,10 +437,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
                            + s->sfb_offsets[i][b + 1] - 1) << i) >> 1;
             for (x = 0; x < num_possible_block_sizes; x++) {
                 int v = 0;
-                while (s->sfb_offsets[x][v + 1] << x < offset) {
-                    v++;
-                    av_assert0(v < MAX_BANDS);
-                }
+                while (s->sfb_offsets[x][v + 1] << x < offset)
+                    if (++v >= MAX_BANDS)
+                        return AVERROR_INVALIDDATA;
                 s->sf_offsets[i][x][b] = v;
             }
         }
@@ -501,9 +492,6 @@ static int decode_subframe_length(WMAProDecodeCtx *s, int offset)
     /** no need to read from the bitstream when only one length is possible */
     if (offset == s->samples_per_frame - s->min_samples_per_subframe)
         return s->min_samples_per_subframe;
-
-    if (get_bits_left(&s->gb) < 1)
-        return AVERROR_INVALIDDATA;
 
     /** 1 bit indicates if the subframe is of maximum length */
     if (s->max_subframe_len_bit) {
@@ -683,7 +671,7 @@ static void decode_decorrelation_matrix(WMAProDecodeCtx *s,
 /**
  *@brief Decode channel transformation parameters
  *@param s codec context
- *@return >= 0 in case of success, < 0 in case of bitstream errors
+ *@return 0 in case of success, < 0 in case of bitstream errors
  */
 static int decode_channel_transform(WMAProDecodeCtx* s)
 {
@@ -1157,7 +1145,7 @@ static int decode_subframe(WMAProDecodeCtx *s)
         int num_fill_bits;
         if (!(num_fill_bits = get_bits(&s->gb, 2))) {
             int len = get_bits(&s->gb, 4);
-            num_fill_bits = (len ? get_bits(&s->gb, len) : 0) + 1;
+            num_fill_bits = get_bits(&s->gb, len) + 1;
         }
 
         if (num_fill_bits >= 0) {
@@ -1187,7 +1175,6 @@ static int decode_subframe(WMAProDecodeCtx *s)
             transmit_coeffs = 1;
     }
 
-    av_assert0(s->subframe_len <= WMAPRO_BLOCK_MAX_SIZE);
     if (transmit_coeffs) {
         int step;
         int quant_step = 90 * s->bits_per_sample >> 4;
@@ -1198,11 +1185,10 @@ static int decode_subframe(WMAProDecodeCtx *s)
             for (i = 0; i < s->channels_for_cur_subframe; i++) {
                 int c = s->channel_indexes_for_cur_subframe[i];
                 int num_vec_coeffs = get_bits(&s->gb, num_bits) << 2;
-                if (num_vec_coeffs > s->subframe_len) {
+                if (num_vec_coeffs + offset > FF_ARRAY_ELEMS(s->channel[c].out)) {
                     av_log(s->avctx, AV_LOG_ERROR, "num_vec_coeffs %d is too large\n", num_vec_coeffs);
                     return AVERROR_INVALIDDATA;
                 }
-                av_assert0(num_vec_coeffs + offset <= FF_ARRAY_ELEMS(s->channel[c].out));
                 s->channel[c].num_vec_coeffs = num_vec_coeffs;
             }
         } else {
@@ -1395,6 +1381,7 @@ static int decode_frame(WMAProDecodeCtx *s, AVFrame *frame, int *got_frame_ptr)
     /* get output buffer */
     frame->nb_samples = s->samples_per_frame;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         s->packet_loss = 1;
         return 0;
     }
@@ -1468,7 +1455,7 @@ static void save_bits(WMAProDecodeCtx *s, GetBitContext* gb, int len,
     int buflen;
 
     /** when the frame data does not need to be concatenated, the input buffer
-        is reset and additional bits from the previous frame are copied
+        is resetted and additional bits from the previous frame are copyed
         and skipped later so that a fast byte copy is possible */
 
     if (!append) {
@@ -1477,7 +1464,7 @@ static void save_bits(WMAProDecodeCtx *s, GetBitContext* gb, int len,
         init_put_bits(&s->pb, s->frame_data, MAX_FRAMESIZE);
     }
 
-    buflen = (put_bits_count(&s->pb) + len + 8) >> 3;
+    buflen = (s->num_saved_bits + len + 8) >> 3;
 
     if (len <= 0 || buflen > MAX_FRAMESIZE) {
         avpriv_request_sample(s->avctx, "Too small input buffer");
@@ -1485,7 +1472,13 @@ static void save_bits(WMAProDecodeCtx *s, GetBitContext* gb, int len,
         return;
     }
 
-    av_assert0(len <= put_bits_left(&s->pb));
+    if (len > put_bits_left(&s->pb)) {
+        av_log(s->avctx, AV_LOG_ERROR,
+               "Cannot append %d bits, only %d bits available.\n",
+               len, put_bits_left(&s->pb));
+        s->packet_loss = 1;
+        return;
+    }
 
     s->num_saved_bits += len;
     if (!append) {
@@ -1600,8 +1593,7 @@ static int decode_packet(AVCodecContext *avctx, void *data,
             (frame_size = show_bits(gb, s->log2_frame_size)) &&
             frame_size <= remaining_bits(s, gb)) {
             save_bits(s, gb, frame_size, 0);
-            if (!s->packet_loss)
-                s->packet_done = !decode_frame(s, data, got_frame_ptr);
+            s->packet_done = !decode_frame(s, data, got_frame_ptr);
         } else if (!s->len_prefix
                    && s->num_saved_bits > get_bits_count(&s->gb)) {
             /** when the frames do not have a length prefix, we don't know
