@@ -16,7 +16,7 @@ FATE_REALMEDIA_VIDEO-$(call DEMDEC, RM, RV30) += fate-rv30
 fate-rv30: CMD = framecrc -flags +bitexact -idct simple -i $(TARGET_SAMPLES)/real/rv30.rm -an
 
 FATE_REALMEDIA_VIDEO-$(call DEMDEC, RM, RV40) += fate-rv40
-fate-rv40: CMD = framecrc -i $(TARGET_SAMPLES)/real/spygames-2MB.rmvb -t 10 -an -vsync 0
+fate-rv40: CMD = framecrc -i $(TARGET_SAMPLES)/real/spygames-2MB.rmvb -t 10 -an
 
 FATE_SIPR += fate-sipr-5k0
 fate-sipr-5k0: CMD = pcm -i $(TARGET_SAMPLES)/sipr/sipr_5k0.rm
@@ -31,8 +31,9 @@ fate-sipr-8k5: CMD = pcm -i $(TARGET_SAMPLES)/sipr/sipr_8k5.rm
 fate-sipr-8k5: REF = $(SAMPLES)/sipr/sipr_8k5.pcm
 
 FATE_SIPR += fate-sipr-16k
-fate-sipr-16k: CMD = pcm -i $(TARGET_SAMPLES)/sipr/sipr_16k.rm
+fate-sipr-16k: CMD = pcm -i $(TARGET_SAMPLES)/sipr/sipr_16k.rm -aframes 3250
 fate-sipr-16k: REF = $(SAMPLES)/sipr/sipr_16k.pcm
+fate-sipr-16k: SIZE_TOLERANCE = 40000
 
 $(FATE_SIPR): CMP = oneoff
 
@@ -43,4 +44,4 @@ fate-realmedia-audio: $(FATE_REALMEDIA_AUDIO-yes)
 fate-realmedia-video: $(FATE_REALMEDIA_VIDEO-yes)
 fate-realmedia: fate-realmedia-audio fate-realmedia-video
 
-FATE_SAMPLES_AVCONV += $(FATE_REALMEDIA_AUDIO-yes) $(FATE_REALMEDIA_VIDEO-yes)
+FATE_SAMPLES_FFMPEG += $(FATE_REALMEDIA_AUDIO-yes) $(FATE_REALMEDIA_VIDEO-yes)
