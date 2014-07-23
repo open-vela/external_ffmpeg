@@ -2,24 +2,24 @@
  * (I)RDFT transforms
  * Copyright (c) 2009 Alex Converse <alex dot converse at gmail dot com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_RDFT_H
+#if !defined(AVCODEC_RDFT_H) && (!defined(FFT_FLOAT) || FFT_FLOAT)
 #define AVCODEC_RDFT_H
 
 #include "config.h"
@@ -48,7 +48,7 @@ extern SINTABLE(16384);
 extern SINTABLE(32768);
 extern SINTABLE(65536);
 
-typedef struct RDFTContext {
+struct RDFTContext {
     int nbits;
     int inverse;
     int sign_convention;
@@ -58,7 +58,7 @@ typedef struct RDFTContext {
     SINTABLE_CONST FFTSample *tsin;
     FFTContext fft;
     void (*rdft_calc)(struct RDFTContext *s, FFTSample *z);
-} RDFTContext;
+};
 
 /**
  * Set up a real FFT.
