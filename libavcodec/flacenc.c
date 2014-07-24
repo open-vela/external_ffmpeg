@@ -2,31 +2,30 @@
  * FLAC audio encoder
  * Copyright (c) 2006  Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/crc.h"
 #include "libavutil/intmath.h"
 #include "libavutil/md5.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "bswapdsp.h"
-#include "put_bits.h"
+#include "get_bits.h"
 #include "golomb.h"
 #include "internal.h"
 #include "lpc.h"
@@ -157,7 +156,7 @@ static int select_blocksize(int samplerate, int block_time_ms)
     int target;
     int blocksize;
 
-    av_assert0(samplerate > 0);
+    assert(samplerate > 0);
     blocksize = ff_flac_blocksize_table[1];
     target    = (samplerate * block_time_ms) / 1000;
     for (i = 0; i < 16; i++) {
@@ -251,11 +250,8 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
         break;
     }
 
-    if (channels < 1 || channels > FLAC_MAX_CHANNELS) {
-        av_log(avctx, AV_LOG_ERROR, "%d channels not supported (max %d)\n",
-               channels, FLAC_MAX_CHANNELS);
-        return AVERROR(EINVAL);
-    }
+    if (channels < 1 || channels > FLAC_MAX_CHANNELS)
+        return -1;
     s->channels = channels;
 
     /* find samplerate in table */
@@ -281,8 +277,7 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
             s->sr_code[0] = 13;
             s->sr_code[1] = freq;
         } else {
-            av_log(avctx, AV_LOG_ERROR, "%d Hz not supported\n", freq);
-            return AVERROR(EINVAL);
+            return -1;
         }
         s->samplerate = freq;
     }
@@ -297,7 +292,7 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
     if (level > 12) {
         av_log(avctx, AV_LOG_ERROR, "invalid compression level: %d\n",
                s->options.compression_level);
-        return AVERROR(EINVAL);
+        return -1;
     }
 
     s->options.block_time_ms = ((int[]){ 27, 27, 27,105,105,105,105,105,105,105,105,105,105})[level];
@@ -336,13 +331,13 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
             if (avctx->min_prediction_order > MAX_FIXED_ORDER) {
                 av_log(avctx, AV_LOG_ERROR, "invalid min prediction order: %d\n",
                        avctx->min_prediction_order);
-                return AVERROR(EINVAL);
+                return -1;
             }
         } else if (avctx->min_prediction_order < MIN_LPC_ORDER ||
                    avctx->min_prediction_order > MAX_LPC_ORDER) {
             av_log(avctx, AV_LOG_ERROR, "invalid min prediction order: %d\n",
                    avctx->min_prediction_order);
-            return AVERROR(EINVAL);
+            return -1;
         }
         s->options.min_prediction_order = avctx->min_prediction_order;
     }
@@ -353,20 +348,20 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
             if (avctx->max_prediction_order > MAX_FIXED_ORDER) {
                 av_log(avctx, AV_LOG_ERROR, "invalid max prediction order: %d\n",
                        avctx->max_prediction_order);
-                return AVERROR(EINVAL);
+                return -1;
             }
         } else if (avctx->max_prediction_order < MIN_LPC_ORDER ||
                    avctx->max_prediction_order > MAX_LPC_ORDER) {
             av_log(avctx, AV_LOG_ERROR, "invalid max prediction order: %d\n",
                    avctx->max_prediction_order);
-            return AVERROR(EINVAL);
+            return -1;
         }
         s->options.max_prediction_order = avctx->max_prediction_order;
     }
     if (s->options.max_prediction_order < s->options.min_prediction_order) {
         av_log(avctx, AV_LOG_ERROR, "invalid prediction orders: min=%d max=%d\n",
                s->options.min_prediction_order, s->options.max_prediction_order);
-        return AVERROR(EINVAL);
+        return -1;
     }
 
     if (avctx->frame_size > 0) {
@@ -374,7 +369,7 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
                 avctx->frame_size > FLAC_MAX_BLOCKSIZE) {
             av_log(avctx, AV_LOG_ERROR, "invalid block size: %d\n",
                    avctx->frame_size);
-            return AVERROR(EINVAL);
+            return -1;
         }
     } else {
         s->avctx->frame_size = select_blocksize(s->samplerate, s->options.block_time_ms);
@@ -401,28 +396,6 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
 
     s->frame_count   = 0;
     s->min_framesize = s->max_framesize;
-
-    if (channels == 3 &&
-            avctx->channel_layout != (AV_CH_LAYOUT_STEREO|AV_CH_FRONT_CENTER) ||
-        channels == 4 &&
-            avctx->channel_layout != AV_CH_LAYOUT_2_2 &&
-            avctx->channel_layout != AV_CH_LAYOUT_QUAD ||
-        channels == 5 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT0 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT0_BACK ||
-        channels == 6 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT1 &&
-            avctx->channel_layout != AV_CH_LAYOUT_5POINT1_BACK) {
-        if (avctx->channel_layout) {
-            av_log(avctx, AV_LOG_ERROR, "Channel layout not supported by Flac, "
-                                             "output stream will have incorrect "
-                                             "channel layout.\n");
-        } else {
-            av_log(avctx, AV_LOG_WARNING, "No channel layout specified. The encoder "
-                                               "will use Flac channel layout for "
-                                               "%d channels.\n", channels);
-        }
-    }
 
     ret = ff_lpc_init(&s->lpc_ctx, avctx->frame_size,
                       s->options.max_prediction_order, FF_LPC_TYPE_LEVINSON);
@@ -646,13 +619,13 @@ static uint64_t calc_rice_params(RiceContext *rc, int pmin, int pmax,
     uint32_t *udata;
     uint64_t sums[MAX_PARTITION_ORDER+1][MAX_PARTITIONS];
 
-    av_assert1(pmin >= 0 && pmin <= MAX_PARTITION_ORDER);
-    av_assert1(pmax >= 0 && pmax <= MAX_PARTITION_ORDER);
-    av_assert1(pmin <= pmax);
+    assert(pmin >= 0 && pmin <= MAX_PARTITION_ORDER);
+    assert(pmax >= 0 && pmax <= MAX_PARTITION_ORDER);
+    assert(pmin <= pmax);
 
     tmp_rc.coding_mode = rc->coding_mode;
 
-    udata = av_malloc_array(n,  sizeof(uint32_t));
+    udata = av_malloc(n * sizeof(uint32_t));
     for (i = 0; i < n; i++)
         udata[i] = (2*data[i]) ^ (data[i]>>31);
 
@@ -1287,8 +1260,10 @@ static int flac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         }
     }
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, frame_bytes)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, frame_bytes))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     out_bytes = write_frame(s, avpkt);
 
@@ -1335,7 +1310,7 @@ static const AVOption options[] = {
 { "fixed",    NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_LPC_TYPE_FIXED },    INT_MIN, INT_MAX, FLAGS, "lpc_type" },
 { "levinson", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_LPC_TYPE_LEVINSON }, INT_MIN, INT_MAX, FLAGS, "lpc_type" },
 { "cholesky", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_LPC_TYPE_CHOLESKY }, INT_MIN, INT_MAX, FLAGS, "lpc_type" },
-{ "lpc_passes", "Number of passes to use for Cholesky factorization during LPC analysis", offsetof(FlacEncodeContext, options.lpc_passes),  AV_OPT_TYPE_INT, {.i64 = 2 }, 1, INT_MAX, FLAGS },
+{ "lpc_passes", "Number of passes to use for Cholesky factorization during LPC analysis", offsetof(FlacEncodeContext, options.lpc_passes),  AV_OPT_TYPE_INT, {.i64 = 1 }, 1, INT_MAX, FLAGS },
 { "min_partition_order",  NULL, offsetof(FlacEncodeContext, options.min_partition_order),  AV_OPT_TYPE_INT, {.i64 = -1 },      -1, MAX_PARTITION_ORDER, FLAGS },
 { "max_partition_order",  NULL, offsetof(FlacEncodeContext, options.max_partition_order),  AV_OPT_TYPE_INT, {.i64 = -1 },      -1, MAX_PARTITION_ORDER, FLAGS },
 { "prediction_order_method", "Search method for selecting prediction order", offsetof(FlacEncodeContext, options.prediction_order_method), AV_OPT_TYPE_INT, {.i64 = -1 }, -1, ORDER_METHOD_LOG, FLAGS, "predm" },
@@ -1370,7 +1345,7 @@ AVCodec ff_flac_encoder = {
     .init           = flac_encode_init,
     .encode2        = flac_encode_frame,
     .close          = flac_encode_close,
-    .capabilities   = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY | CODEC_CAP_LOSSLESS,
+    .capabilities   = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_S32,
                                                      AV_SAMPLE_FMT_NONE },
