@@ -1,20 +1,20 @@
 /*
  * quarterpel DSP functions
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,22 +29,25 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void ff_put_pixels8x8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
-void ff_avg_pixels8x8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
-void ff_put_pixels16x16_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
-void ff_avg_pixels16x16_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
+void ff_put_pixels8x8_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride);
+void ff_avg_pixels8x8_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride);
+void ff_put_pixels16x16_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride);
+void ff_avg_pixels16x16_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride);
 
 void ff_put_pixels8_l2_8(uint8_t *dst, const uint8_t *src1, const uint8_t *src2,
                          int dst_stride, int src_stride1, int src_stride2,
                          int h);
 
-#define DEF_OLD_QPEL(name)                                                     \
-    void ff_put_        ## name(uint8_t *dst /* align width (8 or 16) */,      \
-                                uint8_t *src /* align 1 */, ptrdiff_t stride); \
-    void ff_put_no_rnd_ ## name(uint8_t *dst /* align width (8 or 16) */,      \
-                                uint8_t *src /* align 1 */, ptrdiff_t stride); \
-    void ff_avg_        ## name(uint8_t *dst /* align width (8 or 16) */,      \
-                                uint8_t *src /* align 1 */, ptrdiff_t stride);
+#define DEF_OLD_QPEL(name)                                              \
+void ff_put_        ## name(uint8_t *dst /* align width (8 or 16) */,   \
+                            const uint8_t *src /* align 1 */,           \
+                            ptrdiff_t stride);                          \
+void ff_put_no_rnd_ ## name(uint8_t *dst /* align width (8 or 16) */,   \
+                            const uint8_t *src /* align 1 */,           \
+                            ptrdiff_t stride);                          \
+void ff_avg_        ## name(uint8_t *dst /* align width (8 or 16) */,   \
+                            const uint8_t *src /* align 1 */,           \
+                            ptrdiff_t stride);
 
 DEF_OLD_QPEL(qpel16_mc11_old_c)
 DEF_OLD_QPEL(qpel16_mc31_old_c)
@@ -60,7 +63,8 @@ DEF_OLD_QPEL(qpel8_mc13_old_c)
 DEF_OLD_QPEL(qpel8_mc33_old_c)
 
 typedef void (*qpel_mc_func)(uint8_t *dst /* align width (8 or 16) */,
-                             uint8_t *src /* align 1 */, ptrdiff_t stride);
+                             const uint8_t *src /* align 1 */,
+                             ptrdiff_t stride);
 
 /**
  * quarterpel DSP context
