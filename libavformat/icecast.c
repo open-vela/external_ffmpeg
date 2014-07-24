@@ -1,27 +1,26 @@
 /*
- * Icecast protocol for FFmpeg
+ * Icecast protocol for Libav
  * Copyright (c) 2014 Marvin Scholz
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 
 #include "libavutil/avstring.h"
-#include "libavutil/bprint.h"
 #include "libavutil/opt.h"
 
 #include "avformat.h"
@@ -66,10 +65,35 @@ static const AVOption options[] = {
 };
 
 
-static void cat_header(AVBPrint *bp, const char key[], const char value[])
+static char *cat_header(char buf[], const char key[], const char value[])
 {
-    if (NOT_EMPTY(value))
-        av_bprintf(bp, "%s: %s\r\n", key, value);
+    if (NOT_EMPTY(value)) {
+        int len = strlen(key) + strlen(value) + 5;
+        int is_first = !buf;
+        char *tmp = NULL;
+
+        if (buf)
+            len += strlen(buf);
+        if (!(tmp = av_realloc(buf, len))) {
+            av_freep(&buf);
+            return NULL;
+        } else {
+            buf = tmp;
+        }
+        if (is_first)
+            *buf = '\0';
+
+        av_strlcatf(buf, len, "%s: %s\r\n", key, value);
+    }
+    return buf;
+}
+
+static int icecast_close(URLContext *h)
+{
+    IcecastContext *s = h->priv_data;
+    if (s->hd)
+        ffurl_close(s->hd);
+    return 0;
 }
 
 static int icecast_open(URLContext *h, const char *uri, int flags)
@@ -81,23 +105,22 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
 
     // URI part variables
     char h_url[1024], host[1024], auth[1024], path[1024];
-    char *user = NULL, *headers = NULL;
+    char *headers = NULL, *user = NULL;
     int port, ret;
-    AVBPrint bp;
 
-    av_bprint_init(&bp, 0, 1);
+    if (flags & AVIO_FLAG_READ)
+        return AVERROR(ENOSYS);
 
     // Build header strings
-    cat_header(&bp, "Ice-Name", s->name);
-    cat_header(&bp, "Ice-Description", s->description);
-    cat_header(&bp, "Ice-URL", s->url);
-    cat_header(&bp, "Ice-Genre", s->genre);
-    cat_header(&bp, "Ice-Public", s->public ? "1" : "0");
-    if (!av_bprint_is_complete(&bp)) {
+    headers = cat_header(headers, "Ice-Name", s->name);
+    headers = cat_header(headers, "Ice-Description", s->description);
+    headers = cat_header(headers, "Ice-URL", s->url);
+    headers = cat_header(headers, "Ice-Genre", s->genre);
+    headers = cat_header(headers, "Ice-Public", s->public ? "1" : "0");
+    if (!headers) {
         ret = AVERROR(ENOMEM);
         goto cleanup;
     }
-    av_bprint_finalize(&bp, &headers);
 
     // Set options
     av_dict_set(&opt_dict, "method", s->legacy_icecast ? "SOURCE" : "PUT", 0);
@@ -114,7 +137,7 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
 
     // Check for auth data in URI
     if (auth[0]) {
-        char *sep = strchr(auth, ':');
+        char *sep = strchr(auth,':');
         if (sep) {
             *sep = 0;
             sep++;
@@ -122,9 +145,15 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
                 av_free(s->pass);
                 av_log(h, AV_LOG_WARNING, "Overwriting -password <pass> with URI password!\n");
             }
-            s->pass = av_strdup(sep);
+            if (!(s->pass = av_strdup(sep))) {
+                ret = AVERROR(ENOMEM);
+                goto cleanup;
+            }
         }
-        user = av_strdup(auth);
+        if (!(user = av_strdup(auth))) {
+            ret = AVERROR(ENOMEM);
+            goto cleanup;
+        }
     }
 
     // Build new authstring
@@ -146,6 +175,7 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
     ret = ffurl_open(&s->hd, h_url, AVIO_FLAG_READ_WRITE, NULL, &opt_dict);
 
 cleanup:
+    // Free variables
     av_freep(&user);
     av_freep(&headers);
     av_dict_free(&opt_dict);
@@ -163,13 +193,13 @@ static int icecast_write(URLContext *h, const uint8_t *buf, int size)
             static const uint8_t webm[4] = { 0x1A, 0x45, 0xDF, 0xA3 };
             static const uint8_t opus[8] = { 0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64 };
             if (memcmp(buf, oggs, sizeof(oggs)) == 0) {
-                av_log(h, AV_LOG_WARNING, "Streaming ogg but appropriate content type NOT set!\n");
+                av_log(h, AV_LOG_WARNING, "Streaming Ogg but appropriate content type NOT set!\n");
                 av_log(h, AV_LOG_WARNING, "Set it with -content_type application/ogg\n");
             } else if (memcmp(buf, opus, sizeof(opus)) == 0) {
-                av_log(h, AV_LOG_WARNING, "Streaming opus but appropriate content type NOT set!\n");
+                av_log(h, AV_LOG_WARNING, "Streaming Opus but appropriate content type NOT set!\n");
                 av_log(h, AV_LOG_WARNING, "Set it with -content_type audio/ogg\n");
             } else if (memcmp(buf, webm, sizeof(webm)) == 0) {
-                av_log(h, AV_LOG_WARNING, "Streaming webm but appropriate content type NOT set!\n");
+                av_log(h, AV_LOG_WARNING, "Streaming WebM but appropriate content type NOT set!\n");
                 av_log(h, AV_LOG_WARNING, "Set it with -content_type video/webm\n");
             } else {
                 av_log(h, AV_LOG_WARNING, "It seems you are streaming an unsupported format.\n");
@@ -178,14 +208,6 @@ static int icecast_write(URLContext *h, const uint8_t *buf, int size)
         }
     }
     return ffurl_write(s->hd, buf, size);
-}
-
-static int icecast_close(URLContext *h)
-{
-    IcecastContext *s = h->priv_data;
-    if (s->hd)
-        ffurl_close(s->hd);
-    return 0;
 }
 
 static const AVClass icecast_context_class = {
