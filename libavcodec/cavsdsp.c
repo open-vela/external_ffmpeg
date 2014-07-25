@@ -5,20 +5,20 @@
  *
  * Copyright (c) 2006  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -261,7 +261,7 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, int stride) {
  ****************************************************************************/
 
 #define CAVS_SUBPIX(OPNAME, OP, NAME, A, B, C, D, E, F) \
-static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
+static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int h=8;\
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
@@ -280,7 +280,7 @@ static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, const uint8_t *src, in
     }\
 }\
 \
-static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
+static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     const int w=8;\
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
@@ -312,7 +312,7 @@ static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, const uint8_t *src, i
     }\
 }\
 \
-static void OPNAME ## cavs_filt16_v_ ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
+static void OPNAME ## cavs_filt16_v_ ## NAME(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     OPNAME ## cavs_filt8_v_ ## NAME(dst  , src  , dstStride, srcStride);\
     OPNAME ## cavs_filt8_v_ ## NAME(dst+8, src+8, dstStride, srcStride);\
     src += 8*srcStride;\
@@ -321,7 +321,7 @@ static void OPNAME ## cavs_filt16_v_ ## NAME(uint8_t *dst, const uint8_t *src, i
     OPNAME ## cavs_filt8_v_ ## NAME(dst+8, src+8, dstStride, srcStride);\
 }\
 \
-static void OPNAME ## cavs_filt16_h_ ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
+static void OPNAME ## cavs_filt16_h_ ## NAME(uint8_t *dst, uint8_t *src, int dstStride, int srcStride){\
     OPNAME ## cavs_filt8_h_ ## NAME(dst  , src  , dstStride, srcStride);\
     OPNAME ## cavs_filt8_h_ ## NAME(dst+8, src+8, dstStride, srcStride);\
     src += 8*srcStride;\
@@ -331,7 +331,7 @@ static void OPNAME ## cavs_filt16_h_ ## NAME(uint8_t *dst, const uint8_t *src, i
 }\
 
 #define CAVS_SUBPIX_HV(OPNAME, OP, NAME, AH, BH, CH, DH, EH, FH, AV, BV, CV, DV, EV, FV, FULL) \
-static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int dstStride, int srcStride){\
+static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, uint8_t *src1, uint8_t *src2, int dstStride, int srcStride){\
     int16_t temp[8*(8+5)];\
     int16_t *tmp = temp;\
     const int h=8;\
@@ -412,7 +412,7 @@ static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, 
     }\
 }\
 \
-static void OPNAME ## cavs_filt16_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int dstStride, int srcStride){ \
+static void OPNAME ## cavs_filt16_hv_ ## NAME(uint8_t *dst, uint8_t *src1, uint8_t *src2, int dstStride, int srcStride){ \
     OPNAME ## cavs_filt8_hv_ ## NAME(dst  , src1,   src2  , dstStride, srcStride); \
     OPNAME ## cavs_filt8_hv_ ## NAME(dst+8, src1+8, src2+8, dstStride, srcStride); \
     src1 += 8*srcStride;\
@@ -423,77 +423,77 @@ static void OPNAME ## cavs_filt16_hv_ ## NAME(uint8_t *dst, const uint8_t *src1,
 }\
 
 #define CAVS_MC(OPNAME, SIZE) \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc10_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc10_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
     OPNAME ## cavs_filt ## SIZE ## _h_qpel_l(dst, src, stride, stride);\
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc20_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc20_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
     OPNAME ## cavs_filt ## SIZE ## _h_hpel(dst, src, stride, stride);\
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc30_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc30_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
     OPNAME ## cavs_filt ## SIZE ## _h_qpel_r(dst, src, stride, stride);\
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc01_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc01_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
     OPNAME ## cavs_filt ## SIZE ## _v_qpel_l(dst, src, stride, stride);\
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc02_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc02_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
     OPNAME ## cavs_filt ## SIZE ## _v_hpel(dst, src, stride, stride);\
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc03_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc03_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
     OPNAME ## cavs_filt ## SIZE ## _v_qpel_r(dst, src, stride, stride);\
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc22_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc22_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_jj(dst, src, NULL, stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc11_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc11_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_egpr(dst, src, src, stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc13_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc13_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_egpr(dst, src, src+stride, stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc31_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc31_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_egpr(dst, src, src+1, stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc33_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc33_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_egpr(dst, src, src+stride+1,stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc21_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc21_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_ff(dst, src, src+stride+1,stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc12_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc12_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_ii(dst, src, src+stride+1,stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc32_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc32_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_kk(dst, src, src+stride+1,stride, stride); \
 }\
 \
-static void OPNAME ## cavs_qpel ## SIZE ## _mc23_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
+static void OPNAME ## cavs_qpel ## SIZE ## _mc23_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)\
 {\
   OPNAME ## cavs_filt ## SIZE ## _hv_qq(dst, src, src+stride+1,stride, stride); \
 }\

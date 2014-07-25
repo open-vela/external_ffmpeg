@@ -1,20 +1,22 @@
 /*
  * quarterpel DSP functions
+ * Copyright (c) 2000, 2001 Fabrice Bellard
+ * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +32,7 @@
 #include "libavutil/attributes.h"
 #include "copy_block.h"
 #include "qpeldsp.h"
+#include "diracdsp.h"
 
 #define BIT_DEPTH 8
 #include "hpel_template.c"
@@ -37,7 +40,7 @@
 #include "qpel_template.c"
 
 #define QPEL_MC(r, OPNAME, RND, OP)                                           \
-static void OPNAME ## mpeg4_qpel8_h_lowpass(uint8_t *dst, const uint8_t *src, \
+static void OPNAME ## mpeg4_qpel8_h_lowpass(uint8_t *dst, uint8_t *src,       \
                                             int dstStride, int srcStride,     \
                                             int h)                            \
 {                                                                             \
@@ -58,7 +61,7 @@ static void OPNAME ## mpeg4_qpel8_h_lowpass(uint8_t *dst, const uint8_t *src, \
     }                                                                         \
 }                                                                             \
                                                                               \
-static void OPNAME ## mpeg4_qpel8_v_lowpass(uint8_t *dst, const uint8_t *src, \
+static void OPNAME ## mpeg4_qpel8_v_lowpass(uint8_t *dst, uint8_t *src,       \
                                             int dstStride, int srcStride)     \
 {                                                                             \
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;                           \
@@ -88,8 +91,7 @@ static void OPNAME ## mpeg4_qpel8_v_lowpass(uint8_t *dst, const uint8_t *src, \
     }                                                                         \
 }                                                                             \
                                                                               \
-static void OPNAME ## mpeg4_qpel16_h_lowpass(uint8_t *dst,                    \
-                                             const uint8_t *src,              \
+static void OPNAME ## mpeg4_qpel16_h_lowpass(uint8_t *dst, uint8_t *src,      \
                                              int dstStride, int srcStride,    \
                                              int h)                           \
 {                                                                             \
@@ -118,8 +120,7 @@ static void OPNAME ## mpeg4_qpel16_h_lowpass(uint8_t *dst,                    \
     }                                                                         \
 }                                                                             \
                                                                               \
-static void OPNAME ## mpeg4_qpel16_v_lowpass(uint8_t *dst,                    \
-                                             const uint8_t *src,              \
+static void OPNAME ## mpeg4_qpel16_v_lowpass(uint8_t *dst, uint8_t *src,      \
                                              int dstStride, int srcStride)    \
 {                                                                             \
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;                           \
@@ -165,7 +166,7 @@ static void OPNAME ## mpeg4_qpel16_v_lowpass(uint8_t *dst,                    \
     }                                                                         \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc10_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc10_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t half[64];                                                         \
@@ -174,13 +175,13 @@ static void OPNAME ## qpel8_mc10_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, src, half, stride, stride, 8, 8);             \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc20_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc20_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     OPNAME ## mpeg4_qpel8_h_lowpass(dst, src, stride, stride, 8);             \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc30_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc30_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t half[64];                                                         \
@@ -189,7 +190,7 @@ static void OPNAME ## qpel8_mc30_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, src + 1, half, stride, stride, 8, 8);         \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc01_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc01_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -200,7 +201,7 @@ static void OPNAME ## qpel8_mc01_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, full, half, stride, 16, 8, 8);                \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc02_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc02_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -209,7 +210,7 @@ static void OPNAME ## qpel8_mc02_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## mpeg4_qpel8_v_lowpass(dst, full, stride, 16);                   \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc03_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc03_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -220,7 +221,7 @@ static void OPNAME ## qpel8_mc03_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, full + 16, half, stride, 16, 8, 8);           \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel8_mc11_old_c(uint8_t *dst, const uint8_t *src,      \
+void ff_ ## OPNAME ## qpel8_mc11_old_c(uint8_t *dst, uint8_t *src,            \
                                        ptrdiff_t stride)                      \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -236,7 +237,7 @@ void ff_ ## OPNAME ## qpel8_mc11_old_c(uint8_t *dst, const uint8_t *src,      \
                            stride, 16, 8, 8, 8, 8);                           \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc11_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc11_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -250,7 +251,7 @@ static void OPNAME ## qpel8_mc11_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, halfH, halfHV, stride, 8, 8, 8);              \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel8_mc31_old_c(uint8_t *dst, const uint8_t *src,      \
+void ff_ ## OPNAME ## qpel8_mc31_old_c(uint8_t *dst, uint8_t *src,            \
                                        ptrdiff_t stride)                      \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -266,7 +267,7 @@ void ff_ ## OPNAME ## qpel8_mc31_old_c(uint8_t *dst, const uint8_t *src,      \
                            stride, 16, 8, 8, 8, 8);                           \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc31_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc31_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -280,7 +281,7 @@ static void OPNAME ## qpel8_mc31_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, halfH, halfHV, stride, 8, 8, 8);              \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel8_mc13_old_c(uint8_t *dst, const uint8_t *src,      \
+void ff_ ## OPNAME ## qpel8_mc13_old_c(uint8_t *dst, uint8_t *src,            \
                                        ptrdiff_t stride)                      \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -296,7 +297,7 @@ void ff_ ## OPNAME ## qpel8_mc13_old_c(uint8_t *dst, const uint8_t *src,      \
                            stride, 16, 8, 8, 8, 8);                           \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc13_c(uint8_t *dst, const uint8_t *src,    \
+static void OPNAME ## qpel8_mc13_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -310,7 +311,7 @@ static void OPNAME ## qpel8_mc13_c(uint8_t *dst, const uint8_t *src,    \
     OPNAME ## pixels8_l2_8(dst, halfH + 8, halfHV, stride, 8, 8, 8);          \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel8_mc33_old_c(uint8_t *dst, const uint8_t *src,      \
+void ff_ ## OPNAME ## qpel8_mc33_old_c(uint8_t *dst, uint8_t *src,            \
                                        ptrdiff_t stride)                      \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -326,7 +327,7 @@ void ff_ ## OPNAME ## qpel8_mc33_old_c(uint8_t *dst, const uint8_t *src,      \
                            stride, 16, 8, 8, 8, 8);                           \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc33_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc33_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -340,7 +341,7 @@ static void OPNAME ## qpel8_mc33_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, halfH + 8, halfHV, stride, 8, 8, 8);          \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc21_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc21_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t halfH[72];                                                        \
@@ -351,7 +352,7 @@ static void OPNAME ## qpel8_mc21_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, halfH, halfHV, stride, 8, 8, 8);              \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc23_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc23_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t halfH[72];                                                        \
@@ -362,7 +363,7 @@ static void OPNAME ## qpel8_mc23_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## pixels8_l2_8(dst, halfH + 8, halfHV, stride, 8, 8, 8);          \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel8_mc12_old_c(uint8_t *dst, const uint8_t *src,      \
+void ff_ ## OPNAME ## qpel8_mc12_old_c(uint8_t *dst, uint8_t *src,            \
                                        ptrdiff_t stride)                      \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -377,7 +378,7 @@ void ff_ ## OPNAME ## qpel8_mc12_old_c(uint8_t *dst, const uint8_t *src,      \
     OPNAME ## pixels8_l2_8(dst, halfV, halfHV, stride, 8, 8, 8);              \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc12_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc12_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -389,7 +390,7 @@ static void OPNAME ## qpel8_mc12_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## mpeg4_qpel8_v_lowpass(dst, halfH, stride, 8);                   \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel8_mc32_old_c(uint8_t *dst, const uint8_t *src,      \
+void ff_ ## OPNAME ## qpel8_mc32_old_c(uint8_t *dst, uint8_t *src,            \
                                        ptrdiff_t stride)                      \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -404,7 +405,7 @@ void ff_ ## OPNAME ## qpel8_mc32_old_c(uint8_t *dst, const uint8_t *src,      \
     OPNAME ## pixels8_l2_8(dst, halfV, halfHV, stride, 8, 8, 8);              \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc32_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc32_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t full[16 * 9];                                                     \
@@ -416,7 +417,7 @@ static void OPNAME ## qpel8_mc32_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## mpeg4_qpel8_v_lowpass(dst, halfH, stride, 8);                   \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel8_mc22_c(uint8_t *dst, const uint8_t *src,          \
+static void OPNAME ## qpel8_mc22_c(uint8_t *dst, uint8_t *src,                \
                                    ptrdiff_t stride)                          \
 {                                                                             \
     uint8_t halfH[72];                                                        \
@@ -425,7 +426,7 @@ static void OPNAME ## qpel8_mc22_c(uint8_t *dst, const uint8_t *src,          \
     OPNAME ## mpeg4_qpel8_v_lowpass(dst, halfH, stride, 8);                   \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc10_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc10_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t half[256];                                                        \
@@ -434,13 +435,13 @@ static void OPNAME ## qpel16_mc10_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, src, half, stride, stride, 16, 16);          \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc20_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc20_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     OPNAME ## mpeg4_qpel16_h_lowpass(dst, src, stride, stride, 16);           \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc30_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc30_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t half[256];                                                        \
@@ -449,7 +450,7 @@ static void OPNAME ## qpel16_mc30_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, src + 1, half, stride, stride, 16, 16);      \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc01_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc01_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -460,7 +461,7 @@ static void OPNAME ## qpel16_mc01_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, full, half, stride, 24, 16, 16);             \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc02_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc02_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -469,7 +470,7 @@ static void OPNAME ## qpel16_mc02_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## mpeg4_qpel16_v_lowpass(dst, full, stride, 24);                  \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc03_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc03_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -480,7 +481,7 @@ static void OPNAME ## qpel16_mc03_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, full + 24, half, stride, 24, 16, 16);        \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel16_mc11_old_c(uint8_t *dst, const uint8_t *src,     \
+void ff_ ## OPNAME ## qpel16_mc11_old_c(uint8_t *dst, uint8_t *src,           \
                                         ptrdiff_t stride)                     \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -496,7 +497,7 @@ void ff_ ## OPNAME ## qpel16_mc11_old_c(uint8_t *dst, const uint8_t *src,     \
                             stride, 24, 16, 16, 16, 16);                      \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc11_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc11_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -510,7 +511,7 @@ static void OPNAME ## qpel16_mc11_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, halfH, halfHV, stride, 16, 16, 16);          \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel16_mc31_old_c(uint8_t *dst, const uint8_t *src,     \
+void ff_ ## OPNAME ## qpel16_mc31_old_c(uint8_t *dst, uint8_t *src,           \
                                         ptrdiff_t stride)                     \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -526,7 +527,7 @@ void ff_ ## OPNAME ## qpel16_mc31_old_c(uint8_t *dst, const uint8_t *src,     \
                             stride, 24, 16, 16, 16, 16);                      \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc31_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc31_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -540,7 +541,7 @@ static void OPNAME ## qpel16_mc31_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, halfH, halfHV, stride, 16, 16, 16);          \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel16_mc13_old_c(uint8_t *dst, const uint8_t *src,     \
+void ff_ ## OPNAME ## qpel16_mc13_old_c(uint8_t *dst, uint8_t *src,           \
                                         ptrdiff_t stride)                     \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -556,7 +557,7 @@ void ff_ ## OPNAME ## qpel16_mc13_old_c(uint8_t *dst, const uint8_t *src,     \
                             stride, 24, 16, 16, 16, 16);                      \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc13_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc13_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -570,7 +571,7 @@ static void OPNAME ## qpel16_mc13_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, halfH + 16, halfHV, stride, 16, 16, 16);     \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel16_mc33_old_c(uint8_t *dst, const uint8_t *src,     \
+void ff_ ## OPNAME ## qpel16_mc33_old_c(uint8_t *dst, uint8_t *src,           \
                                         ptrdiff_t stride)                     \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -586,7 +587,7 @@ void ff_ ## OPNAME ## qpel16_mc33_old_c(uint8_t *dst, const uint8_t *src,     \
                             stride, 24, 16, 16, 16, 16);                      \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc33_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc33_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -600,7 +601,7 @@ static void OPNAME ## qpel16_mc33_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, halfH + 16, halfHV, stride, 16, 16, 16);     \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc21_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc21_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t halfH[272];                                                       \
@@ -611,7 +612,7 @@ static void OPNAME ## qpel16_mc21_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, halfH, halfHV, stride, 16, 16, 16);          \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc23_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc23_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t halfH[272];                                                       \
@@ -622,7 +623,7 @@ static void OPNAME ## qpel16_mc23_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## pixels16_l2_8(dst, halfH + 16, halfHV, stride, 16, 16, 16);     \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel16_mc12_old_c(uint8_t *dst, const uint8_t *src,     \
+void ff_ ## OPNAME ## qpel16_mc12_old_c(uint8_t *dst, uint8_t *src,           \
                                         ptrdiff_t stride)                     \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -637,7 +638,7 @@ void ff_ ## OPNAME ## qpel16_mc12_old_c(uint8_t *dst, const uint8_t *src,     \
     OPNAME ## pixels16_l2_8(dst, halfV, halfHV, stride, 16, 16, 16);          \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc12_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc12_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -649,7 +650,7 @@ static void OPNAME ## qpel16_mc12_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## mpeg4_qpel16_v_lowpass(dst, halfH, stride, 16);                 \
 }                                                                             \
                                                                               \
-void ff_ ## OPNAME ## qpel16_mc32_old_c(uint8_t *dst, const uint8_t *src,     \
+void ff_ ## OPNAME ## qpel16_mc32_old_c(uint8_t *dst, uint8_t *src,           \
                                         ptrdiff_t stride)                     \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -664,7 +665,7 @@ void ff_ ## OPNAME ## qpel16_mc32_old_c(uint8_t *dst, const uint8_t *src,     \
     OPNAME ## pixels16_l2_8(dst, halfV, halfHV, stride, 16, 16, 16);          \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc32_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc32_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t full[24 * 17];                                                    \
@@ -676,7 +677,7 @@ static void OPNAME ## qpel16_mc32_c(uint8_t *dst, const uint8_t *src,         \
     OPNAME ## mpeg4_qpel16_v_lowpass(dst, halfH, stride, 16);                 \
 }                                                                             \
                                                                               \
-static void OPNAME ## qpel16_mc22_c(uint8_t *dst, const uint8_t *src,         \
+static void OPNAME ## qpel16_mc22_c(uint8_t *dst, uint8_t *src,               \
                                     ptrdiff_t stride)                         \
 {                                                                             \
     uint8_t halfH[272];                                                       \
@@ -697,22 +698,22 @@ QPEL_MC(0, avg_, _, op_avg)
 #undef op_put
 #undef op_put_no_rnd
 
-void ff_put_pixels8x8_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)
+void ff_put_pixels8x8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)
 {
     put_pixels8_8_c(dst, src, stride, 8);
 }
 
-void ff_avg_pixels8x8_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)
+void ff_avg_pixels8x8_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)
 {
     avg_pixels8_8_c(dst, src, stride, 8);
 }
 
-void ff_put_pixels16x16_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)
+void ff_put_pixels16x16_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)
 {
     put_pixels16_8_c(dst, src, stride, 16);
 }
 
-void ff_avg_pixels16x16_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)
+void ff_avg_pixels16x16_c(uint8_t *dst, uint8_t *src, ptrdiff_t stride)
 {
     avg_pixels16_8_c(dst, src, stride, 16);
 }
@@ -731,6 +732,51 @@ void ff_put_pixels8_l2_8(uint8_t *dst, const uint8_t *src1, const uint8_t *src2,
     put_pixels8_l2_8(dst, src1, src2, dst_stride, src_stride1, src_stride2, h);
 
 }
+
+#if CONFIG_DIRAC_DECODER
+#define DIRAC_MC(OPNAME)\
+void ff_ ## OPNAME ## _dirac_pixels8_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+     OPNAME ## _pixels8_8_c(dst, src[0], stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels16_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels16_8_c(dst, src[0], stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels32_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels16_8_c(dst   , src[0]   , stride, h);\
+    OPNAME ## _pixels16_8_c(dst+16, src[0]+16, stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels8_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels8_l2_8(dst, src[0], src[1], stride, stride, stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels16_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels16_l2_8(dst, src[0], src[1], stride, stride, stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels32_l2_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels16_l2_8(dst   , src[0]   , src[1]   , stride, stride, stride, h);\
+    OPNAME ## _pixels16_l2_8(dst+16, src[0]+16, src[1]+16, stride, stride, stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels8_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels8_l4_8(dst, src[0], src[1], src[2], src[3], stride, stride, stride, stride, stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels16_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels16_l4_8(dst, src[0], src[1], src[2], src[3], stride, stride, stride, stride, stride, h);\
+}\
+void ff_ ## OPNAME ## _dirac_pixels32_l4_c(uint8_t *dst, const uint8_t *src[5], int stride, int h)\
+{\
+    OPNAME ## _pixels16_l4_8(dst   , src[0]   , src[1]   , src[2]   , src[3]   , stride, stride, stride, stride, stride, h);\
+    OPNAME ## _pixels16_l4_8(dst+16, src[0]+16, src[1]+16, src[2]+16, src[3]+16, stride, stride, stride, stride, stride, h);\
+}
+DIRAC_MC(put)
+DIRAC_MC(avg)
+#endif
 
 av_cold void ff_qpeldsp_init(QpelDSPContext *c)
 {
