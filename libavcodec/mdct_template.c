@@ -2,20 +2,20 @@
  * MDCT/IMDCT transforms
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,11 @@
 #if FFT_FLOAT
 #   define RSCALE(x) (x)
 #else
+#if FFT_FIXED_32
+#   define RSCALE(x) (((x) + 32) >> 6)
+#else /* FFT_FIXED_32 */
 #   define RSCALE(x) ((x) >> 1)
+#endif /* FFT_FIXED_32 */
 #endif
 
 /**
@@ -56,7 +60,7 @@ av_cold int ff_mdct_init(FFTContext *s, int nbits, int inverse, double scale)
     if (ff_fft_init(s, s->mdct_bits - 2, inverse) < 0)
         goto fail;
 
-    s->tcos = av_malloc(n/2 * sizeof(FFTSample));
+    s->tcos = av_malloc_array(n/2, sizeof(FFTSample));
     if (!s->tcos)
         goto fail;
 

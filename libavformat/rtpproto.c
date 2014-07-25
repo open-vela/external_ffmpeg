@@ -2,20 +2,20 @@
  * RTP network protocol
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -204,6 +204,7 @@ static void build_udp_url(char *buf, int buf_size,
         url_add_option(buf, buf_size, "pkt_size=%d", max_packet_size);
     if (connect)
         url_add_option(buf, buf_size, "connect=1");
+    url_add_option(buf, buf_size, "fifo_size=0");
     if (include_sources && include_sources[0])
         url_add_option(buf, buf_size, "sources=%s", include_sources);
     if (exclude_sources && exclude_sources[0])
@@ -280,6 +281,7 @@ static int rtp_open(URLContext *h, const char *uri, int flags)
     char buf[1024];
     char path[1024];
     const char *p;
+    int i, max_retry_count = 3;
 
     av_url_split(NULL, 0, NULL, 0, hostname, sizeof(hostname), &rtp_port,
                  path, sizeof(path), uri);
@@ -327,19 +329,35 @@ static int rtp_open(URLContext *h, const char *uri, int flags)
         }
     }
 
-    build_udp_url(buf, sizeof(buf),
-                  hostname, rtp_port, local_rtp_port, ttl, max_packet_size,
-                  connect, include_sources, exclude_sources);
-    if (ffurl_open(&s->rtp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
-        goto fail;
-    if (local_rtp_port>=0 && local_rtcp_port<0)
-        local_rtcp_port = ff_udp_get_local_port(s->rtp_hd) + 1;
-
-    build_udp_url(buf, sizeof(buf),
-                  hostname, rtcp_port, local_rtcp_port, ttl, max_packet_size,
-                  connect, include_sources, exclude_sources);
-    if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
-        goto fail;
+    for (i = 0;i < max_retry_count;i++) {
+        build_udp_url(buf, sizeof(buf),
+                      hostname, rtp_port, local_rtp_port, ttl, max_packet_size,
+                      connect, include_sources, exclude_sources);
+        if (ffurl_open(&s->rtp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
+            goto fail;
+        local_rtp_port = ff_udp_get_local_port(s->rtp_hd);
+        if(local_rtp_port == 65535) {
+            local_rtp_port = -1;
+            continue;
+        }
+        if (local_rtcp_port<0) {
+            local_rtcp_port = local_rtp_port + 1;
+            build_udp_url(buf, sizeof(buf),
+                          hostname, rtcp_port, local_rtcp_port, ttl, max_packet_size,
+                          connect, include_sources, exclude_sources);
+            if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0) {
+                local_rtp_port = local_rtcp_port = -1;
+                continue;
+            }
+            break;
+        }
+        build_udp_url(buf, sizeof(buf),
+                      hostname, rtcp_port, local_rtcp_port, ttl, max_packet_size,
+                      connect, include_sources, exclude_sources);
+        if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
+            goto fail;
+        break;
+    }
 
     /* just to ease handle access. XXX: need to suppress direct handle
        access */
