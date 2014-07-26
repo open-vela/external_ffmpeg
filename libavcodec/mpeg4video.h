@@ -3,20 +3,20 @@
  * Copyright (c) 2000,2001 Fabrice Bellard
  * Copyright (c) 2002-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,29 +62,30 @@
 typedef struct Mpeg4DecContext {
     MpegEncContext m;
 
-    ///< number of bits to represent the fractional part of time
+    /// number of bits to represent the fractional part of time
     int time_increment_bits;
     int shape;
     int vol_sprite_usage;
     int sprite_brightness_change;
     int num_sprite_warping_points;
-    ///< sprite trajectory points
+    /// sprite trajectory points
     uint16_t sprite_traj[4][2];
-    ///< sprite shift [isChroma]
+    /// sprite shift [isChroma]
     int sprite_shift[2];
 
     // reversible vlc
     int rvlc;
-    ///< could this stream contain resync markers
+    /// could this stream contain resync markers
     int resync_marker;
-    ///< time distance of first I -> B, used for interlaced b frames
+    /// time distance of first I -> B, used for interlaced b frames
     int t_frame;
 
     int new_pred;
     int enhancement_type;
     int scalability;
     int use_intra_dc_vlc;
-    ///< QP above whch the ac VLC should be used for intra dc
+
+    /// QP above whch the ac VLC should be used for intra dc
     int intra_dc_threshold;
 
     /* bug workarounds */
@@ -92,7 +93,8 @@ typedef struct Mpeg4DecContext {
     int divx_build;
     int xvid_build;
     int lavc_build;
-    ///< flag for having shown the warning about divxs invalid b frames
+
+    /// flag for having shown the warning about divxs invalid b frames
     int showed_packed_warning;
 
     int cplx_estimation_trash_i;
@@ -146,6 +148,8 @@ int ff_mpeg4_decode_partitions(Mpeg4DecContext *ctx);
 int ff_mpeg4_get_video_packet_prefix_length(MpegEncContext *s);
 int ff_mpeg4_decode_video_packet_header(Mpeg4DecContext *ctx);
 void ff_mpeg4_init_direct_mv(MpegEncContext *s);
+void ff_mpeg4videodec_static_init(void);
+int ff_mpeg4_workaround_bugs(AVCodecContext *avctx);
 int ff_mpeg4_frame_end(AVCodecContext *avctx, const uint8_t *buf, int buf_size);
 
 /**
@@ -221,7 +225,7 @@ static inline int ff_mpeg4_pred_dc(MpegEncContext *s, int n, int level,
     } else {
         level += pred;
         ret    = level;
-        if (s->err_recognition & AV_EF_BITSTREAM) {
+        if (s->err_recognition & (AV_EF_BITSTREAM | AV_EF_AGGRESSIVE)) {
             if (level < 0) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "dc<0 at %dx%d\n", s->mb_x, s->mb_y);
