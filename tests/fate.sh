@@ -19,6 +19,8 @@ test -n "$slot"    || die "slot not specified"
 test -n "$repo"    || die "repo not specified"
 test -d "$samples" || die "samples location not specified"
 
+: ${branch:=master}
+
 lock(){
     lock=$1/fate.lock
     (set -C; exec >$lock) 2>/dev/null || return
@@ -28,25 +30,23 @@ lock(){
 checkout(){
     case "$repo" in
         file:*|/*) src="${repo#file:}"      ;;
-        git:*)     git clone --quiet "$repo" "$src" ;;
+        git:*)     git clone --quiet --branch "$branch" "$repo" "$src" ;;
     esac
 }
 
 update()(
     cd ${src} || return
     case "$repo" in
-        git:*) git fetch --force && git reset --hard FETCH_HEAD ;;
+        git:*) git fetch --force; git reset --hard "origin/$branch" ;;
     esac
 )
 
 configure()(
     cd ${build} || return
-    ${shell} ${src}/configure                                           \
+    ${src}/configure                                                    \
         --prefix="${inst}"                                              \
         --samples="${samples}"                                          \
         --enable-gpl                                                    \
-        --enable-memory-poisoning                                       \
-        --enable-avresample                                             \
         ${arch:+--arch=$arch}                                           \
         ${cpu:+--cpu="$cpu"}                                            \
         ${cross_prefix:+--cross-prefix="$cross_prefix"}                 \
@@ -81,7 +81,7 @@ clean(){
 
 report(){
     date=$(date -u +%Y%m%d%H%M%S)
-    echo "fate:0:${date}:${slot}:${version}:$1:$2:${comment}" >report
+    echo "fate:1:${date}:${slot}:${version}:$1:$2:${branch}:${comment}" >report
     cat ${build}/config.fate ${build}/tests/data/fate/*.rep >>report
     test -n "$fate_recv" && $tar report *.log | gzip | $fate_recv
 }
@@ -111,8 +111,8 @@ echo ${version} >version-$slot
 rm -rf "${build}" *.log
 mkdir -p ${build}
 
-configure >configure.log 2>&1 || fail 3 "error configuring"
-compile   >compile.log   2>&1 || fail 2 "error compiling"
-fate      >test.log      2>&1 || fail 1 "error testing"
+configure >configure.log 2>&1 || fail $? "error configuring"
+compile   >compile.log   2>&1 || fail $? "error compiling"
+fate      >test.log      2>&1 || fail $? "error testing"
 report 0 success
 clean
