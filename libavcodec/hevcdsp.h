@@ -25,6 +25,8 @@
 
 #include "get_bits.h"
 
+#define MAX_PB_SIZE 64
+
 typedef struct SAOParams {
     int offset_abs[3][4];   ///< sao_offset_abs
     int offset_sign[3][4];  ///< sao_offset_sign
