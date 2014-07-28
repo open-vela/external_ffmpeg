@@ -3,20 +3,20 @@
  * Copyright (c) 2008-2009 Robert Swain ( rob opendot cl )
  * Copyright (c) 2009-2010 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -72,6 +72,7 @@ static void sbr_qmf_pre_shuffle_c(float *z)
         zi[64 + 2 * k + 2].i = zi[63 - k].i ^ (1U << 31);
         zi[64 + 2 * k + 3].i = zi[ k + 2].i;
     }
+
     zi[64 + 2 * 31 + 0].i = zi[64 - 31].i ^ (1U << 31);
     zi[64 + 2 * 31 + 1].i = zi[31 +  1].i;
 }
@@ -289,4 +290,6 @@ av_cold void ff_sbrdsp_init(SBRDSPContext *s)
         ff_sbrdsp_init_arm(s);
     if (ARCH_X86)
         ff_sbrdsp_init_x86(s);
+    if (ARCH_MIPS)
+        ff_sbrdsp_init_mips(s);
 }
