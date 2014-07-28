@@ -2,20 +2,20 @@
  * Shorten decoder
  * Copyright (c) 2005 Jeff Muizelaar
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,12 +50,8 @@
 #define ENERGYSIZE 3
 #define BITSHIFTSIZE 2
 
-#define TYPE_S8    1
-#define TYPE_U8    2
 #define TYPE_S16HL 3
-#define TYPE_U16HL 4
 #define TYPE_S16LH 5
-#define TYPE_U16LH 6
 
 #define NWRAP 3
 #define NSKIPSIZE 1
@@ -116,6 +112,7 @@ static av_cold int shorten_decode_init(AVCodecContext *avctx)
 {
     ShortenContext *s = avctx->priv_data;
     s->avctx          = avctx;
+    avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
 
     return 0;
 }
@@ -178,17 +175,13 @@ static int init_offset(ShortenContext *s)
     int nblock = FFMAX(1, s->nmean);
     /* initialise offset */
     switch (s->internal_ftype) {
-    case TYPE_U8:
-        s->avctx->sample_fmt = AV_SAMPLE_FMT_U8P;
-        mean = 0x80;
-        break;
     case TYPE_S16HL:
     case TYPE_S16LH:
-        s->avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
+        mean = 0;
         break;
     default:
-        av_log(s->avctx, AV_LOG_ERROR, "unknown audio type\n");
-        return AVERROR_PATCHWELCOME;
+        av_log(s->avctx, AV_LOG_ERROR, "unknown audio type");
+        return AVERROR_INVALIDDATA;
     }
 
     for (chan = 0; chan < s->channels; chan++)
@@ -200,7 +193,7 @@ static int init_offset(ShortenContext *s)
 static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
                               int header_size)
 {
-    int len, bps;
+    int len;
     short wave_format;
     GetByteContext gb;
 
@@ -221,7 +214,7 @@ static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
     while (bytestream2_get_le32(&gb) != MKTAG('f', 'm', 't', ' ')) {
         len = bytestream2_get_le32(&gb);
         bytestream2_skip(&gb, len);
-        if (len < 0 || bytestream2_get_bytes_left(&gb) < 16) {
+        if (bytestream2_get_bytes_left(&gb) < 16) {
             av_log(avctx, AV_LOG_ERROR, "no fmt chunk found\n");
             return AVERROR_INVALIDDATA;
         }
@@ -247,11 +240,10 @@ static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
     avctx->sample_rate = bytestream2_get_le32(&gb);
     bytestream2_skip(&gb, 4); // skip bit rate    (represents original uncompressed bit rate)
     bytestream2_skip(&gb, 2); // skip block align (not needed)
-    bps = bytestream2_get_le16(&gb);
-    avctx->bits_per_coded_sample = bps;
+    avctx->bits_per_coded_sample = bytestream2_get_le16(&gb);
 
-    if (bps != 16 && bps != 8) {
-        av_log(avctx, AV_LOG_ERROR, "unsupported number of bits per sample: %d\n", bps);
+    if (avctx->bits_per_coded_sample != 16) {
+        av_log(avctx, AV_LOG_ERROR, "unsupported number of bits per sample\n");
         return AVERROR(ENOSYS);
     }
 
@@ -260,6 +252,18 @@ static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
         av_log(avctx, AV_LOG_INFO, "%d header bytes unparsed\n", len);
 
     return 0;
+}
+
+static void output_buffer(int16_t **samples, int nchan, int blocksize,
+                          int32_t **buffer)
+{
+    int i, ch;
+    for (ch = 0; ch < nchan; ch++) {
+        int32_t *in  = buffer[ch];
+        int16_t *out = samples[ch];
+        for (i = 0; i < blocksize; i++)
+            out[i] = av_clip_int16(in[i]);
+    }
 }
 
 static const int fixed_coeffs[][3] = {
@@ -425,14 +429,13 @@ static int shorten_decode_frame(AVCodecContext *avctx, void *data,
     /* allocate internal bitstream buffer */
     if (s->max_framesize == 0) {
         void *tmp_ptr;
-        s->max_framesize = 8192; // should hopefully be enough for the first header
+        s->max_framesize = 1024; // should hopefully be enough for the first header
         tmp_ptr = av_fast_realloc(s->bitstream, &s->allocated_bitstream_size,
                                   s->max_framesize + FF_INPUT_BUFFER_PADDING_SIZE);
         if (!tmp_ptr) {
             av_log(avctx, AV_LOG_ERROR, "error allocating bitstream buffer\n");
             return AVERROR(ENOMEM);
         }
-        memset(tmp_ptr, 0, s->allocated_bitstream_size);
         s->bitstream = tmp_ptr;
     }
 
@@ -441,7 +444,7 @@ static int shorten_decode_frame(AVCodecContext *avctx, void *data,
         buf_size       = FFMIN(buf_size, s->max_framesize - s->bitstream_size);
         input_buf_size = buf_size;
 
-        if (s->bitstream_index + s->bitstream_size + buf_size + FF_INPUT_BUFFER_PADDING_SIZE >
+        if (s->bitstream_index + s->bitstream_size + buf_size >
             s->allocated_bitstream_size) {
             memmove(s->bitstream, &s->bitstream[s->bitstream_index],
                     s->bitstream_size);
@@ -505,16 +508,9 @@ static int shorten_decode_frame(AVCodecContext *avctx, void *data,
                 while (len--)
                     get_ur_golomb_shorten(&s->gb, VERBATIM_BYTE_SIZE);
                 break;
-            case FN_BITSHIFT: {
-                unsigned bitshift = get_ur_golomb_shorten(&s->gb, BITSHIFTSIZE);
-                if (bitshift > 31) {
-                    av_log(avctx, AV_LOG_ERROR, "bitshift %d is invalid\n",
-                           bitshift);
-                    return AVERROR_PATCHWELCOME;
-                }
-                s->bitshift = bitshift;
+            case FN_BITSHIFT:
+                s->bitshift = get_ur_golomb_shorten(&s->gb, BITSHIFTSIZE);
                 break;
-            }
             case FN_BLOCKSIZE: {
                 unsigned blocksize = get_uint(s, av_log2(s->blocksize));
                 if (blocksize > s->blocksize) {
@@ -562,7 +558,7 @@ static int shorten_decode_frame(AVCodecContext *avctx, void *data,
                     sum += s->offset[channel][i];
                 coffset = sum / s->nmean;
                 if (s->version >= 2)
-                    coffset = s->bitshift == 0 ? coffset : coffset >> s->bitshift - 1 >> 1;
+                    coffset >>= FFMIN(1, s->bitshift);
             }
 
             /* decode samples for this channel */
@@ -601,30 +597,15 @@ static int shorten_decode_frame(AVCodecContext *avctx, void *data,
             /* if this is the last channel in the block, output the samples */
             s->cur_chan++;
             if (s->cur_chan == s->channels) {
-                uint8_t *samples_u8;
-                int16_t *samples_s16;
-                int chan;
-
                 /* get output buffer */
                 frame->nb_samples = s->blocksize;
-                if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+                if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+                    av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
                     return ret;
-
-                for (chan = 0; chan < s->channels; chan++) {
-                    samples_u8  = ((uint8_t **)frame->extended_data)[chan];
-                    samples_s16 = ((int16_t **)frame->extended_data)[chan];
-                    for (i = 0; i < s->blocksize; i++) {
-                        switch (s->internal_ftype) {
-                        case TYPE_U8:
-                            *samples_u8++ = av_clip_uint8(s->decoded[chan][i]);
-                            break;
-                        case TYPE_S16HL:
-                        case TYPE_S16LH:
-                            *samples_s16++ = av_clip_int16(s->decoded[chan][i]);
-                            break;
-                        }
-                    }
                 }
+                /* interleave output */
+                output_buffer((int16_t **)frame->extended_data, s->channels,
+                              s->blocksize, s->decoded);
 
                 *got_frame_ptr = 1;
             }
@@ -677,6 +658,5 @@ AVCodec ff_shorten_decoder = {
     .decode         = shorten_decode_frame,
     .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
-                                                      AV_SAMPLE_FMT_U8P,
                                                       AV_SAMPLE_FMT_NONE },
 };
