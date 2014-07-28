@@ -1,29 +1,39 @@
 /*
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
  * Public dictionary API.
+ * @deprecated
+ *  AVDictionary is provided for compatibility with libav. It is both in
+ *  implementation as well as API inefficient. It does not scale and is
+ *  extremely slow with large dictionaries.
+ *  It is recommended that new code uses our tree container from tree.c/h
+ *  where applicable, which uses AVL trees to achieve O(log n) performance.
  */
 
 #ifndef AVUTIL_DICT_H
 #define AVUTIL_DICT_H
+
+#include <stdint.h>
+
+#include "version.h"
 
 /**
  * @addtogroup lavu_dict AVDictionary
@@ -58,12 +68,13 @@
  *
  */
 
-#define AV_DICT_MATCH_CASE      1
-#define AV_DICT_IGNORE_SUFFIX   2
+#define AV_DICT_MATCH_CASE      1   /**< Only get an entry with exact-case key match. Only relevant in av_dict_get(). */
+#define AV_DICT_IGNORE_SUFFIX   2   /**< Return first entry in a dictionary whose first part corresponds to the search key,
+                                         ignoring the suffix of the found key string. Only relevant in av_dict_get(). */
 #define AV_DICT_DONT_STRDUP_KEY 4   /**< Take ownership of a key that's been
-                                         allocated with av_malloc() and children. */
+                                         allocated with av_malloc() or another memory allocation function. */
 #define AV_DICT_DONT_STRDUP_VAL 8   /**< Take ownership of a value that's been
-                                         allocated with av_malloc() and chilren. */
+                                         allocated with av_malloc() or another memory allocation function. */
 #define AV_DICT_DONT_OVERWRITE 16   ///< Don't overwrite existing entries.
 #define AV_DICT_APPEND         32   /**< If the entry already exists, append to it.  Note that no
                                       delimiter is added, the strings are simply concatenated. */
@@ -78,12 +89,19 @@ typedef struct AVDictionary AVDictionary;
 /**
  * Get a dictionary entry with matching key.
  *
+ * The returned entry key or value must not be changed, or it will
+ * cause undefined behavior.
+ *
+ * To iterate through all the dictionary entries, you can set the matching key
+ * to the null string "" and set the AV_DICT_IGNORE_SUFFIX flag.
+ *
  * @param prev Set to the previous matching element to find the next.
  *             If set to NULL the first matching element is returned.
- * @param flags Allows case as well as suffix-insensitive comparisons.
- * @return Found entry or NULL, changing key or value leads to undefined behavior.
+ * @param key matching key
+ * @param flags a collection of AV_DICT_* flags controlling how the entry is retrieved
+ * @return found entry or NULL in case no matching entry was found in the dictionary
  */
-AVDictionaryEntry *av_dict_get(const AVDictionary *m, const char *key,
+AVDictionaryEntry *av_dict_get(FF_CONST_AVUTIL53 AVDictionary *m, const char *key,
                                const AVDictionaryEntry *prev, int flags);
 
 /**
@@ -107,7 +125,16 @@ int av_dict_count(const AVDictionary *m);
 int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags);
 
 /**
- * Parse the key/value pairs list and add to a dictionary.
+ * Convenience wrapper for av_dict_set that converts the value to a string
+ * and stores it.
+ */
+int av_dict_set_int(AVDictionary **pm, const char *key, int64_t value, int flags);
+
+/**
+ * Parse the key/value pairs list and add the parsed entries to a dictionary.
+ *
+ * In case of failure, all the successfully set entries are stored in
+ * *pm. You may need to manually free the created dictionary.
  *
  * @param key_val_sep  a 0-terminated list of characters used to separate
  *                     key from value
@@ -131,7 +158,7 @@ int av_dict_parse_string(AVDictionary **pm, const char *str,
  * @param flags flags to use when setting entries in *dst
  * @note metadata is read using the AV_DICT_IGNORE_SUFFIX flag
  */
-void av_dict_copy(AVDictionary **dst, const AVDictionary *src, int flags);
+void av_dict_copy(AVDictionary **dst, FF_CONST_AVUTIL53 AVDictionary *src, int flags);
 
 /**
  * Free all the memory allocated for an AVDictionary struct
