@@ -1,19 +1,5 @@
-FFSERVER_REFFILE = $(SRC_PATH)/tests/ffserver.regression.ref
-
 VREF = tests/vsynth1/00.pgm
 AREF = tests/data/asynth1.sw
-
-FATEW = 34
-FATEH = 34
-
-$(AREF): CMP=
-
-ffservertest: ffserver$(EXESUF) tests/vsynth1/00.pgm tests/data/asynth1.sw
-	@echo
-	@echo "Unfortunately ffserver is broken and therefore its regression"
-	@echo "test fails randomly. Treat the results accordingly."
-	@echo
-	$(SRC_PATH)/tests/ffserver-regression.sh $(FFSERVER_REFFILE) $(SRC_PATH)/tests/ffserver.conf
 
 OBJDIRS += tests/data tests/vsynth1 tests/data/filtergraphs
 
@@ -32,26 +18,16 @@ tests/data/vsynth1.yuv: tests/videogen$(HOSTEXESUF) | tests/data
 tests/data/vsynth2.yuv: tests/rotozoom$(HOSTEXESUF) | tests/data
 	$(M)$< $(SRC_PATH)/tests/lena.pnm $@
 
-tests/data/vsynth3.yuv: tests/videogen$(HOSTEXESUF) | tests/data
-	$(M)$< $@ $(FATEW) $(FATEH)
-
-tests/data/ffprobe-test.nut: ffmpeg$(EXESUF) | tests/data
-	$(M)$(TARGET_EXEC) ./$< \
-        -f lavfi -i "aevalsrc=sin(400*PI*2*t):d=0.125[out0]; testsrc=d=0.125[out1]; testsrc=s=100x100:d=0.125[out2]" \
-        -f ffmetadata -i $(SRC_PATH)/tests/test.ffmeta \
-        -flags +bitexact -map 0:0 -map 0:1 -map 0:2 -map_metadata 1 \
-        -map_metadata:s:0 1:s:0 -map_metadata:s:1 1:s:1 \
-        -vcodec rawvideo -acodec pcm_s16le \
-        -y $@ 2>/dev/null
-
-tests/data/%.sw tests/data/asynth% tests/data/vsynth%.yuv tests/vsynth%/00.pgm tests/data/%.nut: TAG = GEN
+tests/data/asynth% tests/data/vsynth%.yuv tests/vsynth%/00.pgm: TAG = GEN
 
 tests/data/filtergraphs/%: TAG = COPY
 tests/data/filtergraphs/%: $(SRC_PATH)/tests/filtergraphs/% | tests/data/filtergraphs
 	$(M)cp $< $@
 
+RUNNING_FATE := $(filter check fate%,$(filter-out fate-rsync,$(MAKECMDGOALS)))
+
 # Check sanity of dependencies when running FATE tests.
-ifneq (,$(filter check fate%,$(filter-out fate-rsync,$(MAKECMDGOALS))))
+ifneq (,$(RUNNING_FATE))
 CHKCFG  = $(if $($(1))$(!$(1)),$($(1)), $(error No such config: $(1)))
 endif
 
@@ -100,14 +76,10 @@ include $(SRC_PATH)/tests/fate/demux.mak
 include $(SRC_PATH)/tests/fate/dfa.mak
 include $(SRC_PATH)/tests/fate/dpcm.mak
 include $(SRC_PATH)/tests/fate/ea.mak
-include $(SRC_PATH)/tests/fate/exif.mak
-include $(SRC_PATH)/tests/fate/ffmpeg.mak
-include $(SRC_PATH)/tests/fate/ffprobe.mak
 include $(SRC_PATH)/tests/fate/filter-audio.mak
 include $(SRC_PATH)/tests/fate/filter-video.mak
 include $(SRC_PATH)/tests/fate/flac.mak
 include $(SRC_PATH)/tests/fate/fft.mak
-include $(SRC_PATH)/tests/fate/gif.mak
 include $(SRC_PATH)/tests/fate/h264.mak
 include $(SRC_PATH)/tests/fate/hevc.mak
 include $(SRC_PATH)/tests/fate/image.mak
@@ -117,7 +89,6 @@ include $(SRC_PATH)/tests/fate/libavdevice.mak
 include $(SRC_PATH)/tests/fate/libavformat.mak
 include $(SRC_PATH)/tests/fate/libavresample.mak
 include $(SRC_PATH)/tests/fate/libavutil.mak
-include $(SRC_PATH)/tests/fate/libswresample.mak
 include $(SRC_PATH)/tests/fate/lossless-audio.mak
 include $(SRC_PATH)/tests/fate/lossless-video.mak
 include $(SRC_PATH)/tests/fate/microsoft.mak
@@ -132,7 +103,6 @@ include $(SRC_PATH)/tests/fate/qt.mak
 include $(SRC_PATH)/tests/fate/qtrle.mak
 include $(SRC_PATH)/tests/fate/real.mak
 include $(SRC_PATH)/tests/fate/screen.mak
-include $(SRC_PATH)/tests/fate/subtitles.mak
 include $(SRC_PATH)/tests/fate/utvideo.mak
 include $(SRC_PATH)/tests/fate/video.mak
 include $(SRC_PATH)/tests/fate/voice.mak
@@ -143,47 +113,35 @@ include $(SRC_PATH)/tests/fate/wavpack.mak
 include $(SRC_PATH)/tests/fate/wma.mak
 include $(SRC_PATH)/tests/fate/xvid.mak
 
-FATE_FFMPEG += $(FATE_FFMPEG-yes) $(FATE_AVCONV) $(FATE_AVCONV-yes)
-FATE-$(CONFIG_FFMPEG) += $(FATE_FFMPEG)
-FATE-$(CONFIG_FFPROBE) += $(FATE_FFPROBE)
+FATE_AVCONV += $(FATE_AVCONV-yes)
+FATE-$(CONFIG_AVCONV) += $(FATE_AVCONV)
 
 FATE_SAMPLES_AVCONV           += $(FATE_SAMPLES_AVCONV-yes)
-FATE_SAMPLES_FFMPEG           += $(FATE_SAMPLES_FFMPEG-yes)
-FATE_EXTERN-$(CONFIG_FFMPEG)  += $(FATE_SAMPLES_AVCONV) $(FATE_SAMPLES_FFMPEG) $(FATE_SAMPLES_FFPROBE)
-FATE_EXTERN += $(FATE_EXTERN-yes)
+FATE_SAMPLES-$(CONFIG_AVCONV) += $(FATE_SAMPLES_AVCONV)
+FATE_SAMPLES += $(FATE_SAMPLES-yes)
 
 FATE += $(FATE-yes)
 
-RSYNC_OPTIONS-$(HAVE_RSYNC_CONTIMEOUT) += --contimeout=60
-RSYNC_OPTIONS = -vrltLW --timeout=60 $(RSYNC_OPTIONS-yes)
-
-$(FATE_FFMPEG) $(FATE_SAMPLES_AVCONV) $(FATE_SAMPLES_FFMPEG): ffmpeg$(EXESUF)
-
-$(FATE_FFPROBE) $(FATE_SAMPLES_FFPROBE): ffprobe$(EXESUF)
+$(FATE_AVCONV) $(FATE_SAMPLES_AVCONV): avconv$(EXESUF)
 
 ifdef SAMPLES
-FATE += $(FATE_FULL) $(FATE_FULL-yes)
-FATE += $(FATE_EXTERN)
+FATE += $(FATE_SAMPLES)
 fate-rsync:
-	rsync $(RSYNC_OPTIONS) rsync://fate-suite.ffmpeg.org/fate-suite/ $(SAMPLES)
+	rsync -vaLW rsync://fate-suite.libav.org/fate-suite/ $(SAMPLES)
 else
-fate::
-	@echo "warning: only a subset of the fate tests will be run because SAMPLES is not specified"
 fate-rsync:
 	@echo "use 'make fate-rsync SAMPLES=/path/to/samples' to sync the fate suite"
-$(FATE_EXTERN):
+$(FATE_SAMPLES):
 	@echo "$@ requires external samples and SAMPLES not specified"; false
 endif
 
-FATE_UTILS = base64 tiny_psnr tiny_ssim
+FATE_UTILS = base64 tiny_psnr
 
-TOOL = ffmpeg
+fate: $(FATE)
 
-fate:: $(FATE)
-
-$(FATE) $(FATE_TESTS-no): $(FATE_UTILS:%=tests/%$(HOSTEXESUF))
+$(FATE): $(FATE_UTILS:%=tests/%$(HOSTEXESUF))
 	@echo "TEST    $(@:fate-%=%)"
-	$(Q)$(SRC_PATH)/tests/fate-run.sh $@ "$(TARGET_SAMPLES)" "$(TARGET_EXEC)" "$(TARGET_PATH)" '$(CMD)' '$(CMP)' '$(REF)' '$(FUZZ)' '$(THREADS)' '$(THREAD_TYPE)' '$(CPUFLAGS)' '$(CMP_SHIFT)' '$(CMP_TARGET)' '$(SIZE_TOLERANCE)' '$(CMP_UNIT)' '$(GEN)'
+	$(Q)$(SRC_PATH)/tests/fate-run.sh $@ "$(SAMPLES)" "$(TARGET_EXEC)" "$(TARGET_PATH)" '$(CMD)' '$(CMP)' '$(REF)' '$(FUZZ)' '$(THREADS)' '$(THREAD_TYPE)' '$(CPUFLAGS)' '$(CMP_SHIFT)' '$(CMP_TARGET)' '$(SIZE_TOLERANCE)' '$(CMP_UNIT)' '$(GEN)'
 
 fate-list:
 	@printf '%s\n' $(sort $(FATE))
@@ -192,7 +150,7 @@ coverage.info: TAG = LCOV
 coverage.info:
 	$(M)lcov -q -d $(CURDIR) -b $(SRC_PATH) --capture | \
 	    sed "s,$(CURDIR)/\./,$(CURDIR)/," > $@
-	$(M)lcov -q --remove $@ "/usr*" -o $@
+	$(M)lcov -q --remove $@ "/usr/include*" -o $@
 
 lcov:  TAG = GENHTML
 lcov: coverage.info
@@ -206,9 +164,10 @@ lcov-reset:
 clean:: testclean
 
 testclean:
-	$(RM) -r tests/vsynth1 tests/data tools/lavfi-showfiltfmts$(EXESUF)
+	$(RM) -r tests/vsynth1 tests/data
 	$(RM) $(CLEANSUFFIXES:%=tests/%)
 	$(RM) $(TESTTOOLS:%=tests/%$(HOSTEXESUF))
+	$(RM) tests/pixfmts.mak
 
 -include $(wildcard tests/*.d)
 
