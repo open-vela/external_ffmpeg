@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,7 +36,10 @@
 #include <assert.h>
 #include "config.h"
 #include "attributes.h"
+#include "timer.h"
+#include "cpu.h"
 #include "dict.h"
+#include "version.h"
 
 #if ARCH_X86
 #   include "x86/emms.h"
@@ -61,7 +64,7 @@
 #endif
 
 #if HAVE_PRAGMA_DEPRECATED
-#    if defined(__ICL)
+#    if defined(__ICL) || defined (__INTEL_COMPILER)
 #        define FF_DISABLE_DEPRECATION_WARNINGS __pragma(warning(push)) __pragma(warning(disable:1478))
 #        define FF_ENABLE_DEPRECATION_WARNINGS  __pragma(warning(pop))
 #    elif defined(_MSC_VER)
@@ -79,6 +82,12 @@
 #ifndef INT_BIT
 #    define INT_BIT (CHAR_BIT * sizeof(int))
 #endif
+
+#define FF_MEMORY_POISON 0x2a
+
+#define MAKE_ACCESSORS(str, name, type, field) \
+    type av_##name##_get_##field(const str *s) { return s->field; } \
+    void av_##name##_set_##field(str *s, type v) { s->field = v; }
 
 // Some broken preprocessors need a second expansion
 // to be forced to tokenize __VA_ARGS__
@@ -113,6 +122,12 @@
 #   define LOCAL_ALIGNED_16(t, v, ...) LOCAL_ALIGNED(16, t, v, __VA_ARGS__)
 #endif
 
+#if HAVE_LOCAL_ALIGNED_32
+#   define LOCAL_ALIGNED_32(t, v, ...) E1(LOCAL_ALIGNED_D(32, t, v, __VA_ARGS__,,))
+#else
+#   define LOCAL_ALIGNED_32(t, v, ...) LOCAL_ALIGNED(32, t, v, __VA_ARGS__)
+#endif
+
 #define FF_ALLOC_OR_GOTO(ctx, p, size, label)\
 {\
     p = av_malloc(size);\
@@ -126,6 +141,24 @@
 {\
     p = av_mallocz(size);\
     if (p == NULL && (size) != 0) {\
+        av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
+        goto label;\
+    }\
+}
+
+#define FF_ALLOC_ARRAY_OR_GOTO(ctx, p, nelem, elsize, label)\
+{\
+    p = av_malloc_array(nelem, elsize);\
+    if (p == NULL) {\
+        av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
+        goto label;\
+    }\
+}
+
+#define FF_ALLOCZ_ARRAY_OR_GOTO(ctx, p, nelem, elsize, label)\
+{\
+    p = av_mallocz_array(nelem, elsize);\
+    if (p == NULL) {\
         av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
         goto label;\
     }\
@@ -149,12 +182,11 @@
 #   define NULL_IF_CONFIG_SMALL(x) x
 #endif
 
-
 /**
  * Define a function with only the non-default version specified.
  *
  * On systems with ELF shared libraries, all symbols exported from
- * Libav libraries are tagged with the name and major version of the
+ * FFmpeg libraries are tagged with the name and major version of the
  * library to which they belong.  If a function is moved from one
  * library to another, a wrapper must be retained in the original
  * location to preserve binary compatibility.
@@ -212,11 +244,20 @@ void avpriv_request_sample(void *avc,
 
 #if HAVE_LIBC_MSVCRT
 #define avpriv_open ff_open
+#define PTRDIFF_SPECIFIER "Id"
+#define SIZE_SPECIFIER "Iu"
+#else
+#define PTRDIFF_SPECIFIER "td"
+#define SIZE_SPECIFIER "zu"
 #endif
 
 /**
  * A wrapper for open() setting O_CLOEXEC.
  */
 int avpriv_open(const char *filename, int flags, ...);
+
+#if FF_API_GET_CHANNEL_LAYOUT_COMPAT
+uint64_t ff_get_channel_layout(const char *name, int compat);
+#endif
 
 #endif /* AVUTIL_INTERNAL_H */
