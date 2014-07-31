@@ -295,11 +295,6 @@ static int parse_object_segment(AVCodecContext *avctx,
         return AVERROR_INVALIDDATA;
     }
 
-    if (buf_size > rle_bitmap_len) {
-        av_log(avctx, AV_LOG_ERROR, "too much RLE data\n");
-        return AVERROR_INVALIDDATA;
-    }
-
     object->w = width;
     object->h = height;
 
