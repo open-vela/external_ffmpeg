@@ -1111,7 +1111,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             const int mb_xy   = mb_x + mb_y * s->mb_stride;
             const int mb_type = s->cur_pic.mb_type[mb_xy];
 
-            error = s->error_status_table[mb_xy];
+            // error = s->error_status_table[mb_xy];
 
             if (IS_INTRA(mb_type) && s->partitioned_frame)
                 continue;
