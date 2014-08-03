@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,7 @@
 #include "asm-offsets.h"
 
 .macro shuffle a, b, c, d
-const shuffle_\a\b\c\d, align=4
+const shuffle_\a\b\c\d align=4
         .byte (\a * 4), (\a * 4 + 1), (\a * 4 + 2), (\a * 4 + 3)
         .byte (\b * 4), (\b * 4 + 1), (\b * 4 + 2), (\b * 4 + 3)
         .byte (\c * 4), (\c * 4 + 1), (\c * 4 + 2), (\c * 4 + 3)
@@ -344,7 +344,7 @@ function fft15_pass
         ret
 endfunc
 
-function fft30_neon, align=6
+function fft30_neon  align=6
         sub             sp,  sp,  #0x20
         stp             x20, x21, [sp]
         stp             x22, x30, [sp, #0x10]
@@ -372,7 +372,7 @@ function fft30_neon, align=6
 endfunc
 
 .macro  def_fft n, n2
-function fft\n\()_neon, align=6
+function fft\n\()_neon  align=6
         sub             sp,  sp,  #0x30
         stp             x20, x21, [sp]
         stp             x22, x30, [sp, #0x10]
@@ -641,7 +641,7 @@ function ff_celt_imdct_half_neon, export=1
 endfunc
 
 // [0] = exp(2 * i * pi / 5), [1] = exp(2 * i * pi * 2 / 5)
-const   fact5,          align=4
+const   fact5           align=4
         .float           0.30901699437494745, 0.95105651629515353
         .float          -0.80901699437494734, 0.58778525229247325
 endconst

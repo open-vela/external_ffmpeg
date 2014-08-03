@@ -2,20 +2,20 @@
  * Smacker demuxer
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -94,11 +94,14 @@ static const uint8_t smk_pal[64] = {
 
 static int smacker_probe(AVProbeData *p)
 {
-    if(p->buf[0] == 'S' && p->buf[1] == 'M' && p->buf[2] == 'K'
-        && (p->buf[3] == '2' || p->buf[3] == '4'))
-        return AVPROBE_SCORE_MAX;
-    else
+    if (   AV_RL32(p->buf) != MKTAG('S', 'M', 'K', '2')
+        && AV_RL32(p->buf) != MKTAG('S', 'M', 'K', '4'))
         return 0;
+
+    if (AV_RL32(p->buf+4) > 32768U || AV_RL32(p->buf+8) > 32768U)
+        return AVPROBE_SCORE_MAX/4;
+
+    return AVPROBE_SCORE_MAX;
 }
 
 static int smacker_read_header(AVFormatContext *s)
@@ -112,7 +115,7 @@ static int smacker_read_header(AVFormatContext *s)
     /* read and check header */
     smk->magic = avio_rl32(pb);
     if (smk->magic != MKTAG('S', 'M', 'K', '2') && smk->magic != MKTAG('S', 'M', 'K', '4'))
-        return -1;
+        return AVERROR_INVALIDDATA;
     smk->width = avio_rl32(pb);
     smk->height = avio_rl32(pb);
     smk->frames = avio_rl32(pb);
@@ -126,7 +129,7 @@ static int smacker_read_header(AVFormatContext *s)
 
     if(smk->treesize >= UINT_MAX/4){ // smk->treesize + 16 must not overflow (this check is probably redundant)
         av_log(s, AV_LOG_ERROR, "treesize too large\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
 //FIXME remove extradata "rebuilding"
@@ -142,10 +145,15 @@ static int smacker_read_header(AVFormatContext *s)
     /* setup data */
     if(smk->frames > 0xFFFFFF) {
         av_log(s, AV_LOG_ERROR, "Too many frames: %"PRIu32"\n", smk->frames);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
-    smk->frm_size = av_malloc(smk->frames * 4);
+    smk->frm_size = av_malloc_array(smk->frames, sizeof(*smk->frm_size));
     smk->frm_flags = av_malloc(smk->frames);
+    if (!smk->frm_size || !smk->frm_flags) {
+        av_freep(&smk->frm_size);
+        av_freep(&smk->frm_flags);
+        return AVERROR(ENOMEM);
+    }
 
     smk->is_ver4 = (smk->magic != MKTAG('S', 'M', 'K', '2'));
 
@@ -160,7 +168,7 @@ static int smacker_read_header(AVFormatContext *s)
     /* init video codec */
     st = avformat_new_stream(s, NULL);
     if (!st)
-        return -1;
+        return AVERROR(ENOMEM);
     smk->videoindex = st->index;
     st->codec->width = smk->width;
     st->codec->height = smk->height;
@@ -182,6 +190,8 @@ static int smacker_read_header(AVFormatContext *s)
         smk->indexes[i] = -1;
         if (smk->rates[i]) {
             ast[i] = avformat_new_stream(s, NULL);
+            if (!ast[i])
+                return AVERROR(ENOMEM);
             smk->indexes[i] = ast[i]->index;
             ast[i]->codec->codec_type = AVMEDIA_TYPE_AUDIO;
             if (smk->aflags[i] & SMK_AUD_BINKAUD) {
@@ -212,21 +222,18 @@ static int smacker_read_header(AVFormatContext *s)
 
 
     /* load trees to extradata, they will be unpacked by decoder */
-    st->codec->extradata = av_mallocz(smk->treesize + 16 +
-                                      FF_INPUT_BUFFER_PADDING_SIZE);
-    st->codec->extradata_size = smk->treesize + 16;
-    if(!st->codec->extradata){
+    if(ff_alloc_extradata(st->codec, smk->treesize + 16)){
         av_log(s, AV_LOG_ERROR,
                "Cannot allocate %"PRIu32" bytes of extradata\n",
                smk->treesize + 16);
-        av_free(smk->frm_size);
-        av_free(smk->frm_flags);
-        return -1;
+        av_freep(&smk->frm_size);
+        av_freep(&smk->frm_flags);
+        return AVERROR(ENOMEM);
     }
     ret = avio_read(pb, st->codec->extradata + 16, st->codec->extradata_size - 16);
     if(ret != st->codec->extradata_size - 16){
-        av_free(smk->frm_size);
-        av_free(smk->frm_flags);
+        av_freep(&smk->frm_size);
+        av_freep(&smk->frm_flags);
         return AVERROR(EIO);
     }
     ((int32_t*)st->codec->extradata)[0] = av_le2ne32(smk->mmap_size);
@@ -250,7 +257,7 @@ static int smacker_read_packet(AVFormatContext *s, AVPacket *pkt)
     int frame_size = 0;
     int palchange = 0;
 
-    if (s->pb->eof_reached || smk->cur_frame >= smk->frames)
+    if (url_feof(s->pb) || smk->cur_frame >= smk->frames)
         return AVERROR_EOF;
 
     /* if we demuxed all streams, pass another frame */
@@ -267,6 +274,8 @@ static int smacker_read_packet(AVFormatContext *s, AVPacket *pkt)
             memcpy(oldpal, pal, 768);
             size = avio_r8(s->pb);
             size = size * 4 - 1;
+            if(size + 1 > frame_size)
+                return AVERROR_INVALIDDATA;
             frame_size -= size;
             frame_size--;
             sz = 0;
@@ -312,7 +321,7 @@ static int smacker_read_packet(AVFormatContext *s, AVPacket *pkt)
                 int err;
 
                 size = avio_rl32(s->pb) - 4;
-                if (!size || size > frame_size) {
+                if (!size || size + 4L > frame_size) {
                     av_log(s, AV_LOG_ERROR, "Invalid audio part size\n");
                     return AVERROR_INVALIDDATA;
                 }
@@ -348,7 +357,7 @@ static int smacker_read_packet(AVFormatContext *s, AVPacket *pkt)
         smk->cur_frame++;
         smk->nextpos = avio_tell(s->pb);
     } else {
-        if (smk->stream_id[smk->curstream] < 0)
+        if (smk->stream_id[smk->curstream] < 0 || !smk->bufs[smk->curstream])
             return AVERROR_INVALIDDATA;
         if (av_new_packet(pkt, smk->buf_sizes[smk->curstream]))
             return AVERROR(ENOMEM);
@@ -369,16 +378,16 @@ static int smacker_read_close(AVFormatContext *s)
     int i;
 
     for(i = 0; i < 7; i++)
-        av_free(smk->bufs[i]);
-    av_free(smk->frm_size);
-    av_free(smk->frm_flags);
+        av_freep(&smk->bufs[i]);
+    av_freep(&smk->frm_size);
+    av_freep(&smk->frm_flags);
 
     return 0;
 }
 
 AVInputFormat ff_smacker_demuxer = {
     .name           = "smk",
-    .long_name      = NULL_IF_CONFIG_SMALL("Smacker video"),
+    .long_name      = NULL_IF_CONFIG_SMALL("Smacker"),
     .priv_data_size = sizeof(SmackerContext),
     .read_probe     = smacker_probe,
     .read_header    = smacker_read_header,
