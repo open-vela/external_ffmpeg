@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -97,11 +97,54 @@ typedef struct IDCTDSPContext {
 
 void ff_idctdsp_init(IDCTDSPContext *c, AVCodecContext *avctx);
 
+void ff_idctdsp_init_alpha(IDCTDSPContext *c, AVCodecContext *avctx,
+                           unsigned high_bit_depth);
 void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_idctdsp_init_ppc(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_idctdsp_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
+
+static inline void put_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixels,
+                                        int line_size)
+{
+    int i;
+
+    /* read the pixels */
+    for (i = 0; i < 8; i++) {
+        pixels[0] = av_clip_uint8(block[0]);
+        pixels[1] = av_clip_uint8(block[1]);
+        pixels[2] = av_clip_uint8(block[2]);
+        pixels[3] = av_clip_uint8(block[3]);
+        pixels[4] = av_clip_uint8(block[4]);
+        pixels[5] = av_clip_uint8(block[5]);
+        pixels[6] = av_clip_uint8(block[6]);
+        pixels[7] = av_clip_uint8(block[7]);
+
+        pixels += line_size;
+        block  += 8;
+    }
+}
+
+static inline void add_pixels_clamped_c(const int16_t *block, uint8_t *av_restrict pixels,
+                                        int line_size)
+{
+    int i;
+
+    /* read the pixels */
+    for (i = 0; i < 8; i++) {
+        pixels[0] = av_clip_uint8(pixels[0] + block[0]);
+        pixels[1] = av_clip_uint8(pixels[1] + block[1]);
+        pixels[2] = av_clip_uint8(pixels[2] + block[2]);
+        pixels[3] = av_clip_uint8(pixels[3] + block[3]);
+        pixels[4] = av_clip_uint8(pixels[4] + block[4]);
+        pixels[5] = av_clip_uint8(pixels[5] + block[5]);
+        pixels[6] = av_clip_uint8(pixels[6] + block[6]);
+        pixels[7] = av_clip_uint8(pixels[7] + block[7]);
+        pixels   += line_size;
+        block    += 8;
+    }
+}
 
 #endif /* AVCODEC_IDCTDSP_H */
