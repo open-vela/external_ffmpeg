@@ -246,6 +246,8 @@ int avformat_write_header(AVFormatContext *s, AVDictionary **options)
         ret = s->oformat->write_header(s);
         if (ret < 0)
             return ret;
+        if (s->flush_packets && s->pb && s->pb->error >= 0 && s->flags & AVFMT_FLAG_FLUSH_PACKETS)
+            avio_flush(s->pb);
     }
 
     return 0;
