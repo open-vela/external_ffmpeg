@@ -289,9 +289,7 @@ tests/pixfmts.mak: ffmpeg$(EXESUF)
 	$(Q)$(TARGET_EXEC) $(TARGET_PATH)/$< -pix_fmts list 2> /dev/null | awk 'NR > 8 && /^IO/ { printf $$2 " " }' >> $@
 	$(Q)printf "\n" >> $@
 
-RUNNING_PIXFMTS_TESTS := $(filter check fate-list fate-filter-pixdesc%,$(MAKECMDGOALS))
-
-ifneq (,$(RUNNING_PIXFMTS_TESTS))
+ifneq (,$(RUNNING_FATE))
 -include tests/pixfmts.mak
 endif
 
