@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2010 David Conrad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,6 +36,9 @@ static int skeleton_header(AVFormatContext *s, int idx)
 
     st->codec->codec_type = AVMEDIA_TYPE_DATA;
 
+    if ((os->flags & OGG_FLAG_EOS) && os->psize == 0)
+        return 1;
+
     if (os->psize < 8)
         return -1;
 
@@ -46,7 +49,7 @@ static int skeleton_header(AVFormatContext *s, int idx)
         version_major = AV_RL16(buf+8);
         version_minor = AV_RL16(buf+10);
 
-        if (version_major != 3) {
+        if (version_major != 3 && version_major != 4) {
             av_log(s, AV_LOG_WARNING, "Unknown skeleton version %d.%d\n",
                    version_major, version_minor);
             return -1;
@@ -60,7 +63,7 @@ static int skeleton_header(AVFormatContext *s, int idx)
         start_num = AV_RL64(buf+12);
         start_den = AV_RL64(buf+20);
 
-        if (start_den) {
+        if (start_den > 0 && start_num > 0) {
             int base_den;
             av_reduce(&start_time, &base_den, start_num, start_den, INT_MAX);
             avpriv_set_pts_info(st, 64, 1, base_den);
@@ -73,12 +76,16 @@ static int skeleton_header(AVFormatContext *s, int idx)
 
         target_idx = ogg_find_stream(ogg, AV_RL32(buf+12));
         start_granule = AV_RL64(buf+36);
-        if (os->start_granule != OGG_NOGRANULE_VALUE) {
-            avpriv_report_missing_feature(s,
-                                          "Multiple fisbone for the same stream");
+        if (target_idx < 0) {
+            av_log(s, AV_LOG_WARNING, "Serial number in fisbone doesn't match any stream\n");
             return 1;
         }
-        if (target_idx >= 0 && start_granule != OGG_NOGRANULE_VALUE) {
+        os = ogg->streams + target_idx;
+        if (os->start_granule != OGG_NOGRANULE_VALUE) {
+            av_log(s, AV_LOG_WARNING, "Multiple fisbone for the same stream\n");
+            return 1;
+        }
+        if (start_granule != OGG_NOGRANULE_VALUE) {
             os->start_granule = start_granule;
         }
     }
