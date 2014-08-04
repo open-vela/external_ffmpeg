@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,8 @@
 #include <stdint.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
+
 #include "avcodec.h"
 #include "h264dsp.h"
 #include "h264idct.h"
@@ -43,6 +45,14 @@
 #undef BIT_DEPTH
 
 #define BIT_DEPTH 10
+#include "h264dsp_template.c"
+#undef BIT_DEPTH
+
+#define BIT_DEPTH 12
+#include "h264dsp_template.c"
+#undef BIT_DEPTH
+
+#define BIT_DEPTH 14
 #include "h264dsp_template.c"
 #undef BIT_DEPTH
 
@@ -130,11 +140,18 @@ av_cold void ff_h264dsp_init(H264DSPContext *c, const int bit_depth,
     case 10:
         H264_DSP(10);
         break;
+    case 12:
+        H264_DSP(12);
+        break;
+    case 14:
+        H264_DSP(14);
+        break;
     default:
+        av_assert0(bit_depth<=8);
         H264_DSP(8);
         break;
     }
-    c->startcode_find_candidate = ff_startcode_find_candidate_c;
+    c->h264_find_start_code_candidate = ff_startcode_find_candidate_c;
 
     if (ARCH_AARCH64) ff_h264dsp_init_aarch64(c, bit_depth, chroma_format_idc);
     if (ARCH_ARM) ff_h264dsp_init_arm(c, bit_depth, chroma_format_idc);
