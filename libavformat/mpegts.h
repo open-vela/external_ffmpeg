@@ -2,20 +2,20 @@
  * MPEG2 transport stream defines
  * Copyright (c) 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,13 +52,14 @@
 #define STREAM_TYPE_AUDIO_AAC_LATM  0x11
 #define STREAM_TYPE_VIDEO_MPEG4     0x10
 #define STREAM_TYPE_VIDEO_H264      0x1b
-#define STREAM_TYPE_VIDEO_HEVC      0x24
+#define STREAM_TYPE_VIDEO_HEVC      0x24 //Definition of 0x24 HEVC video MPEG TS stream type
 #define STREAM_TYPE_VIDEO_CAVS      0x42
 #define STREAM_TYPE_VIDEO_VC1       0xea
 #define STREAM_TYPE_VIDEO_DIRAC     0xd1
 
 #define STREAM_TYPE_AUDIO_AC3       0x81
-#define STREAM_TYPE_AUDIO_DTS       0x8a
+#define STREAM_TYPE_AUDIO_DTS       0x82
+#define STREAM_TYPE_AUDIO_TRUEHD    0x83
 
 typedef struct MpegTSContext MpegTSContext;
 
@@ -104,5 +105,11 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
                               const uint8_t **pp, const uint8_t *desc_list_end,
                               Mp4Descr *mp4_descr, int mp4_descr_count, int pid,
                               MpegTSContext *ts);
+
+/**
+ * Check presence of H264 startcode
+ * @return <0 to stop processing
+ */
+int ff_check_h264_startcode(AVFormatContext *s, const AVStream *st, const AVPacket *pkt);
 
 #endif /* AVFORMAT_MPEGTS_H */
