@@ -2,20 +2,20 @@
  * Delphine Software International CIN video decoder
  * Copyright (c) 2006 Gregory Montoir (cyx@users.sourceforge.net)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,10 +42,33 @@ typedef struct CinVideoContext {
     uint8_t *bitmap_table[3];
 } CinVideoContext;
 
+static av_cold void destroy_buffers(CinVideoContext *cin)
+{
+    int i;
+
+    for (i = 0; i < 3; ++i)
+        av_freep(&cin->bitmap_table[i]);
+}
+
+static av_cold int allocate_buffers(CinVideoContext *cin)
+{
+    int i;
+
+    for (i = 0; i < 3; ++i) {
+        cin->bitmap_table[i] = av_mallocz(cin->bitmap_size);
+        if (!cin->bitmap_table[i]) {
+            av_log(cin->avctx, AV_LOG_ERROR, "Can't allocate bitmap buffers.\n");
+            destroy_buffers(cin);
+            return AVERROR(ENOMEM);
+        }
+    }
+
+    return 0;
+}
+
 static av_cold int cinvideo_decode_init(AVCodecContext *avctx)
 {
     CinVideoContext *cin = avctx->priv_data;
-    unsigned int i;
 
     cin->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
@@ -55,11 +78,8 @@ static av_cold int cinvideo_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     cin->bitmap_size = avctx->width * avctx->height;
-    for (i = 0; i < 3; ++i) {
-        cin->bitmap_table[i] = av_mallocz(cin->bitmap_size);
-        if (!cin->bitmap_table[i])
-            av_log(avctx, AV_LOG_ERROR, "Can't allocate bitmap buffers.\n");
-    }
+    if (allocate_buffers(cin))
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -141,27 +161,30 @@ static int cin_decode_lzss(const unsigned char *src, int src_size,
     return 0;
 }
 
-static void cin_decode_rle(const unsigned char *src, int src_size,
+static int cin_decode_rle(const unsigned char *src, int src_size,
                            unsigned char *dst, int dst_size)
 {
     int len, code;
     unsigned char *dst_end       = dst + dst_size;
     const unsigned char *src_end = src + src_size;
 
-    while (src < src_end && dst < dst_end) {
+    while (src + 1 < src_end && dst < dst_end) {
         code = *src++;
         if (code & 0x80) {
-            if (src >= src_end)
-                break;
             len = code - 0x7F;
             memset(dst, *src++, FFMIN(len, dst_end - dst));
         } else {
             len = code + 1;
+            if (len > src_end-src) {
+                av_log(NULL, AV_LOG_ERROR, "RLE overread\n");
+                return AVERROR_INVALIDDATA;
+            }
             memcpy(dst, src, FFMIN3(len, dst_end - dst, src_end - src));
             src += len;
         }
         dst += len;
     }
+    return 0;
 }
 
 static int cinvideo_decode_frame(AVCodecContext *avctx,
@@ -188,18 +211,16 @@ static int cinvideo_decode_frame(AVCodecContext *avctx,
         if (palette_colors_count > 256)
             return AVERROR_INVALIDDATA;
         for (i = 0; i < palette_colors_count; ++i) {
-            cin->palette[i]    = bytestream_get_le24(&buf);
+            cin->palette[i]    = 0xFFU << 24 | bytestream_get_le24(&buf);
             bitmap_frame_size -= 3;
         }
     } else {
         for (i = 0; i < palette_colors_count; ++i) {
-            cin->palette[buf[0]] = AV_RL24(buf + 1);
+            cin->palette[buf[0]] = 0xFFU << 24 | AV_RL24(buf + 1);
             buf                 += 4;
             bitmap_frame_size   -= 4;
         }
     }
-
-    bitmap_frame_size = FFMIN(cin->bitmap_size, bitmap_frame_size);
 
     /* note: the decoding routines below assumes that
      * surface.width = surface.pitch */
@@ -215,7 +236,7 @@ static int cinvideo_decode_frame(AVCodecContext *avctx,
                              cin->bitmap_table[CIN_CUR_BMP], cin->bitmap_size);
         break;
     case 35:
-        cin_decode_huffman(buf, bitmap_frame_size,
+        bitmap_frame_size = cin_decode_huffman(buf, bitmap_frame_size,
                            cin->bitmap_table[CIN_INT_BMP], cin->bitmap_size);
         cin_decode_rle(cin->bitmap_table[CIN_INT_BMP], bitmap_frame_size,
                        cin->bitmap_table[CIN_CUR_BMP], cin->bitmap_size);
@@ -251,11 +272,8 @@ static int cinvideo_decode_frame(AVCodecContext *avctx,
         break;
     }
 
-    if ((res = ff_reget_buffer(avctx, cin->frame)) < 0) {
-        av_log(cin->avctx, AV_LOG_ERROR,
-               "delphinecinvideo: reget_buffer() failed to allocate a frame\n");
+    if ((res = ff_reget_buffer(avctx, cin->frame)) < 0)
         return res;
-    }
 
     memcpy(cin->frame->data[1], cin->palette, sizeof(cin->palette));
     cin->frame->palette_has_changed = 1;
@@ -278,12 +296,10 @@ static int cinvideo_decode_frame(AVCodecContext *avctx,
 static av_cold int cinvideo_decode_end(AVCodecContext *avctx)
 {
     CinVideoContext *cin = avctx->priv_data;
-    int i;
 
     av_frame_free(&cin->frame);
 
-    for (i = 0; i < 3; ++i)
-        av_free(cin->bitmap_table[i]);
+    destroy_buffers(cin);
 
     return 0;
 }

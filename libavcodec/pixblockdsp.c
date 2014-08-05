@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,7 +30,7 @@
 #define BIT_DEPTH 8
 #include "pixblockdsp_template.c"
 
-static void diff_pixels_c(int16_t *restrict block, const uint8_t *s1,
+static void diff_pixels_c(int16_t *av_restrict block, const uint8_t *s1,
                           const uint8_t *s2, int stride)
 {
     int i;
@@ -60,13 +60,19 @@ av_cold void ff_pixblockdsp_init(PixblockDSPContext *c, AVCodecContext *avctx)
     switch (avctx->bits_per_raw_sample) {
     case 9:
     case 10:
+    case 12:
+    case 14:
         c->get_pixels = get_pixels_16_c;
         break;
     default:
-        c->get_pixels = get_pixels_8_c;
+        if (avctx->bits_per_raw_sample<=8 || avctx->codec_type != AVMEDIA_TYPE_VIDEO) {
+            c->get_pixels = get_pixels_8_c;
+        }
         break;
     }
 
+    if (ARCH_ALPHA)
+        ff_pixblockdsp_init_alpha(c, avctx, high_bit_depth);
     if (ARCH_ARM)
         ff_pixblockdsp_init_arm(c, avctx, high_bit_depth);
     if (ARCH_PPC)
