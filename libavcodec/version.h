@@ -1,19 +1,19 @@
 /*
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,8 +29,8 @@
 #include "libavutil/version.h"
 
 #define LIBAVCODEC_VERSION_MAJOR 55
-#define LIBAVCODEC_VERSION_MINOR 57
-#define LIBAVCODEC_VERSION_MICRO  2
+#define LIBAVCODEC_VERSION_MINOR  72
+#define LIBAVCODEC_VERSION_MICRO 102
 
 #define LIBAVCODEC_VERSION_INT  AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, \
                                                LIBAVCODEC_VERSION_MINOR, \
@@ -50,6 +50,24 @@
 
 #ifndef FF_API_REQUEST_CHANNELS
 #define FF_API_REQUEST_CHANNELS (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_OLD_DECODE_AUDIO
+#define FF_API_OLD_DECODE_AUDIO (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_OLD_ENCODE_AUDIO
+#define FF_API_OLD_ENCODE_AUDIO (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_OLD_ENCODE_VIDEO
+#define FF_API_OLD_ENCODE_VIDEO (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_CODEC_ID
+#define FF_API_CODEC_ID          (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_AUDIO_CONVERT
+#define FF_API_AUDIO_CONVERT     (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_AVCODEC_RESAMPLE
+#define FF_API_AVCODEC_RESAMPLE  FF_API_AUDIO_CONVERT
 #endif
 #ifndef FF_API_DEINTERLACE
 #define FF_API_DEINTERLACE       (LIBAVCODEC_VERSION_MAJOR < 56)
@@ -122,6 +140,9 @@
 #endif
 #ifndef FF_API_EMU_EDGE
 #define FF_API_EMU_EDGE          (LIBAVCODEC_VERSION_MAJOR < 56)
+#endif
+#ifndef FF_API_DSPUTIL
+#define FF_API_DSPUTIL           (LIBAVCODEC_VERSION_MAJOR < 56)
 #endif
 #ifndef FF_API_ARCH_SH4
 #define FF_API_ARCH_SH4          (LIBAVCODEC_VERSION_MAJOR < 56)
