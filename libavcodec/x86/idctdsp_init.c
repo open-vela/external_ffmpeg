@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,8 +37,6 @@ static const uint8_t simple_mmx_permutation[64] = {
     0x32, 0x3A, 0x36, 0x3B, 0x33, 0x3E, 0x37, 0x3F,
 };
 
-static const uint8_t idct_sse2_row_perm[8] = { 0, 4, 1, 5, 2, 6, 3, 7 };
-
 av_cold int ff_init_scantable_permutation_x86(uint8_t *idct_permutation,
                                               enum idct_permutation_type perm_type)
 {
@@ -48,10 +46,6 @@ av_cold int ff_init_scantable_permutation_x86(uint8_t *idct_permutation,
     case FF_IDCT_PERM_SIMPLE:
         for (i = 0; i < 64; i++)
             idct_permutation[i] = simple_mmx_permutation[i];
-        return 1;
-    case FF_IDCT_PERM_SSE2:
-        for (i = 0; i < 64; i++)
-            idct_permutation[i] = (i & 0x38) | idct_sse2_row_perm[i & 7];
         return 1;
     }
 
@@ -65,16 +59,23 @@ av_cold void ff_idctdsp_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
 
     if (INLINE_MMX(cpu_flags)) {
         c->put_pixels_clamped        = ff_put_pixels_clamped_mmx;
-        c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_mmx;
         c->add_pixels_clamped        = ff_add_pixels_clamped_mmx;
 
         if (!high_bit_depth &&
+            avctx->lowres == 0 &&
             (avctx->idct_algo == FF_IDCT_AUTO ||
+             avctx->idct_algo == FF_IDCT_SIMPLEAUTO ||
              avctx->idct_algo == FF_IDCT_SIMPLEMMX)) {
                 c->idct_put  = ff_simple_idct_put_mmx;
                 c->idct_add  = ff_simple_idct_add_mmx;
                 c->idct      = ff_simple_idct_mmx;
                 c->perm_type = FF_IDCT_PERM_SIMPLE;
         }
+    }
+    if (EXTERNAL_MMX(cpu_flags)) {
+        c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_mmx;
+    }
+    if (EXTERNAL_SSE2(cpu_flags)) {
+        c->put_signed_pixels_clamped = ff_put_signed_pixels_clamped_sse2;
     }
 }
