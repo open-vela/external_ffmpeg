@@ -2,20 +2,20 @@
  * Real Audio 1.0 (14.4K)
  * Copyright (c) 2003 the ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -1566,15 +1566,8 @@ int ff_eval_refl(int *refl, const int16_t *coefs, AVCodecContext *avctx)
         if (!b)
             b = -2;
 
-        b = 0x1000000 / b;
-        for (j=0; j <= i; j++) {
-#if CONFIG_FTRAPV
-            int a = bp2[j] - ((refl[i+1] * bp2[i-j]) >> 12);
-            if((int)(a*(unsigned)b) != a*(int64_t)b)
-                return 1;
-#endif
-            bp1[j] = ((bp2[j] - ((refl[i+1] * bp2[i-j]) >> 12)) * b) >> 12;
-        }
+        for (j=0; j <= i; j++)
+            bp1[j] = ((bp2[j] - ((refl[i+1] * bp2[i-j]) >> 12)) * (0x1000000 / b)) >> 12;
 
         if ((unsigned) bp1[i] + 0x1000 > 0x1fff)
             return 1;
@@ -1681,9 +1674,12 @@ unsigned int ff_rescale_rms(unsigned int rms, unsigned int energy)
 }
 
 /** inverse root mean square */
-int ff_irms(AudioDSPContext *adsp, const int16_t *data)
+int ff_irms(const int16_t *data)
 {
-    unsigned int sum = adsp->scalarproduct_int16(data, data, BLOCKSIZE);
+    unsigned int i, sum = 0;
+
+    for (i=0; i < BLOCKSIZE; i++)
+        sum += data[i] * data[i];
 
     if (sum == 0)
         return 0; /* OOPS - division by zero */
@@ -1691,17 +1687,18 @@ int ff_irms(AudioDSPContext *adsp, const int16_t *data)
     return 0x20000000 / (ff_t_sqrt(sum) >> 8);
 }
 
-void ff_subblock_synthesis(RA144Context *ractx, const int16_t *lpc_coefs,
+void ff_subblock_synthesis(RA144Context *ractx, const uint16_t *lpc_coefs,
                            int cba_idx, int cb1_idx, int cb2_idx,
                            int gval, int gain)
 {
-    int16_t *block;
+    uint16_t buffer_a[BLOCKSIZE];
+    uint16_t *block;
     int m[3];
 
     if (cba_idx) {
         cba_idx += BLOCKSIZE/2 - 1;
-        ff_copy_and_dup(ractx->buffer_a, ractx->adapt_cb, cba_idx);
-        m[0] = (ff_irms(&ractx->adsp, ractx->buffer_a) * gval) >> 12;
+        ff_copy_and_dup(buffer_a, ractx->adapt_cb, cba_idx);
+        m[0] = (ff_irms(buffer_a) * gval) >> 12;
     } else {
         m[0] = 0;
     }
@@ -1712,7 +1709,7 @@ void ff_subblock_synthesis(RA144Context *ractx, const int16_t *lpc_coefs,
 
     block = ractx->adapt_cb + BUFFERSIZE - BLOCKSIZE;
 
-    add_wav(block, gain, cba_idx, m, cba_idx? ractx->buffer_a: NULL,
+    add_wav(block, gain, cba_idx, m, cba_idx? buffer_a: NULL,
             ff_cb1_vects[cb1_idx], ff_cb2_vects[cb2_idx]);
 
     memcpy(ractx->curr_sblock, ractx->curr_sblock + BLOCKSIZE,
