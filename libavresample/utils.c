@@ -1,26 +1,27 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/common.h"
 #include "libavutil/dict.h"
-// #include "libavutil/error.h"
+#include "libavutil/error.h"
+#include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
@@ -500,6 +501,135 @@ int attribute_align_arg avresample_convert(AVAudioResampleContext *avr,
                                   current_buffer);
 }
 
+int avresample_config(AVAudioResampleContext *avr, AVFrame *out, AVFrame *in)
+{
+    if (avresample_is_open(avr)) {
+        avresample_close(avr);
+    }
+
+    if (in) {
+        avr->in_channel_layout  = in->channel_layout;
+        avr->in_sample_rate     = in->sample_rate;
+        avr->in_sample_fmt      = in->format;
+    }
+
+    if (out) {
+        avr->out_channel_layout = out->channel_layout;
+        avr->out_sample_rate    = out->sample_rate;
+        avr->out_sample_fmt     = out->format;
+    }
+
+    return 0;
+}
+
+static int config_changed(AVAudioResampleContext *avr,
+                          AVFrame *out, AVFrame *in)
+{
+    int ret = 0;
+
+    if (in) {
+        if (avr->in_channel_layout != in->channel_layout ||
+            avr->in_sample_rate    != in->sample_rate ||
+            avr->in_sample_fmt     != in->format) {
+            ret |= AVERROR_INPUT_CHANGED;
+        }
+    }
+
+    if (out) {
+        if (avr->out_channel_layout != out->channel_layout ||
+            avr->out_sample_rate    != out->sample_rate ||
+            avr->out_sample_fmt     != out->format) {
+            ret |= AVERROR_OUTPUT_CHANGED;
+        }
+    }
+
+    return ret;
+}
+
+static inline int convert_frame(AVAudioResampleContext *avr,
+                                AVFrame *out, AVFrame *in)
+{
+    int ret;
+    uint8_t **out_data = NULL, **in_data = NULL;
+    int out_linesize = 0, in_linesize = 0;
+    int out_nb_samples = 0, in_nb_samples = 0;
+
+    if (out) {
+        out_data       = out->extended_data;
+        out_linesize   = out->linesize[0];
+        out_nb_samples = out->nb_samples;
+    }
+
+    if (in) {
+        in_data       = in->extended_data;
+        in_linesize   = in->linesize[0];
+        in_nb_samples = in->nb_samples;
+    }
+
+    ret = avresample_convert(avr, out_data, out_linesize,
+                             out_nb_samples,
+                             in_data, in_linesize,
+                             in_nb_samples);
+
+    if (ret < 0) {
+        if (out)
+            out->nb_samples = 0;
+        return ret;
+    }
+
+    if (out)
+        out->nb_samples = ret;
+
+    return 0;
+}
+
+static inline int available_samples(AVFrame *out)
+{
+    int bytes_per_sample = av_get_bytes_per_sample(out->format);
+    int samples = out->linesize[0] / bytes_per_sample;
+
+    if (av_sample_fmt_is_planar(out->format)) {
+        return samples;
+    } else {
+        int channels = av_get_channel_layout_nb_channels(out->channel_layout);
+        return samples / channels;
+    }
+}
+
+int avresample_convert_frame(AVAudioResampleContext *avr,
+                             AVFrame *out, AVFrame *in)
+{
+    int ret, setup = 0;
+
+    if (!avresample_is_open(avr)) {
+        if ((ret = avresample_config(avr, out, in)) < 0)
+            return ret;
+        if ((ret = avresample_open(avr)) < 0)
+            return ret;
+        setup = 1;
+    } else {
+        // return as is or reconfigure for input changes?
+        if ((ret = config_changed(avr, out, in)))
+            return ret;
+    }
+
+    if (out) {
+        if (!out->linesize[0]) {
+            out->nb_samples = avresample_get_out_samples(avr, in->nb_samples);
+            if ((ret = av_frame_get_buffer(out, 0)) < 0) {
+                if (setup)
+                    avresample_close(avr);
+                return ret;
+            }
+        } else {
+            if (!out->nb_samples)
+                out->nb_samples = available_samples(out);
+        }
+    }
+
+    return convert_frame(avr, out, in);
+}
+
 int avresample_get_matrix(AVAudioResampleContext *avr, double *matrix,
                           int stride)
 {
@@ -650,10 +780,10 @@ unsigned avresample_version(void)
 const char *avresample_license(void)
 {
 #define LICENSE_PREFIX "libavresample license: "
-    return LICENSE_PREFIX FFMPEG_LICENSE + sizeof(LICENSE_PREFIX) - 1;
+    return LICENSE_PREFIX LIBAV_LICENSE + sizeof(LICENSE_PREFIX) - 1;
 }
 
 const char *avresample_configuration(void)
 {
-    return FFMPEG_CONFIGURATION;
+    return LIBAV_CONFIGURATION;
 }
