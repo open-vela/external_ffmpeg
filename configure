@@ -3104,17 +3104,6 @@ EOF
     die "Sanity test failed."
 fi
 
-armasm_flags(){
-    for flag; do
-        case $flag in
-            # Filter out MSVC cl.exe options from cflags that shouldn't
-            # be passed to gas-preprocessor
-            -M[TD]*)                                            ;;
-            *)                  echo $flag                      ;;
-        esac
-   done
-}
-
 ccc_flags(){
     for flag; do
         case $flag in
@@ -3408,7 +3397,6 @@ probe_cc(){
         _ident=$($_cc | head -n1)
         # 4509: "This form of conditional instruction is deprecated"
         _flags="-nologo -ignore 4509"
-        _flags_filter=armasm_flags
     elif $_cc 2>&1 | grep -q Microsoft; then
         _type=msvc
         _ident=$($cc 2>&1 | head -n1)
@@ -4397,7 +4385,7 @@ if enabled_any arm aarch64 || enabled_all ppc altivec && enabled asm; then
     if ! check_gas ; then
         as=${gas:=$as}
         check_gas || \
-            $nogas "GNU assembler not found, install gas-preprocessor"
+            $nogas "GNU assembler not found, install/update gas-preprocessor"
     fi
 
     check_as <<EOF && enable as_func
