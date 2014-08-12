@@ -2,20 +2,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -290,6 +290,10 @@ av_cold int ff_opus_parse_extradata(AVCodecContext *avctx,
                                     OpusContext *s)
 {
     static const uint8_t default_channel_map[2] = { 0, 1 };
+    uint8_t default_extradata[19] = {
+        'O', 'p', 'u', 's', 'H', 'e', 'a', 'd',
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    };
 
     int (*channel_reorder)(int, int) = channel_reorder_unknown;
 
@@ -304,8 +308,9 @@ av_cold int ff_opus_parse_extradata(AVCodecContext *avctx,
                    "Multichannel configuration without extradata.\n");
             return AVERROR(EINVAL);
         }
-        extradata      = opus_default_extradata;
-        extradata_size = sizeof(opus_default_extradata);
+        default_extradata[9] = (avctx->channels == 1) ? 1 : 2;
+        extradata      = default_extradata;
+        extradata_size = sizeof(default_extradata);
     } else {
         extradata = avctx->extradata;
         extradata_size = avctx->extradata_size;
@@ -325,7 +330,7 @@ av_cold int ff_opus_parse_extradata(AVCodecContext *avctx,
 
     avctx->delay = AV_RL16(extradata + 10);
 
-    channels = avctx->extradata ? extradata[9] : (avctx->channels == 1) ? 1 : 2;
+    channels = extradata[9];
     if (!channels) {
         av_log(avctx, AV_LOG_ERROR, "Zero channel count specified in the extadata\n");
         return AVERROR_INVALIDDATA;
