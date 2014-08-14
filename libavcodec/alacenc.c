@@ -2,20 +2,20 @@
  * ALAC audio encoder
  * Copyright (c) 2008  Jaikrishnan Menon <realityman@gmx.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -274,7 +274,7 @@ static void alac_linear_predictor(AlacEncodeContext *s, int ch)
         // generate warm-up samples
         residual[0] = samples[0];
         for (i = 1; i <= lpc.lpc_order; i++)
-            residual[i] = sign_extend(samples[i] - samples[i-1], s->write_sample_size);
+            residual[i] = samples[i] - samples[i-1];
 
         // perform lpc on remaining samples
         for (i = lpc.lpc_order + 1; i < s->frame_size; i++) {
@@ -483,6 +483,7 @@ static av_cold int alac_encode_close(AVCodecContext *avctx)
     ff_lpc_end(&s->lpc_ctx);
     av_freep(&avctx->extradata);
     avctx->extradata_size = 0;
+    av_freep(&avctx->coded_frame);
     return 0;
 }
 
@@ -578,6 +579,12 @@ static av_cold int alac_encode_init(AVCodecContext *avctx)
         goto error;
     }
 
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame) {
+        ret = AVERROR(ENOMEM);
+        goto error;
+    }
+
     s->avctx = avctx;
 
     if ((ret = ff_lpc_init(&s->lpc_ctx, avctx->frame_size,
@@ -606,8 +613,10 @@ static int alac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     else
         max_frame_size = s->max_coded_frame_size;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, 2 * max_frame_size)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, 2 * max_frame_size))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     /* use verbatim mode for compression_level 0 */
     if (s->compression_level) {

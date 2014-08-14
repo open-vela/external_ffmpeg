@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -152,7 +152,6 @@ typedef struct AICContext {
     int16_t        *data_ptr[NUM_BANDS];
 
     DECLARE_ALIGNED(16, int16_t, block)[64];
-    DECLARE_ALIGNED(16, uint8_t, quant_matrix)[64];
 } AICContext;
 
 static int aic_decode_header(AICContext *ctx, const uint8_t *src, int size)
@@ -204,8 +203,7 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
     int has_skips, coeff_type, coeff_bits, skip_type, skip_bits;
     const int num_coeffs = aic_num_band_coeffs[band];
     const uint8_t *scan = aic_scan[band | force_chroma];
-    int mb, idx;
-    unsigned val;
+    int mb, idx, val;
 
     has_skips  = get_bits1(gb);
     coeff_type = get_bits1(gb);
@@ -219,14 +217,14 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
             idx = -1;
             do {
                 GET_CODE(val, skip_type, skip_bits);
-                if (val >= 0x10000)
+                if (val < 0)
                     return AVERROR_INVALIDDATA;
                 idx += val + 1;
                 if (idx >= num_coeffs)
                     break;
                 GET_CODE(val, coeff_type, coeff_bits);
                 val++;
-                if (val >= 0x10000)
+                if (val >= 0x10000 || val < 0)
                     return AVERROR_INVALIDDATA;
                 dst[scan[idx]] = val;
             } while (idx < num_coeffs - 1);
@@ -236,7 +234,7 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
         for (mb = 0; mb < slice_width; mb++) {
             for (idx = 0; idx < num_coeffs; idx++) {
                 GET_CODE(val, coeff_type, coeff_bits);
-                if (val >= 0x10000)
+                if (val >= 0x10000 || val < 0)
                     return AVERROR_INVALIDDATA;
                 dst[scan[idx]] = val;
             }
@@ -288,7 +286,7 @@ static void recombine_block_il(int16_t *dst, const uint8_t *scan,
     }
 }
 
-static void unquant_block(int16_t *block, int q, uint8_t *quant_matrix)
+static void unquant_block(int16_t *block, int q)
 {
     int i;
 
@@ -296,7 +294,7 @@ static void unquant_block(int16_t *block, int q, uint8_t *quant_matrix)
         int val  = (uint16_t)block[i];
         int sign = val & 1;
 
-        block[i] = (((val >> 1) ^ -sign) * q * quant_matrix[i] >> 4)
+        block[i] = (((val >> 1) ^ -sign) * q * aic_quant_matrix[i] >> 4)
                    + sign;
     }
 }
@@ -337,7 +335,7 @@ static int aic_decode_slice(AICContext *ctx, int mb_x, int mb_y,
             else
                 recombine_block_il(ctx->block, ctx->scantable.permutated,
                                    &base_y, &ext_y, blk);
-            unquant_block(ctx->block, ctx->quant, ctx->quant_matrix);
+            unquant_block(ctx->block, ctx->quant);
             ctx->idsp.idct(ctx->block);
 
             if (!ctx->interlaced) {
@@ -354,7 +352,7 @@ static int aic_decode_slice(AICContext *ctx, int mb_x, int mb_y,
         for (blk = 0; blk < 2; blk++) {
             recombine_block(ctx->block, ctx->scantable.permutated,
                             &base_c, &ext_c);
-            unquant_block(ctx->block, ctx->quant, ctx->quant_matrix);
+            unquant_block(ctx->block, ctx->quant);
             ctx->idsp.idct(ctx->block);
             ctx->idsp.put_signed_pixels_clamped(ctx->block, C[blk],
                                                 ctx->frame->linesize[blk + 1]);
@@ -432,8 +430,6 @@ static av_cold int aic_decode_init(AVCodecContext *avctx)
     for (i = 0; i < 64; i++)
         scan[i] = i;
     ff_init_scantable(ctx->idsp.idct_permutation, &ctx->scantable, scan);
-    for (i = 0; i < 64; i++)
-        ctx->quant_matrix[ctx->idsp.idct_permutation[i]] = aic_quant_matrix[i];
 
     ctx->mb_width  = FFALIGN(avctx->width,  16) >> 4;
     ctx->mb_height = FFALIGN(avctx->height, 16) >> 4;
