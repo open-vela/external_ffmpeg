@@ -2,20 +2,20 @@
  * RTSP muxer
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,11 +51,12 @@ int ff_rtsp_setup_output_streams(AVFormatContext *s, const char *addr)
     char *sdp;
     AVFormatContext sdp_ctx, *ctx_array[1];
 
-    s->start_time_realtime = av_gettime();
+    if (s->start_time_realtime == 0  ||  s->start_time_realtime == AV_NOPTS_VALUE)
+        s->start_time_realtime = av_gettime();
 
     /* Announce the stream */
     sdp = av_mallocz(SDP_MAX_SIZE);
-    if (!sdp)
+    if (sdp == NULL)
         return AVERROR(ENOMEM);
     /* We create the SDP based on the RTSP AVFormatContext where we
      * aren't allowed to change the filename field. (We create the SDP
@@ -211,7 +212,7 @@ static int rtsp_write_packet(AVFormatContext *s, AVPacket *pkt)
     rtsp_st = rt->rtsp_streams[pkt->stream_index];
     rtpctx = rtsp_st->transport_priv;
 
-    ret = ff_write_chained(rtpctx, 0, pkt, s);
+    ret = ff_write_chained(rtpctx, 0, pkt, s, 0);
     /* ff_write_chained does all the RTP packetization. If using TCP as
      * transport, rtpctx->pb is only a dyn_packet_buf that queues up the
      * packets, so we need to send them out on the TCP connection separately.

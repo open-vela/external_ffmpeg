@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /*
  * To create a simple file for smooth streaming:
- * avconv <normal input/transcoding options> -movflags frag_keyframe foo.ismv
+ * ffmpeg <normal input/transcoding options> -movflags frag_keyframe foo.ismv
  * ismindex -n foo foo.ismv
  * This step creates foo.ism and foo.ismc that is required by IIS for
  * serving it.
@@ -43,6 +43,8 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#include "cmdutils.h"
 
 #include "libavformat/avformat.h"
 #include "libavformat/os_support.h"
@@ -136,7 +138,8 @@ static int write_fragments(struct Tracks *tracks, int start_index,
         struct Track *track = tracks->tracks[i];
         const char *type    = track->is_video ? "video" : "audio";
         snprintf(dirname, sizeof(dirname), "%sQualityLevels(%d)", output_prefix, track->bitrate);
-        mkdir(dirname, 0777);
+        if (mkdir(dirname, 0777) == -1)
+            return AVERROR(errno);
         for (j = 0; j < track->chunks; j++) {
             snprintf(filename, sizeof(filename), "%s/Fragments(%s=%"PRId64")",
                      dirname, type, track->offsets[j].time);
@@ -170,7 +173,7 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
     }
     fieldlength = avio_rb32(f);
     track->chunks  = avio_rb32(f);
-    track->offsets = av_mallocz(sizeof(*track->offsets) * track->chunks);
+    track->offsets = av_mallocz_array(track->chunks, sizeof(*track->offsets));
     if (!track->offsets) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -228,7 +231,7 @@ static int read_mfra(struct Tracks *tracks, int start_index,
     }
 
     if (split)
-        write_fragments(tracks, start_index, f, output_prefix);
+        err = write_fragments(tracks, start_index, f, output_prefix);
 
 fail:
     if (f)
@@ -257,7 +260,10 @@ static int get_video_private_data(struct Track *track, AVCodecContext *codec)
     if (codec->codec_id == AV_CODEC_ID_VC1)
         return get_private_data(track, codec);
 
-    avio_open_dyn_buf(&io);
+    if (avio_open_dyn_buf(&io) < 0)  {
+        err = AVERROR(ENOMEM);
+        goto fail;
+    }
     if (codec->extradata_size < 11 || codec->extradata[0] != 1)
         goto fail;
     sps_size = AV_RB16(&codec->extradata[6]);
@@ -323,7 +329,7 @@ static int handle_file(struct Tracks *tracks, const char *file, int split,
         tracks->tracks[tracks->nb_tracks] = track;
 
         track->name = file;
-        if ((ptr = strrchr(file, '/')))
+        if ((ptr = strrchr(file, '/')) != NULL)
             track->name = ptr + 1;
 
         track->bitrate   = st->codec->bit_rate;

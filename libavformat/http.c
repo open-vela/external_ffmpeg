@@ -1,21 +1,21 @@
 /*
- * HTTP protocol for avconv client
+ * HTTP protocol for ffmpeg client
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,7 +36,7 @@
 #include "os_support.h"
 #include "url.h"
 
-/* XXX: POST protocol is not completely implemented because avconv uses
+/* XXX: POST protocol is not completely implemented because ffmpeg uses
  * only a subset of it. */
 
 /* The IO buffer size is unrelated to the max URL size in itself, but needs
@@ -64,6 +64,7 @@ typedef struct {
     /* Set if the server correctly handles Connection: close and will close
      * the connection after feeding us the content. */
     int willclose;
+    int seekable;           /**< Control seekability, 0 = disable, 1 = enable, -1 = probe. */
     int chunked_post;
     /* A flag which indicates if the end of chunked encoding has been sent. */
     int end_chunked_post;
@@ -73,6 +74,9 @@ typedef struct {
     int multiple_requests;
     uint8_t *post_data;
     int post_datalen;
+    int is_akamai;
+    int is_mediagateway;
+    char *cookies;          ///< holds newline (\n) delimited Set-Cookie header field values (without the "Set-Cookie: " field name)
     int icy;
     /* how much data was read since the last ICY metadata packet */
     int icy_data_read;
@@ -97,14 +101,16 @@ typedef struct {
 #define DEFAULT_USER_AGENT "Lavf/" AV_STRINGIFY(LIBAVFORMAT_VERSION)
 
 static const AVOption options[] = {
+    { "seekable", "control seekability of connection", OFFSET(seekable), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, D },
     { "chunked_post", "use chunked transfer-encoding for posts", OFFSET(chunked_post), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, E },
     { "headers", "set custom HTTP headers, can override built in default headers", OFFSET(headers), AV_OPT_TYPE_STRING, { 0 }, 0, 0, D | E },
     { "content_type", "set a specific content type for the POST messages", OFFSET(content_type), AV_OPT_TYPE_STRING, { 0 }, 0, 0, D | E },
     { "user_agent", "override User-Agent header", OFFSET(user_agent), AV_OPT_TYPE_STRING, { .str = DEFAULT_USER_AGENT }, 0, 0, D },
-    { "user-agent", "override User-Agent header, for compatibility with ffmpeg", OFFSET(user_agent), AV_OPT_TYPE_STRING, { .str = DEFAULT_USER_AGENT }, 0, 0, D },
+    { "user-agent", "override User-Agent header", OFFSET(user_agent), AV_OPT_TYPE_STRING, { .str = DEFAULT_USER_AGENT }, 0, 0, D },
     { "multiple_requests", "use persistent connections", OFFSET(multiple_requests), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, D | E },
     { "post_data", "set custom HTTP post data", OFFSET(post_data), AV_OPT_TYPE_BINARY, .flags = D | E },
     { "mime_type", "export the MIME type", OFFSET(mime_type), AV_OPT_TYPE_STRING, { 0 }, 0, 0, AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
+    { "cookies", "set cookies to be sent in applicable future requests, use newline delimited Set-Cookie HTTP field value syntax", OFFSET(cookies), AV_OPT_TYPE_STRING, { 0 }, 0, 0, D },
     { "icy", "request ICY metadata", OFFSET(icy), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, D },
     { "icy_metadata_headers", "return ICY metadata headers", OFFSET(icy_metadata_headers), AV_OPT_TYPE_STRING, { 0 }, 0, 0, AV_OPT_FLAG_EXPORT },
     { "icy_metadata_packet", "return current ICY metadata packet", OFFSET(icy_metadata_packet), AV_OPT_TYPE_STRING, { 0 }, 0, 0, AV_OPT_FLAG_EXPORT },
@@ -151,7 +157,7 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
 
     proxy_path = getenv("http_proxy");
     use_proxy  = !ff_http_match_no_proxy(getenv("no_proxy"), hostname) &&
-                 proxy_path && av_strstart(proxy_path, "http://", NULL);
+                 proxy_path != NULL && av_strstart(proxy_path, "http://", NULL);
 
     if (!strcmp(proto, "https")) {
         lower_proto = "tls";
@@ -212,8 +218,7 @@ redo:
     if (s->http_code == 401) {
         if ((cur_auth_type == HTTP_AUTH_NONE || s->auth_state.stale) &&
             s->auth_state.auth_type != HTTP_AUTH_NONE && attempts < 4) {
-            ffurl_close(s->hd);
-            s->hd = NULL;
+            ffurl_closep(&s->hd);
             goto redo;
         } else
             goto fail;
@@ -221,8 +226,7 @@ redo:
     if (s->http_code == 407) {
         if ((cur_proxy_auth_type == HTTP_AUTH_NONE || s->proxy_auth_state.stale) &&
             s->proxy_auth_state.auth_type != HTTP_AUTH_NONE && attempts < 4) {
-            ffurl_close(s->hd);
-            s->hd = NULL;
+            ffurl_closep(&s->hd);
             goto redo;
         } else
             goto fail;
@@ -231,8 +235,7 @@ redo:
          s->http_code == 303 || s->http_code == 307) &&
         location_changed == 1) {
         /* url moved, get next */
-        ffurl_close(s->hd);
-        s->hd = NULL;
+        ffurl_closep(&s->hd);
         if (redirects++ >= MAX_REDIRECTS)
             return AVERROR(EIO);
         /* Restart the authentication process with the new target, which
@@ -246,8 +249,7 @@ redo:
 
 fail:
     if (s->hd)
-        ffurl_close(s->hd);
-    s->hd = NULL;
+        ffurl_closep(&s->hd);
     return AVERROR(EIO);
 }
 
@@ -276,7 +278,10 @@ static int http_open(URLContext *h, const char *uri, int flags,
     HTTPContext *s = h->priv_data;
     int ret;
 
-    h->is_streamed = 1;
+    if( s->seekable == 1 )
+        h->is_streamed = 0;
+    else
+        h->is_streamed = 1;
 
     s->filesize = -1;
     s->location = av_strdup(uri);
@@ -379,7 +384,8 @@ static void parse_content_range(URLContext *h, const char *p)
         if ((slash = strchr(p, '/')) && strlen(slash) > 0)
             s->filesize = strtoll(slash + 1, NULL, 10);
     }
-    h->is_streamed = 0; /* we _can_ in fact seek */
+    if (s->seekable == -1 && (!s->is_akamai || s->filesize != 2147483647))
+        h->is_streamed = 0; /* we _can_ in fact seek */
 }
 
 static int parse_content_encoding(URLContext *h, const char *p)
@@ -411,7 +417,6 @@ static int parse_content_encoding(URLContext *h, const char *p)
         // the header at all if this is the case).
     } else {
         av_log(h, AV_LOG_WARNING, "Unknown content coding: %s\n", p);
-        return AVERROR(ENOSYS);
     }
     return 0;
 }
@@ -460,7 +465,7 @@ static int process_line(URLContext *h, char *line, int line_count,
             p++;
         s->http_code = strtol(p, &end, 10);
 
-        av_dlog(NULL, "http_code=%d\n", s->http_code);
+        av_log(h, AV_LOG_DEBUG, "http_code=%d\n", s->http_code);
 
         if ((ret = check_http_code(h, s->http_code, end)) < 0)
             return ret;
@@ -484,7 +489,8 @@ static int process_line(URLContext *h, char *line, int line_count,
         } else if (!av_strcasecmp(tag, "Content-Range")) {
             parse_content_range(h, p);
         } else if (!av_strcasecmp(tag, "Accept-Ranges") &&
-                   !strncmp(p, "bytes", 5)) {
+                   !strncmp(p, "bytes", 5) &&
+                   s->seekable == -1) {
             h->is_streamed = 0;
         } else if (!av_strcasecmp(tag, "Transfer-Encoding") &&
                    !av_strncasecmp(p, "chunked", 7)) {
@@ -499,9 +505,29 @@ static int process_line(URLContext *h, char *line, int line_count,
         } else if (!av_strcasecmp(tag, "Connection")) {
             if (!strcmp(p, "close"))
                 s->willclose = 1;
+        } else if (!av_strcasecmp(tag, "Server")) {
+            if (!av_strcasecmp(p, "AkamaiGHost")) {
+                s->is_akamai = 1;
+            } else if (!av_strncasecmp(p, "MediaGateway", 12)) {
+                s->is_mediagateway = 1;
+            }
         } else if (!av_strcasecmp(tag, "Content-Type")) {
             av_free(s->mime_type);
             s->mime_type = av_strdup(p);
+        } else if (!av_strcasecmp(tag, "Set-Cookie")) {
+            if (!s->cookies) {
+                if (!(s->cookies = av_strdup(p)))
+                    return AVERROR(ENOMEM);
+            } else {
+                char *tmp = s->cookies;
+                size_t str_size = strlen(tmp) + strlen(p) + 2;
+                if (!(s->cookies = av_malloc(str_size))) {
+                    s->cookies = tmp;
+                    return AVERROR(ENOMEM);
+                }
+                snprintf(s->cookies, str_size, "%s\n%s", tmp, p);
+                av_free(tmp);
+            }
         } else if (!av_strcasecmp(tag, "Icy-MetaInt")) {
             s->icy_metaint = strtoll(p, NULL, 10);
         } else if (!av_strncasecmp(tag, "Icy-", 4)) {
@@ -513,6 +539,106 @@ static int process_line(URLContext *h, char *line, int line_count,
         }
     }
     return 1;
+}
+
+/**
+ * Create a string containing cookie values for use as a HTTP cookie header
+ * field value for a particular path and domain from the cookie values stored in
+ * the HTTP protocol context. The cookie string is stored in *cookies.
+ *
+ * @return a negative value if an error condition occurred, 0 otherwise
+ */
+static int get_cookies(HTTPContext *s, char **cookies, const char *path,
+                       const char *domain)
+{
+    // cookie strings will look like Set-Cookie header field values.  Multiple
+    // Set-Cookie fields will result in multiple values delimited by a newline
+    int ret = 0;
+    char *next, *cookie, *set_cookies = av_strdup(s->cookies), *cset_cookies = set_cookies;
+
+    if (!set_cookies) return AVERROR(EINVAL);
+
+    *cookies = NULL;
+    while ((cookie = av_strtok(set_cookies, "\n", &next))) {
+        int domain_offset = 0;
+        char *param, *next_param, *cdomain = NULL, *cpath = NULL, *cvalue = NULL;
+        set_cookies = NULL;
+
+        while ((param = av_strtok(cookie, "; ", &next_param))) {
+            cookie = NULL;
+            if        (!av_strncasecmp("path=",   param, 5)) {
+                av_free(cpath);
+                cpath = av_strdup(&param[5]);
+            } else if (!av_strncasecmp("domain=", param, 7)) {
+                // if the cookie specifies a sub-domain, skip the leading dot thereby
+                // supporting URLs that point to sub-domains and the master domain
+                int leading_dot = (param[7] == '.');
+                av_free(cdomain);
+                cdomain = av_strdup(&param[7+leading_dot]);
+            } else if (!av_strncasecmp("secure",  param, 6) ||
+                       !av_strncasecmp("comment", param, 7) ||
+                       !av_strncasecmp("max-age", param, 7) ||
+                       !av_strncasecmp("version", param, 7)) {
+                // ignore Comment, Max-Age, Secure and Version
+            } else {
+                av_free(cvalue);
+                cvalue = av_strdup(param);
+            }
+        }
+        if (!cdomain)
+            cdomain = av_strdup(domain);
+
+        // ensure all of the necessary values are valid
+        if (!cdomain || !cpath || !cvalue) {
+            av_log(s, AV_LOG_WARNING,
+                   "Invalid cookie found, no value, path or domain specified\n");
+            goto done_cookie;
+        }
+
+        // check if the request path matches the cookie path
+        if (av_strncasecmp(path, cpath, strlen(cpath)))
+            goto done_cookie;
+
+        // the domain should be at least the size of our cookie domain
+        domain_offset = strlen(domain) - strlen(cdomain);
+        if (domain_offset < 0)
+            goto done_cookie;
+
+        // match the cookie domain
+        if (av_strcasecmp(&domain[domain_offset], cdomain))
+            goto done_cookie;
+
+        // cookie parameters match, so copy the value
+        if (!*cookies) {
+            if (!(*cookies = av_strdup(cvalue))) {
+                ret = AVERROR(ENOMEM);
+                goto done_cookie;
+            }
+        } else {
+            char *tmp = *cookies;
+            size_t str_size = strlen(cvalue) + strlen(*cookies) + 3;
+            if (!(*cookies = av_malloc(str_size))) {
+                ret = AVERROR(ENOMEM);
+                goto done_cookie;
+            }
+            snprintf(*cookies, str_size, "%s; %s", tmp, cvalue);
+            av_free(tmp);
+        }
+
+        done_cookie:
+        av_free(cdomain);
+        av_free(cpath);
+        av_free(cvalue);
+        if (ret < 0) {
+            if (*cookies) av_freep(cookies);
+            av_free(cset_cookies);
+            return ret;
+        }
+    }
+
+    av_free(cset_cookies);
+
+    return 0;
 }
 
 static inline int has_header(const char *str, const char *header)
@@ -535,7 +661,7 @@ static int http_read_header(URLContext *h, int *new_location)
         if ((err = http_get_line(s, line, sizeof(line))) < 0)
             return err;
 
-        av_dlog(NULL, "header='%s'\n", line);
+        av_log(h, AV_LOG_DEBUG, "header='%s'\n", line);
 
         err = process_line(h, line, s->line_count, new_location);
         if (err < 0)
@@ -544,6 +670,9 @@ static int http_read_header(URLContext *h, int *new_location)
             break;
         s->line_count++;
     }
+
+    if (s->seekable == -1 && s->is_mediagateway && s->filesize == 2000000000)
+        h->is_streamed = 1; /* we can in fact _not_ seek */
 
     return err;
 }
@@ -602,7 +731,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     // Note: we send this on purpose even when s->off is 0 when we're probing,
     // since it allows us to detect more reliably if a (non-conforming)
     // server supports seeking by analysing the reply headers.
-    if (!has_header(s->headers, "\r\nRange: ") && !post) {
+    if (!has_header(s->headers, "\r\nRange: ") && !post && (s->off > 0 || s->end_off || s->seekable == -1)) {
         len += av_strlcatf(headers + len, sizeof(headers) - len,
                            "Range: bytes=%"PRId64"-", s->off);
         if (s->end_off)
@@ -634,6 +763,14 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     if (!has_header(s->headers, "\r\nContent-Type: ") && s->content_type)
         len += av_strlcatf(headers + len, sizeof(headers) - len,
                            "Content-Type: %s\r\n", s->content_type);
+    if (!has_header(s->headers, "\r\nCookie: ") && s->cookies) {
+        char *cookies = NULL;
+        if (!get_cookies(s, &cookies, path, hoststr) && cookies) {
+            len += av_strlcatf(headers + len, sizeof(headers) - len,
+                               "Cookie: %s\r\n", cookies);
+            av_free(cookies);
+        }
+    }
     if (!has_header(s->headers, "\r\nIcy-MetaData: ") && s->icy)
         len += av_strlcatf(headers + len, sizeof(headers) - len,
                            "Icy-MetaData: %d\r\n", 1);
@@ -656,14 +793,14 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
              authstr ? authstr : "",
              proxyauthstr ? "Proxy-" : "", proxyauthstr ? proxyauthstr : "");
 
-    av_freep(&authstr);
-    av_freep(&proxyauthstr);
+    av_log(h, AV_LOG_DEBUG, "request: %s\n", s->buffer);
+
     if ((err = ffurl_write(s->hd, s->buffer, strlen(s->buffer))) < 0)
-        return err;
+        goto done;
 
     if (s->post_data)
         if ((err = ffurl_write(s->hd, s->post_data, s->post_datalen)) < 0)
-            return err;
+            goto done;
 
     /* init input buffer */
     s->buf_ptr          = s->buffer;
@@ -680,15 +817,20 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
          * we've still to send the POST data, but the code calling this
          * function will check http_code after we return. */
         s->http_code = 200;
-        return 0;
+        err = 0;
+        goto done;
     }
 
     /* wait for header */
     err = http_read_header(h, new_location);
     if (err < 0)
-        return err;
+        goto done;
 
-    return (off == s->off) ? 0 : -1;
+    err = (off == s->off) ? 0 : -1;
+done:
+    av_freep(&authstr);
+    av_freep(&proxyauthstr);
+    return err;
 }
 
 static int http_buf_read(URLContext *h, uint8_t *buf, int size)
@@ -767,7 +909,6 @@ static int http_read_stream(URLContext *h, uint8_t *buf, int size)
         if (!s->chunksize) {
             char line[32];
 
-            for (;;) {
                 do {
                     if ((err = http_get_line(s, line, sizeof(line))) < 0)
                         return err;
@@ -780,8 +921,6 @@ static int http_read_stream(URLContext *h, uint8_t *buf, int size)
 
                 if (!s->chunksize)
                     return 0;
-                break;
-            }
         }
         size = FFMIN(size, s->chunksize);
     }
@@ -792,6 +931,8 @@ static int http_read_stream(URLContext *h, uint8_t *buf, int size)
     return http_buf_read(h, buf, size);
 }
 
+// Like http_read_stream(), but no short reads.
+// Assumes partial reads are an error.
 static int http_read_stream_all(URLContext *h, uint8_t *buf, int size)
 {
     int pos = 0;
@@ -941,7 +1082,7 @@ static int http_close(URLContext *h)
         ret = http_shutdown(h, h->flags);
 
     if (s->hd)
-        ffurl_close(s->hd);
+        ffurl_closep(&s->hd);
     av_dict_free(&s->chained_options);
     return ret;
 }
@@ -963,15 +1104,20 @@ static int64_t http_seek(URLContext *h, int64_t off, int whence)
     else if ((s->filesize == -1 && whence == SEEK_END) || h->is_streamed)
         return AVERROR(ENOSYS);
 
-    /* we save the old context in case the seek fails */
-    old_buf_size = s->buf_end - s->buf_ptr;
-    memcpy(old_buf, s->buf_ptr, old_buf_size);
-    s->hd = NULL;
     if (whence == SEEK_CUR)
         off += s->off;
     else if (whence == SEEK_END)
         off += s->filesize;
+    else if (whence != SEEK_SET)
+        return AVERROR(EINVAL);
+    if (off < 0)
+        return AVERROR(EINVAL);
     s->off = off;
+
+    /* we save the old context in case the seek fails */
+    old_buf_size = s->buf_end - s->buf_ptr;
+    memcpy(old_buf, s->buf_ptr, old_buf_size);
+    s->hd = NULL;
 
     /* if it fails, continue on old connection */
     av_dict_copy(&options, s->chained_options, 0);
@@ -1044,7 +1190,7 @@ static int http_proxy_close(URLContext *h)
 {
     HTTPContext *s = h->priv_data;
     if (s->hd)
-        ffurl_close(s->hd);
+        ffurl_closep(&s->hd);
     return 0;
 }
 
@@ -1059,7 +1205,10 @@ static int http_proxy_open(URLContext *h, const char *uri, int flags)
     char *authstr;
     int new_loc;
 
-    h->is_streamed = 1;
+    if( s->seekable == 1 )
+        h->is_streamed = 0;
+    else
+        h->is_streamed = 1;
 
     av_url_split(NULL, 0, auth, sizeof(auth), hostname, sizeof(hostname), &port,
                  pathbuf, sizeof(pathbuf), uri);
@@ -1115,8 +1264,7 @@ redo:
     if (s->http_code == 407 &&
         (cur_auth_type == HTTP_AUTH_NONE || s->proxy_auth_state.stale) &&
         s->proxy_auth_state.auth_type != HTTP_AUTH_NONE && attempts < 2) {
-        ffurl_close(s->hd);
-        s->hd = NULL;
+        ffurl_closep(&s->hd);
         goto redo;
     }
 

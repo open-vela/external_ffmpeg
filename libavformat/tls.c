@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,9 @@
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
+#include "network.h"
+#include "os_support.h"
+#include "internal.h"
 #if CONFIG_GNUTLS
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
@@ -50,9 +53,6 @@
             SSL_CTX_free(c->ctx); \
     } while (0)
 #endif
-#include "network.h"
-#include "os_support.h"
-#include "internal.h"
 #if HAVE_POLL_H
 #include <poll.h>
 #endif
@@ -80,6 +80,7 @@ typedef struct {
 #define E AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     {"ca_file",    "Certificate Authority database file", OFFSET(ca_file),   AV_OPT_TYPE_STRING, .flags = D|E },
+    {"cafile",     "Certificate Authority database file", OFFSET(ca_file),   AV_OPT_TYPE_STRING, .flags = D|E },
     {"tls_verify", "Verify the peer certificate",         OFFSET(verify),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = D|E },
     {"cert_file",  "Certificate file",                    OFFSET(cert_file), AV_OPT_TYPE_STRING, .flags = D|E },
     {"key_file",   "Private key file",                    OFFSET(key_file),  AV_OPT_TYPE_STRING, .flags = D|E },
@@ -137,6 +138,31 @@ static int do_tls_poll(URLContext *h, int ret)
     return 0;
 }
 
+static void set_options(URLContext *h, const char *uri)
+{
+    TLSContext *c = h->priv_data;
+    char buf[1024];
+    const char *p = strchr(uri, '?');
+    if (!p)
+        return;
+
+    if (!c->ca_file && av_find_info_tag(buf, sizeof(buf), "cafile", p))
+        c->ca_file = av_strdup(buf);
+
+    if (!c->verify && av_find_info_tag(buf, sizeof(buf), "verify", p)) {
+        char *endptr = NULL;
+        c->verify = strtol(buf, &endptr, 10);
+        if (buf == endptr)
+            c->verify = 1;
+    }
+
+    if (!c->cert_file && av_find_info_tag(buf, sizeof(buf), "cert", p))
+        c->cert_file = av_strdup(buf);
+
+    if (!c->key_file && av_find_info_tag(buf, sizeof(buf), "key", p))
+        c->key_file = av_strdup(buf);
+}
+
 static int tls_open(URLContext *h, const char *uri, int flags)
 {
     TLSContext *c = h->priv_data;
@@ -147,9 +173,12 @@ static int tls_open(URLContext *h, const char *uri, int flags)
     struct addrinfo hints = { 0 }, *ai = NULL;
     const char *proxy_path;
     int use_proxy;
+    const char *p = strchr(uri, '?');
 
     ff_tls_init();
 
+    if(p && av_find_info_tag(buf, sizeof(buf), "listen", p))
+        c->listen = 1;
     if (c->listen)
         snprintf(opts, sizeof(opts), "?listen=1");
 
@@ -164,7 +193,7 @@ static int tls_open(URLContext *h, const char *uri, int flags)
 
     proxy_path = getenv("http_proxy");
     use_proxy = !ff_http_match_no_proxy(getenv("no_proxy"), host) &&
-                proxy_path && av_strstart(proxy_path, "http://", NULL);
+                proxy_path != NULL && av_strstart(proxy_path, "http://", NULL);
 
     if (use_proxy) {
         char proxy_host[200], proxy_auth[200], dest[200];
@@ -188,8 +217,12 @@ static int tls_open(URLContext *h, const char *uri, int flags)
     if (!c->listen && !numerichost)
         gnutls_server_name_set(c->session, GNUTLS_NAME_DNS, host, strlen(host));
     gnutls_certificate_allocate_credentials(&c->cred);
-    if (c->ca_file)
-        gnutls_certificate_set_x509_trust_file(c->cred, c->ca_file, GNUTLS_X509_FMT_PEM);
+    set_options(h, uri);
+    if (c->ca_file) {
+        ret = gnutls_certificate_set_x509_trust_file(c->cred, c->ca_file, GNUTLS_X509_FMT_PEM);
+        if (ret < 0)
+            av_log(h, AV_LOG_ERROR, "%s\n", gnutls_strerror(ret));
+    }
 #if GNUTLS_VERSION_MAJOR >= 3
     else
         gnutls_certificate_set_x509_system_trust(c->cred);
@@ -207,7 +240,8 @@ static int tls_open(URLContext *h, const char *uri, int flags)
             ret = AVERROR(EIO);
             goto fail;
         }
-    }
+    } else if (c->cert_file || c->key_file)
+        av_log(h, AV_LOG_ERROR, "cert and key required\n");
     gnutls_credentials_set(c->session, GNUTLS_CRD_CERTIFICATE, c->cred);
     gnutls_transport_set_ptr(c->session, (gnutls_transport_ptr_t)
                                          (intptr_t) c->fd);
@@ -258,8 +292,11 @@ static int tls_open(URLContext *h, const char *uri, int flags)
         ret = AVERROR(EIO);
         goto fail;
     }
-    if (c->ca_file)
-        SSL_CTX_load_verify_locations(c->ctx, c->ca_file, NULL);
+    set_options(h, uri);
+    if (c->ca_file) {
+        if (!SSL_CTX_load_verify_locations(c->ctx, c->ca_file, NULL))
+            av_log(h, AV_LOG_ERROR, "SSL_CTX_load_verify_locations %s\n", ERR_error_string(ERR_get_error(), NULL));
+    }
     if (c->cert_file && !SSL_CTX_use_certificate_chain_file(c->ctx, c->cert_file)) {
         av_log(h, AV_LOG_ERROR, "Unable to load cert file %s: %s\n",
                c->cert_file, ERR_error_string(ERR_get_error(), NULL));
@@ -275,7 +312,7 @@ static int tls_open(URLContext *h, const char *uri, int flags)
     // Note, this doesn't check that the peer certificate actually matches
     // the requested hostname.
     if (c->verify)
-        SSL_CTX_set_verify(c->ctx, SSL_VERIFY_PEER, NULL);
+        SSL_CTX_set_verify(c->ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
     c->ssl = SSL_new(c->ctx);
     if (!c->ssl) {
         av_log(h, AV_LOG_ERROR, "%s\n", ERR_error_string(ERR_get_error(), NULL));
