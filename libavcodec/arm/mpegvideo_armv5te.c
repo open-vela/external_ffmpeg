@@ -2,24 +2,25 @@
  * Optimization of some functions from mpegvideo.c for armv5te
  * Copyright (c) 2007 Siarhei Siamashka <ssvb@users.sourceforge.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/mpegvideo.h"
 #include "mpegvideo_arm.h"
@@ -55,7 +56,7 @@ static void dct_unquantize_h263_intra_armv5te(MpegEncContext *s,
     int level, qmul, qadd;
     int nCoeffs;
 
-    assert(s->block_last_index[n]>=0);
+    av_assert2(s->block_last_index[n]>=0);
 
     qmul = qscale << 1;
 
@@ -84,7 +85,7 @@ static void dct_unquantize_h263_inter_armv5te(MpegEncContext *s,
     int qmul, qadd;
     int nCoeffs;
 
-    assert(s->block_last_index[n]>=0);
+    av_assert2(s->block_last_index[n]>=0);
 
     qadd = (qscale - 1) | 1;
     qmul = qscale << 1;
@@ -94,7 +95,7 @@ static void dct_unquantize_h263_inter_armv5te(MpegEncContext *s,
     ff_dct_unquantize_h263_armv5te(block, qmul, qadd, nCoeffs + 1);
 }
 
-av_cold void ff_mpv_common_init_armv5te(MpegEncContext *s)
+av_cold void ff_MPV_common_init_armv5te(MpegEncContext *s)
 {
     s->dct_unquantize_h263_intra = dct_unquantize_h263_intra_armv5te;
     s->dct_unquantize_h263_inter = dct_unquantize_h263_inter_armv5te;

@@ -4,20 +4,20 @@
  * Authors: Steven Walters <kemuri9@gmail.com>
  *          Pegasys Inc. <http://www.pegasys-inc.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,8 @@
  * w32threads to pthreads wrapper
  */
 
-#ifndef LIBAV_COMPAT_W32PTHREADS_H
-#define LIBAV_COMPAT_W32PTHREADS_H
+#ifndef FFMPEG_COMPAT_W32PTHREADS_H
+#define FFMPEG_COMPAT_W32PTHREADS_H
 
 /* Build up a pthread-like API using underlying Windows API. Have only static
  * methods so as to not conflict with a potentially linked in pthread-win32
@@ -39,7 +39,7 @@
 #include <windows.h>
 #include <process.h>
 
-#include "libavutil/attributes.h"
+#include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
@@ -87,15 +87,15 @@ static BOOL (WINAPI *cond_wait)(pthread_cond_t *cond, pthread_mutex_t *mutex,
 #define WaitForSingleObject(a, b) WaitForSingleObjectEx(a, b, FALSE)
 #endif
 
-static av_unused unsigned __stdcall attribute_align_arg win32thread_worker(void *arg)
+static unsigned __stdcall attribute_align_arg win32thread_worker(void *arg)
 {
     pthread_t *h = arg;
     h->ret = h->func(h->arg);
     return 0;
 }
 
-static av_unused int pthread_create(pthread_t *thread, const void *unused_attr,
-                                    void *(*start_routine)(void*), void *arg)
+static int pthread_create(pthread_t *thread, const void *unused_attr,
+                          void *(*start_routine)(void*), void *arg)
 {
     thread->func   = start_routine;
     thread->arg    = arg;
@@ -104,7 +104,7 @@ static av_unused int pthread_create(pthread_t *thread, const void *unused_attr,
     return !thread->handle;
 }
 
-static av_unused void pthread_join(pthread_t thread, void **value_ptr)
+static void pthread_join(pthread_t thread, void **value_ptr)
 {
     DWORD ret = WaitForSingleObject(thread.handle, INFINITE);
     if (ret != WAIT_OBJECT_0)
@@ -146,31 +146,32 @@ typedef struct  win32_cond_t {
     volatile int is_broadcast;
 } win32_cond_t;
 
-static av_unused void pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
+static int pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
 {
     win32_cond_t *win32_cond = NULL;
     if (cond_init) {
         cond_init(cond);
-        return;
+        return 0;
     }
 
     /* non native condition variables */
     win32_cond = av_mallocz(sizeof(win32_cond_t));
     if (!win32_cond)
-        return;
+        return ENOMEM;
     cond->ptr = win32_cond;
     win32_cond->semaphore = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
     if (!win32_cond->semaphore)
-        return;
+        return ENOMEM;
     win32_cond->waiters_done = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!win32_cond->waiters_done)
-        return;
+        return ENOMEM;
 
     pthread_mutex_init(&win32_cond->mtx_waiter_count, NULL);
     pthread_mutex_init(&win32_cond->mtx_broadcast, NULL);
+    return 0;
 }
 
-static av_unused void pthread_cond_destroy(pthread_cond_t *cond)
+static void pthread_cond_destroy(pthread_cond_t *cond)
 {
     win32_cond_t *win32_cond = cond->ptr;
     /* native condition variables do not destroy */
@@ -186,7 +187,7 @@ static av_unused void pthread_cond_destroy(pthread_cond_t *cond)
     cond->ptr = NULL;
 }
 
-static av_unused void pthread_cond_broadcast(pthread_cond_t *cond)
+static void pthread_cond_broadcast(pthread_cond_t *cond)
 {
     win32_cond_t *win32_cond = cond->ptr;
     int have_waiter;
@@ -217,7 +218,7 @@ static av_unused void pthread_cond_broadcast(pthread_cond_t *cond)
     pthread_mutex_unlock(&win32_cond->mtx_broadcast);
 }
 
-static av_unused int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
+static int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
     win32_cond_t *win32_cond = cond->ptr;
     int last_waiter;
@@ -249,7 +250,7 @@ static av_unused int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mu
     return pthread_mutex_lock(mutex);
 }
 
-static av_unused void pthread_cond_signal(pthread_cond_t *cond)
+static void pthread_cond_signal(pthread_cond_t *cond)
 {
     win32_cond_t *win32_cond = cond->ptr;
     int have_waiter;
@@ -274,7 +275,7 @@ static av_unused void pthread_cond_signal(pthread_cond_t *cond)
     pthread_mutex_unlock(&win32_cond->mtx_broadcast);
 }
 
-static av_unused void w32thread_init(void)
+static void w32thread_init(void)
 {
 #if _WIN32_WINNT < 0x0600
     HANDLE kernel_dll = GetModuleHandle(TEXT("kernel32.dll"));
@@ -291,4 +292,4 @@ static av_unused void w32thread_init(void)
 
 }
 
-#endif /* LIBAV_COMPAT_W32PTHREADS_H */
+#endif /* FFMPEG_COMPAT_W32PTHREADS_H */
