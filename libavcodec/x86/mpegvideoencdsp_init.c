@@ -1,29 +1,33 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/cpu.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/mpegvideoencdsp.h"
 
 int ff_pix_sum16_mmx(uint8_t *pix, int line_size);
+int ff_pix_sum16_sse2(uint8_t *pix, int line_size);
+int ff_pix_sum16_xop(uint8_t *pix, int line_size);
 int ff_pix_norm1_mmx(uint8_t *pix, int line_size);
+int ff_pix_norm1_sse2(uint8_t *pix, int line_size);
 
 #if HAVE_INLINE_ASM
 
@@ -123,7 +127,7 @@ static void draw_edges_mmx(uint8_t *buf, int wrap, int width, int height,
             : "+r" (ptr)
             : "r" ((x86_reg) wrap), "r" ((x86_reg) width),
               "r" (ptr + wrap * height));
-    } else {
+    } else if (w == 16) {
         __asm__ volatile (
             "1:                                 \n\t"
             "movd            (%0), %%mm0        \n\t"
@@ -141,6 +145,25 @@ static void draw_edges_mmx(uint8_t *buf, int wrap, int width, int height,
             "add               %1, %0           \n\t"
             "cmp               %3, %0           \n\t"
             "jb                1b               \n\t"
+            : "+r"(ptr)
+            : "r"((x86_reg)wrap), "r"((x86_reg)width), "r"(ptr + wrap * height)
+            );
+    } else {
+        av_assert1(w == 4);
+        __asm__ volatile (
+            "1:                             \n\t"
+            "movd            (%0), %%mm0    \n\t"
+            "punpcklbw      %%mm0, %%mm0    \n\t"
+            "punpcklwd      %%mm0, %%mm0    \n\t"
+            "movd           %%mm0, -4(%0)   \n\t"
+            "movd      -4(%0, %2), %%mm1    \n\t"
+            "punpcklbw      %%mm1, %%mm1    \n\t"
+            "punpckhwd      %%mm1, %%mm1    \n\t"
+            "punpckhdq      %%mm1, %%mm1    \n\t"
+            "movd           %%mm1, (%0, %2) \n\t"
+            "add               %1, %0       \n\t"
+            "cmp               %3, %0       \n\t"
+            "jb                1b           \n\t"
             : "+r" (ptr)
             : "r" ((x86_reg) wrap), "r" ((x86_reg) width),
               "r" (ptr + wrap * height));
@@ -198,6 +221,15 @@ av_cold void ff_mpegvideoencdsp_init_x86(MpegvideoEncDSPContext *c,
     if (EXTERNAL_MMX(cpu_flags)) {
         c->pix_sum   = ff_pix_sum16_mmx;
         c->pix_norm1 = ff_pix_norm1_mmx;
+    }
+
+    if (EXTERNAL_SSE2(cpu_flags)) {
+        c->pix_sum     = ff_pix_sum16_sse2;
+        c->pix_norm1   = ff_pix_norm1_sse2;
+    }
+
+    if (EXTERNAL_XOP(cpu_flags)) {
+        c->pix_sum     = ff_pix_sum16_xop;
     }
 
 #if HAVE_INLINE_ASM
