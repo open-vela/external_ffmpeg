@@ -2,20 +2,20 @@
  * id Quake II CIN Video Decoder
  * Copyright (C) 2003 the ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,7 +76,7 @@ typedef struct IdcinContext {
     uint32_t pal[256];
 } IdcinContext;
 
-/**
+/*
  * Find the lowest probability node in a Huffman table, and mark it as
  * being assigned to a higher probability.
  * @return the node index of the lowest unused node, or -1 if all nodes
@@ -170,7 +170,7 @@ static av_cold int idcin_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int idcin_decode_vlcs(IdcinContext *s, AVFrame *frame)
+static void idcin_decode_vlcs(IdcinContext *s, AVFrame *frame)
 {
     hnode *hnodes;
     long x, y;
@@ -189,7 +189,7 @@ static int idcin_decode_vlcs(IdcinContext *s, AVFrame *frame)
                 if(!bit_pos) {
                     if(dat_pos >= s->size) {
                         av_log(s->avctx, AV_LOG_ERROR, "Huffman decode error.\n");
-                        return -1;
+                        return;
                     }
                     bit_pos = 8;
                     v = s->buf[dat_pos++];
@@ -204,8 +204,6 @@ static int idcin_decode_vlcs(IdcinContext *s, AVFrame *frame)
             prev = node_num;
         }
     }
-
-    return 0;
 }
 
 static int idcin_decode_frame(AVCodecContext *avctx,
@@ -222,11 +220,12 @@ static int idcin_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "  id CIN Video: get_buffer() failed\n");
         return ret;
+    }
 
-    if (idcin_decode_vlcs(s, frame))
-        return AVERROR_INVALIDDATA;
+    idcin_decode_vlcs(s, frame);
 
     if (pal) {
         frame->palette_has_changed = 1;
