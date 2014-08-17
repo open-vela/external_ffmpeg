@@ -345,13 +345,13 @@ int ff_audio_convert(AudioConvert *ac, AudioData *out, AudioData *in)
     if (ac->apply_map) {
         ChannelMapInfo *map = &ac->avr->ch_map_info;
 
-        if (!ff_sample_fmt_is_planar(ac->out_fmt, ac->channels)) {
+        if (!av_sample_fmt_is_planar(ac->out_fmt)) {
             av_log(ac->avr, AV_LOG_ERROR, "cannot remap packed format during conversion\n");
             return AVERROR(EINVAL);
         }
 
         if (map->do_remap) {
-            if (ff_sample_fmt_is_planar(ac->in_fmt, ac->channels)) {
+            if (av_sample_fmt_is_planar(ac->in_fmt)) {
                 conv_func_flat *convert = use_generic ? ac->conv_flat_generic :
                                                         ac->conv_flat;
 
