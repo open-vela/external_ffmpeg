@@ -2,20 +2,20 @@
  * WavPack lossless audio decoder
  * Copyright (c) 2006,2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,15 +25,59 @@
 #include "avcodec.h"
 #include "get_bits.h"
 #include "internal.h"
-#include "thread.h"
 #include "unary.h"
 #include "bytestream.h"
-#include "wavpack.h"
 
 /**
  * @file
  * WavPack lossless audio decoder
  */
+
+#define WV_HEADER_SIZE    32
+
+#define WV_MONO           0x00000004
+#define WV_JOINT_STEREO   0x00000010
+#define WV_FALSE_STEREO   0x40000000
+
+#define WV_HYBRID_MODE    0x00000008
+#define WV_HYBRID_SHAPE   0x00000008
+#define WV_HYBRID_BITRATE 0x00000200
+#define WV_HYBRID_BALANCE 0x00000400
+#define WV_INITIAL_BLOCK  0x00000800
+#define WV_FINAL_BLOCK    0x00001000
+
+#define WV_SINGLE_BLOCK (WV_INITIAL_BLOCK | WV_FINAL_BLOCK)
+
+#define WV_FLT_SHIFT_ONES 0x01
+#define WV_FLT_SHIFT_SAME 0x02
+#define WV_FLT_SHIFT_SENT 0x04
+#define WV_FLT_ZERO_SENT  0x08
+#define WV_FLT_ZERO_SIGN  0x10
+
+enum WP_ID_Flags {
+    WP_IDF_MASK   = 0x3F,
+    WP_IDF_IGNORE = 0x20,
+    WP_IDF_ODD    = 0x40,
+    WP_IDF_LONG   = 0x80
+};
+
+enum WP_ID {
+    WP_ID_DUMMY = 0,
+    WP_ID_ENCINFO,
+    WP_ID_DECTERMS,
+    WP_ID_DECWEIGHTS,
+    WP_ID_DECSAMPLES,
+    WP_ID_ENTROPY,
+    WP_ID_HYBRID,
+    WP_ID_SHAPING,
+    WP_ID_FLOATINFO,
+    WP_ID_INT32INFO,
+    WP_ID_DATA,
+    WP_ID_CORR,
+    WP_ID_EXTRABITS,
+    WP_ID_CHANINFO,
+    WP_ID_SAMPLE_RATE = 0x27,
+};
 
 typedef struct SavedContext {
     int offset;
@@ -41,6 +85,23 @@ typedef struct SavedContext {
     int bits_used;
     uint32_t crc;
 } SavedContext;
+
+#define MAX_TERMS 16
+
+typedef struct Decorr {
+    int delta;
+    int value;
+    int weightA;
+    int weightB;
+    int samplesA[8];
+    int samplesB[8];
+} Decorr;
+
+typedef struct WvChannel {
+    int median[3];
+    int slow_level, error_limit;
+    int bitrate_acc, bitrate_delta;
+} WvChannel;
 
 typedef struct WavpackFrameContext {
     AVCodecContext *avctx;
@@ -83,7 +144,101 @@ typedef struct WavpackContext {
     int ch_offset;
 } WavpackContext;
 
-#define LEVEL_DECAY(a)  (((a) + 0x80) >> 8)
+static const int wv_rates[16] = {
+     6000,  8000,  9600, 11025, 12000, 16000,  22050, 24000,
+    32000, 44100, 48000, 64000, 88200, 96000, 192000,     0
+};
+
+// exponent table copied from WavPack source
+static const uint8_t wp_exp2_table[256] = {
+    0x00, 0x01, 0x01, 0x02, 0x03, 0x03, 0x04, 0x05, 0x06, 0x06, 0x07, 0x08, 0x08, 0x09, 0x0a, 0x0b,
+    0x0b, 0x0c, 0x0d, 0x0e, 0x0e, 0x0f, 0x10, 0x10, 0x11, 0x12, 0x13, 0x13, 0x14, 0x15, 0x16, 0x16,
+    0x17, 0x18, 0x19, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1d, 0x1e, 0x1f, 0x20, 0x20, 0x21, 0x22, 0x23,
+    0x24, 0x24, 0x25, 0x26, 0x27, 0x28, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3a, 0x3b, 0x3c, 0x3d,
+    0x3e, 0x3f, 0x40, 0x41, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x48, 0x49, 0x4a, 0x4b,
+    0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a,
+    0x5b, 0x5c, 0x5d, 0x5e, 0x5e, 0x5f, 0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+    0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79,
+    0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x87, 0x88, 0x89, 0x8a,
+    0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b,
+    0x9c, 0x9d, 0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad,
+    0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0,
+    0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc8, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf, 0xd0, 0xd2, 0xd3, 0xd4,
+    0xd6, 0xd7, 0xd8, 0xd9, 0xdb, 0xdc, 0xdd, 0xde, 0xe0, 0xe1, 0xe2, 0xe4, 0xe5, 0xe6, 0xe8, 0xe9,
+    0xea, 0xec, 0xed, 0xee, 0xf0, 0xf1, 0xf2, 0xf4, 0xf5, 0xf6, 0xf8, 0xf9, 0xfa, 0xfc, 0xfd, 0xff
+};
+
+static const uint8_t wp_log2_table [] = {
+    0x00, 0x01, 0x03, 0x04, 0x06, 0x07, 0x09, 0x0a, 0x0b, 0x0d, 0x0e, 0x10, 0x11, 0x12, 0x14, 0x15,
+    0x16, 0x18, 0x19, 0x1a, 0x1c, 0x1d, 0x1e, 0x20, 0x21, 0x22, 0x24, 0x25, 0x26, 0x28, 0x29, 0x2a,
+    0x2c, 0x2d, 0x2e, 0x2f, 0x31, 0x32, 0x33, 0x34, 0x36, 0x37, 0x38, 0x39, 0x3b, 0x3c, 0x3d, 0x3e,
+    0x3f, 0x41, 0x42, 0x43, 0x44, 0x45, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4d, 0x4e, 0x4f, 0x50, 0x51,
+    0x52, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x62, 0x63,
+    0x64, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x74, 0x75,
+    0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85,
+    0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,
+    0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4,
+    0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb2,
+    0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xc0,
+    0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcb, 0xcc, 0xcd, 0xce,
+    0xcf, 0xd0, 0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd8, 0xd9, 0xda, 0xdb,
+    0xdc, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe4, 0xe5, 0xe6, 0xe7, 0xe7,
+    0xe8, 0xe9, 0xea, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xee, 0xef, 0xf0, 0xf1, 0xf1, 0xf2, 0xf3, 0xf4,
+    0xf4, 0xf5, 0xf6, 0xf7, 0xf7, 0xf8, 0xf9, 0xf9, 0xfa, 0xfb, 0xfc, 0xfc, 0xfd, 0xfe, 0xff, 0xff
+};
+
+static av_always_inline int wp_exp2(int16_t val)
+{
+    int res, neg = 0;
+
+    if (val < 0) {
+        val = -val;
+        neg = 1;
+    }
+
+    res   = wp_exp2_table[val & 0xFF] | 0x100;
+    val >>= 8;
+    res   = (val > 9) ? (res << (val - 9)) : (res >> (9 - val));
+    return neg ? -res : res;
+}
+
+static av_always_inline int wp_log2(int32_t val)
+{
+    int bits;
+
+    if (!val)
+        return 0;
+    if (val == 1)
+        return 256;
+    val += val >> 9;
+    bits = av_log2(val) + 1;
+    if (bits < 9)
+        return (bits << 8) + wp_log2_table[(val << (9 - bits)) & 0xFF];
+    else
+        return (bits << 8) + wp_log2_table[(val >> (bits - 9)) & 0xFF];
+}
+
+#define LEVEL_DECAY(a)  ((a + 0x80) >> 8)
+
+// macros for manipulating median values
+#define GET_MED(n) ((c->median[n] >> 4) + 1)
+#define DEC_MED(n) c->median[n] -= ((c->median[n] + (128 >> n) - 2) / (128 >> n)) * 2
+#define INC_MED(n) c->median[n] += ((c->median[n] + (128 >> n)    ) / (128 >> n)) * 5
+
+// macros for applying weight
+#define UPDATE_WEIGHT_CLIP(weight, delta, samples, in) \
+    if (samples && in) { \
+        if ((samples ^ in) < 0) { \
+            weight -= delta; \
+            if (weight < -1024) \
+                weight = -1024; \
+        } else { \
+            weight += delta; \
+            if (weight > 1024) \
+                weight = 1024; \
+        } \
+    }
 
 static av_always_inline int get_tail(GetBitContext *gb, int k)
 {
@@ -226,10 +381,6 @@ static int wv_get_value(WavpackFrameContext *ctx, GetBitContext *gb,
         INC_MED(2);
     }
     if (!c->error_limit) {
-        if (add >= 0x2000000U) {
-            av_log(ctx->avctx, AV_LOG_ERROR, "k %d is too large\n", add);
-            goto error;
-        }
         ret = base + get_tail(gb, add);
         if (get_bits_left(gb) <= 0)
             goto error;
@@ -253,10 +404,6 @@ static int wv_get_value(WavpackFrameContext *ctx, GetBitContext *gb,
     return sign ? ~ret : ret;
 
 error:
-    ret = get_bits_left(gb);
-    if (ret <= 0) {
-        av_log(ctx->avctx, AV_LOG_ERROR, "Too few bits (%d) left\n", ret);
-    }
     *last = 1;
     return 0;
 }
@@ -491,13 +638,6 @@ static inline int wv_unpack_stereo(WavpackFrameContext *s, GetBitContext *gb,
     } while (!last && count < s->samples);
 
     wv_reset_saved_context(s);
-
-    if (last && count < s->samples) {
-        int size = av_get_bytes_per_sample(type);
-        memset((uint8_t*)dst_l + count*size, 0, (s->samples-count)*size);
-        memset((uint8_t*)dst_r + count*size, 0, (s->samples-count)*size);
-    }
-
     if ((s->avctx->err_recognition & AV_EF_CRCCHECK) &&
         wv_check_crc(s, crc, crc_extra_bits))
         return AVERROR_INVALIDDATA;
@@ -559,12 +699,6 @@ static inline int wv_unpack_mono(WavpackFrameContext *s, GetBitContext *gb,
     } while (!last && count < s->samples);
 
     wv_reset_saved_context(s);
-
-    if (last && count < s->samples) {
-        int size = av_get_bytes_per_sample(type);
-        memset((uint8_t*)dst + count*size, 0, (s->samples-count)*size);
-    }
-
     if (s->avctx->err_recognition & AV_EF_CRCCHECK) {
         int ret = wv_check_crc(s, crc, crc_extra_bits);
         if (ret < 0 && s->avctx->err_recognition & AV_EF_EXPLODE)
@@ -586,13 +720,6 @@ static av_cold int wv_alloc_frame_context(WavpackContext *c)
     c->fdec[c->fdec_num - 1]->avctx = c->avctx;
     wv_reset_saved_context(c->fdec[c->fdec_num - 1]);
 
-    return 0;
-}
-
-static int init_thread_copy(AVCodecContext *avctx)
-{
-    WavpackContext *s = avctx->priv_data;
-    s->avctx = avctx;
     return 0;
 }
 
@@ -623,10 +750,9 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
                                 AVFrame *frame, const uint8_t *buf, int buf_size)
 {
     WavpackContext *wc = avctx->priv_data;
-    ThreadFrame tframe = { .f = frame };
     WavpackFrameContext *s;
     GetByteContext gb;
-    void *samples_l = NULL, *samples_r = NULL;
+    void *samples_l, *samples_r;
     int ret;
     int got_terms   = 0, got_weights = 0, got_samples = 0,
         got_entropy = 0, got_bs      = 0, got_float   = 0, got_hybrid = 0;
@@ -784,7 +910,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
         case WP_ID_ENTROPY:
             if (size != 6 * (s->stereo_in + 1)) {
                 av_log(avctx, AV_LOG_ERROR,
-                       "Entropy vars size should be %i, got %i.\n",
+                       "Entropy vars size should be %i, got %i",
                        6 * (s->stereo_in + 1), size);
                 bytestream2_skip(&gb, ssize);
                 continue;
@@ -864,8 +990,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
         case WP_ID_DATA:
             s->sc.offset = bytestream2_tell(&gb);
             s->sc.size   = size * 8;
-            if ((ret = init_get_bits8(&s->gb, gb.buffer, size)) < 0)
-                return ret;
+            init_get_bits(&s->gb, gb.buffer, size * 8);
             s->data_size = size * 8;
             bytestream2_skip(&gb, size);
             got_bs       = 1;
@@ -879,8 +1004,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
             }
             s->extra_sc.offset = bytestream2_tell(&gb);
             s->extra_sc.size   = size * 8;
-            if ((ret = init_get_bits8(&s->gb_extra_bits, gb.buffer, size)) < 0)
-                return ret;
+            init_get_bits(&s->gb_extra_bits, gb.buffer, size * 8);
             s->crc_extra_bits  = get_bits_long(&s->gb_extra_bits, 32);
             bytestream2_skip(&gb, size);
             s->got_extra_bits  = 1;
@@ -903,7 +1027,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
                 chmask = bytestream2_get_le24(&gb);
                 break;
             case 3:
-                chmask = bytestream2_get_le32(&gb);
+                chmask = bytestream2_get_le32(&gb);;
                 break;
             case 5:
                 bytestream2_skip(&gb, 1);
@@ -991,10 +1115,11 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
         }
 
         /* get output buffer */
-        frame->nb_samples = s->samples + 1;
-        if ((ret = ff_thread_get_buffer(avctx, &tframe, 0)) < 0)
-            return ret;
         frame->nb_samples = s->samples;
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            return ret;
+        }
     }
 
     if (wc->ch_offset + s->stereo >= avctx->channels) {
@@ -1051,7 +1176,7 @@ static int wavpack_decode_frame(AVCodecContext *avctx, void *data,
     /* determine number of samples */
     s->samples  = AV_RL32(buf + 20);
     frame_flags = AV_RL32(buf + 24);
-    if (s->samples <= 0 || s->samples > WV_MAX_SAMPLES) {
+    if (s->samples <= 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid number of samples: %d\n",
                s->samples);
         return AVERROR_INVALIDDATA;
@@ -1109,6 +1234,5 @@ AVCodec ff_wavpack_decoder = {
     .close          = wavpack_decode_end,
     .decode         = wavpack_decode_frame,
     .flush          = wavpack_decode_flush,
-    .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
+    .capabilities   = CODEC_CAP_DR1,
 };
