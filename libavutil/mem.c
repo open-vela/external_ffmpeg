@@ -2,20 +2,20 @@
  * default memory allocator for libavutil
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,8 +23,6 @@
  * @file
  * default memory allocator for libavutil
  */
-
-#define _XOPEN_SOURCE 600
 
 #include "config.h"
 
@@ -36,10 +34,8 @@
 #include <malloc.h>
 #endif
 
-#include "avassert.h"
 #include "avutil.h"
 #include "common.h"
-#include "dynarray.h"
 #include "intreadwrite.h"
 #include "mem.h"
 
@@ -59,18 +55,9 @@ void  free(void *ptr);
 
 #endif /* MALLOC_PREFIX */
 
-#define ALIGN (HAVE_AVX ? 32 : 16)
-
-/* NOTE: if you want to override these functions with your own
- * implementations (not recommended) you have to link libav* as
- * dynamic libraries and remove -Wl,-Bsymbolic from the linker flags.
- * Note that this will cost performance. */
-
-static size_t max_alloc_size= INT_MAX;
-
-void av_max_alloc(size_t max){
-    max_alloc_size = max;
-}
+/* You can redefine av_malloc and av_free in your project to use your
+ * memory allocator. You do not need to suppress this file because the
+ * linker will do it automatically. */
 
 void *av_malloc(size_t size)
 {
@@ -80,28 +67,23 @@ void *av_malloc(size_t size)
 #endif
 
     /* let's disallow possibly ambiguous cases */
-    if (size > (max_alloc_size - 32))
+    if (size > (INT_MAX - 32) || !size)
         return NULL;
 
 #if CONFIG_MEMALIGN_HACK
-    ptr = malloc(size + ALIGN);
+    ptr = malloc(size + 32);
     if (!ptr)
         return ptr;
-    diff              = ((~(long)ptr)&(ALIGN - 1)) + 1;
+    diff              = ((-(long)ptr - 1) & 31) + 1;
     ptr               = (char *)ptr + diff;
     ((char *)ptr)[-1] = diff;
 #elif HAVE_POSIX_MEMALIGN
-    if (size) //OS X on SDK 10.6 has a broken posix_memalign implementation
-    if (posix_memalign(&ptr, ALIGN, size))
+    if (posix_memalign(&ptr, 32, size))
         ptr = NULL;
 #elif HAVE_ALIGNED_MALLOC
-    ptr = _aligned_malloc(size, ALIGN);
+    ptr = _aligned_malloc(size, 32);
 #elif HAVE_MEMALIGN
-#ifndef __DJGPP__
-    ptr = memalign(ALIGN, size);
-#else
-    ptr = memalign(size, ALIGN);
-#endif
+    ptr = memalign(32, size);
     /* Why 64?
      * Indeed, we should align it:
      *   on  4 for 386
@@ -129,14 +111,6 @@ void *av_malloc(size_t size)
 #else
     ptr = malloc(size);
 #endif
-    if(!ptr && !size) {
-        size = 1;
-        ptr= av_malloc(1);
-    }
-#if CONFIG_MEMORY_POISONING
-    if (ptr)
-        memset(ptr, FF_MEMORY_POISON, size);
-#endif
     return ptr;
 }
 
@@ -147,7 +121,7 @@ void *av_realloc(void *ptr, size_t size)
 #endif
 
     /* let's disallow possibly ambiguous cases */
-    if (size > (max_alloc_size - 32))
+    if (size > (INT_MAX - 16))
         return NULL;
 
 #if CONFIG_MEMALIGN_HACK
@@ -155,31 +129,12 @@ void *av_realloc(void *ptr, size_t size)
     if (!ptr)
         return av_malloc(size);
     diff = ((char *)ptr)[-1];
-    av_assert0(diff>0 && diff<=ALIGN);
-    ptr = realloc((char *)ptr - diff, size + diff);
-    if (ptr)
-        ptr = (char *)ptr + diff;
-    return ptr;
+    return (char *)realloc((char *)ptr - diff, size + diff) + diff;
 #elif HAVE_ALIGNED_MALLOC
-    return _aligned_realloc(ptr, size + !size, ALIGN);
+    return _aligned_realloc(ptr, size, 32);
 #else
-    return realloc(ptr, size + !size);
+    return realloc(ptr, size);
 #endif
-}
-
-void *av_realloc_f(void *ptr, size_t nelem, size_t elsize)
-{
-    size_t size;
-    void *r;
-
-    if (av_size_mult(elsize, nelem, &size)) {
-        av_free(ptr);
-        return NULL;
-    }
-    r = av_realloc(ptr, size);
-    if (!r && size)
-        av_free(ptr);
-    return r;
 }
 
 int av_reallocp(void *ptr, size_t size)
@@ -212,20 +167,27 @@ void *av_realloc_array(void *ptr, size_t nmemb, size_t size)
 int av_reallocp_array(void *ptr, size_t nmemb, size_t size)
 {
     void **ptrptr = ptr;
-    *ptrptr = av_realloc_f(*ptrptr, nmemb, size);
-    if (!*ptrptr && nmemb && size)
+    void *ret;
+    if (!size || nmemb >= INT_MAX / size)
         return AVERROR(ENOMEM);
+    if (!nmemb) {
+        av_freep(ptr);
+        return 0;
+    }
+    ret = av_realloc(*ptrptr, nmemb * size);
+    if (!ret) {
+        av_freep(ptr);
+        return AVERROR(ENOMEM);
+    }
+    *ptrptr = ret;
     return 0;
 }
 
 void av_free(void *ptr)
 {
 #if CONFIG_MEMALIGN_HACK
-    if (ptr) {
-        int v= ((char *)ptr)[-1];
-        av_assert0(v>0 && v<=ALIGN);
-        free((char *)ptr - v);
-    }
+    if (ptr)
+        free((char *)ptr - ((char *)ptr)[-1]);
 #elif HAVE_ALIGNED_MALLOC
     _aligned_free(ptr);
 #else
@@ -246,13 +208,6 @@ void *av_mallocz(size_t size)
     if (ptr)
         memset(ptr, 0, size);
     return ptr;
-}
-
-void *av_calloc(size_t nmemb, size_t size)
-{
-    if (size <= 0 || nmemb >= INT_MAX / size)
-        return NULL;
-    return av_mallocz(nmemb * size);
 }
 
 char *av_strdup(const char *s)
@@ -285,61 +240,6 @@ char *av_strndup(const char *s, size_t len)
     memcpy(ret, s, len);
     ret[len] = 0;
     return ret;
-}
-
-void *av_memdup(const void *p, size_t size)
-{
-    void *ptr = NULL;
-    if (p) {
-        ptr = av_malloc(size);
-        if (ptr)
-            memcpy(ptr, p, size);
-    }
-    return ptr;
-}
-
-int av_dynarray_add_nofree(void *tab_ptr, int *nb_ptr, void *elem)
-{
-    void **tab = *(void ***)tab_ptr;
-
-    AV_DYNARRAY_ADD(INT_MAX, sizeof(*tab), tab, *nb_ptr, {
-        tab[*nb_ptr] = elem;
-        *(void ***)tab_ptr = tab;
-    }, {
-        return AVERROR(ENOMEM);
-    });
-    return 0;
-}
-
-void av_dynarray_add(void *tab_ptr, int *nb_ptr, void *elem)
-{
-    void **tab = *(void ***)tab_ptr;
-
-    AV_DYNARRAY_ADD(INT_MAX, sizeof(*tab), tab, *nb_ptr, {
-        tab[*nb_ptr] = elem;
-        *(void ***)tab_ptr = tab;
-    }, {
-        *nb_ptr = 0;
-        av_freep(tab_ptr);
-    });
-}
-
-void *av_dynarray2_add(void **tab_ptr, int *nb_ptr, size_t elem_size,
-                       const uint8_t *elem_data)
-{
-    uint8_t *tab_elem_data = NULL;
-
-    AV_DYNARRAY_ADD(INT_MAX, elem_size, *tab_ptr, *nb_ptr, {
-        tab_elem_data = (uint8_t *)*tab_ptr + (*nb_ptr) * elem_size;
-        if (elem_data)
-            memcpy(tab_elem_data, elem_data, elem_size);
-        else if (CONFIG_MEMORY_POISONING)
-            memset(tab_elem_data, FF_MEMORY_POISON, elem_size);
-    }, {
-        av_freep(tab_ptr);
-        *nb_ptr = 0;
-    });
-    return tab_elem_data;
 }
 
 static void fill16(uint8_t *dst, int len)
@@ -485,22 +385,15 @@ void *av_fast_realloc(void *ptr, unsigned int *size, size_t min_size)
     return ptr;
 }
 
-static inline int ff_fast_malloc(void *ptr, unsigned int *size, size_t min_size, int zero_realloc)
+void av_fast_malloc(void *ptr, unsigned int *size, size_t min_size)
 {
     void **p = ptr;
     if (min_size < *size)
-        return 0;
+        return;
     min_size = FFMAX(17 * min_size / 16 + 32, min_size);
     av_free(*p);
-    *p = zero_realloc ? av_mallocz(min_size) : av_malloc(min_size);
+    *p = av_malloc(min_size);
     if (!*p)
         min_size = 0;
     *size = min_size;
-    return 1;
 }
-
-void av_fast_malloc(void *ptr, unsigned int *size, size_t min_size)
-{
-    ff_fast_malloc(ptr, size, min_size, 0);
-}
-
