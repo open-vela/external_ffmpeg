@@ -1090,7 +1090,7 @@ static int h264_slice_header_init(H264Context *h, int reinit)
     ret = ff_h264_alloc_tables(h);
     if (ret < 0) {
         av_log(h->avctx, AV_LOG_ERROR, "Could not allocate memory\n");
-        return ret;
+        goto fail;
     }
 
     if (nb_slices > H264_MAX_THREADS || (nb_slices > h->mb_height && h->mb_height)) {
@@ -1109,14 +1109,16 @@ static int h264_slice_header_init(H264Context *h, int reinit)
         ret = ff_h264_context_init(h);
         if (ret < 0) {
             av_log(h->avctx, AV_LOG_ERROR, "context_init() failed.\n");
-            return ret;
+            goto fail;
         }
     } else {
         for (i = 1; i < h->slice_context_count; i++) {
             H264Context *c;
             c                    = h->thread_context[i] = av_mallocz(sizeof(H264Context));
-            if (!c)
-                return AVERROR(ENOMEM);
+            if (!c) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
             c->avctx             = h->avctx;
             c->mecc              = h->mecc;
             c->vdsp              = h->vdsp;
@@ -1152,13 +1154,17 @@ static int h264_slice_header_init(H264Context *h, int reinit)
         for (i = 0; i < h->slice_context_count; i++)
             if ((ret = ff_h264_context_init(h->thread_context[i])) < 0) {
                 av_log(h->avctx, AV_LOG_ERROR, "context_init() failed.\n");
-                return ret;
+                goto fail;
             }
     }
 
     h->context_initialized = 1;
 
     return 0;
+fail:
+    ff_h264_free_tables(h, 0);
+    h->context_initialized = 0;
+    return ret;
 }
 
 /**
