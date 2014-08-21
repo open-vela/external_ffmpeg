@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Maxim Poliakovski
  * Copyright (c) 2009 Benjamin Larsson
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -242,7 +242,7 @@ static int at1_unpack_dequant(GetBitContext* gb, AT1SUCtx* su,
                      */
                     spec[pos+i] = get_sbits(gb, word_len) * scale_factor * max_quant;
                 }
-            } else { /* word_len = 0 -> empty BFU, zero all specs in the emty BFU */
+            } else { /* word_len = 0 -> empty BFU, zero all specs in the empty BFU */
                 memset(&spec[pos], 0, num_specs * sizeof(float));
             }
         }
@@ -287,10 +287,8 @@ static int atrac1_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = AT1_SU_SAMPLES;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     for (ch = 0; ch < avctx->channels; ch++) {
         AT1SUCtx* su = &q->SUs[ch];
@@ -341,6 +339,11 @@ static av_cold int atrac1_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Unsupported number of channels: %d\n",
                avctx->channels);
         return AVERROR(EINVAL);
+    }
+
+    if (avctx->block_align <= 0) {
+        av_log(avctx, AV_LOG_ERROR, "Unsupported block align.");
+        return AVERROR_PATCHWELCOME;
     }
 
     /* Init the mdct transforms */
