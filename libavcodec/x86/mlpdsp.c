@@ -2,31 +2,32 @@
  * MLP DSP functions x86-optimized
  * Copyright (c) 2009 Ramiro Polla
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/internal.h"
 #include "libavutil/cpu.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/mlpdsp.h"
 #include "libavcodec/mlp.h"
 
-#if HAVE_7REGS && HAVE_INLINE_ASM && HAVE_INLINE_ASM_NONLOCAL_LABELS
+#if HAVE_7REGS && HAVE_INLINE_ASM
 
 extern char ff_mlp_firorder_8;
 extern char ff_mlp_firorder_7;
@@ -44,12 +45,12 @@ extern char ff_mlp_iirorder_2;
 extern char ff_mlp_iirorder_1;
 extern char ff_mlp_iirorder_0;
 
-static const void * const firtable[9] = { &ff_mlp_firorder_0, &ff_mlp_firorder_1,
+static const void *firtable[9] = { &ff_mlp_firorder_0, &ff_mlp_firorder_1,
                                    &ff_mlp_firorder_2, &ff_mlp_firorder_3,
                                    &ff_mlp_firorder_4, &ff_mlp_firorder_5,
                                    &ff_mlp_firorder_6, &ff_mlp_firorder_7,
                                    &ff_mlp_firorder_8 };
-static const void * const iirtable[5] = { &ff_mlp_iirorder_0, &ff_mlp_iirorder_1,
+static const void *iirtable[5] = { &ff_mlp_iirorder_0, &ff_mlp_iirorder_1,
                                    &ff_mlp_iirorder_2, &ff_mlp_iirorder_3,
                                    &ff_mlp_iirorder_4 };
 
@@ -178,7 +179,7 @@ static void mlp_filter_channel_x86(int32_t *state, const int32_t *coeff,
 
 av_cold void ff_mlpdsp_init_x86(MLPDSPContext *c)
 {
-#if HAVE_7REGS && HAVE_INLINE_ASM && HAVE_INLINE_ASM_NONLOCAL_LABELS
+#if HAVE_7REGS && HAVE_INLINE_ASM
     int cpu_flags = av_get_cpu_flags();
     if (INLINE_MMX(cpu_flags))
         c->mlp_filter_channel = mlp_filter_channel_x86;
