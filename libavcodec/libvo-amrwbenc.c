@@ -1,21 +1,21 @@
 /*
  * AMR Audio encoder stub
- * Copyright (c) 2003 The FFmpeg Project
+ * Copyright (c) 2003 the ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,7 +45,7 @@ static const AVOption options[] = {
     { NULL }
 };
 
-static const AVClass amrwb_class = {
+static const AVClass class = {
     "libvo_amrwbenc", av_default_item_name, options, LIBAVUTIL_VERSION_INT
 };
 
@@ -79,7 +79,7 @@ static av_cold int amr_wb_encode_init(AVCodecContext *avctx)
 {
     AMRWBContext *s = avctx->priv_data;
 
-    if (avctx->sample_rate != 16000 && avctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
+    if (avctx->sample_rate != 16000) {
         av_log(avctx, AV_LOG_ERROR, "Only 16000Hz sample rate supported\n");
         return AVERROR(ENOSYS);
     }
@@ -93,7 +93,7 @@ static av_cold int amr_wb_encode_init(AVCodecContext *avctx)
     s->last_bitrate    = avctx->bit_rate;
 
     avctx->frame_size  = 320;
-    avctx->delay       =  80;
+    avctx->initial_padding =  80;
 
     s->state     = E_IF_init();
 
@@ -115,8 +115,10 @@ static int amr_wb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     const int16_t *samples = (const int16_t *)frame->data[0];
     int size, ret;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, MAX_PACKET_SIZE)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, MAX_PACKET_SIZE))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     if (s->last_bitrate != avctx->bit_rate) {
         s->mode         = get_wb_bitrate_mode(avctx->bit_rate, avctx);
@@ -129,7 +131,7 @@ static int amr_wb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
 
     if (frame->pts != AV_NOPTS_VALUE)
-        avpkt->pts = frame->pts - ff_samples_to_time_base(avctx, avctx->delay);
+        avpkt->pts = frame->pts - ff_samples_to_time_base(avctx, avctx->initial_padding);
 
     avpkt->size = size;
     *got_packet_ptr = 1;
@@ -148,5 +150,5 @@ AVCodec ff_libvo_amrwbenc_encoder = {
     .close          = amr_wb_encode_close,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
-    .priv_class     = &amrwb_class,
+    .priv_class     = &class,
 };

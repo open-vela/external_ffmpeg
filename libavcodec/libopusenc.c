@@ -2,20 +2,20 @@
  * Opus encoder using libopus
  * Copyright (c) 2012 Nathan Caldwell
  *
- * This file is part of FFmpeg.
+ * This file is part of libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -65,8 +65,8 @@ static const uint8_t opus_vorbis_channel_map[8][8] = {
     { 0, 6, 1, 2, 3, 4, 5, 7 },
 };
 
-/* libavcodec to libopus channel order mapping, passed to libopus */
-static const uint8_t libavcodec_libopus_channel_map[8][8] = {
+/* libav to libopus channel order mapping, passed to libopus */
+static const uint8_t libav_libopus_channel_map[8][8] = {
     { 0 },
     { 0, 1 },
     { 0, 1, 2 },
@@ -87,7 +87,7 @@ static void libopus_write_header(AVCodecContext *avctx, int stream_count,
     bytestream_put_buffer(&p, "OpusHead", 8);
     bytestream_put_byte(&p, 1); /* Version */
     bytestream_put_byte(&p, channels);
-    bytestream_put_le16(&p, avctx->delay); /* Lookahead samples at 48kHz */
+    bytestream_put_le16(&p, avctx->initial_padding); /* Lookahead samples at 48kHz */
     bytestream_put_le32(&p, avctx->sample_rate); /* Original sample rate */
     bytestream_put_le16(&p, 0); /* Gain of 0dB is recommended. */
 
@@ -106,13 +106,6 @@ static int libopus_configure_encoder(AVCodecContext *avctx, OpusMSEncoder *enc,
                                      LibopusEncOpts *opts)
 {
     int ret;
-
-    if (avctx->global_quality) {
-        av_log(avctx, AV_LOG_ERROR,
-               "Quality-based encoding not supported, "
-               "please specify a bitrate and VBR setting.\n");
-        return AVERROR(EINVAL);
-    }
 
     ret = opus_multistream_encoder_ctl(enc, OPUS_SET_BITRATE(avctx->bit_rate));
     if (ret != OPUS_OK) {
@@ -156,7 +149,7 @@ static int libopus_configure_encoder(AVCodecContext *avctx, OpusMSEncoder *enc,
     return OPUS_OK;
 }
 
-static av_cold int libopus_encode_init(AVCodecContext *avctx)
+static int av_cold libopus_encode_init(AVCodecContext *avctx)
 {
     LibopusEncContext *opus = avctx->priv_data;
     const uint8_t *channel_mapping;
@@ -166,7 +159,7 @@ static av_cold int libopus_encode_init(AVCodecContext *avctx)
 
     coupled_stream_count = opus_coupled_streams[avctx->channels - 1];
     opus->stream_count   = avctx->channels - coupled_stream_count;
-    channel_mapping      = libavcodec_libopus_channel_map[avctx->channels - 1];
+    channel_mapping      = libav_libopus_channel_map[avctx->channels - 1];
 
     /* FIXME: Opus can handle up to 255 channels. However, the mapping for
      * anything greater than 8 is undefined. */
@@ -284,7 +277,7 @@ static av_cold int libopus_encode_init(AVCodecContext *avctx)
         goto fail;
     }
 
-    ret = opus_multistream_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&avctx->delay));
+    ret = opus_multistream_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&avctx->initial_padding));
     if (ret != OPUS_OK)
         av_log(avctx, AV_LOG_WARNING,
                "Unable to get number of lookahead samples: %s\n",
@@ -313,7 +306,6 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
                               av_get_bytes_per_sample(avctx->sample_fmt);
     uint8_t *audio;
     int ret;
-    int discard_padding;
 
     if (frame) {
         ff_af_queue_add(&opus->afq, frame);
@@ -332,8 +324,10 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
     /* Maximum packet size taken from opusenc in opus-tools. 60ms packets
      * consist of 3 frames in one packet. The maximum frame size is 1275
      * bytes along with the largest possible packet header of 7 bytes. */
-    if ((ret = ff_alloc_packet2(avctx, avpkt, (1275 * 3 + 7) * opus->stream_count)) < 0)
+    if (ret = ff_alloc_packet(avpkt, (1275 * 3 + 7) * opus->stream_count)) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     if (avctx->sample_fmt == AV_SAMPLE_FMT_FLT)
         ret = opus_multistream_encode_float(opus->enc, (float *)audio,
@@ -355,31 +349,12 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
     ff_af_queue_remove(&opus->afq, opus->opts.packet_size,
                        &avpkt->pts, &avpkt->duration);
 
-    discard_padding = opus->opts.packet_size - avpkt->duration;
-    // Check if subtraction resulted in an overflow
-    if ((discard_padding < opus->opts.packet_size) != (avpkt->duration > 0)) {
-        av_free_packet(avpkt);
-        av_free(avpkt);
-        return AVERROR(EINVAL);
-    }
-    if (discard_padding > 0) {
-        uint8_t* side_data = av_packet_new_side_data(avpkt,
-                                                     AV_PKT_DATA_SKIP_SAMPLES,
-                                                     10);
-        if(!side_data) {
-            av_free_packet(avpkt);
-            av_free(avpkt);
-            return AVERROR(ENOMEM);
-        }
-        AV_WL32(side_data + 4, discard_padding);
-    }
-
     *got_packet_ptr = 1;
 
     return 0;
 }
 
-static av_cold int libopus_encode_close(AVCodecContext *avctx)
+static int av_cold libopus_encode_close(AVCodecContext *avctx)
 {
     LibopusEncContext *opus = avctx->priv_data;
 
