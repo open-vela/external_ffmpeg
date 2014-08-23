@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/common.h"
 #include "libavutil/dict.h"
-// #include "libavutil/error.h"
+#include "libavutil/error.h"
 #include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
@@ -780,10 +780,10 @@ unsigned avresample_version(void)
 const char *avresample_license(void)
 {
 #define LICENSE_PREFIX "libavresample license: "
-    return LICENSE_PREFIX FFMPEG_LICENSE + sizeof(LICENSE_PREFIX) - 1;
+    return LICENSE_PREFIX LIBAV_LICENSE + sizeof(LICENSE_PREFIX) - 1;
 }
 
 const char *avresample_configuration(void)
 {
-    return FFMPEG_CONFIGURATION;
+    return LIBAV_CONFIGURATION;
 }
