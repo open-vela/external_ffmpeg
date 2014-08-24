@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,12 +25,7 @@
  * MPEG-1/2 decoder
  */
 
-#define UNCHECKED_BITSTREAM_READER 1
-
 #include "libavutil/attributes.h"
-#include "libavutil/avassert.h"
-#include "libavutil/timecode.h"
-
 #include "internal.h"
 #include "avcodec.h"
 #include "mpegvideo.h"
@@ -38,7 +33,6 @@
 #include "mpeg12.h"
 #include "mpeg12data.h"
 #include "bytestream.h"
-#include "vdpau_internal.h"
 #include "thread.h"
 
 uint8_t ff_mpeg12_static_rl_table_store[2][2][2*MAX_RUN + MAX_LEVEL + 3];
@@ -70,21 +64,21 @@ static const uint8_t table_mb_btype[11][2] = {
 #define INIT_2D_VLC_RL(rl, static_size)\
 {\
     static RL_VLC_ELEM rl_vlc_table[static_size];\
+    INIT_VLC_STATIC(&rl.vlc, TEX_VLC_BITS, rl.n + 2,\
+                    &rl.table_vlc[0][1], 4, 2,\
+                    &rl.table_vlc[0][0], 4, 2, static_size);\
+\
     rl.rl_vlc[0] = rl_vlc_table;\
-    init_2d_vlc_rl(&rl, static_size);\
+    init_2d_vlc_rl(&rl);\
 }
 
-static av_cold void init_2d_vlc_rl(RLTable *rl, unsigned static_size)
+static av_cold void init_2d_vlc_rl(RLTable *rl)
 {
     int i;
-    VLC_TYPE table[680][2] = {{0}};
-    VLC vlc = { .table = table, .table_allocated = static_size };
-    av_assert0(static_size <= FF_ARRAY_ELEMS(table));
-    init_vlc(&vlc, TEX_VLC_BITS, rl->n + 2, &rl->table_vlc[0][1], 4, 2, &rl->table_vlc[0][0], 4, 2, INIT_VLC_USE_NEW_STATIC);
 
-    for (i = 0; i < vlc.table_size; i++) {
-        int code = vlc.table[i][0];
-        int len  = vlc.table[i][1];
+    for (i = 0; i < rl->vlc.table_size; i++) {
+        int code = rl->vlc.table[i][0];
+        int len  = rl->vlc.table[i][1];
         int level, run;
 
         if (len == 0) { // illegal code
@@ -200,7 +194,7 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
 */
 
     for (i = 0; i < buf_size; i++) {
-        av_assert1(pc->frame_start_found >= 0 && pc->frame_start_found <= 4);
+        assert(pc->frame_start_found >= 0 && pc->frame_start_found <= 4);
         if (pc->frame_start_found & 1) {
             if (state == EXT_START_CODE && (buf[i] & 0xF0) != 0x80)
                 pc->frame_start_found--;
@@ -241,4 +235,3 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
     pc->state = state;
     return END_NOT_FOUND;
 }
-

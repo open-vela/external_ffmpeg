@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,7 +39,7 @@ static int dxtory_decode_v1_rgb(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *dst;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * (int64_t)bpp) {
+    if (src_size < avctx->width * avctx->height * bpp) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -65,7 +65,7 @@ static int dxtory_decode_v1_410(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y1, *Y2, *Y3, *Y4, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 9L / 8) {
+    if (src_size < avctx->width * avctx->height * 18 / 16) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -108,7 +108,7 @@ static int dxtory_decode_v1_420(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y1, *Y2, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 3L / 2) {
+    if (src_size < avctx->width * avctx->height * 3 / 2) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -145,7 +145,7 @@ static int dxtory_decode_v1_444(AVCodecContext *avctx, AVFrame *pic,
     uint8_t *Y, *U, *V;
     int ret;
 
-    if (src_size < avctx->width * avctx->height * 3L) {
+    if (src_size < avctx->width * avctx->height * 3) {
         av_log(avctx, AV_LOG_ERROR, "packet too small\n");
         return AVERROR_INVALIDDATA;
     }
@@ -171,9 +171,9 @@ static int dxtory_decode_v1_444(AVCodecContext *avctx, AVFrame *pic,
     return 0;
 }
 
-static const uint8_t def_lru[8] = { 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xFF };
-static const uint8_t def_lru_555[8] = { 0x00, 0x08, 0x10, 0x18, 0x1F };
-static const uint8_t def_lru_565[8] = { 0x00, 0x08, 0x10, 0x20, 0x30, 0x3F };
+const uint8_t def_lru[8] = { 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xFF };
+const uint8_t def_lru_555[8] = { 0x00, 0x08, 0x10, 0x18, 0x1F };
+const uint8_t def_lru_565[8] = { 0x00, 0x08, 0x10, 0x20, 0x30, 0x3F };
 
 static inline uint8_t decode_sym(GetBitContext *gb, uint8_t lru[8])
 {
@@ -410,7 +410,7 @@ static int dxtory_decode_v2_410(AVCodecContext *avctx, AVFrame *pic,
 {
     GetByteContext gb;
     GetBitContext  gb2;
-    int nslices, slice, slice_height;
+    int nslices, slice, slice_height, ref_slice_height;
     int cur_y, next_y;
     uint32_t off, slice_size;
     uint8_t *Y, *U, *V;
@@ -424,12 +424,13 @@ static int dxtory_decode_v2_410(AVCodecContext *avctx, AVFrame *pic,
         return AVERROR_INVALIDDATA;
     }
 
-    if (!nslices) {
+    if (!nslices || avctx->height % nslices) {
         avpriv_request_sample(avctx, "%d slices for %dx%d", nslices,
                               avctx->width, avctx->height);
         return AVERROR_PATCHWELCOME;
     }
 
+    ref_slice_height = avctx->height / nslices;
     if ((avctx->width & 3) || (avctx->height & 3)) {
         avpriv_request_sample(avctx, "Frame dimensions %dx%d",
                               avctx->width, avctx->height);
@@ -444,9 +445,9 @@ static int dxtory_decode_v2_410(AVCodecContext *avctx, AVFrame *pic,
     V = pic->data[2];
 
     cur_y  = 0;
+    next_y = ref_slice_height;
     for (slice = 0; slice < nslices; slice++) {
         slice_size   = bytestream2_get_le32(&gb);
-        next_y = ((slice + 1) * avctx->height) / nslices;
         slice_height = (next_y & ~3) - (cur_y & ~3);
         if (slice_size > src_size - off) {
             av_log(avctx, AV_LOG_ERROR,
@@ -474,6 +475,7 @@ static int dxtory_decode_v2_410(AVCodecContext *avctx, AVFrame *pic,
         V += pic->linesize[2] * (slice_height >> 2);
         off += slice_size;
         cur_y   = next_y;
+        next_y += ref_slice_height;
     }
 
     return 0;
@@ -512,7 +514,7 @@ static int dxtory_decode_v2_420(AVCodecContext *avctx, AVFrame *pic,
 {
     GetByteContext gb;
     GetBitContext  gb2;
-    int nslices, slice, slice_height;
+    int nslices, slice, slice_height, ref_slice_height;
     int cur_y, next_y;
     uint32_t off, slice_size;
     uint8_t *Y, *U, *V;
@@ -526,12 +528,13 @@ static int dxtory_decode_v2_420(AVCodecContext *avctx, AVFrame *pic,
         return AVERROR_INVALIDDATA;
     }
 
-    if (!nslices) {
+    if (!nslices || avctx->height % nslices) {
         avpriv_request_sample(avctx, "%d slices for %dx%d", nslices,
                               avctx->width, avctx->height);
         return AVERROR_PATCHWELCOME;
     }
 
+    ref_slice_height = avctx->height / nslices;
     if ((avctx->width & 1) || (avctx->height & 1)) {
         avpriv_request_sample(avctx, "Frame dimensions %dx%d",
                               avctx->width, avctx->height);
@@ -546,9 +549,9 @@ static int dxtory_decode_v2_420(AVCodecContext *avctx, AVFrame *pic,
     V = pic->data[2];
 
     cur_y  = 0;
+    next_y = ref_slice_height;
     for (slice = 0; slice < nslices; slice++) {
         slice_size   = bytestream2_get_le32(&gb);
-        next_y = ((slice + 1) * avctx->height) / nslices;
         slice_height = (next_y & ~1) - (cur_y & ~1);
         if (slice_size > src_size - off) {
             av_log(avctx, AV_LOG_ERROR,
@@ -576,6 +579,7 @@ static int dxtory_decode_v2_420(AVCodecContext *avctx, AVFrame *pic,
         V += pic->linesize[2] * (slice_height >> 1);
         off += slice_size;
         cur_y   = next_y;
+        next_y += ref_slice_height;
     }
 
     return 0;
