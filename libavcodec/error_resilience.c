@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,7 +43,7 @@
 static void set_mv_strides(ERContext *s, int *mv_step, int *stride)
 {
     if (s->avctx->codec_id == AV_CODEC_ID_H264) {
-        av_assert0(s->quarter_sample);
+        assert(s->quarter_sample);
         *mv_step = 4;
         *stride  = s->mb_width * 4;
     } else {
@@ -136,73 +136,11 @@ static void guess_dc(ERContext *s, int16_t *dc, int w,
                      int h, int stride, int is_luma)
 {
     int b_x, b_y;
-    int16_t  (*col )[4] = av_malloc_array(stride, h*sizeof( int16_t)*4);
-    uint32_t (*dist)[4] = av_malloc_array(stride, h*sizeof(uint32_t)*4);
-
-    if(!col || !dist) {
-        av_log(s->avctx, AV_LOG_ERROR, "guess_dc() is out of memory\n");
-        goto fail;
-    }
-
-    for(b_y=0; b_y<h; b_y++){
-        int color= 1024;
-        int distance= -1;
-        for(b_x=0; b_x<w; b_x++){
-            int mb_index_j= (b_x>>is_luma) + (b_y>>is_luma)*s->mb_stride;
-            int error_j= s->error_status_table[mb_index_j];
-            int intra_j = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
-            if(intra_j==0 || !(error_j&ER_DC_ERROR)){
-                color= dc[b_x + b_y*stride];
-                distance= b_x;
-            }
-            col [b_x + b_y*stride][1]= color;
-            dist[b_x + b_y*stride][1]= distance >= 0 ? b_x-distance : 9999;
-        }
-        color= 1024;
-        distance= -1;
-        for(b_x=w-1; b_x>=0; b_x--){
-            int mb_index_j= (b_x>>is_luma) + (b_y>>is_luma)*s->mb_stride;
-            int error_j= s->error_status_table[mb_index_j];
-            int intra_j = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
-            if(intra_j==0 || !(error_j&ER_DC_ERROR)){
-                color= dc[b_x + b_y*stride];
-                distance= b_x;
-            }
-            col [b_x + b_y*stride][0]= color;
-            dist[b_x + b_y*stride][0]= distance >= 0 ? distance-b_x : 9999;
-        }
-    }
-    for(b_x=0; b_x<w; b_x++){
-        int color= 1024;
-        int distance= -1;
-        for(b_y=0; b_y<h; b_y++){
-            int mb_index_j= (b_x>>is_luma) + (b_y>>is_luma)*s->mb_stride;
-            int error_j= s->error_status_table[mb_index_j];
-            int intra_j = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
-            if(intra_j==0 || !(error_j&ER_DC_ERROR)){
-                color= dc[b_x + b_y*stride];
-                distance= b_y;
-            }
-            col [b_x + b_y*stride][3]= color;
-            dist[b_x + b_y*stride][3]= distance >= 0 ? b_y-distance : 9999;
-        }
-        color= 1024;
-        distance= -1;
-        for(b_y=h-1; b_y>=0; b_y--){
-            int mb_index_j= (b_x>>is_luma) + (b_y>>is_luma)*s->mb_stride;
-            int error_j= s->error_status_table[mb_index_j];
-            int intra_j = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
-            if(intra_j==0 || !(error_j&ER_DC_ERROR)){
-                color= dc[b_x + b_y*stride];
-                distance= b_y;
-            }
-            col [b_x + b_y*stride][2]= color;
-            dist[b_x + b_y*stride][2]= distance >= 0 ? distance-b_y : 9999;
-        }
-    }
 
     for (b_y = 0; b_y < h; b_y++) {
         for (b_x = 0; b_x < w; b_x++) {
+            int color[4]    = { 1024, 1024, 1024, 1024 };
+            int distance[4] = { 9999, 9999, 9999, 9999 };
             int mb_index, error, j;
             int64_t guess, weight_sum;
             mb_index = (b_x >> is_luma) + (b_y >> is_luma) * s->mb_stride;
@@ -213,21 +151,66 @@ static void guess_dc(ERContext *s, int16_t *dc, int w,
             if (!(error & ER_DC_ERROR))
                 continue; // dc-ok
 
+            /* right block */
+            for (j = b_x + 1; j < w; j++) {
+                int mb_index_j = (j >> is_luma) + (b_y >> is_luma) * s->mb_stride;
+                int error_j    = s->error_status_table[mb_index_j];
+                int intra_j    = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
+                if (intra_j == 0 || !(error_j & ER_DC_ERROR)) {
+                    color[0]    = dc[j + b_y * stride];
+                    distance[0] = j - b_x;
+                    break;
+                }
+            }
+
+            /* left block */
+            for (j = b_x - 1; j >= 0; j--) {
+                int mb_index_j = (j >> is_luma) + (b_y >> is_luma) * s->mb_stride;
+                int error_j    = s->error_status_table[mb_index_j];
+                int intra_j    = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
+                if (intra_j == 0 || !(error_j & ER_DC_ERROR)) {
+                    color[1]    = dc[j + b_y * stride];
+                    distance[1] = b_x - j;
+                    break;
+                }
+            }
+
+            /* bottom block */
+            for (j = b_y + 1; j < h; j++) {
+                int mb_index_j = (b_x >> is_luma) + (j >> is_luma) * s->mb_stride;
+                int error_j    = s->error_status_table[mb_index_j];
+                int intra_j    = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
+
+                if (intra_j == 0 || !(error_j & ER_DC_ERROR)) {
+                    color[2]    = dc[b_x + j * stride];
+                    distance[2] = j - b_y;
+                    break;
+                }
+            }
+
+            /* top block */
+            for (j = b_y - 1; j >= 0; j--) {
+                int mb_index_j = (b_x >> is_luma) + (j >> is_luma) * s->mb_stride;
+                int error_j    = s->error_status_table[mb_index_j];
+                int intra_j    = IS_INTRA(s->cur_pic.mb_type[mb_index_j]);
+                if (intra_j == 0 || !(error_j & ER_DC_ERROR)) {
+                    color[3]    = dc[b_x + j * stride];
+                    distance[3] = b_y - j;
+                    break;
+                }
+            }
+
             weight_sum = 0;
             guess      = 0;
             for (j = 0; j < 4; j++) {
-                int64_t weight  = 256 * 256 * 256 * 16 / FFMAX(dist[b_x + b_y*stride][j], 1);
-                guess          += weight*(int64_t)col[b_x + b_y*stride][j];
+                int64_t weight  = 256 * 256 * 256 * 16 / distance[j];
+                guess          += weight * (int64_t) color[j];
                 weight_sum     += weight;
             }
             guess = (guess + weight_sum / 2) / weight_sum;
             dc[b_x + b_y * stride] = guess;
         }
     }
-
-fail:
-    av_freep(&col);
-    av_freep(&dist);
 }
 
 /**
@@ -397,14 +380,6 @@ static void guess_mv(ERContext *s)
         fixed[mb_xy] = f;
         if (f == MV_FROZEN)
             num_avail++;
-        else if(s->last_pic.f->data[0] && s->last_pic.motion_val[0]){
-            const int mb_y= mb_xy / s->mb_stride;
-            const int mb_x= mb_xy % s->mb_stride;
-            const int mot_index= (mb_x + mb_y*mot_stride) * mot_step;
-            s->cur_pic.motion_val[0][mot_index][0]= s->last_pic.motion_val[0][mot_index][0];
-            s->cur_pic.motion_val[0][mot_index][1]= s->last_pic.motion_val[0][mot_index][1];
-            s->cur_pic.ref_index[0][4*mb_xy]      = s->last_pic.ref_index[0][4*mb_xy];
-        }
     }
 
     if ((!(s->avctx->error_concealment&FF_EC_GUESS_MVS)) ||
@@ -455,8 +430,6 @@ static void guess_mv(ERContext *s)
 
                     if (fixed[mb_xy] == MV_FROZEN)
                         continue;
-                    av_assert1(!IS_INTRA(s->cur_pic.mb_type[mb_xy]));
-                    av_assert1(s->last_pic.f && s->last_pic.f->data[0]);
 
                     j = 0;
                     if (mb_x > 0             && fixed[mb_xy - 1]         == MV_FROZEN)
@@ -571,7 +544,7 @@ skip_mean_and_median:
                     /* zero MV */
                     pred_count++;
 
-                    if (!fixed[mb_xy] && 0) {
+                    if (!fixed[mb_xy]) {
                         if (s->avctx->codec_id == AV_CODEC_ID_H264) {
                             // FIXME
                         } else {
@@ -686,9 +659,6 @@ static int is_intra_more_likely(ERContext *s)
     if (!s->last_pic.f || !s->last_pic.f->data[0])
         return 1; // no previous frame available -> use spatial prediction
 
-    if (s->avctx->error_concealment & FF_EC_FAVOR_INTER)
-        return 0;
-
     undamaged_count = 0;
     for (i = 0; i < s->mb_num; i++) {
         const int mb_xy = s->mb_index2xy[i];
@@ -703,11 +673,15 @@ static int is_intra_more_likely(ERContext *s)
     if (undamaged_count < 5)
         return 0; // almost all MBs damaged -> use temporal prediction
 
+#if FF_API_XVMC
+FF_DISABLE_DEPRECATION_WARNINGS
     // prevent dsp.sad() check, that requires access to the image
-    if (CONFIG_XVMC    &&
-        s->avctx->hwaccel && s->avctx->hwaccel->decode_mb &&
+    if (CONFIG_MPEG_XVMC_DECODER    &&
+        s->avctx->xvmc_acceleration &&
         s->cur_pic.f->pict_type == AV_PICTURE_TYPE_I)
         return 1;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif /* FF_API_XVMC */
 
     skip_amount     = FFMAX(undamaged_count / 50, 1); // check only up to 50 MBs
     is_intra_likely = 0;
@@ -741,7 +715,6 @@ static int is_intra_more_likely(ERContext *s)
                 }
                 is_intra_likely += s->mecc->sad[0](NULL, last_mb_ptr, mb_ptr,
                                                    linesize[0], 16);
-                // FIXME need await_progress() here
                 is_intra_likely -= s->mecc->sad[0](NULL, last_mb_ptr,
                                                    last_mb_ptr + linesize[0] * 16,
                                                    linesize[0], 16);
@@ -753,7 +726,6 @@ static int is_intra_more_likely(ERContext *s)
             }
         }
     }
-//      av_log(NULL, AV_LOG_ERROR, "is_intra_likely: %d type:%d\n", is_intra_likely, s->pict_type);
     return is_intra_likely > 0;
 }
 
@@ -766,17 +738,6 @@ void ff_er_frame_start(ERContext *s)
            s->mb_stride * s->mb_height * sizeof(uint8_t));
     s->error_count    = 3 * s->mb_num;
     s->error_occurred = 0;
-}
-
-static int er_supported(ERContext *s)
-{
-    if(s->avctx->hwaccel && s->avctx->hwaccel->decode_slice           ||
-       s->avctx->codec->capabilities&CODEC_CAP_HWACCEL_VDPAU          ||
-       !s->cur_pic.f                                                  ||
-       s->cur_pic.field_picture
-    )
-        return 0;
-    return 1;
 }
 
 /**
@@ -795,7 +756,7 @@ void ff_er_add_slice(ERContext *s, int startx, int starty,
     const int end_xy   = s->mb_index2xy[end_i];
     int mask           = -1;
 
-    if (s->avctx->hwaccel && s->avctx->hwaccel->decode_slice)
+    if (s->avctx->hwaccel)
         return;
 
     if (start_i > end_i || start_xy > end_xy) {
@@ -844,15 +805,13 @@ void ff_er_add_slice(ERContext *s, int startx, int starty,
 
     s->error_status_table[start_xy] |= VP_START;
 
-    if (start_xy > 0 && !(s->avctx->active_thread_type & FF_THREAD_SLICE) &&
-        er_supported(s) && s->avctx->skip_top * s->mb_width < start_i) {
+    if (start_xy > 0 && s->avctx->thread_count <= 1 &&
+        s->avctx->skip_top * s->mb_width < start_i) {
         int prev_status = s->error_status_table[s->mb_index2xy[start_i - 1]];
 
         prev_status &= ~ VP_START;
-        if (prev_status != (ER_MV_END | ER_DC_END | ER_AC_END)) {
-            s->error_occurred = 1;
+        if (prev_status != (ER_MV_END | ER_DC_END | ER_AC_END))
             s->error_count = INT_MAX;
-        }
     }
 }
 
@@ -864,69 +823,21 @@ void ff_er_frame_end(ERContext *s)
     int threshold_part[4] = { 100, 100, 100 };
     int threshold = 50;
     int is_intra_likely;
-    int size = s->b8_stride * 2 * s->mb_height;
 
     /* We do not support ER of field pictures yet,
      * though it should not crash if enabled. */
     if (!s->avctx->error_concealment || s->error_count == 0            ||
-        s->avctx->lowres                                               ||
-        !er_supported(s)                                               ||
+        s->avctx->hwaccel                                              ||
+        !s->cur_pic.f                                                  ||
+        s->cur_pic.field_picture                                       ||
         s->error_count == 3 * s->mb_width *
                           (s->avctx->skip_top + s->avctx->skip_bottom)) {
         return;
-    }
-    for (mb_x = 0; mb_x < s->mb_width; mb_x++) {
-        int status = s->error_status_table[mb_x + (s->mb_height - 1) * s->mb_stride];
-        if (status != 0x7F)
-            break;
-    }
-
-    if (   mb_x == s->mb_width
-        && s->avctx->codec_id == AV_CODEC_ID_MPEG2VIDEO
-        && (s->avctx->height&16)
-        && s->error_count == 3 * s->mb_width * (s->avctx->skip_top + s->avctx->skip_bottom + 1)
-    ) {
-        av_log(s->avctx, AV_LOG_DEBUG, "ignoring last missing slice\n");
-        return;
-    }
-
-    if (s->last_pic.f) {
-        if (s->last_pic.f->width  != s->cur_pic.f->width  ||
-            s->last_pic.f->height != s->cur_pic.f->height ||
-            s->last_pic.f->format != s->cur_pic.f->format) {
-            av_log(s->avctx, AV_LOG_WARNING, "Cannot use previous picture in error concealment\n");
-            memset(&s->last_pic, 0, sizeof(s->last_pic));
-        }
-    }
-    if (s->next_pic.f) {
-        if (s->next_pic.f->width  != s->cur_pic.f->width  ||
-            s->next_pic.f->height != s->cur_pic.f->height ||
-            s->next_pic.f->format != s->cur_pic.f->format) {
-            av_log(s->avctx, AV_LOG_WARNING, "Cannot use next picture in error concealment\n");
-            memset(&s->next_pic, 0, sizeof(s->next_pic));
-        }
-    }
+    };
 
     if (!s->cur_pic.motion_val[0] || !s->cur_pic.ref_index[0]) {
-        av_log(s->avctx, AV_LOG_ERROR, "Warning MVs not available\n");
-
-        for (i = 0; i < 2; i++) {
-            s->ref_index_buf[i]  = av_buffer_allocz(s->mb_stride * s->mb_height * 4 * sizeof(uint8_t));
-            s->motion_val_buf[i] = av_buffer_allocz((size + 4) * 2 * sizeof(uint16_t));
-            if (!s->ref_index_buf[i] || !s->motion_val_buf[i])
-                break;
-            s->cur_pic.ref_index[i]  = s->ref_index_buf[i]->data;
-            s->cur_pic.motion_val[i] = (int16_t (*)[2])s->motion_val_buf[i]->data + 4;
-        }
-        if (i < 2) {
-            for (i = 0; i < 2; i++) {
-                av_buffer_unref(&s->ref_index_buf[i]);
-                av_buffer_unref(&s->motion_val_buf[i]);
-                s->cur_pic.ref_index[i]  = NULL;
-                s->cur_pic.motion_val[i] = NULL;
-            }
-            return;
-        }
+        av_log(s->avctx, AV_LOG_ERROR, "MVs not available, ER not possible.\n");
+        return;
     }
 
     if (s->avctx->debug & FF_DEBUG_ER) {
@@ -940,7 +851,6 @@ void ff_er_frame_end(ERContext *s)
         }
     }
 
-#if 1
     /* handle overlapping slices */
     for (error_type = 1; error_type <= 3; error_type++) {
         int end_ok = 0;
@@ -961,8 +871,7 @@ void ff_er_frame_end(ERContext *s)
                 end_ok = 0;
         }
     }
-#endif
-#if 1
+
     /* handle slices with partitions of different length */
     if (s->partitioned_frame) {
         int end_ok = 0;
@@ -985,7 +894,7 @@ void ff_er_frame_end(ERContext *s)
                 end_ok = 0;
         }
     }
-#endif
+
     /* handle missing slices */
     if (s->avctx->err_recognition & AV_EF_EXPLODE) {
         int end_ok = 1;
@@ -1012,7 +921,6 @@ void ff_er_frame_end(ERContext *s)
         }
     }
 
-#if 1
     /* backward mark errors */
     distance = 9999999;
     for (error_type = 1; error_type <= 3; error_type++) {
@@ -1037,7 +945,6 @@ void ff_er_frame_end(ERContext *s)
                 distance = 9999999;
         }
     }
-#endif
 
     /* forward mark errors */
     error = 0;
@@ -1052,23 +959,22 @@ void ff_er_frame_end(ERContext *s)
             s->error_status_table[mb_xy] |= error;
         }
     }
-#if 1
+
     /* handle not partitioned case */
     if (!s->partitioned_frame) {
         for (i = 0; i < s->mb_num; i++) {
             const int mb_xy = s->mb_index2xy[i];
-            int error = s->error_status_table[mb_xy];
+            error = s->error_status_table[mb_xy];
             if (error & ER_MB_ERROR)
                 error |= ER_MB_ERROR;
             s->error_status_table[mb_xy] = error;
         }
     }
-#endif
 
     dc_error = ac_error = mv_error = 0;
     for (i = 0; i < s->mb_num; i++) {
         const int mb_xy = s->mb_index2xy[i];
-        int error = s->error_status_table[mb_xy];
+        error = s->error_status_table[mb_xy];
         if (error & ER_DC_ERROR)
             dc_error++;
         if (error & ER_AC_ERROR)
@@ -1076,15 +982,15 @@ void ff_er_frame_end(ERContext *s)
         if (error & ER_MV_ERROR)
             mv_error++;
     }
-    av_log(s->avctx, AV_LOG_INFO, "concealing %d DC, %d AC, %d MV errors in %c frame\n",
-           dc_error, ac_error, mv_error, av_get_picture_type_char(s->cur_pic.f->pict_type));
+    av_log(s->avctx, AV_LOG_INFO, "concealing %d DC, %d AC, %d MV errors\n",
+           dc_error, ac_error, mv_error);
 
     is_intra_likely = is_intra_more_likely(s);
 
     /* set unknown mb-type to most likely */
     for (i = 0; i < s->mb_num; i++) {
         const int mb_xy = s->mb_index2xy[i];
-        int error = s->error_status_table[mb_xy];
+        error = s->error_status_table[mb_xy];
         if (!((error & ER_DC_ERROR) && (error & ER_MV_ERROR)))
             continue;
 
@@ -1112,7 +1018,7 @@ void ff_er_frame_end(ERContext *s)
             const int mv_dir  = dir ? MV_DIR_BACKWARD : MV_DIR_FORWARD;
             int mv_type;
 
-            int error = s->error_status_table[mb_xy];
+            error = s->error_status_table[mb_xy];
 
             if (IS_INTRA(mb_type))
                 continue; // intra
@@ -1149,7 +1055,7 @@ void ff_er_frame_end(ERContext *s)
                 const int mb_type = s->cur_pic.mb_type[mb_xy];
                 int mv_dir = MV_DIR_FORWARD | MV_DIR_BACKWARD;
 
-                int error = s->error_status_table[mb_xy];
+                error = s->error_status_table[mb_xy];
 
                 if (IS_INTRA(mb_type))
                     continue;
@@ -1167,7 +1073,6 @@ void ff_er_frame_end(ERContext *s)
                     int time_pp = s->pp_time;
                     int time_pb = s->pb_time;
 
-                    av_assert0(s->avctx->codec_id != AV_CODEC_ID_H264);
                     ff_thread_await_progress(s->next_pic.tf, mb_y, 0);
 
                     s->mv[0][0][0] = s->next_pic.motion_val[0][xy][0] *  time_pb            / time_pp;
@@ -1188,9 +1093,13 @@ void ff_er_frame_end(ERContext *s)
     } else
         guess_mv(s);
 
-    /* the filters below manipulate raw image, skip them */
-    if (CONFIG_XVMC && s->avctx->hwaccel && s->avctx->hwaccel->decode_mb)
+#if FF_API_XVMC
+FF_DISABLE_DEPRECATION_WARNINGS
+    /* the filters below are not XvMC compatible, skip them */
+    if (CONFIG_MPEG_XVMC_DECODER && s->avctx->xvmc_acceleration)
         goto ec_clean;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif /* FF_API_XVMC */
     /* fill DC for inter blocks */
     for (mb_y = 0; mb_y < s->mb_height; mb_y++) {
         for (mb_x = 0; mb_x < s->mb_width; mb_x++) {
@@ -1200,7 +1109,7 @@ void ff_er_frame_end(ERContext *s)
             const int mb_xy   = mb_x + mb_y * s->mb_stride;
             const int mb_type = s->cur_pic.mb_type[mb_xy];
 
-            // error = s->error_status_table[mb_xy];
+            error = s->error_status_table[mb_xy];
 
             if (IS_INTRA(mb_type) && s->partitioned_frame)
                 continue;
@@ -1235,17 +1144,15 @@ void ff_er_frame_end(ERContext *s)
             s->dc_val[2][mb_x + mb_y * s->mb_stride] = (dcv + 4) >> 3;
         }
     }
-#if 1
+
     /* guess DC for damaged blocks */
-    guess_dc(s, s->dc_val[0], s->mb_width*2, s->mb_height*2, s->b8_stride, 1);
-    guess_dc(s, s->dc_val[1], s->mb_width  , s->mb_height  , s->mb_stride, 0);
-    guess_dc(s, s->dc_val[2], s->mb_width  , s->mb_height  , s->mb_stride, 0);
-#endif
+    guess_dc(s, s->dc_val[0], s->mb_width * 2, s->mb_height * 2, s->b8_stride, 1);
+    guess_dc(s, s->dc_val[1], s->mb_width, s->mb_height, s->mb_stride, 0);
+    guess_dc(s, s->dc_val[2], s->mb_width, s->mb_height, s->mb_stride, 0);
 
     /* filter luma DC */
     filter181(s->dc_val[0], s->mb_width * 2, s->mb_height * 2, s->b8_stride);
 
-#if 1
     /* render DC only intra */
     for (mb_y = 0; mb_y < s->mb_height; mb_y++) {
         for (mb_x = 0; mb_x < s->mb_width; mb_x++) {
@@ -1253,7 +1160,7 @@ void ff_er_frame_end(ERContext *s)
             const int mb_xy   = mb_x + mb_y * s->mb_stride;
             const int mb_type = s->cur_pic.mb_type[mb_xy];
 
-            int error = s->error_status_table[mb_xy];
+            error = s->error_status_table[mb_xy];
 
             if (IS_INTER(mb_type))
                 continue;
@@ -1267,7 +1174,6 @@ void ff_er_frame_end(ERContext *s)
             put_dc(s, dest_y, dest_cb, dest_cr, mb_x, mb_y);
         }
     }
-#endif
 
     if (s->avctx->error_concealment & FF_EC_DEBLOCK) {
         /* filter horizontal block boundaries */
@@ -1298,13 +1204,6 @@ ec_clean:
             s->mbskip_table[mb_xy] = 0;
         }
         s->mbintra_table[mb_xy] = 1;
-    }
-
-    for (i = 0; i < 2; i++) {
-        av_buffer_unref(&s->ref_index_buf[i]);
-        av_buffer_unref(&s->motion_val_buf[i]);
-        s->cur_pic.ref_index[i]  = NULL;
-        s->cur_pic.motion_val[i] = NULL;
     }
 
     memset(&s->cur_pic, 0, sizeof(ERPicture));
