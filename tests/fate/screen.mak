@@ -1,8 +1,8 @@
 # FIXME dropped frames in this test because of coarse timebase
-FATE_SCREEN-$(call DEMDEC, AVI, CSCD) += fate-cscd
+FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, CSCD) += fate-cscd
 fate-cscd: CMD = framecrc -i $(TARGET_SAMPLES)/CSCD/sample_video.avi -an -pix_fmt rgb24
 
-FATE_SCREEN-$(call DEMDEC, AVI, DXTORY) += fate-dxtory
+FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, DXTORY) += fate-dxtory
 fate-dxtory: CMD = framecrc -i $(TARGET_SAMPLES)/dxtory/dxtory_mic.avi
 
 FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, FIC) += fate-fic-avi
@@ -26,7 +26,7 @@ fate-fraps-v4: CMD = framecrc -i $(TARGET_SAMPLES)/fraps/WoW_2006-11-03_14-58-17
 FATE_FRAPS += fate-fraps-v5
 fate-fraps-v5: CMD = framecrc -i $(TARGET_SAMPLES)/fraps/fraps-v5-bouncing-balls-partial.avi
 
-FATE_SCREEN-$(call DEMDEC, AVI, FRAPS) += $(FATE_FRAPS)
+FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, FRAPS) += $(FATE_FRAPS)
 fate-fraps: $(FATE_FRAPS)
 
 FATE_TSCC += fate-tscc-15bit
@@ -35,7 +35,7 @@ fate-tscc-15bit: CMD = framecrc -i $(TARGET_SAMPLES)/tscc/oneminute.avi -t 15 -p
 FATE_TSCC += fate-tscc-32bit
 fate-tscc-32bit: CMD = framecrc -i $(TARGET_SAMPLES)/tscc/2004-12-17-uebung9-partial.avi -pix_fmt rgb24 -an
 
-FATE_SCREEN-$(call DEMDEC, AVI, TSCC) += $(FATE_TSCC)
+FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, TSCC) += $(FATE_TSCC)
 fate-tscc: $(FATE_TSCC)
 
 FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, TSCC2) += fate-tscc2
@@ -47,7 +47,7 @@ fate-vmnc-16bit: CMD = framecrc -i $(TARGET_SAMPLES)/VMnc/test.avi -pix_fmt rgb2
 FATE_VMNC += fate-vmnc-32bit
 fate-vmnc-32bit: CMD = framecrc -i $(TARGET_SAMPLES)/VMnc/VS2k5DebugDemo-01-partial.avi -pix_fmt rgb24
 
-FATE_SCREEN-$(call DEMDEC, AVI, VMNC) += $(FATE_VMNC)
+FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, VMNC) += $(FATE_VMNC)
 fate-vmnc: $(FATE_VMNC)
 
 FATE_ZMBV += fate-zmbv-8bit
@@ -62,10 +62,5 @@ fate-zmbv-16bit: CMD = framecrc -i $(TARGET_SAMPLES)/zmbv/zmbv_16bit.avi -pix_fm
 FATE_ZMBV += fate-zmbv-32bit
 fate-zmbv-32bit: CMD = framecrc -i $(TARGET_SAMPLES)/zmbv/zmbv_32bit.avi -pix_fmt rgb24 -t 25
 
-FATE_SCREEN-$(call DEMDEC, AVI, ZMBV) += $(FATE_ZMBV)
+FATE_SAMPLES_AVCONV-$(call DEMDEC, AVI, ZMBV) += $(FATE_ZMBV)
 fate-zmbv: $(FATE_ZMBV)
-
-FATE_SCREEN += $(FATE_SCREEN-yes)
-
-FATE_SAMPLES_FFMPEG += $(FATE_SCREEN)
-fate-screen: $(FATE_SCREEN)
