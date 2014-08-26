@@ -2,20 +2,20 @@
  * AAC encoder
  * Copyright (C) 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -145,7 +145,7 @@ static const uint8_t aac_chan_configs[6][5] = {
 };
 
 /**
- * Table to remap channels from libavcodec's default order to AAC order.
+ * Table to remap channels from Libav's default order to AAC order.
  */
 static const uint8_t aac_chan_maps[AAC_MAX_CHANNELS][AAC_MAX_CHANNELS] = {
     { 0 },
@@ -384,7 +384,8 @@ static void encode_scale_factors(AVCodecContext *avctx, AACEncContext *s,
         for (i = 0; i < sce->ics.max_sfb; i++) {
             if (!sce->zeroes[w*16 + i]) {
                 diff = sce->sf_idx[w*16 + i] - off + SCALE_DIFF_ZERO;
-                av_assert0(diff >= 0 && diff <= 120);
+                if (diff < 0 || diff > 120)
+                    av_log(avctx, AV_LOG_ERROR, "Scalefactor difference is too big to be coded\n");
                 off = sce->sf_idx[w*16 + i];
                 put_bits(&s->pb, ff_aac_scalefactor_bits[diff], ff_aac_scalefactor_code[diff]);
             }
@@ -477,7 +478,7 @@ static void put_bitstream_info(AACEncContext *s, const char *name)
 
 /*
  * Copy input samples.
- * Channels are reordered from libavcodec's default order to AAC order.
+ * Channels are reordered from Libav's default order to AAC order.
  */
 static void copy_input_samples(AACEncContext *s, const AVFrame *frame)
 {
@@ -570,8 +571,11 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         }
         start_ch += chans;
     }
-    if ((ret = ff_alloc_packet2(avctx, avpkt, 8192 * s->channels)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, 768 * s->channels))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
+
     do {
         int frame_bits;
 
@@ -764,12 +768,9 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     if (ret = ff_psy_init(&s->psy, avctx, 2, sizes, lengths, s->chan_map[0], grouping))
         goto fail;
     s->psypp = ff_psy_preprocess_init(avctx);
-    s->coder = &ff_aac_coders[s->options.aac_coder];
+    s->coder = &ff_aac_coders[2];
 
-    if (HAVE_MIPSDSPR1)
-        ff_aac_coder_init_mips(s);
-
-    s->lambda = avctx->global_quality > 0 ? avctx->global_quality : 120;
+    s->lambda = avctx->global_quality ? avctx->global_quality : 120;
 
     ff_aac_tableinit();
 
@@ -791,11 +792,6 @@ static const AVOption aacenc_options[] = {
         {"auto",     "Selected by the Encoder", 0, AV_OPT_TYPE_CONST, {.i64 = -1 }, INT_MIN, INT_MAX, AACENC_FLAGS, "stereo_mode"},
         {"ms_off",   "Disable Mid/Side coding", 0, AV_OPT_TYPE_CONST, {.i64 =  0 }, INT_MIN, INT_MAX, AACENC_FLAGS, "stereo_mode"},
         {"ms_force", "Force Mid/Side for the whole frame if possible", 0, AV_OPT_TYPE_CONST, {.i64 =  1 }, INT_MIN, INT_MAX, AACENC_FLAGS, "stereo_mode"},
-    {"aac_coder", "", offsetof(AACEncContext, options.aac_coder), AV_OPT_TYPE_INT, {.i64 = AAC_CODER_TWOLOOP}, 0, AAC_CODER_NB-1, AACENC_FLAGS, "aac_coder"},
-        {"faac",     "FAAC-inspired method",      0, AV_OPT_TYPE_CONST, {.i64 = AAC_CODER_FAAC},    INT_MIN, INT_MAX, AACENC_FLAGS, "aac_coder"},
-        {"anmr",     "ANMR method",               0, AV_OPT_TYPE_CONST, {.i64 = AAC_CODER_ANMR},    INT_MIN, INT_MAX, AACENC_FLAGS, "aac_coder"},
-        {"twoloop",  "Two loop searching method", 0, AV_OPT_TYPE_CONST, {.i64 = AAC_CODER_TWOLOOP}, INT_MIN, INT_MAX, AACENC_FLAGS, "aac_coder"},
-        {"fast",     "Constant quantizer",        0, AV_OPT_TYPE_CONST, {.i64 = AAC_CODER_FAST},    INT_MIN, INT_MAX, AACENC_FLAGS, "aac_coder"},
     {NULL}
 };
 
@@ -804,13 +800,6 @@ static const AVClass aacenc_class = {
     av_default_item_name,
     aacenc_options,
     LIBAVUTIL_VERSION_INT,
-};
-
-/* duplicated from avpriv_mpeg4audio_sample_rates to avoid shared build
- * failures */
-static const int mpeg4audio_sample_rates[16] = {
-    96000, 88200, 64000, 48000, 44100, 32000,
-    24000, 22050, 16000, 12000, 11025, 8000, 7350
 };
 
 AVCodec ff_aac_encoder = {
@@ -822,7 +811,6 @@ AVCodec ff_aac_encoder = {
     .init           = aac_encode_init,
     .encode2        = aac_encode_frame,
     .close          = aac_encode_end,
-    .supported_samplerates = mpeg4audio_sample_rates,
     .capabilities   = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY |
                       CODEC_CAP_EXPERIMENTAL,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_FLTP,
