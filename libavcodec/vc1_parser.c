@@ -3,20 +3,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,7 +63,6 @@ static void vc1_extract_header(AVCodecParserContext *s, AVCodecContext *avctx,
     /* Parse the header we just finished unescaping */
     VC1ParseContext *vpc = s->priv_data;
     GetBitContext gb;
-    int ret;
     vpc->v.s.avctx = avctx;
     vpc->v.parse_only = 1;
     init_get_bits(&gb, buf, buf_size * 8);
@@ -76,12 +75,9 @@ static void vc1_extract_header(AVCodecParserContext *s, AVCodecContext *avctx,
         break;
     case VC1_CODE_FRAME & 0xFF:
         if(vpc->v.profile < PROFILE_ADVANCED)
-            ret = ff_vc1_parse_frame_header    (&vpc->v, &gb);
+            ff_vc1_parse_frame_header    (&vpc->v, &gb);
         else
-            ret = ff_vc1_parse_frame_header_adv(&vpc->v, &gb);
-
-        if (ret < 0)
-            break;
+            ff_vc1_parse_frame_header_adv(&vpc->v, &gb);
 
         /* keep AV_PICTURE_TYPE_BI internal to VC1 */
         if (vpc->v.s.pict_type == AV_PICTURE_TYPE_BI)
@@ -127,7 +123,7 @@ static int vc1_parse(AVCodecParserContext *s,
     uint8_t *unesc_buffer = vpc->unesc_buffer;
     size_t unesc_index = vpc->unesc_index;
     VC1ParseSearchState search_state = vpc->search_state;
-    int start_code_found;
+    int start_code_found = 0;
     int next = END_NOT_FOUND;
     int i = vpc->bytes_to_skip;
 
@@ -237,7 +233,7 @@ static int vc1_parse(AVCodecParserContext *s,
      * the start code we've already seen, or cause extra bytes to be
      * inserted at the start of the unescaped buffer. */
     vpc->bytes_to_skip = 4;
-    if (next < 0 && next != END_NOT_FOUND)
+    if (next < 0 && start_code_found)
         vpc->bytes_to_skip += next;
 
     *poutbuf = buf;
@@ -269,7 +265,6 @@ static av_cold int vc1_parse_init(AVCodecParserContext *s)
 {
     VC1ParseContext *vpc = s->priv_data;
     vpc->v.s.slice_context_count = 1;
-    vpc->v.first_pic_header_flag = 1;
     vpc->prev_start_code = 0;
     vpc->bytes_to_skip = 0;
     vpc->unesc_index = 0;
