@@ -4,20 +4,20 @@
  * based on public domain SHA-1 code by Steve Reid <steve@edmweb.com>
  * and on BSD-licensed SHA-2 code by Aaron D. Gifford
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,9 +40,7 @@ typedef struct AVSHA {
     void     (*transform)(uint32_t *state, const uint8_t buffer[64]);
 } AVSHA;
 
-#if FF_API_CONTEXT_SIZE
 const int av_sha_size = sizeof(AVSHA);
-#endif
 
 struct AVSHA *av_sha_alloc(void)
 {
@@ -100,39 +98,53 @@ static void sha1_transform(uint32_t state[5], const uint8_t buffer[64])
         a = t;
     }
 #else
-    for (i = 0; i < 15; i += 5) {
-        R0(a, b, c, d, e, 0 + i);
-        R0(e, a, b, c, d, 1 + i);
-        R0(d, e, a, b, c, 2 + i);
-        R0(c, d, e, a, b, 3 + i);
-        R0(b, c, d, e, a, 4 + i);
-    }
+
+#define R1_0 \
+    R0(a, b, c, d, e, 0 + i); \
+    R0(e, a, b, c, d, 1 + i); \
+    R0(d, e, a, b, c, 2 + i); \
+    R0(c, d, e, a, b, 3 + i); \
+    R0(b, c, d, e, a, 4 + i); \
+    i += 5
+
+    i = 0;
+    R1_0; R1_0; R1_0;
     R0(a, b, c, d, e, 15);
     R1(e, a, b, c, d, 16);
     R1(d, e, a, b, c, 17);
     R1(c, d, e, a, b, 18);
     R1(b, c, d, e, a, 19);
-    for (i = 20; i < 40; i += 5) {
-        R2(a, b, c, d, e, 0 + i);
-        R2(e, a, b, c, d, 1 + i);
-        R2(d, e, a, b, c, 2 + i);
-        R2(c, d, e, a, b, 3 + i);
-        R2(b, c, d, e, a, 4 + i);
-    }
-    for (; i < 60; i += 5) {
-        R3(a, b, c, d, e, 0 + i);
-        R3(e, a, b, c, d, 1 + i);
-        R3(d, e, a, b, c, 2 + i);
-        R3(c, d, e, a, b, 3 + i);
-        R3(b, c, d, e, a, 4 + i);
-    }
-    for (; i < 80; i += 5) {
-        R4(a, b, c, d, e, 0 + i);
-        R4(e, a, b, c, d, 1 + i);
-        R4(d, e, a, b, c, 2 + i);
-        R4(c, d, e, a, b, 3 + i);
-        R4(b, c, d, e, a, 4 + i);
-    }
+
+#define R1_20 \
+    R2(a, b, c, d, e, 0 + i); \
+    R2(e, a, b, c, d, 1 + i); \
+    R2(d, e, a, b, c, 2 + i); \
+    R2(c, d, e, a, b, 3 + i); \
+    R2(b, c, d, e, a, 4 + i); \
+    i += 5
+
+    i = 20;
+    R1_20; R1_20; R1_20; R1_20;
+
+#define R1_40 \
+    R3(a, b, c, d, e, 0 + i); \
+    R3(e, a, b, c, d, 1 + i); \
+    R3(d, e, a, b, c, 2 + i); \
+    R3(c, d, e, a, b, 3 + i); \
+    R3(b, c, d, e, a, 4 + i); \
+    i += 5
+
+    R1_40; R1_40; R1_40; R1_40;
+
+#define R1_60 \
+    R4(a, b, c, d, e, 0 + i); \
+    R4(e, a, b, c, d, 1 + i); \
+    R4(d, e, a, b, c, 2 + i); \
+    R4(c, d, e, a, b, 3 + i); \
+    R4(b, c, d, e, a, 4 + i); \
+    i += 5
+
+    R1_60; R1_60; R1_60; R1_60;
 #endif
     state[0] += a;
     state[1] += b;
@@ -162,7 +174,7 @@ static const uint32_t K256[64] = {
 
 
 #define Ch(x,y,z)   (((x) & ((y) ^ (z))) ^ (z))
-#define Maj(x,y,z)  ((((x) | (y)) & (z)) | ((x) & (y)))
+#define Maj(z,y,x)  ((((x) | (y)) & (z)) | ((x) & (y)))
 
 #define Sigma0_256(x)   (rol((x), 30) ^ rol((x), 19) ^ rol((x), 10))
 #define Sigma1_256(x)   (rol((x), 26) ^ rol((x), 21) ^ rol((x),  7))
@@ -220,27 +232,32 @@ static void sha256_transform(uint32_t *state, const uint8_t buffer[64])
         a = T1 + T2;
     }
 #else
-    for (i = 0; i < 16;) {
-        ROUND256_0_TO_15(a, b, c, d, e, f, g, h);
-        ROUND256_0_TO_15(h, a, b, c, d, e, f, g);
-        ROUND256_0_TO_15(g, h, a, b, c, d, e, f);
-        ROUND256_0_TO_15(f, g, h, a, b, c, d, e);
-        ROUND256_0_TO_15(e, f, g, h, a, b, c, d);
-        ROUND256_0_TO_15(d, e, f, g, h, a, b, c);
-        ROUND256_0_TO_15(c, d, e, f, g, h, a, b);
-        ROUND256_0_TO_15(b, c, d, e, f, g, h, a);
-    }
 
-    for (; i < 64;) {
-        ROUND256_16_TO_63(a, b, c, d, e, f, g, h);
-        ROUND256_16_TO_63(h, a, b, c, d, e, f, g);
-        ROUND256_16_TO_63(g, h, a, b, c, d, e, f);
-        ROUND256_16_TO_63(f, g, h, a, b, c, d, e);
-        ROUND256_16_TO_63(e, f, g, h, a, b, c, d);
-        ROUND256_16_TO_63(d, e, f, g, h, a, b, c);
-        ROUND256_16_TO_63(c, d, e, f, g, h, a, b);
-        ROUND256_16_TO_63(b, c, d, e, f, g, h, a);
-    }
+    i = 0;
+#define R256_0 \
+    ROUND256_0_TO_15(a, b, c, d, e, f, g, h); \
+    ROUND256_0_TO_15(h, a, b, c, d, e, f, g); \
+    ROUND256_0_TO_15(g, h, a, b, c, d, e, f); \
+    ROUND256_0_TO_15(f, g, h, a, b, c, d, e); \
+    ROUND256_0_TO_15(e, f, g, h, a, b, c, d); \
+    ROUND256_0_TO_15(d, e, f, g, h, a, b, c); \
+    ROUND256_0_TO_15(c, d, e, f, g, h, a, b); \
+    ROUND256_0_TO_15(b, c, d, e, f, g, h, a)
+
+    R256_0; R256_0;
+
+#define R256_16 \
+    ROUND256_16_TO_63(a, b, c, d, e, f, g, h); \
+    ROUND256_16_TO_63(h, a, b, c, d, e, f, g); \
+    ROUND256_16_TO_63(g, h, a, b, c, d, e, f); \
+    ROUND256_16_TO_63(f, g, h, a, b, c, d, e); \
+    ROUND256_16_TO_63(e, f, g, h, a, b, c, d); \
+    ROUND256_16_TO_63(d, e, f, g, h, a, b, c); \
+    ROUND256_16_TO_63(c, d, e, f, g, h, a, b); \
+    ROUND256_16_TO_63(b, c, d, e, f, g, h, a)
+
+    R256_16; R256_16; R256_16;
+    R256_16; R256_16; R256_16;
 #endif
     state[0] += a;
     state[1] += b;
@@ -342,7 +359,7 @@ int main(void)
     int i, j, k;
     AVSHA ctx;
     unsigned char digest[32];
-    const int lengths[3] = { 160, 224, 256 };
+    static const int lengths[3] = { 160, 224, 256 };
 
     for (j = 0; j < 3; j++) {
         printf("Testing SHA-%d\n", lengths[j]);
