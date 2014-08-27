@@ -5,20 +5,20 @@
  * Copyright (C) 2006 Benjamin Larsson
  * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,7 +37,7 @@ typedef struct DCAParseContext {
 #define IS_MARKER(state, i, buf, buf_size) \
  ((state == DCA_MARKER_14B_LE && (i < buf_size-2) && (buf[i+1] & 0xF0) == 0xF0 && buf[i+2] == 0x07) \
  || (state == DCA_MARKER_14B_BE && (i < buf_size-2) && buf[i+1] == 0x07 && (buf[i+2] & 0xF0) == 0xF0) \
- || state == DCA_MARKER_RAW_LE || state == DCA_MARKER_RAW_BE)
+ || state == DCA_MARKER_RAW_LE || state == DCA_MARKER_RAW_BE || state == DCA_HD_MARKER)
 
 /**
  * Find the end of the current frame in the bitstream.
@@ -58,11 +58,7 @@ static int dca_find_frame_end(DCAParseContext * pc1, const uint8_t * buf,
         for (i = 0; i < buf_size; i++) {
             state = (state << 8) | buf[i];
             if (IS_MARKER(state, i, buf, buf_size)) {
-                if (pc1->lastmarker && state == pc1->lastmarker) {
-                    start_found = 1;
-                    i++;
-                    break;
-                } else if (!pc1->lastmarker) {
+                if (!pc1->lastmarker || state == pc1->lastmarker || pc1->lastmarker == DCA_HD_MARKER) {
                     start_found = 1;
                     pc1->lastmarker = state;
                     i++;
@@ -77,7 +73,7 @@ static int dca_find_frame_end(DCAParseContext * pc1, const uint8_t * buf,
             state = (state << 8) | buf[i];
             if (state == DCA_HD_MARKER && !pc1->hd_pos)
                 pc1->hd_pos = pc1->size;
-            if (state == pc1->lastmarker && IS_MARKER(state, i, buf, buf_size)) {
+            if (IS_MARKER(state, i, buf, buf_size) && (state == pc1->lastmarker || pc1->lastmarker == DCA_HD_MARKER)) {
                 if(pc1->framesize > pc1->size)
                     continue;
                 pc->frame_start_found = 0;
@@ -110,7 +106,7 @@ static int dca_parse_params(const uint8_t *buf, int buf_size, int *duration,
     if (buf_size < 12)
         return AVERROR_INVALIDDATA;
 
-    if ((ret = ff_dca_convert_bitstream(buf, 12, hdr, 12)) < 0)
+    if ((ret = avpriv_dca_convert_bitstream(buf, 12, hdr, 12)) < 0)
         return ret;
 
     init_get_bits(&gb, hdr, 96);

@@ -2,20 +2,20 @@
  * MxPEG decoder
  * Copyright (c) 2011 Anatoly Nenashev
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -54,6 +54,7 @@ static av_cold int mxpeg_decode_end(AVCodecContext *avctx)
     for (i = 0; i < 2; ++i)
         av_frame_free(&s->picture[i]);
 
+    s->bitmask_size = 0;
     av_freep(&s->mxm_bitmask);
     av_freep(&s->completion_bitmask);
 
@@ -105,6 +106,7 @@ static int mxpeg_decode_mxm(MXpegDecodeContext *s,
     }
 
     if (s->bitmask_size != bitmask_size) {
+        s->bitmask_size = 0;
         av_freep(&s->mxm_bitmask);
         s->mxm_bitmask = av_malloc(bitmask_size);
         if (!s->mxm_bitmask) {
@@ -272,11 +274,9 @@ static int mxpeg_decode_frame(AVCodecContext *avctx,
                     }
                     /* use stored SOF data to allocate current picture */
                     av_frame_unref(jpg->picture_ptr);
-                    if (ff_get_buffer(avctx, jpg->picture_ptr,
-                                      AV_GET_BUFFER_FLAG_REF) < 0) {
-                        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-                        return AVERROR(ENOMEM);
-                    }
+                    if ((ret = ff_get_buffer(avctx, jpg->picture_ptr,
+                                             AV_GET_BUFFER_FLAG_REF)) < 0)
+                        return ret;
                     jpg->picture_ptr->pict_type = AV_PICTURE_TYPE_P;
                     jpg->picture_ptr->key_frame = 0;
                     jpg->got_picture = 1;
@@ -292,17 +292,15 @@ static int mxpeg_decode_frame(AVCodecContext *avctx,
 
                     /* allocate dummy reference picture if needed */
                     if (!reference_ptr->data[0] &&
-                        ff_get_buffer(avctx, reference_ptr,
-                                      AV_GET_BUFFER_FLAG_REF) < 0) {
-                        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-                        return AVERROR(ENOMEM);
-                    }
+                        (ret = ff_get_buffer(avctx, reference_ptr,
+                                             AV_GET_BUFFER_FLAG_REF)) < 0)
+                        return ret;
 
-                    ret = ff_mjpeg_decode_sos(jpg, s->mxm_bitmask, reference_ptr);
+                    ret = ff_mjpeg_decode_sos(jpg, s->mxm_bitmask, s->bitmask_size, reference_ptr);
                     if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                         return ret;
                 } else {
-                    ret = ff_mjpeg_decode_sos(jpg, NULL, NULL);
+                    ret = ff_mjpeg_decode_sos(jpg, NULL, 0, NULL);
                     if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                         return ret;
                 }
@@ -346,4 +344,5 @@ AVCodec ff_mxpeg_decoder = {
     .close          = mxpeg_decode_end,
     .decode         = mxpeg_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
+    .max_lowres     = 3,
 };

@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,6 +47,11 @@ void ff_init_scantable_permutation(uint8_t *idct_permutation,
                                    enum idct_permutation_type perm_type);
 int ff_init_scantable_permutation_x86(uint8_t *idct_permutation,
                                       enum idct_permutation_type perm_type);
+
+void ff_put_pixels_clamped(const int16_t *block, uint8_t *av_restrict pixels,
+                           int line_size);
+void ff_add_pixels_clamped(const int16_t *block, uint8_t *av_restrict pixels,
+                           int line_size);
 
 typedef struct IDCTDSPContext {
     /* pixel ops : interface with DCT */
@@ -97,6 +102,8 @@ typedef struct IDCTDSPContext {
 
 void ff_idctdsp_init(IDCTDSPContext *c, AVCodecContext *avctx);
 
+void ff_idctdsp_init_alpha(IDCTDSPContext *c, AVCodecContext *avctx,
+                           unsigned high_bit_depth);
 void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_idctdsp_init_ppc(IDCTDSPContext *c, AVCodecContext *avctx,
