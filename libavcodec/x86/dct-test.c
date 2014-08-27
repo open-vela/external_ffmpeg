@@ -1,26 +1,47 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "config.h"
 
 #include "fdct.h"
-#include "xvididct.h"
+#include "idct_xvid.h"
 #include "simple_idct.h"
+
+#if ARCH_X86_64 && HAVE_MMX && HAVE_YASM
+void ff_prores_idct_put_10_sse2(uint16_t *dst, int linesize,
+                                int16_t *block, int16_t *qmat);
+
+static void ff_prores_idct_put_10_sse2_wrap(int16_t *dst){
+    DECLARE_ALIGNED(16, static int16_t, qmat)[64];
+    DECLARE_ALIGNED(16, static int16_t, tmp)[64];
+    int i;
+
+    for(i=0; i<64; i++){
+        qmat[i]=4;
+        tmp[i]= dst[i];
+    }
+    ff_prores_idct_put_10_sse2(dst, 16, tmp, qmat);
+
+    for(i=0; i<64; i++) {
+         dst[i] -= 512;
+    }
+}
+#endif
 
 static const struct algo fdct_tab_arch[] = {
 #if HAVE_MMX_INLINE
@@ -41,13 +62,16 @@ static const struct algo idct_tab_arch[] = {
 #endif
 #if CONFIG_MPEG4_DECODER
 #if HAVE_MMX_INLINE
-    { "XVID-MMX",    ff_xvid_idct_mmx,    FF_IDCT_PERM_NONE,   AV_CPU_FLAG_MMX,    1 },
+    { "XVID-MMX",    ff_idct_xvid_mmx,    FF_IDCT_PERM_NONE,   AV_CPU_FLAG_MMX,    1 },
 #endif
 #if HAVE_MMXEXT_INLINE
-    { "XVID-MMXEXT", ff_xvid_idct_mmxext, FF_IDCT_PERM_NONE,   AV_CPU_FLAG_MMXEXT, 1 },
+    { "XVID-MMXEXT", ff_idct_xvid_mmxext, FF_IDCT_PERM_NONE,   AV_CPU_FLAG_MMXEXT, 1 },
 #endif
 #if HAVE_SSE2_INLINE
-    { "XVID-SSE2",   ff_xvid_idct_sse2,   FF_IDCT_PERM_SSE2,   AV_CPU_FLAG_SSE2,   1 },
+    { "XVID-SSE2",   ff_idct_xvid_sse2,   FF_IDCT_PERM_SSE2,   AV_CPU_FLAG_SSE2,   1 },
+#if ARCH_X86_64 && HAVE_YASM
+    { "PR-SSE2",     ff_prores_idct_put_10_sse2_wrap, FF_IDCT_PERM_TRANSPOSE, AV_CPU_FLAG_SSE2, 1 },
+#endif
 #endif
 #endif /* CONFIG_MPEG4_DECODER */
     { 0 }
