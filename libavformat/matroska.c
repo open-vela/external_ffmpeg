@@ -1,28 +1,29 @@
 /*
  * Matroska common data
- * Copyright (c) 2003-2004 The ffmpeg Project
+ * Copyright (c) 2003-2004 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/stereo3d.h"
-
 #include "matroska.h"
 
+/* If you add a tag here that is not in ff_codec_bmp_tags[]
+   or ff_codec_wav_tags[], add it also to additional_audio_tags[]
+   or additional_video_tags[] in matroskaenc.c */
 const CodecTags ff_mkv_codec_tags[]={
     {"A_AAC"            , AV_CODEC_ID_AAC},
     {"A_AC3"            , AV_CODEC_ID_AC3},
@@ -35,6 +36,7 @@ const CodecTags ff_mkv_codec_tags[]={
     {"A_MPEG/L1"        , AV_CODEC_ID_MP2},
     {"A_MPEG/L3"        , AV_CODEC_ID_MP3},
     {"A_OPUS"           , AV_CODEC_ID_OPUS},
+    {"A_OPUS/EXPERIMENTAL",AV_CODEC_ID_OPUS},
     {"A_PCM/FLOAT/IEEE" , AV_CODEC_ID_PCM_F32LE},
     {"A_PCM/FLOAT/IEEE" , AV_CODEC_ID_PCM_F64LE},
     {"A_PCM/INT/BIG"    , AV_CODEC_ID_PCM_S16BE},
@@ -55,14 +57,27 @@ const CodecTags ff_mkv_codec_tags[]={
     {"A_VORBIS"         , AV_CODEC_ID_VORBIS},
     {"A_WAVPACK4"       , AV_CODEC_ID_WAVPACK},
 
+    {"D_WEBVTT/SUBTITLES"   , AV_CODEC_ID_WEBVTT},
+    {"D_WEBVTT/CAPTIONS"    , AV_CODEC_ID_WEBVTT},
+    {"D_WEBVTT/DESCRIPTIONS", AV_CODEC_ID_WEBVTT},
+    {"D_WEBVTT/METADATA"    , AV_CODEC_ID_WEBVTT},
+
+    {"S_TEXT/UTF8"      , AV_CODEC_ID_SUBRIP},
     {"S_TEXT/UTF8"      , AV_CODEC_ID_TEXT},
     {"S_TEXT/UTF8"      , AV_CODEC_ID_SRT},
     {"S_TEXT/ASCII"     , AV_CODEC_ID_TEXT},
+#if FF_API_ASS_SSA
     {"S_TEXT/ASS"       , AV_CODEC_ID_SSA},
     {"S_TEXT/SSA"       , AV_CODEC_ID_SSA},
     {"S_ASS"            , AV_CODEC_ID_SSA},
     {"S_SSA"            , AV_CODEC_ID_SSA},
+#endif
+    {"S_TEXT/ASS"       , AV_CODEC_ID_ASS},
+    {"S_TEXT/SSA"       , AV_CODEC_ID_ASS},
+    {"S_ASS"            , AV_CODEC_ID_ASS},
+    {"S_SSA"            , AV_CODEC_ID_ASS},
     {"S_VOBSUB"         , AV_CODEC_ID_DVD_SUBTITLE},
+    {"S_DVBSUB"         , AV_CODEC_ID_DVB_SUBTITLE},
     {"S_HDMV/PGS"       , AV_CODEC_ID_HDMV_PGS_SUBTITLE},
 
     {"V_DIRAC"          , AV_CODEC_ID_DIRAC},
@@ -80,6 +95,7 @@ const CodecTags ff_mkv_codec_tags[]={
     {"V_REAL/RV20"      , AV_CODEC_ID_RV20},
     {"V_REAL/RV30"      , AV_CODEC_ID_RV30},
     {"V_REAL/RV40"      , AV_CODEC_ID_RV40},
+    {"V_SNOW"           , AV_CODEC_ID_SNOW},
     {"V_THEORA"         , AV_CODEC_ID_THEORA},
     {"V_UNCOMPRESSED"   , AV_CODEC_ID_RAWVIDEO},
     {"V_VP8"            , AV_CODEC_ID_VP8},
@@ -96,6 +112,8 @@ const CodecMime ff_mkv_mime_tags[] = {
     {"image/tiff"                 , AV_CODEC_ID_TIFF},
     {"application/x-truetype-font", AV_CODEC_ID_TTF},
     {"application/x-font"         , AV_CODEC_ID_TTF},
+    {"application/vnd.ms-opentype", AV_CODEC_ID_OTF},
+    {"binary"                     , AV_CODEC_ID_BIN_DATA},
 
     {""                           , AV_CODEC_ID_NONE}
 };
@@ -106,64 +124,26 @@ const AVMetadataConv ff_mkv_metadata_conv[] = {
     { 0 }
 };
 
-int ff_mkv_stereo3d_conv(AVStream *st, MatroskaVideoStereoModeType stereo_mode)
-{
-    AVPacketSideData *sd, *tmp;
-    AVStereo3D *stereo;
+const char * const ff_matroska_video_stereo_mode[MATROSKA_VIDEO_STEREO_MODE_COUNT] = {
+    "mono",
+    "left_right",
+    "bottom_top",
+    "top_bottom",
+    "checkerboard_rl",
+    "checkerboard_lr",
+    "row_interleaved_rl",
+    "row_interleaved_lr",
+    "col_interleaved_rl",
+    "col_interleaved_lr",
+    "anaglyph_cyan_red",
+    "right_left",
+    "anaglyph_green_magenta",
+    "block_lr",
+    "block_rl",
+};
 
-    stereo = av_stereo3d_alloc();
-    if (!stereo)
-        return AVERROR(ENOMEM);
-
-    tmp = av_realloc_array(st->side_data, st->nb_side_data + 1, sizeof(*tmp));
-    if (!tmp) {
-        av_freep(&stereo);
-        return AVERROR(ENOMEM);
-    }
-    st->side_data = tmp;
-    st->nb_side_data++;
-
-    sd = &st->side_data[st->nb_side_data - 1];
-    sd->type = AV_PKT_DATA_STEREO3D;
-    sd->data = (uint8_t *)stereo;
-    sd->size = sizeof(*stereo);
-
-    // note: the missing breaks are intentional
-    switch (stereo_mode) {
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_MONO:
-        stereo->type = AV_STEREO3D_2D;
-        break;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_RIGHT_LEFT:
-        stereo->flags |= AV_STEREO3D_FLAG_INVERT;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_LEFT_RIGHT:
-        stereo->type = AV_STEREO3D_SIDEBYSIDE;
-        break;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_BOTTOM_TOP:
-        stereo->flags |= AV_STEREO3D_FLAG_INVERT;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_TOP_BOTTOM:
-        stereo->type = AV_STEREO3D_TOPBOTTOM;
-        break;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_CHECKERBOARD_RL:
-        stereo->flags |= AV_STEREO3D_FLAG_INVERT;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_CHECKERBOARD_LR:
-        stereo->type = AV_STEREO3D_CHECKERBOARD;
-        break;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_ROW_INTERLEAVED_RL:
-        stereo->flags |= AV_STEREO3D_FLAG_INVERT;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_ROW_INTERLEAVED_LR:
-        stereo->type = AV_STEREO3D_LINES;
-        break;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_COL_INTERLEAVED_RL:
-        stereo->flags |= AV_STEREO3D_FLAG_INVERT;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_COL_INTERLEAVED_LR:
-        stereo->type = AV_STEREO3D_COLUMNS;
-        break;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_BOTH_EYES_BLOCK_RL:
-        stereo->flags |= AV_STEREO3D_FLAG_INVERT;
-    case MATROSKA_VIDEO_STEREOMODE_TYPE_BOTH_EYES_BLOCK_LR:
-        stereo->type = AV_STEREO3D_FRAMESEQUENCE;
-        break;
-    }
-
-    return 0;
-}
+const char * const ff_matroska_video_stereo_plane[MATROSKA_VIDEO_STEREO_PLANE_COUNT] = {
+    "left",
+    "right",
+    "background",
+};
