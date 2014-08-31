@@ -1,21 +1,21 @@
 /*
  * WMA compatible codec
- * Copyright (c) 2002-2007 The FFmpeg Project
+ * Copyright (c) 2002-2007 The Libav Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,10 +46,10 @@ static av_cold void init_coef_vlc(VLC *vlc, uint16_t **prun_table,
 
     init_vlc(vlc, VLCBITS, n, table_bits, 1, 1, table_codes, 4, 4, 0);
 
-    run_table    = av_malloc_array(n, sizeof(uint16_t));
-    level_table  = av_malloc_array(n, sizeof(uint16_t));
-    flevel_table = av_malloc_array(n, sizeof(*flevel_table));
-    int_table    = av_malloc_array(n, sizeof(uint16_t));
+    run_table    = av_malloc(n * sizeof(uint16_t));
+    level_table  = av_malloc(n * sizeof(uint16_t));
+    flevel_table = av_malloc(n * sizeof(*flevel_table));
+    int_table    = av_malloc(n * sizeof(uint16_t));
     i            = 2;
     level        = 1;
     k            = 0;
@@ -134,10 +134,6 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
     bps                 = (float) avctx->bit_rate /
                           (float) (avctx->channels * avctx->sample_rate);
     s->byte_offset_bits = av_log2((int) (bps * s->frame_len / 8.0 + 0.5)) + 2;
-    if (s->byte_offset_bits + 3 > MIN_CACHE_BITS) {
-        av_log(avctx, AV_LOG_ERROR, "byte_offset_bits %d is too large\n", s->byte_offset_bits);
-        return AVERROR_PATCHWELCOME;
-    }
 
     /* compute high frequency value and choose if noise coding should
      * be activated */
@@ -378,9 +374,9 @@ int ff_wma_end(AVCodecContext *avctx)
         ff_free_vlc(&s->hgain_vlc);
     for (i = 0; i < 2; i++) {
         ff_free_vlc(&s->coef_vlc[i]);
-        av_freep(&s->run_table[i]);
-        av_freep(&s->level_table[i]);
-        av_freep(&s->int_table[i]);
+        av_free(s->run_table[i]);
+        av_free(s->level_table[i]);
+        av_free(s->int_table[i]);
     }
 
     return 0;
