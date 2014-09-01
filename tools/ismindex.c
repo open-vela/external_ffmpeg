@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /*
  * To create a simple file for smooth streaming:
- * ffmpeg <normal input/transcoding options> -movflags frag_keyframe foo.ismv
+ * avconv <normal input/transcoding options> -movflags frag_keyframe foo.ismv
  * ismindex -n foo foo.ismv
  * This step creates foo.ism and foo.ismc that is required by IIS for
  * serving it.
@@ -43,8 +43,6 @@
 
 #include <stdio.h>
 #include <string.h>
-
-#include "cmdutils.h"
 
 #include "libavformat/avformat.h"
 #include "libavformat/os_support.h"
@@ -98,14 +96,22 @@ static int copy_tag(AVIOContext *in, AVIOContext *out, int32_t tag_name)
     tag  = avio_rb32(in);
     avio_wb32(out, size);
     avio_wb32(out, tag);
-    if (tag != tag_name)
+    if (tag != tag_name) {
+        char tag_str[4], tag_name_str[4];
+        AV_WB32(tag_str, tag);
+        AV_WB32(tag_name_str, tag_name);
+        fprintf(stderr, "wanted tag %.4s, got %.4s\n", tag_name_str, tag_str);
         return -1;
+    }
     size -= 8;
     while (size > 0) {
         char buf[1024];
         int len = FFMIN(sizeof(buf), size);
-        if (avio_read(in, buf, len) != len)
+        int got;
+        if ((got = avio_read(in, buf, len)) != len) {
+            fprintf(stderr, "short read, wanted %d, got %d\n", len, got);
             break;
+        }
         avio_write(out, buf, len);
         size -= len;
     }
@@ -117,10 +123,15 @@ static int write_fragment(const char *filename, AVIOContext *in)
     AVIOContext *out = NULL;
     int ret;
 
-    if ((ret = avio_open2(&out, filename, AVIO_FLAG_WRITE, NULL, NULL)) < 0)
+    if ((ret = avio_open2(&out, filename, AVIO_FLAG_WRITE, NULL, NULL)) < 0) {
+        char errbuf[100];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        fprintf(stderr, "Unable to open %s: %s\n", filename, errbuf);
         return ret;
-    copy_tag(in, out, MKBETAG('m', 'o', 'o', 'f'));
-    copy_tag(in, out, MKBETAG('m', 'd', 'a', 't'));
+    }
+    ret = copy_tag(in, out, MKBETAG('m', 'o', 'o', 'f'));
+    if (!ret)
+        ret = copy_tag(in, out, MKBETAG('m', 'd', 'a', 't'));
 
     avio_flush(out);
     avio_close(out);
@@ -138,8 +149,7 @@ static int write_fragments(struct Tracks *tracks, int start_index,
         struct Track *track = tracks->tracks[i];
         const char *type    = track->is_video ? "video" : "audio";
         snprintf(dirname, sizeof(dirname), "%sQualityLevels(%d)", output_prefix, track->bitrate);
-        if (mkdir(dirname, 0777) == -1)
-            return AVERROR(errno);
+        mkdir(dirname, 0777);
         for (j = 0; j < track->chunks; j++) {
             snprintf(filename, sizeof(filename), "%s/Fragments(%s=%"PRId64")",
                      dirname, type, track->offsets[j].time);
@@ -173,7 +183,7 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
     }
     fieldlength = avio_rb32(f);
     track->chunks  = avio_rb32(f);
-    track->offsets = av_mallocz_array(track->chunks, sizeof(*track->offsets));
+    track->offsets = av_mallocz(sizeof(*track->offsets) * track->chunks);
     if (!track->offsets) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -210,6 +220,7 @@ static int read_mfra(struct Tracks *tracks, int start_index,
                      const char *file, int split, const char *output_prefix)
 {
     int err = 0;
+    const char* err_str = "";
     AVIOContext *f = NULL;
     int32_t mfra_size;
 
@@ -220,10 +231,12 @@ static int read_mfra(struct Tracks *tracks, int start_index,
     avio_seek(f, -mfra_size, SEEK_CUR);
     if (avio_rb32(f) != mfra_size) {
         err = AVERROR_INVALIDDATA;
+        err_str = "mfra size mismatch";
         goto fail;
     }
     if (avio_rb32(f) != MKBETAG('m', 'f', 'r', 'a')) {
         err = AVERROR_INVALIDDATA;
+        err_str = "mfra tag mismatch";
         goto fail;
     }
     while (!read_tfra(tracks, start_index, f)) {
@@ -231,13 +244,13 @@ static int read_mfra(struct Tracks *tracks, int start_index,
     }
 
     if (split)
-        err = write_fragments(tracks, start_index, f, output_prefix);
+        write_fragments(tracks, start_index, f, output_prefix);
 
 fail:
     if (f)
         avio_close(f);
     if (err)
-        fprintf(stderr, "Unable to read the MFRA atom in %s\n", file);
+        fprintf(stderr, "Unable to read the MFRA atom in %s (%s)\n", file, err_str);
     return err;
 }
 
@@ -255,15 +268,14 @@ static int get_video_private_data(struct Track *track, AVCodecContext *codec)
 {
     AVIOContext *io = NULL;
     uint16_t sps_size, pps_size;
-    int err = AVERROR(EINVAL);
+    int err;
 
     if (codec->codec_id == AV_CODEC_ID_VC1)
         return get_private_data(track, codec);
 
-    if (avio_open_dyn_buf(&io) < 0)  {
-        err = AVERROR(ENOMEM);
+    if ((err = avio_open_dyn_buf(&io)) < 0)
         goto fail;
-    }
+    err = AVERROR(EINVAL);
     if (codec->extradata_size < 11 || codec->extradata[0] != 1)
         goto fail;
     sps_size = AV_RB16(&codec->extradata[6]);
@@ -437,12 +449,23 @@ static void print_track_chunks(FILE *out, struct Tracks *tracks, int main,
 {
     int i, j;
     struct Track *track = tracks->tracks[main];
+    int should_print_time_mismatch = 1;
+
     for (i = 0; i < track->chunks; i++) {
         for (j = main + 1; j < tracks->nb_tracks; j++) {
-            if (tracks->tracks[j]->is_audio == track->is_audio &&
-                track->offsets[i].duration != tracks->tracks[j]->offsets[i].duration)
-                fprintf(stderr, "Mismatched duration of %s chunk %d in %s and %s\n",
-                        type, i, track->name, tracks->tracks[j]->name);
+            if (tracks->tracks[j]->is_audio == track->is_audio) {
+                if (track->offsets[i].duration != tracks->tracks[j]->offsets[i].duration) {
+                    fprintf(stderr, "Mismatched duration of %s chunk %d in %s (%d) and %s (%d)\n",
+                            type, i, track->name, main, tracks->tracks[j]->name, j);
+                    should_print_time_mismatch = 1;
+                }
+                if (track->offsets[i].time != tracks->tracks[j]->offsets[i].time) {
+                    if (should_print_time_mismatch)
+                        fprintf(stderr, "Mismatched (start) time of %s chunk %d in %s (%d) and %s (%d)\n",
+                                type, i, track->name, main, tracks->tracks[j]->name, j);
+                    should_print_time_mismatch = 0;
+                }
+            }
         }
         fprintf(out, "\t\t<c n=\"%d\" d=\"%"PRId64"\" />\n",
                 i, track->offsets[i].duration);
@@ -491,8 +514,8 @@ static void output_client_manifest(struct Tracks *tracks, const char *basename,
             fprintf(out, "\" />\n");
             index++;
             if (track->chunks != first_track->chunks)
-                fprintf(stderr, "Mismatched number of video chunks in %s and %s\n",
-                        track->name, first_track->name);
+                fprintf(stderr, "Mismatched number of video chunks in %s (id: %d, chunks %d) and %s (id: %d, chunks %d)\n",
+                        track->name, track->track_id, track->chunks, first_track->name, first_track->track_id, first_track->chunks);
         }
         print_track_chunks(out, tracks, tracks->video_track, "video");
         fprintf(out, "\t</StreamIndex>\n");
