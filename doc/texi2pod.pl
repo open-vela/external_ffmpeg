@@ -27,9 +27,9 @@ use warnings;
 
 $output = 0;
 $skipping = 0;
-%chapters = ();
-@chapters_sequence = ();
-$chapter = "";
+%sects = ();
+@sects_sequence = ();
+$section = "";
 @icstack = ();
 @endwstack = ();
 @skstack = ();
@@ -116,22 +116,16 @@ INF: while(<$inf>) {
         die "cannot open $1: $!\n";
     };
 
-    /^\@chapter\s+([A-Za-z ]+)/ and do {
-        # close old chapter
-        $chapters{$chapter_name} .= postprocess($chapter) if ($chapter_name);
-
-        # start new chapter
-        $chapter_name = $1, push (@chapters_sequence, $chapter_name) unless $skipping;
-        $chapters{$chapter_name} = "" unless exists $chapters{$chapter_name};
-        $chapter = "";
-        $output = 1;
+    # Look for blocks surrounded by @c man begin SECTION ... @c man end.
+    # This really oughta be @ifman ... @end ifman and the like, but such
+    # would require rev'ing all other Texinfo translators.
+    /^\@c\s+man\s+begin\s+([A-Za-z ]+)/ and $sect = $1, push (@sects_sequence, $sect), $output = 1, next;
+    /^\@c\s+man\s+end/ and do {
+        $sects{$sect} = "" unless exists $sects{$sect};
+        $sects{$sect} .= postprocess($section);
+        $section = "";
+        $output = 0;
         next;
-    };
-
-    /^\@bye/ and do {
-        # close old chapter
-        $chapters{$chapter_name} .= postprocess($chapter) if ($chapter_name);
-        last INF;
     };
 
     # handle variables
@@ -156,14 +150,14 @@ INF: while(<$inf>) {
         # Ignore @end foo, where foo is not an operation which may
         # cause us to skip, if we are presently skipping.
         my $ended = $1;
-        next if $skipping && $ended !~ /^(?:ifset|ifclear|ignore|menu|iftex|ifhtml|ifnothtml)$/;
+        next if $skipping && $ended !~ /^(?:ifset|ifclear|ignore|menu|iftex)$/;
 
         die "\@end $ended without \@$ended at line $.\n" unless defined $endw;
         die "\@$endw ended by \@end $ended at line $.\n" unless $ended eq $endw;
 
         $endw = pop @endwstack;
 
-        if ($ended =~ /^(?:ifset|ifclear|ignore|menu|iftex|ifhtml|ifnothtml)$/) {
+        if ($ended =~ /^(?:ifset|ifclear|ignore|menu|iftex)$/) {
             $skipping = pop @skstack;
             next;
         } elsif ($ended =~ /^(?:example|smallexample|display)$/) {
@@ -196,11 +190,11 @@ INF: while(<$inf>) {
         next;
     };
 
-    /^\@(ignore|menu|iftex|ifhtml|ifnothtml)\b/ and do {
+    /^\@(ignore|menu|iftex)\b/ and do {
         push @endwstack, $endw;
         push @skstack, $skipping;
         $endw = $1;
-        $skipping = $endw !~ /ifnothtml/;
+        $skipping = 1;
         next;
     };
 
@@ -217,6 +211,7 @@ INF: while(<$inf>) {
     s/\@TeX\{\}/TeX/g;
     s/\@pounds\{\}/\#/g;
     s/\@minus(?:\{\})?/-/g;
+    s/\\,/,/g;
 
     # Now the ones that have to be replaced by special escapes
     # (which will be turned back into text by unmunge())
@@ -274,7 +269,7 @@ INF: while(<$inf>) {
         push @icstack, $ic;
         $endw = $1;
         $ic = $2;
-        $ic =~ s/\@(?:samp|strong|key|gcctabopt|option|env|command)/B/;
+        $ic =~ s/\@(?:samp|strong|key|gcctabopt|option|env)/B/;
         $ic =~ s/\@(?:code|kbd)/C/;
         $ic =~ s/\@(?:dfn|var|emph|cite|i)/I/;
         $ic =~ s/\@(?:file)/F/;
@@ -309,7 +304,7 @@ INF: while(<$inf>) {
         $columns =~ s/\@tab//;
 
         $_ = $columns;
-        $chapter =~ s/$//;
+        $section =~ s/$//;
     };
 
     /^\@itemx?\s*(.+)?$/ and do {
@@ -323,7 +318,7 @@ INF: while(<$inf>) {
         }
     };
 
-    $chapter .= $shift.$_."\n";
+    $section .= $shift.$_."\n";
 }
 # End of current file.
 close($inf);
@@ -332,18 +327,19 @@ $inf = pop @instack;
 
 die "No filename or title\n" unless defined $fn && defined $tl;
 
-$chapters{NAME} = "$fn \- $tl\n";
-$chapters{FOOTNOTES} .= "=back\n" if exists $chapters{FOOTNOTES};
-
 # always use utf8
 print "=encoding utf8\n\n";
 
-unshift @chapters_sequence, "NAME";
-for $chapter (@chapters_sequence) {
-    if (exists $chapters{$chapter}) {
-        $head = uc($chapter);
+$sects{NAME} = "$fn \- $tl\n";
+$sects{FOOTNOTES} .= "=back\n" if exists $sects{FOOTNOTES};
+
+unshift @sects_sequence, "NAME";
+for $sect (@sects_sequence) {
+    if(exists $sects{$sect}) {
+        $head = $sect;
+        $head =~ s/SEEALSO/SEE ALSO/;
         print "=head1 $head\n\n";
-        print scalar unmunge ($chapters{$chapter});
+        print scalar unmunge ($sects{$sect});
         print "\n";
     }
 }
@@ -388,8 +384,7 @@ sub postprocess
     s/\(?\@xref\{(?:[^\}]*)\}(?:[^.<]|(?:<[^<>]*>))*\.\)?//g;
     s/\s+\(\@pxref\{(?:[^\}]*)\}\)//g;
     s/;\s+\@pxref\{(?:[^\}]*)\}//g;
-    s/\@ref\{(?:[^,\}]*,)(?:[^,\}]*,)([^,\}]*).*\}/B<$1>/g;
-    s/\@ref\{([^\}]*)\}/B<$1>/g;
+    s/\@ref\{([^\}]*)\}/$1/g;
     s/\@noindent\s*//g;
     s/\@refill//g;
     s/\@gol//g;
@@ -398,7 +393,7 @@ sub postprocess
     # @uref can take one, two, or three arguments, with different
     # semantics each time.  @url and @email are just like @uref with
     # one argument, for our purposes.
-    s/\@(?:uref|url|email)\{([^\},]*),?[^\}]*\}/&lt;B<$1>&gt;/g;
+    s/\@(?:uref|url|email)\{([^\},]*)\}/&lt;B<$1>&gt;/g;
     s/\@uref\{([^\},]*),([^\},]*)\}/$2 (C<$1>)/g;
     s/\@uref\{([^\},]*),([^\},]*),([^\},]*)\}/$3/g;
 
@@ -442,13 +437,13 @@ sub unmunge
 
 sub add_footnote
 {
-    unless (exists $chapters{FOOTNOTES}) {
-        $chapters{FOOTNOTES} = "\n=over 4\n\n";
+    unless (exists $sects{FOOTNOTES}) {
+        $sects{FOOTNOTES} = "\n=over 4\n\n";
     }
 
-    $chapters{FOOTNOTES} .= "=item $fnno.\n\n"; $fnno++;
-    $chapters{FOOTNOTES} .= $_[0];
-    $chapters{FOOTNOTES} .= "\n\n";
+    $sects{FOOTNOTES} .= "=item $fnno.\n\n"; $fnno++;
+    $sects{FOOTNOTES} .= $_[0];
+    $sects{FOOTNOTES} .= "\n\n";
 }
 
 # stolen from Symbol.pm
