@@ -2,26 +2,28 @@
  * Copyright (c) 2004 Gildas Bazin
  * Copyright (c) 2010 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "config.h"
+
 #include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
+
 #include "dcadsp.h"
 
 static void decode_hf_c(float dst[DCA_SUBBANDS][8],
@@ -42,9 +44,8 @@ static void decode_hf_c(float dst[DCA_SUBBANDS][8],
     }
 }
 
-static inline void
-dca_lfe_fir(float *out, const float *in, const float *coefs,
-            int decifactor)
+static inline void dca_lfe_fir(float *out, const float *in, const float *coefs,
+                               int decifactor)
 {
     float *out2    = out + 2 * decifactor - 1;
     int num_coeffs = 256 / decifactor;
@@ -55,7 +56,7 @@ dca_lfe_fir(float *out, const float *in, const float *coefs,
         float v0 = 0.0;
         float v1 = 0.0;
         for (j = 0; j < num_coeffs; j++, coefs++) {
-            v0 += in[-j] * *coefs;
+            v0 += in[-j]                 * *coefs;
             v1 += in[j + 1 - num_coeffs] * *coefs;
         }
         *out++  = v0;
@@ -86,7 +87,8 @@ static void dca_qmf_32_subbands(float samples_in[32][8], int sb_act,
         }
 
         synth->synth_filter_float(imdct, synth_buf_ptr, synth_buf_offset,
-                                  synth_buf2, window, samples_out, raXin, scale);
+                                  synth_buf2, window, samples_out, raXin,
+                                  scale);
         samples_out += 32;
     }
 }
@@ -103,10 +105,13 @@ static void dca_lfe_fir1_c(float *out, const float *in, const float *coefs)
 
 av_cold void ff_dcadsp_init(DCADSPContext *s)
 {
-    s->lfe_fir[0] = dca_lfe_fir0_c;
-    s->lfe_fir[1] = dca_lfe_fir1_c;
+    s->lfe_fir[0]      = dca_lfe_fir0_c;
+    s->lfe_fir[1]      = dca_lfe_fir1_c;
     s->qmf_32_subbands = dca_qmf_32_subbands;
-    s->decode_hf = decode_hf_c;
-    if (ARCH_ARM) ff_dcadsp_init_arm(s);
-    if (ARCH_X86) ff_dcadsp_init_x86(s);
+    s->decode_hf       = decode_hf_c;
+
+    if (ARCH_ARM)
+        ff_dcadsp_init_arm(s);
+    if (ARCH_X86)
+        ff_dcadsp_init_x86(s);
 }
