@@ -796,9 +796,9 @@ SECTION .note.GNU-stack noalloc noexec nowrite progbits
 %endmacro
 
 ; Merge mmx and sse*
-; m# is a simd register of the currently selected size
-; xm# is the corresponding xmm register if mmsize >= 16, otherwise the same as m#
-; ym# is the corresponding ymm register if mmsize >= 32, otherwise the same as m#
+; m# is a simd regsiter of the currently selected size
+; xm# is the corresponding xmmreg (if selcted xmm or ymm size), or mmreg (if selected mmx)
+; ym# is the corresponding ymmreg (if selcted xmm or ymm size), or mmreg (if selected mmx)
 ; (All 3 remain in sync through SWAP.)
 
 %macro CAT_XDEFINE 3
@@ -821,12 +821,12 @@ SECTION .note.GNU-stack noalloc noexec nowrite progbits
     %assign %%i 0
     %rep 8
     CAT_XDEFINE m, %%i, mm %+ %%i
-    CAT_XDEFINE nnmm, %%i, %%i
+    CAT_XDEFINE nmm, %%i, %%i
     %assign %%i %%i+1
     %endrep
     %rep 8
     CAT_UNDEF m, %%i
-    CAT_UNDEF nnmm, %%i
+    CAT_UNDEF nmm, %%i
     %assign %%i %%i+1
     %endrep
     INIT_CPUFLAGS %1
@@ -847,18 +847,10 @@ SECTION .note.GNU-stack noalloc noexec nowrite progbits
     %assign %%i 0
     %rep num_mmregs
     CAT_XDEFINE m, %%i, xmm %+ %%i
-    CAT_XDEFINE nnxmm, %%i, %%i
+    CAT_XDEFINE nxmm, %%i, %%i
     %assign %%i %%i+1
     %endrep
     INIT_CPUFLAGS %1
-%endmacro
-
-; FIXME: INIT_AVX can be replaced by INIT_XMM avx
-%macro INIT_AVX 0
-    INIT_XMM
-    %assign avx_enabled 1
-    %define PALIGNR PALIGNR_SSSE3
-    %define RESET_MM_PERMUTATION INIT_AVX
 %endmacro
 
 %macro INIT_YMM 0-1+
@@ -892,7 +884,7 @@ INIT_XMM
     %define xmmxmm%1 xmm%1
     %define xmmymm%1 xmm%1
     %define ymmmm%1   mm%1
-    %define ymmxmm%1 xmm%1
+    %define ymmxmm%1 ymm%1
     %define ymmymm%1 ymm%1
     %define xm%1 xmm %+ m%1
     %define ym%1 ymm %+ m%1
@@ -925,7 +917,7 @@ INIT_XMM
 %endrep
 %rep %0/2
     %xdefine m%1 %%tmp%2
-    CAT_XDEFINE nn, m%1, %1
+    CAT_XDEFINE n, m%1, %1
     %rotate 2
 %endrep
 %endmacro
@@ -943,16 +935,16 @@ INIT_XMM
         %xdefine %%tmp m%1
         %xdefine m%1 m%2
         %xdefine m%2 %%tmp
-        CAT_XDEFINE nn, m%1, %1
-        CAT_XDEFINE nn, m%2, %2
+        CAT_XDEFINE n, m%1, %1
+        CAT_XDEFINE n, m%2, %2
     %rotate 1
     %endrep
 %endmacro
 
 %macro SWAP_INTERNAL_NAME 2-*
-    %xdefine %%args nn %+ %1
+    %xdefine %%args n %+ %1
     %rep %0-1
-        %xdefine %%args %%args, nn %+ %2
+        %xdefine %%args %%args, n %+ %2
     %rotate 1
     %endrep
     SWAP_INTERNAL_NUM %%args
@@ -979,7 +971,7 @@ INIT_XMM
         %assign %%i 0
         %rep num_mmregs
             CAT_XDEFINE m, %%i, %1_m %+ %%i
-            CAT_XDEFINE nn, m %+ %%i, %%i
+            CAT_XDEFINE n, m %+ %%i, %%i
         %assign %%i %%i+1
         %endrep
     %endif
@@ -1406,6 +1398,21 @@ AVX_INSTR pfmul, 1, 0, 1
 %endrep
 %undef i
 %undef j
+
+%macro FMA_INSTR 3
+    %macro %1 4-7 %1, %2, %3
+        %if cpuflag(xop)
+            v%5 %1, %2, %3, %4
+        %else
+            %6 %1, %2, %3
+            %7 %1, %4
+        %endif
+    %endmacro
+%endmacro
+
+FMA_INSTR  pmacsdd,  pmulld, paddd
+FMA_INSTR  pmacsww,  pmullw, paddw
+FMA_INSTR pmadcswd, pmaddwd, paddd
 
 ; tzcnt is equivalent to "rep bsf" and is backwards-compatible with bsf.
 ; This lets us use tzcnt without bumping the yasm version requirement yet.
