@@ -2,20 +2,20 @@
  * RTP output format
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,6 +49,7 @@ static const AVClass rtp_muxer_class = {
 static int is_supported(enum AVCodecID id)
 {
     switch(id) {
+    case AV_CODEC_ID_H261:
     case AV_CODEC_ID_H263:
     case AV_CODEC_ID_H263P:
     case AV_CODEC_ID_H264:
@@ -96,7 +97,7 @@ static int rtp_write_header(AVFormatContext *s1)
     }
     st = s1->streams[0];
     if (!is_supported(st->codec->codec_id)) {
-        av_log(s1, AV_LOG_ERROR, "Unsupported codec %x\n", st->codec->codec_id);
+        av_log(s1, AV_LOG_ERROR, "Unsupported codec %s\n", avcodec_get_name(st->codec->codec_id));
 
         return -1;
     }
@@ -119,16 +120,19 @@ static int rtp_write_header(AVFormatContext *s1)
         s->ssrc = av_get_random_seed();
     s->first_packet = 1;
     s->first_rtcp_ntp_time = ff_ntp_time();
-    if (s1->start_time_realtime)
+    if (s1->start_time_realtime != 0  &&  s1->start_time_realtime != AV_NOPTS_VALUE)
         /* Round the NTP time to whole milliseconds. */
         s->first_rtcp_ntp_time = (s1->start_time_realtime / 1000) * 1000 +
                                  NTP_OFFSET_US;
     // Pick a random sequence start number, but in the lower end of the
     // available range, so that any wraparound doesn't happen immediately.
     // (Immediate wraparound would be an issue for SRTP.)
-    if (s->seq < 0)
-        s->seq = av_get_random_seed() & 0x0fff;
-    else
+    if (s->seq < 0) {
+        if (s1->flags & AVFMT_FLAG_BITEXACT) {
+            s->seq = 0;
+        } else
+            s->seq = av_get_random_seed() & 0x0fff;
+    } else
         s->seq &= 0xffff; // Use the given parameter, wrapped to the right interval
 
     if (s1->packet_size) {
@@ -553,12 +557,19 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     case AV_CODEC_ID_H264:
         ff_rtp_send_h264(s1, pkt->data, size);
         break;
+    case AV_CODEC_ID_H261:
+        ff_rtp_send_h261(s1, pkt->data, size);
+        break;
     case AV_CODEC_ID_H263:
         if (s->flags & FF_RTP_FLAG_RFC2190) {
             int mb_info_size = 0;
             const uint8_t *mb_info =
                 av_packet_get_side_data(pkt, AV_PKT_DATA_H263_MB_INFO,
                                         &mb_info_size);
+            if (!mb_info) {
+                av_log(s1, AV_LOG_ERROR, "failed to allocate side data\n");
+                return AVERROR(ENOMEM);
+            }
             ff_rtp_send_h263_rfc2190(s1, pkt->data, size, mb_info, mb_info_size);
             break;
         }
