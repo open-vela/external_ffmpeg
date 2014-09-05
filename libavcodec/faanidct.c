@@ -2,20 +2,20 @@
  * Floating point AAN IDCT
  * Copyright (c) 2008 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "faanidct.h"
@@ -49,6 +49,7 @@ B7*B0/8, B7*B1/8, B7*B2/8, B7*B3/8, B7*B4/8, B7*B5/8, B7*B6/8, B7*B7/8,
 
 static inline void p8idct(int16_t data[64], FLOAT temp[64], uint8_t *dest, int stride, int x, int y, int type){
     int i;
+    FLOAT av_unused tmp0;
     FLOAT s04, d04, s17, d17, s26, d26, s53, d53;
     FLOAT os07, os16, os25, os34;
     FLOAT od07, od16, od25, od34;
@@ -63,12 +64,9 @@ static inline void p8idct(int16_t data[64], FLOAT temp[64], uint8_t *dest, int s
         od25= (s17 - s53)*(2*A4);
 
 #if 0 //these 2 are equivalent
-        {
-            FLOAT tmp0;
-            tmp0 = (d17 + d53) *  (2 * A2);
-            od34 =  d17        *  (2 * B6) - tmp0;
-            od16 =  d53        * (-2 * B2) + tmp0;
-        }
+        tmp0= (d17 + d53)*(2*A2);
+        od34=  d17*( 2*B6) - tmp0;
+        od16=  d53*(-2*B2) + tmp0;
 #else
         od34=  d17*(2*(B6-A2)) - d53*(2*A2);
         od16=  d53*(2*(A2-B2)) + d17*(2*A2);

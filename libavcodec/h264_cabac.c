@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... cabac decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,10 @@
  */
 
 #define CABAC(h) 1
+#define UNCHECKED_BITSTREAM_READER 1
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/timer.h"
 #include "config.h"
 #include "cabac.h"
@@ -43,8 +45,6 @@
 #if ARCH_X86
 #include "x86/h264_i386.h"
 #endif
-
-#include <assert.h>
 
 /* Cabac pre state table */
 
@@ -1604,7 +1604,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
 
     int index[64];
 
-    int last;
+    int av_unused last;
     int coeff_count = 0;
     int node_ctx = 0;
 
@@ -1621,7 +1621,9 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
     cc.range     = h->cabac.range;
     cc.low       = h->cabac.low;
     cc.bytestream= h->cabac.bytestream;
+#if !UNCHECKED_BITSTREAM_READER || ARCH_AARCH64
     cc.bytestream_end = h->cabac.bytestream_end;
+#endif
 #else
 #define CC &h->cabac
 #endif
@@ -1670,7 +1672,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
         }
 #endif
     }
-    assert(coeff_count > 0);
+    av_assert2(coeff_count > 0);
 
     if( is_dc ) {
         if( cat == 3 )
@@ -1682,7 +1684,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
         if( max_coeff == 64 )
             fill_rectangle(&h->non_zero_count_cache[scan8[n]], 2, 2, 8, coeff_count, 1);
         else {
-            assert( cat == 1 || cat ==  2 || cat ==  4 || cat == 7 || cat == 8 || cat == 11 || cat == 12 );
+            av_assert2( cat == 1 || cat ==  2 || cat ==  4 || cat == 7 || cat == 8 || cat == 11 || cat == 12 );
             h->non_zero_count_cache[scan8[n]] = coeff_count;
         }
     }
@@ -1711,7 +1713,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
 \
             if( coeff_abs >= 15 ) { \
                 int j = 0; \
-                while( get_cabac_bypass( CC ) ) { \
+                while(get_cabac_bypass( CC ) && j<30) { \
                     j++; \
                 } \
 \
@@ -1885,6 +1887,7 @@ int ff_h264_decode_mb_cabac(H264Context *h) {
     int dct8x8_allowed= h->pps.transform_8x8_mode;
     int decode_chroma = h->sps.chroma_format_idc == 1 || h->sps.chroma_format_idc == 2;
     const int pixel_shift = h->pixel_shift;
+    unsigned local_ref_count[2];
 
     mb_xy = h->mb_xy = h->mb_x + h->mb_y*h->mb_stride;
 
@@ -1927,7 +1930,7 @@ int ff_h264_decode_mb_cabac(H264Context *h) {
 
     if( h->slice_type_nos == AV_PICTURE_TYPE_B ) {
         int ctx = 0;
-        assert(h->slice_type_nos == AV_PICTURE_TYPE_B);
+        av_assert2(h->slice_type_nos == AV_PICTURE_TYPE_B);
 
         if( !IS_DIRECT( h->left_type[LTOP]-1 ) )
             ctx++;
@@ -1980,7 +1983,7 @@ int ff_h264_decode_mb_cabac(H264Context *h) {
         mb_type= decode_cabac_intra_mb_type(h, 3, 1);
         if(h->slice_type == AV_PICTURE_TYPE_SI && mb_type)
             mb_type--;
-        assert(h->slice_type_nos == AV_PICTURE_TYPE_I);
+        av_assert2(h->slice_type_nos == AV_PICTURE_TYPE_I);
 decode_intra_mb:
         partition_count = 0;
         cbp= i_mb_type_info[mb_type].cbp;
@@ -2025,6 +2028,9 @@ decode_intra_mb:
         h->last_qscale_diff = 0;
         return 0;
     }
+
+    local_ref_count[0] = h->ref_count[0] << MB_MBAFF(h);
+    local_ref_count[1] = h->ref_count[1] << MB_MBAFF(h);
 
     fill_decode_caches(h, mb_type);
 
@@ -2094,11 +2100,10 @@ decode_intra_mb:
                 for( i = 0; i < 4; i++ ) {
                     if(IS_DIRECT(h->sub_mb_type[i])) continue;
                     if(IS_DIR(h->sub_mb_type[i], 0, list)){
-                        int rc = h->ref_count[list] << MB_MBAFF(h);
-                        if (rc > 1) {
+                        if (local_ref_count[list] > 1) {
                             ref[list][i] = decode_cabac_mb_ref( h, list, 4*i );
-                            if (ref[list][i] >= (unsigned) rc) {
-                                av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref[list][i], rc);
+                            if (ref[list][i] >= (unsigned)local_ref_count[list]) {
+                                av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref[list][i], local_ref_count[list]);
                                 return -1;
                             }
                         }else
@@ -2180,16 +2185,16 @@ decode_intra_mb:
         if(IS_16X16(mb_type)){
             for(list=0; list<h->list_count; list++){
                 if(IS_DIR(mb_type, 0, list)){
-                    int ref, rc = h->ref_count[list] << MB_MBAFF(h);
-                    if (rc > 1) {
+                    int ref;
+                    if (local_ref_count[list] > 1) {
                         ref= decode_cabac_mb_ref(h, list, 0);
-                        if (ref >= (unsigned) rc) {
-                            av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
+                        if (ref >= (unsigned)local_ref_count[list]) {
+                            av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, local_ref_count[list]);
                             return -1;
                         }
                     }else
                         ref=0;
-                        fill_rectangle(&h->ref_cache[list][ scan8[0] ], 4, 4, 8, ref, 1);
+                    fill_rectangle(&h->ref_cache[list][ scan8[0] ], 4, 4, 8, ref, 1);
                 }
             }
             for(list=0; list<h->list_count; list++){
@@ -2208,11 +2213,11 @@ decode_intra_mb:
             for(list=0; list<h->list_count; list++){
                     for(i=0; i<2; i++){
                         if(IS_DIR(mb_type, i, list)){
-                            int ref, rc = h->ref_count[list] << MB_MBAFF(h);
-                            if (rc > 1) {
+                            int ref;
+                            if (local_ref_count[list] > 1) {
                                 ref= decode_cabac_mb_ref( h, list, 8*i );
-                                if (ref >= (unsigned) rc) {
-                                    av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
+                                if (ref >= (unsigned)local_ref_count[list]) {
+                                    av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, local_ref_count[list]);
                                     return -1;
                                 }
                             }else
@@ -2239,15 +2244,15 @@ decode_intra_mb:
                 }
             }
         }else{
-            assert(IS_8X16(mb_type));
+            av_assert2(IS_8X16(mb_type));
             for(list=0; list<h->list_count; list++){
                     for(i=0; i<2; i++){
                         if(IS_DIR(mb_type, i, list)){ //FIXME optimize
-                            int ref, rc = h->ref_count[list] << MB_MBAFF(h);
-                            if (rc > 1) {
+                            int ref;
+                            if (local_ref_count[list] > 1) {
                                 ref= decode_cabac_mb_ref( h, list, 4*i );
-                                if (ref >= (unsigned) rc) {
-                                    av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
+                                if (ref >= (unsigned)local_ref_count[list]) {
+                                    av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, local_ref_count[list]);
                                     return -1;
                                 }
                             }else
@@ -2285,6 +2290,11 @@ decode_intra_mb:
         cbp  = decode_cabac_mb_cbp_luma( h );
         if(decode_chroma)
             cbp |= decode_cabac_mb_cbp_chroma( h ) << 4;
+    } else {
+        if (!decode_chroma && cbp>15) {
+            av_log(h->avctx, AV_LOG_ERROR, "gray chroma\n");
+            return AVERROR_INVALIDDATA;
+        }
     }
 
     h->cbp_table[mb_xy] = h->cbp = cbp;
