@@ -2,27 +2,26 @@
  * RTP muxer chaining code
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avformat.h"
 #include "avio_internal.h"
 #include "rtpenc_chain.h"
-#include "avio_internal.h"
 #include "rtp.h"
 #include "libavutil/opt.h"
 
@@ -59,12 +58,15 @@ int ff_rtp_chain_mux_open(AVFormatContext **out, AVFormatContext *s,
     rtpctx->max_delay = s->max_delay;
     /* Copy other stream parameters. */
     rtpctx->streams[0]->sample_aspect_ratio = st->sample_aspect_ratio;
+    rtpctx->flags |= s->flags & AVFMT_FLAG_MP4A_LATM;
+
     /* Get the payload type from the codec */
     if (st->id < RTP_PT_PRIVATE)
         rtpctx->streams[0]->id =
             ff_rtp_get_payload_type(s, st->codec, idx);
     else
         rtpctx->streams[0]->id = st->id;
+
 
     if (av_opt_get(s, "rtpflags", AV_OPT_SEARCH_CHILDREN, &rtpflags) >= 0)
         av_dict_set(&opts, "rtpflags", rtpflags, AV_DICT_DONT_STRDUP_VAL);
@@ -73,7 +75,6 @@ int ff_rtp_chain_mux_open(AVFormatContext **out, AVFormatContext *s,
     rtpctx->start_time_realtime = s->start_time_realtime;
 
     avcodec_copy_context(rtpctx->streams[0]->codec, st->codec);
-    rtpctx->streams[0]->time_base = st->time_base;
 
     if (handle) {
         ret = ffio_fdopen(&rtpctx->pb, handle);
