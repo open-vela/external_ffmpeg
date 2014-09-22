@@ -4,20 +4,20 @@
  *
  * based upon code from Sebastian Jedruszkiewicz <elf@frogger.rules.pl>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,7 @@
 
 #include "avcodec.h"
 #include "blockdsp.h"
+#include "bswapdsp.h"
 #include "idctdsp.h"
 #include "mpegvideo.h"
 #include "mpeg12.h"
@@ -37,6 +38,7 @@
 typedef struct MDECContext {
     AVCodecContext *avctx;
     BlockDSPContext bdsp;
+    BswapDSPContext bbdsp;
     IDCTDSPContext idsp;
     ThreadFrame frame;
     GetBitContext gb;
@@ -124,7 +126,7 @@ static inline int mdec_decode_block_intra(MDECContext *a, int16_t *block, int n)
 static inline int decode_mb(MDECContext *a, int16_t block[6][64])
 {
     int i, ret;
-    const int block_index[6] = { 5, 4, 0, 1, 2, 3 };
+    static const int block_index[6] = { 5, 4, 0, 1, 2, 3 };
 
     a->bdsp.clear_blocks(block[0]);
 
@@ -166,23 +168,19 @@ static int decode_frame(AVCodecContext *avctx,
     const uint8_t *buf    = avpkt->data;
     int buf_size          = avpkt->size;
     ThreadFrame frame     = { .f = data };
-    int i, ret;
+    int ret;
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
-    }
     frame.f->pict_type = AV_PICTURE_TYPE_I;
     frame.f->key_frame = 1;
 
-    av_fast_malloc(&a->bitstream_buffer, &a->bitstream_buffer_size, buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    av_fast_padded_malloc(&a->bitstream_buffer, &a->bitstream_buffer_size, buf_size);
     if (!a->bitstream_buffer)
         return AVERROR(ENOMEM);
-    for (i = 0; i < buf_size; i += 2) {
-        a->bitstream_buffer[i]     = buf[i + 1];
-        a->bitstream_buffer[i + 1] = buf[i];
-    }
-    init_get_bits(&a->gb, a->bitstream_buffer, buf_size * 8);
+    a->bbdsp.bswap16_buf((uint16_t *)a->bitstream_buffer, (uint16_t *)buf, (buf_size + 1) / 2);
+    if ((ret = init_get_bits8(&a->gb, a->bitstream_buffer, buf_size)) < 0)
+        return ret;
 
     /* skip over 4 preamble bytes in stream (typically 0xXX 0xXX 0x00 0x38) */
     skip_bits(&a->gb, 32);
@@ -216,6 +214,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     a->avctx           = avctx;
 
     ff_blockdsp_init(&a->bdsp, avctx);
+    ff_bswapdsp_init(&a->bbdsp);
     ff_idctdsp_init(&a->idsp, avctx);
     ff_mpeg12_init_vlcs();
     ff_init_scantable(a->idsp.idct_permutation, &a->scantable,

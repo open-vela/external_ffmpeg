@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -95,12 +95,6 @@ static int vdpau_mpeg_decode_slice(AVCodecContext *avctx,
 }
 
 #if CONFIG_MPEG1_VDPAU_HWACCEL
-static int vdpau_mpeg1_init(AVCodecContext *avctx)
-{
-    return ff_vdpau_common_init(avctx, VDP_DECODER_PROFILE_MPEG1,
-                                VDP_DECODER_LEVEL_MPEG1_NA);
-}
-
 AVHWAccel ff_mpeg1_vdpau_hwaccel = {
     .name           = "mpeg1_vdpau",
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -110,31 +104,10 @@ AVHWAccel ff_mpeg1_vdpau_hwaccel = {
     .end_frame      = ff_vdpau_mpeg_end_frame,
     .decode_slice   = vdpau_mpeg_decode_slice,
     .frame_priv_data_size = sizeof(struct vdpau_picture_context),
-    .init           = vdpau_mpeg1_init,
-    .uninit         = ff_vdpau_common_uninit,
-    .priv_data_size = sizeof(VDPAUContext),
 };
 #endif
 
 #if CONFIG_MPEG2_VDPAU_HWACCEL
-static int vdpau_mpeg2_init(AVCodecContext *avctx)
-{
-    VdpDecoderProfile profile;
-
-    switch (avctx->profile) {
-    case FF_PROFILE_MPEG2_MAIN:
-        profile = VDP_DECODER_PROFILE_MPEG2_MAIN;
-        break;
-    case FF_PROFILE_MPEG2_SIMPLE:
-        profile = VDP_DECODER_PROFILE_MPEG2_SIMPLE;
-        break;
-    default:
-        return AVERROR(EINVAL);
-    }
-
-    return ff_vdpau_common_init(avctx, profile, VDP_DECODER_LEVEL_MPEG2_HL);
-}
-
 AVHWAccel ff_mpeg2_vdpau_hwaccel = {
     .name           = "mpeg2_vdpau",
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -144,8 +117,5 @@ AVHWAccel ff_mpeg2_vdpau_hwaccel = {
     .end_frame      = ff_vdpau_mpeg_end_frame,
     .decode_slice   = vdpau_mpeg_decode_slice,
     .frame_priv_data_size = sizeof(struct vdpau_picture_context),
-    .init           = vdpau_mpeg2_init,
-    .uninit         = ff_vdpau_common_uninit,
-    .priv_data_size = sizeof(VDPAUContext),
 };
 #endif

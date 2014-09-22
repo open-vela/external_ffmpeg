@@ -4,30 +4,35 @@
  *
  * Copyright (C) 2008 NVIDIA
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef AVCODEC_VDPAU_INTERNAL_H
 #define AVCODEC_VDPAU_INTERNAL_H
 
+#include "config.h"
 #include <stdint.h>
+#if CONFIG_VDPAU
 #include <vdpau/vdpau.h>
+#endif
+#include "h264.h"
 
 #include "avcodec.h"
+#include "mpeg4video.h"
 #include "mpegvideo.h"
 #include "version.h"
 
@@ -37,6 +42,8 @@ static inline uintptr_t ff_vdpau_get_surface_id(AVFrame *pic)
     return (uintptr_t)pic->data[3];
 }
 
+struct vdpau_picture_context;
+#if CONFIG_VDPAU
 #if !FF_API_BUFS_VDPAU
 union AVVDPAUPictureInfo {
     VdpPictureInfoH264        h264;
@@ -47,34 +54,6 @@ union AVVDPAUPictureInfo {
 #else
 #include "vdpau.h"
 #endif
-
-typedef struct VDPAUHWContext {
-    AVVDPAUContext context;
-    VdpDevice device;
-    VdpGetProcAddress *get_proc_address;
-} VDPAUHWContext;
-
-typedef struct VDPAUContext {
-    /**
-     * VDPAU device handle
-     */
-    VdpDevice device;
-
-    /**
-     * VDPAU decoder handle
-     */
-    VdpDecoder decoder;
-
-    /**
-     * VDPAU device driver
-     */
-    VdpGetProcAddress *get_proc_address;
-
-    /**
-     * VDPAU decoder render callback
-     */
-    VdpDecoderRender *render;
-} VDPAUContext;
 
 struct vdpau_picture_context {
     /**
@@ -97,17 +76,29 @@ struct vdpau_picture_context {
      */
     VdpBitstreamBuffer *bitstream_buffers;
 };
-
-int ff_vdpau_common_init(AVCodecContext *avctx, VdpDecoderProfile profile,
-                         int level);
-int ff_vdpau_common_uninit(AVCodecContext *avctx);
+#endif
 
 int ff_vdpau_common_start_frame(struct vdpau_picture_context *pic,
                                 const uint8_t *buffer, uint32_t size);
-int ff_vdpau_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
-                              struct vdpau_picture_context *pic);
 int ff_vdpau_mpeg_end_frame(AVCodecContext *avctx);
 int ff_vdpau_add_buffer(struct vdpau_picture_context *pic, const uint8_t *buf,
                         uint32_t buf_size);
+
+
+void ff_vdpau_add_data_chunk(uint8_t *data, const uint8_t *buf,
+                             int buf_size);
+
+void ff_vdpau_mpeg_picture_complete(MpegEncContext *s, const uint8_t *buf,
+                                    int buf_size, int slice_count);
+
+void ff_vdpau_h264_picture_start(H264Context *h);
+void ff_vdpau_h264_set_reference_frames(H264Context *h);
+void ff_vdpau_h264_picture_complete(H264Context *h);
+
+void ff_vdpau_vc1_decode_picture(MpegEncContext *s, const uint8_t *buf,
+                                 int buf_size);
+
+void ff_vdpau_mpeg4_decode_picture(Mpeg4DecContext *s, const uint8_t *buf,
+                                   int buf_size);
 
 #endif /* AVCODEC_VDPAU_INTERNAL_H */

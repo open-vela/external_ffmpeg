@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,6 +22,7 @@
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/mpegvideodsp.h"
+#include "libavcodec/videodsp.h"
 
 #if HAVE_INLINE_ASM
 
@@ -43,20 +44,24 @@ static void gmc_mmx(uint8_t *dst, uint8_t *src,
     const uint16_t dxy4[4] = { dxys, dxys, dxys, dxys };
     const uint16_t dyy4[4] = { dyys, dyys, dyys, dyys };
     const uint64_t shift2  = 2 * shift;
+#define MAX_STRIDE 4096U
+#define MAX_H 8U
+    uint8_t edge_buf[(MAX_H + 1) * MAX_STRIDE];
     int x, y;
 
     const int dxw = (dxx - (1 << (16 + shift))) * (w - 1);
     const int dyh = (dyy - (1 << (16 + shift))) * (h - 1);
     const int dxh = dxy * (h - 1);
     const int dyw = dyx * (w - 1);
+    int need_emu  =  (unsigned) ix >= width  - w ||
+                     (unsigned) iy >= height - h;
 
     if ( // non-constant fullpel offset (3% of blocks)
         ((ox ^ (ox + dxw)) | (ox ^ (ox + dxh)) | (ox ^ (ox + dxw + dxh)) |
          (oy ^ (oy + dyw)) | (oy ^ (oy + dyh)) | (oy ^ (oy + dyw + dyh))) >> (16 + shift) ||
         // uses more than 16 bits of subpel mv (only at huge resolution)
         (dxx | dxy | dyx | dyy) & 15 ||
-        (unsigned) ix >= width  - w ||
-        (unsigned) iy >= height - h) {
+        (need_emu && (h > MAX_H || stride > MAX_STRIDE))) {
         // FIXME could still use mmx for some of the rows
         ff_gmc_c(dst, src, stride, h, ox, oy, dxx, dxy, dyx, dyy,
                  shift, r, width, height);
@@ -64,6 +69,10 @@ static void gmc_mmx(uint8_t *dst, uint8_t *src,
     }
 
     src += ix + iy * stride;
+    if (need_emu) {
+        ff_emulated_edge_mc_8(edge_buf, src, stride, stride, w + 1, h + 1, ix, iy, width, height);
+        src = edge_buf;
+    }
 
     __asm__ volatile (
         "movd         %0, %%mm6         \n\t"
@@ -150,4 +159,3 @@ av_cold void ff_mpegvideodsp_init_x86(MpegVideoDSPContext *c)
         c->gmc = gmc_mmx;
 #endif /* HAVE_INLINE_ASM */
 }
-

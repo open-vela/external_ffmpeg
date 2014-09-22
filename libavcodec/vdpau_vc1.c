@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,14 +44,18 @@ static int vdpau_vc1_start_frame(AVCodecContext *avctx,
 
     switch (s->pict_type) {
     case AV_PICTURE_TYPE_B:
+        if (s->next_picture_ptr) {
         ref = ff_vdpau_get_surface_id(s->next_picture.f);
         assert(ref != VDP_INVALID_HANDLE);
         info->backward_reference = ref;
+        }
         /* fall-through */
     case AV_PICTURE_TYPE_P:
+        if (s->last_picture_ptr) {
         ref = ff_vdpau_get_surface_id(s->last_picture.f);
         assert(ref != VDP_INVALID_HANDLE);
         info->forward_reference  = ref;
+        }
     }
 
     info->slice_count       = 0;
@@ -109,27 +113,6 @@ static int vdpau_vc1_decode_slice(AVCodecContext *avctx,
     return 0;
 }
 
-static int vdpau_vc1_init(AVCodecContext *avctx)
-{
-    VdpDecoderProfile profile;
-
-    switch (avctx->profile) {
-    case FF_PROFILE_VC1_SIMPLE:
-        profile = VDP_DECODER_PROFILE_VC1_SIMPLE;
-        break;
-    case FF_PROFILE_VC1_MAIN:
-        profile = VDP_DECODER_PROFILE_VC1_MAIN;
-        break;
-    case FF_PROFILE_VC1_ADVANCED:
-        profile = VDP_DECODER_PROFILE_VC1_ADVANCED;
-        break;
-    default:
-        return AVERROR(ENOTSUP);
-    }
-
-    return ff_vdpau_common_init(avctx, profile, avctx->level);
-}
-
 #if CONFIG_WMV3_VDPAU_HWACCEL
 AVHWAccel ff_wmv3_vdpau_hwaccel = {
     .name           = "wm3_vdpau",
@@ -140,9 +123,6 @@ AVHWAccel ff_wmv3_vdpau_hwaccel = {
     .end_frame      = ff_vdpau_mpeg_end_frame,
     .decode_slice   = vdpau_vc1_decode_slice,
     .frame_priv_data_size = sizeof(struct vdpau_picture_context),
-    .init           = vdpau_vc1_init,
-    .uninit         = ff_vdpau_common_uninit,
-    .priv_data_size = sizeof(VDPAUContext),
 };
 #endif
 
@@ -155,7 +135,4 @@ AVHWAccel ff_vc1_vdpau_hwaccel = {
     .end_frame      = ff_vdpau_mpeg_end_frame,
     .decode_slice   = vdpau_vc1_decode_slice,
     .frame_priv_data_size = sizeof(struct vdpau_picture_context),
-    .init           = vdpau_vc1_init,
-    .uninit         = ff_vdpau_common_uninit,
-    .priv_data_size = sizeof(VDPAUContext),
 };
