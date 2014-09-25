@@ -4,27 +4,26 @@
  * Copyright (c) 2007 Wolfram Gloger
  * Copyright (c) 2010 Michele Orrù
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "avformat.h"
 #include "libavutil/avstring.h"
 #include "libavutil/mem.h"
-
-#include "avformat.h"
 #include "url.h"
 
 #define AV_CAT_SEPARATOR "|"
@@ -60,26 +59,24 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
     char *node_uri = NULL;
     int err = 0;
     int64_t size;
-    size_t len, i;
+    size_t  len, i;
     URLContext *uc;
     struct concat_data  *data = h->priv_data;
     struct concat_nodes *nodes;
 
     av_strstart(uri, "concat:", &uri);
 
-    for (i = 0, len = 1; uri[i]; i++) {
-        if (uri[i] == *AV_CAT_SEPARATOR) {
+    for (i = 0, len = 1; uri[i]; i++)
+        if (uri[i] == *AV_CAT_SEPARATOR)
             /* integer overflow */
             if (++len == UINT_MAX / sizeof(*nodes)) {
                 av_freep(&h->priv_data);
                 return AVERROR(ENAMETOOLONG);
             }
-        }
-    }
 
-    if (!(nodes = av_realloc(NULL, sizeof(*nodes) * len)))
+    if (!(nodes = av_realloc(NULL, sizeof(*nodes) * len))) {
         return AVERROR(ENOMEM);
-    else
+    } else
         data->nodes = nodes;
 
     /* handle input */
@@ -90,8 +87,8 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
         len = strcspn(uri, AV_CAT_SEPARATOR);
         if ((err = av_reallocp(&node_uri, len + 1)) < 0)
             break;
-        av_strlcpy(node_uri, uri, len + 1);
-        uri += len + strspn(uri + len, AV_CAT_SEPARATOR);
+        av_strlcpy(node_uri, uri, len+1);
+        uri += len + strspn(uri+len, AV_CAT_SEPARATOR);
 
         /* creating URLContext */
         if ((err = ffurl_open(&uc, node_uri, flags,
@@ -114,9 +111,10 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
 
     if (err < 0)
         concat_close(h);
-    else if ((err = av_reallocp(&nodes, data->length * sizeof(*nodes))) < 0)
+    else if (!(nodes = av_realloc(nodes, data->length * sizeof(*nodes)))) {
         concat_close(h);
-    else
+        err = AVERROR(ENOMEM);
+    } else
         data->nodes = nodes;
     return err;
 }
@@ -126,17 +124,16 @@ static int concat_read(URLContext *h, unsigned char *buf, int size)
     int result, total = 0;
     struct concat_data  *data  = h->priv_data;
     struct concat_nodes *nodes = data->nodes;
-    size_t i                   = data->current;
+    size_t i = data->current;
 
     while (size > 0) {
         result = ffurl_read(nodes[i].uc, buf, size);
         if (result < 0)
             return total ? total : result;
-        if (!result) {
+        if (!result)
             if (i + 1 == data->length ||
                 ffurl_seek(nodes[++i].uc, 0, SEEK_SET) < 0)
                 break;
-        }
         total += result;
         buf   += result;
         size  -= result;
@@ -154,7 +151,9 @@ static int64_t concat_seek(URLContext *h, int64_t pos, int whence)
 
     switch (whence) {
     case SEEK_END:
-        for (i = data->length - 1; i && pos < -nodes[i].size; i--)
+        for (i = data->length - 1;
+             i && pos < -nodes[i].size;
+             i--)
             pos += nodes[i].size;
         break;
     case SEEK_CUR:
