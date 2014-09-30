@@ -3,20 +3,20 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,15 +39,6 @@ static void fill_picture_parameters(AVCodecContext *avctx,
 {
     const MpegEncContext *s = &v->s;
     const Picture *current_picture = s->current_picture_ptr;
-    int intcomp = 0;
-
-    // determine if intensity compensation is needed
-    if (s->pict_type == AV_PICTURE_TYPE_P) {
-      if ((v->fcm == ILACE_FRAME && v->intcomp) || (v->fcm != ILACE_FRAME && v->mv_mode == MV_PMODE_INTENSITY_COMP)) {
-        if (v->lumscale != 32 || v->lumshift != 0 || (s->picture_structure != PICT_FRAME && (v->lumscale2 != 32 || v->lumshift2 != 0)))
-          intcomp = 1;
-      }
-    }
 
     memset(pp, 0, sizeof(*pp));
     pp->wDecodedPictureIndex    =
@@ -78,13 +69,13 @@ static void fill_picture_parameters(AVCodecContext *avctx,
         pp->bPicStructure      |= 0x01;
     if (s->picture_structure & PICT_BOTTOM_FIELD)
         pp->bPicStructure      |= 0x02;
-    pp->bSecondField            = v->interlace && v->fcm == ILACE_FIELD && v->second_field;
+    pp->bSecondField            = v->interlace && v->fcm != ILACE_FIELD && !s->first_field;
     pp->bPicIntra               = s->pict_type == AV_PICTURE_TYPE_I || v->bi_type;
     pp->bPicBackwardPrediction  = s->pict_type == AV_PICTURE_TYPE_B && !v->bi_type;
     pp->bBidirectionalAveragingMode = (1                                           << 7) |
                                       ((ctx->cfg->ConfigIntraResidUnsigned != 0)   << 6) |
                                       ((ctx->cfg->ConfigResidDiffAccelerator != 0) << 5) |
-                                      (intcomp                                     << 4) |
+                                      ((v->lumscale != 32 || v->lumshift != 0)     << 4) |
                                       ((v->profile == PROFILE_ADVANCED)            << 3);
     pp->bMVprecisionAndChromaRelation = ((v->mv_mode == MV_PMODE_1MV_HPEL_BILIN) << 3) |
                                         (1                                       << 2) |
@@ -132,25 +123,15 @@ static void fill_picture_parameters(AVCodecContext *avctx,
                                   (v->range_mapuv_flag << 3) |
                                   (v->range_mapuv          );
     pp->bPicBinPB               = 0;
-    pp->bMV_RPS                 = (v->fcm == ILACE_FIELD && pp->bPicBackwardPrediction) ? v->refdist + 9 : 0;
-    pp->bReservedBits           = v->pq;
+    pp->bMV_RPS                 = 0;
+    pp->bReservedBits           = 0;
     if (s->picture_structure == PICT_FRAME) {
-        if (intcomp) {
-            pp->wBitstreamFcodes      = v->lumscale;
-            pp->wBitstreamPCEelements = v->lumshift;
-        } else {
-            pp->wBitstreamFcodes      = 32;
-            pp->wBitstreamPCEelements = 0;
-        }
+        pp->wBitstreamFcodes        = v->lumscale;
+        pp->wBitstreamPCEelements   = v->lumshift;
     } else {
         /* Syntax: (top_field_param << 8) | bottom_field_param */
-        if (intcomp) {
-            pp->wBitstreamFcodes      = (v->lumscale << 8) | v->lumscale2;
-            pp->wBitstreamPCEelements = (v->lumshift << 8) | v->lumshift2;
-        } else {
-            pp->wBitstreamFcodes      = (32 << 8) | 32;
-            pp->wBitstreamPCEelements = 0;
-        }
+        pp->wBitstreamFcodes        = (v->lumscale << 8) | v->lumscale;
+        pp->wBitstreamPCEelements   = (v->lumshift << 8) | v->lumshift;
     }
     pp->bBitstreamConcealmentNeed   = 0;
     pp->bBitstreamConcealmentMethod = 0;
@@ -168,8 +149,8 @@ static void fill_slice(AVCodecContext *avctx, DXVA_SliceInfo *slice,
     slice->dwSliceBitsInBuffer = 8 * size;
     slice->dwSliceDataLocation = position;
     slice->bStartCodeBitOffset = 0;
-    slice->bReservedBits       = (s->pict_type == AV_PICTURE_TYPE_B && !v->bi_type) ? v->bfraction_lut_index + 9 : 0;
-    slice->wMBbitOffset        = v->p_frame_skipped ? 0xffff : get_bits_count(&s->gb) + (avctx->codec_id == AV_CODEC_ID_VC1 ? 32 : 0);
+    slice->bReservedBits       = 0;
+    slice->wMBbitOffset        = get_bits_count(&s->gb);
     slice->wNumberMBsInSlice   = s->mb_width * s->mb_height; /* XXX We assume 1 slice */
     slice->wQuantizerScaleCode = v->pq;
     slice->wBadSliceChopping   = 0;
@@ -205,11 +186,8 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
     dxva_data = dxva_data_ptr;
     result = data_size <= dxva_size ? 0 : -1;
     if (!result) {
-        if (start_code_size > 0) {
+        if (start_code_size > 0)
             memcpy(dxva_data, start_code, start_code_size);
-            if (v->second_field)
-                dxva_data[3] = 0x0c;
-        }
         memcpy(dxva_data + start_code_size,
                ctx_pic->bitstream + slice->dwSliceDataLocation, slice_size);
         if (padding > 0)
