@@ -1,23 +1,18 @@
 /*
- * Copyright (c) 2003 Michael Zucchi <notzed@ximian.com>
- * Copyright (c) 2010 Baptiste Coudurier
- * Copyright (c) 2011 Stefano Sabatini
- * Copyright (c) 2013 Vittorio Giovara <vittorio.giovara@gmail.com>
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -51,11 +46,12 @@ typedef struct InterlaceContext {
     enum ScanMode scan;    // top or bottom field first scanning
     int lowpass;           // enable or disable low pass filterning
     AVFrame *cur, *next;   // the two frames from which the new one is obtained
+    int got_output;        // signal an output frame is reday to request_frame()
 } InterlaceContext;
 
 #define OFFSET(x) offsetof(InterlaceContext, x)
 #define V AV_OPT_FLAG_VIDEO_PARAM
-static const AVOption interlace_options[] = {
+static const AVOption options[] = {
     { "scan", "scanning mode", OFFSET(scan),
         AV_OPT_TYPE_INT,   {.i64 = MODE_TFF }, 0, 1, .flags = V, .unit = "scan" },
     { "tff", "top field first", 0,
@@ -67,7 +63,13 @@ static const AVOption interlace_options[] = {
     { NULL }
 };
 
-AVFILTER_DEFINE_CLASS(interlace);
+static const AVClass class = {
+    .class_name = "interlace filter",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 
 static const enum AVPixelFormat formats_supported[] = {
     AV_PIX_FMT_YUV420P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV444P,
@@ -88,6 +90,8 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     av_frame_free(&s->cur);
     av_frame_free(&s->next);
+
+    av_opt_free(s);
 }
 
 static int config_out_props(AVFilterLink *outlink)
@@ -109,11 +113,8 @@ static int config_out_props(AVFilterLink *outlink)
     outlink->w = inlink->w;
     outlink->h = inlink->h;
     outlink->time_base = inlink->time_base;
-    outlink->frame_rate = inlink->frame_rate;
     // half framerate
     outlink->time_base.num *= 2;
-    outlink->frame_rate.den *= 2;
-    outlink->flags |= FF_LINK_FLAG_REQUEST_LOOP;
 
     av_log(ctx, AV_LOG_VERBOSE, "%s interlacing %s lowpass filter\n",
            s->scan == MODE_TFF ? "tff" : "bff", (s->lowpass) ? "with" : "without");
@@ -130,7 +131,7 @@ static void copy_picture_field(AVFrame *src_frame, AVFrame *dst_frame,
     int plane, i, j;
 
     for (plane = 0; plane < desc->nb_components; plane++) {
-        int lines = (plane == 1 || plane == 2) ? FF_CEIL_RSHIFT(inlink->h, vsub) : inlink->h;
+        int lines = (plane == 1 || plane == 2) ? -(-inlink->h) >> vsub : inlink->h;
         int linesize = av_image_get_linesize(inlink->format, inlink->w, plane);
         uint8_t *dstp = dst_frame->data[plane];
         const uint8_t *srcp = src_frame->data[plane];
@@ -193,6 +194,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
             return AVERROR(ENOMEM);
         out->pts /= 2;  // adjust pts to new framerate
         ret = ff_filter_frame(outlink, out);
+        s->got_output = 1;
         return ret;
     }
 
@@ -215,6 +217,20 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     av_frame_free(&s->next);
 
     ret = ff_filter_frame(outlink, out);
+    s->got_output = 1;
+
+    return ret;
+}
+
+static int request_frame(AVFilterLink *outlink)
+{
+    AVFilterContext *ctx = outlink->src;
+    InterlaceContext *s  = ctx->priv;
+    int ret = 0;
+
+    s->got_output = 0;
+    while (ret >= 0 && !s->got_output)
+        ret = ff_request_frame(ctx->inputs[0]);
 
     return ret;
 }
@@ -230,9 +246,10 @@ static const AVFilterPad inputs[] = {
 
 static const AVFilterPad outputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_VIDEO,
-        .config_props = config_out_props,
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_VIDEO,
+        .config_props  = config_out_props,
+        .request_frame = request_frame,
     },
     { NULL }
 };
@@ -241,9 +258,12 @@ AVFilter ff_vf_interlace = {
     .name          = "interlace",
     .description   = NULL_IF_CONFIG_SMALL("Convert progressive video into interlaced."),
     .uninit        = uninit,
-    .priv_class    = &interlace_class,
+
+    .priv_class    = &class,
     .priv_size     = sizeof(InterlaceContext),
     .query_formats = query_formats,
+
     .inputs        = inputs,
     .outputs       = outputs,
 };
+
