@@ -2,20 +2,20 @@
  * Discrete wavelet transform
  * Copyright (c) 2007 Kamil Nowosad
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,8 +34,7 @@
 enum DWTType {
     FF_DWT97,
     FF_DWT53,
-    FF_DWT97_INT,
-    FF_DWT_NB
+    FF_DWT97_INT
 };
 
 typedef struct DWTContext {
@@ -58,7 +57,6 @@ typedef struct DWTContext {
 int ff_jpeg2000_dwt_init(DWTContext *s, uint16_t border[2][2],
                          int decomp_levels, int type);
 
-int ff_dwt_encode(DWTContext *s, void *t);
 int ff_dwt_decode(DWTContext *s, void *t);
 
 void ff_dwt_destroy(DWTContext *s);
