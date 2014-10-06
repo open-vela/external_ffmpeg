@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2007 Luca Abeni
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -156,9 +156,8 @@ static char *extradata2psets(AVCodecContext *c)
     const uint8_t *r;
     static const char pset_string[] = "; sprop-parameter-sets=";
     static const char profile_string[] = "; profile-level-id=";
-    uint8_t *extradata = c->extradata;
-    int extradata_size = c->extradata_size;
-    uint8_t *tmpbuf = NULL;
+    uint8_t *orig_extradata = NULL;
+    int orig_extradata_size = 0;
     const uint8_t *sps = NULL, *sps_end;
 
     if (c->extradata_size > MAX_EXTRADATA_SIZE) {
@@ -167,28 +166,44 @@ static char *extradata2psets(AVCodecContext *c)
         return NULL;
     }
     if (c->extradata[0] == 1) {
-        if (ff_avc_write_annexb_extradata(c->extradata, &extradata,
-                                          &extradata_size))
+        uint8_t *dummy_p;
+        int dummy_int;
+        AVBitStreamFilterContext *bsfc= av_bitstream_filter_init("h264_mp4toannexb");
+
+        if (!bsfc) {
+            av_log(c, AV_LOG_ERROR, "Cannot open the h264_mp4toannexb BSF!\n");
+
             return NULL;
-        tmpbuf = extradata;
+        }
+
+        orig_extradata_size = c->extradata_size;
+        orig_extradata = av_mallocz(orig_extradata_size +
+                                    FF_INPUT_BUFFER_PADDING_SIZE);
+        if (!orig_extradata) {
+            av_bitstream_filter_close(bsfc);
+            return NULL;
+        }
+        memcpy(orig_extradata, c->extradata, orig_extradata_size);
+        av_bitstream_filter_filter(bsfc, c, NULL, &dummy_p, &dummy_int, NULL, 0, 0);
+        av_bitstream_filter_close(bsfc);
     }
 
     psets = av_mallocz(MAX_PSET_SIZE);
     if (!psets) {
         av_log(c, AV_LOG_ERROR, "Cannot allocate memory for the parameter sets.\n");
-        av_free(tmpbuf);
+        av_free(orig_extradata);
         return NULL;
     }
     memcpy(psets, pset_string, strlen(pset_string));
     p = psets + strlen(pset_string);
-    r = ff_avc_find_startcode(extradata, extradata + extradata_size);
-    while (r < extradata + extradata_size) {
+    r = ff_avc_find_startcode(c->extradata, c->extradata + c->extradata_size);
+    while (r < c->extradata + c->extradata_size) {
         const uint8_t *r1;
         uint8_t nal_type;
 
         while (!*(r++));
         nal_type = *r & 0x1f;
-        r1 = ff_avc_find_startcode(r, extradata + extradata_size);
+        r1 = ff_avc_find_startcode(r, c->extradata + c->extradata_size);
         if (nal_type != 7 && nal_type != 8) { /* Only output SPS and PPS */
             r = r1;
             continue;
@@ -202,9 +217,8 @@ static char *extradata2psets(AVCodecContext *c)
             sps_end = r1;
         }
         if (!av_base64_encode(p, MAX_PSET_SIZE - (p - psets), r, r1 - r)) {
-            av_log(c, AV_LOG_ERROR, "Cannot Base64-encode %td %td!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
+            av_log(c, AV_LOG_ERROR, "Cannot Base64-encode %"PTRDIFF_SPECIFIER" %"PTRDIFF_SPECIFIER"!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
             av_free(psets);
-            av_free(tmpbuf);
 
             return NULL;
         }
@@ -217,7 +231,11 @@ static char *extradata2psets(AVCodecContext *c)
         ff_data_to_hex(p, sps + 1, 3, 0);
         p[6] = '\0';
     }
-    av_free(tmpbuf);
+    if (orig_extradata) {
+        av_free(c->extradata);
+        c->extradata      = orig_extradata;
+        c->extradata_size = orig_extradata_size;
+    }
 
     return psets;
 }
@@ -396,6 +414,19 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                                      payload_type, mode, config ? config : "");
             break;
         }
+        case AV_CODEC_ID_H261:
+        {
+            const char *pic_fmt = NULL;
+            /* only QCIF and CIF are specified as supported in RFC 4587 */
+            if (c->width == 176 && c->height == 144)
+                pic_fmt = "QCIF=1";
+            if (c->width == 352 && c->height == 288)
+                pic_fmt = "CIF=1";
+            av_strlcatf(buff, size, "a=rtpmap:%d H261/90000\r\n", payload_type);
+            if (pic_fmt)
+                av_strlcatf(buff, size, "a=fmtp:%d %s\r\n", payload_type, pic_fmt);
+            break;
+        }
         case AV_CODEC_ID_H263:
         case AV_CODEC_ID_H263P:
             /* a=framesize is required by 3GPP TS 26.234 (PSS). It
@@ -426,7 +457,7 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                                      payload_type, config ? config : "");
             break;
         case AV_CODEC_ID_AAC:
-            if (fmt && fmt->oformat->priv_class &&
+            if (fmt && fmt->oformat && fmt->oformat->priv_class &&
                 av_opt_flag_is_set(fmt->priv_data, "rtpflags", "latm")) {
                 config = latm_context2config(c);
                 if (!config)
@@ -563,6 +594,20 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
         case AV_CODEC_ID_SPEEX:
             av_strlcatf(buff, size, "a=rtpmap:%d speex/%d\r\n",
                                      payload_type, c->sample_rate);
+            if (c->codec) {
+                const char *mode;
+                uint64_t vad_option;
+
+                if (c->flags & CODEC_FLAG_QSCALE)
+                      mode = "on";
+                else if (!av_opt_get_int(c, "vad", AV_OPT_FLAG_ENCODING_PARAM, &vad_option) && vad_option)
+                      mode = "vad";
+                else
+                      mode = "off";
+
+                av_strlcatf(buff, size, "a=fmtp:%d vbr=%s\r\n",
+                                        payload_type, mode);
+            }
             break;
         case AV_CODEC_ID_OPUS:
             /* The opus RTP draft says that all opus streams MUST be declared
