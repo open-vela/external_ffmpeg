@@ -4,20 +4,20 @@
  *
  * Copyright (C) 2008 NVIDIA
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,7 +39,7 @@
  * - VDPAU decoding
  * - VDPAU presentation
  *
- * The VDPAU decoding module parses all headers using Libav
+ * The VDPAU decoding module parses all headers using FFmpeg
  * parsing mechanisms and uses VDPAU for the actual decoding.
  *
  * As per the current implementation, the actual decoding
@@ -51,7 +51,7 @@
 
 #include <vdpau/vdpau.h>
 #include <vdpau/vdpau_x11.h>
-
+#include "libavutil/avconfig.h"
 #include "libavutil/attributes.h"
 
 #include "avcodec.h"
@@ -66,10 +66,18 @@ union AVVDPAUPictureInfo {
 };
 #endif
 
+struct AVCodecContext;
+struct AVFrame;
+
+typedef int (*AVVDPAU_Render2)(struct AVCodecContext *, struct AVFrame *,
+                               const VdpPictureInfo *, uint32_t,
+                               const VdpBitstreamBuffer *);
+
 /**
  * This structure is used to share data between the libavcodec library and
  * the client video application.
- * The user shall zero-allocate the structure and make it available as
+ * The user shall allocate the structure via the av_alloc_vdpau_hwaccel
+ * function and make it available as
  * AVCodecContext.hwaccel_context. Members can be set by the user once
  * during initialization or through each AVCodecContext.get_buffer()
  * function call. In any case, they must be valid prior to calling
@@ -128,27 +136,18 @@ typedef struct AVVDPAUContext {
     attribute_deprecated
     VdpBitstreamBuffer *bitstream_buffers;
 #endif
+    AVVDPAU_Render2 render2;
 } AVVDPAUContext;
 
 /**
- * Associate a VDPAU device with a codec context for hardware acceleration.
- * This function is meant to be called from the get_format() codec callback,
- * or earlier. It can also be called after avcodec_flush_buffers() to change
- * the underlying VDPAU device mid-stream (e.g. to recover from non-transparent
- * display preemption).
+ * @brief allocation function for AVVDPAUContext
  *
- * @note get_format() must return AV_PIX_FMT_VDPAU if this function completes
- * succesfully.
- *
- * @param avctx decoding context whose get_format() callback is invoked
- * @param device VDPAU device handle to use for hardware acceleration
- * @param get_proc_address VDPAU device driver
- * @param flags for future use, must be zero
- *
- * @return 0 on success, an AVERROR code on failure.
+ * Allows extending the struct without breaking API/ABI
  */
-int av_vdpau_bind_context(AVCodecContext *avctx, VdpDevice device,
-                          VdpGetProcAddress *get_proc_address, unsigned flags);
+AVVDPAUContext *av_alloc_vdpaucontext(void);
+
+AVVDPAU_Render2 av_vdpau_hwaccel_get_render2(const AVVDPAUContext *);
+void av_vdpau_hwaccel_set_render2(AVVDPAUContext *, AVVDPAU_Render2);
 
 /**
  * Allocate an AVVDPAUContext.
@@ -181,19 +180,21 @@ int av_vdpau_get_profile(AVCodecContext *avctx, VdpDecoderProfile *profile);
 #define FF_VDPAU_STATE_USED_FOR_REFERENCE 2
 
 /**
- * @brief This structure is used as a callback between the Libav
+ * @brief This structure is used as a callback between the FFmpeg
  * decoder (vd_) and presentation (vo_) module.
  * This is used for defining a video frame containing surface,
  * picture parameter, bitstream information etc which are passed
- * between the Libav decoder and its clients.
+ * between the FFmpeg decoder and its clients.
  */
 struct vdpau_render_state {
     VdpVideoSurface surface; ///< Used as rendered surface, never changed.
 
     int state; ///< Holds FF_VDPAU_STATE_* values.
 
+#if AV_HAVE_INCOMPATIBLE_LIBAV_ABI
     /** picture parameter information for all supported codecs */
     union AVVDPAUPictureInfo info;
+#endif
 
     /** Describe size/location of the compressed video data.
         Set to 0 when freeing bitstream_buffers. */
@@ -201,6 +202,11 @@ struct vdpau_render_state {
     int bitstream_buffers_used;
     /** The user is responsible for freeing this buffer using av_freep(). */
     VdpBitstreamBuffer *bitstream_buffers;
+
+#if !AV_HAVE_INCOMPATIBLE_LIBAV_ABI
+    /** picture parameter information for all supported codecs */
+    union AVVDPAUPictureInfo info;
+#endif
 };
 #endif
 
