@@ -2,20 +2,20 @@
  * RTSP demuxer
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -360,10 +360,10 @@ static inline int parse_command_line(AVFormatContext *s, const char *line,
     RTSPState *rt = s->priv_data;
     const char *linept, *searchlinept;
     linept = strchr(line, ' ');
-
-    if (!linept)
+    if (!linept) {
+        av_log(s, AV_LOG_ERROR, "Error parsing method string\n");
         return AVERROR_INVALIDDATA;
-
+    }
     if (linept - line > methodsize - 1) {
         av_log(s, AV_LOG_ERROR, "Method string too long\n");
         return AVERROR(EIO);
@@ -609,12 +609,10 @@ int ff_rtsp_setup_input_streams(AVFormatContext *s, RTSPMessageHeader *reply)
 static int rtsp_listen(AVFormatContext *s)
 {
     RTSPState *rt = s->priv_data;
-    char proto[128], host[128], path[512], auth[128];
+    char host[128], path[512], auth[128];
     char uri[500];
     int port;
-    int default_port = RTSP_DEFAULT_PORT;
     char tcpname[500];
-    const char *lower_proto = "tcp";
     unsigned char rbuf[4096];
     unsigned char method[10];
     int rbuflen = 0;
@@ -622,23 +620,18 @@ static int rtsp_listen(AVFormatContext *s)
     enum RTSPMethod methodcode;
 
     /* extract hostname and port */
-    av_url_split(proto, sizeof(proto), auth, sizeof(auth), host, sizeof(host),
-                 &port, path, sizeof(path), s->filename);
+    av_url_split(NULL, 0, auth, sizeof(auth), host, sizeof(host), &port,
+                 path, sizeof(path), s->filename);
 
     /* ff_url_join. No authorization by now (NULL) */
-    ff_url_join(rt->control_uri, sizeof(rt->control_uri), proto, NULL, host,
+    ff_url_join(rt->control_uri, sizeof(rt->control_uri), "rtsp", NULL, host,
                 port, "%s", path);
 
-    if (!strcmp(proto, "rtsps")) {
-        lower_proto  = "tls";
-        default_port = RTSPS_DEFAULT_PORT;
-    }
-
     if (port < 0)
-        port = default_port;
+        port = RTSP_DEFAULT_PORT;
 
     /* Create TCP connection */
-    ff_url_join(tcpname, sizeof(tcpname), lower_proto, NULL, host, port,
+    ff_url_join(tcpname, sizeof(tcpname), "tcp", NULL, host, port,
                 "?listen&listen_timeout=%d", rt->initial_timeout * 1000);
 
     if (ret = ffurl_open(&rt->rtsp_hd, tcpname, AVIO_FLAG_READ_WRITE,
@@ -680,11 +673,7 @@ static int rtsp_listen(AVFormatContext *s)
 
 static int rtsp_probe(AVProbeData *p)
 {
-    if (
-#if CONFIG_TLS_PROTOCOL
-        av_strstart(p->filename, "rtsps:", NULL) ||
-#endif
-        av_strstart(p->filename, "rtsp:", NULL))
+    if (av_strstart(p->filename, "rtsp:", NULL))
         return AVPROBE_SCORE_MAX;
     return 0;
 }
@@ -707,7 +696,7 @@ static int rtsp_read_header(AVFormatContext *s)
             return ret;
 
         rt->real_setup_cache = !s->nb_streams ? NULL :
-            av_mallocz(2 * s->nb_streams * sizeof(*rt->real_setup_cache));
+            av_mallocz_array(s->nb_streams, 2 * sizeof(*rt->real_setup_cache));
         if (!rt->real_setup_cache && s->nb_streams)
             return AVERROR(ENOMEM);
         rt->real_setup = rt->real_setup_cache + s->nb_streams;
@@ -753,7 +742,7 @@ redo:
     id  = buf[0];
     len = AV_RB16(buf + 1);
     av_dlog(s, "id=%d len=%d\n", id, len);
-    if (len > buf_size || len < 12)
+    if (len > buf_size || len < 8)
         goto redo;
     /* get the data */
     ret = ffurl_read_complete(rt->rtsp_hd, buf, len);

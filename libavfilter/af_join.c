@@ -1,19 +1,18 @@
 /*
+ * This file is part of FFmpeg.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,22 +65,18 @@ typedef struct JoinContext {
 
 #define OFFSET(x) offsetof(JoinContext, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
+#define F AV_OPT_FLAG_FILTERING_PARAM
 static const AVOption join_options[] = {
-    { "inputs",         "Number of input streams.", OFFSET(inputs),             AV_OPT_TYPE_INT,    { .i64 = 2 }, 1, INT_MAX,       A },
+    { "inputs",         "Number of input streams.", OFFSET(inputs),             AV_OPT_TYPE_INT,    { .i64 = 2 }, 1, INT_MAX,       A|F },
     { "channel_layout", "Channel layout of the "
-                        "output stream.",           OFFSET(channel_layout_str), AV_OPT_TYPE_STRING, {.str = "stereo"}, 0, 0, A },
+                        "output stream.",           OFFSET(channel_layout_str), AV_OPT_TYPE_STRING, {.str = "stereo"}, 0, 0, A|F },
     { "map",            "A comma-separated list of channels maps in the format "
                         "'input_stream.input_channel-output_channel.",
-                                                    OFFSET(map),                AV_OPT_TYPE_STRING,                 .flags = A },
-    { NULL },
+                                                    OFFSET(map),                AV_OPT_TYPE_STRING,                 .flags = A|F },
+    { NULL }
 };
 
-static const AVClass join_class = {
-    .class_name = "join filter",
-    .item_name  = av_default_item_name,
-    .option     = join_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(join);
 
 static int filter_frame(AVFilterLink *link, AVFrame *frame)
 {
@@ -194,18 +189,15 @@ static av_cold int join_init(AVFilterContext *ctx)
     if (!(s->channel_layout = av_get_channel_layout(s->channel_layout_str))) {
         av_log(ctx, AV_LOG_ERROR, "Error parsing channel layout '%s'.\n",
                s->channel_layout_str);
-        ret = AVERROR(EINVAL);
-        goto fail;
+        return AVERROR(EINVAL);
     }
 
     s->nb_channels  = av_get_channel_layout_nb_channels(s->channel_layout);
     s->channels     = av_mallocz(sizeof(*s->channels) * s->nb_channels);
     s->buffers      = av_mallocz(sizeof(*s->buffers)  * s->nb_channels);
     s->input_frames = av_mallocz(sizeof(*s->input_frames) * s->inputs);
-    if (!s->channels || !s->buffers|| !s->input_frames) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (!s->channels || !s->buffers|| !s->input_frames)
+        return AVERROR(ENOMEM);
 
     for (i = 0; i < s->nb_channels; i++) {
         s->channels[i].out_channel = av_channel_layout_extract_channel(s->channel_layout, i);
@@ -213,7 +205,7 @@ static av_cold int join_init(AVFilterContext *ctx)
     }
 
     if ((ret = parse_maps(ctx)) < 0)
-        goto fail;
+        return ret;
 
     for (i = 0; i < s->inputs; i++) {
         char name[32];
@@ -229,9 +221,7 @@ static av_cold int join_init(AVFilterContext *ctx)
         ff_insert_inpad(ctx, i, &pad);
     }
 
-fail:
-    av_opt_free(s);
-    return ret;
+    return 0;
 }
 
 static av_cold void join_uninit(AVFilterContext *ctx)
@@ -258,9 +248,12 @@ static int join_query_formats(AVFilterContext *ctx)
     ff_add_channel_layout(&layouts, s->channel_layout);
     ff_channel_layouts_ref(layouts, &ctx->outputs[0]->in_channel_layouts);
 
-    for (i = 0; i < ctx->nb_inputs; i++)
-        ff_channel_layouts_ref(ff_all_channel_layouts(),
-                               &ctx->inputs[i]->out_channel_layouts);
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        layouts = ff_all_channel_layouts();
+        if (!layouts)
+            return AVERROR(ENOMEM);
+        ff_channel_layouts_ref(layouts, &ctx->inputs[i]->out_channel_layouts);
+    }
 
     ff_set_common_formats    (ctx, ff_planar_sample_fmts());
     ff_set_common_samplerates(ctx, ff_all_samplerates());
@@ -479,6 +472,7 @@ static int join_request_frame(AVFilterLink *outlink)
 
     frame->nb_samples     = nb_samples;
     frame->channel_layout = outlink->channel_layout;
+    av_frame_set_channels(frame, outlink->channels);
     frame->sample_rate    = outlink->sample_rate;
     frame->format         = outlink->format;
     frame->pts            = s->input_frames[0]->pts;
@@ -513,16 +507,13 @@ static const AVFilterPad avfilter_af_join_outputs[] = {
 AVFilter ff_af_join = {
     .name           = "join",
     .description    = NULL_IF_CONFIG_SMALL("Join multiple audio streams into "
-                                           "multi-channel output"),
+                                           "multi-channel output."),
     .priv_size      = sizeof(JoinContext),
     .priv_class     = &join_class,
-
     .init           = join_init,
     .uninit         = join_uninit,
     .query_formats  = join_query_formats,
-
-    .inputs  = NULL,
-    .outputs = avfilter_af_join_outputs,
-
-    .flags   = AVFILTER_FLAG_DYNAMIC_INPUTS,
+    .inputs         = NULL,
+    .outputs        = avfilter_af_join_outputs,
+    .flags          = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
