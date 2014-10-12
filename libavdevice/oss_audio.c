@@ -2,20 +2,20 @@
  * Linux audio play and grab interface
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,15 +29,16 @@
 #include <sys/soundcard.h>
 #endif
 
+#if HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
 #include "libavutil/log.h"
 
 #include "libavcodec/avcodec.h"
-
-#include "libavformat/avformat.h"
+#include "avdevice.h"
 
 #include "oss_audio.h"
 
@@ -63,13 +64,28 @@ int ff_oss_audio_open(AVFormatContext *s1, int is_output,
     }
 
     /* non blocking mode */
-    if (!is_output)
-        fcntl(audio_fd, F_SETFL, O_NONBLOCK);
+    if (!is_output) {
+        if (fcntl(audio_fd, F_SETFL, O_NONBLOCK) < 0) {
+            av_log(s1, AV_LOG_WARNING, "%s: Could not enable non block mode (%s)\n", audio_device, strerror(errno));
+        }
+    }
 
     s->frame_size = OSS_AUDIO_BLOCK_SIZE;
 
-    /* select format : favour native format */
+#define CHECK_IOCTL_ERROR(event)                                              \
+    if (err < 0) {                                                            \
+        av_log(s1, AV_LOG_ERROR, #event ": %s\n", strerror(errno));         \
+        goto fail;                                                            \
+    }
+
+    /* select format : favour native format
+     * We don't CHECK_IOCTL_ERROR here because even if failed OSS still may be
+     * usable. If OSS is not usable the SNDCTL_DSP_SETFMTS later is going to
+     * fail anyway. `err =` kept to eliminate compiler warning. */
     err = ioctl(audio_fd, SNDCTL_DSP_GETFMTS, &tmp);
+    if (err < 0) {
+        av_log(s1, AV_LOG_WARNING, "SNDCTL_DSP_GETFMTS: %s\n", strerror(errno));
+    }
 
 #if HAVE_BIGENDIAN
     if (tmp & AFMT_S16_BE) {
@@ -102,24 +118,15 @@ int ff_oss_audio_open(AVFormatContext *s1, int is_output,
         return AVERROR(EIO);
     }
     err=ioctl(audio_fd, SNDCTL_DSP_SETFMT, &tmp);
-    if (err < 0) {
-        av_log(s1, AV_LOG_ERROR, "SNDCTL_DSP_SETFMT: %s\n", strerror(errno));
-        goto fail;
-    }
+    CHECK_IOCTL_ERROR(SNDCTL_DSP_SETFMTS)
 
     tmp = (s->channels == 2);
     err = ioctl(audio_fd, SNDCTL_DSP_STEREO, &tmp);
-    if (err < 0) {
-        av_log(s1, AV_LOG_ERROR, "SNDCTL_DSP_STEREO: %s\n", strerror(errno));
-        goto fail;
-    }
+    CHECK_IOCTL_ERROR(SNDCTL_DSP_STEREO)
 
     tmp = s->sample_rate;
     err = ioctl(audio_fd, SNDCTL_DSP_SPEED, &tmp);
-    if (err < 0) {
-        av_log(s1, AV_LOG_ERROR, "SNDCTL_DSP_SPEED: %s\n", strerror(errno));
-        goto fail;
-    }
+    CHECK_IOCTL_ERROR(SNDCTL_DSP_SPEED)
     s->sample_rate = tmp; /* store real sample rate */
     s->fd = audio_fd;
 
@@ -127,6 +134,7 @@ int ff_oss_audio_open(AVFormatContext *s1, int is_output,
  fail:
     close(audio_fd);
     return AVERROR(EIO);
+#undef CHECK_IOCTL_ERROR
 }
 
 int ff_oss_audio_close(OSSAudioData *s)
