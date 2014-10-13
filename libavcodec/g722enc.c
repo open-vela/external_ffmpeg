@@ -5,20 +5,20 @@
  * Copyright (c) 2009 Kenan Gillet
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
  * G.722 ADPCM audio encoder
  */
 
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "g722.h"
@@ -106,7 +107,7 @@ static av_cold int g722_encode_init(AVCodecContext * avctx)
            a common packet size for VoIP applications */
         avctx->frame_size = 320;
     }
-    avctx->initial_padding = 22;
+    avctx->delay = 22;
 
     if (avctx->trellis) {
         /* validate trellis */
@@ -236,7 +237,7 @@ static void g722_encode_trellis(G722Context *c, int trellis,
                     continue;\
                 if (heap_pos[index] < frontier) {\
                     pos = heap_pos[index]++;\
-                    assert(pathn[index] < FREEZE_INTERVAL * frontier);\
+                    av_assert2(pathn[index] < FREEZE_INTERVAL * frontier);\
                     node = nodes_next[index][pos] = next[index]++;\
                     node->path = pathn[index]++;\
                 } else {\
@@ -356,10 +357,8 @@ static int g722_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     int nb_samples, out_size, ret;
 
     out_size = (frame->nb_samples + 1) / 2;
-    if ((ret = ff_alloc_packet(avpkt, out_size))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, out_size)) < 0)
         return ret;
-    }
 
     nb_samples = frame->nb_samples - (frame->nb_samples & 1);
 
@@ -375,7 +374,7 @@ static int g722_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
 
     if (frame->pts != AV_NOPTS_VALUE)
-        avpkt->pts = frame->pts - ff_samples_to_time_base(avctx, avctx->initial_padding);
+        avpkt->pts = frame->pts - ff_samples_to_time_base(avctx, avctx->delay);
     *got_packet_ptr = 1;
     return 0;
 }
