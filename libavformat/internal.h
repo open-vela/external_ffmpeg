@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,10 +25,6 @@
 #include "avformat.h"
 
 #define MAX_URL_SIZE 4096
-
-/** size of probe buffer, for guessing file type from file contents */
-#define PROBE_BUF_MIN 2048
-#define PROBE_BUF_MAX (1 << 20)
 
 #ifdef DEBUG
 #    define hex_dump_debug(class, buf, size) av_hex_dump_log(class, AV_LOG_DEBUG, buf, size)
@@ -52,9 +48,9 @@ struct AVFormatInternal {
      * Muxing only.
      */
     int nb_interleaved_streams;
-
-    int inject_global_side_data;
 };
+
+void ff_dynarray_add(intptr_t **tab_ptr, int *nb_ptr, intptr_t elem);
 
 #ifdef __GNUC__
 #define dynarray_add(tab, nb_ptr, elem)\
@@ -62,12 +58,12 @@ do {\
     __typeof__(tab) _tab = (tab);\
     __typeof__(elem) _elem = (elem);\
     (void)sizeof(**_tab == _elem); /* check that types are compatible */\
-    av_dynarray_add(_tab, nb_ptr, _elem);\
+    ff_dynarray_add((intptr_t **)_tab, nb_ptr, (intptr_t)_elem);\
 } while(0)
 #else
 #define dynarray_add(tab, nb_ptr, elem)\
 do {\
-    av_dynarray_add((tab), nb_ptr, (elem));\
+    ff_dynarray_add((intptr_t **)(tab), nb_ptr, (intptr_t)(elem));\
 } while(0)
 #endif
 
@@ -90,7 +86,6 @@ void ff_program_add_stream_index(AVFormatContext *ac, int progid, unsigned int i
 /**
  * Add packet to AVFormatContext->packet_buffer list, determining its
  * interleaved position using compare() function argument.
- * @return 0, or < 0 on error
  */
 int ff_interleave_add_packet(AVFormatContext *s, AVPacket *pkt,
                              int (*compare)(AVFormatContext *, AVPacket *, AVPacket *));
@@ -134,11 +129,10 @@ void ff_sdp_write_media(char *buff, int size, AVStream *st, int idx,
  * @param dst_stream the stream index within dst to write the packet to
  * @param pkt the packet to be written
  * @param src the muxer the packet originally was intended for
- * @param interleave 0->use av_write_frame, 1->av_write_interleaved_frame
  * @return the value av_write_frame returned
  */
 int ff_write_chained(AVFormatContext *dst, int dst_stream, AVPacket *pkt,
-                     AVFormatContext *src, int interleave);
+                     AVFormatContext *src);
 
 /**
  * Get the length in bytes which is needed to store val as v.
@@ -257,9 +251,6 @@ int ff_seek_frame_binary(AVFormatContext *s, int stream_index,
  */
 void ff_update_cur_dts(AVFormatContext *s, AVStream *ref_st, int64_t timestamp);
 
-int ff_find_last_ts(AVFormatContext *s, int stream_index, int64_t *ts, int64_t *pos,
-                    int64_t (*read_timestamp)(struct AVFormatContext *, int , int64_t *, int64_t ));
-
 /**
  * Perform a binary search using read_timestamp().
  *
@@ -329,8 +320,6 @@ int ff_read_packet(AVFormatContext *s, AVPacket *pkt);
 int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *out,
                                  AVPacket *pkt, int flush);
 
-void ff_free_stream(AVFormatContext *s, AVStream *st);
-
 /**
  * Return the frame duration in seconds. Return 0 if not available.
  */
@@ -357,60 +346,9 @@ enum AVCodecID ff_codec_get_id(const AVCodecTag *tags, unsigned int tag);
 enum AVCodecID ff_get_pcm_codec_id(int bps, int flt, int be, int sflags);
 
 /**
- * Chooses a timebase for muxing the specified stream.
- *
- * The chosen timebase allows sample accurate timestamps based
- * on the framerate or sample rate for audio streams. It also is
- * at least as precise as 1/min_precision would be.
- */
-AVRational ff_choose_timebase(AVFormatContext *s, AVStream *st, int min_precision);
-
-/**
  * Generate standard extradata for AVC-Intra based on width/height and field
  * order.
  */
 int ff_generate_avci_extradata(AVStream *st);
-
-/**
- * Allocate extradata with additional FF_INPUT_BUFFER_PADDING_SIZE at end
- * which is always set to 0.
- *
- * @param size size of extradata
- * @return 0 if OK, AVERROR_xxx on error
- */
-int ff_alloc_extradata(AVCodecContext *avctx, int size);
-
-/**
- * Allocate extradata with additional FF_INPUT_BUFFER_PADDING_SIZE at end
- * which is always set to 0 and fill it from pb.
- *
- * @param size size of extradata
- * @return >= 0 if OK, AVERROR_xxx on error
- */
-int ff_get_extradata(AVCodecContext *avctx, AVIOContext *pb, int size);
-
-/**
- * add frame for rfps calculation.
- *
- * @param dts timestamp of the i-th frame
- * @return 0 if OK, AVERROR_xxx on error
- */
-int ff_rfps_add_frame(AVFormatContext *ic, AVStream *st, int64_t dts);
-
-void ff_rfps_calculate(AVFormatContext *ic);
-
-/**
- * Flags for AVFormatContext.write_uncoded_frame()
- */
-enum AVWriteUncodedFrameFlags {
-
-    /**
-     * Query whether the feature is possible on this stream.
-     * The frame argument is ignored.
-     */
-    AV_WRITE_UNCODED_FRAME_QUERY           = 0x0001,
-
-};
-
 
 #endif /* AVFORMAT_INTERNAL_H */
