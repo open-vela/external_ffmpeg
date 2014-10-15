@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2007 Luca Abeni
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include "avformat.h"
 #include "internal.h"
 #include "avc.h"
-#include "hevc.h"
 #include "rtp.h"
 #if CONFIG_NETWORK
 #include "network.h"
@@ -203,7 +202,7 @@ static char *extradata2psets(AVCodecContext *c)
             sps_end = r1;
         }
         if (!av_base64_encode(p, MAX_PSET_SIZE - (p - psets), r, r1 - r)) {
-            av_log(c, AV_LOG_ERROR, "Cannot Base64-encode %td %td!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
+            av_log(c, AV_LOG_ERROR, "Cannot Base64-encode %"PTRDIFF_SPECIFIER" %"PTRDIFF_SPECIFIER"!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
             av_free(psets);
             av_free(tmpbuf);
 
@@ -221,107 +220,6 @@ static char *extradata2psets(AVCodecContext *c)
     av_free(tmpbuf);
 
     return psets;
-}
-
-static char *extradata2psets_hevc(AVCodecContext *c)
-{
-    char *psets;
-    uint8_t *extradata = c->extradata;
-    int extradata_size = c->extradata_size;
-    uint8_t *tmpbuf = NULL;
-    int ps_pos[3] = { 0 };
-    static const char * const ps_names[3] = { "vps", "sps", "pps" };
-    int num_arrays, num_nalus;
-    int pos, i, j;
-
-    // Convert to hvcc format. Since we need to group multiple NALUs of
-    // the same type, and we might need to convert from one format to the
-    // other anyway, we get away with a little less work by using the hvcc
-    // format.
-    if (c->extradata[0] != 1) {
-        AVIOContext *pb;
-        if (avio_open_dyn_buf(&pb) < 0)
-            return NULL;
-        if (ff_isom_write_hvcc(pb, c->extradata, c->extradata_size, 0) < 0) {
-            avio_close_dyn_buf(pb, &tmpbuf);
-            goto err;
-        }
-        extradata_size = avio_close_dyn_buf(pb, &extradata);
-        tmpbuf = extradata;
-    }
-
-    if (extradata_size < 23)
-        goto err;
-
-    num_arrays = extradata[22];
-    pos = 23;
-    for (i = 0; i < num_arrays; i++) {
-        int num_nalus, nalu_type;
-        if (pos + 3 > extradata_size)
-            goto err;
-        nalu_type = extradata[pos] & 0x3f;
-        // Not including libavcodec/hevc.h to avoid confusion between
-        // NAL_* with the same name for both H264 and HEVC.
-        if (nalu_type == 32) // VPS
-            ps_pos[0] = pos;
-        else if (nalu_type == 33) // SPS
-            ps_pos[1] = pos;
-        else if (nalu_type == 34) // PPS
-            ps_pos[2] = pos;
-        num_nalus = AV_RB16(&extradata[pos + 1]);
-        pos += 3;
-        for (j = 0; j < num_nalus; j++) {
-            int len;
-            if (pos + 2 > extradata_size)
-                goto err;
-            len = AV_RB16(&extradata[pos]);
-            pos += 2;
-            if (pos + len > extradata_size)
-                goto err;
-            pos += len;
-        }
-    }
-    if (!ps_pos[0] || !ps_pos[1] || !ps_pos[2])
-        goto err;
-
-    psets = av_mallocz(MAX_PSET_SIZE);
-    if (!psets)
-        goto err;
-    psets[0] = '\0';
-
-    for (i = 0; i < 3; i++) {
-        pos = ps_pos[i];
-
-        if (i > 0)
-            av_strlcat(psets, "; ", MAX_PSET_SIZE);
-        av_strlcatf(psets, MAX_PSET_SIZE, "sprop-%s=", ps_names[i]);
-
-        // Skipping boundary checks in the input here; we've already traversed
-        // the whole hvcc structure above without issues
-        num_nalus = AV_RB16(&extradata[pos + 1]);
-        pos += 3;
-        for (j = 0; j < num_nalus; j++) {
-            int len = AV_RB16(&extradata[pos]);
-            int strpos;
-            pos += 2;
-            if (j > 0)
-                av_strlcat(psets, ",", MAX_PSET_SIZE);
-            strpos = strlen(psets);
-            if (!av_base64_encode(psets + strpos, MAX_PSET_SIZE - strpos,
-                                  &extradata[pos], len)) {
-                av_free(psets);
-                goto err;
-            }
-            pos += len;
-        }
-    }
-    av_free(tmpbuf);
-
-    return psets;
-
-err:
-    av_free(tmpbuf);
-    return NULL;
 }
 
 static char *extradata2config(AVCodecContext *c)
@@ -498,6 +396,19 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                                      payload_type, mode, config ? config : "");
             break;
         }
+        case AV_CODEC_ID_H261:
+        {
+            const char *pic_fmt = NULL;
+            /* only QCIF and CIF are specified as supported in RFC 4587 */
+            if (c->width == 176 && c->height == 144)
+                pic_fmt = "QCIF=1";
+            if (c->width == 352 && c->height == 288)
+                pic_fmt = "CIF=1";
+            av_strlcatf(buff, size, "a=rtpmap:%d H261/90000\r\n", payload_type);
+            if (pic_fmt)
+                av_strlcatf(buff, size, "a=fmtp:%d %s\r\n", payload_type, pic_fmt);
+            break;
+        }
         case AV_CODEC_ID_H263:
         case AV_CODEC_ID_H263P:
             /* a=framesize is required by 3GPP TS 26.234 (PSS). It
@@ -514,11 +425,9 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
             break;
         case AV_CODEC_ID_HEVC:
             if (c->extradata_size)
-                config = extradata2psets_hevc(c);
+                av_log(NULL, AV_LOG_WARNING, "HEVC extradata not currently "
+                                             "passed properly through SDP\n");
             av_strlcatf(buff, size, "a=rtpmap:%d H265/90000\r\n", payload_type);
-            if (config)
-                av_strlcatf(buff, size, "a=fmtp:%d %s\r\n",
-                                         payload_type, config);
             break;
         case AV_CODEC_ID_MPEG4:
             if (c->extradata_size) {
@@ -530,7 +439,7 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                                      payload_type, config ? config : "");
             break;
         case AV_CODEC_ID_AAC:
-            if (fmt && fmt->oformat->priv_class &&
+            if (fmt && fmt->oformat && fmt->oformat->priv_class &&
                 av_opt_flag_is_set(fmt->priv_data, "rtpflags", "latm")) {
                 config = latm_context2config(c);
                 if (!config)
@@ -667,6 +576,20 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
         case AV_CODEC_ID_SPEEX:
             av_strlcatf(buff, size, "a=rtpmap:%d speex/%d\r\n",
                                      payload_type, c->sample_rate);
+            if (c->codec) {
+                const char *mode;
+                uint64_t vad_option;
+
+                if (c->flags & CODEC_FLAG_QSCALE)
+                      mode = "on";
+                else if (!av_opt_get_int(c, "vad", AV_OPT_FLAG_ENCODING_PARAM, &vad_option) && vad_option)
+                      mode = "vad";
+                else
+                      mode = "off";
+
+                av_strlcatf(buff, size, "a=fmtp:%d vbr=%s\r\n",
+                                        payload_type, mode);
+            }
             break;
         case AV_CODEC_ID_OPUS:
             /* The opus RTP draft says that all opus streams MUST be declared
