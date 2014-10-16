@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /*
  * To create a simple file for smooth streaming:
- * avconv <normal input/transcoding options> -movflags frag_keyframe foo.ismv
+ * ffmpeg <normal input/transcoding options> -movflags frag_keyframe foo.ismv
  * ismindex -n foo foo.ismv
  * This step creates foo.ism and foo.ismc that is required by IIS for
  * serving it.
@@ -46,6 +46,8 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#include "cmdutils.h"
 
 #include "libavformat/avformat.h"
 #include "libavformat/isom.h"
@@ -225,8 +227,7 @@ fail:
     return ret;
 }
 
-static int64_t read_trun_duration(AVIOContext *in, int default_duration,
-                                  int64_t end)
+static int64_t read_trun_duration(AVIOContext *in, int64_t end)
 {
     int64_t ret = 0;
     int64_t pos;
@@ -234,7 +235,7 @@ static int64_t read_trun_duration(AVIOContext *in, int default_duration,
     int entries;
     avio_r8(in); /* version */
     flags = avio_rb24(in);
-    if (default_duration <= 0 && !(flags & MOV_TRUN_SAMPLE_DURATION)) {
+    if (!(flags & MOV_TRUN_SAMPLE_DURATION)) {
         fprintf(stderr, "No sample duration in trun flags\n");
         return -1;
     }
@@ -245,7 +246,7 @@ static int64_t read_trun_duration(AVIOContext *in, int default_duration,
 
     pos = avio_tell(in);
     for (i = 0; i < entries && pos < end; i++) {
-        int sample_duration = default_duration;
+        int sample_duration = 0;
         if (flags & MOV_TRUN_SAMPLE_DURATION) sample_duration = avio_rb32(in);
         if (flags & MOV_TRUN_SAMPLE_SIZE)     avio_rb32(in);
         if (flags & MOV_TRUN_SAMPLE_FLAGS)    avio_rb32(in);
@@ -266,7 +267,6 @@ static int64_t read_moof_duration(AVIOContext *in, int64_t offset)
     int64_t ret = -1;
     int32_t moof_size, size, tag;
     int64_t pos = 0;
-    int default_duration = 0;
 
     avio_seek(in, offset, SEEK_SET);
     moof_size = avio_rb32(in);
@@ -284,21 +284,8 @@ static int64_t read_moof_duration(AVIOContext *in, int64_t offset)
                 pos = avio_tell(in);
                 size = avio_rb32(in);
                 tag  = avio_rb32(in);
-                if (tag == MKBETAG('t', 'f', 'h', 'd')) {
-                    int flags = 0;
-                    avio_r8(in); /* version */
-                    flags = avio_rb24(in);
-                    avio_rb32(in); /* track_id */
-                    if (flags & MOV_TFHD_BASE_DATA_OFFSET)
-                        avio_rb64(in);
-                    if (flags & MOV_TFHD_STSD_ID)
-                        avio_rb32(in);
-                    if (flags & MOV_TFHD_DEFAULT_DURATION)
-                        default_duration = avio_rb32(in);
-                }
                 if (tag == MKBETAG('t', 'r', 'u', 'n')) {
-                    return read_trun_duration(in, default_duration,
-                                              pos + size);
+                    return read_trun_duration(in, pos + size);
                 }
                 avio_seek(in, pos + size, SEEK_SET);
             }
@@ -336,7 +323,7 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
     }
     fieldlength = avio_rb32(f);
     track->chunks  = avio_rb32(f);
-    track->offsets = av_mallocz(sizeof(*track->offsets) * track->chunks);
+    track->offsets = av_mallocz_array(track->chunks, sizeof(*track->offsets));
     if (!track->offsets) {
         ret = AVERROR(ENOMEM);
         goto fail;
