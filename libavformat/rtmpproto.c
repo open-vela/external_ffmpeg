@@ -2,20 +2,20 @@
  * RTMP network protocol
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@
 #include <zlib.h>
 #endif
 
-#define APP_MAX_LENGTH 1024
+#define APP_MAX_LENGTH 128
 #define PLAYPATH_MAX_LENGTH 256
 #define TCURL_MAX_LENGTH 512
 #define FLASHVER_MAX_LENGTH 64
@@ -276,6 +276,9 @@ static int rtmp_write_amf_data(URLContext *s, char *param, uint8_t **p)
         *value = '\0';
         value++;
 
+        if (!field || !value)
+            goto fail;
+
         ff_amf_write_field_name(p, field);
     } else {
         goto fail;
@@ -322,7 +325,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
     int ret;
 
     if ((ret = ff_rtmp_packet_create(&pkt, RTMP_SYSTEM_CHANNEL, RTMP_PT_INVOKE,
-                                     0, 4096 + APP_MAX_LENGTH)) < 0)
+                                     0, 4096)) < 0)
         return ret;
 
     p = pkt.data;
@@ -419,7 +422,6 @@ static int read_connect(URLContext *s, RTMPContext *rt)
     if (pkt.type == RTMP_PT_CHUNK_SIZE) {
         if ((ret = handle_chunk_size(s, &pkt)) < 0)
             return ret;
-
         ff_rtmp_packet_destroy(&pkt);
         if ((ret = ff_rtmp_packet_read(rt->stream, &pkt, rt->in_chunk_size,
                                        &rt->prev_pkt[0], &rt->nb_prev_pkt[0])) < 0)
@@ -770,6 +772,33 @@ static int gen_seek(URLContext *s, RTMPContext *rt, int64_t timestamp)
     ff_amf_write_number(&p, 0); //no tracking back responses
     ff_amf_write_null(&p); //as usual, the first null param
     ff_amf_write_number(&p, timestamp); //where we want to jump
+
+    return rtmp_send_packet(rt, &pkt, 1);
+}
+
+/**
+ * Generate a pause packet that either pauses or unpauses the current stream.
+ */
+static int gen_pause(URLContext *s, RTMPContext *rt, int pause, uint32_t timestamp)
+{
+    RTMPPacket pkt;
+    uint8_t *p;
+    int ret;
+
+    av_log(s, AV_LOG_DEBUG, "Sending pause command for timestamp %d\n",
+           timestamp);
+
+    if ((ret = ff_rtmp_packet_create(&pkt, 3, RTMP_PT_INVOKE, 0, 29)) < 0)
+        return ret;
+
+    pkt.extra = rt->stream_id;
+
+    p = pkt.data;
+    ff_amf_write_string(&p, "pause");
+    ff_amf_write_number(&p, 0); //no tracking back responses
+    ff_amf_write_null(&p); //as usual, the first null param
+    ff_amf_write_bool(&p, pause); // pause or unpause
+    ff_amf_write_number(&p, timestamp); //where we pause the stream
 
     return rtmp_send_packet(rt, &pkt, 1);
 }
@@ -1741,23 +1770,18 @@ static int handle_connect_error(URLContext *s, const char *desc)
         char *value = strchr(ptr, '=');
         if (next)
             *next++ = '\0';
-        if (value) {
+        if (value)
             *value++ = '\0';
-            if (!strcmp(ptr, "user")) {
-                user = value;
-            } else if (!strcmp(ptr, "salt")) {
-                salt = value;
-            } else if (!strcmp(ptr, "opaque")) {
-                opaque = value;
-            } else if (!strcmp(ptr, "challenge")) {
-                challenge = value;
-            } else if (!strcmp(ptr, "nonce")) {
-                nonce = value;
-            } else {
-                av_log(s, AV_LOG_INFO, "Ignoring unsupported var %s\n", ptr);
-            }
-        } else {
-            av_log(s, AV_LOG_WARNING, "Variable %s has NULL value\n", ptr);
+        if (!strcmp(ptr, "user")) {
+            user = value;
+        } else if (!strcmp(ptr, "salt")) {
+            salt = value;
+        } else if (!strcmp(ptr, "opaque")) {
+            opaque = value;
+        } else if (!strcmp(ptr, "challenge")) {
+            challenge = value;
+        } else if (!strcmp(ptr, "nonce")) {
+            nonce = value;
         }
         ptr = next;
     }
@@ -2405,7 +2429,7 @@ static int get_packet(URLContext *s, int for_header)
         rt->last_timestamp = rpkt.timestamp;
 
         rt->bytes_read += ret;
-        if (rt->bytes_read - rt->last_bytes_read > rt->client_report_size) {
+        if (rt->bytes_read > rt->last_bytes_read + rt->client_report_size) {
             av_log(s, AV_LOG_DEBUG, "Sending bytes read report\n");
             if ((ret = gen_bytes_read(s, rt, rpkt.timestamp + 1)) < 0)
                 return ret;
@@ -2703,10 +2727,6 @@ reconnect:
 
     if (old_app) {
         // The name of application has been defined by the user, override it.
-        if (strlen(old_app) >= APP_MAX_LENGTH) {
-            ret = AVERROR(EINVAL);
-            goto fail;
-        }
         av_free(rt->app);
         rt->app = old_app;
     }
@@ -2812,7 +2832,7 @@ reconnect:
         // audio or video packet arrives.
         while (!rt->has_audio && !rt->has_video && !rt->received_metadata) {
             if ((ret = get_packet(s, 0)) < 0)
-               goto fail;
+               return ret;
         }
 
         // Either after we have read the metadata or (if there is none) the
@@ -2894,6 +2914,20 @@ static int64_t rtmp_seek(URLContext *s, int stream_index, int64_t timestamp,
     rt->flv_off = rt->flv_size;
     rt->state = STATE_SEEKING;
     return timestamp;
+}
+
+static int rtmp_pause(URLContext *s, int pause)
+{
+    RTMPContext *rt = s->priv_data;
+    int ret;
+    av_log(s, AV_LOG_DEBUG, "Pause at timestamp %d\n",
+           rt->last_timestamp);
+    if ((ret = gen_pause(s, rt, pause, rt->last_timestamp)) < 0) {
+        av_log(s, AV_LOG_ERROR, "Unable to send pause command at timestamp %d\n",
+               rt->last_timestamp);
+        return ret;
+    }
+    return 0;
 }
 
 static int rtmp_write(URLContext *s, const uint8_t *buf, int size)
@@ -3058,6 +3092,7 @@ URLProtocol ff_##flavor##_protocol = {           \
     .url_open       = rtmp_open,                 \
     .url_read       = rtmp_read,                 \
     .url_read_seek  = rtmp_seek,                 \
+    .url_read_pause = rtmp_pause,                \
     .url_write      = rtmp_write,                \
     .url_close      = rtmp_close,                \
     .priv_data_size = sizeof(RTMPContext),       \
