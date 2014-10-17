@@ -1,28 +1,28 @@
 /*
  * Copyright (c) 2001 Michel Lespinasse
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /* NOTE: This code is based on GPL code from the libmpeg2 project.  The
  * author, Michel Lespinasses, has given explicit permission to release
- * under LGPL as part of FFmpeg.
+ * under LGPL as part of Libav.
  *
- * FFmpeg integration by Dieter Shirley
+ * Libav integration by Dieter Shirley
  *
  * This file is a direct copy of the AltiVec IDCT module from the libmpeg2
  * project.  I've deleted all of the libmpeg2-specific code, renamed the
@@ -153,22 +153,6 @@ static const vec_s16 constants[5] = {
     { 19266, 26722, 25172, 22654,  19266,  22654, 25172, 26722 }
 };
 
-static void idct_altivec(int16_t *blk)
-{
-    vec_s16 *block = (vec_s16 *) blk;
-
-    IDCT;
-
-    block[0] = vx0;
-    block[1] = vx1;
-    block[2] = vx2;
-    block[3] = vx3;
-    block[4] = vx4;
-    block[5] = vx5;
-    block[6] = vx6;
-    block[7] = vx7;
-}
-
 static void idct_put_altivec(uint8_t *dest, int stride, int16_t *blk)
 {
     vec_s16 *block = (vec_s16 *) blk;
@@ -250,10 +234,9 @@ av_cold void ff_idctdsp_init_ppc(IDCTDSPContext *c, AVCodecContext *avctx,
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 
-    if (!high_bit_depth && avctx->lowres == 0) {
-        if ((avctx->idct_algo == FF_IDCT_AUTO && !(avctx->flags & CODEC_FLAG_BITEXACT)) ||
+    if (!high_bit_depth) {
+        if ((avctx->idct_algo == FF_IDCT_AUTO) ||
             (avctx->idct_algo == FF_IDCT_ALTIVEC)) {
-            c->idct      = idct_altivec;
             c->idct_add  = idct_add_altivec;
             c->idct_put  = idct_put_altivec;
             c->perm_type = FF_IDCT_PERM_TRANSPOSE;

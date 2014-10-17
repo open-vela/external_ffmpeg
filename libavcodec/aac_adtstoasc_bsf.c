@@ -2,20 +2,20 @@
  * MPEG-2/4 AAC ADTS to MPEG-4 Audio Specific Configuration bitstream filter
  * Copyright (c) 2009 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -87,7 +87,6 @@ static int aac_adtstoasc_filter(AVBitStreamFilterContext *bsfc,
             buf_size -= get_bits_count(&gb)/8;
             buf      += get_bits_count(&gb)/8;
         }
-        av_free(avctx->extradata);
         avctx->extradata_size = 2 + pce_size;
         avctx->extradata = av_mallocz(avctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
 
@@ -113,7 +112,7 @@ static int aac_adtstoasc_filter(AVBitStreamFilterContext *bsfc,
 }
 
 AVBitStreamFilter ff_aac_adtstoasc_bsf = {
-    .name           = "aac_adtstoasc",
-    .priv_data_size = sizeof(AACBSFContext),
-    .filter         = aac_adtstoasc_filter,
+    "aac_adtstoasc",
+    sizeof(AACBSFContext),
+    aac_adtstoasc_filter,
 };
