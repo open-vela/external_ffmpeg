@@ -1,27 +1,26 @@
 /*
  * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <string.h>
 
 #include "avcodec.h"
-#include "libavutil/atomic.h"
 #include "libavutil/mem.h"
 
 static AVBitStreamFilter *first_bitstream_filter = NULL;
@@ -36,16 +35,15 @@ AVBitStreamFilter *av_bitstream_filter_next(const AVBitStreamFilter *f)
 
 void av_register_bitstream_filter(AVBitStreamFilter *bsf)
 {
-    do {
-        bsf->next = first_bitstream_filter;
-    } while(bsf->next != avpriv_atomic_ptr_cas((void * volatile *)&first_bitstream_filter, bsf->next, bsf));
+    bsf->next              = first_bitstream_filter;
+    first_bitstream_filter = bsf;
 }
 
 AVBitStreamFilterContext *av_bitstream_filter_init(const char *name)
 {
-    AVBitStreamFilter *bsf = NULL;
+    AVBitStreamFilter *bsf = first_bitstream_filter;
 
-    while (bsf = av_bitstream_filter_next(bsf)) {
+    while (bsf) {
         if (!strcmp(name, bsf->name)) {
             AVBitStreamFilterContext *bsfc =
                 av_mallocz(sizeof(AVBitStreamFilterContext));
@@ -54,14 +52,13 @@ AVBitStreamFilterContext *av_bitstream_filter_init(const char *name)
                 bsf->priv_data_size ? av_mallocz(bsf->priv_data_size) : NULL;
             return bsfc;
         }
+        bsf = bsf->next;
     }
     return NULL;
 }
 
 void av_bitstream_filter_close(AVBitStreamFilterContext *bsfc)
 {
-    if (!bsfc)
-        return;
     if (bsfc->filter->close)
         bsfc->filter->close(bsfc);
     av_freep(&bsfc->priv_data);

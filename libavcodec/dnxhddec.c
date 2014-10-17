@@ -5,20 +5,20 @@
  *
  * 10 bit support added by MirriAd Ltd, Joseph Artsimovich <joseph@mirriad.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,13 +30,12 @@
 #include "dnxhddata.h"
 #include "idctdsp.h"
 #include "internal.h"
-#include "thread.h"
 
 typedef struct DNXHDContext {
     AVCodecContext *avctx;
     GetBitContext gb;
     BlockDSPContext bdsp;
-    int64_t cid;                        ///< compression id
+    int cid;                            ///< compression id
     unsigned int width, height;
     unsigned int mb_width, mb_height;
     uint32_t mb_scan_index[68];         /* max for 1080p */
@@ -51,9 +50,6 @@ typedef struct DNXHDContext {
     int is_444;
     void (*decode_dct_block)(struct DNXHDContext *ctx, int16_t *block,
                              int n, int qscale);
-    int last_qscale;
-    int luma_scale[64];
-    int chroma_scale[64];
 } DNXHDContext;
 
 #define DNXHD_VLC_BITS 9
@@ -71,11 +67,10 @@ static av_cold int dnxhd_decode_init(AVCodecContext *avctx)
     DNXHDContext *ctx = avctx->priv_data;
 
     ctx->avctx = avctx;
-    ctx->cid = -1;
     return 0;
 }
 
-static int dnxhd_init_vlc(DNXHDContext *ctx, uint32_t cid)
+static int dnxhd_init_vlc(DNXHDContext *ctx, int cid)
 {
     if (cid != ctx->cid) {
         int index;
@@ -83,10 +78,6 @@ static int dnxhd_init_vlc(DNXHDContext *ctx, uint32_t cid)
         if ((index = ff_dnxhd_get_cid_table(cid)) < 0) {
             av_log(ctx->avctx, AV_LOG_ERROR, "unsupported cid %d\n", cid);
             return AVERROR(ENOSYS);
-        }
-        if (ff_dnxhd_cid_table[index].bit_depth != ctx->bit_depth) {
-            av_log(ctx->avctx, AV_LOG_ERROR, "bit depth mismatches %d %d\n", ff_dnxhd_cid_table[index].bit_depth, ctx->bit_depth);
-            return AVERROR_INVALIDDATA;
         }
         ctx->cid_table = &ff_dnxhd_cid_table[index];
 
@@ -200,7 +191,7 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
     for (i = 0; i < ctx->mb_height; i++) {
         ctx->mb_scan_index[i] = AV_RB32(buf + 0x170 + (i << 2));
         av_dlog(ctx->avctx, "mb scan index %d\n", ctx->mb_scan_index[i]);
-        if (buf_size < ctx->mb_scan_index[i] + 0x280LL) {
+        if (buf_size < ctx->mb_scan_index[i] + 0x280) {
             av_log(ctx->avctx, AV_LOG_ERROR, "invalid mb scan index\n");
             return AVERROR_INVALIDDATA;
         }
@@ -216,32 +207,24 @@ static av_always_inline void dnxhd_decode_dct_block(DNXHDContext *ctx,
                                                     int level_bias,
                                                     int level_shift)
 {
-    int i, j, index1, index2, len, flags;
+    int i, j, index1, index2, len;
     int level, component, sign;
-    const int *scale;
     const uint8_t *weight_matrix;
-    const uint8_t *ac_level = ctx->cid_table->ac_level;
-    const uint8_t *ac_flags = ctx->cid_table->ac_flags;
-    const int eob_index     = ctx->cid_table->eob_index;
     OPEN_READER(bs, &ctx->gb);
 
     if (!ctx->is_444) {
         if (n & 2) {
             component     = 1 + (n & 1);
-            scale = ctx->chroma_scale;
             weight_matrix = ctx->cid_table->chroma_weight;
         } else {
             component     = 0;
-            scale = ctx->luma_scale;
             weight_matrix = ctx->cid_table->luma_weight;
         }
     } else {
         component = (n >> 1) % 3;
         if (component) {
-            scale = ctx->chroma_scale;
             weight_matrix = ctx->cid_table->chroma_weight;
         } else {
-            scale = ctx->luma_scale;
             weight_matrix = ctx->cid_table->luma_weight;
         }
     }
@@ -257,47 +240,41 @@ static av_always_inline void dnxhd_decode_dct_block(DNXHDContext *ctx,
     }
     block[0] = ctx->last_dc[component];
 
-    i = 0;
-
-    UPDATE_CACHE(bs, &ctx->gb);
-    GET_VLC(index1, bs, &ctx->gb, ctx->ac_vlc.table,
-            DNXHD_VLC_BITS, 2);
-
-    while (index1 != eob_index) {
-        level = ac_level[index1];
-        flags = ac_flags[index1];
+    for (i = 1; ; i++) {
+        UPDATE_CACHE(bs, &ctx->gb);
+        GET_VLC(index1, bs, &ctx->gb, ctx->ac_vlc.table,
+                DNXHD_VLC_BITS, 2);
+        level = ctx->cid_table->ac_level[index1];
+        if (!level) /* EOB */
+            break;
 
         sign = SHOW_SBITS(bs, &ctx->gb, 1);
         SKIP_BITS(bs, &ctx->gb, 1);
 
-        if (flags & 1) {
-            level += SHOW_UBITS(bs, &ctx->gb, index_bits) << 7;
+        if (ctx->cid_table->ac_index_flag[index1]) {
+            level += SHOW_UBITS(bs, &ctx->gb, index_bits) << 6;
             SKIP_BITS(bs, &ctx->gb, index_bits);
         }
 
-        if (flags & 2) {
+        if (ctx->cid_table->ac_run_flag[index1]) {
             UPDATE_CACHE(bs, &ctx->gb);
             GET_VLC(index2, bs, &ctx->gb, ctx->run_vlc.table,
                     DNXHD_VLC_BITS, 2);
             i += ctx->cid_table->run[index2];
         }
 
-        if (++i > 63) {
+        if (i > 63) {
             av_log(ctx->avctx, AV_LOG_ERROR, "ac tex damaged %d, %d\n", n, i);
             break;
         }
 
         j     = ctx->scantable.permutated[i];
-        level *= scale[i];
+        level = (2 * level + 1) * qscale * weight_matrix[i];
         if (level_bias < 32 || weight_matrix[i] != level_bias)
             level += level_bias;
         level >>= level_shift;
 
         block[j] = (level ^ sign) - sign;
-
-        UPDATE_CACHE(bs, &ctx->gb);
-        GET_VLC(index1, bs, &ctx->gb, ctx->ac_vlc.table,
-                DNXHD_VLC_BITS, 2);
     }
 
     CLOSE_READER(bs, &ctx->gb);
@@ -333,14 +310,6 @@ static int dnxhd_decode_macroblock(DNXHDContext *ctx, AVFrame *frame,
 
     qscale = get_bits(&ctx->gb, 11);
     skip_bits1(&ctx->gb);
-
-    if (qscale != ctx->last_qscale) {
-        for (i = 0; i < 64; i++) {
-            ctx->luma_scale[i]   = qscale * ctx->cid_table->luma_weight[i];
-            ctx->chroma_scale[i] = qscale * ctx->cid_table->chroma_weight[i];
-        }
-        ctx->last_qscale = qscale;
-    }
 
     for (i = 0; i < 8; i++) {
         ctx->bdsp.clear_block(ctx->blocks[i]);
@@ -429,7 +398,6 @@ static int dnxhd_decode_frame(AVCodecContext *avctx, void *data,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     DNXHDContext *ctx = avctx->priv_data;
-    ThreadFrame frame = { .f = data };
     AVFrame *picture = data;
     int first_field = 1;
     int ret;
@@ -452,8 +420,10 @@ decode_coding_unit:
         return ret;
 
     if (first_field) {
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+        if ((ret = ff_get_buffer(avctx, picture, 0)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
         picture->pict_type = AV_PICTURE_TYPE_I;
         picture->key_frame = 1;
     }
@@ -468,7 +438,7 @@ decode_coding_unit:
     }
 
     *got_frame = 1;
-    return avpkt->size;
+    return buf_size;
 }
 
 static av_cold int dnxhd_decode_close(AVCodecContext *avctx)
@@ -490,5 +460,5 @@ AVCodec ff_dnxhd_decoder = {
     .init           = dnxhd_decode_init,
     .close          = dnxhd_decode_close,
     .decode         = dnxhd_decode_frame,
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
+    .capabilities   = CODEC_CAP_DR1,
 };
