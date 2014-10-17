@@ -49,6 +49,7 @@
 /tests/data/
 /tests/pixfmts.mak
 /tests/rotozoom
+/tests/test_copy.ffmeta
 /tests/tiny_psnr
 /tests/videogen
 /tests/vsynth1/
