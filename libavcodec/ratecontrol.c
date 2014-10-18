@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,7 +47,7 @@ void ff_write_pass1_stats(MpegEncContext *s)
 {
     snprintf(s->avctx->stats_out, 256,
              "in:%d out:%d type:%d q:%d itex:%d ptex:%d mv:%d misc:%d "
-             "fcode:%d bcode:%d mc-var:%d var:%d icount:%d skipcount:%d hbits:%d;\n",
+             "fcode:%d bcode:%d mc-var:%"PRId64" var:%"PRId64" icount:%d skipcount:%d hbits:%d;\n",
              s->current_picture_ptr->f->display_picture_number,
              s->current_picture_ptr->f->coded_picture_number,
              s->pict_type,
@@ -62,6 +62,11 @@ void ff_write_pass1_stats(MpegEncContext *s)
              s->current_picture.mb_var_sum,
              s->i_count, s->skip_count,
              s->header_bits);
+}
+
+static double get_fps(AVCodecContext *avctx)
+{
+    return 1.0 / av_q2d(avctx->time_base) / FFMAX(avctx->ticks_per_frame, 1);
 }
 
 static inline double qp2bits(RateControlEntry *rce, double qp)
@@ -125,12 +130,19 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
     };
     emms_c();
 
+    if (!s->avctx->rc_max_available_vbv_use && s->avctx->rc_buffer_size) {
+        if (s->avctx->rc_max_rate) {
+            s->avctx->rc_max_available_vbv_use = av_clipf(s->avctx->rc_max_rate/(s->avctx->rc_buffer_size*get_fps(s->avctx)), 1.0/3, 1.0);
+        } else
+            s->avctx->rc_max_available_vbv_use = 1.0;
+    }
+
     res = av_expr_parse(&rcc->rc_eq_eval,
-                        s->rc_eq ? s->rc_eq : "tex^qComp",
+                        s->avctx->rc_eq ? s->avctx->rc_eq : "tex^qComp",
                         const_names, func1_names, func1,
                         NULL, NULL, 0, s->avctx);
     if (res < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "Error parsing rc_eq \"%s\"\n", s->rc_eq);
+        av_log(s->avctx, AV_LOG_ERROR, "Error parsing rc_eq \"%s\"\n", s->avctx->rc_eq);
         return res;
     }
 
@@ -148,6 +160,8 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
         rcc->last_qscale_for[i] = FF_QP2LAMBDA * 5;
     }
     rcc->buffer_index = s->avctx->rc_initial_buffer_occupancy;
+    if (!rcc->buffer_index)
+        rcc->buffer_index = s->avctx->rc_buffer_size * 3 / 4;
 
     if (s->flags & CODEC_FLAG_PASS2) {
         int i;
@@ -193,7 +207,7 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
             assert(picture_number < rcc->num_entries);
             rce = &rcc->entry[picture_number];
 
-            e += sscanf(p, " in:%*d out:%*d type:%d q:%f itex:%d ptex:%d mv:%d misc:%d fcode:%d bcode:%d mc-var:%d var:%d icount:%d skipcount:%d hbits:%d",
+            e += sscanf(p, " in:%*d out:%*d type:%d q:%f itex:%d ptex:%d mv:%d misc:%d fcode:%d bcode:%d mc-var:%"SCNd64" var:%"SCNd64" icount:%d skipcount:%d hbits:%d",
                         &rce->pict_type, &rce->qscale, &rce->i_tex_bits, &rce->p_tex_bits,
                         &rce->mv_bits, &rce->misc_bits,
                         &rce->f_code, &rce->b_code,
@@ -236,9 +250,9 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
             return -1;
         }
         /* init stuff with the user specified complexity */
-        if (s->rc_initial_cplx) {
+        if (s->avctx->rc_initial_cplx) {
             for (i = 0; i < 60 * 30; i++) {
-                double bits = s->rc_initial_cplx * (i / 10000.0 + 1.0) * s->mb_num;
+                double bits = s->avctx->rc_initial_cplx * (i / 10000.0 + 1.0) * s->mb_num;
                 RateControlEntry rce;
 
                 if (i % ((s->gop_size + 3) / 4) == 0)
@@ -276,7 +290,7 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
                 get_qscale(s, &rce, rcc->pass1_wanted_bits / rcc->pass1_rc_eq_output_sum, i);
 
                 // FIXME misbehaves a little for variable fps
-                rcc->pass1_wanted_bits += s->bit_rate / (1 / av_q2d(s->avctx->time_base));
+                rcc->pass1_wanted_bits += s->bit_rate / get_fps(s->avctx);
             }
         }
     }
@@ -301,7 +315,7 @@ av_cold void ff_rate_control_uninit(MpegEncContext *s)
 int ff_vbv_update(MpegEncContext *s, int frame_size)
 {
     RateControlContext *rcc = &s->rc_context;
-    const double fps        = 1 / av_q2d(s->avctx->time_base);
+    const double fps        = get_fps(s->avctx);
     const int buffer_size   = s->avctx->rc_buffer_size;
     const double min_rate   = s->avctx->rc_min_rate / fps;
     const double max_rate   = s->avctx->rc_max_rate / fps;
@@ -315,6 +329,9 @@ int ff_vbv_update(MpegEncContext *s, int frame_size)
         rcc->buffer_index -= frame_size;
         if (rcc->buffer_index < 0) {
             av_log(s->avctx, AV_LOG_ERROR, "rc buffer underflow\n");
+            if (frame_size > max_rate && s->qscale == s->avctx->qmax) {
+                av_log(s->avctx, AV_LOG_ERROR, "max bitrate possibly too small or try trellis with large lmax or increase qmax\n");
+            }
             rcc->buffer_index = 0;
         }
 
@@ -382,7 +399,7 @@ static double get_qscale(MpegEncContext *s, RateControlEntry *rce,
 
     bits = av_expr_eval(rcc->rc_eq_eval, const_values, rce);
     if (isnan(bits)) {
-        av_log(s->avctx, AV_LOG_ERROR, "Error evaluating rc_eq \"%s\"\n", s->rc_eq);
+        av_log(s->avctx, AV_LOG_ERROR, "Error evaluating rc_eq \"%s\"\n", s->avctx->rc_eq);
         return -1;
     }
 
@@ -460,8 +477,8 @@ static double get_diff_limited_q(MpegEncContext *s, RateControlEntry *rce, doubl
  */
 static void get_qminmax(int *qmin_ret, int *qmax_ret, MpegEncContext *s, int pict_type)
 {
-    int qmin = s->lmin;
-    int qmax = s->lmax;
+    int qmin = s->avctx->lmin;
+    int qmax = s->avctx->lmax;
 
     assert(qmin <= qmax);
 
@@ -491,7 +508,7 @@ static double modify_qscale(MpegEncContext *s, RateControlEntry *rce,
 {
     RateControlContext *rcc  = &s->rc_context;
     const double buffer_size = s->avctx->rc_buffer_size;
-    const double fps         = 1 / av_q2d(s->avctx->time_base);
+    const double fps         = get_fps(s->avctx);
     const double min_rate    = s->avctx->rc_min_rate / fps;
     const double max_rate    = s->avctx->rc_max_rate / fps;
     const int pict_type      = rce->new_pict_type;
@@ -500,10 +517,10 @@ static double modify_qscale(MpegEncContext *s, RateControlEntry *rce,
     get_qminmax(&qmin, &qmax, s, pict_type);
 
     /* modulation */
-    if (s->rc_qmod_freq &&
-        frame_num % s->rc_qmod_freq == 0 &&
+    if (s->avctx->rc_qmod_freq &&
+        frame_num % s->avctx->rc_qmod_freq == 0 &&
         pict_type == AV_PICTURE_TYPE_P)
-        q *= s->rc_qmod_amp;
+        q *= s->avctx->rc_qmod_amp;
 
     /* buffer overflow/underflow protection */
     if (buffer_size) {
@@ -516,7 +533,7 @@ static double modify_qscale(MpegEncContext *s, RateControlEntry *rce,
                 d = 1.0;
             else if (d < 0.0001)
                 d = 0.0001;
-            q *= pow(d, 1.0 / s->rc_buffer_aggressivity);
+            q *= pow(d, 1.0 / s->avctx->rc_buffer_aggressivity);
 
             q_limit = bits2qp(rce,
                               FFMAX((min_rate - buffer_size + rcc->buffer_index) *
@@ -536,7 +553,7 @@ static double modify_qscale(MpegEncContext *s, RateControlEntry *rce,
                 d = 1.0;
             else if (d < 0.0001)
                 d = 0.0001;
-            q /= pow(d, 1.0 / s->rc_buffer_aggressivity);
+            q /= pow(d, 1.0 / s->avctx->rc_buffer_aggressivity);
 
             q_limit = bits2qp(rce,
                               FFMAX(rcc->buffer_index *
@@ -552,8 +569,8 @@ static double modify_qscale(MpegEncContext *s, RateControlEntry *rce,
     }
     av_dlog(s, "q:%f max:%f min:%f size:%f index:%f agr:%f\n",
             q, max_rate, min_rate, buffer_size, rcc->buffer_index,
-            s->rc_buffer_aggressivity);
-    if (s->rc_qsquish == 0.0 || qmin == qmax) {
+            s->avctx->rc_buffer_aggressivity);
+    if (s->avctx->rc_qsquish == 0.0 || qmin == qmax) {
         if (q < qmin)
             q = qmin;
         else if (q > qmax)
@@ -602,7 +619,7 @@ static void adaptive_quantization(MpegEncContext *s, double q)
     const float temp_cplx_masking    = s->avctx->temporal_cplx_masking;
     const float spatial_cplx_masking = s->avctx->spatial_cplx_masking;
     const float p_masking            = s->avctx->p_masking;
-    const float border_masking       = s->border_masking;
+    const float border_masking       = s->avctx->border_masking;
     float bits_sum                   = 0.0;
     float cplx_sum                   = 0.0;
     float *cplx_tab                  = s->cplx_tab;
@@ -737,7 +754,7 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
     RateControlEntry local_rce, *rce;
     double bits;
     double rate_factor;
-    int var;
+    int64_t var;
     const int pict_type = s->pict_type;
     Picture * const pic = &s->current_picture;
     emms_c();
@@ -750,19 +767,25 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
 
     get_qminmax(&qmin, &qmax, s, pict_type);
 
-    fps = 1 / av_q2d(s->avctx->time_base);
+    fps = get_fps(s->avctx);
     /* update predictors */
     if (picture_number > 2 && !dry_run) {
-        const int last_var = s->last_pict_type == AV_PICTURE_TYPE_I ? rcc->last_mb_var_sum
-                                                                    : rcc->last_mc_mb_var_sum;
+        const int64_t last_var =
+            s->last_pict_type == AV_PICTURE_TYPE_I ? rcc->last_mb_var_sum
+                                                   : rcc->last_mc_mb_var_sum;
+        av_assert1(s->frame_bits >= s->stuffing_bits);
         update_predictor(&rcc->pred[s->last_pict_type],
                          rcc->last_qscale,
-                         sqrt(last_var), s->frame_bits);
+                         sqrt(last_var),
+                         s->frame_bits - s->stuffing_bits);
     }
 
     if (s->flags & CODEC_FLAG_PASS2) {
         assert(picture_number >= 0);
-        assert(picture_number < rcc->num_entries);
+        if (picture_number >= rcc->num_entries) {
+            av_log(s, AV_LOG_ERROR, "Input is longer than 2-pass log file\n");
+            return -1;
+        }
         rce         = &rcc->entry[picture_number];
         wanted_bits = rce->expected_bits;
     } else {
@@ -796,7 +819,7 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
             assert(pict_type == rce->new_pict_type);
 
         q = rce->new_qscale / br_compensation;
-        av_dlog(s, "%f %f %f last:%d var:%d type:%d//\n", q, rce->new_qscale,
+        av_dlog(s, "%f %f %f last:%d var:%"PRId64" type:%d//\n", q, rce->new_qscale,
                 br_compensation, s->frame_bits, var, pict_type);
     } else {
         rce->pict_type     =
@@ -825,7 +848,6 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
         rcc->mv_bits_sum[pict_type] += rce->mv_bits;
         rcc->frame_count[pict_type]++;
 
-        bits        = rce->i_tex_bits + rce->p_tex_bits;
         rate_factor = rcc->pass1_wanted_bits /
                       rcc->pass1_rc_eq_output_sum * br_compensation;
 
@@ -858,7 +880,7 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
     if (s->avctx->debug & FF_DEBUG_RC) {
         av_log(s->avctx, AV_LOG_DEBUG,
                "%c qp:%d<%2.1f<%d %d want:%d total:%d comp:%f st_q:%2.2f "
-               "size:%d var:%d/%d br:%d fps:%d\n",
+               "size:%d var:%"PRId64"/%"PRId64" br:%d fps:%d\n",
                av_get_picture_type_char(pict_type),
                qmin, q, qmax, picture_number,
                (int)wanted_bits / 1000, (int)s->total_bits / 1000,
@@ -893,7 +915,7 @@ static int init_pass2(MpegEncContext *s)
     RateControlContext *rcc = &s->rc_context;
     AVCodecContext *a       = s->avctx;
     int i, toobig;
-    double fps             = 1 / av_q2d(s->avctx->time_base);
+    double fps             = get_fps(s->avctx);
     double complexity[5]   = { 0 }; // approximate bits at quant=1
     uint64_t const_bits[5] = { 0 }; // quantizer independent bits
     uint64_t all_const_bits;
@@ -902,7 +924,7 @@ static int init_pass2(MpegEncContext *s)
     double rate_factor          = 0;
     double step;
     const int filter_size = (int)(a->qblur * 4) | 1;
-    double expected_bits;
+    double expected_bits = 0; // init to silence gcc warning
     double *qscale, *blurred_qscale, qscale_sum;
 
     /* find complexity & const_bits & decide the pict_types */
@@ -929,8 +951,8 @@ static int init_pass2(MpegEncContext *s)
         return -1;
     }
 
-    qscale         = av_malloc(sizeof(double) * rcc->num_entries);
-    blurred_qscale = av_malloc(sizeof(double) * rcc->num_entries);
+    qscale         = av_malloc_array(rcc->num_entries, sizeof(double));
+    blurred_qscale = av_malloc_array(rcc->num_entries, sizeof(double));
     toobig = 0;
 
     for (step = 256 * 256; step > 0.0000001; step *= 0.5) {
@@ -949,6 +971,12 @@ static int init_pass2(MpegEncContext *s)
         assert(filter_size % 2 == 1);
 
         /* fixed I/B QP relative to P mode */
+        for (i = FFMAX(0, rcc->num_entries - 300); i < rcc->num_entries; i++) {
+            RateControlEntry *rce = &rcc->entry[i];
+
+            qscale[i] = get_diff_limited_q(s, rce, qscale[i]);
+        }
+
         for (i = rcc->num_entries - 1; i >= 0; i--) {
             RateControlEntry *rce = &rcc->entry[i];
 

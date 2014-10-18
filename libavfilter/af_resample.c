@@ -1,19 +1,18 @@
 /*
+ * This file is part of FFmpeg.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,7 +41,6 @@ typedef struct ResampleContext {
     AVDictionary *options;
 
     int64_t next_pts;
-    int64_t next_in_pts;
 
     /* set by filter_frame() to signal an output frame to request_frame() */
     int got_output;
@@ -155,7 +153,6 @@ static int config_output(AVFilterLink *outlink)
 
     outlink->time_base = (AVRational){ 1, outlink->sample_rate };
     s->next_pts        = AV_NOPTS_VALUE;
-    s->next_in_pts     = AV_NOPTS_VALUE;
 
     av_get_channel_layout_string(buf1, sizeof(buf1),
                                  -1, inlink ->channel_layout);
@@ -257,12 +254,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             }
 
             out->sample_rate = outlink->sample_rate;
-            /* Only convert in->pts if there is a discontinuous jump.
-               This ensures that out->pts tracks the number of samples actually
-               output by the resampler in the absence of such a jump.
-               Otherwise, the rounding in av_rescale_q() and av_rescale()
-               causes off-by-1 errors. */
-            if (in->pts != AV_NOPTS_VALUE && in->pts != s->next_in_pts) {
+            if (in->pts != AV_NOPTS_VALUE) {
                 out->pts = av_rescale_q(in->pts, inlink->time_base,
                                             outlink->time_base) -
                                av_rescale(delay, outlink->sample_rate,
@@ -271,7 +263,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
                 out->pts = s->next_pts;
 
             s->next_pts = out->pts + out->nb_samples;
-            s->next_in_pts = in->pts + in->nb_samples;
 
             ret = ff_filter_frame(outlink, out);
             s->got_output = 1;
@@ -309,9 +300,9 @@ static const AVClass resample_class = {
 
 static const AVFilterPad avfilter_af_resample_inputs[] = {
     {
-        .name           = "default",
-        .type           = AVMEDIA_TYPE_AUDIO,
-        .filter_frame   = filter_frame,
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_AUDIO,
+        .filter_frame  = filter_frame,
     },
     { NULL }
 };
@@ -331,11 +322,9 @@ AVFilter ff_af_resample = {
     .description   = NULL_IF_CONFIG_SMALL("Audio resampling and conversion."),
     .priv_size     = sizeof(ResampleContext),
     .priv_class    = &resample_class,
-
-    .init_dict      = init,
-    .uninit         = uninit,
-    .query_formats  = query_formats,
-
-    .inputs    = avfilter_af_resample_inputs,
-    .outputs   = avfilter_af_resample_outputs,
+    .init_dict     = init,
+    .uninit        = uninit,
+    .query_formats = query_formats,
+    .inputs        = avfilter_af_resample_inputs,
+    .outputs       = avfilter_af_resample_outputs,
 };
