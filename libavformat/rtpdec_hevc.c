@@ -2,20 +2,20 @@
  * RTP parser for HEVC/H.265 payload format (draft version 6)
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
  */
@@ -361,6 +361,8 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
         buf += RTP_HEVC_PAYLOAD_HEADER_SIZE;
         len -= RTP_HEVC_PAYLOAD_HEADER_SIZE;
 
+        if (len < 1)
+            return AVERROR_INVALIDDATA;
         /*
              decode the FU header
 
@@ -389,6 +391,7 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
 
         av_dlog(ctx, " FU type %d with %d bytes\n", fu_type, len);
 
+        /* sanity check for size of input packet: 1 byte payload at least */
         if (len > 0) {
             new_nal_header[0] = (rtp_pl[0] & 0x81) | (fu_type << 1);
             new_nal_header[1] = rtp_pl[1];
@@ -417,11 +420,14 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
                 memcpy(pkt->data, buf, len);
             }
         } else {
-            /* sanity check for size of input packet: 1 byte payload at least */
-            av_log(ctx, AV_LOG_ERROR,
-                   "Too short RTP/HEVC packet, got %d bytes of NAL unit type %d\n",
-                   len, nal_type);
-            res = AVERROR_INVALIDDATA;
+            if (len < 0) {
+                av_log(ctx, AV_LOG_ERROR,
+                       "Too short RTP/HEVC packet, got %d bytes of NAL unit type %d\n",
+                       len, nal_type);
+                res = AVERROR_INVALIDDATA;
+            } else {
+                res = AVERROR(EAGAIN);
+            }
         }
 
         break;
