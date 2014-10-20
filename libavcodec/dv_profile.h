@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,11 +24,6 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/rational.h"
 #include "avcodec.h"
-
-/* minimum number of bytes to read from a DV stream in order to
- * determine the profile */
-#define DV_PROFILE_BYTES (6 * 80) /* 6 DIF blocks */
-
 
 /*
  * AVDVProfile is used to express the differences between various
@@ -57,15 +52,6 @@ typedef struct AVDVProfile {
                                             /* in each frame in a 5 frames window */
     const uint8_t  (*audio_shuffle)[9];     /* PCM shuffling table */
 } AVDVProfile;
-
-#if FF_API_DV_FRAME_PROFILE
-/**
- * @deprecated use av_dv_frame_profile()
- */
-attribute_deprecated
-const AVDVProfile* avpriv_dv_frame_profile2(AVCodecContext* codec, const AVDVProfile *sys,
-                                            const uint8_t* frame, unsigned buf_size);
-#endif
 
 /**
  * Get a DV profile for the provided compressed frame.
