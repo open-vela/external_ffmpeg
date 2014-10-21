@@ -8,20 +8,20 @@
  * aspecting, new decode_frame mechanism and apple mjpeg-b support
  *                                  by Alex Beregszaszi
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,8 +29,6 @@
  * @file
  * MJPEG encoder.
  */
-
-#include <assert.h>
 
 #include "libavutil/pixdesc.h"
 
@@ -43,6 +41,11 @@
 av_cold int ff_mjpeg_encode_init(MpegEncContext *s)
 {
     MJpegContext *m;
+
+    if (s->width > 65500 || s->height > 65500) {
+        av_log(s, AV_LOG_ERROR, "JPEG does not support resolutions above 65500x65500\n");
+        return AVERROR(EINVAL);
+    }
 
     m = av_malloc(sizeof(MJpegContext));
     if (!m)
@@ -121,7 +124,7 @@ static void encode_block(MpegEncContext *s, int16_t *block, int n)
                 mant--;
             }
 
-            nbits= av_log2(val) + 1;
+            nbits= av_log2_16bit(val) + 1;
             code = (run << 4) | nbits;
 
             put_bits(&s->pb, huff_size_ac[code], huff_code_ac[code]);
@@ -136,22 +139,83 @@ static void encode_block(MpegEncContext *s, int16_t *block, int n)
         put_bits(&s->pb, huff_size_ac[0], huff_code_ac[0]);
 }
 
-void ff_mjpeg_encode_mb(MpegEncContext *s, int16_t block[6][64])
+void ff_mjpeg_encode_mb(MpegEncContext *s, int16_t block[12][64])
 {
     int i;
-    for(i=0;i<5;i++) {
-        encode_block(s, block[i], i);
-    }
-    if (s->chroma_format == CHROMA_420) {
+    if (s->chroma_format == CHROMA_444) {
+        encode_block(s, block[0], 0);
+        encode_block(s, block[2], 2);
+        encode_block(s, block[4], 4);
+        encode_block(s, block[8], 8);
         encode_block(s, block[5], 5);
+        encode_block(s, block[9], 9);
+
+        if (16*s->mb_x+8 < s->width) {
+            encode_block(s, block[1], 1);
+            encode_block(s, block[3], 3);
+            encode_block(s, block[6], 6);
+            encode_block(s, block[10], 10);
+            encode_block(s, block[7], 7);
+            encode_block(s, block[11], 11);
+        }
     } else {
-        encode_block(s, block[6], 6);
-        encode_block(s, block[5], 5);
-        encode_block(s, block[7], 7);
+        for(i=0;i<5;i++) {
+            encode_block(s, block[i], i);
+        }
+        if (s->chroma_format == CHROMA_420) {
+            encode_block(s, block[5], 5);
+        } else {
+            encode_block(s, block[6], 6);
+            encode_block(s, block[5], 5);
+            encode_block(s, block[7], 7);
+        }
     }
 
     s->i_tex_bits += get_bits_diff(s);
 }
+
+// maximum over s->mjpeg_vsample[i]
+#define V_MAX 2
+static int amv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
+                              const AVFrame *pic_arg, int *got_packet)
+
+{
+    MpegEncContext *s = avctx->priv_data;
+    AVFrame *pic;
+    int i, ret;
+    int chroma_h_shift, chroma_v_shift;
+
+    av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &chroma_h_shift, &chroma_v_shift);
+
+    //CODEC_FLAG_EMU_EDGE have to be cleared
+    if(s->avctx->flags & CODEC_FLAG_EMU_EDGE)
+        return AVERROR(EINVAL);
+
+    if ((avctx->height & 15) && avctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Heights which are not a multiple of 16 might fail with some decoders, "
+               "use vstrict=-1 / -strict -1 to use %d anyway.\n", avctx->height);
+        av_log(avctx, AV_LOG_WARNING, "If you have a device that plays AMV videos, please test if videos "
+               "with such heights work with it and report your findings to ffmpeg-devel@ffmpeg.org\n");
+        return AVERROR_EXPERIMENTAL;
+    }
+
+    pic = av_frame_clone(pic_arg);
+    if (!pic)
+        return AVERROR(ENOMEM);
+    //picture should be flipped upside-down
+    for(i=0; i < 3; i++) {
+        int vsample = i ? 2 >> chroma_v_shift : 2;
+        pic->data[i] += pic->linesize[i] * (vsample * s->height / V_MAX - 1);
+        pic->linesize[i] *= -1;
+    }
+    ret = ff_mpv_encode_picture(avctx, pkt, pic, got_packet);
+    av_frame_free(&pic);
+    return ret;
+}
+
+#if CONFIG_MJPEG_ENCODER
+FF_MPV_GENERIC_CLASS(mjpeg)
 
 AVCodec ff_mjpeg_encoder = {
     .name           = "mjpeg",
@@ -162,7 +226,28 @@ AVCodec ff_mjpeg_encoder = {
     .init           = ff_mpv_encode_init,
     .encode2        = ff_mpv_encode_picture,
     .close          = ff_mpv_encode_end,
+    .capabilities   = CODEC_CAP_SLICE_THREADS | CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .pix_fmts       = (const enum AVPixelFormat[]){
-        AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ422P, AV_PIX_FMT_NONE
+        AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ422P, AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_NONE
     },
+    .priv_class     = &mjpeg_class,
 };
+#endif
+#if CONFIG_AMV_ENCODER
+FF_MPV_GENERIC_CLASS(amv)
+
+AVCodec ff_amv_encoder = {
+    .name           = "amv",
+    .long_name      = NULL_IF_CONFIG_SMALL("AMV Video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_AMV,
+    .priv_data_size = sizeof(MpegEncContext),
+    .init           = ff_mpv_encode_init,
+    .encode2        = amv_encode_picture,
+    .close          = ff_mpv_encode_end,
+    .pix_fmts       = (const enum AVPixelFormat[]){
+        AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_NONE
+    },
+    .priv_class     = &amv_class,
+};
+#endif
