@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,8 +22,8 @@
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 
+#include "bitstream.h"
 #include "bsf.h"
-#include "get_bits.h"
 #include "put_bits.h"
 
 #define FRAME_SLOTS 8
@@ -73,7 +73,7 @@ static void vp9_raw_reorder_clear_slot(VP9RawReorderContext *ctx, int s)
 
 static int vp9_raw_reorder_frame_parse(AVBSFContext *bsf, VP9RawReorderFrame *frame)
 {
-    GetBitContext bc;
+    BitstreamContext bc;
     int err;
 
     unsigned int frame_marker;
@@ -81,22 +81,22 @@ static int vp9_raw_reorder_frame_parse(AVBSFContext *bsf, VP9RawReorderFrame *fr
     unsigned int error_resilient_mode;
     unsigned int frame_sync_code;
 
-    err = init_get_bits(&bc, frame->packet->data, 8 * frame->packet->size);
+    err = bitstream_init8(&bc, frame->packet->data, frame->packet->size);
     if (err)
         return err;
 
-    frame_marker = get_bits(&bc, 2);
+    frame_marker = bitstream_read(&bc, 2);
     if (frame_marker != 2) {
         av_log(bsf, AV_LOG_ERROR, "Invalid frame marker: %u.\n",
                frame_marker);
         return AVERROR_INVALIDDATA;
     }
 
-    profile_low_bit  = get_bits1(&bc);
-    profile_high_bit = get_bits1(&bc);
+    profile_low_bit  = bitstream_read_bit(&bc);
+    profile_high_bit = bitstream_read_bit(&bc);
     frame->profile = (profile_high_bit << 1) | profile_low_bit;
     if (frame->profile == 3) {
-        reserved_zero = get_bits1(&bc);
+        reserved_zero = bitstream_read_bit(&bc);
         if (reserved_zero != 0) {
             av_log(bsf, AV_LOG_ERROR, "Profile reserved_zero bit set: "
                    "unsupported profile or invalid bitstream.\n");
@@ -104,18 +104,18 @@ static int vp9_raw_reorder_frame_parse(AVBSFContext *bsf, VP9RawReorderFrame *fr
         }
     }
 
-    frame->show_existing_frame = get_bits1(&bc);
+    frame->show_existing_frame = bitstream_read_bit(&bc);
     if (frame->show_existing_frame) {
-        frame->frame_to_show = get_bits(&bc, 3);
+        frame->frame_to_show = bitstream_read(&bc, 3);
         return 0;
     }
 
-    frame->frame_type = get_bits1(&bc);
-    frame->show_frame = get_bits1(&bc);
-    error_resilient_mode = get_bits1(&bc);
+    frame->frame_type = bitstream_read_bit(&bc);
+    frame->show_frame = bitstream_read_bit(&bc);
+    error_resilient_mode = bitstream_read_bit(&bc);
 
     if (frame->frame_type == 0) {
-        frame_sync_code = get_bits(&bc, 24);
+        frame_sync_code = bitstream_read(&bc, 24);
         if (frame_sync_code != 0x498342) {
             av_log(bsf, AV_LOG_ERROR, "Invalid frame sync code: %06x.\n",
                    frame_sync_code);
@@ -126,15 +126,15 @@ static int vp9_raw_reorder_frame_parse(AVBSFContext *bsf, VP9RawReorderFrame *fr
         unsigned int intra_only;
 
         if (frame->show_frame == 0)
-            intra_only = get_bits1(&bc);
+            intra_only = bitstream_read_bit(&bc);
         else
             intra_only = 0;
         if (error_resilient_mode == 0) {
             // reset_frame_context
-            skip_bits(&bc, 2);
+            bitstream_skip(&bc, 2);
         }
         if (intra_only) {
-            frame_sync_code = get_bits(&bc, 24);
+            frame_sync_code = bitstream_read(&bc, 24);
             if (frame_sync_code != 0x498342) {
                 av_log(bsf, AV_LOG_ERROR, "Invalid frame sync code: "
                        "%06x.\n", frame_sync_code);
@@ -144,24 +144,24 @@ static int vp9_raw_reorder_frame_parse(AVBSFContext *bsf, VP9RawReorderFrame *fr
                 unsigned int color_space;
                 if (frame->profile >= 2) {
                     // ten_or_twelve_bit
-                    skip_bits(&bc, 1);
+                    bitstream_skip(&bc, 1);
                 }
-                color_space = get_bits(&bc, 3);
+                color_space = bitstream_read(&bc, 3);
                 if (color_space != 7 /* CS_RGB */) {
                     // color_range
-                    skip_bits(&bc, 1);
+                    bitstream_skip(&bc, 1);
                     if (frame->profile == 1 || frame->profile == 3) {
                         // subsampling
-                        skip_bits(&bc, 3);
+                        bitstream_skip(&bc, 3);
                     }
                 } else {
                     if (frame->profile == 1 || frame->profile == 3)
-                        skip_bits(&bc, 1);
+                        bitstream_skip(&bc, 1);
                 }
             }
-            frame->refresh_frame_flags = get_bits(&bc, 8);
+            frame->refresh_frame_flags = bitstream_read(&bc, 8);
         } else {
-            frame->refresh_frame_flags = get_bits(&bc, 8);
+            frame->refresh_frame_flags = bitstream_read(&bc, 8);
         }
     }
 

@@ -3,49 +3,32 @@
  *
  * Copyright (c) 2003-2012 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef AVCODEC_FFV1_H
 #define AVCODEC_FFV1_H
 
-/**
- * @file
- * FF Video Codec 1 (a lossless codec)
- */
+#include <stdint.h>
 
-#include "libavutil/avassert.h"
-#include "libavutil/crc.h"
-#include "libavutil/opt.h"
-#include "libavutil/imgutils.h"
-#include "libavutil/pixdesc.h"
-#include "libavutil/timer.h"
 #include "avcodec.h"
-#include "get_bits.h"
-#include "internal.h"
-#include "mathops.h"
+#include "bitstream.h"
 #include "put_bits.h"
 #include "rangecoder.h"
-#include "thread.h"
-
-#ifdef __INTEL_COMPILER
-#undef av_flatten
-#define av_flatten
-#endif
 
 #define MAX_PLANES 4
 #define CONTEXT_SIZE 32
@@ -56,7 +39,14 @@
 #define AC_GOLOMB_RICE          0
 #define AC_RANGE_DEFAULT_TAB    1
 #define AC_RANGE_CUSTOM_TAB     2
-#define AC_RANGE_DEFAULT_TAB_FORCE -2
+
+extern const uint8_t ff_log2_run[41];
+
+extern const int8_t ffv1_quant5_10bit[256];
+extern const int8_t ffv1_quant5[256];
+extern const int8_t ffv1_quant9_10bit[256];
+extern const int8_t ffv1_quant11[256];
+extern const uint8_t ffv1_ver2_state[256];
 
 typedef struct VlcState {
     int16_t drift;
@@ -74,18 +64,18 @@ typedef struct PlaneContext {
     uint8_t interlace_bit_state[2];
 } PlaneContext;
 
-#define MAX_SLICES 1024
+#define MAX_SLICES 256
 
 typedef struct FFV1Context {
     AVClass *class;
     AVCodecContext *avctx;
     RangeCoder c;
-    GetBitContext gb;
+    BitstreamContext bc;
     PutBitContext pb;
     uint64_t rc_stat[256][2];
     uint64_t (*rc_stat2[MAX_QUANT_TABLES])[32][2];
     int version;
-    int micro_version;
+    int minor_version;
     int width, height;
     int chroma_planes;
     int chroma_h_shift, chroma_v_shift;
@@ -93,13 +83,13 @@ typedef struct FFV1Context {
     int flags;
     int picture_number;
     int key_frame;
-    ThreadFrame picture, last_picture;
-    struct FFV1Context *fsrc;
+    const AVFrame *frame;
+    AVFrame *last_picture;
 
     AVFrame *cur;
     int plane_count;
-    int ac;                              ///< 1=range coder <-> 0=golomb rice
-    int ac_byte_count;                   ///< number of bytes used for AC coding
+    int ac;     // 1 = range coder <-> 0 = golomb rice
+    int ac_byte_count;      // number of bytes used for AC coding
     PlaneContext plane[MAX_PLANES];
     int16_t quant_table[MAX_CONTEXT_INPUTS][256];
     int16_t quant_tables[MAX_QUANT_TABLES][MAX_CONTEXT_INPUTS][256];
@@ -109,12 +99,8 @@ typedef struct FFV1Context {
     int run_index;
     int colorspace;
     int16_t *sample_buffer;
-    int32_t *sample_buffer32;
-
-    int use32bit;
 
     int ec;
-    int intra;
     int slice_damaged;
     int key_frame_ok;
     int context_model;
@@ -127,26 +113,13 @@ typedef struct FFV1Context {
 
     struct FFV1Context *slice_context[MAX_SLICES];
     int slice_count;
-    int max_slice_count;
     int num_v_slices;
     int num_h_slices;
     int slice_width;
     int slice_height;
     int slice_x;
     int slice_y;
-    int slice_reset_contexts;
-    int slice_coding_mode;
-    int slice_rct_by_coef;
-    int slice_rct_ry_coef;
 } FFV1Context;
-
-int ff_ffv1_common_init(AVCodecContext *avctx);
-int ff_ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs);
-int ff_ffv1_init_slices_state(FFV1Context *f);
-int ff_ffv1_init_slice_contexts(FFV1Context *f);
-int ff_ffv1_allocate_initial_states(FFV1Context *f);
-void ff_ffv1_clear_slice_state(FFV1Context *f, FFV1Context *fs);
-int ff_ffv1_close(AVCodecContext *avctx);
 
 static av_always_inline int fold(int diff, int bits)
 {
@@ -154,11 +127,42 @@ static av_always_inline int fold(int diff, int bits)
         diff = (int8_t)diff;
     else {
         diff +=  1 << (bits  - 1);
-        diff  = av_mod_uintp2(diff, bits);
+        diff &= (1 <<  bits) - 1;
         diff -=  1 << (bits  - 1);
     }
 
     return diff;
+}
+
+static inline int predict(int16_t *src, int16_t *last)
+{
+    const int LT = last[-1];
+    const int T  = last[0];
+    const int L  = src[-1];
+
+    return mid_pred(L, L + T - LT, T);
+}
+
+static inline int get_context(PlaneContext *p, int16_t *src,
+                              int16_t *last, int16_t *last2)
+{
+    const int LT = last[-1];
+    const int T  = last[0];
+    const int RT = last[1];
+    const int L  = src[-1];
+
+    if (p->quant_table[3][127]) {
+        const int TT = last2[0];
+        const int LL = src[-2];
+        return p->quant_table[0][(L - LT) & 0xFF] +
+               p->quant_table[1][(LT - T) & 0xFF] +
+               p->quant_table[2][(T - RT) & 0xFF] +
+               p->quant_table[3][(LL - L) & 0xFF] +
+               p->quant_table[4][(TT - T) & 0xFF];
+    } else
+        return p->quant_table[0][(L - LT) & 0xFF] +
+               p->quant_table[1][(LT - T) & 0xFF] +
+               p->quant_table[2][(T - RT) & 0xFF];
 }
 
 static inline void update_vlc_state(VlcState *const state, const int v)
@@ -195,16 +199,11 @@ static inline void update_vlc_state(VlcState *const state, const int v)
     state->count = count;
 }
 
-#define TYPE int16_t
-#define RENAME(name) name
-#include "ffv1_template.c"
-#undef TYPE
-#undef RENAME
-
-#define TYPE int32_t
-#define RENAME(name) name ## 32
-#include "ffv1_template.c"
-#undef TYPE
-#undef RENAME
+int ffv1_common_init(AVCodecContext *avctx);
+int ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs);
+int ffv1_init_slice_contexts(FFV1Context *f);
+int ffv1_allocate_initial_states(FFV1Context *f);
+void ffv1_clear_slice_state(FFV1Context *f, FFV1Context *fs);
+int ffv1_close(AVCodecContext *avctx);
 
 #endif /* AVCODEC_FFV1_H */
