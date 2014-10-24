@@ -2,20 +2,20 @@
  * Apple HTTP Live Streaming Protocol Handler
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -126,7 +126,7 @@ static int parse_playlist(URLContext *h, const char *url)
 
     free_segment_list(s);
     s->finished = 0;
-    while (!in->eof_reached) {
+    while (!avio_feof(in)) {
         read_chomp_line(in, line, sizeof(line));
         if (av_strstart(line, "#EXT-X-STREAM-INF:", &ptr)) {
             struct variant_info info = {{0}};
@@ -169,7 +169,7 @@ static int parse_playlist(URLContext *h, const char *url)
             }
         }
     }
-    s->last_load_time = av_gettime_relative();
+    s->last_load_time = av_gettime();
 
 fail:
     avio_close(in);
@@ -273,7 +273,7 @@ start:
                       s->target_duration;
 retry:
     if (!s->finished) {
-        int64_t now = av_gettime_relative();
+        int64_t now = av_gettime();
         if (now - s->last_load_time >= reload_interval) {
             if ((ret = parse_playlist(h, s->playlisturl)) < 0)
                 return ret;
@@ -292,7 +292,7 @@ retry:
     if (s->cur_seq_no - s->start_seq_no >= s->n_segments) {
         if (s->finished)
             return AVERROR_EOF;
-        while (av_gettime_relative() - s->last_load_time < reload_interval) {
+        while (av_gettime() - s->last_load_time < reload_interval) {
             if (ff_check_interrupt(&h->interrupt_callback))
                 return AVERROR_EXIT;
             av_usleep(100*1000);

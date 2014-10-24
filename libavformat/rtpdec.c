@@ -2,20 +2,20 @@
  * RTP input format
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,12 @@
 #include "rtpdec_formats.h"
 
 #define MIN_FEEDBACK_INTERVAL 200000 /* 200 ms in us */
+
+static RTPDynamicProtocolHandler gsm_dynamic_handler = {
+    .enc_name   = "GSM",
+    .codec_type = AVMEDIA_TYPE_AUDIO,
+    .codec_id   = AV_CODEC_ID_GSM,
+};
 
 static RTPDynamicProtocolHandler realmedia_mp3_dynamic_handler = {
     .enc_name   = "X-MP3-draft-00",
@@ -66,6 +72,7 @@ void ff_register_rtp_dynamic_payload_handlers(void)
     ff_register_dynamic_payload_handler(&ff_g726_24_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_g726_32_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_g726_40_dynamic_handler);
+    ff_register_dynamic_payload_handler(&ff_h261_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_h263_1998_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_h263_2000_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_h263_rfc2190_dynamic_handler);
@@ -91,6 +98,7 @@ void ff_register_rtp_dynamic_payload_handlers(void)
     ff_register_dynamic_payload_handler(&ff_theora_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_vorbis_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_vp8_dynamic_handler);
+    ff_register_dynamic_payload_handler(&gsm_dynamic_handler);
     ff_register_dynamic_payload_handler(&opus_dynamic_handler);
     ff_register_dynamic_payload_handler(&realmedia_mp3_dynamic_handler);
     ff_register_dynamic_payload_handler(&speex_dynamic_handler);
@@ -135,7 +143,7 @@ static int rtcp_parse_packet(RTPDemuxContext *s, const unsigned char *buf,
                 return AVERROR_INVALIDDATA;
             }
 
-            s->last_rtcp_reception_time = av_gettime_relative();
+            s->last_rtcp_reception_time = av_gettime();
             s->last_rtcp_ntp_time  = AV_RB64(buf + 8);
             s->last_rtcp_timestamp = AV_RB32(buf + 16);
             if (s->first_rtcp_ntp_time == AV_NOPTS_VALUE) {
@@ -315,7 +323,7 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
         avio_wb32(pb, 0); /* delay since last SR */
     } else {
         uint32_t middle_32_bits   = s->last_rtcp_ntp_time >> 16; // this is valid, right? do we need to handle 64 bit values special?
-        uint32_t delay_since_last = av_rescale(av_gettime_relative() - s->last_rtcp_reception_time,
+        uint32_t delay_since_last = av_rescale(av_gettime() - s->last_rtcp_reception_time,
                                                65536, AV_TIME_BASE);
 
         avio_wb32(pb, middle_32_bits); /* last SR timestamp */
@@ -440,7 +448,7 @@ int ff_rtp_send_rtcp_feedback(RTPDemuxContext *s, URLContext *fd,
     /* Send new feedback if enough time has elapsed since the last
      * feedback packet. */
 
-    now = av_gettime_relative();
+    now = av_gettime();
     if (s->last_feedback_time &&
         (now - s->last_feedback_time) < MIN_FEEDBACK_INTERVAL)
         return 0;
@@ -683,7 +691,7 @@ static void enqueue_packet(RTPDemuxContext *s, uint8_t *buf, int len)
     packet = av_mallocz(sizeof(*packet));
     if (!packet)
         return;
-    packet->recvtime = av_gettime_relative();
+    packet->recvtime = av_gettime();
     packet->seq      = seq;
     packet->len      = len;
     packet->buf      = buf;
@@ -761,7 +769,7 @@ static int rtp_parse_one_packet(RTPDemuxContext *s, AVPacket *pkt,
     }
 
     if (s->st) {
-        int64_t received = av_gettime_relative();
+        int64_t received = av_gettime();
         uint32_t arrival_ts = av_rescale_q(received, AV_TIME_BASE_Q,
                                            s->st->time_base);
         timestamp = AV_RB32(buf + 4);
@@ -840,7 +848,7 @@ int ff_parse_fmtp(AVFormatContext *s,
     int value_size = strlen(p) + 1;
 
     if (!(value = av_malloc(value_size))) {
-        av_log(NULL, AV_LOG_ERROR, "Failed to allocate data for FMTP.");
+        av_log(NULL, AV_LOG_ERROR, "Failed to allocate data for FMTP.\n");
         return AVERROR(ENOMEM);
     }
 
