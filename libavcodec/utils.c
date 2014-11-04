@@ -1210,11 +1210,6 @@ int ff_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmt)
     memcpy(choices, fmt, (n + 1) * sizeof(*choices));
 
     for (;;) {
-        if (avctx->hwaccel && avctx->hwaccel->uninit)
-            avctx->hwaccel->uninit(avctx);
-        av_freep(&avctx->internal->hwaccel_priv_data);
-        avctx->hwaccel = NULL;
-
         ret = avctx->get_format(avctx, choices);
 
         desc = av_pix_fmt_desc_get(ret);
@@ -1222,6 +1217,11 @@ int ff_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmt)
             ret = AV_PIX_FMT_NONE;
             break;
         }
+
+        if (avctx->hwaccel && avctx->hwaccel->uninit)
+            avctx->hwaccel->uninit(avctx);
+        av_freep(&avctx->internal->hwaccel_priv_data);
+        avctx->hwaccel = NULL;
 
         if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
             break;
