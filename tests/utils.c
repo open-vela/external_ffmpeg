@@ -1,20 +1,18 @@
 /*
- * copyright (c) Sebastien Bechet <s.bechet@av7.net>
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,12 +33,12 @@
 } while (0)
 
 static void rgb24_to_yuv420p(unsigned char *lum, unsigned char *cb,
-                             unsigned char *cr, const unsigned char *src,
+                             unsigned char *cr, unsigned char *src,
                              int width, int height)
 {
     int wrap, wrap3, x, y;
     int r, g, b, r1, g1, b1;
-    const unsigned char *p;
+    unsigned char *p;
 
     wrap  = width;
     wrap3 = width * 3;
@@ -104,7 +102,7 @@ static void rgb24_to_yuv420p(unsigned char *lum, unsigned char *cb,
 #define DEFAULT_NB_PICT  50
 
 static void pgmyuv_save(const char *filename, int w, int h,
-                        const unsigned char *rgb_tab)
+                        unsigned char *rgb_tab)
 {
     FILE *f;
     int i, h2, w2;
