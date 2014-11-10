@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -468,7 +468,7 @@ void ff_vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
     MpegEncContext *s = &v->s;
     int xy, wrap, off = 0;
     int A[2], B[2], C[2];
-    int px = 0, py = 0;
+    int px, py;
     int a_valid = 0, b_valid = 0, c_valid = 0;
     int field_a, field_b, field_c; // 0: same, 1: opposit
     int total_valid, num_samefield, num_oppfield;
@@ -602,10 +602,11 @@ void ff_vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 px = mid_pred(A[0], B[0], C[0]);
                 py = mid_pred(A[1], B[1], C[1]);
             } else if (total_valid) {
-                if      (a_valid) { px = A[0]; py = A[1]; }
-                else if (b_valid) { px = B[0]; py = B[1]; }
-                else              { px = C[0]; py = C[1]; }
-            }
+                if (a_valid) { px = A[0]; py = A[1]; }
+                if (b_valid) { px = B[0]; py = B[1]; }
+                if (c_valid) { px = C[0]; py = C[1]; }
+            } else
+                px = py = 0;
         }
     } else {
         if (a_valid)
@@ -644,28 +645,28 @@ void ff_vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 } else if (!field_b && b_valid) {
                     px = B[0];
                     py = B[1];
-                } else /*if (c_valid)*/ {
-                    av_assert1(c_valid);
+                } else if (c_valid) {
                     px = C[0];
                     py = C[1];
-                } /*else px = py = 0;*/
+                } else px = py = 0;
             } else {
                 if (field_a && a_valid) {
                     px = A[0];
                     py = A[1];
-                } else /*if (field_b && b_valid)*/ {
-                    av_assert1(field_b && b_valid);
+                } else if (field_b && b_valid) {
                     px = B[0];
                     py = B[1];
-                } /*else if (c_valid) {
+                } else if (c_valid) {
                     px = C[0];
                     py = C[1];
-                }*/
+                } else
+                    px = py = 0;
             }
         } else if (total_valid == 1) {
             px = (a_valid) ? A[0] : ((b_valid) ? B[0] : C[0]);
             py = (a_valid) ? A[1] : ((b_valid) ? B[1] : C[1]);
-        }
+        } else
+            px = py = 0;
     }
 
     /* store MV using signed modulus of MV range defined in 4.11 */
@@ -697,8 +698,6 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
     int r_x, r_y;
     const uint8_t *is_intra = v->mb_type[0];
 
-    av_assert0(!v->field_mode);
-
     r_x = v->range_x;
     r_y = v->range_y;
     /* scale MV difference to be quad-pel */
@@ -711,15 +710,13 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
     xy = s->block_index[0];
 
     if (s->mb_intra) {
-        s->current_picture.motion_val[0][xy][0] =
-        s->current_picture.motion_val[0][xy][1] =
-        s->current_picture.motion_val[1][xy][0] =
-        s->current_picture.motion_val[1][xy][1] = 0;
+        s->current_picture.motion_val[0][xy + v->blocks_off][0] =
+        s->current_picture.motion_val[0][xy + v->blocks_off][1] =
+        s->current_picture.motion_val[1][xy + v->blocks_off][0] =
+        s->current_picture.motion_val[1][xy + v->blocks_off][1] = 0;
         return;
     }
-        if (direct && s->next_picture_ptr->field_picture)
-            av_log(s->avctx, AV_LOG_WARNING, "Mixed frame/field direct mode not supported\n");
-
+    if (!v->field_mode) {
         s->mv[0][0][0] = scale_mv(s->next_picture.motion_val[1][xy][0], v->bfraction, 0, s->quarter_sample);
         s->mv[0][0][1] = scale_mv(s->next_picture.motion_val[1][xy][1], v->bfraction, 0, s->quarter_sample);
         s->mv[1][0][0] = scale_mv(s->next_picture.motion_val[1][xy][0], v->bfraction, 1, s->quarter_sample);
@@ -730,11 +727,12 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
         s->mv[0][0][1] = av_clip(s->mv[0][0][1], -60 - (s->mb_y << 6), (s->mb_height << 6) - 4 - (s->mb_y << 6));
         s->mv[1][0][0] = av_clip(s->mv[1][0][0], -60 - (s->mb_x << 6), (s->mb_width  << 6) - 4 - (s->mb_x << 6));
         s->mv[1][0][1] = av_clip(s->mv[1][0][1], -60 - (s->mb_y << 6), (s->mb_height << 6) - 4 - (s->mb_y << 6));
+    }
     if (direct) {
-        s->current_picture.motion_val[0][xy][0] = s->mv[0][0][0];
-        s->current_picture.motion_val[0][xy][1] = s->mv[0][0][1];
-        s->current_picture.motion_val[1][xy][0] = s->mv[1][0][0];
-        s->current_picture.motion_val[1][xy][1] = s->mv[1][0][1];
+        s->current_picture.motion_val[0][xy + v->blocks_off][0] = s->mv[0][0][0];
+        s->current_picture.motion_val[0][xy + v->blocks_off][1] = s->mv[0][0][1];
+        s->current_picture.motion_val[1][xy + v->blocks_off][0] = s->mv[1][0][0];
+        s->current_picture.motion_val[1][xy + v->blocks_off][1] = s->mv[1][0][1];
         return;
     }
 
