@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "libavutil/common.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/pixdesc.h"
 
@@ -256,21 +257,29 @@ void ff_dv_print_profiles(void *logctx, int loglevel)
 
 #endif /* CONFIG_DVPROFILE */
 
-const AVDVProfile *av_dv_frame_profile(const AVDVProfile *sys,
+const AVDVProfile* ff_dv_frame_profile(AVCodecContext* codec, const AVDVProfile *sys,
                                        const uint8_t *frame, unsigned buf_size)
 {
 #if CONFIG_DVPROFILE
     int i, dsf, stype;
 
-    if (buf_size < 80 * 5 + 48 + 4)
+    if(buf_size < DV_PROFILE_BYTES)
         return NULL;
 
     dsf   = (frame[3] & 0x80) >> 7;
     stype = frame[80 * 5 + 48 + 3] & 0x1f;
 
     /* 576i50 25Mbps 4:1:1 is a special case */
-    if (dsf == 1 && stype == 0 && frame[4] & 0x07 /* the APT field */)
+    if ((dsf == 1 && stype == 0 && frame[4] & 0x07 /* the APT field */) ||
+        (stype == 31 && codec && codec->codec_tag==AV_RL32("SL25") && codec->coded_width==720 && codec->coded_height==576))
         return &dv_profiles[2];
+
+    if(   stype == 0
+       && codec
+       && (codec->codec_tag==AV_RL32("dvsd") || codec->codec_tag==AV_RL32("CDVC"))
+       && codec->coded_width ==720
+       && codec->coded_height==576)
+        return &dv_profiles[1];
 
     for (i = 0; i < FF_ARRAY_ELEMS(dv_profiles); i++)
         if (dsf == dv_profiles[i].dsf && stype == dv_profiles[i].video_stype)
@@ -279,9 +288,27 @@ const AVDVProfile *av_dv_frame_profile(const AVDVProfile *sys,
     /* check if old sys matches and assumes corrupted input */
     if (sys && buf_size == sys->frame_size)
         return sys;
+
+    /* hack for trac issue #217, dv files created with QuickTime 3 */
+    if ((frame[3] & 0x7f) == 0x3f && frame[80 * 5 + 48 + 3] == 0xff)
+        return &dv_profiles[dsf];
 #endif
 
     return NULL;
+}
+
+#if FF_API_DV_FRAME_PROFILE
+const AVDVProfile* avpriv_dv_frame_profile2(AVCodecContext* codec, const AVDVProfile *sys,
+                                            const uint8_t *frame, unsigned buf_size)
+{
+    return ff_dv_frame_profile(codec, sys, frame, buf_size);
+}
+#endif
+
+const AVDVProfile *av_dv_frame_profile(const AVDVProfile *sys,
+                                       const uint8_t *frame, unsigned buf_size)
+{
+    return ff_dv_frame_profile(NULL, sys, frame, buf_size);
 }
 
 const AVDVProfile *av_dv_codec_profile(int width, int height,
@@ -299,3 +326,4 @@ const AVDVProfile *av_dv_codec_profile(int width, int height,
 
     return NULL;
 }
+
