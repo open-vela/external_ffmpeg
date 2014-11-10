@@ -2,25 +2,26 @@
  * TCP protocol
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avformat.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/opt.h"
+#include "libavutil/time.h"
 
 #include "internal.h"
 #include "network.h"
@@ -34,7 +35,8 @@ typedef struct TCPContext {
     const AVClass *class;
     int fd;
     int listen;
-    int timeout;
+    int open_timeout;
+    int rw_timeout;
     int listen_timeout;
 } TCPContext;
 
@@ -43,8 +45,8 @@ typedef struct TCPContext {
 #define E AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     { "listen",          "Listen for incoming connections",  OFFSET(listen),         AV_OPT_TYPE_INT, { .i64 = 0 },     0,       1,       .flags = D|E },
-    { "timeout",         "Connection timeout",               OFFSET(timeout),        AV_OPT_TYPE_INT, { .i64 = 10000 }, INT_MIN, INT_MAX, .flags = D|E },
-    { "listen_timeout",  "Bind timeout",                     OFFSET(listen_timeout), AV_OPT_TYPE_INT, { .i64 = -1 },    INT_MIN, INT_MAX, .flags = D|E },
+    { "timeout",     "set timeout of socket I/O operations", OFFSET(rw_timeout),     AV_OPT_TYPE_INT, { .i64 = -1 },         -1, INT_MAX, .flags = D|E },
+    { "listen_timeout",  "Connection awaiting timeout",      OFFSET(listen_timeout), AV_OPT_TYPE_INT, { .i64 = -1 },         -1, INT_MAX, .flags = D|E },
     { NULL }
 };
 
@@ -66,6 +68,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     int ret;
     char hostname[1024],proto[1024],path[1024];
     char portstr[10];
+    s->open_timeout = 5000000;
 
     av_url_split(proto, sizeof(proto), NULL, 0, hostname, sizeof(hostname),
         &port, path, sizeof(path), uri);
@@ -77,14 +80,23 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     }
     p = strchr(uri, '?');
     if (p) {
-        if (av_find_info_tag(buf, sizeof(buf), "listen", p))
-            s->listen = 1;
+        if (av_find_info_tag(buf, sizeof(buf), "listen", p)) {
+            char *endptr = NULL;
+            s->listen = strtol(buf, &endptr, 10);
+            /* assume if no digits were found it is a request to enable it */
+            if (buf == endptr)
+                s->listen = 1;
+        }
         if (av_find_info_tag(buf, sizeof(buf), "timeout", p)) {
-            s->timeout = strtol(buf, NULL, 10) * 100;
+            s->rw_timeout = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "listen_timeout", p)) {
             s->listen_timeout = strtol(buf, NULL, 10);
         }
+    }
+    if (s->rw_timeout >= 0) {
+        s->open_timeout =
+        h->rw_timeout   = s->rw_timeout;
     }
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -121,7 +133,7 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
         }
     } else {
         if ((ret = ff_listen_connect(fd, cur_ai->ai_addr, cur_ai->ai_addrlen,
-                                     s->timeout, h, !!cur_ai->ai_next)) < 0) {
+                                     s->open_timeout / 1000, h, !!cur_ai->ai_next)) < 0) {
 
             if (ret == AVERROR_EXIT)
                 goto fail1;
@@ -157,8 +169,8 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
     int ret;
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
-        ret = ff_network_wait_fd(s->fd, 0);
-        if (ret < 0)
+        ret = ff_network_wait_fd_timeout(s->fd, 0, h->rw_timeout, &h->interrupt_callback);
+        if (ret)
             return ret;
     }
     ret = recv(s->fd, buf, size, 0);
@@ -171,8 +183,8 @@ static int tcp_write(URLContext *h, const uint8_t *buf, int size)
     int ret;
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
-        ret = ff_network_wait_fd(s->fd, 1);
-        if (ret < 0)
+        ret = ff_network_wait_fd_timeout(s->fd, 1, h->rw_timeout, &h->interrupt_callback);
+        if (ret)
             return ret;
     }
     ret = send(s->fd, buf, size, MSG_NOSIGNAL);
