@@ -2786,8 +2786,9 @@ static void stream_component_close(VideoState *is, int stream_index)
     switch (avctx->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
         packet_queue_abort(&is->audioq);
-        frame_queue_signal(&is->sampq);
+
         SDL_CloseAudio();
+        frame_queue_signal(&is->sampq);
         SDL_WaitThread(is->audio_tid, NULL);
 
         decoder_destroy(&is->auddec);
