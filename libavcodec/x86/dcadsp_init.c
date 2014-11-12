@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@ void ff_decode_hf_sse4(float dst[DCA_SUBBANDS][8], const int vq_num[DCA_SUBBANDS
                        int scale[DCA_SUBBANDS][2], intptr_t start, intptr_t end);
 void ff_dca_lfe_fir0_sse(float *out, const float *in, const float *coefs);
 void ff_dca_lfe_fir1_sse(float *out, const float *in, const float *coefs);
-void ff_dca_lfe_fir0_fma3(float *out, const float *in, const float *coefs);
 
 av_cold void ff_dcadsp_init_x86(DCADSPContext *s)
 {
@@ -54,10 +53,6 @@ av_cold void ff_dcadsp_init_x86(DCADSPContext *s)
 
     if (EXTERNAL_SSE4(cpu_flags)) {
         s->decode_hf = ff_decode_hf_sse4;
-    }
-
-    if (EXTERNAL_FMA3(cpu_flags)) {
-        s->lfe_fir[0]        = ff_dca_lfe_fir0_fma3;
     }
 }
 
