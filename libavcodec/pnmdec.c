@@ -2,29 +2,39 @@
  * PNM image format
  * Copyright (c) 2002, 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avcodec.h"
-#include "bytestream.h"
 #include "internal.h"
 #include "put_bits.h"
 #include "pnm.h"
 
+static void samplecpy(uint8_t *dst, const uint8_t *src, int n, int maxval)
+{
+    if (maxval <= 255) {
+        memcpy(dst, src, n);
+    } else {
+        int i;
+        for (i=0; i<n/2; i++) {
+            ((uint16_t *)dst)[i] = AV_RB16(src+2*i);
+        }
+    }
+}
 
 static int pnm_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame, AVPacket *avpkt)
@@ -33,36 +43,51 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
     int buf_size         = avpkt->size;
     PNMContext * const s = avctx->priv_data;
     AVFrame * const p    = data;
-    int i, j, n, linesize, h, upgrade = 0;
+    int i, j, n, linesize, h, upgrade = 0, is_mono = 0;
     unsigned char *ptr;
     int components, sample_len, ret;
 
     s->bytestream_start =
-    s->bytestream       = buf;
-    s->bytestream_end   = buf + buf_size;
+    s->bytestream       = (uint8_t *)buf;
+    s->bytestream_end   = (uint8_t *)buf + buf_size;
 
     if ((ret = ff_pnm_decode_header(avctx, s)) < 0)
         return ret;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
+    avctx->bits_per_raw_sample = av_log2(s->maxval) + 1;
 
     switch (avctx->pix_fmt) {
     default:
         return AVERROR(EINVAL);
-    case AV_PIX_FMT_RGB48BE:
+    case AV_PIX_FMT_RGBA64:
+        n = avctx->width * 8;
+        components=4;
+        sample_len=16;
+        if (s->maxval < 65535)
+            upgrade = 2;
+        goto do_read;
+    case AV_PIX_FMT_RGB48:
         n = avctx->width * 6;
         components=3;
         sample_len=16;
+        if (s->maxval < 65535)
+            upgrade = 2;
+        goto do_read;
+    case AV_PIX_FMT_RGBA:
+        n = avctx->width * 4;
+        components=4;
+        sample_len=8;
         goto do_read;
     case AV_PIX_FMT_RGB24:
         n = avctx->width * 3;
         components=3;
         sample_len=8;
+        if (s->maxval < 255)
+            upgrade = 1;
         goto do_read;
     case AV_PIX_FMT_GRAY8:
         n = avctx->width;
@@ -71,8 +96,12 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
         if (s->maxval < 255)
             upgrade = 1;
         goto do_read;
-    case AV_PIX_FMT_GRAY16BE:
-    case AV_PIX_FMT_GRAY16LE:
+    case AV_PIX_FMT_GRAY8A:
+        n = avctx->width * 2;
+        components=2;
+        sample_len=8;
+        goto do_read;
+    case AV_PIX_FMT_GRAY16:
         n = avctx->width * 2;
         components=1;
         sample_len=16;
@@ -84,35 +113,47 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
         n = (avctx->width + 7) >> 3;
         components=1;
         sample_len=1;
+        is_mono = 1;
     do_read:
         ptr      = p->data[0];
         linesize = p->linesize[0];
         if (s->bytestream + n * avctx->height > s->bytestream_end)
             return AVERROR_INVALIDDATA;
-        if(s->type < 4){
+        if(s->type < 4 || (is_mono && s->type==7)){
             for (i=0; i<avctx->height; i++) {
                 PutBitContext pb;
                 init_put_bits(&pb, ptr, linesize);
                 for(j=0; j<avctx->width * components; j++){
                     unsigned int c=0;
                     int v=0;
+                    if(s->type < 4)
                     while(s->bytestream < s->bytestream_end && (*s->bytestream < '0' || *s->bytestream > '9' ))
                         s->bytestream++;
                     if(s->bytestream >= s->bytestream_end)
                         return AVERROR_INVALIDDATA;
-                    do{
-                        v= 10*v + c;
-                        c= (*s->bytestream++) - '0';
-                    }while(c <= 9);
-                    put_bits(&pb, sample_len, (((1<<sample_len)-1)*v + (s->maxval>>1))/s->maxval);
+                    if (is_mono) {
+                        /* read a single digit */
+                        v = (*s->bytestream++)&1;
+                    } else {
+                        /* read a sequence of digits */
+                        do {
+                            v = 10*v + c;
+                            c = (*s->bytestream++) - '0';
+                        } while (c <= 9);
+                    }
+                    if (sample_len == 16) {
+                        ((uint16_t*)ptr)[j] = (((1<<sample_len)-1)*v + (s->maxval>>1))/s->maxval;
+                    } else
+                        put_bits(&pb, sample_len, (((1<<sample_len)-1)*v + (s->maxval>>1))/s->maxval);
                 }
-                flush_put_bits(&pb);
+                if (sample_len != 16)
+                    flush_put_bits(&pb);
                 ptr+= linesize;
             }
         }else{
         for (i = 0; i < avctx->height; i++) {
             if (!upgrade)
-                memcpy(ptr, s->bytestream, n);
+                samplecpy(ptr, s->bytestream, n, s->maxval);
             else if (upgrade == 1) {
                 unsigned int j, f = (255 * 128 + s->maxval / 2) / s->maxval;
                 for (j = 0; j < n; j++)
@@ -130,8 +171,8 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
         }
         break;
     case AV_PIX_FMT_YUV420P:
-    case AV_PIX_FMT_YUV420P9BE:
-    case AV_PIX_FMT_YUV420P10BE:
+    case AV_PIX_FMT_YUV420P9:
+    case AV_PIX_FMT_YUV420P10:
         {
             unsigned char *ptr1, *ptr2;
 
@@ -143,7 +184,7 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
             if (s->bytestream + n * avctx->height * 3 / 2 > s->bytestream_end)
                 return AVERROR_INVALIDDATA;
             for (i = 0; i < avctx->height; i++) {
-                memcpy(ptr, s->bytestream, n);
+                samplecpy(ptr, s->bytestream, n, s->maxval);
                 s->bytestream += n;
                 ptr           += linesize;
             }
@@ -152,9 +193,9 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
             n >>= 1;
             h = avctx->height >> 1;
             for (i = 0; i < h; i++) {
-                memcpy(ptr1, s->bytestream, n);
+                samplecpy(ptr1, s->bytestream, n, s->maxval);
                 s->bytestream += n;
-                memcpy(ptr2, s->bytestream, n);
+                samplecpy(ptr2, s->bytestream, n, s->maxval);
                 s->bytestream += n;
                 ptr1 += p->linesize[1];
                 ptr2 += p->linesize[2];
@@ -200,24 +241,6 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
                 ptr1 += p->linesize[1] / 2;
                 ptr2 += p->linesize[2] / 2;
             }
-        }
-        break;
-    case AV_PIX_FMT_RGB32:
-        ptr      = p->data[0];
-        linesize = p->linesize[0];
-        if (s->bytestream + avctx->width * avctx->height * 4 > s->bytestream_end)
-            return AVERROR_INVALIDDATA;
-        for (i = 0; i < avctx->height; i++) {
-            int j, r, g, b, a;
-
-            for (j = 0; j < avctx->width; j++) {
-                r = *s->bytestream++;
-                g = *s->bytestream++;
-                b = *s->bytestream++;
-                a = *s->bytestream++;
-                ((uint32_t *)ptr)[j] = (a << 24) | (r << 16) | (g << 8) | b;
-            }
-            ptr += linesize;
         }
         break;
     }
