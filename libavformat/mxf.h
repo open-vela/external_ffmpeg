@@ -2,20 +2,20 @@
  * MXF
  * Copyright (c) 2006 SmartJog S.A., Baptiste Coudurier <baptiste dot coudurier at smartjog dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #ifndef AVFORMAT_MXF_H
@@ -33,7 +33,6 @@ enum MXFMetadataSetType {
     SourcePackage,
     SourceClip,
     TimecodeComponent,
-    PulldownComponent,
     Sequence,
     MultipleDescriptor,
     Descriptor,
@@ -46,15 +45,14 @@ enum MXFMetadataSetType {
     IndexTableSegment,
     EssenceContainerData,
     TypeBottom,// add metadata type before this
-    EssenceGroup,
 };
 
 enum MXFFrameLayout {
-    FullFrame = 0,
-    SeparateFields,
-    OneField,
-    MixedFields,
-    SegmentedFrame,
+     FullFrame = 0,
+     MixedFields,
+     OneField,
+     SegmentedFrame,
+     SeparateFields
 };
 
 typedef struct KLVPacket {
@@ -69,7 +67,7 @@ typedef struct MXFCodecUL {
     int id;
 } MXFCodecUL;
 
-typedef struct {
+typedef struct MXFSamplesPerFrame {
     struct AVRational time_base;
     int samples_per_frame[6];
 } MXFSamplesPerFrame;

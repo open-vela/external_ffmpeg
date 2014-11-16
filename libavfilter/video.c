@@ -1,29 +1,24 @@
 /*
- * Copyright 2007 Bobby Bingham
- * Copyright Stefano Sabatini <stefasab gmail com>
- * Copyright Vitor Sessak <vitor1001 gmail com>
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <string.h>
 #include <stdio.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/buffer.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem.h"
@@ -61,7 +56,7 @@ AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h)
 
 #if FF_API_AVFILTERBUFFER
 AVFilterBufferRef *
-avfilter_get_video_buffer_ref_from_arrays(uint8_t * const data[4], const int linesize[4], int perms,
+avfilter_get_video_buffer_ref_from_arrays(uint8_t *data[4], int linesize[4], int perms,
                                           int w, int h, enum AVPixelFormat format)
 {
     AVFilterBuffer *pic = av_mallocz(sizeof(AVFilterBuffer));
@@ -110,7 +105,7 @@ AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h)
 {
     AVFrame *ret = NULL;
 
-    FF_TPRINTF_START(NULL, get_video_buffer); ff_tlog_link(NULL, link, 0);
+    FF_DPRINTF_START(NULL, get_video_buffer); ff_dlog_link(NULL, link, 0);
 
     if (link->dstpad->get_video_buffer)
         ret = link->dstpad->get_video_buffer(link, w, h);
