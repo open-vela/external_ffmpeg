@@ -2,20 +2,20 @@
  * RTMP network protocol
  * Copyright (c) 2010 Howard Chu
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -169,7 +169,7 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
     }
     if (ctx->swfurl) {
         av_strlcat(filename, " swfUrl=", len);
-        av_strlcat(filename, ctx->pageurl, len);
+        av_strlcat(filename, ctx->swfurl, len);
     }
     if (ctx->flashver) {
         av_strlcat(filename, " flashVer=", len);
@@ -234,6 +234,9 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
     return 0;
 fail:
     av_freep(&ctx->temp_filename);
+    if (rc)
+        RTMP_Close(r);
+
     return rc;
 }
 

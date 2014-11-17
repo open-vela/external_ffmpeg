@@ -2,20 +2,20 @@
  * HTTP definitions
  * Copyright (c) 2010 Josh Allmann
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,7 @@
 
 #include "url.h"
 
-#define HTTP_HEADERS_SIZE 1024
+#define HTTP_HEADERS_SIZE 4096
 
 /**
  * Initialize the authentication state based on another HTTP URLContext.
@@ -40,11 +40,13 @@ void ff_http_init_auth_state(URLContext *dest, const URLContext *src);
 /**
  * Send a new HTTP request, reusing the old connection.
  *
- * @param h pointer to the ressource
+ * @param h pointer to the resource
  * @param uri uri used to perform the request
  * @return a negative value if an error condition occurred, 0
  * otherwise
  */
 int ff_http_do_new_request(URLContext *h, const char *uri);
+
+int ff_http_averror(int status_code, int default_averror);
 
 #endif /* AVFORMAT_HTTP_H */
