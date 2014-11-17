@@ -2,20 +2,20 @@
  * MPEG-DASH ISO BMFF segmenter
  * Copyright (c) 2014 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,7 +59,6 @@ typedef struct OutputStream {
     int nb_segments, segments_size, segment_index;
     Segment **segments;
     int64_t first_dts, start_dts, end_dts;
-    char bandwidth_str[64];
 
     char codec_str[100];
 } OutputStream;
@@ -369,7 +368,7 @@ static int write_manifest(AVFormatContext *s, int final)
             OutputStream *os = &c->streams[i];
             if (s->streams[i]->codec->codec_type != AVMEDIA_TYPE_VIDEO)
                 continue;
-            avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"video/mp4\" codecs=\"%s\"%s width=\"%d\" height=\"%d\">\n", i, os->codec_str, os->bandwidth_str, st->codec->width, st->codec->height);
+            avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"video/mp4\" codecs=\"%s\" bandwidth=\"%d\" width=\"%d\" height=\"%d\">\n", i, os->codec_str, st->codec->bit_rate, st->codec->width, st->codec->height);
             output_segment_list(&c->streams[i], out, c);
             avio_printf(out, "\t\t\t</Representation>\n");
         }
@@ -382,7 +381,7 @@ static int write_manifest(AVFormatContext *s, int final)
             OutputStream *os = &c->streams[i];
             if (s->streams[i]->codec->codec_type != AVMEDIA_TYPE_AUDIO)
                 continue;
-            avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"audio/mp4\" codecs=\"%s\"%s audioSamplingRate=\"%d\">\n", i, os->codec_str, os->bandwidth_str, st->codec->sample_rate);
+            avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"audio/mp4\" codecs=\"%s\" bandwidth=\"%d\" audioSamplingRate=\"%d\">\n", i, os->codec_str, st->codec->bit_rate, st->codec->sample_rate);
             avio_printf(out, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:dash:23003:3:audio_channel_configuration:2011\" value=\"%d\" />\n", st->codec->channels);
             output_segment_list(&c->streams[i], out, c);
             avio_printf(out, "\t\t\t</Representation>\n");
@@ -393,7 +392,7 @@ static int write_manifest(AVFormatContext *s, int final)
     avio_printf(out, "</MPD>\n");
     avio_flush(out);
     avio_close(out);
-    return ff_rename(temp_filename, s->filename, s);
+    return ff_rename(temp_filename, s->filename);
 }
 
 static int dash_write_header(AVFormatContext *s)
@@ -440,15 +439,10 @@ static int dash_write_header(AVFormatContext *s)
         AVDictionary *opts = NULL;
         char filename[1024];
 
-        int bit_rate = s->streams[i]->codec->bit_rate ?
-                       s->streams[i]->codec->bit_rate :
-                       s->streams[i]->codec->rc_max_rate;
-        if (bit_rate) {
-            snprintf(os->bandwidth_str, sizeof(os->bandwidth_str),
-                     " bandwidth=\"%i\"", bit_rate);
-        } else {
-            av_log(s, AV_LOG_WARNING, "No bit rate set for stream %d\n", i);
-            os->bandwidth_str[0] = 0;
+        if (!s->streams[i]->codec->bit_rate) {
+            av_log(s, AV_LOG_ERROR, "No bit rate set for stream %d\n", i);
+            ret = AVERROR(EINVAL);
+            goto fail;
         }
 
         ctx = avformat_alloc_context();
@@ -626,7 +620,7 @@ static int dash_flush(AVFormatContext *s, int final)
         } else {
             ffurl_close(os->out);
             os->out = NULL;
-            ret = ff_rename(temp_path, full_path, s);
+            ret = ff_rename(temp_path, full_path);
             if (ret < 0)
                 break;
         }
@@ -708,7 +702,7 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
         os->start_dts = pkt->dts;
     os->end_dts = pkt->dts + pkt->duration;
     os->packets_written++;
-    return ff_write_chained(os->ctx, 0, pkt, s, 0);
+    return ff_write_chained(os->ctx, 0, pkt, s);
 }
 
 static int dash_write_trailer(AVFormatContext *s)
