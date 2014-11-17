@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -209,7 +209,7 @@ static av_always_inline void vc1_apply_p_v_loop_filter(VC1Context *v, int block_
     int mb_cbp         = v->cbp[s->mb_x - s->mb_stride],
         block_cbp      = mb_cbp      >> (block_num * 4), bottom_cbp,
         mb_is_intra    = v->is_intra[s->mb_x - s->mb_stride],
-        block_is_intra = mb_is_intra >> (block_num * 4), bottom_is_intra;
+        block_is_intra = mb_is_intra >> block_num, bottom_is_intra;
     int idx, linesize  = block_num > 3 ? s->uvlinesize : s->linesize, ttblk;
     uint8_t *dst;
 
@@ -224,14 +224,14 @@ static av_always_inline void vc1_apply_p_v_loop_filter(VC1Context *v, int block_
 
         if (block_num > 3) {
             bottom_cbp      = v->cbp[s->mb_x]      >> (block_num * 4);
-            bottom_is_intra = v->is_intra[s->mb_x] >> (block_num * 4);
+            bottom_is_intra = v->is_intra[s->mb_x] >> block_num;
             mv              = &v->luma_mv[s->mb_x - s->mb_stride];
             mv_stride       = s->mb_stride;
         } else {
             bottom_cbp      = (block_num < 2) ? (mb_cbp               >> ((block_num + 2) * 4))
                                               : (v->cbp[s->mb_x]      >> ((block_num - 2) * 4));
-            bottom_is_intra = (block_num < 2) ? (mb_is_intra          >> ((block_num + 2) * 4))
-                                              : (v->is_intra[s->mb_x] >> ((block_num - 2) * 4));
+            bottom_is_intra = (block_num < 2) ? (mb_is_intra          >> (block_num + 2))
+                                              : (v->is_intra[s->mb_x] >> (block_num - 2));
             mv_stride       = s->b8_stride;
             mv              = &s->current_picture.motion_val[0][s->block_index[block_num] - 2 * mv_stride];
         }
@@ -273,7 +273,7 @@ static av_always_inline void vc1_apply_p_h_loop_filter(VC1Context *v, int block_
     int mb_cbp         = v->cbp[s->mb_x - 1 - s->mb_stride],
         block_cbp      = mb_cbp      >> (block_num * 4), right_cbp,
         mb_is_intra    = v->is_intra[s->mb_x - 1 - s->mb_stride],
-        block_is_intra = mb_is_intra >> (block_num * 4), right_is_intra;
+        block_is_intra = mb_is_intra >> block_num, right_is_intra;
     int idx, linesize  = block_num > 3 ? s->uvlinesize : s->linesize, ttblk;
     uint8_t *dst;
 
@@ -288,13 +288,13 @@ static av_always_inline void vc1_apply_p_h_loop_filter(VC1Context *v, int block_
 
         if (block_num > 3) {
             right_cbp      = v->cbp[s->mb_x - s->mb_stride] >> (block_num * 4);
-            right_is_intra = v->is_intra[s->mb_x - s->mb_stride] >> (block_num * 4);
+            right_is_intra = v->is_intra[s->mb_x - s->mb_stride] >> block_num;
             mv             = &v->luma_mv[s->mb_x - s->mb_stride - 1];
         } else {
             right_cbp      = (block_num & 1) ? (v->cbp[s->mb_x - s->mb_stride]      >> ((block_num - 1) * 4))
                                              : (mb_cbp                              >> ((block_num + 1) * 4));
-            right_is_intra = (block_num & 1) ? (v->is_intra[s->mb_x - s->mb_stride] >> ((block_num - 1) * 4))
-                                             : (mb_is_intra                         >> ((block_num + 1) * 4));
+            right_is_intra = (block_num & 1) ? (v->is_intra[s->mb_x - s->mb_stride] >> (block_num - 1))
+                                             : (mb_is_intra                         >> (block_num + 1));
             mv             = &s->current_picture.motion_val[0][s->block_index[block_num] - s->b8_stride * 2 - 2];
         }
         if (block_is_intra & 1 || right_is_intra & 1 || mv[0][0] != mv[1][0] || mv[0][1] != mv[1][1]) {
