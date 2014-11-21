@@ -2,20 +2,20 @@
  * TwinVQ decoder
  * Copyright (c) 2009 Vitor Sessak
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -487,8 +487,10 @@ int ff_twinvq_decode_frame(AVCodecContext *avctx, void *data,
     /* get output buffer */
     if (tctx->discarded_packets >= 2) {
         frame->nb_samples = mtab->size * tctx->frames_per_packet;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
         out = (float **)frame->extended_data;
     }
 
@@ -546,24 +548,24 @@ static av_cold int init_mdct_win(TwinVQContext *tctx)
             return ret;
     }
 
-    FF_ALLOC_ARRAY_OR_GOTO(tctx->avctx, tctx->tmp_buf,
-                     mtab->size, sizeof(*tctx->tmp_buf), alloc_fail);
+    FF_ALLOC_OR_GOTO(tctx->avctx, tctx->tmp_buf,
+                     mtab->size * sizeof(*tctx->tmp_buf), alloc_fail);
 
-    FF_ALLOC_ARRAY_OR_GOTO(tctx->avctx, tctx->spectrum,
-                     2 * mtab->size, channels * sizeof(*tctx->spectrum),
+    FF_ALLOC_OR_GOTO(tctx->avctx, tctx->spectrum,
+                     2 * mtab->size * channels * sizeof(*tctx->spectrum),
                      alloc_fail);
-    FF_ALLOC_ARRAY_OR_GOTO(tctx->avctx, tctx->curr_frame,
-                     2 * mtab->size, channels * sizeof(*tctx->curr_frame),
+    FF_ALLOC_OR_GOTO(tctx->avctx, tctx->curr_frame,
+                     2 * mtab->size * channels * sizeof(*tctx->curr_frame),
                      alloc_fail);
-    FF_ALLOC_ARRAY_OR_GOTO(tctx->avctx, tctx->prev_frame,
-                     2 * mtab->size, channels * sizeof(*tctx->prev_frame),
+    FF_ALLOC_OR_GOTO(tctx->avctx, tctx->prev_frame,
+                     2 * mtab->size * channels * sizeof(*tctx->prev_frame),
                      alloc_fail);
 
     for (i = 0; i < 3; i++) {
         int m       = 4 * mtab->size / mtab->fmode[i].sub;
         double freq = 2 * M_PI / m;
-        FF_ALLOC_ARRAY_OR_GOTO(tctx->avctx, tctx->cos_tabs[i],
-                         (m / 4), sizeof(*tctx->cos_tabs[i]), alloc_fail);
+        FF_ALLOC_OR_GOTO(tctx->avctx, tctx->cos_tabs[i],
+                         (m / 4) * sizeof(*tctx->cos_tabs[i]), alloc_fail);
 
         for (j = 0; j <= m / 8; j++)
             tctx->cos_tabs[i][j] = cos((2 * j + 1) * freq);
@@ -755,13 +757,13 @@ av_cold int ff_twinvq_decode_close(AVCodecContext *avctx)
 
     for (i = 0; i < 3; i++) {
         ff_mdct_end(&tctx->mdct_ctx[i]);
-        av_freep(&tctx->cos_tabs[i]);
+        av_free(tctx->cos_tabs[i]);
     }
 
-    av_freep(&tctx->curr_frame);
-    av_freep(&tctx->spectrum);
-    av_freep(&tctx->prev_frame);
-    av_freep(&tctx->tmp_buf);
+    av_free(tctx->curr_frame);
+    av_free(tctx->spectrum);
+    av_free(tctx->prev_frame);
+    av_free(tctx->tmp_buf);
 
     return 0;
 }

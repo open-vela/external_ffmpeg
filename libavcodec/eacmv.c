@@ -2,20 +2,20 @@
  * Electronic Arts CMV Video Decoder
  * Copyright (c) 2007-2008 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -44,7 +44,6 @@ typedef struct CmvContext {
 
 static av_cold int cmv_decode_init(AVCodecContext *avctx){
     CmvContext *s = avctx->priv_data;
-
     s->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
@@ -161,7 +160,7 @@ static int cmv_process_header(CmvContext *s, const uint8_t *buf, const uint8_t *
 
     buf += 16;
     for (i=pal_start; i<pal_start+pal_count && i<AVPALETTE_COUNT && buf_end - buf >= 3; i++) {
-        s->palette[i] = 0xFFU << 24 | AV_RB24(buf);
+        s->palette[i] = AV_RB24(buf);
         buf += 3;
     }
 
@@ -186,20 +185,19 @@ static int cmv_decode_frame(AVCodecContext *avctx,
         return AVERROR_INVALIDDATA;
 
     if (AV_RL32(buf)==MVIh_TAG||AV_RB32(buf)==MVIh_TAG) {
-        unsigned size = AV_RL32(buf + 4);
         ret = cmv_process_header(s, buf+EA_PREAMBLE_SIZE, buf_end);
         if (ret < 0)
             return ret;
-        if (size > buf_end - buf - EA_PREAMBLE_SIZE)
-            return -1;
-        buf += size;
+        return buf_size;
     }
 
     if (av_image_check_size(s->width, s->height, 0, s->avctx))
         return -1;
 
-    if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     memcpy(frame->data[1], s->palette, AVPALETTE_SIZE);
 
