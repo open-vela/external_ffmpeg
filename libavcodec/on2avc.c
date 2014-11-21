@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,7 +47,7 @@ enum WindowTypes {
 
 typedef struct On2AVCContext {
     AVCodecContext *avctx;
-    AVFloatDSPContext *fdsp;
+    AVFloatDSPContext fdsp;
     FFTContext mdct, mdct_half, mdct_small;
     FFTContext fft128, fft256, fft512, fft1024;
     void (*wtf)(struct On2AVCContext *ctx, float *out, float *in, int size);
@@ -313,7 +313,7 @@ static void zero_head_and_tail(float *src, int len, int order0, int order1)
 }
 
 static void pretwiddle(float *src, float *dst, int dst_len, int tab_step,
-                       int step, int order0, int order1, const double * const *tabs)
+                       int step, int order0, int order1, const double **tabs)
 {
     float *src2, *out;
     const double *tab;
@@ -341,7 +341,7 @@ static void pretwiddle(float *src, float *dst, int dst_len, int tab_step,
 
 static void twiddle(float *src1, float *src2, int src2_len,
                     const double *tab, int tab_len, int step,
-                    int order0, int order1, const double * const *tabs)
+                    int order0, int order1, const double **tabs)
 {
     int steps;
     int mask;
@@ -714,7 +714,7 @@ static int on2avc_reconstruct_stereo(On2AVCContext *c, AVFrame *dst, int offset)
         }
 
         memcpy(out, saved, 448 * sizeof(float));
-        c->fdsp->vector_fmul_window(wout, saved + 448, buf, c->short_win, 64);
+        c->fdsp.vector_fmul_window(wout, saved + 448, buf, c->short_win, 64);
         memcpy(wout + 128,  buf + 64,         448 * sizeof(float));
         memcpy(saved,       buf + 512,        448 * sizeof(float));
         memcpy(saved + 448, buf + 7*128 + 64,  64 * sizeof(float));
@@ -750,20 +750,20 @@ static int on2avc_reconstruct_channel(On2AVCContext *c, int channel,
          c->prev_window_type == WINDOW_TYPE_LONG_STOP) &&
         (c->window_type == WINDOW_TYPE_LONG ||
          c->window_type == WINDOW_TYPE_LONG_START)) {
-        c->fdsp->vector_fmul_window(out, saved, buf, c->long_win, 512);
+        c->fdsp.vector_fmul_window(out, saved, buf, c->long_win, 512);
     } else {
         float *wout = out + 448;
         memcpy(out, saved, 448 * sizeof(float));
 
         if (c->window_type == WINDOW_TYPE_8SHORT) {
-            c->fdsp->vector_fmul_window(wout + 0*128, saved + 448,      buf + 0*128, c->short_win, 64);
-            c->fdsp->vector_fmul_window(wout + 1*128, buf + 0*128 + 64, buf + 1*128, c->short_win, 64);
-            c->fdsp->vector_fmul_window(wout + 2*128, buf + 1*128 + 64, buf + 2*128, c->short_win, 64);
-            c->fdsp->vector_fmul_window(wout + 3*128, buf + 2*128 + 64, buf + 3*128, c->short_win, 64);
-            c->fdsp->vector_fmul_window(temp,         buf + 3*128 + 64, buf + 4*128, c->short_win, 64);
+            c->fdsp.vector_fmul_window(wout + 0*128, saved + 448,      buf + 0*128, c->short_win, 64);
+            c->fdsp.vector_fmul_window(wout + 1*128, buf + 0*128 + 64, buf + 1*128, c->short_win, 64);
+            c->fdsp.vector_fmul_window(wout + 2*128, buf + 1*128 + 64, buf + 2*128, c->short_win, 64);
+            c->fdsp.vector_fmul_window(wout + 3*128, buf + 2*128 + 64, buf + 3*128, c->short_win, 64);
+            c->fdsp.vector_fmul_window(temp,         buf + 3*128 + 64, buf + 4*128, c->short_win, 64);
             memcpy(wout + 4*128, temp, 64 * sizeof(float));
         } else {
-            c->fdsp->vector_fmul_window(wout, saved + 448, buf, c->short_win, 64);
+            c->fdsp.vector_fmul_window(wout, saved + 448, buf, c->short_win, 64);
             memcpy(wout + 128, buf + 64, 448 * sizeof(float));
         }
     }
@@ -772,9 +772,9 @@ static int on2avc_reconstruct_channel(On2AVCContext *c, int channel,
     switch (c->window_type) {
     case WINDOW_TYPE_8SHORT:
         memcpy(saved,       temp + 64,         64 * sizeof(float));
-        c->fdsp->vector_fmul_window(saved + 64,  buf + 4*128 + 64, buf + 5*128, c->short_win, 64);
-        c->fdsp->vector_fmul_window(saved + 192, buf + 5*128 + 64, buf + 6*128, c->short_win, 64);
-        c->fdsp->vector_fmul_window(saved + 320, buf + 6*128 + 64, buf + 7*128, c->short_win, 64);
+        c->fdsp.vector_fmul_window(saved + 64,  buf + 4*128 + 64, buf + 5*128, c->short_win, 64);
+        c->fdsp.vector_fmul_window(saved + 192, buf + 5*128 + 64, buf + 6*128, c->short_win, 64);
+        c->fdsp.vector_fmul_window(saved + 320, buf + 6*128 + 64, buf + 7*128, c->short_win, 64);
         memcpy(saved + 448, buf + 7*128 + 64,  64 * sizeof(float));
         break;
     case WINDOW_TYPE_LONG_START:
@@ -908,11 +908,6 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
     On2AVCContext *c = avctx->priv_data;
     int i;
 
-    if (avctx->channels > 2U) {
-        avpriv_request_sample(avctx, "Decoding more than 2 channels");
-        return AVERROR_PATCHWELCOME;
-    }
-
     c->avctx = avctx;
     avctx->sample_fmt     = AV_SAMPLE_FMT_FLTP;
     avctx->channel_layout = (avctx->channels == 2) ? AV_CH_LAYOUT_STEREO
@@ -952,14 +947,13 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
     ff_fft_init(&c->fft256,  7, 0);
     ff_fft_init(&c->fft512,  8, 1);
     ff_fft_init(&c->fft1024, 9, 1);
-    c->fdsp = avpriv_float_dsp_alloc(avctx->flags & CODEC_FLAG_BITEXACT);
-    if (!c->fdsp)
-        return AVERROR(ENOMEM);
+    avpriv_float_dsp_init(&c->fdsp, avctx->flags & CODEC_FLAG_BITEXACT);
 
     if (init_vlc(&c->scale_diff, 9, ON2AVC_SCALE_DIFFS,
                  ff_on2avc_scale_diff_bits,  1, 1,
                  ff_on2avc_scale_diff_codes, 4, 4, 0)) {
-        goto vlc_fail;
+        av_log(avctx, AV_LOG_ERROR, "Cannot init VLC\n");
+        return AVERROR(ENOMEM);
     }
     for (i = 1; i < 9; i++) {
         int idx = i - 1;
@@ -967,7 +961,9 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
                                ff_on2avc_quad_cb_bits[idx],  1, 1,
                                ff_on2avc_quad_cb_codes[idx], 4, 4,
                                ff_on2avc_quad_cb_syms[idx],  2, 2, 0)) {
-            goto vlc_fail;
+            av_log(avctx, AV_LOG_ERROR, "Cannot init VLC\n");
+            on2avc_free_vlcs(c);
+            return AVERROR(ENOMEM);
         }
     }
     for (i = 9; i < 16; i++) {
@@ -976,16 +972,13 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
                                ff_on2avc_pair_cb_bits[idx],  1, 1,
                                ff_on2avc_pair_cb_codes[idx], 2, 2,
                                ff_on2avc_pair_cb_syms[idx],  2, 2, 0)) {
-            goto vlc_fail;
+            av_log(avctx, AV_LOG_ERROR, "Cannot init VLC\n");
+            on2avc_free_vlcs(c);
+            return AVERROR(ENOMEM);
         }
     }
 
     return 0;
-vlc_fail:
-    av_log(avctx, AV_LOG_ERROR, "Cannot init VLC\n");
-    on2avc_free_vlcs(c);
-    av_freep(&c->fdsp);
-    return AVERROR(ENOMEM);
 }
 
 static av_cold int on2avc_decode_close(AVCodecContext *avctx)
@@ -999,8 +992,6 @@ static av_cold int on2avc_decode_close(AVCodecContext *avctx)
     ff_fft_end(&c->fft256);
     ff_fft_end(&c->fft512);
     ff_fft_end(&c->fft1024);
-
-    av_freep(&c->fdsp);
 
     on2avc_free_vlcs(c);
 
