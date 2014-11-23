@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2009 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,7 @@
 #include "dict.h"
 #include "internal.h"
 #include "mem.h"
+#include "bprint.h"
 
 struct AVDictionary {
     int count;
@@ -77,8 +78,8 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
 
     if (tag) {
         if (flags & AV_DICT_DONT_OVERWRITE) {
-            if (flags & AV_DICT_DONT_STRDUP_KEY) av_free(key);
-            if (flags & AV_DICT_DONT_STRDUP_VAL) av_free(value);
+            if (flags & AV_DICT_DONT_STRDUP_KEY) av_free((void*)key);
+            if (flags & AV_DICT_DONT_STRDUP_VAL) av_free((void*)value);
             return 0;
         }
         if (flags & AV_DICT_APPEND)
@@ -90,24 +91,26 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
     } else {
         AVDictionaryEntry *tmp = av_realloc(m->elems,
                                             (m->count + 1) * sizeof(*m->elems));
-        if (tmp)
-            m->elems = tmp;
-        else
-            return AVERROR(ENOMEM);
+        if (!tmp)
+            goto err_out;
+        m->elems = tmp;
     }
     if (value) {
         if (flags & AV_DICT_DONT_STRDUP_KEY)
-            m->elems[m->count].key = key;
+            m->elems[m->count].key = (char*)(intptr_t)key;
         else
             m->elems[m->count].key = av_strdup(key);
         if (flags & AV_DICT_DONT_STRDUP_VAL) {
-            m->elems[m->count].value = value;
+            m->elems[m->count].value = (char*)(intptr_t)value;
         } else if (oldval && flags & AV_DICT_APPEND) {
             int len = strlen(oldval) + strlen(value) + 1;
-            if (!(oldval = av_realloc(oldval, len)))
-                return AVERROR(ENOMEM);
-            av_strlcat(oldval, value, len);
-            m->elems[m->count].value = oldval;
+            char *newval = av_mallocz(len);
+            if (!newval)
+                goto err_out;
+            av_strlcat(newval, oldval, len);
+            av_freep(&oldval);
+            av_strlcat(newval, value, len);
+            m->elems[m->count].value = newval;
         } else
             m->elems[m->count].value = av_strdup(value);
         m->count++;
@@ -118,6 +121,23 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value,
     }
 
     return 0;
+
+err_out:
+    if (!m->count) {
+        av_free(m->elems);
+        av_freep(pm);
+    }
+    if (flags & AV_DICT_DONT_STRDUP_KEY) av_free((void*)key);
+    if (flags & AV_DICT_DONT_STRDUP_VAL) av_free((void*)value);
+    return AVERROR(ENOMEM);
+}
+
+int av_dict_set_int(AVDictionary **pm, const char *key, int64_t value,
+                int flags)
+{
+    char valuestr[22];
+    snprintf(valuestr, sizeof(valuestr), "%"PRId64, value);
+    return av_dict_set(pm, key, valuestr, flags);
 }
 
 static int parse_key_value_pair(AVDictionary **pm, const char **buf,
@@ -188,3 +208,92 @@ void av_dict_copy(AVDictionary **dst, const AVDictionary *src, int flags)
     while ((t = av_dict_get(src, "", t, AV_DICT_IGNORE_SUFFIX)))
         av_dict_set(dst, t->key, t->value, flags);
 }
+
+int av_dict_get_string(const AVDictionary *m, char **buffer,
+                       const char key_val_sep, const char pairs_sep)
+{
+    AVDictionaryEntry *t = NULL;
+    AVBPrint bprint;
+    int cnt = 0;
+    char special_chars[] = {pairs_sep, key_val_sep, '\0'};
+
+    if (!buffer || pairs_sep == '\0' || key_val_sep == '\0' || pairs_sep == key_val_sep ||
+        pairs_sep == '\\' || key_val_sep == '\\')
+        return AVERROR(EINVAL);
+
+    if (!av_dict_count(m)) {
+        *buffer = av_strdup("");
+        return *buffer ? 0 : AVERROR(ENOMEM);
+    }
+
+    av_bprint_init(&bprint, 64, AV_BPRINT_SIZE_UNLIMITED);
+    while ((t = av_dict_get(m, "", t, AV_DICT_IGNORE_SUFFIX))) {
+        if (cnt++)
+            av_bprint_append_data(&bprint, &pairs_sep, 1);
+        av_bprint_escape(&bprint, t->key, special_chars, AV_ESCAPE_MODE_BACKSLASH, 0);
+        av_bprint_append_data(&bprint, &key_val_sep, 1);
+        av_bprint_escape(&bprint, t->value, special_chars, AV_ESCAPE_MODE_BACKSLASH, 0);
+    }
+    return av_bprint_finalize(&bprint, buffer);
+}
+
+#ifdef TEST
+static void print_dict(const AVDictionary *m)
+{
+    AVDictionaryEntry *t = NULL;
+    while ((t = av_dict_get(m, "", t, AV_DICT_IGNORE_SUFFIX)))
+        printf("%s %s   ", t->key, t->value);
+    printf("\n");
+}
+
+static void test_separators(const AVDictionary *m, const char pair, const char val)
+{
+    AVDictionary *dict = NULL;
+    char pairs[] = {pair , '\0'};
+    char vals[]  = {val, '\0'};
+
+    char *buffer = NULL;
+    av_dict_copy(&dict, m, 0);
+    print_dict(dict);
+    av_dict_get_string(dict, &buffer, val, pair);
+    printf("%s\n", buffer);
+    av_dict_free(&dict);
+    av_dict_parse_string(&dict, buffer, vals, pairs, 0);
+    av_freep(&buffer);
+    print_dict(dict);
+    av_dict_free(&dict);
+}
+
+int main(void)
+{
+    AVDictionary *dict = NULL;
+    char *buffer = NULL;
+
+    printf("Testing av_dict_get_string() and av_dict_parse_string()\n");
+    av_dict_get_string(dict, &buffer, '=', ',');
+    printf("%s\n", buffer);
+    av_freep(&buffer);
+    av_dict_set(&dict, "aaa", "aaa", 0);
+    av_dict_set(&dict, "b,b", "bbb", 0);
+    av_dict_set(&dict, "c=c", "ccc", 0);
+    av_dict_set(&dict, "ddd", "d,d", 0);
+    av_dict_set(&dict, "eee", "e=e", 0);
+    av_dict_set(&dict, "f,f", "f=f", 0);
+    av_dict_set(&dict, "g=g", "g,g", 0);
+    test_separators(dict, ',', '=');
+    av_dict_free(&dict);
+    av_dict_set(&dict, "aaa", "aaa", 0);
+    av_dict_set(&dict, "bbb", "bbb", 0);
+    av_dict_set(&dict, "ccc", "ccc", 0);
+    av_dict_set(&dict, "\\,=\'\"", "\\,=\'\"", 0);
+    test_separators(dict, '"',  '=');
+    test_separators(dict, '\'', '=');
+    test_separators(dict, ',', '"');
+    test_separators(dict, ',', '\'');
+    test_separators(dict, '\'', '"');
+    test_separators(dict, '"', '\'');
+    av_dict_free(&dict);
+
+    return 0;
+}
+#endif

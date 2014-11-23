@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... direct mb/block decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -229,6 +229,7 @@ static void pred_spatial_direct_motion(H264Context *const h, int *mb_type)
                 else
                     mv[list] = AV_RN32A(C);
             }
+            av_assert2(ref[list] < (h->ref_count[list] << !!FRAME_MBAFF(h)));
         } else {
             int mask = ~(MB_TYPE_L0 << (2 * list));
             mv[list]  = 0;
@@ -314,8 +315,8 @@ single_col:
 
     await_reference_mb_row(h, &h->ref_list[1][0], mb_y);
 
-    l1mv0  = &h->ref_list[1][0].motion_val[0][h->mb2b_xy[mb_xy]];
-    l1mv1  = &h->ref_list[1][0].motion_val[1][h->mb2b_xy[mb_xy]];
+    l1mv0  = (void*)&h->ref_list[1][0].motion_val[0][h->mb2b_xy[mb_xy]];
+    l1mv1  = (void*)&h->ref_list[1][0].motion_val[1][h->mb2b_xy[mb_xy]];
     l1ref0 = &h->ref_list[1][0].ref_index[0][4 * mb_xy];
     l1ref1 = &h->ref_list[1][0].ref_index[1][4 * mb_xy];
     if (!b8_stride) {
@@ -537,8 +538,8 @@ single_col:
 
     await_reference_mb_row(h, &h->ref_list[1][0], mb_y);
 
-    l1mv0  = &h->ref_list[1][0].motion_val[0][h->mb2b_xy[mb_xy]];
-    l1mv1  = &h->ref_list[1][0].motion_val[1][h->mb2b_xy[mb_xy]];
+    l1mv0  = (void*)&h->ref_list[1][0].motion_val[0][h->mb2b_xy[mb_xy]];
+    l1mv1  = (void*)&h->ref_list[1][0].motion_val[1][h->mb2b_xy[mb_xy]];
     l1ref0 = &h->ref_list[1][0].ref_index[0][4 * mb_xy];
     l1ref1 = &h->ref_list[1][0].ref_index[1][4 * mb_xy];
     if (!b8_stride) {

@@ -2,20 +2,20 @@
  * LPC utility code
  * Copyright (c) 2006  Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,8 @@
 #define AVCODEC_LPC_H
 
 #include <stdint.h>
+#include "libavutil/avassert.h"
+#include "libavutil/lls.h"
 
 #define ORDER_METHOD_EST     0
 #define ORDER_METHOD_2LEVEL  1
@@ -66,7 +68,7 @@ typedef struct LPCContext {
     /**
      * Perform autocorrelation on input samples with delay of 0 to lag.
      * @param data  input samples.
-     *              constraints: no alignment needed, but must have have at
+     *              constraints: no alignment needed, but must have at
      *              least lag*sizeof(double) valid bytes preceding it, and
      *              size must be at least (len+1)*sizeof(double) if data is
      *              16-byte aligned or (len+2)*sizeof(double) if data is
@@ -78,6 +80,9 @@ typedef struct LPCContext {
      */
     void (*lpc_compute_autocorr)(const double *data, int len, int lag,
                                  double *autoc);
+
+    // TODO: these should be allocated to reduce ABI compatibility issues
+    LLSModel lls_models[2];
 } LPCContext;
 
 
@@ -152,8 +157,10 @@ static inline int compute_lpc_coefs(const LPC_TYPE *autoc, int max_order,
                                     int normalize)
 {
     int i, j;
-    LPC_TYPE err = { 0 };
+    LPC_TYPE err = 0;
     LPC_TYPE *lpc_last = lpc;
+
+    av_assert2(normalize || !fail);
 
     if (normalize)
         err = *autoc++;
