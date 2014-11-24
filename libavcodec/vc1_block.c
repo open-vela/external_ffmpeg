@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,20 +50,6 @@ static const int offset_table2[9] = {  0,  1,  3,  7, 15, 31, 63, 127, 255 };
  * @{
  */
 
-/**
- * Imode types
- * @{
- */
-enum Imode {
-    IMODE_RAW,
-    IMODE_NORM2,
-    IMODE_DIFF2,
-    IMODE_NORM6,
-    IMODE_DIFF6,
-    IMODE_ROWSKIP,
-    IMODE_COLSKIP
-};
-/** @} */ //imode defines
 
 static void init_block_index(VC1Context *v)
 {
@@ -290,6 +276,7 @@ static av_always_inline void get_mvdata_interlaced(VC1Context *v, int *dmv_x,
         }
     }
     else {
+        av_assert0(index < esc);
         if (extend_x)
             offs_tab = offset_table2;
         else
@@ -759,7 +746,7 @@ static int vc1_decode_i_block_adv(VC1Context *v, int16_t block[64], int n,
     MpegEncContext *s = &v->s;
     int dc_pred_dir = 0; /* Direction of the DC prediction used */
     int i;
-    int16_t *dc_val;
+    int16_t *dc_val = NULL;
     int16_t *ac_val, *ac_val2;
     int dcdiff;
     int a_avail = v->a_avail, c_avail = v->c_avail;
@@ -971,7 +958,7 @@ static int vc1_decode_intra_block(VC1Context *v, int16_t block[64], int n,
     MpegEncContext *s = &v->s;
     int dc_pred_dir = 0; /* Direction of the DC prediction used */
     int i;
-    int16_t *dc_val;
+    int16_t *dc_val = NULL;
     int16_t *ac_val, *ac_val2;
     int dcdiff;
     int mb_pos = s->mb_x + s->mb_y * s->mb_stride;
@@ -1602,7 +1589,7 @@ static int vc1_decode_p_mb_intfr(VC1Context *v)
     int idx_mbmode = 0, mvbp;
     int stride_y, fieldtx;
 
-    mquant = v->pq; /* Loosy initialization */
+    mquant = v->pq; /* Lossy initialization */
 
     if (v->skip_is_raw)
         skipped = get_bits1(gb);
@@ -1648,9 +1635,11 @@ static int vc1_decode_p_mb_intfr(VC1Context *v)
                 s->current_picture.motion_val[1][s->block_index[i]][0] = 0;
                 s->current_picture.motion_val[1][s->block_index[i]][1] = 0;
             }
-            v->is_intra[s->mb_x] = 0x3f; // Set the bitfield to all 1.
-            s->mb_intra          = 1;
-            s->current_picture.mb_type[mb_pos] = MB_TYPE_INTRA;
+            s->current_picture.mb_type[mb_pos]                     = MB_TYPE_INTRA;
+            s->mb_intra = 1;
+            v->is_intra[s->mb_x] = 0x3F;
+            for (i = 0; i < 6; i++)
+                v->mb_type[0][s->block_index[i]] = 1;
             fieldtx = v->fieldtx_plane[mb_pos] = get_bits1(gb);
             mb_has_coeffs = get_bits1(gb);
             if (mb_has_coeffs)
@@ -1663,11 +1652,11 @@ static int vc1_decode_p_mb_intfr(VC1Context *v)
             s->c_dc_scale = s->c_dc_scale_table[mquant];
             dst_idx = 0;
             for (i = 0; i < 6; i++) {
-                v->a_avail = v->c_avail          = 0;
-                v->mb_type[0][s->block_index[i]] = 1;
-                s->dc_val[0][s->block_index[i]]  = 0;
+                s->dc_val[0][s->block_index[i]] = 0;
                 dst_idx += i >> 2;
                 val = ((cbp >> (5 - i)) & 1);
+                v->mb_type[0][s->block_index[i]] = s->mb_intra;
+                v->a_avail = v->c_avail = 0;
                 if (i == 2 || i == 3 || !s->first_slice_line)
                     v->a_avail = v->mb_type[0][s->block_index[i] - s->block_wrap[i]];
                 if (i == 1 || i == 3 || s->mb_x)
@@ -1809,16 +1798,16 @@ static int vc1_decode_p_mb_intfi(VC1Context *v)
     int val; /* temp values */
     int first_block = 1;
     int dst_idx, off;
-    int pred_flag;
+    int pred_flag = 0;
     int block_cbp = 0, pat, block_tt = 0;
     int idx_mbmode = 0;
 
-    mquant = v->pq; /* Loosy initialization */
+    mquant = v->pq; /* Lossy initialization */
 
     idx_mbmode = get_vlc2(gb, v->mbmode_vlc->table, VC1_IF_MBMODE_VLC_BITS, 2);
     if (idx_mbmode <= 1) { // intra MB
-        v->is_intra[s->mb_x] = 0x3f; // Set the bitfield to all 1.
-        s->mb_intra          = 1;
+        s->mb_intra = 1;
+        v->is_intra[s->mb_x] = 0x3F;
         s->current_picture.motion_val[1][s->block_index[0] + v->blocks_off][0] = 0;
         s->current_picture.motion_val[1][s->block_index[0] + v->blocks_off][1] = 0;
         s->current_picture.mb_type[mb_pos + v->mb_off] = MB_TYPE_INTRA;
@@ -1833,11 +1822,11 @@ static int vc1_decode_p_mb_intfi(VC1Context *v)
             cbp = 1 + get_vlc2(&v->s.gb, v->cbpcy_vlc->table, VC1_ICBPCY_VLC_BITS, 2);
         dst_idx = 0;
         for (i = 0; i < 6; i++) {
-            v->a_avail = v->c_avail          = 0;
-            v->mb_type[0][s->block_index[i]] = 1;
             s->dc_val[0][s->block_index[i]]  = 0;
+            v->mb_type[0][s->block_index[i]] = 1;
             dst_idx += i >> 2;
             val = ((cbp >> (5 - i)) & 1);
+            v->a_avail = v->c_avail = 0;
             if (i == 2 || i == 3 || !s->first_slice_line)
                 v->a_avail = v->mb_type[0][s->block_index[i] - s->block_wrap[i]];
             if (i == 1 || i == 3 || s->mb_x)
@@ -2088,15 +2077,15 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
     int fwd;
     int dmv_x[2], dmv_y[2], pred_flag[2];
     int bmvtype = BMV_TYPE_BACKWARD;
-    int idx_mbmode, interpmvp;
+    int idx_mbmode;
 
-    mquant      = v->pq; /* Loosy initialization */
+    mquant      = v->pq; /* Lossy initialization */
     s->mb_intra = 0;
 
     idx_mbmode = get_vlc2(gb, v->mbmode_vlc->table, VC1_IF_MBMODE_VLC_BITS, 2);
     if (idx_mbmode <= 1) { // intra MB
-        v->is_intra[s->mb_x] = 0x3f; // Set the bitfield to all 1.
-        s->mb_intra          = 1;
+        s->mb_intra = 1;
+        v->is_intra[s->mb_x] = 0x3F;
         s->current_picture.motion_val[1][s->block_index[0]][0] = 0;
         s->current_picture.motion_val[1][s->block_index[0]][1] = 0;
         s->current_picture.mb_type[mb_pos + v->mb_off]         = MB_TYPE_INTRA;
@@ -2111,11 +2100,11 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
             cbp = 1 + get_vlc2(&v->s.gb, v->cbpcy_vlc->table, VC1_ICBPCY_VLC_BITS, 2);
         dst_idx = 0;
         for (i = 0; i < 6; i++) {
-            v->a_avail = v->c_avail          = 0;
-            v->mb_type[0][s->block_index[i]] = 1;
-            s->dc_val[0][s->block_index[i]]  = 0;
+            s->dc_val[0][s->block_index[i]] = 0;
             dst_idx += i >> 2;
             val = ((cbp >> (5 - i)) & 1);
+            v->mb_type[0][s->block_index[i]] = s->mb_intra;
+            v->a_avail                       = v->c_avail = 0;
             if (i == 2 || i == 3 || !s->first_slice_line)
                 v->a_avail = v->mb_type[0][s->block_index[i] - s->block_wrap[i]];
             if (i == 1 || i == 3 || s->mb_x)
@@ -2145,6 +2134,7 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
         else
             fwd = v->forward_mb_plane[mb_pos];
         if (idx_mbmode <= 5) { // 1-MV
+            int interpmvp = 0;
             dmv_x[0]     = dmv_x[1] = dmv_y[0] = dmv_y[1] = 0;
             pred_flag[0] = pred_flag[1] = 0;
             if (fwd)
@@ -2167,12 +2157,16 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
             if (bmvtype != BMV_TYPE_DIRECT && idx_mbmode & 1) {
                 get_mvdata_interlaced(v, &dmv_x[bmvtype == BMV_TYPE_BACKWARD], &dmv_y[bmvtype == BMV_TYPE_BACKWARD], &pred_flag[bmvtype == BMV_TYPE_BACKWARD]);
             }
-            if (bmvtype == BMV_TYPE_INTERPOLATED && interpmvp) {
+            if (interpmvp) {
                 get_mvdata_interlaced(v, &dmv_x[1], &dmv_y[1], &pred_flag[1]);
             }
             if (bmvtype == BMV_TYPE_DIRECT) {
                 dmv_x[0] = dmv_y[0] = pred_flag[0] = 0;
                 dmv_x[1] = dmv_y[1] = pred_flag[0] = 0;
+                if (!s->next_picture_ptr->field_picture) {
+                    av_log(s->avctx, AV_LOG_ERROR, "Mixed field/frame direct mode not supported\n");
+                    return;
+                }
             }
             ff_vc1_pred_b_mv_intfi(v, 0, dmv_x, dmv_y, 1, pred_flag);
             vc1_b_mc(v, dmv_x, dmv_y, (bmvtype == BMV_TYPE_DIRECT), bmvtype);
@@ -2280,6 +2274,8 @@ static int vc1_decode_b_mb_intfr(VC1Context *v)
         direct = v->direct_mb_plane[mb_pos];
 
     if (direct) {
+        if (s->next_picture_ptr->field_picture)
+            av_log(s->avctx, AV_LOG_WARNING, "Mixed frame/field direct mode not supported\n");
         s->mv[0][0][0] = s->current_picture.motion_val[0][s->block_index[0]][0] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][0], v->bfraction, 0, s->quarter_sample);
         s->mv[0][0][1] = s->current_picture.motion_val[0][s->block_index[0]][1] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][1], v->bfraction, 0, s->quarter_sample);
         s->mv[1][0][0] = s->current_picture.motion_val[1][s->block_index[0]][0] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][0], v->bfraction, 1, s->quarter_sample);
@@ -2314,9 +2310,11 @@ static int vc1_decode_b_mb_intfr(VC1Context *v)
             s->mv[1][i][0] = s->current_picture.motion_val[1][s->block_index[i]][0] = 0;
             s->mv[1][i][1] = s->current_picture.motion_val[1][s->block_index[i]][1] = 0;
         }
-        v->is_intra[s->mb_x] = 0x3f; // Set the bitfield to all 1.
-        s->mb_intra          = 1;
         s->current_picture.mb_type[mb_pos] = MB_TYPE_INTRA;
+        s->mb_intra = 1;
+        v->is_intra[s->mb_x] = 0x3F;
+        for (i = 0; i < 6; i++)
+            v->mb_type[0][s->block_index[i]] = 1;
         fieldtx = v->fieldtx_plane[mb_pos] = get_bits1(gb);
         mb_has_coeffs = get_bits1(gb);
         if (mb_has_coeffs)
@@ -2329,11 +2327,11 @@ static int vc1_decode_b_mb_intfr(VC1Context *v)
         s->c_dc_scale = s->c_dc_scale_table[mquant];
         dst_idx = 0;
         for (i = 0; i < 6; i++) {
-            v->a_avail = v->c_avail          = 0;
-            v->mb_type[0][s->block_index[i]] = 1;
-            s->dc_val[0][s->block_index[i]]  = 0;
+            s->dc_val[0][s->block_index[i]] = 0;
             dst_idx += i >> 2;
             val = ((cbp >> (5 - i)) & 1);
+            v->mb_type[0][s->block_index[i]] = s->mb_intra;
+            v->a_avail = v->c_avail = 0;
             if (i == 2 || i == 3 || !s->first_slice_line)
                 v->a_avail = v->mb_type[0][s->block_index[i] - s->block_wrap[i]];
             if (i == 1 || i == 3 || s->mb_x)
