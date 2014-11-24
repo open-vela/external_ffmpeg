@@ -20,7 +20,6 @@
 #define AVCODEC_HUFFYUVDSP_H
 
 #include <stdint.h>
-#include "config.h"
 
 #if HAVE_BIGENDIAN
 #define B 3

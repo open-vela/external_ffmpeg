@@ -21,7 +21,6 @@
 #ifndef AVCODEC_SNOW_DWT_H
 #define AVCODEC_SNOW_DWT_H
 
-#include <stddef.h>
 #include <stdint.h>
 
 typedef int DWTELEM;
