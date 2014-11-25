@@ -3,20 +3,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/frame.h"
 
-#include "libswresample/swresample.h"
+#include "libavresample/avresample.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -57,18 +57,9 @@
 #define SILK_HISTORY                 322
 #define SILK_MAX_LPC                 16
 
-#define ROUND_MULL(a,b,s) (((MUL64(a, b) >> ((s) - 1)) + 1) >> 1)
+#define ROUND_MULL(a,b,s) (((MUL64(a, b) >> (s - 1)) + 1) >> 1)
 #define ROUND_MUL16(a,b)  ((MUL16(a, b) + 16384) >> 15)
 #define opus_ilog(i) (av_log2(i) + !!(i))
-
-#define OPUS_TS_HEADER     0x7FE0        // 0x3ff (11 bits)
-#define OPUS_TS_MASK       0xFFE0        // top 11 bits
-
-static const uint8_t opus_default_extradata[30] = {
-    'O', 'p', 'u', 's', 'H', 'e', 'a', 'd',
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-};
 
 enum OpusMode {
     OPUS_MODE_SILK,
@@ -104,19 +95,19 @@ typedef struct SilkContext SilkContext;
 typedef struct CeltContext CeltContext;
 
 typedef struct OpusPacket {
-    int packet_size;                /**< packet size */
-    int data_size;                  /**< size of the useful data -- packet size - padding */
-    int code;                       /**< packet code: specifies the frame layout */
-    int stereo;                     /**< whether this packet is mono or stereo */
-    int vbr;                        /**< vbr flag */
-    int config;                     /**< configuration: tells the audio mode,
+    int packet_size;                /** packet size */
+    int data_size;                  /** size of the useful data -- packet size - padding */
+    int code;                       /** packet code: specifies the frame layout */
+    int stereo;                     /** whether this packet is mono or stereo */
+    int vbr;                        /** vbr flag */
+    int config;                     /** configuration: tells the audio mode,
                                      **                bandwidth, and frame duration */
-    int frame_count;                /**< frame count */
-    int frame_offset[MAX_FRAMES];   /**< frame offsets */
-    int frame_size[MAX_FRAMES];     /**< frame sizes */
-    int frame_duration;             /**< frame duration, in samples @ 48kHz */
-    enum OpusMode mode;             /**< mode */
-    enum OpusBandwidth bandwidth;   /**< bandwidth */
+    int frame_count;                /** frame count */
+    int frame_offset[MAX_FRAMES];   /** frame offsets */
+    int frame_size[MAX_FRAMES];     /** frame sizes */
+    int frame_duration;             /** frame duration, in samples @ 48kHz */
+    enum OpusMode mode;             /** mode */
+    enum OpusBandwidth bandwidth;   /** bandwidth */
 } OpusPacket;
 
 typedef struct OpusStreamContext {
@@ -144,7 +135,7 @@ typedef struct OpusStreamContext {
     float *out_dummy;
     int    out_dummy_allocated_size;
 
-    SwrContext *swr;
+    AVAudioResampleContext *avr;
     AVAudioFifo *celt_delay;
     int silk_samplerate;
     /* number of samples we still want to get from the resampler */
