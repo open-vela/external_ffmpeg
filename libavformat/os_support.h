@@ -2,20 +2,20 @@
  * various OS-feature replacement utilities
  * copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,30 +42,13 @@
 
 #if defined(_WIN32) && !defined(__MINGW32CE__)
 #  include <fcntl.h>
-#  ifdef lseek
-#   undef lseek
-#  endif
+#  undef lseek
 #  define lseek(f,p,w) _lseeki64((f), (p), (w))
-#  ifdef stat
-#   undef stat
-#  endif
+#  undef stat
 #  define stat _stati64
-#  ifdef fstat
-#   undef fstat
-#  endif
+#  undef fstat
 #  define fstat(f,s) _fstati64((f), (s))
 #endif /* defined(_WIN32) && !defined(__MINGW32CE__) */
-
-
-#ifdef __ANDROID__
-#  if HAVE_UNISTD_H
-#    include <unistd.h>
-#  endif
-#  ifdef lseek
-#   undef lseek
-#  endif
-#  define lseek(f,p,w) lseek64((f), (p), (w))
-#endif
 
 static inline int is_dos_path(const char *path)
 {
@@ -144,24 +127,7 @@ int ff_poll(struct pollfd *fds, nfds_t numfds, int timeout);
 #elif defined(_WIN32)
 #include <stdio.h>
 #include <windows.h>
-#include "libavutil/mem.h"
-
-static inline int utf8towchar(const char *filename_utf8, wchar_t **filename_w)
-{
-    int num_chars;
-    num_chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename_utf8, -1, NULL, 0);
-    if (num_chars <= 0) {
-        *filename_w = NULL;
-        return 0;
-    }
-    *filename_w = (wchar_t *)av_mallocz(sizeof(wchar_t) * num_chars);
-    if (!*filename_w) {
-        errno = ENOMEM;
-        return -1;
-    }
-    MultiByteToWideChar(CP_UTF8, 0, filename_utf8, -1, *filename_w, num_chars);
-    return 0;
-}
+#include "libavutil/wchar_filename.h"
 
 #define DEF_FS_FUNCTION(name, wfunc, afunc)               \
 static inline int win32_##name(const char *filename_utf8) \

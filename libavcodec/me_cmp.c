@@ -1,27 +1,22 @@
 /*
- * DSP utils
- * Copyright (c) 2000, 2001 Fabrice Bellard
- * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
-#include "libavutil/internal.h"
 #include "avcodec.h"
 #include "copy_block.h"
 #include "simple_idct.h"
@@ -414,14 +409,6 @@ void ff_set_cmp(MECmpContext *c, me_cmp_func *cmp, int type)
         case FF_CMP_NSSE:
             cmp[i] = c->nsse[i];
             break;
-#if CONFIG_DWT
-        case FF_CMP_W53:
-            cmp[i]= c->w53[i];
-            break;
-        case FF_CMP_W97:
-            cmp[i]= c->w97[i];
-            break;
-#endif
         default:
             av_log(NULL, AV_LOG_ERROR,
                    "internal error in cmp function selection\n");
@@ -449,7 +436,7 @@ static int hadamard8_diff8x8_c(MpegEncContext *s, uint8_t *dst,
 {
     int i, temp[64], sum = 0;
 
-    av_assert2(h == 8);
+    assert(h == 8);
 
     for (i = 0; i < 8; i++) {
         // FIXME: try pointer walks
@@ -501,7 +488,7 @@ static int hadamard8_intra8x8_c(MpegEncContext *s, uint8_t *src,
 {
     int i, temp[64], sum = 0;
 
-    av_assert2(h == 8);
+    assert(h == 8);
 
     for (i = 0; i < 8; i++) {
         // FIXME: try pointer walks
@@ -553,7 +540,7 @@ static int dct_sad8x8_c(MpegEncContext *s, uint8_t *src1,
 {
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
 
-    av_assert2(h == 8);
+    assert(h == 8);
 
     s->pdsp.diff_pixels(temp, src1, src2, stride);
     s->fdsp.fdct(temp);
@@ -620,7 +607,7 @@ static int dct_max8x8_c(MpegEncContext *s, uint8_t *src1,
     LOCAL_ALIGNED_16(int16_t, temp, [64]);
     int sum = 0, i;
 
-    av_assert2(h == 8);
+    assert(h == 8);
 
     s->pdsp.diff_pixels(temp, src1, src2, stride);
     s->fdsp.fdct(temp);
@@ -638,7 +625,7 @@ static int quant_psnr8x8_c(MpegEncContext *s, uint8_t *src1,
     int16_t *const bak = temp + 64;
     int sum = 0, i;
 
-    av_assert2(h == 8);
+    assert(h == 8);
     s->mb_intra = 0;
 
     s->pdsp.diff_pixels(temp, src1, src2, stride);
@@ -667,7 +654,7 @@ static int rd8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
     const int esc_length = s->ac_esc_length;
     uint8_t *length, *last_length;
 
-    av_assert2(h == 8);
+    assert(h == 8);
 
     copy_block8(lsrc1, src1, 8, stride, 8);
     copy_block8(lsrc2, src2, 8, stride, 8);
@@ -711,7 +698,7 @@ static int rd8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
         level = temp[i] + 64;
 
-        av_assert2(level - 64);
+        assert(level - 64);
 
         if ((level & (~127)) == 0) {
             bits += last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -742,7 +729,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
     const int esc_length = s->ac_esc_length;
     uint8_t *length, *last_length;
 
-    av_assert2(h == 8);
+    assert(h == 8);
 
     s->pdsp.diff_pixels(temp, src1, src2, stride);
 
@@ -783,7 +770,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
         level = temp[i] + 64;
 
-        av_assert2(level - 64);
+        assert(level - 64);
 
         if ((level & (~127)) == 0)
             bits += last_length[UNI_AC_ENC_INDEX(run, level)];
@@ -816,24 +803,20 @@ static int vsad_intra ## size ## _c(MpegEncContext *c,                  \
 VSAD_INTRA(8)
 VSAD_INTRA(16)
 
-#define VSAD(size)                                                             \
-static int vsad ## size ## _c(MpegEncContext *c,                               \
-                              uint8_t *s1, uint8_t *s2,                        \
-                              ptrdiff_t stride, int h)                               \
-{                                                                              \
-    int score = 0, x, y;                                                       \
-                                                                               \
-    for (y = 1; y < h; y++) {                                                  \
-        for (x = 0; x < size; x++)                                             \
-            score += FFABS(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);   \
-        s1 += stride;                                                          \
-        s2 += stride;                                                          \
-    }                                                                          \
-                                                                               \
-    return score;                                                              \
+static int vsad16_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,
+                    ptrdiff_t stride, int h)
+{
+    int score = 0, x, y;
+
+    for (y = 1; y < h; y++) {
+        for (x = 0; x < 16; x++)
+            score += FFABS(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);
+        s1 += stride;
+        s2 += stride;
+    }
+
+    return score;
 }
-VSAD(8)
-VSAD(16)
 
 #define SQ(a) ((a) * (a))
 #define VSSE_INTRA(size)                                                \
@@ -858,23 +841,20 @@ static int vsse_intra ## size ## _c(MpegEncContext *c,                  \
 VSSE_INTRA(8)
 VSSE_INTRA(16)
 
-#define VSSE(size)                                                             \
-static int vsse ## size ## _c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,     \
-                              ptrdiff_t stride, int h)                         \
-{                                                                              \
-    int score = 0, x, y;                                                       \
-                                                                               \
-    for (y = 1; y < h; y++) {                                                  \
-        for (x = 0; x < size; x++)                                             \
-            score += SQ(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);      \
-        s1 += stride;                                                          \
-        s2 += stride;                                                          \
-    }                                                                          \
-                                                                               \
-    return score;                                                              \
+static int vsse16_c(MpegEncContext *c, uint8_t *s1, uint8_t *s2,
+                    ptrdiff_t stride, int h)
+{
+    int score = 0, x, y;
+
+    for (y = 1; y < h; y++) {
+        for (x = 0; x < 16; x++)
+            score += SQ(s1[x] - s2[x] - s1[x + stride] + s2[x + stride]);
+        s1 += stride;
+        s2 += stride;
+    }
+
+    return score;
 }
-VSSE(8)
-VSSE(16)
 
 #define WRAPPER8_16_SQ(name8, name16)                                   \
 static int name16(MpegEncContext *s, uint8_t *dst, uint8_t *src,        \
@@ -912,31 +892,8 @@ av_cold void ff_me_cmp_init_static(void)
         ff_square_tab[i] = (i - 256) * (i - 256);
 }
 
-int ff_check_alignment(void)
-{
-    static int did_fail = 0;
-    LOCAL_ALIGNED_16(int, aligned, [4]);
-
-    if ((intptr_t)aligned & 15) {
-        if (!did_fail) {
-#if HAVE_MMX || HAVE_ALTIVEC
-            av_log(NULL, AV_LOG_ERROR,
-                "Compiler did not align stack variables. Libavcodec has been miscompiled\n"
-                "and may be very slow or crash. This is not a bug in libavcodec,\n"
-                "but in the compiler. You may try recompiling using gcc >= 4.2.\n"
-                "Do not report crashes to FFmpeg developers.\n");
-#endif
-            did_fail=1;
-        }
-        return -1;
-    }
-    return 0;
-}
-
 av_cold void ff_me_cmp_init(MECmpContext *c, AVCodecContext *avctx)
 {
-    ff_check_alignment();
-
     c->sum_abs_dctelem = sum_abs_dctelem_c;
 
     /* TODO [0] 16  [1] 8 */
@@ -970,21 +927,14 @@ av_cold void ff_me_cmp_init(MECmpContext *c, AVCodecContext *avctx)
     SET_CMP_FUNC(rd)
     SET_CMP_FUNC(bit)
     c->vsad[0] = vsad16_c;
-    c->vsad[1] = vsad8_c;
     c->vsad[4] = vsad_intra16_c;
     c->vsad[5] = vsad_intra8_c;
     c->vsse[0] = vsse16_c;
-    c->vsse[1] = vsse8_c;
     c->vsse[4] = vsse_intra16_c;
     c->vsse[5] = vsse_intra8_c;
     c->nsse[0] = nsse16_c;
     c->nsse[1] = nsse8_c;
-#if CONFIG_SNOW_DECODER || CONFIG_SNOW_ENCODER
-    ff_dsputil_init_dwt(c);
-#endif
 
-    if (ARCH_ALPHA)
-        ff_me_cmp_init_alpha(c, avctx);
     if (ARCH_ARM)
         ff_me_cmp_init_arm(c, avctx);
     if (ARCH_PPC)
