@@ -2,20 +2,20 @@
  * MPEG-DASH ISO BMFF segmenter
  * Copyright (c) 2014 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -394,7 +394,7 @@ static int write_manifest(AVFormatContext *s, int final)
     avio_printf(out, "</MPD>\n");
     avio_flush(out);
     avio_close(out);
-    return USE_RENAME_REPLACE ? ff_rename(temp_filename, s->filename) : 0;
+    return USE_RENAME_REPLACE ? ff_rename(temp_filename, s->filename, s) : 0;
 }
 
 static int dash_write_header(AVFormatContext *s)
@@ -441,9 +441,12 @@ static int dash_write_header(AVFormatContext *s)
         AVDictionary *opts = NULL;
         char filename[1024];
 
-        if (s->streams[i]->codec->bit_rate) {
+        int bit_rate = s->streams[i]->codec->bit_rate ?
+                       s->streams[i]->codec->bit_rate :
+                       s->streams[i]->codec->rc_max_rate;
+        if (bit_rate) {
             snprintf(os->bandwidth_str, sizeof(os->bandwidth_str),
-                     " bandwidth=\"%d\"", s->streams[i]->codec->bit_rate);
+                     " bandwidth=\"%d\"", bit_rate);
         } else {
             int level = s->strict_std_compliance >= FF_COMPLIANCE_STRICT ?
                         AV_LOG_ERROR : AV_LOG_WARNING;
@@ -646,7 +649,7 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         } else {
             ffurl_close(os->out);
             os->out = NULL;
-            ret = USE_RENAME_REPLACE ? ff_rename(temp_path, full_path) : 0;
+            ret = USE_RENAME_REPLACE ? ff_rename(temp_path, full_path, s) : 0;
             if (ret < 0)
                 break;
         }
@@ -727,7 +730,7 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
         os->start_dts = pkt->dts;
     os->end_dts = pkt->dts + pkt->duration;
     os->packets_written++;
-    return ff_write_chained(os->ctx, 0, pkt, s);
+    return ff_write_chained(os->ctx, 0, pkt, s, 0);
 }
 
 static int dash_write_trailer(AVFormatContext *s)

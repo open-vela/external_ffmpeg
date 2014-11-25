@@ -2,20 +2,20 @@
  * RTMP network protocol
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@
 #include <zlib.h>
 #endif
 
-#define APP_MAX_LENGTH 128
+#define APP_MAX_LENGTH 1024
 #define PLAYPATH_MAX_LENGTH 256
 #define TCURL_MAX_LENGTH 512
 #define FLASHVER_MAX_LENGTH 64
@@ -322,7 +322,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
     int ret;
 
     if ((ret = ff_rtmp_packet_create(&pkt, RTMP_SYSTEM_CHANNEL, RTMP_PT_INVOKE,
-                                     0, 4096)) < 0)
+                                     0, 4096 + APP_MAX_LENGTH)) < 0)
         return ret;
 
     p = pkt.data;
@@ -419,6 +419,7 @@ static int read_connect(URLContext *s, RTMPContext *rt)
     if (pkt.type == RTMP_PT_CHUNK_SIZE) {
         if ((ret = handle_chunk_size(s, &pkt)) < 0)
             return ret;
+
         ff_rtmp_packet_destroy(&pkt);
         if ((ret = ff_rtmp_packet_read(rt->stream, &pkt, rt->in_chunk_size,
                                        &rt->prev_pkt[0], &rt->nb_prev_pkt[0])) < 0)
@@ -1767,18 +1768,23 @@ static int handle_connect_error(URLContext *s, const char *desc)
         char *value = strchr(ptr, '=');
         if (next)
             *next++ = '\0';
-        if (value)
+        if (value) {
             *value++ = '\0';
-        if (!strcmp(ptr, "user")) {
-            user = value;
-        } else if (!strcmp(ptr, "salt")) {
-            salt = value;
-        } else if (!strcmp(ptr, "opaque")) {
-            opaque = value;
-        } else if (!strcmp(ptr, "challenge")) {
-            challenge = value;
-        } else if (!strcmp(ptr, "nonce")) {
-            nonce = value;
+            if (!strcmp(ptr, "user")) {
+                user = value;
+            } else if (!strcmp(ptr, "salt")) {
+                salt = value;
+            } else if (!strcmp(ptr, "opaque")) {
+                opaque = value;
+            } else if (!strcmp(ptr, "challenge")) {
+                challenge = value;
+            } else if (!strcmp(ptr, "nonce")) {
+                nonce = value;
+            } else {
+                av_log(s, AV_LOG_INFO, "Ignoring unsupported var %s\n", ptr);
+            }
+        } else {
+            av_log(s, AV_LOG_WARNING, "Variable %s has NULL value\n", ptr);
         }
         ptr = next;
     }
@@ -2429,7 +2435,7 @@ static int get_packet(URLContext *s, int for_header)
         rt->last_timestamp = rpkt.timestamp;
 
         rt->bytes_read += ret;
-        if (rt->bytes_read > rt->last_bytes_read + rt->client_report_size) {
+        if (rt->bytes_read - rt->last_bytes_read > rt->client_report_size) {
             av_log(s, AV_LOG_DEBUG, "Sending bytes read report\n");
             if ((ret = gen_bytes_read(s, rt, rpkt.timestamp + 1)) < 0)
                 return ret;
@@ -2591,7 +2597,7 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
 {
     RTMPContext *rt = s->priv_data;
     char proto[8], hostname[256], path[1024], auth[100], *fname;
-    char *old_app, *qmark, fname_buffer[1024];
+    char *old_app, *qmark, *n, fname_buffer[1024];
     uint8_t buf[2048];
     int port;
     AVDictionary *opts = NULL;
@@ -2606,11 +2612,13 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
                  hostname, sizeof(hostname), &port,
                  path, sizeof(path), s->filename);
 
-    if (strchr(path, ' ')) {
+    n = strchr(path, ' ');
+    if (n) {
         av_log(s, AV_LOG_WARNING,
                "Detected librtmp style URL parameters, these aren't supported "
                "by the libavformat internal RTMP handler currently enabled. "
                "See the documentation for the correct way to pass parameters.\n");
+        *n = '\0'; // Trim not supported part
     }
 
     if (auth[0]) {
@@ -2709,8 +2717,14 @@ reconnect:
         char *next = *path ? path + 1 : path;
         char *p = strchr(next, '/');
         if (!p) {
-            fname = next;
-            rt->app[0] = '\0';
+            if (old_app) {
+                // If name of application has been defined by the user, assume that
+                // playpath is provided in the URL
+                fname = next;
+            } else {
+                fname = NULL;
+                av_strlcpy(rt->app, next, APP_MAX_LENGTH);
+            }
         } else {
             // make sure we do not mismatch a playpath for an application instance
             char *c = strchr(p + 1, ':');
@@ -2727,29 +2741,36 @@ reconnect:
 
     if (old_app) {
         // The name of application has been defined by the user, override it.
+        if (strlen(old_app) >= APP_MAX_LENGTH) {
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
         av_free(rt->app);
         rt->app = old_app;
     }
 
     if (!rt->playpath) {
-        int len = strlen(fname);
-
         rt->playpath = av_malloc(PLAYPATH_MAX_LENGTH);
         if (!rt->playpath) {
             ret = AVERROR(ENOMEM);
             goto fail;
         }
 
-        if (!strchr(fname, ':') && len >= 4 &&
-            (!strcmp(fname + len - 4, ".f4v") ||
-             !strcmp(fname + len - 4, ".mp4"))) {
-            memcpy(rt->playpath, "mp4:", 5);
+        if (fname) {
+            int len = strlen(fname);
+            if (!strchr(fname, ':') && len >= 4 &&
+                (!strcmp(fname + len - 4, ".f4v") ||
+                 !strcmp(fname + len - 4, ".mp4"))) {
+                memcpy(rt->playpath, "mp4:", 5);
+            } else {
+                if (len >= 4 && !strcmp(fname + len - 4, ".flv"))
+                    fname[len - 4] = '\0';
+                rt->playpath[0] = 0;
+            }
+            av_strlcat(rt->playpath, fname, PLAYPATH_MAX_LENGTH);
         } else {
-            if (len >= 4 && !strcmp(fname + len - 4, ".flv"))
-                fname[len - 4] = '\0';
-            rt->playpath[0] = 0;
+            rt->playpath[0] = '\0';
         }
-        av_strlcat(rt->playpath, fname, PLAYPATH_MAX_LENGTH);
     }
 
     if (!rt->tcurl) {
@@ -2949,9 +2970,11 @@ static int rtmp_write(URLContext *s, const uint8_t *buf, int size)
         }
 
         if (rt->flv_header_bytes < RTMP_HEADER) {
+            int set_data_frame = 0;
             const uint8_t *header = rt->flv_header;
             int copy = FFMIN(RTMP_HEADER - rt->flv_header_bytes, size_temp);
             int channel = RTMP_AUDIO_CHANNEL;
+
             bytestream_get_buffer(&buf_temp, rt->flv_header + rt->flv_header_bytes, copy);
             rt->flv_header_bytes += copy;
             size_temp            -= copy;
@@ -2968,10 +2991,31 @@ static int rtmp_write(URLContext *s, const uint8_t *buf, int size)
             if (pkttype == RTMP_PT_VIDEO)
                 channel = RTMP_VIDEO_CHANNEL;
 
-            //force 12bytes header
+            if (pkttype == RTMP_PT_NOTIFY) {
+                // For onMetaData and |RtmpSampleAccess packets, we want
+                // @setDataFrame prepended to the packet before it gets sent.
+                // However, definitely not *all* RTMP_PT_NOTIFY packets (e.g.,
+                // onTextData and onCuePoint).
+                uint8_t commandbuffer[64];
+                int stringlen = 0, commandsize = size - rt->flv_header_bytes;
+                GetByteContext gbc;
+
+                // buf_temp at this point should be pointing to the RTMP command
+                bytestream2_init(&gbc, buf_temp, commandsize);
+                if (ff_amf_read_string(&gbc, commandbuffer, sizeof(commandbuffer),
+                                       &stringlen))
+                    return AVERROR_INVALIDDATA;
+
+                if (!strcmp(commandbuffer, "onMetaData") ||
+                    !strcmp(commandbuffer, "|RtmpSampleAccess")) {
+                    set_data_frame = 1;
+                }
+            }
+
             if (((pkttype == RTMP_PT_VIDEO || pkttype == RTMP_PT_AUDIO) && ts == 0) ||
                 pkttype == RTMP_PT_NOTIFY) {
-                if (pkttype == RTMP_PT_NOTIFY)
+                // add 12 bytes header if passing @setDataFrame
+                if (set_data_frame)
                     pktsize += 16;
                 if ((ret = ff_rtmp_check_alloc_array(&rt->prev_pkt[1],
                                                      &rt->nb_prev_pkt[1],
@@ -2988,8 +3032,9 @@ static int rtmp_write(URLContext *s, const uint8_t *buf, int size)
             rt->out_pkt.extra = rt->stream_id;
             rt->flv_data = rt->out_pkt.data;
 
-            if (pkttype == RTMP_PT_NOTIFY)
+            if (set_data_frame) {
                 ff_amf_write_string(&rt->flv_data, "@setDataFrame");
+            }
         }
 
         if (rt->flv_size - rt->flv_off > size_temp) {
