@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Kamil Nowosad
  * Copyright (c) 2013 Nicolas Bertrand <nicoinattendu@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +26,7 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/mem.h"
 #include "avcodec.h"
@@ -41,8 +42,7 @@ static int32_t tag_tree_size(uint16_t w, uint16_t h)
     uint32_t res = 0;
     while (w > 1 || h > 1) {
         res += w * h;
-        if (res + 1 >= INT32_MAX)
-            return -1;
+        av_assert0(res + 1 < INT32_MAX);
         w = (w + 1) >> 1;
         h = (h + 1) >> 1;
     }
@@ -56,8 +56,6 @@ static Jpeg2000TgtNode *ff_jpeg2000_tag_tree_init(int w, int h)
     int32_t tt_size;
 
     tt_size = tag_tree_size(w, h);
-    if (tt_size == -1)
-        return NULL;
 
     t = res = av_mallocz_array(tt_size, sizeof(*t));
     if (!res)
@@ -82,6 +80,16 @@ static Jpeg2000TgtNode *ff_jpeg2000_tag_tree_init(int w, int h)
     return res;
 }
 
+static void tag_tree_zero(Jpeg2000TgtNode *t, int w, int h)
+{
+    int i, siz = tag_tree_size(w, h);
+
+    for (i = 0; i < siz; i++) {
+        t[i].val = 0;
+        t[i].vis = 0;
+    }
+}
+
 uint8_t ff_jpeg2000_sigctxno_lut[256][4];
 
 static int getsigctxno(int flag, int bandno)
@@ -96,45 +104,33 @@ static int getsigctxno(int flag, int bandno)
         ((flag & JPEG2000_T1_SIG_NW) ? 1 : 0) +
         ((flag & JPEG2000_T1_SIG_SE) ? 1 : 0) +
         ((flag & JPEG2000_T1_SIG_SW) ? 1 : 0);
+
     if (bandno < 3) {
         if (bandno == 1)
             FFSWAP(int, h, v);
-        if (h == 2)
-            return 8;
+        if (h == 2) return 8;
         if (h == 1) {
-            if (v >= 1)
-                return 7;
-            if (d >= 1)
-                return 6;
+            if (v >= 1) return 7;
+            if (d >= 1) return 6;
             return 5;
         }
-        if (v == 2)
-            return 4;
-        if (v == 1)
-            return 3;
-        if (d >= 2)
-            return 2;
-        if (d == 1)
-            return 1;
+        if (v == 2) return 4;
+        if (v == 1) return 3;
+        if (d >= 2) return 2;
+        if (d == 1) return 1;
     } else {
-        if (d >= 3)
-            return 8;
+        if (d >= 3) return 8;
         if (d == 2) {
-            if (h + v >= 1)
-                return 7;
+            if (h+v >= 1) return 7;
             return 6;
         }
         if (d == 1) {
-            if (h + v >= 2)
-                return 5;
-            if (h + v == 1)
-                return 4;
+            if (h+v >= 2) return 5;
+            if (h+v == 1) return 4;
             return 3;
         }
-        if (h + v >= 2)
-            return 2;
-        if (h + v == 1)
-            return 1;
+        if (h+v >= 2) return 2;
+        if (h+v == 1) return 1;
     }
     return 0;
 }
@@ -205,8 +201,8 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
     int reslevelno, bandno, gbandno = 0, ret, i, j;
     uint32_t csize;
 
-    if (!codsty->nreslevels2decode) {
-        av_log(avctx, AV_LOG_ERROR, "nreslevels2decode uninitialized\n");
+    if (codsty->nreslevels2decode <= 0) {
+        av_log(avctx, AV_LOG_ERROR, "nreslevels2decode %d invalid or uninitialized\n", codsty->nreslevels2decode);
         return AVERROR_INVALIDDATA;
     }
 
@@ -220,12 +216,12 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
 
     if (codsty->transform == FF_DWT97) {
         comp->i_data = NULL;
-        comp->f_data = av_malloc_array(csize, sizeof(*comp->f_data));
+        comp->f_data = av_mallocz_array(csize, sizeof(*comp->f_data));
         if (!comp->f_data)
             return AVERROR(ENOMEM);
     } else {
         comp->f_data = NULL;
-        comp->i_data = av_malloc_array(csize, sizeof(*comp->i_data));
+        comp->i_data = av_mallocz_array(csize, sizeof(*comp->i_data));
         if (!comp->i_data)
             return AVERROR(ENOMEM);
     }
@@ -254,7 +250,7 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
         else
             reslevel->nbands = 3;
 
-        /* Number of precincts wich span the tile for resolution level reslevelno
+        /* Number of precincts which span the tile for resolution level reslevelno
          * see B.6 in ISO/IEC 15444-1:2002 eq. B-16
          * num_precincts_x = |- trx_1 / 2 ^ log2_prec_width) -| - (trx_0 / 2 ^ log2_prec_width)
          * num_precincts_y = |- try_1 / 2 ^ log2_prec_width) -| - (try_0 / 2 ^ log2_prec_width)
@@ -325,7 +321,7 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
             if (!av_codec_is_encoder(avctx->codec))
                 band->f_stepsize *= 0.5;
 
-            band->i_stepsize = band->f_stepsize * (1 << 16);
+            band->i_stepsize = band->f_stepsize * (1 << 15);
 
             /* computation of tbx_0, tbx_1, tby_0, tby_1
              * see ISO/IEC 15444-1:2002 B.5 eq. B-15 and tbl B.1
@@ -373,6 +369,10 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
             for (j = 0; j < 2; j++)
                 band->coord[1][j] = ff_jpeg2000_ceildiv(band->coord[1][j], dy);
 
+            if (reslevel->num_precincts_x * (uint64_t)reslevel->num_precincts_y > INT_MAX) {
+                band->prec = NULL;
+                return AVERROR(ENOMEM);
+            }
             nb_precincts = reslevel->num_precincts_x * reslevel->num_precincts_y;
             band->prec = av_mallocz_array(nb_precincts, sizeof(*band->prec));
             if (!band->prec)
@@ -427,6 +427,10 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
                 if (!prec->zerobits)
                     return AVERROR(ENOMEM);
 
+                if (prec->nb_codeblocks_width * (uint64_t)prec->nb_codeblocks_height > INT_MAX) {
+                    prec->cblk = NULL;
+                    return AVERROR(ENOMEM);
+                }
                 nb_codeblocks = prec->nb_codeblocks_width * prec->nb_codeblocks_height;
                 prec->cblk = av_mallocz_array(nb_codeblocks, sizeof(*prec->cblk));
                 if (!prec->cblk)
@@ -479,6 +483,27 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
     return 0;
 }
 
+void ff_jpeg2000_reinit(Jpeg2000Component *comp, Jpeg2000CodingStyle *codsty)
+{
+    int reslevelno, bandno, cblkno, precno;
+    for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++) {
+        Jpeg2000ResLevel *rlevel = comp->reslevel + reslevelno;
+        for (bandno = 0; bandno < rlevel->nbands; bandno++) {
+            Jpeg2000Band *band = rlevel->band + bandno;
+            for(precno = 0; precno < rlevel->num_precincts_x * rlevel->num_precincts_y; precno++) {
+                Jpeg2000Prec *prec = band->prec + precno;
+                tag_tree_zero(prec->zerobits, prec->nb_codeblocks_width, prec->nb_codeblocks_height);
+                tag_tree_zero(prec->cblkincl, prec->nb_codeblocks_width, prec->nb_codeblocks_height);
+                for (cblkno = 0; cblkno < prec->nb_codeblocks_width * prec->nb_codeblocks_height; cblkno++) {
+                    Jpeg2000Cblk *cblk = prec->cblk + cblkno;
+                    cblk->length = 0;
+                    cblk->lblock = 3;
+                }
+            }
+        }
+    }
+}
+
 void ff_jpeg2000_cleanup(Jpeg2000Component *comp, Jpeg2000CodingStyle *codsty)
 {
     int reslevelno, bandno, precno;
@@ -499,16 +524,12 @@ void ff_jpeg2000_cleanup(Jpeg2000Component *comp, Jpeg2000CodingStyle *codsty)
 
             band = reslevel->band + bandno;
             for (precno = 0; precno < reslevel->num_precincts_x * reslevel->num_precincts_y; precno++) {
-                Jpeg2000Prec *prec;
-
-                if (!band->prec)
-                    continue;
-
-                prec = band->prec + precno;
-                av_freep(&prec->zerobits);
-                av_freep(&prec->cblkincl);
-                av_freep(&prec->cblk);
-
+                if (band->prec) {
+                    Jpeg2000Prec *prec = band->prec + precno;
+                    av_freep(&prec->zerobits);
+                    av_freep(&prec->cblkincl);
+                    av_freep(&prec->cblk);
+                }
             }
 
             av_freep(&band->prec);
