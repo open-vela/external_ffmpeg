@@ -2,20 +2,20 @@
  * ADX ADPCM codecs
  * Copyright (c) 2001,2003 BERO
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,12 +43,14 @@ static void adx_encode(ADXContext *c, uint8_t *adx, const int16_t *wav,
     int s0, s1, s2, d;
     int max = 0;
     int min = 0;
+    int data[BLOCK_SAMPLES];
 
     s1 = prev->s1;
     s2 = prev->s2;
     for (i = 0, j = 0; j < 32; i += channels, j++) {
         s0 = wav[i];
         d = ((s0 << COEFF_BITS) - c->coeff[0] * s1 - c->coeff[1] * s2) >> COEFF_BITS;
+        data[j] = d;
         if (max < d)
             max = d;
         if (min > d)
@@ -56,10 +58,10 @@ static void adx_encode(ADXContext *c, uint8_t *adx, const int16_t *wav,
         s2 = s1;
         s1 = s0;
     }
+    prev->s1 = s1;
+    prev->s2 = s2;
 
     if (max == 0 && min == 0) {
-        prev->s1 = s1;
-        prev->s2 = s2;
         memset(adx, 0, BLOCK_SIZE);
         return;
     }
@@ -75,23 +77,8 @@ static void adx_encode(ADXContext *c, uint8_t *adx, const int16_t *wav,
     AV_WB16(adx, scale);
 
     init_put_bits(&pb, adx + 2, 16);
-
-    s1 = prev->s1;
-    s2 = prev->s2;
-    for (i = 0, j = 0; j < 32; i += channels, j++) {
-        d = ((wav[i] << COEFF_BITS) - c->coeff[0] * s1 - c->coeff[1] * s2) >> COEFF_BITS;
-
-        d = av_clip(ROUNDED_DIV(d, scale), -8, 7);
-
-        put_sbits(&pb, 4, d);
-
-        s0 = ((d << COEFF_BITS) * scale + c->coeff[0] * s1 + c->coeff[1] * s2) >> COEFF_BITS;
-        s2 = s1;
-        s1 = s0;
-    }
-    prev->s1 = s1;
-    prev->s2 = s2;
-
+    for (i = 0; i < BLOCK_SAMPLES; i++)
+        put_sbits(&pb, 4, av_clip(data[i] / scale, -8, 7));
     flush_put_bits(&pb);
 }
 
@@ -146,8 +133,10 @@ static int adx_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     int ch, out_size, ret;
 
     out_size = BLOCK_SIZE * avctx->channels + !c->header_parsed * HEADER_SIZE;
-    if ((ret = ff_alloc_packet2(avctx, avpkt, out_size)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, out_size)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
     dst = avpkt->data;
 
     if (!c->header_parsed) {
