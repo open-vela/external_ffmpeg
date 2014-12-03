@@ -2,20 +2,20 @@
  * xWMA demuxer
  * Copyright (c) 2011 Max Horn
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ static int xwma_read_header(AVFormatContext *s)
     int64_t size;
     int ret = 0;
     uint32_t dpds_table_size = 0;
-    uint32_t *dpds_table = NULL;
+    uint32_t *dpds_table = 0;
     unsigned int tag;
     AVIOContext *pb = s->pb;
     AVStream *st;
@@ -131,7 +131,7 @@ static int xwma_read_header(AVFormatContext *s)
     /* parse the remaining RIFF chunks */
     for (;;) {
         if (pb->eof_reached) {
-            ret = AVERROR_EOF;
+            ret = AVERROR_INVALIDDATA;
             goto fail;
         }
         /* read next chunk tag */
@@ -167,7 +167,7 @@ static int xwma_read_header(AVFormatContext *s)
             if (dpds_table_size == 0 || dpds_table_size >= INT_MAX / 4) {
                 av_log(s, AV_LOG_ERROR,
                        "dpds chunk size %"PRId64" invalid\n", size);
-                return AVERROR_INVALIDDATA;
+                return -1;
             }
 
             /* Allocate some temporary storage to keep the dpds data around.

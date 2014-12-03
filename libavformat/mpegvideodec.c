@@ -3,27 +3,25 @@
  * Copyright (c) 2002-2003 Fabrice Bellard
  * Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avformat.h"
 #include "rawdec.h"
-
-#include "libavutil/intreadwrite.h"
 
 #define SEQ_START_CODE          0x000001b3
 #define GOP_START_CODE          0x000001b8
@@ -36,53 +34,24 @@
 static int mpegvideo_probe(AVProbeData *p)
 {
     uint32_t code= -1;
-    int pic=0, seq=0, slice=0, pspack=0, vpes=0, apes=0, res=0, sicle=0;
-    int i, j;
-    uint32_t last = 0;
+    int pic=0, seq=0, slice=0, pspack=0, pes=0;
+    int i;
 
     for(i=0; i<p->buf_size; i++){
         code = (code<<8) + p->buf[i];
         if ((code & 0xffffff00) == 0x100) {
             switch(code){
-            case     SEQ_START_CODE:
-                if (!(p->buf[i+1+3+1+2] & 0x20))
-                    break;
-                j = i;
-                if (p->buf[j+8] & 2)
-                    j+= 64;
-                if (j >= p->buf_size)
-                    break;
-                if (p->buf[j+8] & 1)
-                    j+= 64;
-                if (j >= p->buf_size)
-                    break;
-                if (AV_RB24(p->buf + j + 9) & 0xFFFFFE)
-                    break;
-                seq++;
-            break;
+            case     SEQ_START_CODE:   seq++; break;
             case PICTURE_START_CODE:   pic++; break;
+            case   SLICE_START_CODE: slice++; break;
             case    PACK_START_CODE: pspack++; break;
-            case              0x1b6:
-                                        res++; break;
             }
-            if (code >= SLICE_START_CODE && code <= 0x1af) {
-                if (last >= SLICE_START_CODE && last <= 0x1af) {
-                    if (code >= last) slice++;
-                    else              sicle++;
-                }else{
-                    if (code == SLICE_START_CODE) slice++;
-                    else                          sicle++;
-                }
-            }
-            if     ((code & 0x1f0) == VIDEO_ID)   vpes++;
-            else if((code & 0x1e0) == AUDIO_ID)   apes++;
-            last = code;
+            if     ((code & 0x1f0) == VIDEO_ID)   pes++;
+            else if((code & 0x1e0) == AUDIO_ID)   pes++;
         }
     }
-    if(seq && seq*9<=pic*10 && pic*9<=slice*10 && !pspack && !apes && !res && slice > sicle) {
-        if(vpes) return AVPROBE_SCORE_EXTENSION / 4;
-        else     return pic>1 ? AVPROBE_SCORE_EXTENSION + 1 : AVPROBE_SCORE_EXTENSION / 2; // +1 for .mpg
-    }
+    if(seq && seq*9<=pic*10 && pic*9<=slice*10 && !pspack && !pes)
+        return pic>1 ? AVPROBE_SCORE_EXTENSION + 1 : AVPROBE_SCORE_EXTENSION / 2; // 1 more than .mpg
     return 0;
 }
 
