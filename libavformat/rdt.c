@@ -2,20 +2,20 @@
  * Realmedia RTSP protocol (RDT) support.
  * Copyright (c) 2007 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -98,7 +98,7 @@ ff_rdt_calc_response_and_checksum(char response[41], char chksum[9],
     unsigned char zres[16],
         buf[64] = { 0xa1, 0xe9, 0x14, 0x9d, 0x0e, 0x6b, 0x3b, 0x59 };
 #define XOR_TABLE_SIZE 37
-    static const unsigned char xor_table[XOR_TABLE_SIZE] = {
+    const unsigned char xor_table[XOR_TABLE_SIZE] = {
         0x05, 0x18, 0x74, 0xd0, 0x0d, 0x09, 0x02, 0x53,
         0xc0, 0x01, 0x05, 0x05, 0x67, 0x03, 0x19, 0x70,
         0x08, 0x27, 0x66, 0x10, 0x10, 0x72, 0x08, 0x09,
@@ -132,7 +132,7 @@ static int
 rdt_load_mdpr (PayloadContext *rdt, AVStream *st, int rule_nr)
 {
     AVIOContext pb;
-    int size;
+    unsigned int size;
     uint32_t tag;
 
     /**
@@ -176,7 +176,7 @@ rdt_load_mdpr (PayloadContext *rdt, AVStream *st, int rule_nr)
         size = rdt->mlti_data_size;
         avio_seek(&pb, 0, SEEK_SET);
     }
-    if (ff_rm_read_mdpr_codecdata(rdt->rmctx, &pb, st, rdt->rmst[st->index], size, NULL) < 0)
+    if (ff_rm_read_mdpr_codecdata(rdt->rmctx, &pb, st, rdt->rmst[st->index], size) < 0)
         return -1;
 
     return 0;
@@ -301,7 +301,7 @@ rdt_parse_packet (AVFormatContext *ctx, PayloadContext *rdt, AVStream *st,
     if (rdt->audio_pkt_cnt == 0) {
         int pos;
 
-        ffio_init_context(&pb, (uint8_t *)buf, len, 0, NULL, NULL, NULL, NULL);
+        ffio_init_context(&pb, buf, len, 0, NULL, NULL, NULL, NULL);
         flags = (flags & RTP_FLAG_KEY) ? 2 : 0;
         res = ff_rm_parse_packet (rdt->rmctx, &pb, st, rdt->rmst[st->index], len, pkt,
                                   &seq, flags, *timestamp);
@@ -523,25 +523,16 @@ static PayloadContext *
 rdt_new_context (void)
 {
     PayloadContext *rdt = av_mallocz(sizeof(PayloadContext));
+    int ret;
     if (!rdt)
         return NULL;
-
-    rdt->rmctx = avformat_alloc_context();
-    if (!rdt->rmctx)
-        av_freep(&rdt);
+    ret = avformat_open_input(&rdt->rmctx, "", &ff_rdt_demuxer, NULL);
+    if (ret < 0) {
+        av_free(rdt);
+        return NULL;
+    }
 
     return rdt;
-}
-
-static int
-rdt_init_context (AVFormatContext *s, int st_index, PayloadContext *rdt)
-{
-    int ret;
-
-    if ((ret = ff_copy_whitelists(rdt->rmctx, s)) < 0)
-        return ret;
-
-    return avformat_open_input(&rdt->rmctx, "", &ff_rdt_demuxer, NULL);
 }
 
 static void
@@ -568,7 +559,6 @@ static RTPDynamicProtocolHandler rdt_ ## n ## _handler = { \
     .codec_id         = AV_CODEC_ID_NONE, \
     .parse_sdp_a_line = rdt_parse_sdp_line, \
     .alloc            = rdt_new_context, \
-    .init             = rdt_init_context, \
     .free             = rdt_free_context, \
     .parse_packet     = rdt_parse_packet \
 }
