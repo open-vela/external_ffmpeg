@@ -2,20 +2,20 @@
  * OpenEXR (.exr) image decoder
  * Copyright (c) 2009 Jimmy Christensen
  *
- * This file is part of Libav
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,16 +27,17 @@
  * For more information on the OpenEXR format, visit:
  *  http://openexr.com/
  *
- * exr_flt2uint() and exr_halflt2uint() is credited to Reimar Döffinger.
- * exr_half2float() is credited to Aaftab Munshi, Dan Ginsburg, Dave Shreiner.
+ * exr_flt2uint() and exr_halflt2uint() is credited to  Reimar Döffinger.
+ * exr_half2float() is credited to Aaftab Munshi; Dan Ginsburg, Dave Shreiner.
+ *
  */
 
-#include <float.h>
 #include <zlib.h>
+#include <float.h>
 
 #include "libavutil/imgutils.h"
-#include "libavutil/intfloat.h"
 #include "libavutil/opt.h"
+#include "libavutil/intfloat.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
@@ -111,12 +112,13 @@ typedef struct EXRContext {
     const char *layer;
 
     float gamma;
+
     uint16_t gamma_table[65536];
+
 } EXRContext;
 
 /* -15 stored using a single precision bias of 127 */
 #define HALF_FLOAT_MIN_BIASED_EXP_AS_SINGLE_FP_EXP 0x38000000
-
 /* max exponent value in single precision that will be converted
  * to Inf or Nan when stored as a half-float */
 #define HALF_FLOAT_MAX_BIASED_EXP_AS_SINGLE_FP_EXP 0x47800000
@@ -126,7 +128,7 @@ typedef struct EXRContext {
 
 #define HALF_FLOAT_MAX_BIASED_EXP (0x1F << 10)
 
-/**
+/*
  * Convert a half float as a uint16_t into a full float.
  *
  * @param hf half float as uint16_t
@@ -135,10 +137,10 @@ typedef struct EXRContext {
  */
 static union av_intfloat32 exr_half2float(uint16_t hf)
 {
-    unsigned int sign = (unsigned int) (hf >> 15);
-    unsigned int mantissa = (unsigned int) (hf & ((1 << 10) - 1));
-    unsigned int exp = (unsigned int) (hf & HALF_FLOAT_MAX_BIASED_EXP);
-    union av_intfloat32 f;
+    unsigned int    sign = (unsigned int)(hf >> 15);
+    unsigned int    mantissa = (unsigned int)(hf & ((1 << 10) - 1));
+    unsigned int    exp = (unsigned int)(hf & HALF_FLOAT_MAX_BIASED_EXP);
+    union av_intfloat32   f;
 
     if (exp == HALF_FLOAT_MAX_BIASED_EXP) {
         // we have a half-float NaN or Inf
@@ -722,8 +724,8 @@ static int piz_uncompress(EXRContext *s, const uint8_t *src, int ssize,
     if (!td->lut)
         td->lut = av_malloc(1 << 17);
     if (!td->bitmap || !td->lut) {
-        av_free(td->bitmap);
-        av_free(td->lut);
+        av_freep(&td->bitmap);
+        av_freep(&td->lut);
         return AVERROR(ENOMEM);
     }
 
@@ -841,8 +843,8 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
     int axmax = (avctx->width - (s->xmax + 1)) * 2 * s->desc->nb_components;
     int bxmin = s->xmin * 2 * s->desc->nb_components;
     int i, x, buf_size = s->buf_size;
-    float one_gamma = 1.0f / s->gamma;
     int ret;
+    float one_gamma = 1.0f / s->gamma;
 
     line_offset = AV_RL64(s->gb.buffer + jobnr * 8);
     // Check if the buffer has the required bytes needed from the offset
@@ -924,17 +926,17 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
             for (x = 0; x < xdelta; x++) {
                 union av_intfloat32 t;
                 t.i = bytestream_get_le32(&r);
-                if (t.f > 0.0f)  /* avoid negative values */
+                if ( t.f > 0.0f )  /* avoid negative values */
                     t.f = powf(t.f, one_gamma);
                 *ptr_x++ = exr_flt2uint(t.i);
 
                 t.i = bytestream_get_le32(&g);
-                if (t.f > 0.0f)
+                if ( t.f > 0.0f )
                     t.f = powf(t.f, one_gamma);
                 *ptr_x++ = exr_flt2uint(t.i);
 
                 t.i = bytestream_get_le32(&b);
-                if (t.f > 0.0f)
+                if ( t.f > 0.0f )
                     t.f = powf(t.f, one_gamma);
                 *ptr_x++ = exr_flt2uint(t.i);
                 if (channel_buffer[3])
@@ -1344,9 +1346,9 @@ static int decode_frame(AVCodecContext *avctx, void *data,
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
-    EXRContext *s = avctx->priv_data;
     uint32_t i;
     union av_intfloat32 t;
+    EXRContext *s = avctx->priv_data;
     float one_gamma = 1.0f / s->gamma;
 
     s->avctx              = avctx;
@@ -1366,14 +1368,15 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->w                  = 0;
     s->h                  = 0;
 
-    if (one_gamma > 0.9999f && one_gamma < 1.0001f) {
-        for (i = 0; i < 65536; ++i)
+    if ( one_gamma > 0.9999f && one_gamma < 1.0001f ) {
+        for ( i = 0; i < 65536; ++i ) {
             s->gamma_table[i] = exr_halflt2uint(i);
+        }
     } else {
-        for (i = 0; i < 65536; ++i) {
+        for ( i = 0; i < 65536; ++i ) {
             t = exr_half2float(i);
             /* If negative value we reuse half value */
-            if (t.f <= 0.0f) {
+            if ( t.f <= 0.0f ) {
                 s->gamma_table[i] = exr_halflt2uint(i);
             } else {
                 t.f = powf(t.f, one_gamma);
@@ -1424,7 +1427,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 static const AVOption options[] = {
     { "layer", "Set the decoding layer", OFFSET(layer),
         AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VD },
-    { "gamma", "Set the float gamma value when decoding", OFFSET(gamma),
+    { "gamma", "Set the float gamma value when decoding (experimental/unsupported)", OFFSET(gamma),
         AV_OPT_TYPE_FLOAT, { .dbl = 1.0f }, 0.001, FLT_MAX, VD },
     { NULL },
 };
