@@ -6,20 +6,20 @@
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
 ;*          Holger Lubitz <holger@lubitz.org>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -67,15 +67,6 @@
     SBUTTERFLY dq, %1, %3, %5
     SBUTTERFLY dq, %2, %4, %5
     SWAP %2, %3
-%endmacro
-
-%macro TRANSPOSE2x4x4B 5
-    SBUTTERFLY bw,  %1, %2, %5
-    SBUTTERFLY bw,  %3, %4, %5
-    SBUTTERFLY wd,  %1, %3, %5
-    SBUTTERFLY wd,  %2, %4, %5
-    SBUTTERFLY dq,  %1, %2, %5
-    SBUTTERFLY dq,  %3, %4, %5
 %endmacro
 
 %macro TRANSPOSE2x4x4W 5
@@ -282,44 +273,6 @@
 %endif
 %endmacro
 
-%macro HADDD 2 ; sum junk
-%if sizeof%1 == 32
-%define %2 xmm%2
-    vextracti128 %2, %1, 1
-%define %1 xmm%1
-    paddd   %1, %2
-%endif
-%if mmsize >= 16
-%if cpuflag(xop) && sizeof%1 == 16
-    vphadddq %1, %1
-%endif
-    movhlps %2, %1
-    paddd   %1, %2
-%endif
-%if notcpuflag(xop) || sizeof%1 != 16
-%if cpuflag(mmxext)
-    PSHUFLW %2, %1, q0032
-%else ; mmx
-    mova    %2, %1
-    psrlq   %2, 32
-%endif
-    paddd   %1, %2
-%endif
-%undef %1
-%undef %2
-%endmacro
-
-%macro HADDW 2 ; reg, tmp
-%if cpuflag(xop) && sizeof%1 == 16
-    vphaddwq  %1, %1
-    movhlps   %2, %1
-    paddd     %1, %2
-%else
-    pmaddwd %1, [pw_1]
-    HADDD   %1, %2
-%endif
-%endmacro
-
 %macro PALIGNR 4-5
 %if cpuflag(ssse3)
 %if %0==5
@@ -349,19 +302,11 @@
 %endif
 %endmacro
 
-%macro PAVGB 2-4
+%macro PAVGB 2
 %if cpuflag(mmxext)
     pavgb   %1, %2
 %elif cpuflag(3dnow)
     pavgusb %1, %2
-%elif cpuflag(mmx)
-    movu   %3, %2
-    por    %3, %1
-    pxor   %1, %2
-    pand   %1, %4
-    psrlq  %1, 1
-    psubb  %3, %1
-    SWAP   %1, %3
 %endif
 %endmacro
 
@@ -607,9 +552,7 @@
 %endmacro
 
 %macro SPLATW 2-3 0
-%if cpuflag(avx2) && %3 == 0
-    vpbroadcastw %1, %2
-%elif mmsize == 16
+%if mmsize == 16
     pshuflw    %1, %2, (%3)*0x55
     punpcklqdq %1, %1
 %elif cpuflag(mmxext)
@@ -728,25 +671,6 @@
 %endif
 %endmacro
 
-%macro PMA_EMU 4
-    %macro %1 5-8 %2, %3, %4
-        %if cpuflag(xop)
-            v%6 %1, %2, %3, %4
-        %elifidn %1, %4
-            %7 %5, %2, %3
-            %8 %1, %4, %5
-        %else
-            %7 %1, %2, %3
-            %8 %1, %4
-        %endif
-    %endmacro
-%endmacro
-
-PMA_EMU  PMACSWW,  pmacsww,  pmullw, paddw
-PMA_EMU  PMACSDD,  pmacsdd,  pmulld, paddd ; sse4 emulation
-PMA_EMU PMACSDQL, pmacsdql,  pmuldq, paddq ; sse4 emulation
-PMA_EMU PMADCSWD, pmadcswd, pmaddwd, paddd
-
 ; Wrapper for non-FMA version of fmaddps
 %macro FMULADD_PS 5
     %if cpuflag(fma3) || cpuflag(fma4)
@@ -758,20 +682,4 @@ PMA_EMU PMADCSWD, pmadcswd, pmaddwd, paddd
         mulps   %1, %2, %3
         addps   %1, %4
     %endif
-%endmacro
-
-%macro LSHIFT 2
-%if mmsize > 8
-    pslldq  %1, %2
-%else
-    psllq   %1, 8*(%2)
-%endif
-%endmacro
-
-%macro RSHIFT 2
-%if mmsize > 8
-    psrldq  %1, %2
-%else
-    psrlq   %1, 8*(%2)
-%endif
 %endmacro
