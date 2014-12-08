@@ -2,7 +2,7 @@
  * AAC decoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -100,7 +100,7 @@ static int get_stream_info(AVCodecContext *avctx)
 
     for (i = 0; i < info->numChannels; i++) {
         AUDIO_CHANNEL_TYPE ctype = info->pChannelType[i];
-        if (ctype <= ACT_NONE || ctype >= FF_ARRAY_ELEMS(channel_counts)) {
+        if (ctype <= ACT_NONE || ctype > FF_ARRAY_ELEMS(channel_counts)) {
             av_log(avctx, AV_LOG_WARNING, "unknown channel type\n");
             break;
         }
@@ -195,8 +195,8 @@ static av_cold int fdk_aac_decode_close(AVCodecContext *avctx)
 
     if (s->handle)
         aacDecoder_Close(s->handle);
-    av_free(s->decoder_buffer);
-    av_free(s->anc_buffer);
+    av_freep(&s->decoder_buffer);
+    av_freep(&s->anc_buffer);
 
     return 0;
 }
@@ -319,10 +319,8 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (s->initialized) {
         frame->nb_samples = avctx->frame_size;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             return ret;
-        }
 
         if (s->anc_buffer) {
             buf_size = DECODER_BUFFSIZE * DECODER_MAX_CHANNELS;
@@ -364,10 +362,8 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (tmpptr) {
         frame->nb_samples = avctx->frame_size;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             goto end;
-        }
     }
     if (s->decoder_buffer) {
         memcpy(frame->extended_data[0], buf,

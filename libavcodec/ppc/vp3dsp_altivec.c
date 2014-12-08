@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2009 David Conrad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,13 @@
 
 static const vec_s16 constants =
     {0, 64277, 60547, 54491, 46341, 36410, 25080, 12785};
+#if HAVE_BIGENDIAN
 static const vec_u8 interleave_high =
     {0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29};
+#else
+static const vec_u8 interleave_high =
+    {2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31};
+#endif
 
 #define IDCT_START \
     vec_s16 A, B, C, D, Ad, Bd, Cd, Dd, E, F, G, H;\
@@ -156,9 +161,18 @@ static void vp3_idct_add_altivec(uint8_t *dst, int stride, int16_t block[64])
     TRANSPOSE8(b0, b1, b2, b3, b4, b5, b6, b7);
     IDCT_1D(ADD8, SHIFT4)
 
-#define ADD(a)\
+#if HAVE_BIGENDIAN
+#define GET_VDST16\
     vdst = vec_ld(0, dst);\
-    vdst_16 = (vec_s16)vec_perm(vdst, zero_u8v, vdst_mask);\
+    vdst_16 = (vec_s16)vec_perm(vdst, zero_u8v, vdst_mask);
+#else
+#define GET_VDST16\
+    vdst = vec_vsx_ld(0,dst);\
+    vdst_16 = (vec_s16)vec_mergeh(vdst, zero_u8v);
+#endif
+
+#define ADD(a)\
+    GET_VDST16;\
     vdst_16 = vec_adds(a, vdst_16);\
     t = vec_packsu(vdst_16, vdst_16);\
     vec_ste((vec_u32)t, 0, (unsigned int *)dst);\
