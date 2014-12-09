@@ -2,20 +2,20 @@
  * Copyright (c) 2014 RISC OS Open Ltd
  * Author: Ben Avison <bavison@riscosopen.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,14 +42,6 @@ ST3     .req    fp
 I       .req    ip
 PSAMP   .req    lr
 
-
-.macro branch_pic_label first, remainder:vararg
-A       .word           \first   - 4
-T       .hword          (\first) / 2
-.ifnb   \remainder
-        branch_pic_label \remainder
-.endif
-.endm
 
 // Some macros that do loads/multiplies where the register number is determined
 // from an assembly-time expression. Boy is GNU assembler's syntax ugly...
@@ -346,20 +338,23 @@ T       orr     AC0, AC0, AC1
 .endm
 
 .macro switch_on_fir_taps  mask_minus1, shift_0, shift_8, iir_taps
-A       ldr     CO0, [pc, a3, lsl #2]   // firorder is in range 0-(8-iir_taps)
-A       add     pc,  pc,  CO0
+A       ldr     pc, [pc, a3, lsl #2] // firorder is in range 0-(8-iir_taps)
 T       tbh     [pc, a3, lsl #1]
 0:
-        branch_pic_label (70f - 0b), (71f - 0b), (72f - 0b), (73f - 0b)
-        branch_pic_label (74f - 0b)
+A       .word   0, 70f, 71f, 72f, 73f, 74f
+T       .hword  (70f - 0b) / 2, (71f - 0b) / 2, (72f - 0b) / 2, (73f - 0b) / 2, (74f - 0b) / 2
  .if \iir_taps <= 3
-        branch_pic_label (75f - 0b)
+A       .word   75f
+T       .hword  (75f - 0b) / 2
   .if \iir_taps <= 2
-        branch_pic_label (76f - 0b)
+A       .word   76f
+T       .hword  (76f - 0b) / 2
    .if \iir_taps <= 1
-        branch_pic_label (77f - 0b)
+A       .word   77f
+T       .hword  (77f - 0b) / 2
     .if \iir_taps == 0
-        branch_pic_label (78f - 0b)
+A       .word   78f
+T       .hword  (78f - 0b) / 2
     .endif
    .endif
   .endif
@@ -384,12 +379,11 @@ T       tbh     [pc, a3, lsl #1]
 .endm
 
 .macro switch_on_iir_taps  mask_minus1, shift_0, shift_8
-A       ldr     CO0, [pc, a4, lsl #2]   // irorder is in range 0-4
-A       add     pc,  pc,  CO0
+A       ldr     pc, [pc, a4, lsl #2] // irorder is in range 0-4
 T       tbh     [pc, a4, lsl #1]
 0:
-        branch_pic_label (60f - 0b), (61f - 0b), (62f - 0b), (63f - 0b)
-        branch_pic_label (64f - 0b)
+A       .word   0, 60f, 61f, 62f, 63f, 64f
+T       .hword  (60f - 0b) / 2, (61f - 0b) / 2, (62f - 0b) / 2, (63f - 0b) / 2, (64f - 0b) / 2
 60:     switch_on_fir_taps  \mask_minus1, \shift_0, \shift_8, 0
 61:     switch_on_fir_taps  \mask_minus1, \shift_0, \shift_8, 1
 62:     switch_on_fir_taps  \mask_minus1, \shift_0, \shift_8, 2
@@ -610,14 +604,13 @@ function ff_mlp_rematrix_channel_arm, export=1
         cmp     v5, #1
         beq     11f
         blo     10f
-A       ldr     v5,  [pc,  v5,  lsl #2]
-A       add     pc,  pc,  v5
+A       ldr     pc, [pc, v5, lsl #2]
 T       tbh     [pc, v5, lsl #1]
 0:
-        branch_pic_label          0,          0, (12f - 0b), (13f - 0b)
-        branch_pic_label (14f - 0b), (15f - 0b), (16f - 0b), (17f - 0b)
-        branch_pic_label (18f - 0b), (19f - 0b), (20f - 0b), (21f - 0b)
-        branch_pic_label (22f - 0b), (23f - 0b), (24f - 0b), (25f - 0b)
+A       .word   0, 0, 0, 12f, 13f, 14f, 15f, 16f, 17f, 18f, 19f, 20f, 21f, 22f, 23f, 24f, 25f
+T       .hword  0, 0, (12f - 0b) / 2, (13f - 0b) / 2, (14f - 0b) / 2, (15f - 0b) / 2
+T       .hword  (16f - 0b) / 2, (17f - 0b) / 2, (18f - 0b) / 2, (19f - 0b) / 2
+T       .hword  (20f - 0b) / 2, (21f - 0b) / 2, (22f - 0b) / 2, (23f - 0b) / 2, (24f - 0b) / 2, (25f - 0b) / 2
 10:     switch_on_au_size  0
 11:     switch_on_au_size  1
 12:     switch_on_au_size  2
