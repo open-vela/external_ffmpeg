@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -438,8 +438,8 @@ function fft_b15_calc_neon
         uzp1            v12.4s, v4.4s,  v5.4s   // exp[11 - 14].re
         uzp2            v13.4s, v4.4s,  v5.4s   // exp[11 - 14].im
         zip1            v14.4s, v6.4s,  v7.4s   // exp[5,10].re/exp[5,10].im
-        add             x5,  x5,  x3,  lsl #3
-        ldr             x5,  [x5]
+        ldr             x6,  [x5, x3, lsl #3]
+        add             x5,  x5,  x6
         mov             x10, x0
         blr             x5
         ldp             x20, x30, [sp]
@@ -451,14 +451,14 @@ function fft_b15_calc_neon
         ret
 endfunc
 
-const   fft_tab_neon, relocate=1
-        .quad fft15_neon
-        .quad fft30_neon
-        .quad fft60_neon
-        .quad fft120_neon
-        .quad fft240_neon
-        .quad fft480_neon
-        .quad fft960_neon
+const   fft_tab_neon
+        .quad fft15_neon  - fft_tab_neon
+        .quad fft30_neon  - fft_tab_neon
+        .quad fft60_neon  - fft_tab_neon
+        .quad fft120_neon - fft_tab_neon
+        .quad fft240_neon - fft_tab_neon
+        .quad fft480_neon - fft_tab_neon
+        .quad fft960_neon - fft_tab_neon
 endconst
 
 function ff_celt_imdct_half_neon, export=1

@@ -8,20 +8,20 @@
  * This algorithm (though not any of the implementation details) is
  * based on libdjbfft by D. J. Bernstein.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -376,7 +376,8 @@ function ff_fft_calc_neon, export=1
         ld1             {v30.16b}, [x10]
         mov             x7,  #-8
         movrel          x12, pmmp
-        ldr             x3,  [x3, x2, lsl #3]
+        ldr             x4,  [x3, x2, lsl #3]
+        add             x3,  x3,  x4
         movrel          x13, mppm
         movrel          x14, X(ff_cos_16)
         ld1             {v31.16b}, [x11]
@@ -415,22 +416,22 @@ function ff_fft_permute_neon, export=1
         ret
 endfunc
 
-const   fft_tab_neon, relocate=1
-        .quad fft4_neon
-        .quad fft8_neon
-        .quad fft16_neon
-        .quad fft32_neon
-        .quad fft64_neon
-        .quad fft128_neon
-        .quad fft256_neon
-        .quad fft512_neon
-        .quad fft1024_neon
-        .quad fft2048_neon
-        .quad fft4096_neon
-        .quad fft8192_neon
-        .quad fft16384_neon
-        .quad fft32768_neon
-        .quad fft65536_neon
+const   fft_tab_neon
+        .quad fft4_neon     - fft_tab_neon
+        .quad fft8_neon     - fft_tab_neon
+        .quad fft16_neon    - fft_tab_neon
+        .quad fft32_neon    - fft_tab_neon
+        .quad fft64_neon    - fft_tab_neon
+        .quad fft128_neon   - fft_tab_neon
+        .quad fft256_neon   - fft_tab_neon
+        .quad fft512_neon   - fft_tab_neon
+        .quad fft1024_neon  - fft_tab_neon
+        .quad fft2048_neon  - fft_tab_neon
+        .quad fft4096_neon  - fft_tab_neon
+        .quad fft8192_neon  - fft_tab_neon
+        .quad fft16384_neon - fft_tab_neon
+        .quad fft32768_neon - fft_tab_neon
+        .quad fft65536_neon - fft_tab_neon
 endconst
 
 const   pmmp, align=4
