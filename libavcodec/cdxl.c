@@ -2,22 +2,30 @@
  * CDXL video decoder
  * Copyright (c) 2011-2012 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+/**
+ * @file
+ * Commodore CDXL video decoder
+ * @author Paul B Mahol
+ */
+
+#define UNCHECKED_BITSTREAM_READER 1
 
 #include "libavutil/intreadwrite.h"
 #include "libavutil/imgutils.h"
@@ -26,8 +34,8 @@
 #include "internal.h"
 
 #define BIT_PLANAR   0x00
-#define BYTE_PLANAR  0x20
-#define CHUNKY       0x40
+#define CHUNKY       0x20
+#define BYTE_PLANAR  0x40
 #define BIT_LINE     0x80
 #define BYTE_LINE    0xC0
 
@@ -63,7 +71,7 @@ static void import_palette(CDXLVideoContext *c, uint32_t *new_palette)
         unsigned r   = ((rgb >> 8) & 0xF) * 0x11;
         unsigned g   = ((rgb >> 4) & 0xF) * 0x11;
         unsigned b   =  (rgb       & 0xF) * 0x11;
-        AV_WN32(&new_palette[i], (r << 16) | (g << 8) | b);
+        AV_WN32(&new_palette[i], (0xFFU << 24) | (r << 16) | (g << 8) | b);
     }
 }
 
@@ -115,6 +123,7 @@ static void cdxl_decode_rgb(CDXLVideoContext *c, AVFrame *frame)
 {
     uint32_t *new_palette = (uint32_t *)frame->data[1];
 
+    memset(frame->data[1], 0, AVPALETTE_SIZE);
     import_palette(c, new_palette);
     import_format(c, frame->linesize[0], frame->data[0]);
 }
@@ -255,10 +264,8 @@ static int cdxl_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_PATCHWELCOME;
     }
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
     p->pict_type = AV_PICTURE_TYPE_I;
 
     if (encoding) {
@@ -282,7 +289,7 @@ static av_cold int cdxl_decode_end(AVCodecContext *avctx)
 {
     CDXLVideoContext *c = avctx->priv_data;
 
-    av_free(c->new_video);
+    av_freep(&c->new_video);
 
     return 0;
 }
