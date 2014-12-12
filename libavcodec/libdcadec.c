@@ -2,20 +2,20 @@
  * libdcadec decoder wrapper
  * Copyright (C) 2015 Hendrik Leppkes
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -58,10 +58,7 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
         if (!s->buffer)
             return AVERROR(ENOMEM);
 
-        for (i = 0, ret = AVERROR_INVALIDDATA; i < input_size - 3 && ret < 0; i++)
-            ret = avpriv_dca_convert_bitstream(input + i, input_size - i, s->buffer, s->buffer_size);
-
-        if (ret < 0)
+        if ((ret = ff_dca_convert_bitstream(avpkt->data, avpkt->size, s->buffer, s->buffer_size)) < 0)
             return ret;
 
         input      = s->buffer;
@@ -70,12 +67,12 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
 
     if ((ret = dcadec_context_parse(s->ctx, input, input_size)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "dcadec_context_parse() failed: %d (%s)\n", -ret, dcadec_strerror(ret));
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
     }
     if ((ret = dcadec_context_filter(s->ctx, &samples, &nsamples, &channel_mask,
                                      &sample_rate, &bits_per_sample, &profile)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "dcadec_context_filter() failed: %d (%s)\n", -ret, dcadec_strerror(ret));
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
     }
 
     avctx->channels       = av_get_channel_layout_nb_channels(channel_mask);
@@ -84,7 +81,7 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
 
     if (bits_per_sample == 16)
         avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
-    else if (bits_per_sample > 16 && bits_per_sample <= 24)
+    else if (bits_per_sample <= 24)
         avctx->sample_fmt = AV_SAMPLE_FMT_S32P;
     else {
         av_log(avctx, AV_LOG_ERROR, "Unsupported number of bits per sample: %d\n",
@@ -170,13 +167,8 @@ static av_cold int dcadec_close(AVCodecContext *avctx)
 static av_cold int dcadec_init(AVCodecContext *avctx)
 {
     DCADecContext *s = avctx->priv_data;
-    int flags = 0;
 
-    /* Affects only lossy DTS profiles. DTS-HD MA is always bitexact */
-    if (avctx->flags & CODEC_FLAG_BITEXACT)
-        flags |= DCADEC_FLAG_CORE_BIT_EXACT;
-
-    s->ctx = dcadec_context_create(flags);
+    s->ctx = dcadec_context_create(0);
     if (!s->ctx)
         return AVERROR(ENOMEM);
 

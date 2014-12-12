@@ -2,20 +2,20 @@
  * XCB input grabber
  * Copyright (C) 2014 Luca Barbato <lu_zero@gentoo.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,10 +32,6 @@
 #if CONFIG_LIBXCB_SHM
 #include <sys/shm.h>
 #include <xcb/shm.h>
-#endif
-
-#if CONFIG_LIBXCB_SHAPE
-#include <xcb/shape.h>
 #endif
 
 #include "libavutil/internal.h"
@@ -101,7 +97,6 @@ static const AVClass xcbgrab_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
 static int xcbgrab_reposition(AVFormatContext *s,
@@ -474,11 +469,11 @@ static int pixfmt_from_pixmap_format(AVFormatContext *s, int depth,
             switch (depth) {
             case 32:
                 if (fmt->bits_per_pixel == 32)
-                    *pix_fmt = AV_PIX_FMT_0RGB;
+                    *pix_fmt = AV_PIX_FMT_ARGB;
                 break;
             case 24:
                 if (fmt->bits_per_pixel == 32)
-                    *pix_fmt = AV_PIX_FMT_0RGB32;
+                    *pix_fmt = AV_PIX_FMT_RGB32;
                 else if (fmt->bits_per_pixel == 24)
                     *pix_fmt = AV_PIX_FMT_RGB24;
                 break;
@@ -608,13 +603,11 @@ static void setup_window(AVFormatContext *s)
                       XCB_COPY_FROM_PARENT,
                       mask, values);
 
-#if CONFIG_LIBXCB_SHAPE
     xcb_shape_rectangles(c->conn, XCB_SHAPE_SO_SUBTRACT,
                          XCB_SHAPE_SK_BOUNDING, XCB_CLIP_ORDERING_UNSORTED,
                          c->window,
                          c->region_border, c->region_border,
                          1, &rect);
-#endif
 
     xcb_map_window(c->conn, c->window);
 
@@ -626,24 +619,29 @@ static av_cold int xcbgrab_read_header(AVFormatContext *s)
     XCBGrabContext *c = s->priv_data;
     int screen_num, ret;
     const xcb_setup_t *setup;
-    char *display_name = av_strdup(s->filename);
+    char *host        = s->filename[0] ? s->filename : NULL;
+    const char *opts  = strchr(s->filename, '+');
 
-    if (!display_name)
-        return AVERROR(ENOMEM);
-
-    if (!sscanf(s->filename, "%[^+]+%d,%d", display_name, &c->x, &c->y)) {
-        *display_name = 0;
-        sscanf(s->filename, "+%d,%d", &c->x, &c->y);
+    if (opts) {
+        sscanf(opts, "%d,%d", &c->x, &c->y);
+        host = av_strdup(s->filename);
+        if (!host)
+            return AVERROR(ENOMEM);
+        host[opts - s->filename] = '\0';
     }
 
-    c->conn = xcb_connect(display_name[0] ? display_name : NULL, &screen_num);
-    av_freep(&display_name);
+    c->conn = xcb_connect(host, &screen_num);
 
     if ((ret = xcb_connection_has_error(c->conn))) {
         av_log(s, AV_LOG_ERROR, "Cannot open display %s, error %d.\n",
-               s->filename[0] ? s->filename : "default", ret);
+               s->filename[0] ? host : "default", ret);
+        if (opts)
+            av_freep(&host);
         return AVERROR(EIO);
     }
+
+    if (opts)
+        av_freep(&host);
 
     setup = xcb_get_setup(c->conn);
 
