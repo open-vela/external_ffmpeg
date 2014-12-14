@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Colin McQuillian
  * Copyright (c) 2010 Josh Allmann
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,12 +28,12 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavcodec/bytestream.h"
 
-#include <assert.h>
-
+#include "internal.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
 
@@ -192,7 +192,7 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         data->timestamp = *timestamp;
 
     } else {
-        assert(fragmented < 4);
+        av_assert1(fragmented < 4);
         if (data->timestamp != *timestamp) {
             // skip if fragmented timestamp is incorrect;
             // a start packet has been lost somewhere
@@ -256,7 +256,7 @@ parse_packed_headers(const uint8_t * packed_headers,
 
     if (packed_headers_end - packed_headers < 9) {
         av_log(codec, AV_LOG_ERROR,
-               "Invalid %td byte packed header.",
+               "Invalid %"PTRDIFF_SPECIFIER" byte packed header.",
                packed_headers_end - packed_headers);
         return AVERROR_INVALIDDATA;
     }
@@ -278,7 +278,7 @@ parse_packed_headers(const uint8_t * packed_headers,
     if (packed_headers_end - packed_headers != length ||
         length1 > length || length2 > length - length1) {
         av_log(codec, AV_LOG_ERROR,
-               "Bad packed header lengths (%d,%d,%td,%d)\n", length1,
+               "Bad packed header lengths (%d,%d,%"PTRDIFF_SPECIFIER",%d)\n", length1,
                length2, packed_headers_end - packed_headers, length);
         return AVERROR_INVALIDDATA;
     }
@@ -289,11 +289,11 @@ parse_packed_headers(const uint8_t * packed_headers,
      * -- FF_INPUT_BUFFER_PADDING_SIZE required */
     extradata_alloc = length + length/255 + 3 + FF_INPUT_BUFFER_PADDING_SIZE;
 
-    ptr = codec->extradata = av_malloc(extradata_alloc);
-    if (!ptr) {
+    if (ff_alloc_extradata(codec, extradata_alloc)) {
         av_log(codec, AV_LOG_ERROR, "Out of memory\n");
         return AVERROR(ENOMEM);
     }
+    ptr = codec->extradata;
     *ptr++ = 2;
     ptr += av_xiphlacing(ptr, length1);
     ptr += av_xiphlacing(ptr, length2);

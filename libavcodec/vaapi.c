@@ -4,20 +4,20 @@
  *
  * Copyright (C) 2008-2009 Splitted-Desktop Systems
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,6 +45,9 @@ int ff_vaapi_render_picture(struct vaapi_context *vactx, VASurfaceID surface)
 {
     VABufferID va_buffers[3];
     unsigned int n_va_buffers = 0;
+
+    if (!vactx->pic_param_buf_id)
+        return 0;
 
     vaUnmapBuffer(vactx->display, vactx->pic_param_buf_id);
     va_buffers[n_va_buffers++] = vactx->pic_param_buf_id;
@@ -193,31 +196,5 @@ void ff_vaapi_common_end_frame(AVCodecContext *avctx)
     vactx->slice_count         = 0;
     vactx->slice_params_alloc  = 0;
 }
-
-#if CONFIG_H263_VAAPI_HWACCEL  || CONFIG_MPEG1_VAAPI_HWACCEL || \
-    CONFIG_MPEG2_VAAPI_HWACCEL || CONFIG_MPEG4_VAAPI_HWACCEL || \
-    CONFIG_VC1_VAAPI_HWACCEL   || CONFIG_WMV3_VAAPI_HWACCEL
-int ff_vaapi_mpeg_end_frame(AVCodecContext *avctx)
-{
-    struct vaapi_context * const vactx = avctx->hwaccel_context;
-    MpegEncContext *s = avctx->priv_data;
-    int ret;
-
-    ret = ff_vaapi_commit_slices(vactx);
-    if (ret < 0)
-        goto finish;
-
-    ret = ff_vaapi_render_picture(vactx,
-                                  ff_vaapi_get_surface_id(s->current_picture_ptr->f));
-    if (ret < 0)
-        goto finish;
-
-    ff_mpeg_draw_horiz_band(s, 0, s->avctx->height);
-
-finish:
-    ff_vaapi_common_end_frame(avctx);
-    return ret;
-}
-#endif
 
 /* @} */

@@ -2,20 +2,20 @@
  * RIFF common functions and data
  * copyright (c) 2000 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,14 +43,28 @@ void ff_end_tag(AVIOContext *pb, int64_t start);
  * bits_per_encoded_sample fields. Does not read extradata.
  * @return codec tag
  */
-int ff_get_bmp_header(AVIOContext *pb, AVStream *st);
+int ff_get_bmp_header(AVIOContext *pb, AVStream *st, unsigned *esize);
 
-void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc, const AVCodecTag *tags, int for_asf);
-int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc);
+void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc, const AVCodecTag *tags, int for_asf, int ignore_extradata);
+
+/**
+ * Tell ff_put_wav_header() to use WAVEFORMATEX even for PCM codecs.
+ */
+#define FF_PUT_WAV_HEADER_FORCE_WAVEFORMATEX    0x00000001
+
+/**
+ * Write WAVEFORMAT header structure.
+ *
+ * @param flags a combination of FF_PUT_WAV_HEADER_* constants
+ *
+ * @return the size or -1 on error
+ */
+int ff_put_wav_header(AVIOContext *pb, AVCodecContext *enc, int flags);
+
 enum AVCodecID ff_wav_codec_get_id(unsigned int tag, int bps);
 int ff_get_wav_header(AVIOContext *pb, AVCodecContext *codec, int size);
 
-extern const AVCodecTag ff_codec_bmp_tags[];
+extern const AVCodecTag ff_codec_bmp_tags[]; // exposed through avformat_get_riff_video_tags()
 extern const AVCodecTag ff_codec_wav_tags[];
 
 void ff_parse_specific_params(AVStream *st, int *au_rate, int *au_ssize, int *au_scale);
@@ -77,10 +91,13 @@ typedef struct AVCodecGuid {
 extern const AVCodecGuid ff_codec_wav_guids[];
 
 #define FF_PRI_GUID \
-    "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"
+    "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x " \
+    "{%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x}"
 
 #define FF_ARG_GUID(g) \
     g[0], g[1], g[2],  g[3],  g[4],  g[5],  g[6],  g[7], \
+    g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15],\
+    g[3], g[2], g[1],  g[0],  g[5],  g[4],  g[7],  g[6], \
     g[8], g[9], g[10], g[11], g[12], g[13], g[14], g[15]
 
 #define FF_MEDIASUBTYPE_BASE_GUID \
@@ -91,10 +108,9 @@ static av_always_inline int ff_guidcmp(const void *g1, const void *g2)
     return memcmp(g1, g2, sizeof(ff_asf_guid));
 }
 
-static av_always_inline int ff_get_guid(AVIOContext *s, ff_asf_guid *g)
-{
-    return avio_read(s, *g, sizeof(*g));
-}
+int ff_get_guid(AVIOContext *s, ff_asf_guid *g);
+void ff_put_guid(AVIOContext *s, const ff_asf_guid *g);
+const ff_asf_guid *get_codec_guid(enum AVCodecID id, const AVCodecGuid *av_guid);
 
 enum AVCodecID ff_codec_guid_get_id(const AVCodecGuid *guids, ff_asf_guid guid);
 
