@@ -390,7 +390,7 @@ static int xmv_process_packet_header(AVFormatContext *s)
                 assert(xmv->video.stream_index < s->nb_streams);
 
                 if (vst->codec->extradata_size < 4) {
-                    av_free(vst->codec->extradata);
+                    av_freep(&vst->codec->extradata);
 
                     vst->codec->extradata =
                         av_malloc(4 + FF_INPUT_BUFFER_PADDING_SIZE);
