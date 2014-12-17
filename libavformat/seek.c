@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Ivan Schreter
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -280,7 +280,7 @@ int64_t ff_gen_syncpoint_search(AVFormatContext *s,
     }
 
     // Initialize syncpoint structures for each stream.
-    sync = av_malloc_array(s->nb_streams, sizeof(AVSyncPoint));
+    sync = av_malloc(s->nb_streams * sizeof(AVSyncPoint));
     if (!sync)
         // cannot allocate helper structure
         return -1;
@@ -402,7 +402,7 @@ AVParserState *ff_store_parser_state(AVFormatContext *s)
     if (!state)
         return NULL;
 
-    state->stream_states = av_malloc_array(s->nb_streams, sizeof(AVParserStreamState));
+    state->stream_states = av_malloc(sizeof(AVParserStreamState) * s->nb_streams);
     if (!state->stream_states) {
         av_free(state);
         return NULL;
@@ -470,14 +470,15 @@ void ff_restore_parser_state(AVFormatContext *s, AVParserState *state)
         st->probe_packets = ss->probe_packets;
     }
 
-    av_freep(&state->stream_states);
-    av_freep(&state);
+    av_free(state->stream_states);
+    av_free(state);
 }
 
 static void free_packet_list(AVPacketList *pktl)
 {
+    AVPacketList *cur;
     while (pktl) {
-        AVPacketList *cur = pktl;
+        cur = pktl;
         pktl = cur->next;
         av_free_packet(&cur->pkt);
         av_free(cur);
@@ -502,6 +503,6 @@ void ff_free_parser_state(AVFormatContext *s, AVParserState *state)
     free_packet_list(state->parse_queue);
     free_packet_list(state->raw_packet_buffer);
 
-    av_freep(&state->stream_states);
-    av_freep(&state);
+    av_free(state->stream_states);
+    av_free(state);
 }
