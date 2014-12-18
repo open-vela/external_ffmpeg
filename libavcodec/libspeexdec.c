@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2008 David Conrad
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,6 @@ typedef struct {
     SpeexStereoState stereo;
     void *dec_state;
     int frame_size;
-    int pktsize;
 } LibSpeexContext;
 
 
@@ -44,30 +43,14 @@ static av_cold int libspeex_decode_init(AVCodecContext *avctx)
     SpeexHeader *header = NULL;
     int spx_mode;
 
+    avctx->sample_fmt = AV_SAMPLE_FMT_S16;
     if (avctx->extradata && avctx->extradata_size >= 80) {
         header = speex_packet_to_header(avctx->extradata,
                                         avctx->extradata_size);
         if (!header)
             av_log(avctx, AV_LOG_WARNING, "Invalid Speex header\n");
     }
-    if (avctx->codec_tag == MKTAG('S', 'P', 'X', 'N')) {
-        int quality;
-        if (!avctx->extradata || avctx->extradata && avctx->extradata_size < 47) {
-            av_log(avctx, AV_LOG_ERROR, "Missing or invalid extradata.\n");
-            return AVERROR_INVALIDDATA;
-        }
-
-        quality = avctx->extradata[37];
-        if (quality > 10) {
-            av_log(avctx, AV_LOG_ERROR, "Unsupported quality mode %d.\n", quality);
-            return AVERROR_PATCHWELCOME;
-        }
-
-        s->pktsize = ((const int[]){5,10,15,20,20,28,28,38,38,46,62})[quality];
-
-        spx_mode           = 0;
-    } else if (header) {
-        avctx->sample_rate = header->rate;
+    if (header) {
         avctx->channels    = header->nb_channels;
         spx_mode           = header->mode;
         speex_header_free(header);
@@ -90,9 +73,8 @@ static av_cold int libspeex_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Unknown Speex mode %d", spx_mode);
         return AVERROR_INVALIDDATA;
     }
+    avctx->sample_rate = 8000 << spx_mode;
     s->frame_size      =  160 << spx_mode;
-    if (!avctx->sample_rate)
-        avctx->sample_rate = 8000 << spx_mode;
 
     if (avctx->channels < 1 || avctx->channels > 2) {
         /* libspeex can handle mono or stereo if initialized as stereo */
@@ -131,12 +113,13 @@ static int libspeex_decode_frame(AVCodecContext *avctx, void *data,
     AVFrame *frame     = data;
     int16_t *output;
     int ret, consumed = 0;
-    avctx->sample_fmt = AV_SAMPLE_FMT_S16;
 
     /* get output buffer */
     frame->nb_samples = s->frame_size;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     output = (int16_t *)frame->data[0];
 
     /* if there is not enough data left for the smallest possible frame or the
@@ -150,11 +133,9 @@ static int libspeex_decode_frame(AVCodecContext *avctx, void *data,
             *got_frame_ptr = 0;
             return buf_size;
         }
-        if (s->pktsize && buf_size == 62)
-            buf_size = s->pktsize;
         /* set new buffer */
         speex_bits_read_from(&s->bits, buf, buf_size);
-        consumed = avpkt->size;
+        consumed = buf_size;
     }
 
     /* decode a single frame */
@@ -168,8 +149,6 @@ static int libspeex_decode_frame(AVCodecContext *avctx, void *data,
 
     *got_frame_ptr = 1;
 
-    if (!avctx->bit_rate)
-        speex_decoder_ctl(s->dec_state, SPEEX_GET_BITRATE, &avctx->bit_rate);
     return consumed;
 }
 
