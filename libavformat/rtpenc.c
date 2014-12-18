@@ -2,20 +2,20 @@
  * RTP output format
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -89,7 +89,7 @@ static int is_supported(enum AVCodecID id)
 static int rtp_write_header(AVFormatContext *s1)
 {
     RTPMuxContext *s = s1->priv_data;
-    int n, ret = AVERROR(EINVAL);
+    int n;
     AVStream *st;
 
     if (s1->nb_streams != 1) {
@@ -98,7 +98,7 @@ static int rtp_write_header(AVFormatContext *s1)
     }
     st = s1->streams[0];
     if (!is_supported(st->codec->codec_id)) {
-        av_log(s1, AV_LOG_ERROR, "Unsupported codec %x\n", st->codec->codec_id);
+        av_log(s1, AV_LOG_ERROR, "Unsupported codec %s\n", avcodec_get_name(st->codec->codec_id));
 
         return -1;
     }
@@ -121,16 +121,19 @@ static int rtp_write_header(AVFormatContext *s1)
         s->ssrc = av_get_random_seed();
     s->first_packet = 1;
     s->first_rtcp_ntp_time = ff_ntp_time();
-    if (s1->start_time_realtime)
+    if (s1->start_time_realtime != 0  &&  s1->start_time_realtime != AV_NOPTS_VALUE)
         /* Round the NTP time to whole milliseconds. */
         s->first_rtcp_ntp_time = (s1->start_time_realtime / 1000) * 1000 +
                                  NTP_OFFSET_US;
     // Pick a random sequence start number, but in the lower end of the
     // available range, so that any wraparound doesn't happen immediately.
     // (Immediate wraparound would be an issue for SRTP.)
-    if (s->seq < 0)
-        s->seq = av_get_random_seed() & 0x0fff;
-    else
+    if (s->seq < 0) {
+        if (s1->flags & AVFMT_FLAG_BITEXACT) {
+            s->seq = 0;
+        } else
+            s->seq = av_get_random_seed() & 0x0fff;
+    } else
         s->seq &= 0xffff; // Use the given parameter, wrapped to the right interval
 
     if (s1->packet_size) {
@@ -191,17 +194,6 @@ static int rtp_write_header(AVFormatContext *s1)
             n = 1;
         s->max_payload_size = n * TS_PACKET_SIZE;
         s->buf_ptr = s->buf;
-        break;
-    case AV_CODEC_ID_H261:
-        if (s1->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
-            av_log(s, AV_LOG_ERROR,
-                   "Packetizing H261 is experimental and produces incorrect "
-                   "packetization for cases where GOBs don't fit into packets "
-                   "(even though most receivers may handle it just fine). "
-                   "Please set -f_strict experimental in order to enable it.\n");
-            ret = AVERROR_EXPERIMENTAL;
-            goto fail;
-        }
         break;
     case AV_CODEC_ID_H264:
         /* check for H.264 MP4 syntax */
@@ -267,11 +259,8 @@ static int rtp_write_header(AVFormatContext *s1)
             av_log(s1, AV_LOG_ERROR, "Only mono is supported\n");
             goto fail;
         }
-        s->num_frames = 0;
-        goto defaultcase;
     case AV_CODEC_ID_AAC:
         s->num_frames = 0;
-        goto defaultcase;
     default:
 defaultcase:
         if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
@@ -285,7 +274,7 @@ defaultcase:
 
 fail:
     av_freep(&s->buf);
-    return ret;
+    return AVERROR(EINVAL);
 }
 
 /* send an rtcp sender report packet */
@@ -588,6 +577,10 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
             const uint8_t *mb_info =
                 av_packet_get_side_data(pkt, AV_PKT_DATA_H263_MB_INFO,
                                         &mb_info_size);
+            if (!mb_info) {
+                av_log(s1, AV_LOG_ERROR, "failed to allocate side data\n");
+                return AVERROR(ENOMEM);
+            }
             ff_rtp_send_h263_rfc2190(s1, pkt->data, size, mb_info, mb_info_size);
             break;
         }

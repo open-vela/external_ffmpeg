@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -85,7 +85,7 @@ void ff_vc1_mc_1mv(VC1Context *v, int dir)
             srcV = s->current_picture.f->data[2];
             luty  = v->curr_luty;
             lutuv = v->curr_lutuv;
-            use_ic = v->curr_use_ic;
+            use_ic = *v->curr_use_ic;
         } else {
             srcY = s->last_picture.f->data[0];
             srcU = s->last_picture.f->data[1];
@@ -145,7 +145,8 @@ void ff_vc1_mc_1mv(VC1Context *v, int dir)
         || s->h_edge_pos < 22 || v_edge_pos < 22
         || (unsigned)(src_x - s->mspel) > s->h_edge_pos - (mx&3) - 16 - s->mspel * 3
         || (unsigned)(src_y - 1)        > v_edge_pos    - (my&3) - 16 - 3) {
-        uint8_t *uvbuf = s->edge_emu_buffer + 19 * s->linesize;
+        uint8_t *ubuf = s->edge_emu_buffer + 19 * s->linesize;
+        uint8_t *vbuf = ubuf + 9 * s->uvlinesize;
 
         srcY -= s->mspel * (1 + s->linesize);
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
@@ -154,16 +155,18 @@ void ff_vc1_mc_1mv(VC1Context *v, int dir)
                                  src_x - s->mspel, src_y - s->mspel,
                                  s->h_edge_pos, v_edge_pos);
         srcY = s->edge_emu_buffer;
-        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+        s->vdsp.emulated_edge_mc(ubuf, srcU,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
+        s->vdsp.emulated_edge_mc(vbuf, srcV,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
-        srcU = uvbuf;
-        srcV = uvbuf + 16;
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
+        srcU = ubuf;
+        srcV = vbuf;
         /* if we deal with range reduction we need to scale source blocks */
         if (v->rangeredfrm) {
             int i, j;
@@ -215,11 +218,7 @@ void ff_vc1_mc_1mv(VC1Context *v, int dir)
 
     if (s->mspel) {
         dxy = ((my & 3) << 2) | (mx & 3);
-        v->vc1dsp.put_vc1_mspel_pixels_tab[dxy](s->dest[0]    , srcY    , s->linesize, v->rnd);
-        v->vc1dsp.put_vc1_mspel_pixels_tab[dxy](s->dest[0] + 8, srcY + 8, s->linesize, v->rnd);
-        srcY += s->linesize * 8;
-        v->vc1dsp.put_vc1_mspel_pixels_tab[dxy](s->dest[0] + 8 * s->linesize    , srcY    , s->linesize, v->rnd);
-        v->vc1dsp.put_vc1_mspel_pixels_tab[dxy](s->dest[0] + 8 * s->linesize + 8, srcY + 8, s->linesize, v->rnd);
+        v->vc1dsp.put_vc1_mspel_pixels_tab[0][dxy](s->dest[0]    , srcY    , s->linesize, v->rnd);
     } else { // hpel mc - always used for luma
         dxy = (my & 2) | ((mx & 2) >> 1);
         if (!v->rnd)
@@ -277,7 +276,7 @@ void ff_vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
         if (v->field_mode && (v->cur_field_type != v->ref_field_type[dir]) && v->second_field) {
             srcY = s->current_picture.f->data[0];
             luty = v->curr_luty;
-            use_ic = v->curr_use_ic;
+            use_ic = *v->curr_use_ic;
         } else {
             srcY = s->last_picture.f->data[0];
             luty = v->last_luty;
@@ -302,7 +301,7 @@ void ff_vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
     if (s->pict_type == AV_PICTURE_TYPE_P && n == 3 && v->field_mode) {
         int same_count = 0, opp_count = 0, k;
         int chosen_mv[2][4][2], f;
-        int tx = 0, ty = 0;
+        int tx, ty;
         for (k = 0; k < 4; k++) {
             f = v->mv_f[0][s->block_index[k] + v->blocks_off];
             chosen_mv[f][f ? opp_count : same_count][0] = s->mv[0][k][0];
@@ -326,6 +325,8 @@ void ff_vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
             tx = (chosen_mv[f][0][0] + chosen_mv[f][1][0]) / 2;
             ty = (chosen_mv[f][0][1] + chosen_mv[f][1][1]) / 2;
             break;
+        default:
+            av_assert0(0);
         }
         s->current_picture.motion_val[1][s->block_index[0] + v->blocks_off][0] = tx;
         s->current_picture.motion_val[1][s->block_index[0] + v->blocks_off][1] = ty;
@@ -431,9 +432,9 @@ void ff_vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
     if (s->mspel) {
         dxy = ((my & 3) << 2) | (mx & 3);
         if (avg)
-            v->vc1dsp.avg_vc1_mspel_pixels_tab[dxy](s->dest[0] + off, srcY, s->linesize << fieldmv, v->rnd);
+            v->vc1dsp.avg_vc1_mspel_pixels_tab[1][dxy](s->dest[0] + off, srcY, s->linesize << fieldmv, v->rnd);
         else
-            v->vc1dsp.put_vc1_mspel_pixels_tab[dxy](s->dest[0] + off, srcY, s->linesize << fieldmv, v->rnd);
+            v->vc1dsp.put_vc1_mspel_pixels_tab[1][dxy](s->dest[0] + off, srcY, s->linesize << fieldmv, v->rnd);
     } else { // hpel mc - always used for luma
         dxy = (my & 2) | ((mx & 2) >> 1);
         if (!v->rnd)
@@ -577,7 +578,7 @@ void ff_vc1_mc_4mv_chroma(VC1Context *v, int dir)
             srcU = s->current_picture.f->data[1];
             srcV = s->current_picture.f->data[2];
             lutuv = v->curr_lutuv;
-            use_ic = v->curr_use_ic;
+            use_ic = *v->curr_use_ic;
         } else {
             srcU = s->last_picture.f->data[1];
             srcV = s->last_picture.f->data[2];
@@ -707,21 +708,26 @@ void ff_vc1_mc_4mv_chroma4(VC1Context *v, int dir, int dir2, int avg)
         uvsrc_x = av_clip(uvsrc_x, -8, s->avctx->coded_width  >> 1);
         uvsrc_y = av_clip(uvsrc_y, -8, s->avctx->coded_height >> 1);
         if (i < 2 ? dir : dir2) {
-            srcU = s->next_picture.f->data[1] + uvsrc_y * s->uvlinesize + uvsrc_x;
-            srcV = s->next_picture.f->data[2] + uvsrc_y * s->uvlinesize + uvsrc_x;
+            srcU = s->next_picture.f->data[1];
+            srcV = s->next_picture.f->data[2];
             lutuv  = v->next_lutuv;
             use_ic = v->next_use_ic;
         } else {
-            srcU = s->last_picture.f->data[1] + uvsrc_y * s->uvlinesize + uvsrc_x;
-            srcV = s->last_picture.f->data[2] + uvsrc_y * s->uvlinesize + uvsrc_x;
+            srcU = s->last_picture.f->data[1];
+            srcV = s->last_picture.f->data[2];
             lutuv  = v->last_lutuv;
             use_ic = v->last_use_ic;
         }
+        if (!srcU)
+            return;
+        srcU += uvsrc_y * s->uvlinesize + uvsrc_x;
+        srcV += uvsrc_y * s->uvlinesize + uvsrc_x;
         uvmx_field[i] = (uvmx_field[i] & 3) << 1;
         uvmy_field[i] = (uvmy_field[i] & 3) << 1;
 
         if (fieldmv && !(uvsrc_y & 1))
-            v_edge_pos--;
+            v_edge_pos = (s->v_edge_pos >> 1) - 1;
+
         if (fieldmv && (uvsrc_y & 1) && uvsrc_y < 2)
             uvsrc_y--;
         if (use_ic
@@ -844,7 +850,8 @@ void ff_vc1_interp_mc(VC1Context *v)
     if (v->rangeredfrm || s->h_edge_pos < 22 || v_edge_pos < 22 || use_ic
         || (unsigned)(src_x - 1) > s->h_edge_pos - (mx & 3) - 16 - 3
         || (unsigned)(src_y - 1) > v_edge_pos    - (my & 3) - 16 - 3) {
-        uint8_t *uvbuf = s->edge_emu_buffer + 19 * s->linesize;
+        uint8_t *ubuf = s->edge_emu_buffer + 19 * s->linesize;
+        uint8_t *vbuf = ubuf + 9 * s->uvlinesize;
 
         srcY -= s->mspel * (1 + s->linesize);
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
@@ -853,16 +860,18 @@ void ff_vc1_interp_mc(VC1Context *v)
                                  src_x - s->mspel, src_y - s->mspel,
                                  s->h_edge_pos, v_edge_pos);
         srcY = s->edge_emu_buffer;
-        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+        s->vdsp.emulated_edge_mc(ubuf, srcU,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
+        s->vdsp.emulated_edge_mc(vbuf, srcV,
                                  s->uvlinesize, s->uvlinesize,
                                  8 + 1, 8 + 1,
-                                 uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, v_edge_pos >> 1);
-        srcU = uvbuf;
-        srcV = uvbuf + 16;
+                                 uvsrc_x, uvsrc_y,
+                                 s->h_edge_pos >> 1, v_edge_pos >> 1);
+        srcU = ubuf;
+        srcV = vbuf;
         /* if we deal with range reduction we need to scale source blocks */
         if (v->rangeredfrm) {
             int i, j;
@@ -919,11 +928,7 @@ void ff_vc1_interp_mc(VC1Context *v)
 
     if (s->mspel) {
         dxy = ((my & 3) << 2) | (mx & 3);
-        v->vc1dsp.avg_vc1_mspel_pixels_tab[dxy](s->dest[0] + off    , srcY    , s->linesize, v->rnd);
-        v->vc1dsp.avg_vc1_mspel_pixels_tab[dxy](s->dest[0] + off + 8, srcY + 8, s->linesize, v->rnd);
-        srcY += s->linesize * 8;
-        v->vc1dsp.avg_vc1_mspel_pixels_tab[dxy](s->dest[0] + off + 8 * s->linesize    , srcY    , s->linesize, v->rnd);
-        v->vc1dsp.avg_vc1_mspel_pixels_tab[dxy](s->dest[0] + off + 8 * s->linesize + 8, srcY + 8, s->linesize, v->rnd);
+        v->vc1dsp.avg_vc1_mspel_pixels_tab[0][dxy](s->dest[0] + off    , srcY    , s->linesize, v->rnd);
     } else { // hpel mc
         dxy = (my & 2) | ((mx & 2) >> 1);
 
