@@ -2,20 +2,20 @@
  * various OS-feature replacement utilities
  * copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,13 +42,30 @@
 
 #if defined(_WIN32) && !defined(__MINGW32CE__)
 #  include <fcntl.h>
-#  undef lseek
+#  ifdef lseek
+#   undef lseek
+#  endif
 #  define lseek(f,p,w) _lseeki64((f), (p), (w))
-#  undef stat
+#  ifdef stat
+#   undef stat
+#  endif
 #  define stat _stati64
-#  undef fstat
+#  ifdef fstat
+#   undef fstat
+#  endif
 #  define fstat(f,s) _fstati64((f), (s))
 #endif /* defined(_WIN32) && !defined(__MINGW32CE__) */
+
+
+#ifdef __ANDROID__
+#  if HAVE_UNISTD_H
+#    include <unistd.h>
+#  endif
+#  ifdef lseek
+#   undef lseek
+#  endif
+#  define lseek(f,p,w) lseek64((f), (p), (w))
+#endif
 
 static inline int is_dos_path(const char *path)
 {
@@ -129,18 +146,6 @@ int ff_poll(struct pollfd *fds, nfds_t numfds, int timeout);
 #include <windows.h>
 #include "libavutil/wchar_filename.h"
 
-#ifdef WINAPI_FAMILY
-#include <winapifamily.h>
-// If a WINAPI_FAMILY is defined, check that the desktop API subset
-// is enabled
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
-#define USE_MOVEFILEEXA
-#endif
-#else
-// If no WINAPI_FAMILY is defined, assume the full API subset
-#define USE_MOVEFILEEXA
-#endif
-
 #define DEF_FS_FUNCTION(name, wfunc, afunc)               \
 static inline int win32_##name(const char *filename_utf8) \
 {                                                         \
@@ -192,14 +197,13 @@ static inline int win32_rename(const char *src_utf8, const char *dest_utf8)
 
 fallback:
     /* filename may be be in CP_ACP */
-#ifdef USE_MOVEFILEEXA
+#if HAVE_MOVEFILEEXA
     ret = MoveFileExA(src_utf8, dest_utf8, MOVEFILE_REPLACE_EXISTING);
     if (ret)
         errno = EPERM;
 #else
-    /* Windows Phone doesn't have MoveFileExA, and for Windows Store apps,
-     * it is available but not allowed by the app certification kit. However,
-     * it's unlikely that anybody would input filenames in CP_ACP there, so this
+    /* Windows Phone doesn't have MoveFileExA. However, it's unlikely
+     * that anybody would input filenames in CP_ACP there, so this
      * fallback is kept mostly for completeness. Alternatively we could
      * do MultiByteToWideChar(CP_ACP) and use MoveFileExW, but doing
      * explicit conversions with CP_ACP is allegedly forbidden in windows
