@@ -2,20 +2,20 @@
  * MPEG-4 Parametric Stereo decoding functions
  * Copyright (c) 2010 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -236,6 +236,7 @@ int ff_ps_read_data(AVCodecContext *avctx, GetBitContext *gb_host, PSContext *ps
     if (!ps->num_env || ps->border_position[ps->num_env] < numQMFSlots - 1) {
         //Create a fake envelope
         int source = ps->num_env ? ps->num_env - 1 : ps->num_env_old - 1;
+        int b;
         if (source >= 0 && source != ps->num_env) {
             if (ps->enable_iid) {
                 memcpy(ps->iid_par+ps->num_env, ps->iid_par+source, sizeof(ps->iid_par[0]));
@@ -246,6 +247,22 @@ int ff_ps_read_data(AVCodecContext *avctx, GetBitContext *gb_host, PSContext *ps
             if (ps->enable_ipdopd) {
                 memcpy(ps->ipd_par+ps->num_env, ps->ipd_par+source, sizeof(ps->ipd_par[0]));
                 memcpy(ps->opd_par+ps->num_env, ps->opd_par+source, sizeof(ps->opd_par[0]));
+            }
+        }
+        if (ps->enable_iid){
+            for (b = 0; b < ps->nr_iid_par; b++) {
+                if (FFABS(ps->iid_par[ps->num_env][b]) > 7 + 8 * ps->iid_quant) {
+                    av_log(avctx, AV_LOG_ERROR, "iid_par invalid\n");
+                    goto err;
+                }
+            }
+        }
+        if (ps->enable_icc){
+            for (b = 0; b < ps->nr_iid_par; b++) {
+                if (ps->icc_par[ps->num_env][b] > 7U) {
+                    av_log(avctx, AV_LOG_ERROR, "icc_par invalid\n");
+                    goto err;
+                }
             }
         }
         ps->num_env++;
@@ -415,6 +432,7 @@ static void hybrid_synthesis(PSDSPContext *dsp, float out[2][38][64],
 #define DECAY_SLOPE      0.05f
 /// Number of frequency bands that can be addressed by the parameter index, b(k)
 static const int   NR_PAR_BANDS[]      = { 20, 34 };
+static const int   NR_IPDOPD_BANDS[]   = { 11, 17 };
 /// Number of frequency bands that can be addressed by the sub subband index, k
 static const int   NR_BANDS[]          = { 71, 91 };
 /// Start frequency band for the all-pass filter decay slope
@@ -606,7 +624,6 @@ static void map_val_20_to_34(float par[PS_MAX_NR_IIDICC])
     par[ 3] =  par[ 2];
     par[ 2] =  par[ 1];
     par[ 1] = (par[ 0] + par[ 1]) * 0.5f;
-    par[ 0] =  par[ 0];
 }
 
 static void decorrelation(PSContext *ps, float (*out)[32][2], const float (*s)[32][2], int is34)
@@ -811,7 +828,8 @@ static void stereo_processing(PSContext *ps, float (*l)[32][2], float (*r)[32][2
             h12 = H_LUT[iid_mapped[e][b] + 7 + 23 * ps->iid_quant][icc_mapped[e][b]][1];
             h21 = H_LUT[iid_mapped[e][b] + 7 + 23 * ps->iid_quant][icc_mapped[e][b]][2];
             h22 = H_LUT[iid_mapped[e][b] + 7 + 23 * ps->iid_quant][icc_mapped[e][b]][3];
-            if (!PS_BASELINE && ps->enable_ipdopd && b < ps->nr_ipdopd_par) {
+
+            if (!PS_BASELINE && ps->enable_ipdopd && b < NR_IPDOPD_BANDS[is34]) {
                 //The spec say says to only run this smoother when enable_ipdopd
                 //is set but the reference decoder appears to run it constantly
                 float h11i, h12i, h21i, h22i;
@@ -890,8 +908,8 @@ static void stereo_processing(PSContext *ps, float (*l)[32][2], float (*r)[32][2
 
 int ff_ps_apply(AVCodecContext *avctx, PSContext *ps, float L[2][38][64], float R[2][38][64], int top)
 {
-    LOCAL_ALIGNED_16(float, Lbuf, [91], [32][2]);
-    LOCAL_ALIGNED_16(float, Rbuf, [91], [32][2]);
+    float (*Lbuf)[32][2] = ps->Lbuf;
+    float (*Rbuf)[32][2] = ps->Rbuf;
     const int len = 32;
     int is34 = ps->is34bands;
 
