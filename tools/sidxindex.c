@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,6 +43,8 @@ struct Track {
     int timescale;
     char codec_str[30];
     int64_t sidx_start, sidx_length;
+    int64_t  earliest_presentation;
+    uint32_t earliest_presentation_timescale;
 };
 
 struct Tracks {
@@ -93,6 +95,14 @@ static int find_sidx(struct Tracks *tracks, int start_index,
         if (size < 8)
             break;
         if (tag == MKBETAG('s', 'i', 'd', 'x')) {
+            int version, track_id;
+            uint32_t timescale;
+            int64_t earliest_presentation;
+            version = avio_r8(f);
+            avio_rb24(f); /* flags */
+            track_id = avio_rb32(f);
+            timescale = avio_rb32(f);
+            earliest_presentation = version ? avio_rb64(f) : avio_rb32(f);
             for (i = start_index; i < tracks->nb_tracks; i++) {
                 struct Track *track = tracks->tracks[i];
                 if (!track->sidx_start) {
@@ -100,6 +110,10 @@ static int find_sidx(struct Tracks *tracks, int start_index,
                     track->sidx_length = size;
                 } else if (pos == track->sidx_start + track->sidx_length) {
                     track->sidx_length = pos + size - track->sidx_start;
+                }
+                if (track->track_id == track_id) {
+                    track->earliest_presentation = earliest_presentation;
+                    track->earliest_presentation_timescale = timescale;
                 }
             }
         }
@@ -238,6 +252,7 @@ static int output_mpd(struct Tracks *tracks, const char *filename)
     int nb_tracks_buf[2] = { 0 };
     int *nb_tracks;
     int set, nb_sets;
+    int64_t latest_start = 0;
 
     if (!tracks->multiple_tracks_per_file) {
         adaptation_sets = adaptation_sets_buf;
@@ -284,7 +299,17 @@ static int output_mpd(struct Tracks *tracks, const char *filename)
     fprintf(out, "\"\n");
     fprintf(out, "\tminBufferTime=\"PT5S\">\n");
 
-    fprintf(out, "\t<Period start=\"PT0.0S\">\n");
+    for (i = 0; i < tracks->nb_tracks; i++) {
+        int64_t start = av_rescale_rnd(tracks->tracks[i]->earliest_presentation,
+                                       AV_TIME_BASE,
+                                       tracks->tracks[i]->earliest_presentation_timescale,
+                                       AV_ROUND_UP);
+        latest_start = FFMAX(start, latest_start);
+    }
+    fprintf(out, "\t<Period start=\"");
+    write_time(out, latest_start, 3, AV_ROUND_UP);
+    fprintf(out, "\">\n");
+
 
     for (set = 0; set < nb_sets; set++) {
         if (nb_tracks[set] == 0)
