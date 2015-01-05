@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... cavlc bitstream decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
  */
 
 #define CABAC(h) 0
-#define UNCHECKED_BITSTREAM_READER 1
 
 #include "internal.h"
 #include "avcodec.h"
@@ -35,8 +34,8 @@
 #include "h264_mvpred.h"
 #include "golomb.h"
 #include "mpegutils.h"
-#include "libavutil/avassert.h"
 
+#include <assert.h>
 
 static const uint8_t golomb_to_inter_cbp_gray[16]={
  0, 1, 2, 4, 8, 3, 5,10,12,15, 7,11,13,14, 6, 9,
@@ -360,7 +359,7 @@ av_cold void ff_h264_decode_init_vlc(void){
          * the packed static coeff_token_vlc table sizes
          * were initialized correctly.
          */
-        av_assert0(offset == FF_ARRAY_ELEMS(coeff_token_vlc_tables));
+        assert(offset == FF_ARRAY_ELEMS(coeff_token_vlc_tables));
 
         for(i=0; i<3; i++){
             chroma_dc_total_zeros_vlc[i].table = chroma_dc_total_zeros_vlc_tables[i];
@@ -479,7 +478,7 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
 
     trailing_ones= coeff_token&3;
     tprintf(h->avctx, "trailing:%d, total:%d\n", trailing_ones, total_coeff);
-    av_assert2(total_coeff<=16);
+    assert(total_coeff<=16);
 
     i = show_bits(gb, 3);
     skip_bits(gb, trailing_ones);
@@ -511,7 +510,7 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
                 else
                     level_code= prefix + get_bits(gb, 4); //part
             }else{
-                level_code= 30;
+                level_code= 30 + get_bits(gb, prefix-3); //part
                 if(prefix>=16){
                     if(prefix > 25+3){
                         av_log(h->avctx, AV_LOG_ERROR, "Invalid level prefix\n");
@@ -519,7 +518,6 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
                     }
                     level_code += (1<<(prefix-3))-4096;
                 }
-                level_code += get_bits(gb, prefix-3); //part
             }
 
             if(trailing_ones < 3) level_code += 2;
@@ -549,15 +547,9 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
                 if(prefix<15){
                     level_code = (prefix<<suffix_length) + get_bits(gb, suffix_length);
                 }else{
-                    level_code = 15<<suffix_length;
-                    if (prefix>=16) {
-                        if(prefix > 25+3){
-                            av_log(h->avctx, AV_LOG_ERROR, "Invalid level prefix\n");
-                            return AVERROR_INVALIDDATA;
-                        }
+                    level_code = (15<<suffix_length) + get_bits(gb, prefix-3);
+                    if(prefix>=16)
                         level_code += (1<<(prefix-3))-4096;
-                    }
-                    level_code += get_bits(gb, prefix-3);
                 }
                 mask= -(level_code&1);
                 level_code= (((2+level_code)>>1) ^ mask) - mask;
@@ -572,13 +564,13 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
     else{
         if (max_coeff <= 8) {
             if (max_coeff == 4)
-                zeros_left = get_vlc2(gb, (chroma_dc_total_zeros_vlc-1)[total_coeff].table,
+                zeros_left = get_vlc2(gb, chroma_dc_total_zeros_vlc[total_coeff - 1].table,
                                       CHROMA_DC_TOTAL_ZEROS_VLC_BITS, 1);
             else
-                zeros_left = get_vlc2(gb, (chroma422_dc_total_zeros_vlc-1)[total_coeff].table,
+                zeros_left = get_vlc2(gb, chroma422_dc_total_zeros_vlc[total_coeff - 1].table,
                                       CHROMA422_DC_TOTAL_ZEROS_VLC_BITS, 1);
         } else {
-            zeros_left= get_vlc2(gb, (total_zeros_vlc-1)[ total_coeff ].table, TOTAL_ZEROS_VLC_BITS, 1);
+            zeros_left= get_vlc2(gb, total_zeros_vlc[total_coeff - 1].table, TOTAL_ZEROS_VLC_BITS, 1);
         }
     }
 
@@ -588,7 +580,7 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
         ((type*)block)[*scantable] = level[0]; \
         for(i=1;i<total_coeff && zeros_left > 0;i++) { \
             if(zeros_left < 7) \
-                run_before= get_vlc2(gb, (run_vlc-1)[zeros_left].table, RUN_VLC_BITS, 1); \
+                run_before= get_vlc2(gb, run_vlc[zeros_left - 1].table, RUN_VLC_BITS, 1); \
             else \
                 run_before= get_vlc2(gb, run7_vlc.table, RUN7_VLC_BITS, 2); \
             zeros_left -= run_before; \
@@ -603,7 +595,7 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
         ((type*)block)[*scantable] = ((int)(level[0] * qmul[*scantable] + 32))>>6; \
         for(i=1;i<total_coeff && zeros_left > 0;i++) { \
             if(zeros_left < 7) \
-                run_before= get_vlc2(gb, (run_vlc-1)[zeros_left].table, RUN_VLC_BITS, 1); \
+                run_before= get_vlc2(gb, run_vlc[zeros_left - 1].table, RUN_VLC_BITS, 1); \
             else \
                 run_before= get_vlc2(gb, run7_vlc.table, RUN7_VLC_BITS, 2); \
             zeros_left -= run_before; \
@@ -616,15 +608,16 @@ static int decode_residual(H264Context *h, GetBitContext *gb, int16_t *block, in
         } \
     }
 
+    if (zeros_left < 0) {
+        av_log(h->avctx, AV_LOG_ERROR,
+               "negative number of zero coeffs at %d %d\n", h->mb_x, h->mb_y);
+        return AVERROR_INVALIDDATA;
+    }
+
     if (h->pixel_shift) {
         STORE_BLOCK(int32_t)
     } else {
         STORE_BLOCK(int16_t)
-    }
-
-    if(zeros_left<0){
-        av_log(h->avctx, AV_LOG_ERROR, "negative number of zero coeffs at %d %d\n", h->mb_x, h->mb_y);
-        return -1;
     }
 
     return 0;
@@ -642,7 +635,7 @@ static av_always_inline int decode_luma_residual(H264Context *h, GetBitContext *
             return -1; //FIXME continue if partitioned and other return -1 too
         }
 
-        av_assert2((cbp&15) == 0 || (cbp&15) == 15);
+        assert((cbp&15) == 0 || (cbp&15) == 15);
 
         if(cbp&15){
             for(i8x8=0; i8x8<4; i8x8++){
@@ -703,7 +696,6 @@ int ff_h264_decode_mb_cavlc(H264Context *h){
     int dct8x8_allowed= h->pps.transform_8x8_mode;
     int decode_chroma = h->sps.chroma_format_idc == 1 || h->sps.chroma_format_idc == 2;
     const int pixel_shift = h->pixel_shift;
-    unsigned local_ref_count[2];
 
     mb_xy = h->mb_xy = h->mb_x + h->mb_y*h->mb_stride;
 
@@ -712,7 +704,7 @@ int ff_h264_decode_mb_cavlc(H264Context *h){
                 down the code */
     if(h->slice_type_nos != AV_PICTURE_TYPE_I){
         if(h->mb_skip_run==-1)
-            h->mb_skip_run= get_ue_golomb_long(&h->gb);
+            h->mb_skip_run= get_ue_golomb(&h->gb);
 
         if (h->mb_skip_run--) {
             if(FRAME_MBAFF(h) && (h->mb_y&1) == 0){
@@ -748,7 +740,7 @@ int ff_h264_decode_mb_cavlc(H264Context *h){
             goto decode_intra_mb;
         }
     }else{
-       av_assert2(h->slice_type_nos == AV_PICTURE_TYPE_I);
+       assert(h->slice_type_nos == AV_PICTURE_TYPE_I);
         if(h->slice_type == AV_PICTURE_TYPE_SI && mb_type)
             mb_type--;
 decode_intra_mb:
@@ -787,9 +779,6 @@ decode_intra_mb:
         h->cur_pic.mb_type[mb_xy] = mb_type;
         return 0;
     }
-
-    local_ref_count[0] = h->ref_count[0] << MB_MBAFF(h);
-    local_ref_count[1] = h->ref_count[1] << MB_MBAFF(h);
 
     fill_decode_neighbors(h, mb_type);
     fill_decode_caches(h, mb_type);
@@ -857,7 +846,7 @@ decode_intra_mb:
                 h->ref_cache[1][scan8[12]] = PART_NOT_AVAILABLE;
             }
         }else{
-            av_assert2(h->slice_type_nos == AV_PICTURE_TYPE_P); //FIXME SP correct ?
+            assert(h->slice_type_nos == AV_PICTURE_TYPE_P); //FIXME SP correct ?
             for(i=0; i<4; i++){
                 h->sub_mb_type[i]= get_ue_golomb_31(&h->gb);
                 if(h->sub_mb_type[i] >=4){
@@ -870,7 +859,7 @@ decode_intra_mb:
         }
 
         for(list=0; list<h->list_count; list++){
-            int ref_count = IS_REF0(mb_type) ? 1 : local_ref_count[list];
+            int ref_count = IS_REF0(mb_type) ? 1 : h->ref_count[list] << MB_MBAFF(h);
             for(i=0; i<4; i++){
                 if(IS_DIRECT(h->sub_mb_type[i])) continue;
                 if(IS_DIR(h->sub_mb_type[i], 0, list)){
@@ -950,13 +939,14 @@ decode_intra_mb:
             for(list=0; list<h->list_count; list++){
                     unsigned int val;
                     if(IS_DIR(mb_type, 0, list)){
-                        if(local_ref_count[list]==1){
+                        int rc = h->ref_count[list] << MB_MBAFF(h);
+                        if (rc == 1) {
                             val= 0;
-                        } else if(local_ref_count[list]==2){
+                        } else if (rc == 2) {
                             val= get_bits1(&h->gb)^1;
                         }else{
                             val= get_ue_golomb_31(&h->gb);
-                            if (val >= local_ref_count[list]){
+                            if (val >= rc) {
                                 av_log(h->avctx, AV_LOG_ERROR, "ref %u overflow\n", val);
                                 return -1;
                             }
@@ -980,13 +970,14 @@ decode_intra_mb:
                     for(i=0; i<2; i++){
                         unsigned int val;
                         if(IS_DIR(mb_type, i, list)){
-                            if(local_ref_count[list] == 1) {
+                            int rc = h->ref_count[list] << MB_MBAFF(h);
+                            if (rc == 1) {
                                 val= 0;
-                            } else if(local_ref_count[list] == 2) {
+                            } else if (rc == 2) {
                                 val= get_bits1(&h->gb)^1;
                             }else{
                                 val= get_ue_golomb_31(&h->gb);
-                                if (val >= local_ref_count[list]){
+                                if (val >= rc) {
                                     av_log(h->avctx, AV_LOG_ERROR, "ref %u overflow\n", val);
                                     return -1;
                                 }
@@ -1012,18 +1003,19 @@ decode_intra_mb:
                 }
             }
         }else{
-            av_assert2(IS_8X16(mb_type));
+            assert(IS_8X16(mb_type));
             for(list=0; list<h->list_count; list++){
                     for(i=0; i<2; i++){
                         unsigned int val;
                         if(IS_DIR(mb_type, i, list)){ //FIXME optimize
-                            if(local_ref_count[list]==1){
+                            int rc = h->ref_count[list] << MB_MBAFF(h);
+                            if (rc == 1) {
                                 val= 0;
-                            } else if(local_ref_count[list]==2){
+                            } else if (rc == 2) {
                                 val= get_bits1(&h->gb)^1;
                             }else{
                                 val= get_ue_golomb_31(&h->gb);
-                                if (val >= local_ref_count[list]){
+                                if (val >= rc) {
                                     av_log(h->avctx, AV_LOG_ERROR, "ref %u overflow\n", val);
                                     return -1;
                                 }
@@ -1071,11 +1063,6 @@ decode_intra_mb:
             }
             if(IS_INTRA4x4(mb_type)) cbp= golomb_to_intra4x4_cbp_gray[cbp];
             else                     cbp= golomb_to_inter_cbp_gray[cbp];
-        }
-    } else {
-        if (!decode_chroma && cbp>15) {
-            av_log(h->avctx, AV_LOG_ERROR, "gray chroma\n");
-            return AVERROR_INVALIDDATA;
         }
     }
 
@@ -1129,15 +1116,12 @@ decode_intra_mb:
             if( decode_luma_residual(h, gb, scan, scan8x8, pixel_shift, mb_type, cbp, 2) < 0 ){
                 return -1;
             }
-        } else {
-            const int num_c8x8 = h->sps.chroma_format_idc;
-
+        } else if (CHROMA422(h)) {
             if(cbp&0x30){
                 for(chroma_idx=0; chroma_idx<2; chroma_idx++)
                     if (decode_residual(h, gb, h->mb + ((256 + 16*16*chroma_idx) << pixel_shift),
-                                        CHROMA_DC_BLOCK_INDEX+chroma_idx,
-                                        CHROMA422(h) ? chroma422_dc_scan : chroma_dc_scan,
-                                        NULL, 4*num_c8x8) < 0) {
+                                        CHROMA_DC_BLOCK_INDEX+chroma_idx, chroma422_dc_scan,
+                                        NULL, 8) < 0) {
                         return -1;
                     }
             }
@@ -1146,12 +1130,34 @@ decode_intra_mb:
                 for(chroma_idx=0; chroma_idx<2; chroma_idx++){
                     const uint32_t *qmul = h->dequant4_coeff[chroma_idx+1+(IS_INTRA( mb_type ) ? 0:3)][h->chroma_qp[chroma_idx]];
                     int16_t *mb = h->mb + (16*(16 + 16*chroma_idx) << pixel_shift);
-                    for (i8x8 = 0; i8x8<num_c8x8; i8x8++) {
+                    for (i8x8 = 0; i8x8 < 2; i8x8++) {
                         for (i4x4 = 0; i4x4 < 4; i4x4++) {
                             const int index = 16 + 16*chroma_idx + 8*i8x8 + i4x4;
                             if (decode_residual(h, gb, mb, index, scan + 1, qmul, 15) < 0)
                                 return -1;
                             mb += 16 << pixel_shift;
+                        }
+                    }
+                }
+            }else{
+                fill_rectangle(&h->non_zero_count_cache[scan8[16]], 4, 4, 8, 0, 1);
+                fill_rectangle(&h->non_zero_count_cache[scan8[32]], 4, 4, 8, 0, 1);
+            }
+        } else /* yuv420 */ {
+            if(cbp&0x30){
+                for(chroma_idx=0; chroma_idx<2; chroma_idx++)
+                    if( decode_residual(h, gb, h->mb + ((256 + 16*16*chroma_idx) << pixel_shift), CHROMA_DC_BLOCK_INDEX+chroma_idx, chroma_dc_scan, NULL, 4) < 0){
+                        return -1;
+                    }
+            }
+
+            if(cbp&0x20){
+                for(chroma_idx=0; chroma_idx<2; chroma_idx++){
+                    const uint32_t *qmul = h->dequant4_coeff[chroma_idx+1+(IS_INTRA( mb_type ) ? 0:3)][h->chroma_qp[chroma_idx]];
+                    for(i4x4=0; i4x4<4; i4x4++){
+                        const int index= 16 + 16*chroma_idx + i4x4;
+                        if( decode_residual(h, gb, h->mb + (16*index << pixel_shift), index, scan + 1, qmul, 15) < 0){
+                            return -1;
                         }
                     }
                 }
