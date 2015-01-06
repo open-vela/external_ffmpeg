@@ -287,7 +287,7 @@ int ff_img_read_header(AVFormatContext *s1)
         }
         s->img_first  = first_index;
         s->img_last   = last_index;
-        s->img_number = first_index;
+        s->img_number = s->start_number != 1 ? s->start_number : first_index;
         /* compute duration */
         if (!s->ts_from_file) {
             st->start_time = 0;
