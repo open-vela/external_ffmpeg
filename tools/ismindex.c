@@ -338,6 +338,7 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
     track->chunks  = avio_rb32(f);
     track->offsets = av_mallocz(sizeof(*track->offsets) * track->chunks);
     if (!track->offsets) {
+        track->chunks = 0;
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -446,10 +447,11 @@ fail:
 
 static int get_private_data(struct Track *track, AVCodecContext *codec)
 {
-    track->codec_private_size = codec->extradata_size;
+    track->codec_private_size = 0;
     track->codec_private      = av_mallocz(codec->extradata_size);
     if (!track->codec_private)
         return AVERROR(ENOMEM);
+    track->codec_private_size = codec->extradata_size;
     memcpy(track->codec_private, codec->extradata, codec->extradata_size);
     return 0;
 }
