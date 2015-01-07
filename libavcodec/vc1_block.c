@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,6 +50,20 @@ static const int offset_table2[9] = {  0,  1,  3,  7, 15, 31, 63, 127, 255 };
  * @{
  */
 
+/**
+ * Imode types
+ * @{
+ */
+enum Imode {
+    IMODE_RAW,
+    IMODE_NORM2,
+    IMODE_DIFF2,
+    IMODE_NORM6,
+    IMODE_DIFF6,
+    IMODE_ROWSKIP,
+    IMODE_COLSKIP
+};
+/** @} */ //imode defines
 
 static void init_block_index(VC1Context *v)
 {
@@ -276,7 +290,6 @@ static av_always_inline void get_mvdata_interlaced(VC1Context *v, int *dmv_x,
         }
     }
     else {
-        av_assert0(index < esc);
         if (extend_x)
             offs_tab = offset_table2;
         else
@@ -746,7 +759,7 @@ static int vc1_decode_i_block_adv(VC1Context *v, int16_t block[64], int n,
     MpegEncContext *s = &v->s;
     int dc_pred_dir = 0; /* Direction of the DC prediction used */
     int i;
-    int16_t *dc_val = NULL;
+    int16_t *dc_val;
     int16_t *ac_val, *ac_val2;
     int dcdiff;
     int a_avail = v->a_avail, c_avail = v->c_avail;
@@ -958,7 +971,7 @@ static int vc1_decode_intra_block(VC1Context *v, int16_t block[64], int n,
     MpegEncContext *s = &v->s;
     int dc_pred_dir = 0; /* Direction of the DC prediction used */
     int i;
-    int16_t *dc_val = NULL;
+    int16_t *dc_val;
     int16_t *ac_val, *ac_val2;
     int dcdiff;
     int mb_pos = s->mb_x + s->mb_y * s->mb_stride;
@@ -1589,7 +1602,7 @@ static int vc1_decode_p_mb_intfr(VC1Context *v)
     int idx_mbmode = 0, mvbp;
     int stride_y, fieldtx;
 
-    mquant = v->pq; /* Lossy initialization */
+    mquant = v->pq; /* Loosy initialization */
 
     if (v->skip_is_raw)
         skipped = get_bits1(gb);
@@ -1796,11 +1809,11 @@ static int vc1_decode_p_mb_intfi(VC1Context *v)
     int val; /* temp values */
     int first_block = 1;
     int dst_idx, off;
-    int pred_flag = 0;
+    int pred_flag;
     int block_cbp = 0, pat, block_tt = 0;
     int idx_mbmode = 0;
 
-    mquant = v->pq; /* Lossy initialization */
+    mquant = v->pq; /* Loosy initialization */
 
     idx_mbmode = get_vlc2(gb, v->mbmode_vlc->table, VC1_IF_MBMODE_VLC_BITS, 2);
     if (idx_mbmode <= 1) { // intra MB
@@ -2075,9 +2088,9 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
     int fwd;
     int dmv_x[2], dmv_y[2], pred_flag[2];
     int bmvtype = BMV_TYPE_BACKWARD;
-    int idx_mbmode;
+    int idx_mbmode, interpmvp;
 
-    mquant      = v->pq; /* Lossy initialization */
+    mquant      = v->pq; /* Loosy initialization */
     s->mb_intra = 0;
 
     idx_mbmode = get_vlc2(gb, v->mbmode_vlc->table, VC1_IF_MBMODE_VLC_BITS, 2);
@@ -2132,7 +2145,6 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
         else
             fwd = v->forward_mb_plane[mb_pos];
         if (idx_mbmode <= 5) { // 1-MV
-            int interpmvp = 0;
             dmv_x[0]     = dmv_x[1] = dmv_y[0] = dmv_y[1] = 0;
             pred_flag[0] = pred_flag[1] = 0;
             if (fwd)
@@ -2155,16 +2167,12 @@ static void vc1_decode_b_mb_intfi(VC1Context *v)
             if (bmvtype != BMV_TYPE_DIRECT && idx_mbmode & 1) {
                 get_mvdata_interlaced(v, &dmv_x[bmvtype == BMV_TYPE_BACKWARD], &dmv_y[bmvtype == BMV_TYPE_BACKWARD], &pred_flag[bmvtype == BMV_TYPE_BACKWARD]);
             }
-            if (interpmvp) {
+            if (bmvtype == BMV_TYPE_INTERPOLATED && interpmvp) {
                 get_mvdata_interlaced(v, &dmv_x[1], &dmv_y[1], &pred_flag[1]);
             }
             if (bmvtype == BMV_TYPE_DIRECT) {
                 dmv_x[0] = dmv_y[0] = pred_flag[0] = 0;
                 dmv_x[1] = dmv_y[1] = pred_flag[0] = 0;
-                if (!s->next_picture_ptr->field_picture) {
-                    av_log(s->avctx, AV_LOG_ERROR, "Mixed field/frame direct mode not supported\n");
-                    return;
-                }
             }
             ff_vc1_pred_b_mv_intfi(v, 0, dmv_x, dmv_y, 1, pred_flag);
             vc1_b_mc(v, dmv_x, dmv_y, (bmvtype == BMV_TYPE_DIRECT), bmvtype);
@@ -2272,8 +2280,6 @@ static int vc1_decode_b_mb_intfr(VC1Context *v)
         direct = v->direct_mb_plane[mb_pos];
 
     if (direct) {
-        if (s->next_picture_ptr->field_picture)
-            av_log(s->avctx, AV_LOG_WARNING, "Mixed frame/field direct mode not supported\n");
         s->mv[0][0][0] = s->current_picture.motion_val[0][s->block_index[0]][0] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][0], v->bfraction, 0, s->quarter_sample);
         s->mv[0][0][1] = s->current_picture.motion_val[0][s->block_index[0]][1] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][1], v->bfraction, 0, s->quarter_sample);
         s->mv[1][0][0] = s->current_picture.motion_val[1][s->block_index[0]][0] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][0], v->bfraction, 1, s->quarter_sample);
