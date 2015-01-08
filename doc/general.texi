@@ -110,7 +110,7 @@ enable it.
 
 @section OpenH264
 
-Libav can make use of the OpenH264 library for H.264 encoding.
+FFmpeg can make use of the OpenH264 library for H.264 encoding.
 
 Go to @url{http://www.openh264.org/} and follow the instructions for
 installing the library. Then pass @code{--enable-libopenh264} to configure to
