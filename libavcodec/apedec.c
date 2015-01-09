@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Benjamin Zores <ben@geexbox.org>
  *  based upon libdemac from Dave Chapman.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
-#include "apedsp.h"
+#include "lossless_audiodsp.h"
 #include "avcodec.h"
 #include "bswapdsp.h"
 #include "bytestream.h"
@@ -137,7 +137,7 @@ typedef struct APEContext {
     AVClass *class;                          ///< class for AVOptions
     AVCodecContext *avctx;
     BswapDSPContext bdsp;
-    APEDSPContext adsp;
+    LLAudDSPContext adsp;
     int channels;
     int samples;                             ///< samples left to decode in current frame
     int bps;
@@ -212,19 +212,6 @@ static av_cold int ape_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-static int32_t scalarproduct_and_madd_int16_c(int16_t *v1, const int16_t *v2,
-                                              const int16_t *v3,
-                                              int order, int mul)
-{
-    int res = 0;
-
-    while (order--) {
-        res   += *v1 * *v2++;
-        *v1++ += mul * *v3++;
-    }
-    return res;
-}
-
 static av_cold int ape_decode_init(AVCodecContext *avctx)
 {
     APEContext *s = avctx->priv_data;
@@ -263,6 +250,7 @@ static av_cold int ape_decode_init(AVCodecContext *avctx)
     av_log(avctx, AV_LOG_DEBUG, "Compression Level: %d - Flags: %d\n",
            s->compression_level, s->flags);
     if (s->compression_level % 1000 || s->compression_level > COMPRESSION_LEVEL_INSANE ||
+        !s->compression_level ||
         (s->fileversion < 3930 && s->compression_level == COMPRESSION_LEVEL_INSANE)) {
         av_log(avctx, AV_LOG_ERROR, "Incorrect compression level %d\n",
                s->compression_level);
@@ -305,16 +293,8 @@ static av_cold int ape_decode_init(AVCodecContext *avctx)
         s->predictor_decode_stereo = predictor_decode_stereo_3950;
     }
 
-    s->adsp.scalarproduct_and_madd_int16 = scalarproduct_and_madd_int16_c;
-
-    if (ARCH_ARM)
-        ff_apedsp_init_arm(&s->adsp);
-    if (ARCH_PPC)
-        ff_apedsp_init_ppc(&s->adsp);
-    if (ARCH_X86)
-        ff_apedsp_init_x86(&s->adsp);
-
     ff_bswapdsp_init(&s->bdsp);
+    ff_llauddsp_init(&s->adsp);
     avctx->channel_layout = (avctx->channels==2) ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
 
     return 0;
@@ -512,9 +492,12 @@ static inline int ape_decode_value_3860(APEContext *ctx, GetBitContext *gb,
 
     if (!rice->k)
         x = overflow;
-    else
+    else if(rice->k <= MIN_CACHE_BITS) {
         x = (overflow << rice->k) + get_bits(gb, rice->k);
-
+    } else {
+        av_log(ctx->avctx, AV_LOG_ERROR, "Too many bits: %d\n", rice->k);
+        return AVERROR_INVALIDDATA;
+    }
     rice->ksum += x - (rice->ksum + 8 >> 4);
     if (rice->ksum < (rice->k ? 1 << (rice->k + 4) : 0))
         rice->k--;
@@ -541,9 +524,13 @@ static inline int ape_decode_value_3900(APEContext *ctx, APERice *rice)
     } else
         tmpk = (rice->k < 1) ? 0 : rice->k - 1;
 
-    if (tmpk <= 16 || ctx->fileversion < 3910)
+    if (tmpk <= 16 || ctx->fileversion < 3910) {
+        if (tmpk > 23) {
+            av_log(ctx->avctx, AV_LOG_ERROR, "Too many bits: %d\n", tmpk);
+            return AVERROR_INVALIDDATA;
+        }
         x = range_decode_bits(ctx, tmpk);
-    else if (tmpk <= 32) {
+    } else if (tmpk <= 31) {
         x = range_decode_bits(ctx, 16);
         x |= (range_decode_bits(ctx, tmpk - 16) << 16);
     } else {
@@ -619,10 +606,14 @@ static void decode_array_0000(APEContext *ctx, GetBitContext *gb,
         rice->ksum += out[i];
     }
     rice->k = av_log2(rice->ksum / 10) + 1;
+    if (rice->k >= 24)
+        return;
     for (; i < 64; i++) {
         out[i] = get_rice_ook(&ctx->gb, rice->k);
         rice->ksum += out[i];
         rice->k = av_log2(rice->ksum / ((i + 1) * 2)) + 1;
+        if (rice->k >= 24)
+            return;
     }
     ksummax = 1 << rice->k + 7;
     ksummin = rice->k ? (1 << rice->k + 6) : 0;
@@ -922,7 +913,7 @@ static void long_filter_high_3800(int32_t *buffer, int order, int shift,
         sign = APESIGN(buffer[i]);
         for (j = 0; j < order; j++) {
             dotprod += delay[j] * coeffs[j];
-            coeffs[j] -= (((delay[j] >> 30) & 2) - 1) * sign;
+            coeffs[j] += ((delay[j] >> 31) | 1) * sign;
         }
         buffer[i] -= dotprod >> shift;
         for (j = 0; j < order - 1; j++)
@@ -942,7 +933,7 @@ static void long_filter_ehigh_3830(int32_t *buffer, int length)
         sign = APESIGN(buffer[i]);
         for (j = 7; j >= 0; j--) {
             dotprod += delay[j] * coeffs[j];
-            coeffs[j] -= (((delay[j] >> 30) & 2) - 1) * sign;
+            coeffs[j] += ((delay[j] >> 31) | 1) * sign;
         }
         for (j = 7; j > 0; j--)
             delay[j] = delay[j - 1];
@@ -1449,7 +1440,7 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
         }
         if (s->fileversion < 3950) // previous versions overread two bytes
             buf_size += 2;
-        av_fast_malloc(&s->data, &s->data_size, buf_size);
+        av_fast_padded_malloc(&s->data, &s->data_size, buf_size);
         if (!s->data)
             return AVERROR(ENOMEM);
         s->bdsp.bswap_buf((uint32_t *) s->data, (const uint32_t *) buf,
@@ -1472,7 +1463,8 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
             }
             s->ptr += offset;
         } else {
-            init_get_bits(&s->gb, s->ptr, (s->data_end - s->ptr) * 8);
+            if ((ret = init_get_bits8(&s->gb, s->ptr, s->data_end - s->ptr)) < 0)
+                return ret;
             if (s->fileversion > 3800)
                 skip_bits_long(&s->gb, offset * 8);
             else
@@ -1491,7 +1483,6 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
             av_log(avctx, AV_LOG_ERROR, "Error reading frame header\n");
             return AVERROR_INVALIDDATA;
         }
-
     }
 
     if (!s->data) {
@@ -1516,10 +1507,8 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = blockstodecode;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     s->error=0;
 
@@ -1563,7 +1552,7 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
 
     *got_frame_ptr = 1;
 
-    return (s->samples == 0) ? avpkt->size : 0;
+    return !s->samples ? avpkt->size : 0;
 }
 
 static void ape_flush(AVCodecContext *avctx)
