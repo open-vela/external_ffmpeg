@@ -2,20 +2,20 @@
  * MPEG Audio header decoder
  * Copyright (c) 2001, 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -112,7 +112,7 @@ int avpriv_mpegaudio_decode_header(MPADecodeHeader *s, uint32_t header)
     return 0;
 }
 
-int avpriv_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_rate, int *channels, int *frame_size, int *bit_rate)
+int avpriv_mpa_decode_header2(uint32_t head, int *sample_rate, int *channels, int *frame_size, int *bit_rate, enum AVCodecID *codec_id)
 {
     MPADecodeHeader s1, *s = &s1;
 
@@ -125,16 +125,16 @@ int avpriv_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_r
 
     switch(s->layer) {
     case 1:
-        avctx->codec_id = AV_CODEC_ID_MP1;
+        *codec_id = AV_CODEC_ID_MP1;
         *frame_size = 384;
         break;
     case 2:
-        avctx->codec_id = AV_CODEC_ID_MP2;
+        *codec_id = AV_CODEC_ID_MP2;
         *frame_size = 1152;
         break;
     default:
     case 3:
-        avctx->codec_id = AV_CODEC_ID_MP3;
+        *codec_id = AV_CODEC_ID_MP3;
         if (s->lsf)
             *frame_size = 576;
         else
@@ -146,4 +146,9 @@ int avpriv_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_r
     *channels = s->nb_channels;
     *bit_rate = s->bit_rate;
     return s->frame_size;
+}
+
+int avpriv_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_rate, int *channels, int *frame_size, int *bit_rate)
+{
+    return avpriv_mpa_decode_header2(head, sample_rate, channels, frame_size, bit_rate, &avctx->codec_id);
 }
