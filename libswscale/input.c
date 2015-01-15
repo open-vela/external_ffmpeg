@@ -764,7 +764,7 @@ static void planar_rgb_to_y(uint8_t *_dst, const uint8_t *src[4], int width, int
     }
 }
 
-static void planar_rgb_to_a(uint8_t *_dst, const uint8_t *src[4], int width, int32_t *unused)
+static void planar_rgb_to_a(uint8_t *_dst, const uint8_t *src[4], int width)
 {
     uint16_t *dst = (uint16_t *)_dst;
     int i;
