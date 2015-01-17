@@ -3,20 +3,20 @@
  *
  * copyright (c) 2009 Laurent Aimar
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -96,7 +96,7 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
                                         ((h->sps.mb_aff &&
                                         (h->picture_structure == PICT_FRAME)) <<  1) |
                                         (h->sps.residual_color_transform_flag <<  2) |
-                                        /* sp_for_switch_flag (not implemented by FFmpeg) */
+                                        /* sp_for_switch_flag (not implemented by Libav) */
                                         (0                                    <<  3) |
                                         (h->sps.chroma_format_idc             <<  4) |
                                         ((h->nal_ref_idc != 0)                <<  6) |
@@ -152,8 +152,8 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
     pp->deblocking_filter_control_present_flag = h->pps.deblocking_filter_parameters_present;
     pp->redundant_pic_cnt_present_flag= h->pps.redundant_pic_cnt_present;
     pp->Reserved8BitsB                = 0;
-    pp->slice_group_change_rate_minus1= 0;  /* XXX not implemented by FFmpeg */
-    //pp->SliceGroupMap[810];               /* XXX not implemented by FFmpeg */
+    pp->slice_group_change_rate_minus1= 0;  /* XXX not implemented by Libav */
+    //pp->SliceGroupMap[810];               /* XXX not implemented by Libav */
 }
 
 static void fill_scaling_lists(struct dxva_context *ctx, const H264Context *h, DXVA_Qmatrix_H264 *qm)
@@ -211,6 +211,7 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
                             const DXVA_PicParams_H264 *pp, unsigned position, unsigned size)
 {
     const H264Context *h = avctx->priv_data;
+    H264SliceContext *sl = &h->slice_ctx[0];
     struct dxva_context *ctx = avctx->hwaccel_context;
     unsigned list;
 
@@ -225,8 +226,8 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
     slice->slice_type            = ff_h264_get_slice_type(h);
     if (h->slice_type_fixed)
         slice->slice_type += 5;
-    slice->luma_log2_weight_denom       = h->luma_log2_weight_denom;
-    slice->chroma_log2_weight_denom     = h->chroma_log2_weight_denom;
+    slice->luma_log2_weight_denom       = sl->luma_log2_weight_denom;
+    slice->chroma_log2_weight_denom     = sl->chroma_log2_weight_denom;
     if (h->list_count > 0)
         slice->num_ref_idx_l0_active_minus1 = h->ref_count[0] - 1;
     if (h->list_count > 1)
@@ -250,15 +251,15 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
                                    r->reference == PICT_BOTTOM_FIELD);
                 for (plane = 0; plane < 3; plane++) {
                     int w, o;
-                    if (plane == 0 && h->luma_weight_flag[list]) {
-                        w = h->luma_weight[i][list][0];
-                        o = h->luma_weight[i][list][1];
-                    } else if (plane >= 1 && h->chroma_weight_flag[list]) {
-                        w = h->chroma_weight[i][list][plane-1][0];
-                        o = h->chroma_weight[i][list][plane-1][1];
+                    if (plane == 0 && sl->luma_weight_flag[list]) {
+                        w = sl->luma_weight[i][list][0];
+                        o = sl->luma_weight[i][list][1];
+                    } else if (plane >= 1 && sl->chroma_weight_flag[list]) {
+                        w = sl->chroma_weight[i][list][plane-1][0];
+                        o = sl->chroma_weight[i][list][plane-1][1];
                     } else {
-                        w = 1 << (plane == 0 ? h->luma_log2_weight_denom :
-                                               h->chroma_log2_weight_denom);
+                        w = 1 << (plane == 0 ? sl->luma_log2_weight_denom :
+                                               sl->chroma_log2_weight_denom);
                         o = 0;
                     }
                     slice->Weights[list][i][plane][0] = w;
@@ -274,7 +275,7 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
             }
         }
     }
-    slice->slice_qs_delta    = 0; /* XXX not implemented by FFmpeg */
+    slice->slice_qs_delta    = 0; /* XXX not implemented by Libav */
     slice->slice_qp_delta    = h->qscale - h->pps.init_qp;
     slice->redundant_pic_cnt = h->redundant_pic_count;
     if (h->slice_type == AV_PICTURE_TYPE_B)
