@@ -1,21 +1,21 @@
 /*
  * Westwood Studios VQA Format Demuxer
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,10 +81,10 @@ static int wsvqa_read_header(AVFormatContext *s)
     WsVqaDemuxContext *wsvqa = s->priv_data;
     AVIOContext *pb = s->pb;
     AVStream *st;
-    unsigned char *header;
-    unsigned char scratch[VQA_PREAMBLE_SIZE];
-    unsigned int chunk_tag;
-    unsigned int chunk_size;
+    uint8_t *header;
+    uint8_t scratch[VQA_PREAMBLE_SIZE];
+    uint32_t chunk_tag;
+    uint32_t chunk_size;
     int fps;
 
     /* initialize the video decoder stream */
@@ -101,13 +101,9 @@ static int wsvqa_read_header(AVFormatContext *s)
     avio_seek(pb, 20, SEEK_SET);
 
     /* the VQA header needs to go to the decoder */
-    st->codec->extradata_size = VQA_HEADER_SIZE;
-    st->codec->extradata = av_mallocz(VQA_HEADER_SIZE + FF_INPUT_BUFFER_PADDING_SIZE);
-    header = (unsigned char *)st->codec->extradata;
-    if (avio_read(pb, st->codec->extradata, VQA_HEADER_SIZE) !=
-        VQA_HEADER_SIZE) {
-        return AVERROR(EIO);
-    }
+    if (ff_get_extradata(st->codec, pb, VQA_HEADER_SIZE) < 0)
+        return AVERROR(ENOMEM);
+    header = st->codec->extradata;
     st->codec->width = AV_RL16(&header[6]);
     st->codec->height = AV_RL16(&header[8]);
     fps = header[12];
@@ -130,9 +126,8 @@ static int wsvqa_read_header(AVFormatContext *s)
     /* there are 0 or more chunks before the FINF chunk; iterate until
      * FINF has been skipped and the file will be ready to be demuxed */
     do {
-        if (avio_read(pb, scratch, VQA_PREAMBLE_SIZE) != VQA_PREAMBLE_SIZE) {
+        if (avio_read(pb, scratch, VQA_PREAMBLE_SIZE) != VQA_PREAMBLE_SIZE)
             return AVERROR(EIO);
-        }
         chunk_tag = AV_RB32(&scratch[0]);
         chunk_size = AV_RB32(&scratch[4]);
 
@@ -167,26 +162,23 @@ static int wsvqa_read_packet(AVFormatContext *s,
     WsVqaDemuxContext *wsvqa = s->priv_data;
     AVIOContext *pb = s->pb;
     int ret = -1;
-    unsigned char preamble[VQA_PREAMBLE_SIZE];
-    unsigned int chunk_type;
-    unsigned int chunk_size;
+    uint8_t preamble[VQA_PREAMBLE_SIZE];
+    uint32_t chunk_type;
+    uint32_t chunk_size;
     int skip_byte;
 
     while (avio_read(pb, preamble, VQA_PREAMBLE_SIZE) == VQA_PREAMBLE_SIZE) {
         chunk_type = AV_RB32(&preamble[0]);
         chunk_size = AV_RB32(&preamble[4]);
+
         skip_byte = chunk_size & 0x01;
 
         if ((chunk_type == SND0_TAG) || (chunk_type == SND1_TAG) ||
             (chunk_type == SND2_TAG) || (chunk_type == VQFR_TAG)) {
 
-            if (av_new_packet(pkt, chunk_size))
+            ret= av_get_packet(pb, pkt, chunk_size);
+            if (ret<0)
                 return AVERROR(EIO);
-            ret = avio_read(pb, pkt->data, chunk_size);
-            if (ret != chunk_size) {
-                av_free_packet(pkt);
-                return AVERROR(EIO);
-            }
 
             switch (chunk_type) {
             case SND0_TAG:
@@ -223,9 +215,7 @@ static int wsvqa_read_packet(AVFormatContext *s,
                         break;
                     case SND2_TAG:
                         st->codec->codec_id = AV_CODEC_ID_ADPCM_IMA_WS;
-                        st->codec->extradata_size = 2;
-                        st->codec->extradata = av_mallocz(2 + FF_INPUT_BUFFER_PADDING_SIZE);
-                        if (!st->codec->extradata)
+                        if (ff_alloc_extradata(st->codec, 2))
                             return AVERROR(ENOMEM);
                         AV_WL16(st->codec->extradata, wsvqa->version);
                         break;
@@ -236,7 +226,8 @@ static int wsvqa_read_packet(AVFormatContext *s,
                 switch (chunk_type) {
                 case SND1_TAG:
                     /* unpacked size is stored in header */
-                    pkt->duration = AV_RL16(pkt->data) / wsvqa->channels;
+                    if(pkt->data)
+                        pkt->duration = AV_RL16(pkt->data) / wsvqa->channels;
                     break;
                 case SND2_TAG:
                     /* 2 samples/byte, 1 or 2 samples per frame depending on stereo */
