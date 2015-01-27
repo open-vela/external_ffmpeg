@@ -2,20 +2,20 @@
  * QCP format (.qcp) demuxer
  * Copyright (c) 2009 Kenan Gillet
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +30,7 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
+#include "riff.h"
 
 typedef struct {
     uint32_t data_size;                     ///< size of data chunk
@@ -102,13 +103,12 @@ static int qcp_read_header(AVFormatContext *s)
     if (is_qcelp_13k_guid(buf)) {
         st->codec->codec_id = AV_CODEC_ID_QCELP;
     } else if (!memcmp(buf, guid_evrc, 16)) {
-        av_log(s, AV_LOG_ERROR, "EVRC codec is not supported.\n");
-        return AVERROR_PATCHWELCOME;
+        st->codec->codec_id = AV_CODEC_ID_EVRC;
     } else if (!memcmp(buf, guid_smv, 16)) {
-        av_log(s, AV_LOG_ERROR, "SMV codec is not supported.\n");
-        return AVERROR_PATCHWELCOME;
+        st->codec->codec_id = AV_CODEC_ID_SMV;
     } else {
-        av_log(s, AV_LOG_ERROR, "Unknown codec GUID.\n");
+        av_log(s, AV_LOG_ERROR, "Unknown codec GUID "FF_PRI_GUID".\n",
+               FF_ARG_GUID(buf));
         return AVERROR_INVALIDDATA;
     }
     avio_skip(pb, 2 + 80); // codec-version + codec-name
@@ -141,7 +141,7 @@ static int qcp_read_packet(AVFormatContext *s, AVPacket *pkt)
     QCPContext    *c  = s->priv_data;
     unsigned int  chunk_size, tag;
 
-    while(!pb->eof_reached) {
+    while(!avio_feof(pb)) {
         if (c->data_size) {
             int pkt_size, ret, mode = avio_r8(pb);
 
