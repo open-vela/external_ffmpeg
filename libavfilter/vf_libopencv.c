@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010 Stefano Sabatini
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -166,7 +166,7 @@ static int read_shape_from_file(int *cols, int *rows, int **values, const char *
                *rows, *cols);
         return AVERROR_INVALIDDATA;
     }
-    if (!(*values = av_mallocz(sizeof(int) * *rows * *cols)))
+    if (!(*values = av_mallocz_array(sizeof(int) * *rows, *cols)))
         return AVERROR(ENOMEM);
 
     /* fill *values */
@@ -205,7 +205,7 @@ static int parse_iplconvkernel(IplConvKernel **kernel, char *buf, void *log_ctx)
 {
     char shape_filename[128] = "", shape_str[32] = "rect";
     int cols = 0, rows = 0, anchor_x = 0, anchor_y = 0, shape = CV_SHAPE_RECT;
-    int *values = NULL, ret = 0;
+    int *values = NULL, ret;
 
     sscanf(buf, "%dx%d+%dx%d/%32[^=]=%127s", &cols, &rows, &anchor_x, &anchor_y, shape_str, shape_filename);
 
@@ -219,36 +219,30 @@ static int parse_iplconvkernel(IplConvKernel **kernel, char *buf, void *log_ctx)
     } else {
         av_log(log_ctx, AV_LOG_ERROR,
                "Shape unspecified or type '%s' unknown.\n", shape_str);
-        ret = AVERROR(EINVAL);
-        goto out;
+        return AVERROR(EINVAL);
     }
 
     if (rows <= 0 || cols <= 0) {
         av_log(log_ctx, AV_LOG_ERROR,
                "Invalid non-positive values for shape size %dx%d\n", cols, rows);
-        ret = AVERROR(EINVAL);
-        goto out;
+        return AVERROR(EINVAL);
     }
 
     if (anchor_x < 0 || anchor_y < 0 || anchor_x >= cols || anchor_y >= rows) {
         av_log(log_ctx, AV_LOG_ERROR,
                "Shape anchor %dx%d is not inside the rectangle with size %dx%d.\n",
                anchor_x, anchor_y, cols, rows);
-        ret = AVERROR(EINVAL);
-        goto out;
+        return AVERROR(EINVAL);
     }
 
     *kernel = cvCreateStructuringElementEx(cols, rows, anchor_x, anchor_y, shape, values);
-    if (!*kernel) {
-        ret = AVERROR(ENOMEM);
-        goto out;
-    }
+    av_freep(&values);
+    if (!*kernel)
+        return AVERROR(ENOMEM);
 
     av_log(log_ctx, AV_LOG_VERBOSE, "Structuring element: w:%d h:%d x:%d y:%d shape:%s\n",
            rows, cols, anchor_x, anchor_y, shape_str);
-out:
-    av_freep(&values);
-    return ret;
+    return 0;
 }
 
 typedef struct DilateContext {
@@ -265,17 +259,18 @@ static av_cold int dilate_init(AVFilterContext *ctx, const char *args)
     const char *buf = args;
     int ret;
 
-    dilate->nb_iterations = 1;
-
     if (args)
         kernel_str = av_get_token(&buf, "|");
-    if ((ret = parse_iplconvkernel(&dilate->kernel,
-                                   *kernel_str ? kernel_str : default_kernel_str,
-                                   ctx)) < 0)
+    else
+        kernel_str = av_strdup(default_kernel_str);
+    if (!kernel_str)
+        return AVERROR(ENOMEM);
+    if ((ret = parse_iplconvkernel(&dilate->kernel, kernel_str, ctx)) < 0)
         return ret;
     av_free(kernel_str);
 
-    sscanf(buf, "|%d", &dilate->nb_iterations);
+    if (!buf || sscanf(buf, "|%d", &dilate->nb_iterations) != 1)
+        dilate->nb_iterations = 1;
     av_log(ctx, AV_LOG_VERBOSE, "iterations_nb:%d\n", dilate->nb_iterations);
     if (dilate->nb_iterations <= 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid non-positive value '%d' for nb_iterations\n",
@@ -326,6 +321,10 @@ static av_cold int init(AVFilterContext *ctx)
     OCVContext *s = ctx->priv;
     int i;
 
+    if (!s->name) {
+        av_log(ctx, AV_LOG_ERROR, "No libopencv filter name specified\n");
+        return AVERROR(EINVAL);
+    }
     for (i = 0; i < FF_ARRAY_ELEMS(ocv_filter_entries); i++) {
         OCVFilterEntry *entry = &ocv_filter_entries[i];
         if (!strcmp(s->name, entry->name)) {
@@ -349,7 +348,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     if (s->uninit)
         s->uninit(ctx);
-    av_free(s->priv);
+    av_freep(&s->priv);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -378,24 +377,19 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 }
 
 #define OFFSET(x) offsetof(OCVContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
-static const AVOption options[] = {
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
+static const AVOption ocv_options[] = {
     { "filter_name",   NULL, OFFSET(name),   AV_OPT_TYPE_STRING, .flags = FLAGS },
     { "filter_params", NULL, OFFSET(params), AV_OPT_TYPE_STRING, .flags = FLAGS },
-    { NULL },
+    { NULL }
 };
 
-static const AVClass ocv_class = {
-    .class_name = "ocv",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(ocv);
 
 static const AVFilterPad avfilter_vf_ocv_inputs[] = {
     {
-        .name       = "default",
-        .type       = AVMEDIA_TYPE_VIDEO,
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
     { NULL }
@@ -410,17 +404,13 @@ static const AVFilterPad avfilter_vf_ocv_outputs[] = {
 };
 
 AVFilter ff_vf_ocv = {
-    .name        = "ocv",
-    .description = NULL_IF_CONFIG_SMALL("Apply transform using libopencv."),
-
-    .priv_size = sizeof(OCVContext),
-    .priv_class = &ocv_class,
-
+    .name          = "ocv",
+    .description   = NULL_IF_CONFIG_SMALL("Apply transform using libopencv."),
+    .priv_size     = sizeof(OCVContext),
+    .priv_class    = &ocv_class,
     .query_formats = query_formats,
-    .init = init,
-    .uninit = uninit,
-
-    .inputs    = avfilter_vf_ocv_inputs,
-
-    .outputs   = avfilter_vf_ocv_outputs,
+    .init          = init,
+    .uninit        = uninit,
+    .inputs        = avfilter_vf_ocv_inputs,
+    .outputs       = avfilter_vf_ocv_outputs,
 };
