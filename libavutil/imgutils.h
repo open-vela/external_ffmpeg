@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,6 +100,9 @@ int av_image_alloc(uint8_t *pointers[4], int linesizes[4],
  * The first byte of each successive line is separated by *_linesize
  * bytes.
  *
+ * bytewidth must be contained by both absolute values of dst_linesize
+ * and src_linesize, otherwise the function behavior is undefined.
+ *
  * @param dst_linesize linesize for the image plane in dst
  * @param src_linesize linesize for the image plane in src
  */
@@ -145,7 +148,7 @@ void av_image_copy(uint8_t *dst_data[4], int dst_linesizes[4],
  */
 int av_image_fill_arrays(uint8_t *dst_data[4], int dst_linesize[4],
                          const uint8_t *src,
-                         enum PixelFormat pix_fmt, int width, int height, int align);
+                         enum AVPixelFormat pix_fmt, int width, int height, int align);
 
 /**
  * Return the size in bytes of the amount of data required to store an
@@ -153,7 +156,7 @@ int av_image_fill_arrays(uint8_t *dst_data[4], int dst_linesize[4],
  *
  * @param[in] align the assumed linesize alignment
  */
-int av_image_get_buffer_size(enum PixelFormat pix_fmt, int width, int height, int align);
+int av_image_get_buffer_size(enum AVPixelFormat pix_fmt, int width, int height, int align);
 
 /**
  * Copy image data from an image into a buffer.
@@ -174,7 +177,7 @@ int av_image_get_buffer_size(enum PixelFormat pix_fmt, int width, int height, in
  */
 int av_image_copy_to_buffer(uint8_t *dst, int dst_size,
                             const uint8_t * const src_data[4], const int src_linesize[4],
-                            enum PixelFormat pix_fmt, int width, int height, int align);
+                            enum AVPixelFormat pix_fmt, int width, int height, int align);
 
 /**
  * Check if the given dimension of an image is valid, meaning that all
