@@ -1,20 +1,20 @@
 /*
  * DCA ExSS extension
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,7 +22,6 @@
 #include "libavutil/log.h"
 
 #include "dca.h"
-#include "dca_exss.h"
 #include "get_bits.h"
 
 /* extensions that reside in core substream */
@@ -243,27 +242,21 @@ static int dca_exss_parse_asset_header(DCAContext *s)
  */
 void ff_dca_exss_parse_header(DCAContext *s)
 {
-    int asset_size[8];
     int ss_index;
     int blownup;
     int num_audiop = 1;
     int num_assets = 1;
     int active_ss_mask[8];
     int i, j;
-    int start_posn;
-    int hdrsize;
-    uint32_t mkr;
 
     if (get_bits_left(&s->gb) < 52)
         return;
-
-    start_posn = get_bits_count(&s->gb) - 32;
 
     skip_bits(&s->gb, 8); // user data
     ss_index = get_bits(&s->gb, 2);
 
     blownup = get_bits1(&s->gb);
-    hdrsize = get_bits(&s->gb,  8 + 4 * blownup) + 1; // header_size
+    skip_bits(&s->gb,  8 + 4 * blownup); // header_size
     skip_bits(&s->gb, 16 + 4 * blownup); // hd_size
 
     s->static_fields = get_bits1(&s->gb);
@@ -315,10 +308,8 @@ void ff_dca_exss_parse_header(DCAContext *s)
         }
     }
 
-    av_assert0(num_assets > 0); // silence a warning
-
     for (i = 0; i < num_assets; i++)
-        asset_size[i] = get_bits_long(&s->gb, 16 + 4 * blownup);
+        skip_bits_long(&s->gb, 16 + 4 * blownup);  // asset size
 
     for (i = 0; i < num_assets; i++) {
         if (dca_exss_parse_asset_header(s))
@@ -327,29 +318,4 @@ void ff_dca_exss_parse_header(DCAContext *s)
 
     /* not parsed further, we were only interested in the extensions mask
      * from the asset header */
-
-        j = get_bits_count(&s->gb);
-        if (start_posn + hdrsize * 8 > j)
-            skip_bits_long(&s->gb, start_posn + hdrsize * 8 - j);
-
-        for (i = 0; i < num_assets; i++) {
-            start_posn = get_bits_count(&s->gb);
-            mkr        = get_bits_long(&s->gb, 32);
-
-            /* parse extensions that we know about */
-            if (mkr == 0x655e315e) {
-                ff_dca_xbr_parse_frame(s);
-            } else if (mkr == 0x47004a03) {
-                ff_dca_xxch_decode_frame(s);
-                s->core_ext_mask |= DCA_EXT_XXCH; /* xxx use for chan reordering */
-            } else {
-                av_log(s->avctx, AV_LOG_DEBUG,
-                       "DTS-ExSS: unknown marker = 0x%08x\n", mkr);
-            }
-
-            /* skip to end of block */
-            j = get_bits_count(&s->gb);
-            if (start_posn + asset_size[i] * 8 > j)
-                skip_bits_long(&s->gb, start_posn + asset_size[i] * 8 - j);
-        }
 }

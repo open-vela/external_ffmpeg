@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -209,7 +209,7 @@ static av_always_inline void vc1_apply_p_v_loop_filter(VC1Context *v, int block_
     int mb_cbp         = v->cbp[s->mb_x - s->mb_stride],
         block_cbp      = mb_cbp      >> (block_num * 4), bottom_cbp,
         mb_is_intra    = v->is_intra[s->mb_x - s->mb_stride],
-        block_is_intra = mb_is_intra >> block_num, bottom_is_intra;
+        block_is_intra = mb_is_intra >> (block_num * 4), bottom_is_intra;
     int idx, linesize  = block_num > 3 ? s->uvlinesize : s->linesize, ttblk;
     uint8_t *dst;
 
