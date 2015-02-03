@@ -3,20 +3,20 @@
  * Copyright (c) 2005-2006 Oded Shimon ( ods15 ods15 dyndns org )
  * Copyright (c) 2006-2007 Maxim Gavrilov ( maxim.gavrilov gmail com )
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,8 +46,7 @@
  */
 DECLARE_ALIGNED(32, extern float,  ff_aac_kbd_long_1024)[1024];
 DECLARE_ALIGNED(32, extern float,  ff_aac_kbd_short_128)[128];
-const DECLARE_ALIGNED(32, extern float, ff_aac_eld_window_512)[1920];
-const DECLARE_ALIGNED(32, extern float, ff_aac_eld_window_480)[1800];
+const DECLARE_ALIGNED(32, extern float, ff_aac_eld_window)[1920];
 // @}
 
 /* @name number of scalefactor window bands for long and short transform windows respectively
@@ -55,7 +54,6 @@ const DECLARE_ALIGNED(32, extern float, ff_aac_eld_window_480)[1800];
  */
 extern const uint8_t ff_aac_num_swb_1024[];
 extern const uint8_t ff_aac_num_swb_512 [];
-extern const uint8_t ff_aac_num_swb_480 [];
 extern const uint8_t ff_aac_num_swb_128 [];
 // @}
 
@@ -74,12 +72,10 @@ extern const uint16_t *ff_aac_codebook_vector_idx[];
 
 extern const uint16_t * const ff_swb_offset_1024[13];
 extern const uint16_t * const ff_swb_offset_512 [13];
-extern const uint16_t * const ff_swb_offset_480 [13];
 extern const uint16_t * const ff_swb_offset_128 [13];
 
 extern const uint8_t ff_tns_max_bands_1024[13];
 extern const uint8_t ff_tns_max_bands_512 [13];
-extern const uint8_t ff_tns_max_bands_480 [13];
 extern const uint8_t ff_tns_max_bands_128 [13];
 
 #endif /* AVCODEC_AACTAB_H */
