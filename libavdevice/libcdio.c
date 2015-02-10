@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,7 @@
 #include "libavformat/internal.h"
 
 typedef struct CDIOContext {
-    AVClass             *class;
+    const AVClass       *class;
     cdrom_drive_t       *drive;
     cdrom_paranoia_t *paranoia;
     int32_t last_sector;
@@ -164,11 +164,13 @@ static int read_seek(AVFormatContext *ctx, int stream_index, int64_t timestamp,
 #define OFFSET(x) offsetof(CDIOContext, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
-    { "speed",              "Drive reading speed.", OFFSET(speed),         AV_OPT_TYPE_INT,   { .i64 = 0 }, 0,       INT_MAX, DEC },
-    { "paranoia_mode",      "Error recovery mode.", OFFSET(paranoia_mode), AV_OPT_TYPE_FLAGS, { .i64 = 0 }, INT_MIN, INT_MAX, DEC, "paranoia_mode" },
-        { "verify",         "Verify data integrity in overlap area", 0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_VERIFY },    0, 0, DEC, "paranoia_mode" },
-        { "overlap",        "Perform overlapped reads.",             0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_OVERLAP },   0, 0, DEC, "paranoia_mode" },
-        { "neverskip",      "Do not skip failed reads.",             0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_NEVERSKIP }, 0, 0, DEC, "paranoia_mode" },
+    { "speed",              "set drive reading speed", OFFSET(speed),         AV_OPT_TYPE_INT,   { .i64 = 0 }, 0,       INT_MAX, DEC },
+    { "paranoia_mode",      "set error recovery mode", OFFSET(paranoia_mode), AV_OPT_TYPE_FLAGS, { .i64 = PARANOIA_MODE_DISABLE }, INT_MIN, INT_MAX, DEC, "paranoia_mode" },
+        { "disable",        "apply no fixups",                      0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_DISABLE },   0, 0, DEC, "paranoia_mode" },
+        { "verify",         "verify data integrity in overlap area", 0,   AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_VERIFY },    0, 0, DEC, "paranoia_mode" },
+        { "overlap",        "perform overlapped reads",             0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_OVERLAP },   0, 0, DEC, "paranoia_mode" },
+        { "neverskip",      "do not skip failed reads",             0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_NEVERSKIP }, 0, 0, DEC, "paranoia_mode" },
+        { "full",           "apply all recovery modes",             0,    AV_OPT_TYPE_CONST, { .i64 = PARANOIA_MODE_FULL },      0, 0, DEC, "paranoia_mode" },
     { NULL },
 };
 
@@ -177,6 +179,7 @@ static const AVClass libcdio_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
 };
 
 AVInputFormat ff_libcdio_demuxer = {
