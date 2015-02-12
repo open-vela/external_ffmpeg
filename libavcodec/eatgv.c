@@ -2,20 +2,20 @@
  * Electronic Arts TGV Video Decoder
  * Copyright (c) 2007-2008 Peter Ross
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -81,7 +81,7 @@ static int unpack(const uint8_t *src, const uint8_t *src_end,
     else
         src += 2;
 
-    if (src + 3 > src_end)
+    if (src_end - src < 3)
         return AVERROR_INVALIDDATA;
     size = AV_RB24(src);
     src += 3;
@@ -156,7 +156,7 @@ static int tgv_decode_inter(TgvContext *s, AVFrame *frame,
     int mvbits;
     const uint8_t *blocks_raw;
 
-    if (buf + 12 > buf_end)
+    if(buf_end - buf < 12)
         return AVERROR_INVALIDDATA;
 
     num_mvs           = AV_RL16(&buf[0]);
@@ -173,7 +173,10 @@ static int tgv_decode_inter(TgvContext *s, AVFrame *frame,
 
     /* allocate codebook buffers as necessary */
     if (num_mvs > s->num_mvs) {
-        s->mv_codebook = av_realloc(s->mv_codebook, num_mvs*2*sizeof(int));
+        if (av_reallocp_array(&s->mv_codebook, num_mvs, sizeof(*s->mv_codebook))) {
+            s->num_mvs = 0;
+            return AVERROR(ENOMEM);
+        }
         s->num_mvs = num_mvs;
     }
 
@@ -189,7 +192,7 @@ static int tgv_decode_inter(TgvContext *s, AVFrame *frame,
     /* read motion vectors */
     mvbits = (num_mvs * 2 * 10 + 31) & ~31;
 
-    if (buf + (mvbits >> 3) + 16 * num_blocks_raw + 8 * num_blocks_packed > buf_end)
+    if (buf_end - buf < (mvbits>>3) + 16*num_blocks_raw + 8*num_blocks_packed)
         return AVERROR_INVALIDDATA;
 
     init_get_bits(&gb, buf, mvbits);
@@ -229,8 +232,10 @@ static int tgv_decode_inter(TgvContext *s, AVFrame *frame,
                 int my = y * 4 + s->mv_codebook[vector][1];
 
                 if (mx < 0 || mx + 4 > s->avctx->width ||
-                    my < 0 || my + 4 > s->avctx->height)
+                    my < 0 || my + 4 > s->avctx->height) {
+                    av_log(s->avctx, AV_LOG_ERROR, "MV %d %d out of picture\n", mx, my);
                     continue;
+                }
 
                 src = s->last_frame->data[0] + mx + my * s->last_frame->linesize[0];
                 src_stride = s->last_frame->linesize[0];
@@ -265,12 +270,15 @@ static int tgv_decode_frame(AVCodecContext *avctx,
     AVFrame *frame         = data;
     int chunk_type, ret;
 
+    if (buf_end - buf < EA_PREAMBLE_SIZE)
+        return AVERROR_INVALIDDATA;
+
     chunk_type = AV_RL32(&buf[0]);
     buf       += EA_PREAMBLE_SIZE;
 
     if (chunk_type == kVGT_TAG) {
         int pal_count, i;
-        if (buf + 12 > buf_end) {
+        if(buf_end - buf < 12) {
             av_log(avctx, AV_LOG_WARNING, "truncated header\n");
             return AVERROR_INVALIDDATA;
         }
@@ -286,8 +294,8 @@ static int tgv_decode_frame(AVCodecContext *avctx,
 
         pal_count = AV_RL16(&buf[6]);
         buf += 12;
-        for (i = 0; i < pal_count && i < AVPALETTE_COUNT && buf + 2 < buf_end; i++) {
-            s->palette[i] = AV_RB24(buf);
+        for(i = 0; i < pal_count && i < AVPALETTE_COUNT && buf_end - buf >= 3; i++) {
+            s->palette[i] = 0xFFU << 24 | AV_RB24(buf);
             buf += 3;
         }
     }
@@ -303,7 +311,7 @@ static int tgv_decode_frame(AVCodecContext *avctx,
         frame->pict_type = AV_PICTURE_TYPE_I;
 
         if (!s->frame_buffer &&
-            !(s->frame_buffer = av_malloc(s->width * s->height)))
+            !(s->frame_buffer = av_mallocz(s->width * s->height)))
             return AVERROR(ENOMEM);
 
         if (unpack(buf, buf_end, s->frame_buffer, s->avctx->width, s->avctx->height) < 0) {
@@ -341,8 +349,8 @@ static av_cold int tgv_decode_end(AVCodecContext *avctx)
     TgvContext *s = avctx->priv_data;
     av_frame_free(&s->last_frame);
     av_freep(&s->frame_buffer);
-    av_free(s->mv_codebook);
-    av_free(s->block_codebook);
+    av_freep(&s->mv_codebook);
+    av_freep(&s->block_codebook);
     return 0;
 }
 
