@@ -22,20 +22,20 @@
  *
  * conversion to gcc syntax by Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public License
- * along with Libav; if not, write to the Free Software Foundation,
+ * along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,6 +46,7 @@
 #include "libavutil/mem.h"
 
 #include "libavcodec/avcodec.h"
+#include "libavcodec/idctdsp.h"
 
 #include "idctdsp.h"
 #include "xvididct.h"
@@ -497,13 +498,13 @@ void ff_xvid_idct_mmx(short *block)
 void ff_xvid_idct_mmx_put(uint8_t *dest, int line_size, int16_t *block)
 {
     ff_xvid_idct_mmx(block);
-    ff_put_pixels_clamped_mmx(block, dest, line_size);
+    ff_put_pixels_clamped(block, dest, line_size);
 }
 
 void ff_xvid_idct_mmx_add(uint8_t *dest, int line_size, int16_t *block)
 {
     ff_xvid_idct_mmx(block);
-    ff_add_pixels_clamped_mmx(block, dest, line_size);
+    ff_add_pixels_clamped(block, dest, line_size);
 }
 
 #endif /* HAVE_MMX_INLINE */
@@ -536,13 +537,13 @@ void ff_xvid_idct_mmxext(short *block)
 void ff_xvid_idct_mmxext_put(uint8_t *dest, int line_size, int16_t *block)
 {
     ff_xvid_idct_mmxext(block);
-    ff_put_pixels_clamped_mmx(block, dest, line_size);
+    ff_put_pixels_clamped(block, dest, line_size);
 }
 
 void ff_xvid_idct_mmxext_add(uint8_t *dest, int line_size, int16_t *block)
 {
     ff_xvid_idct_mmxext(block);
-    ff_add_pixels_clamped_mmx(block, dest, line_size);
+    ff_add_pixels_clamped(block, dest, line_size);
 }
 
 #endif /* HAVE_MMXEXT_INLINE */
