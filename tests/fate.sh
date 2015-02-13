@@ -37,16 +37,18 @@ checkout(){
 update()(
     cd ${src} || return
     case "$repo" in
-        git:*) git fetch --force; git reset --hard "origin/$branch" ;;
+        git:*) git fetch --force && git reset --hard "origin/$branch" ;;
     esac
 )
 
 configure()(
     cd ${build} || return
-    ${src}/configure                                                    \
+    ${shell} ${src}/configure                                           \
         --prefix="${inst}"                                              \
         --samples="${samples}"                                          \
         --enable-gpl                                                    \
+        --enable-memory-poisoning                                       \
+        --enable-avresample                                             \
         ${arch:+--arch=$arch}                                           \
         ${cpu:+--cpu="$cpu"}                                            \
         ${cross_prefix:+--cross-prefix="$cross_prefix"}                 \
@@ -81,8 +83,10 @@ clean(){
 
 report(){
     date=$(date -u +%Y%m%d%H%M%S)
-    echo "fate:1:${date}:${slot}:${version}:$1:$2:${branch}:${comment}" >report
-    cat ${build}/config.fate ${build}/tests/data/fate/*.rep >>report
+    echo "fate:0:${date}:${slot}:${version}:$1:$2:${comment}" >report
+#    echo "fate:1:${date}:${slot}:${version}:$1:$2:${branch}:${comment}" >report
+    cat ${build}/config.fate >>report
+    cat ${build}/tests/data/fate/*.rep >>report || for i in ${build}/tests/data/fate/*.rep ; do cat "$i" >>report ; done
     test -n "$fate_recv" && $tar report *.log | gzip | $fate_recv
 }
 
@@ -111,8 +115,8 @@ echo ${version} >version-$slot
 rm -rf "${build}" *.log
 mkdir -p ${build}
 
-configure >configure.log 2>&1 || fail $? "error configuring"
-compile   >compile.log   2>&1 || fail $? "error compiling"
-fate      >test.log      2>&1 || fail $? "error testing"
+configure >configure.log 2>&1 || fail 3 "error configuring"
+compile   >compile.log   2>&1 || fail 2 "error compiling"
+fate      >test.log      2>&1 || fail 1 "error testing"
 report 0 success
 clean
