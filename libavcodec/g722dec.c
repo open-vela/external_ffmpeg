@@ -5,20 +5,20 @@
  * Copyright (c) 2009 Kenan Gillet
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,8 +67,6 @@ static av_cold int g722_decode_init(AVCodecContext * avctx)
     c->band[1].scale_factor = 2;
     c->prev_samples_pos = 22;
 
-    ff_g722dsp_init(&c->dsp);
-
     return 0;
 }
 
@@ -79,7 +77,7 @@ static const int16_t low_inv_quant5[32] = {
      587,   473,   370,   276,   190,   110,    35,   -35
 };
 
-static const int16_t *low_inv_quants[3] = { ff_g722_low_inv_quant6,
+static const int16_t * const low_inv_quants[3] = { ff_g722_low_inv_quant6,
                                                     low_inv_quant5,
                                             ff_g722_low_inv_quant4 };
 
@@ -96,17 +94,15 @@ static int g722_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = avpkt->size * 2;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     out_buf = (int16_t *)frame->data[0];
 
     init_get_bits(&gb, avpkt->data, avpkt->size * 8);
 
     for (j = 0; j < avpkt->size; j++) {
         int ilow, ihigh, rlow, rhigh, dhigh;
-        int xout[2];
+        int xout1, xout2;
 
         ihigh = get_bits(&gb, 2);
         ilow = get_bits(&gb, 6 - skip);
@@ -124,9 +120,10 @@ static int g722_decode_frame(AVCodecContext *avctx, void *data,
 
         c->prev_samples[c->prev_samples_pos++] = rlow + rhigh;
         c->prev_samples[c->prev_samples_pos++] = rlow - rhigh;
-        c->dsp.apply_qmf(c->prev_samples + c->prev_samples_pos - 24, xout);
-        *out_buf++ = av_clip_int16(xout[0] >> 11);
-        *out_buf++ = av_clip_int16(xout[1] >> 11);
+        ff_g722_apply_qmf(c->prev_samples + c->prev_samples_pos - 24,
+                          &xout1, &xout2);
+        *out_buf++ = av_clip_int16(xout1 >> 11);
+        *out_buf++ = av_clip_int16(xout2 >> 11);
         if (c->prev_samples_pos >= PREV_SAMPLES_BUF_SIZE) {
             memmove(c->prev_samples, c->prev_samples + c->prev_samples_pos - 22,
                     22 * sizeof(c->prev_samples[0]));
