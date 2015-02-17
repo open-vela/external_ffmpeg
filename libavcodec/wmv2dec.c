@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -86,7 +86,7 @@ static int decode_ext_header(Wmv2Context *w)
     int code;
 
     if (s->avctx->extradata_size < 4)
-        return AVERROR_INVALIDDATA;
+        return -1;
 
     init_get_bits(&gb, s->avctx->extradata, 32);
 
@@ -101,7 +101,7 @@ static int decode_ext_header(Wmv2Context *w)
     code                = get_bits(&gb, 3);
 
     if (code == 0)
-        return AVERROR_INVALIDDATA;
+        return -1;
 
     s->slice_height = s->mb_height / code;
 
@@ -131,7 +131,7 @@ int ff_wmv2_decode_picture_header(MpegEncContext *s)
     }
     s->chroma_qscale = s->qscale = get_bits(&s->gb, 5);
     if (s->qscale <= 0)
-        return AVERROR_INVALIDDATA;
+        return -1;
 
     return 0;
 }
@@ -173,16 +173,7 @@ int ff_wmv2_decode_secondary_picture_header(MpegEncContext *s)
 
         parse_mb_skip(w);
         cbp_index = decode012(&s->gb);
-        if (s->qscale <= 10) {
-            int map[3]         = { 0, 2, 1 };
-            w->cbp_table_index = map[cbp_index];
-        } else if (s->qscale <= 20) {
-            int map[3]         = { 1, 0, 2 };
-            w->cbp_table_index = map[cbp_index];
-        } else {
-            int map[3]         = {2,1,0};
-            w->cbp_table_index = map[cbp_index];
-        }
+        w->cbp_table_index = wmv2_get_cbp_table_index(s, cbp_index);
 
         if (w->mspel_bit)
             s->mspel = get_bits1(&s->gb);
@@ -242,7 +233,7 @@ static inline int wmv2_decode_motion(Wmv2Context *w, int *mx_ptr, int *my_ptr)
     ret = ff_msmpeg4_decode_motion(s, mx_ptr, my_ptr);
 
     if (ret < 0)
-        return ret;
+        return -1;
 
     if ((((*mx_ptr) | (*my_ptr)) & 1) && s->mspel)
         w->hshift = get_bits1(&s->gb);
@@ -302,7 +293,7 @@ static inline int wmv2_decode_inter_block(Wmv2Context *w, int16_t *block,
 {
     MpegEncContext *const s = &w->s;
     static const int sub_cbp_table[3] = { 2, 3, 1 };
-    int sub_cbp, ret;
+    int sub_cbp;
 
     if (!cbp) {
         s->block_last_index[n] = -1;
@@ -321,12 +312,12 @@ static inline int wmv2_decode_inter_block(Wmv2Context *w, int16_t *block,
         sub_cbp = sub_cbp_table[decode012(&s->gb)];
 
         if (sub_cbp & 1)
-            if ((ret = ff_msmpeg4_decode_block(s, block, n, 1, scantable)) < 0)
-                return ret;
+            if (ff_msmpeg4_decode_block(s, block, n, 1, scantable) < 0)
+                return -1;
 
         if (sub_cbp & 2)
-            if ((ret = ff_msmpeg4_decode_block(s, w->abt_block2[n], n, 1, scantable)) < 0)
-                return ret;
+            if (ff_msmpeg4_decode_block(s, w->abt_block2[n], n, 1, scantable) < 0)
+                return -1;
 
         s->block_last_index[n] = 63;
 
@@ -340,7 +331,7 @@ static inline int wmv2_decode_inter_block(Wmv2Context *w, int16_t *block,
 int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
 {
     Wmv2Context *const w = (Wmv2Context *) s;
-    int cbp, code, i, ret;
+    int cbp, code, i;
     uint8_t *coded_val;
 
     if (w->j_type)
@@ -364,7 +355,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         code = get_vlc2(&s->gb, ff_mb_non_intra_vlc[w->cbp_table_index].table,
                         MB_NON_INTRA_VLC_BITS, 3);
         if (code < 0)
-            return AVERROR_INVALIDDATA;
+            return -1;
         s->mb_intra = (~code & 0x40) >> 6;
 
         cbp = code & 0x3f;
@@ -374,7 +365,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         if (code < 0) {
             av_log(s->avctx, AV_LOG_ERROR,
                    "II-cbp illegal at %d %d\n", s->mb_x, s->mb_y);
-            return AVERROR_INVALIDDATA;
+            return -1;
         }
         /* predict coded block pattern */
         cbp = 0;
@@ -408,8 +399,8 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
                 w->per_block_abt = 0;
         }
 
-        if ((ret = wmv2_decode_motion(w, &mx, &my)) < 0)
-            return ret;
+        if (wmv2_decode_motion(w, &mx, &my) < 0)
+            return -1;
 
         s->mv_dir      = MV_DIR_FORWARD;
         s->mv_type     = MV_TYPE_16X16;
@@ -417,11 +408,11 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         s->mv[0][0][1] = my;
 
         for (i = 0; i < 6; i++) {
-            if ((ret = wmv2_decode_inter_block(w, block[i], i, (cbp >> (5 - i)) & 1)) < 0) {
+            if (wmv2_decode_inter_block(w, block[i], i, (cbp >> (5 - i)) & 1) < 0) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "\nerror while decoding inter block: %d x %d (%d)\n",
                        s->mb_x, s->mb_y, i);
-                return ret;
+                return -1;
             }
         }
     } else {
@@ -444,11 +435,11 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
 
         s->bdsp.clear_blocks(s->block[0]);
         for (i = 0; i < 6; i++) {
-            if ((ret = ff_msmpeg4_decode_block(s, block[i], i, (cbp >> (5 - i)) & 1, NULL)) < 0) {
+            if (ff_msmpeg4_decode_block(s, block[i], i, (cbp >> (5 - i)) & 1, NULL) < 0) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "\nerror while decoding intra block: %d x %d (%d)\n",
                        s->mb_x, s->mb_y, i);
-                return ret;
+                return -1;
             }
         }
     }
@@ -459,10 +450,11 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
 static av_cold int wmv2_decode_init(AVCodecContext *avctx)
 {
     Wmv2Context *const w = avctx->priv_data;
-    int ret;
 
-    if ((ret = ff_msmpeg4_decode_init(avctx)) < 0)
-        return ret;
+    avctx->flags |= CODEC_FLAG_EMU_EDGE;
+
+    if (ff_msmpeg4_decode_init(avctx) < 0)
+        return -1;
 
     ff_wmv2_common_init(w);
 
