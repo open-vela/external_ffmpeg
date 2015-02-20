@@ -2,20 +2,20 @@
  * RTP H264 Protocol (RFC3984)
  * Copyright (c) 2006 Ryan Martell
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,8 +35,8 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/base64.h"
-#include "libavutil/intreadwrite.h"
 #include "libavutil/avstring.h"
+#include "libavcodec/get_bits.h"
 #include "avformat.h"
 
 #include "network.h"
@@ -94,7 +94,7 @@ static void parse_profile_level_id(AVFormatContext *s,
 
 static int parse_sprop_parameter_sets(AVFormatContext *s,
                                       AVCodecContext *codec,
-                                      const char *value)
+                                      char *value)
 {
     char base64packet[1024];
     uint8_t decoded_packet[1024];
@@ -115,16 +115,18 @@ static int parse_sprop_parameter_sets(AVFormatContext *s,
         packet_size = av_base64_decode(decoded_packet, base64packet,
                                        sizeof(decoded_packet));
         if (packet_size > 0) {
-            uint8_t *dest = av_realloc(codec->extradata,
-                                       packet_size + sizeof(start_sequence) +
-                                       codec->extradata_size +
-                                       FF_INPUT_BUFFER_PADDING_SIZE);
+            uint8_t *dest = av_malloc(packet_size + sizeof(start_sequence) +
+                                      codec->extradata_size +
+                                      FF_INPUT_BUFFER_PADDING_SIZE);
             if (!dest) {
                 av_log(s, AV_LOG_ERROR,
                        "Unable to allocate memory for extradata!\n");
                 return AVERROR(ENOMEM);
             }
-            codec->extradata = dest;
+            if (codec->extradata_size) {
+                memcpy(dest, codec->extradata, codec->extradata_size);
+                av_free(codec->extradata);
+            }
 
             memcpy(dest + codec->extradata_size, start_sequence,
                    sizeof(start_sequence));
@@ -133,6 +135,7 @@ static int parse_sprop_parameter_sets(AVFormatContext *s,
             memset(dest + codec->extradata_size + sizeof(start_sequence) +
                    packet_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
 
+            codec->extradata       = dest;
             codec->extradata_size += sizeof(start_sequence) + packet_size;
         }
     }
@@ -174,7 +177,7 @@ static int sdp_parse_fmtp_config_h264(AVFormatContext *s,
     return 0;
 }
 
-static int h264_handle_packet_stap_a(AVFormatContext *ctx, AVPacket *pkt,
+static int h264_handle_packet_stap_a(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
                                      const uint8_t *buf, int len)
 {
     int pass         = 0;
@@ -182,7 +185,6 @@ static int h264_handle_packet_stap_a(AVFormatContext *ctx, AVPacket *pkt,
     uint8_t *dst     = NULL;
     int ret;
 
-    // first we are going to figure out the total size
     for (pass = 0; pass < 2; pass++) {
         const uint8_t *src = buf;
         int src_len        = len;
@@ -209,12 +211,15 @@ static int h264_handle_packet_stap_a(AVFormatContext *ctx, AVPacket *pkt,
             } else {
                 av_log(ctx, AV_LOG_ERROR,
                        "nal size exceeds length: %d %d\n", nal_size, src_len);
-                return AVERROR_INVALIDDATA;
             }
 
             // eat what we handled
             src     += nal_size;
             src_len -= nal_size;
+
+            if (src_len < 0)
+                av_log(ctx, AV_LOG_ERROR,
+                       "Consumed more bytes than we got! (%d)\n", src_len);
         }
 
         if (pass == 0) {
@@ -229,7 +234,7 @@ static int h264_handle_packet_stap_a(AVFormatContext *ctx, AVPacket *pkt,
     return 0;
 }
 
-static int h264_handle_packet_fu_a(AVFormatContext *ctx, AVPacket *pkt,
+static int h264_handle_packet_fu_a(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
                                    const uint8_t *buf, int len)
 {
     uint8_t fu_indicator, fu_header, start_bit, nal_type, nal;
@@ -302,7 +307,8 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         // consume the STAP-A NAL
         buf++;
         len--;
-        result = h264_handle_packet_stap_a(ctx, pkt, buf, len);
+        // first we are going to figure out the total size
+        result = h264_handle_packet_stap_a(ctx, data, pkt, buf, len);
         break;
 
     case 25:                   // STAP-B
@@ -316,7 +322,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         break;
 
     case 28:                   // FU-A (fragmented nal)
-        result = h264_handle_packet_fu_a(ctx, pkt, buf, len);
+        result = h264_handle_packet_fu_a(ctx, data, pkt, buf, len);
         break;
 
     case 30:                   // undefined
