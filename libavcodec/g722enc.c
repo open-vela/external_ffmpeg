@@ -5,20 +5,20 @@
  * Copyright (c) 2009 Kenan Gillet
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
  * G.722 ADPCM audio encoder
  */
 
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "g722.h"
@@ -74,9 +75,9 @@ static av_cold int g722_encode_init(AVCodecContext * avctx)
         int max_paths = frontier * FREEZE_INTERVAL;
         int i;
         for (i = 0; i < 2; i++) {
-            c->paths[i] = av_mallocz(max_paths * sizeof(**c->paths));
-            c->node_buf[i] = av_mallocz(2 * frontier * sizeof(**c->node_buf));
-            c->nodep_buf[i] = av_mallocz(2 * frontier * sizeof(**c->nodep_buf));
+            c->paths[i] = av_mallocz_array(max_paths, sizeof(**c->paths));
+            c->node_buf[i] = av_mallocz_array(frontier, 2 * sizeof(**c->node_buf));
+            c->nodep_buf[i] = av_mallocz_array(frontier, 2 * sizeof(**c->nodep_buf));
             if (!c->paths[i] || !c->node_buf[i] || !c->nodep_buf[i]) {
                 ret = AVERROR(ENOMEM);
                 goto error;
@@ -225,9 +226,9 @@ static void g722_encode_trellis(G722Context *c, int trellis,
                 if (k < 0)
                     continue;
 
-                decoded = av_clip_intp2((cur_node->state.scale_factor *
+                decoded = av_clip((cur_node->state.scale_factor *
                                   ff_g722_low_inv_quant6[k] >> 10)
-                                + cur_node->state.s_predictor, 14);
+                                + cur_node->state.s_predictor, -16384, 16383);
                 dec_diff = xlow - decoded;
 
 #define STORE_NODE(index, UPDATE, VALUE)\
@@ -238,7 +239,7 @@ static void g722_encode_trellis(G722Context *c, int trellis,
                     continue;\
                 if (heap_pos[index] < frontier) {\
                     pos = heap_pos[index]++;\
-                    assert(pathn[index] < FREEZE_INTERVAL * frontier);\
+                    av_assert2(pathn[index] < FREEZE_INTERVAL * frontier);\
                     node = nodes_next[index][pos] = next[index]++;\
                     node->path = pathn[index]++;\
                 } else {\
@@ -284,7 +285,8 @@ static void g722_encode_trellis(G722Context *c, int trellis,
 
                 dhigh = cur_node->state.scale_factor *
                         ff_g722_high_inv_quant[ihigh] >> 10;
-                decoded = av_clip_intp2(dhigh + cur_node->state.s_predictor, 14);
+                decoded = av_clip(dhigh + cur_node->state.s_predictor,
+                                  -16384, 16383);
                 dec_diff = xhigh - decoded;
 
                 STORE_NODE(1, ff_g722_update_high_predictor(&node->state, dhigh, ihigh), ihigh);
@@ -357,10 +359,8 @@ static int g722_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     int nb_samples, out_size, ret;
 
     out_size = (frame->nb_samples + 1) / 2;
-    if ((ret = ff_alloc_packet(avpkt, out_size))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, out_size)) < 0)
         return ret;
-    }
 
     nb_samples = frame->nb_samples - (frame->nb_samples & 1);
 

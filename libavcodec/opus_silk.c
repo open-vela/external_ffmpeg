@@ -2,20 +2,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -1077,7 +1077,7 @@ static inline void silk_decode_lpc(SilkContext *s, SilkFrame *frame,
         weight = y + ((213 * fpart * y) >> 16);
 
         value = cur * 128 + (lsf_res[i] * 16384) / weight;
-        nlsf[i] = av_clip_uintp2(value, 15);
+        nlsf[i] = av_clip(value, 0, 32767);
     }
 
     /* stabilize the NLSF coefficients */
@@ -1288,8 +1288,8 @@ static void silk_decode_frame(SilkContext *s, OpusRangeCoder *rc,
         } else {
             /* gain is coded relative */
             int delta_gain = opus_rc_getsymbol(rc, silk_model_gain_delta);
-            log_gain = av_clip_uintp2(FFMAX((delta_gain<<1) - 16,
-                                     frame->log_gain + delta_gain - 4), 6);
+            log_gain = av_clip(FFMAX((delta_gain<<1) - 16,
+                                     frame->log_gain + delta_gain - 4), 0, 63);
         }
 
         frame->log_gain = log_gain;

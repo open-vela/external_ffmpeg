@@ -5,20 +5,20 @@
  * Copyright (c) 2009 Kenan Gillet
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -79,7 +79,7 @@ static const int16_t low_inv_quant5[32] = {
      587,   473,   370,   276,   190,   110,    35,   -35
 };
 
-static const int16_t *low_inv_quants[3] = { ff_g722_low_inv_quant6,
+static const int16_t * const low_inv_quants[3] = { ff_g722_low_inv_quant6,
                                                     low_inv_quant5,
                                             ff_g722_low_inv_quant4 };
 
@@ -96,10 +96,8 @@ static int g722_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = avpkt->size * 2;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     out_buf = (int16_t *)frame->data[0];
 
     init_get_bits(&gb, avpkt->data, avpkt->size * 8);
@@ -112,13 +110,13 @@ static int g722_decode_frame(AVCodecContext *avctx, void *data,
         ilow = get_bits(&gb, 6 - skip);
         skip_bits(&gb, skip);
 
-        rlow = av_clip_intp2((c->band[0].scale_factor * quantizer_table[ilow] >> 10)
-                      + c->band[0].s_predictor, 14);
+        rlow = av_clip((c->band[0].scale_factor * quantizer_table[ilow] >> 10)
+                      + c->band[0].s_predictor, -16384, 16383);
 
         ff_g722_update_low_predictor(&c->band[0], ilow >> (2 - skip));
 
         dhigh = c->band[1].scale_factor * ff_g722_high_inv_quant[ihigh] >> 10;
-        rhigh = av_clip_intp2(dhigh + c->band[1].s_predictor, 14);
+        rhigh = av_clip(dhigh + c->band[1].s_predictor, -16384, 16383);
 
         ff_g722_update_high_predictor(&c->band[1], dhigh, ihigh);
 
