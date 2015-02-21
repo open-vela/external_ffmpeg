@@ -3,20 +3,20 @@
  * Copyright (c) 2010 Fabrice Bellard
  *                    Romain Degez
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,6 @@
 #include "libavutil/attributes.h"
 #include "libavutil/avstring.h"
 #include "libavcodec/get_bits.h"
-
-#define MAX_AAC_HBR_FRAME_SIZE 8191
 
 /** Structure listing useful vars to parse RTP packet payload */
 struct PayloadContext {
@@ -61,9 +59,8 @@ struct PayloadContext {
     int au_headers_length_bytes;
     int cur_au_index;
 
-    uint8_t buf[FFMAX(RTP_MAX_PACKET_LENGTH, MAX_AAC_HBR_FRAME_SIZE)];
+    uint8_t buf[RTP_MAX_PACKET_LENGTH];
     int buf_pos, buf_size;
-    uint32_t timestamp;
 };
 
 typedef struct AttrNameMap {
@@ -98,20 +95,18 @@ static PayloadContext *new_context(void)
 
 static void free_context(PayloadContext *data)
 {
-    av_free(data->au_headers);
-    av_free(data->mode);
-    av_free(data);
+    av_freep(&data->au_headers);
+    av_freep(&data->mode);
+    av_freep(&data);
 }
 
 static int parse_fmtp_config(AVCodecContext *codec, char *value)
 {
     /* decode the hexa encoded parameter */
     int len = ff_hex_to_data(NULL, value);
-    av_free(codec->extradata);
-    codec->extradata = av_mallocz(len + FF_INPUT_BUFFER_PADDING_SIZE);
-    if (!codec->extradata)
+    av_freep(&codec->extradata);
+    if (ff_alloc_extradata(codec, len))
         return AVERROR(ENOMEM);
-    codec->extradata_size = len;
     ff_hex_to_data(codec->extradata, value);
     return 0;
 }
@@ -142,7 +137,7 @@ static int rtp_parse_mp4_au(PayloadContext *data, const uint8_t *buf, int len)
 
     init_get_bits(&getbitcontext, buf, data->au_headers_length_bytes * 8);
 
-    /* XXX: Wrong if optionnal additional sections are present (cts, dts etc...) */
+    /* XXX: Wrong if optional additional sections are present (cts, dts etc...) */
     au_header_size = data->sizelength + data->indexlength;
     if (au_header_size <= 0 || (au_headers_length % au_header_size != 0))
         return -1;
@@ -174,93 +169,29 @@ static int aac_parse_packet(AVFormatContext *ctx, PayloadContext *data,
     int ret;
 
     if (!buf) {
-        if (data->cur_au_index > data->nb_au_headers) {
-            av_log(ctx, AV_LOG_ERROR, "Invalid parser state\n");
+        if (data->cur_au_index > data->nb_au_headers)
             return AVERROR_INVALIDDATA;
-        }
-        if (data->buf_size - data->buf_pos < data->au_headers[data->cur_au_index].size) {
-            av_log(ctx, AV_LOG_ERROR, "Invalid AU size\n");
+        if (data->buf_size - data->buf_pos < data->au_headers[data->cur_au_index].size)
             return AVERROR_INVALIDDATA;
-        }
-        if ((ret = av_new_packet(pkt, data->au_headers[data->cur_au_index].size)) < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Out of memory\n");
+        if ((ret = av_new_packet(pkt, data->au_headers[data->cur_au_index].size)) < 0)
             return ret;
-        }
         memcpy(pkt->data, &data->buf[data->buf_pos], data->au_headers[data->cur_au_index].size);
         data->buf_pos += data->au_headers[data->cur_au_index].size;
         pkt->stream_index = st->index;
         data->cur_au_index++;
-
-        if (data->cur_au_index == data->nb_au_headers) {
-            data->buf_pos = 0;
-            return 0;
-        }
-
-        return 1;
+        return data->cur_au_index < data->nb_au_headers;
     }
 
-    if (rtp_parse_mp4_au(data, buf, len)) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing AU headers\n");
+    if (rtp_parse_mp4_au(data, buf, len))
         return -1;
-    }
 
     buf += data->au_headers_length_bytes + 2;
     len -= data->au_headers_length_bytes + 2;
-    if (data->nb_au_headers == 1 && len < data->au_headers[0].size) {
-        /* Packet is fragmented */
 
-        if (!data->buf_pos) {
-            if (data->au_headers[0].size > MAX_AAC_HBR_FRAME_SIZE) {
-                av_log(ctx, AV_LOG_ERROR, "Invalid AU size\n");
-                return AVERROR_INVALIDDATA;
-            }
-
-            data->buf_size = data->au_headers[0].size;
-            data->timestamp = *timestamp;
-        }
-
-        if (data->timestamp != *timestamp ||
-            data->au_headers[0].size != data->buf_size ||
-            data->buf_pos + len > MAX_AAC_HBR_FRAME_SIZE) {
-            data->buf_pos = 0;
-            data->buf_size = 0;
-            av_log(ctx, AV_LOG_ERROR, "Invalid packet received\n");
-            return AVERROR_INVALIDDATA;
-        }
-
-        memcpy(&data->buf[data->buf_pos], buf, len);
-        data->buf_pos += len;
-
-        if (!(flags & RTP_FLAG_MARKER))
-            return AVERROR(EAGAIN);
-
-        if (data->buf_pos != data->buf_size) {
-            data->buf_pos = 0;
-            av_log(ctx, AV_LOG_ERROR, "Missed some packets, discarding frame\n");
-            return AVERROR_INVALIDDATA;
-        }
-
-        data->buf_pos = 0;
-        ret = av_new_packet(pkt, data->buf_size);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Out of memory\n");
-            return ret;
-        }
-        pkt->stream_index = st->index;
-
-        memcpy(pkt->data, data->buf, data->buf_size);
-
-        return 0;
-    }
-
-    if (len < data->au_headers[0].size) {
-        av_log(ctx, AV_LOG_ERROR, "First AU larger than packet size\n");
+    if (len < data->au_headers[0].size)
         return AVERROR_INVALIDDATA;
-    }
-    if ((ret = av_new_packet(pkt, data->au_headers[0].size)) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Out of memory\n");
+    if ((ret = av_new_packet(pkt, data->au_headers[0].size)) < 0)
         return ret;
-    }
     memcpy(pkt->data, buf, data->au_headers[0].size);
     len -= data->au_headers[0].size;
     buf += data->au_headers[0].size;
