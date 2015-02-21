@@ -2,20 +2,20 @@
  * RTP H264 Protocol (RFC3984)
  * Copyright (c) 2006 Ryan Martell
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -179,9 +179,9 @@ static int sdp_parse_fmtp_config_h264(AVFormatContext *s,
     return 0;
 }
 
-int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, AVPacket *pkt,
+int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
                                      const uint8_t *buf, int len,
-                                     int skip_between, int *nal_counters,
+                                     int start_skip, int *nal_counters,
                                      int nal_mask)
 {
     int pass         = 0;
@@ -193,6 +193,9 @@ int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, AVPacket *pkt,
     for (pass = 0; pass < 2; pass++) {
         const uint8_t *src = buf;
         int src_len        = len;
+
+        src     += start_skip;
+        src_len -= start_skip;
 
         while (src_len > 2) {
             uint16_t nal_size = AV_RB16(src);
@@ -221,8 +224,8 @@ int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, AVPacket *pkt,
             }
 
             // eat what we handled
-            src     += nal_size + skip_between;
-            src_len -= nal_size + skip_between;
+            src     += nal_size + start_skip;
+            src_len -= nal_size + start_skip;
         }
 
         if (pass == 0) {
@@ -237,7 +240,7 @@ int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, AVPacket *pkt,
     return 0;
 }
 
-static int h264_handle_packet_fu_a(AVFormatContext *ctx, AVPacket *pkt,
+static int h264_handle_packet_fu_a(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
                                    const uint8_t *buf, int len,
                                    int *nal_counters, int nal_mask)
 {
@@ -312,7 +315,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         // consume the STAP-A NAL
         buf++;
         len--;
-        result = ff_h264_handle_aggregated_packet(ctx, pkt, buf, len, 0,
+        result = ff_h264_handle_aggregated_packet(ctx, data, pkt, buf, len, 0,
                                                   NAL_COUNTERS, NAL_MASK);
         break;
 
@@ -327,7 +330,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         break;
 
     case 28:                   // FU-A (fragmented nal)
-        result = h264_handle_packet_fu_a(ctx, pkt, buf, len,
+        result = h264_handle_packet_fu_a(ctx, data, pkt, buf, len,
                                          NAL_COUNTERS, NAL_MASK);
         break;
 
