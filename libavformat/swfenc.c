@@ -3,25 +3,24 @@
  * Copyright (c) 2000 Fabrice Bellard
  * Copyright (c) 2003 Tinic Uro
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavcodec/put_bits.h"
-#include "libavutil/avassert.h"
 #include "avformat.h"
 #include "swf.h"
 
@@ -57,7 +56,7 @@ static void put_swf_end_tag(AVFormatContext *s)
         avio_wl16(pb, (tag << 6) | 0x3f);
         avio_wl32(pb, tag_len - 4);
     } else {
-        av_assert0(tag_len < 0x3f);
+        assert(tag_len < 0x3f);
         avio_wl16(pb, (tag << 6) | tag_len);
     }
     avio_seek(pb, pos, SEEK_SET);
@@ -192,10 +191,6 @@ static int swf_write_header(AVFormatContext *s)
                 return AVERROR_INVALIDDATA;
             }
             if (enc->codec_id == AV_CODEC_ID_MP3) {
-                if (!enc->frame_size) {
-                    av_log(s, AV_LOG_ERROR, "audio frame size not set\n");
-                    return -1;
-                }
                 swf->audio_enc = enc;
                 swf->audio_fifo= av_fifo_alloc(AUDIO_FIFO_SIZE);
                 if (!swf->audio_fifo)
@@ -432,7 +427,7 @@ static int swf_write_video(AVFormatContext *s,
         put_swf_tag(s, TAG_STREAMBLOCK | TAG_LONG);
         avio_wl16(pb, swf->sound_samples);
         avio_wl16(pb, 0); // seek samples
-        av_fifo_generic_read(swf->audio_fifo, pb, frame_size, (void*)avio_write);
+        av_fifo_generic_read(swf->audio_fifo, pb, frame_size, &avio_write);
         put_swf_end_tag(s);
 
         /* update FIFO */
@@ -461,7 +456,7 @@ static int swf_write_audio(AVFormatContext *s,
     }
 
     av_fifo_generic_write(swf->audio_fifo, buf, size, NULL);
-    swf->sound_samples += enc->frame_size;
+    swf->sound_samples += av_get_audio_frame_duration(enc, size);
 
     /* if audio only stream make sure we add swf frames */
     if (!swf->video_enc)
@@ -491,9 +486,8 @@ static int swf_write_trailer(AVFormatContext *s)
         enc = s->streams[i]->codec;
         if (enc->codec_type == AVMEDIA_TYPE_VIDEO)
             video_enc = enc;
-        else {
-            av_fifo_freep(&swf->audio_fifo);
-        }
+        else
+            av_fifo_free(swf->audio_fifo);
     }
 
     put_swf_tag(s, TAG_END);
@@ -506,10 +500,8 @@ static int swf_write_trailer(AVFormatContext *s)
         avio_wl32(pb, file_size);
         avio_seek(pb, swf->duration_pos, SEEK_SET);
         avio_wl16(pb, swf->video_frame_number);
-        if (swf->vframes_pos) {
         avio_seek(pb, swf->vframes_pos, SEEK_SET);
         avio_wl16(pb, swf->video_frame_number);
-        }
         avio_seek(pb, file_size, SEEK_SET);
     }
     return 0;

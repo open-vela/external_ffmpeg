@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... motion vector predicion
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,8 @@
 #include "avcodec.h"
 #include "h264.h"
 #include "mpegutils.h"
-#include "libavutil/avassert.h"
 
+#include <assert.h>
 
 static av_always_inline int fetch_diagonal_mv(H264Context *h, const int16_t **C,
                                               int i, int list, int part_width)
@@ -103,7 +103,7 @@ static av_always_inline void pred_motion(H264Context *const h, int n,
     const int16_t *C;
     int diagonal_ref, match_count;
 
-    av_assert2(part_width == 1 || part_width == 2 || part_width == 4);
+    assert(part_width == 1 || part_width == 2 || part_width == 4);
 
 /* mv_cache
  * B . . A T T T T
@@ -482,7 +482,7 @@ static void fill_decode_caches(H264Context *h, int mb_type)
                 } else {
                     int left_typei = h->cur_pic.mb_type[left_xy[LTOP] + h->mb_stride];
 
-                    av_assert2(left_xy[LTOP] == left_xy[LBOT]);
+                    assert(left_xy[LTOP] == left_xy[LBOT]);
                     if (!((left_typei & type_mask) && (left_type[LTOP] & type_mask))) {
                         h->topleft_samples_available &= 0xDF5F;
                         h->left_samples_available    &= 0x5F5F;
@@ -607,7 +607,7 @@ static void fill_decode_caches(H264Context *h, int mb_type)
             int16_t(*mv)[2]       = h->cur_pic.motion_val[list];
             if (!USES_LIST(mb_type, list))
                 continue;
-            av_assert2(!(IS_DIRECT(mb_type) && !h->direct_spatial_mv_pred));
+            assert(!(IS_DIRECT(mb_type) && !h->direct_spatial_mv_pred));
 
             if (USES_LIST(top_type, list)) {
                 const int b_xy = h->mb2b_xy[top_xy] + 3 * b_stride;
@@ -664,7 +664,7 @@ static void fill_decode_caches(H264Context *h, int mb_type)
                 ref_cache[4 - 1 * 8] = topright_type ? LIST_NOT_USED
                                                      : PART_NOT_AVAILABLE;
             }
-            if(ref_cache[2 - 1*8] < 0 || ref_cache[4 - 1 * 8] < 0) {
+            if (ref_cache[4 - 1 * 8] < 0) {
                 if (USES_LIST(topleft_type, list)) {
                     const int b_xy  = h->mb2b_xy[topleft_xy] + 3 + b_stride +
                                       (h->topleft_partition & 2 * b_stride);
