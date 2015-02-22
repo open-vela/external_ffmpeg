@@ -3,20 +3,20 @@
  * Copyright (c) 2010 Josh Allmann
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,7 @@
 
 #include "libavcodec/bytestream.h"
 
+#include "avio_internal.h"
 #include "rtpdec_formats.h"
 
 struct PayloadContext {
@@ -52,22 +53,12 @@ struct PayloadContext {
     int          got_keyframe;
 };
 
-static void vp8_free_buffer(PayloadContext *vp8)
-{
-    uint8_t *tmp;
-    if (!vp8->data)
-        return;
-    avio_close_dyn_buf(vp8->data, &tmp);
-    av_free(tmp);
-    vp8->data = NULL;
-}
-
 static int vp8_broken_sequence(AVFormatContext *ctx, PayloadContext *vp8,
                                const char *msg)
 {
     vp8->sequence_ok = 0;
     av_log(ctx, AV_LOG_WARNING, "%s", msg);
-    vp8_free_buffer(vp8);
+    ffio_free_dyn_buf(&vp8->data);
     return AVERROR(EAGAIN);
 }
 
@@ -150,7 +141,7 @@ static int vp8_handle_packet(AVFormatContext *ctx, PayloadContext *vp8,
         int res;
         int non_key = buf[0] & 0x01;
         if (!non_key) {
-            vp8_free_buffer(vp8);
+            ffio_free_dyn_buf(&vp8->data);
             // Keyframe, decoding ok again
             vp8->sequence_ok = 1;
             vp8->sequence_dirty = 0;
@@ -205,7 +196,7 @@ static int vp8_handle_packet(AVFormatContext *ctx, PayloadContext *vp8,
                     old_timestamp = vp8->timestamp;
                 } else {
                     // Shouldn't happen
-                    vp8_free_buffer(vp8);
+                    ffio_free_dyn_buf(&vp8->data);
                 }
             }
         }
@@ -269,19 +260,15 @@ static int vp8_handle_packet(AVFormatContext *ctx, PayloadContext *vp8,
     return AVERROR(EAGAIN);
 }
 
-static PayloadContext *vp8_new_context(void)
+static av_cold int vp8_init(AVFormatContext *s, int st_index, PayloadContext *vp8)
 {
-    PayloadContext *vp8 = av_mallocz(sizeof(PayloadContext));
-    if (!vp8)
-        return NULL;
     vp8->sequence_ok = 1;
-    return vp8;
+    return 0;
 }
 
-static void vp8_free_context(PayloadContext *vp8)
+static void vp8_close_context(PayloadContext *vp8)
 {
-    vp8_free_buffer(vp8);
-    av_free(vp8);
+    ffio_free_dyn_buf(&vp8->data);
 }
 
 static int vp8_need_keyframe(PayloadContext *vp8)
@@ -293,8 +280,9 @@ RTPDynamicProtocolHandler ff_vp8_dynamic_handler = {
     .enc_name       = "VP8",
     .codec_type     = AVMEDIA_TYPE_VIDEO,
     .codec_id       = AV_CODEC_ID_VP8,
-    .alloc          = vp8_new_context,
-    .free           = vp8_free_context,
+    .priv_data_size = sizeof(PayloadContext),
+    .init           = vp8_init,
+    .close          = vp8_close_context,
     .parse_packet   = vp8_handle_packet,
     .need_keyframe  = vp8_need_keyframe,
 };

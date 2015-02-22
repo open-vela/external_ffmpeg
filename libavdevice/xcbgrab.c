@@ -2,20 +2,20 @@
  * XCB input grabber
  * Copyright (C) 2014 Luca Barbato <lu_zero@gentoo.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,10 +31,6 @@
 #if CONFIG_LIBXCB_SHM
 #include <sys/shm.h>
 #include <xcb/shm.h>
-#endif
-
-#if CONFIG_LIBXCB_SHAPE
-#include <xcb/shape.h>
 #endif
 
 #include "libavformat/avformat.h"
@@ -81,6 +77,8 @@ typedef struct XCBGrabContext {
 static const AVOption options[] = {
     { "x", "Initial x coordinate.", OFFSET(x), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
     { "y", "Initial y coordinate.", OFFSET(y), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
+    { "grab_x", "Initial x coordinate.", OFFSET(x), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
+    { "grab_y", "Initial y coordinate.", OFFSET(y), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, D },
     { "video_size", "A string describing frame size, such as 640x480 or hd720.", OFFSET(video_size), AV_OPT_TYPE_STRING, {.str = "vga" }, 0, 0, D },
     { "framerate", "", OFFSET(framerate), AV_OPT_TYPE_STRING, {.str = "ntsc" }, 0, 0, D },
     { "draw_mouse", "Draw the mouse pointer.", OFFSET(draw_mouse), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, D },
@@ -97,7 +95,6 @@ static const AVClass xcbgrab_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
 static int xcbgrab_reposition(AVFormatContext *s,
@@ -458,11 +455,11 @@ static int pixfmt_from_pixmap_format(AVFormatContext *s, int depth,
             switch (depth) {
             case 32:
                 if (fmt->bits_per_pixel == 32)
-                    *pix_fmt = AV_PIX_FMT_0RGB;
+                    *pix_fmt = AV_PIX_FMT_ARGB;
                 break;
             case 24:
                 if (fmt->bits_per_pixel == 32)
-                    *pix_fmt = AV_PIX_FMT_0RGB32;
+                    *pix_fmt = AV_PIX_FMT_RGB32;
                 else if (fmt->bits_per_pixel == 24)
                     *pix_fmt = AV_PIX_FMT_RGB24;
                 break;
@@ -498,6 +495,7 @@ static int create_stream(AVFormatContext *s)
 {
     XCBGrabContext *c = s->priv_data;
     AVStream *st      = avformat_new_stream(s, NULL);
+    const char *opts  = strchr(s->filename, '+');
     xcb_get_geometry_cookie_t gc;
     xcb_get_geometry_reply_t *geo;
     int ret;
@@ -512,6 +510,9 @@ static int create_stream(AVFormatContext *s)
     ret = av_parse_video_rate(&st->avg_frame_rate, c->framerate);
     if (ret < 0)
         return ret;
+
+    if (opts)
+        sscanf(opts, "%d,%d", &c->x, &c->y);
 
     avpriv_set_pts_info(st, 64, 1, 1000000);
 
@@ -583,13 +584,11 @@ static void setup_window(AVFormatContext *s)
                       XCB_COPY_FROM_PARENT,
                       mask, values);
 
-#if CONFIG_LIBXCB_SHAPE
     xcb_shape_rectangles(c->conn, XCB_SHAPE_SO_SUBTRACT,
                          XCB_SHAPE_SK_BOUNDING, XCB_CLIP_ORDERING_UNSORTED,
                          c->window,
                          c->region_border, c->region_border,
                          1, &rect);
-#endif
 
     xcb_map_window(c->conn, c->window);
 
@@ -601,18 +600,8 @@ static av_cold int xcbgrab_read_header(AVFormatContext *s)
     XCBGrabContext *c = s->priv_data;
     int screen_num, ret;
     const xcb_setup_t *setup;
-    char *display_name = av_strdup(s->filename);
 
-    if (!display_name)
-        return AVERROR(ENOMEM);
-
-    if (!sscanf(s->filename, "%[^+]+%d,%d", display_name, &c->x, &c->y)) {
-        *display_name = 0;
-        sscanf(s->filename, "+%d,%d", &c->x, &c->y);
-    }
-
-    c->conn = xcb_connect(display_name[0] ? display_name : NULL, &screen_num);
-    av_freep(&display_name);
+    c->conn = xcb_connect(s->filename[0] ? s->filename : NULL, &screen_num);
     if ((ret = xcb_connection_has_error(c->conn))) {
         av_log(s, AV_LOG_ERROR, "Cannot open display %s, error %d.\n",
                s->filename[0] ? s->filename : "default", ret);

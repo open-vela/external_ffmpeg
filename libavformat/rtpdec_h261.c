@@ -2,25 +2,26 @@
  * RTP parser for H.261 payload format (RFC 4587)
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavcodec/get_bits.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "rtpdec_formats.h"
 
 #define RTP_H261_PAYLOAD_HEADER_SIZE 4
@@ -32,43 +33,14 @@ struct PayloadContext {
     uint32_t     timestamp;
 };
 
-static av_cold PayloadContext *h261_new_context(void)
-{
-    return av_mallocz(sizeof(PayloadContext));
-}
-
-static void h261_free_dyn_buffer(AVIOContext **dyn_buf)
-{
-    uint8_t *ptr_dyn_buffer;
-    avio_close_dyn_buf(*dyn_buf, &ptr_dyn_buffer);
-    av_free(ptr_dyn_buffer);
-    *dyn_buf = NULL;
-}
-
-static av_cold void h261_free_context(PayloadContext *pl_ctx)
+static av_cold void h261_close_context(PayloadContext *pl_ctx)
 {
     /* return if context is invalid */
     if (!pl_ctx)
         return;
 
     /* free buffer if it is valid */
-    if (pl_ctx->buf) {
-        h261_free_dyn_buffer(&pl_ctx->buf);
-    }
-
-    /* free context */
-    av_free(pl_ctx);
-}
-
-static av_cold int h261_init(AVFormatContext *ctx, int st_index,
-                             PayloadContext *data)
-{
-    if (st_index < 0)
-        return 0;
-
-    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
-
-    return 0;
+    ffio_free_dyn_buf(&pl_ctx->buf);
 }
 
 static int h261_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_h261_ctx,
@@ -81,7 +53,7 @@ static int h261_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_h261_ctx
 
     /* drop data of previous packets in case of non-continuous (lossy) packet stream */
     if (rtp_h261_ctx->buf && rtp_h261_ctx->timestamp != *timestamp) {
-        h261_free_dyn_buffer(&rtp_h261_ctx->buf);
+        ffio_free_dyn_buf(&rtp_h261_ctx->buf);
         rtp_h261_ctx->endbyte_bits = 0;
     }
 
@@ -194,9 +166,9 @@ RTPDynamicProtocolHandler ff_h261_dynamic_handler = {
     .enc_name          = "H261",
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_H261,
-    .init              = h261_init,
-    .alloc             = h261_new_context,
-    .free              = h261_free_context,
+    .need_parsing      = AVSTREAM_PARSE_FULL,
+    .priv_data_size    = sizeof(PayloadContext),
+    .close             = h261_close_context,
     .parse_packet      = h261_handle_packet,
     .static_payload_id = 31,
 };

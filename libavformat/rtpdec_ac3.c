@@ -2,24 +2,25 @@
  * RTP parser for AC3 payload format (RFC 4184)
  * Copyright (c) 2015 Gilles Chanteperdrix <gch@xenomai.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avformat.h"
+#include "avio_internal.h"
 #include "rtpdec_formats.h"
 
 #define RTP_AC3_PAYLOAD_HEADER_SIZE 2
@@ -31,34 +32,9 @@ struct PayloadContext {
     AVIOContext *fragment;
 };
 
-static av_cold int ac3_init(AVFormatContext *s, int st_index,
-                            PayloadContext *data)
+static void ac3_close_context(PayloadContext *data)
 {
-    if (st_index < 0)
-        return 0;
-    s->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
-    return 0;
-}
-
-static PayloadContext *ac3_new_context(void)
-{
-    return av_mallocz(sizeof(PayloadContext));
-}
-
-static void free_fragment(PayloadContext *data)
-{
-    if (data->fragment) {
-        uint8_t *p;
-        avio_close_dyn_buf(data->fragment, &p);
-        av_free(p);
-        data->fragment = NULL;
-    }
-}
-
-static void ac3_free_context(PayloadContext *data)
-{
-    free_fragment(data);
-    av_free(data);
+    ffio_free_dyn_buf(&data->fragment);
 }
 
 static int ac3_handle_packet(AVFormatContext *ctx, PayloadContext *data,
@@ -97,7 +73,7 @@ static int ac3_handle_packet(AVFormatContext *ctx, PayloadContext *data,
 
     case 1:
     case 2: /* First fragment */
-        free_fragment(data);
+        ffio_free_dyn_buf(&data->fragment);
 
         data->last_frame = 1;
         data->nr_frames = nr_frames;
@@ -117,7 +93,7 @@ static int ac3_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         }
         if (nr_frames != data->nr_frames ||
             data->timestamp != *timestamp) {
-            free_fragment(data);
+            ffio_free_dyn_buf(&data->fragment);
             av_log(ctx, AV_LOG_ERROR, "Invalid packet received\n");
             return AVERROR_INVALIDDATA;
         }
@@ -130,7 +106,7 @@ static int ac3_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         return AVERROR(EAGAIN);
 
     if (data->last_frame != data->nr_frames) {
-        free_fragment(data);
+        ffio_free_dyn_buf(&data->fragment);
         av_log(ctx, AV_LOG_ERROR, "Missed %d packets\n",
                data->nr_frames - data->last_frame);
         return AVERROR_INVALIDDATA;
@@ -150,8 +126,8 @@ RTPDynamicProtocolHandler ff_ac3_dynamic_handler = {
     .enc_name           = "ac3",
     .codec_type         = AVMEDIA_TYPE_AUDIO,
     .codec_id           = AV_CODEC_ID_AC3,
-    .init               = ac3_init,
-    .alloc              = ac3_new_context,
-    .free               = ac3_free_context,
+    .need_parsing       = AVSTREAM_PARSE_FULL,
+    .priv_data_size     = sizeof(PayloadContext),
+    .close              = ac3_close_context,
     .parse_packet       = ac3_handle_packet,
 };

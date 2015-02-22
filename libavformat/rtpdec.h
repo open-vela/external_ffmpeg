@@ -3,20 +3,20 @@
  * Copyright (c) 2002 Fabrice Bellard
  * Copyright (c) 2006 Ryan Martell <rdm4@martellventures.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -116,19 +116,21 @@ struct RTPDynamicProtocolHandler {
     const char *enc_name;
     enum AVMediaType codec_type;
     enum AVCodecID codec_id;
+    enum AVStreamParseType need_parsing;
     int static_payload_id; /* 0 means no payload id is set. 0 is a valid
                             * payload ID (PCMU), too, but that format doesn't
                             * require any custom depacketization code. */
+    int priv_data_size;
 
     /** Initialize dynamic protocol handler, called after the full rtpmap line is parsed, may be null */
     int (*init)(AVFormatContext *s, int st_index, PayloadContext *priv_data);
     /** Parse the a= line from the sdp field */
     int (*parse_sdp_a_line)(AVFormatContext *s, int st_index,
                             PayloadContext *priv_data, const char *line);
-    /** Allocate any data needed by the rtp parsing for this dynamic data. */
-    PayloadContext *(*alloc)(void);
-    /** Free any data needed by the rtp parsing for this dynamic data. */
-    void (*free)(PayloadContext *protocol_data);
+    /** Free any data needed by the rtp parsing for this dynamic data.
+      * Don't free the protocol_data pointer itself, that is freed by the
+      * caller. This is called even if the init method failed. */
+    void (*close)(PayloadContext *protocol_data);
     /** Parse handler for this dynamic packet */
     DynamicPayloadPacketHandlerProc parse_packet;
     int (*need_keyframe)(PayloadContext *context);
@@ -173,9 +175,9 @@ struct RTPDemuxContext {
     /*@}*/
 
     /* rtcp sender statistics receive */
-    uint64_t last_rtcp_ntp_time;
+    int64_t last_rtcp_ntp_time;
     int64_t last_rtcp_reception_time;
-    uint64_t first_rtcp_ntp_time;
+    int64_t first_rtcp_ntp_time;
     uint32_t last_rtcp_timestamp;
     int64_t rtcp_ts_offset;
 
@@ -205,7 +207,7 @@ int ff_parse_fmtp(AVFormatContext *s,
                   int (*parse_fmtp)(AVFormatContext *s,
                                     AVStream *stream,
                                     PayloadContext *data,
-                                    char *attr, char *value));
+                                    const char *attr, const char *value));
 
 void ff_register_rtp_dynamic_payload_handlers(void);
 
