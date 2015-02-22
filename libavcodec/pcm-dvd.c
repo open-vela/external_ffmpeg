@@ -2,20 +2,20 @@
  * LPCM codecs for PCM formats found in Video DVD streams
  * Copyright (c) 2013 Christian Schmidt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@
 typedef struct PCMDVDContext {
     uint32_t last_header;    // Cached header to see if parsing is needed
     int block_size;          // Size of a block of samples in bytes
-    int last_block_size;     // Size of the last block of samples in bytes
     int samples_per_block;   // Number of samples per channel per block
     int groups_per_block;    // Number of 20/24bit sample groups per block
     uint8_t *extra_samples;  // Pointer to leftover samples from a frame
@@ -70,7 +69,6 @@ static int pcm_dvd_parse_header(AVCodecContext *avctx, const uint8_t *header)
     /* early exit if the header didn't change apart from the frame number */
     if (s->last_header == header_int)
         return 0;
-    s->last_header = -1;
 
     if (avctx->debug & FF_DEBUG_PICT_INFO)
         av_dlog(avctx, "pcm_dvd_parse_header: header = %02x%02x%02x\n",
@@ -87,9 +85,7 @@ static int pcm_dvd_parse_header(AVCodecContext *avctx, const uint8_t *header)
     /* get the sample depth and derive the sample format from it */
     avctx->bits_per_coded_sample = 16 + (header[1] >> 6 & 3) * 4;
     if (avctx->bits_per_coded_sample == 28) {
-        av_log(avctx, AV_LOG_ERROR,
-               "PCM DVD unsupported sample depth %i\n",
-               avctx->bits_per_coded_sample);
+        av_log(avctx, AV_LOG_ERROR, "PCM DVD unsupported sample depth\n");
         return AVERROR_INVALIDDATA;
     }
     avctx->sample_fmt = avctx->bits_per_coded_sample == 16 ? AV_SAMPLE_FMT_S16
@@ -174,17 +170,6 @@ static void *pcm_dvd_decode_samples(AVCodecContext *avctx, const uint8_t *src,
         return dst16;
     }
     case 20:
-        if (avctx->channels == 1) {
-            do {
-                for (i = 2; i; i--) {
-                    dst32[0] = bytestream2_get_be16u(&gb) << 16;
-                    dst32[1] = bytestream2_get_be16u(&gb) << 16;
-                    t = bytestream2_get_byteu(&gb);
-                    *dst32++ += (t & 0xf0) << 8;
-                    *dst32++ += (t & 0x0f) << 12;
-                }
-            } while (--blocks);
-        } else {
         do {
             for (i = s->groups_per_block; i; i--) {
                 dst32[0] = bytestream2_get_be16u(&gb) << 16;
@@ -199,19 +184,8 @@ static void *pcm_dvd_decode_samples(AVCodecContext *avctx, const uint8_t *src,
                 *dst32++ += (t & 0x0f) << 12;
             }
         } while (--blocks);
-        }
         return dst32;
     case 24:
-        if (avctx->channels == 1) {
-            do {
-                for (i = 2; i; i--) {
-                    dst32[0] = bytestream2_get_be16u(&gb) << 16;
-                    dst32[1] = bytestream2_get_be16u(&gb) << 16;
-                    *dst32++ += bytestream2_get_byteu(&gb) << 8;
-                    *dst32++ += bytestream2_get_byteu(&gb) << 8;
-                }
-            } while (--blocks);
-        } else {
         do {
             for (i = s->groups_per_block; i; i--) {
                 dst32[0] = bytestream2_get_be16u(&gb) << 16;
@@ -224,7 +198,6 @@ static void *pcm_dvd_decode_samples(AVCodecContext *avctx, const uint8_t *src,
                 *dst32++ += bytestream2_get_byteu(&gb) << 8;
             }
         } while (--blocks);
-        }
         return dst32;
     default:
         return NULL;
@@ -249,11 +222,6 @@ static int pcm_dvd_decode_frame(AVCodecContext *avctx, void *data,
 
     if ((retval = pcm_dvd_parse_header(avctx, src)))
         return retval;
-    if (s->last_block_size && s->last_block_size != s->block_size) {
-        av_log(avctx, AV_LOG_WARNING, "block_size has changed %d != %d\n", s->last_block_size, s->block_size);
-        s->extra_sample_count = 0;
-    }
-    s->last_block_size = s->block_size;
     src      += 3;
     buf_size -= 3;
 
@@ -261,8 +229,10 @@ static int pcm_dvd_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = blocks * s->samples_per_block;
-    if ((retval = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((retval = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return retval;
+    }
     dst = frame->data[0];
 
     /* consume leftover samples from last packet */
