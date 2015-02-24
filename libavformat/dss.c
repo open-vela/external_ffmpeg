@@ -210,11 +210,10 @@ static int dss_sp_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     DSSDemuxContext *ctx = s->priv_data;
     int read_size, ret, offset = 0, buff_offset = 0;
+    int64_t pos = avio_tell(s->pb);
 
     if (ctx->counter == 0)
         dss_skip_audio_header(s, pkt);
-
-    pkt->pos = avio_tell(s->pb);
 
     if (ctx->swap) {
         read_size   = DSS_FRAME_SIZE - 2;
@@ -229,6 +228,7 @@ static int dss_sp_read_packet(AVFormatContext *s, AVPacket *pkt)
         return ret;
 
     pkt->duration     = 0;
+    pkt->pos = pos;
     pkt->stream_index = 0;
 
     if (ctx->counter < 0) {
@@ -264,11 +264,11 @@ static int dss_723_1_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     DSSDemuxContext *ctx = s->priv_data;
     int size, byte, ret, offset;
+    int64_t pos = avio_tell(s->pb);
 
     if (ctx->counter == 0)
         dss_skip_audio_header(s, pkt);
 
-    pkt->pos = avio_tell(s->pb);
     /* We make one byte-step here. Don't forget to add offset. */
     byte = avio_r8(s->pb);
     if (byte == 0xff)
@@ -281,6 +281,7 @@ static int dss_723_1_read_packet(AVFormatContext *s, AVPacket *pkt)
     ret = av_new_packet(pkt, size);
     if (ret < 0)
         return ret;
+    pkt->pos = pos;
 
     pkt->data[0]  = byte;
     offset        = 1;
