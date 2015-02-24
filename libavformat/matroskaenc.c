@@ -851,6 +851,8 @@ static int mkv_write_track(AVFormatContext *s, MatroskaMuxContext *mkv,
     // if we need to clear it.
     if (default_stream_exists && !(st->disposition & AV_DISPOSITION_DEFAULT))
         put_ebml_uint(pb, MATROSKA_ID_TRACKFLAGDEFAULT, !!(st->disposition & AV_DISPOSITION_DEFAULT));
+    if (st->disposition & AV_DISPOSITION_FORCED)
+        put_ebml_uint(pb, MATROSKA_ID_TRACKFLAGFORCED, !!(st->disposition & AV_DISPOSITION_FORCED));
 
     if (st->disposition & AV_DISPOSITION_FORCED)
         put_ebml_uint(pb, MATROSKA_ID_TRACKFLAGFORCED, 1);
