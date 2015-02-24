@@ -38,8 +38,6 @@ static PayloadContext *latm_new_context(void)
 
 static void latm_free_context(PayloadContext *data)
 {
-    if (!data)
-        return;
     if (data->dyn_buf) {
         uint8_t *p;
         avio_close_dyn_buf(data->dyn_buf, &p);
