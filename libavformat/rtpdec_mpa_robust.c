@@ -2,20 +2,20 @@
  * RTP parser for loss tolerant payload format for MP3 audio (RFC 5219)
  * Copyright (c) 2015 Gilles Chanteperdrix <gch@xenomai.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,21 +33,7 @@ struct PayloadContext {
     AVIOContext *fragment;
 };
 
-static av_cold int mpa_robust_init(AVFormatContext *ctx, int st_index,
-                                   PayloadContext *data)
-{
-    if (st_index < 0)
-        return 0;
-    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_HEADERS;
-    return 0;
-}
-
-static PayloadContext *mpa_robust_new_context(void)
-{
-    return av_mallocz(sizeof(PayloadContext));
-}
-
-static inline void free_fragment(PayloadContext *data)
+static void free_fragment(PayloadContext *data)
 {
     if (data->fragment) {
         uint8_t *p;
@@ -214,11 +200,11 @@ static int mpa_robust_parse_packet(AVFormatContext *ctx, PayloadContext *data,
 }
 
 RTPDynamicProtocolHandler ff_mpeg_audio_robust_dynamic_handler = {
+    .enc_name          = "mpa-robust",
     .codec_type        = AVMEDIA_TYPE_AUDIO,
     .codec_id          = AV_CODEC_ID_MP3ADU,
-    .init              = mpa_robust_init,
-    .alloc             = mpa_robust_new_context,
+    .need_parsing      = AVSTREAM_PARSE_HEADERS,
+    .priv_data_size    = sizeof(PayloadContext),
     .free              = mpa_robust_free_context,
     .parse_packet      = mpa_robust_parse_packet,
-    .enc_name          = "mpa-robust",
 };

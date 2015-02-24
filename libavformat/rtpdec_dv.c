@@ -2,20 +2,20 @@
  * RTP parser for DV payload format (RFC 6469)
  * Copyright (c) 2015 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,11 +31,6 @@ struct PayloadContext {
     int         bundled_audio;
 };
 
-static av_cold PayloadContext *dv_new_context(void)
-{
-    return av_mallocz(sizeof(PayloadContext));
-}
-
 static void dv_free_dyn_buffer(AVIOContext **dyn_buf)
 {
     uint8_t *ptr_dyn_buffer;
@@ -48,19 +43,6 @@ static av_cold void dv_free_context(PayloadContext *data)
 {
     dv_free_dyn_buffer(&data->buf);
     av_free(data);
-}
-
-static av_cold int dv_init(AVFormatContext *ctx, int st_index,
-                           PayloadContext *data)
-{
-    av_dlog(ctx, "dv_init() for stream %d\n", st_index);
-
-    if (st_index < 0)
-        return 0;
-
-    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
-
-    return 0;
 }
 
 static av_cold int dv_sdp_parse_fmtp_config(AVFormatContext *s,
@@ -161,9 +143,9 @@ RTPDynamicProtocolHandler ff_dv_dynamic_handler = {
     .enc_name         = "DV",
     .codec_type       = AVMEDIA_TYPE_VIDEO,
     .codec_id         = AV_CODEC_ID_DVVIDEO,
-    .init             = dv_init,
+    .need_parsing     = AVSTREAM_PARSE_FULL,
     .parse_sdp_a_line = dv_parse_sdp_line,
-    .alloc            = dv_new_context,
+    .priv_data_size   = sizeof(PayloadContext),
     .free             = dv_free_context,
     .parse_packet     = dv_handle_packet,
 };

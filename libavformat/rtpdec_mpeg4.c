@@ -3,20 +3,20 @@
  * Copyright (c) 2010 Fabrice Bellard
  *                    Romain Degez
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -91,25 +91,22 @@ static const AttrNameMap attr_names[] = {
     { NULL, -1, -1 },
 };
 
-static PayloadContext *new_context(void)
-{
-    return av_mallocz(sizeof(PayloadContext));
-}
-
 static void free_context(PayloadContext *data)
 {
-    av_freep(&data->au_headers);
-    av_freep(&data->mode);
-    av_freep(&data);
+    av_free(data->au_headers);
+    av_free(data->mode);
+    av_free(data);
 }
 
 static int parse_fmtp_config(AVCodecContext *codec, const char *value)
 {
     /* decode the hexa encoded parameter */
     int len = ff_hex_to_data(NULL, value);
-    av_freep(&codec->extradata);
-    if (ff_alloc_extradata(codec, len))
+    av_free(codec->extradata);
+    codec->extradata = av_mallocz(len + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!codec->extradata)
         return AVERROR(ENOMEM);
+    codec->extradata_size = len;
     ff_hex_to_data(codec->extradata, value);
     return 0;
 }
@@ -140,7 +137,7 @@ static int rtp_parse_mp4_au(PayloadContext *data, const uint8_t *buf, int len)
 
     init_get_bits(&getbitcontext, buf, data->au_headers_length_bytes * 8);
 
-    /* XXX: Wrong if optional additional sections are present (cts, dts etc...) */
+    /* XXX: Wrong if optionnal additional sections are present (cts, dts etc...) */
     au_header_size = data->sizelength + data->indexlength;
     if (au_header_size <= 0 || (au_headers_length % au_header_size != 0))
         return -1;
@@ -170,7 +167,6 @@ static int aac_parse_packet(AVFormatContext *ctx, PayloadContext *data,
                             int flags)
 {
     int ret;
-
 
     if (!buf) {
         if (data->cur_au_index > data->nb_au_headers) {
@@ -320,20 +316,12 @@ static int parse_sdp_line(AVFormatContext *s, int st_index,
     return 0;
 }
 
-static av_cold int init_video(AVFormatContext *s, int st_index,
-                              PayloadContext *data)
-{
-    if (st_index < 0)
-        return 0;
-    s->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
-    return 0;
-}
-
 RTPDynamicProtocolHandler ff_mp4v_es_dynamic_handler = {
     .enc_name           = "MP4V-ES",
     .codec_type         = AVMEDIA_TYPE_VIDEO,
     .codec_id           = AV_CODEC_ID_MPEG4,
-    .init               = init_video,
+    .need_parsing       = AVSTREAM_PARSE_FULL,
+    .priv_data_size     = sizeof(PayloadContext),
     .parse_sdp_a_line   = parse_sdp_line,
 };
 
@@ -341,8 +329,8 @@ RTPDynamicProtocolHandler ff_mpeg4_generic_dynamic_handler = {
     .enc_name           = "mpeg4-generic",
     .codec_type         = AVMEDIA_TYPE_AUDIO,
     .codec_id           = AV_CODEC_ID_AAC,
+    .priv_data_size     = sizeof(PayloadContext),
     .parse_sdp_a_line   = parse_sdp_line,
-    .alloc              = new_context,
     .free               = free_context,
     .parse_packet       = aac_parse_packet,
 };
