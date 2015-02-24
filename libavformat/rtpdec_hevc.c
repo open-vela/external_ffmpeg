@@ -72,7 +72,7 @@ static av_cold int hevc_init(AVFormatContext *ctx, int st_index,
 static av_cold int hevc_sdp_parse_fmtp_config(AVFormatContext *s,
                                               AVStream *stream,
                                               PayloadContext *hevc_data,
-                                              char *attr, char *value)
+                                              const char *attr, const char *value)
 {
     /* profile-space: 0-3 */
     /* profile-id: 0-31 */

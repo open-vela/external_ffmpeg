@@ -141,7 +141,7 @@ static int amr_handle_packet(AVFormatContext *ctx, PayloadContext *data,
 
 static int amr_parse_fmtp(AVFormatContext *s,
                           AVStream *stream, PayloadContext *data,
-                          char *attr, char *value)
+                          const char *attr, const char *value)
 {
     /* Some AMR SDP configurations contain "octet-align", without
      * the trailing =1. Therefore, if the value is empty,
@@ -150,7 +150,7 @@ static int amr_parse_fmtp(AVFormatContext *s,
     if (!strcmp(value, "")) {
         av_log(s, AV_LOG_WARNING, "AMR fmtp attribute %s had "
                                   "nonstandard empty value\n", attr);
-        strcpy(value, "1");
+        value = "1";
     }
     if (!strcmp(attr, "octet-align"))
         data->octet_align = atoi(value);
