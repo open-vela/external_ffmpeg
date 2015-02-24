@@ -2,20 +2,20 @@
  * RTP parser for AC3 payload format (RFC 4184)
  * Copyright (c) 2015 Gilles Chanteperdrix <gch@xenomai.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +30,20 @@ struct PayloadContext {
     uint32_t timestamp;
     AVIOContext *fragment;
 };
+
+static av_cold int ac3_init(AVFormatContext *s, int st_index,
+                            PayloadContext *data)
+{
+    if (st_index < 0)
+        return 0;
+    s->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
+    return 0;
+}
+
+static PayloadContext *ac3_new_context(void)
+{
+    return av_mallocz(sizeof(PayloadContext));
+}
 
 static void free_fragment(PayloadContext *data)
 {
@@ -136,8 +150,8 @@ RTPDynamicProtocolHandler ff_ac3_dynamic_handler = {
     .enc_name           = "ac3",
     .codec_type         = AVMEDIA_TYPE_AUDIO,
     .codec_id           = AV_CODEC_ID_AC3,
-    .need_parsing       = AVSTREAM_PARSE_FULL,
-    .priv_data_size     = sizeof(PayloadContext),
+    .init               = ac3_init,
+    .alloc              = ac3_new_context,
     .free               = ac3_free_context,
     .parse_packet       = ac3_handle_packet,
 };

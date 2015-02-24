@@ -2,20 +2,20 @@
  * RTP parser for H.261 payload format (RFC 4587)
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,11 @@ struct PayloadContext {
     int          endbyte_bits;
     uint32_t     timestamp;
 };
+
+static av_cold PayloadContext *h261_new_context(void)
+{
+    return av_mallocz(sizeof(PayloadContext));
+}
 
 static void h261_free_dyn_buffer(AVIOContext **dyn_buf)
 {
@@ -53,6 +58,17 @@ static av_cold void h261_free_context(PayloadContext *pl_ctx)
 
     /* free context */
     av_free(pl_ctx);
+}
+
+static av_cold int h261_init(AVFormatContext *ctx, int st_index,
+                             PayloadContext *data)
+{
+    if (st_index < 0)
+        return 0;
+
+    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
+
+    return 0;
 }
 
 static int h261_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_h261_ctx,
@@ -178,8 +194,8 @@ RTPDynamicProtocolHandler ff_h261_dynamic_handler = {
     .enc_name          = "H261",
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_H261,
-    .need_parsing      = AVSTREAM_PARSE_FULL,
-    .priv_data_size    = sizeof(PayloadContext),
+    .init              = h261_init,
+    .alloc             = h261_new_context,
     .free              = h261_free_context,
     .parse_packet      = h261_handle_packet,
     .static_payload_id = 31,

@@ -8,20 +8,20 @@
  * Copyright 2007 Collabora Ltd, Philippe Kalaf
  * Copyright 2010 Mark Nauwelaerts
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,6 +39,11 @@ struct PayloadContext {
     int          newformat;
 };
 
+static PayloadContext *h263_new_context(void)
+{
+    return av_mallocz(sizeof(PayloadContext));
+}
+
 static void h263_free_context(PayloadContext *data)
 {
     if (!data)
@@ -49,6 +54,14 @@ static void h263_free_context(PayloadContext *data)
         av_free(p);
     }
     av_free(data);
+}
+
+static av_cold int h263_init(AVFormatContext *ctx, int st_index, PayloadContext *data)
+{
+    if (st_index < 0)
+        return 0;
+    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
+    return 0;
 }
 
 static int h263_handle_packet(AVFormatContext *ctx, PayloadContext *data,
@@ -195,9 +208,9 @@ static int h263_handle_packet(AVFormatContext *ctx, PayloadContext *data,
 RTPDynamicProtocolHandler ff_h263_rfc2190_dynamic_handler = {
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_H263,
-    .need_parsing      = AVSTREAM_PARSE_FULL,
+    .init              = h263_init,
     .parse_packet      = h263_handle_packet,
-    .priv_data_size    = sizeof(PayloadContext),
+    .alloc             = h263_new_context,
     .free              = h263_free_context,
     .static_payload_id = 34,
 };
