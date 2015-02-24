@@ -2,27 +2,26 @@
  * RTP parser for loss tolerant payload format for MP3 audio (RFC 5219)
  * Copyright (c) 2015 Gilles Chanteperdrix <gch@xenomai.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
 
-#include "avio_internal.h"
 #include "rtpdec_formats.h"
 
 struct PayloadContext {
@@ -34,10 +33,35 @@ struct PayloadContext {
     AVIOContext *fragment;
 };
 
-static void mpa_robust_close_context(PayloadContext *data)
+static av_cold int mpa_robust_init(AVFormatContext *ctx, int st_index,
+                                   PayloadContext *data)
 {
-    ffio_free_dyn_buf(&data->fragment);
+    if (st_index < 0)
+        return 0;
+    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_HEADERS;
+    return 0;
+}
+
+static PayloadContext *mpa_robust_new_context(void)
+{
+    return av_mallocz(sizeof(PayloadContext));
+}
+
+static inline void free_fragment(PayloadContext *data)
+{
+    if (data->fragment) {
+        uint8_t *p;
+        avio_close_dyn_buf(data->fragment, &p);
+        av_free(p);
+        data->fragment = NULL;
+    }
+}
+
+static void mpa_robust_free_context(PayloadContext *data)
+{
+    free_fragment(data);
     av_free(data->split_buf);
+    av_free(data);
 }
 
 static int mpa_robust_parse_rtp_header(AVFormatContext *ctx,
@@ -145,7 +169,7 @@ static int mpa_robust_parse_packet(AVFormatContext *ctx, PayloadContext *data,
         return 0;
     } else if (!continuation) { /* && adu_size > len */
         /* First fragment */
-        ffio_free_dyn_buf(&data->fragment);
+        free_fragment(data);
 
         data->adu_size = adu_size;
         data->cur_size = len;
@@ -168,7 +192,7 @@ static int mpa_robust_parse_packet(AVFormatContext *ctx, PayloadContext *data,
     }
     if (adu_size = data->adu_size ||
         data->timestamp != *timestamp) {
-        ffio_free_dyn_buf(&data->fragment);
+        free_fragment(data);
         av_log(ctx, AV_LOG_ERROR, "Invalid packet received\n");
         return AVERROR_INVALIDDATA;
     }
@@ -190,11 +214,11 @@ static int mpa_robust_parse_packet(AVFormatContext *ctx, PayloadContext *data,
 }
 
 RTPDynamicProtocolHandler ff_mpeg_audio_robust_dynamic_handler = {
-    .enc_name          = "mpa-robust",
     .codec_type        = AVMEDIA_TYPE_AUDIO,
     .codec_id          = AV_CODEC_ID_MP3ADU,
-    .need_parsing      = AVSTREAM_PARSE_HEADERS,
-    .priv_data_size    = sizeof(PayloadContext),
-    .close             = mpa_robust_close_context,
+    .init              = mpa_robust_init,
+    .alloc             = mpa_robust_new_context,
+    .free              = mpa_robust_free_context,
     .parse_packet      = mpa_robust_parse_packet,
+    .enc_name          = "mpa-robust",
 };

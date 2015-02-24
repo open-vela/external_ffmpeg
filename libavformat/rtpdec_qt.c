@@ -2,20 +2,20 @@
  * RTP/Quicktime support.
  * Copyright (c) 2009 Ronald S. Bultje
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -71,7 +71,7 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
      * http://developer.apple.com/quicktime/icefloe/dispatch026.html
      */
     init_get_bits(&gb, buf, len << 3);
-    ffio_init_context(&pb, buf, len, 0, NULL, NULL, NULL, NULL);
+    ffio_init_context(&pb, (uint8_t*)buf, len, 0, NULL, NULL, NULL, NULL);
 
     if (len < 4)
         return AVERROR_INVALIDDATA;
@@ -235,9 +235,15 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
     }
 }
 
-static void qt_rtp_close(PayloadContext *qt)
+static PayloadContext *qt_rtp_new(void)
+{
+    return av_mallocz(sizeof(PayloadContext));
+}
+
+static void qt_rtp_free(PayloadContext *qt)
 {
     av_freep(&qt->pkt.data);
+    av_free(qt);
 }
 
 #define RTP_QT_HANDLER(m, n, s, t) \
@@ -245,8 +251,8 @@ RTPDynamicProtocolHandler ff_ ## m ## _rtp_ ## n ## _handler = { \
     .enc_name         = s, \
     .codec_type       = t, \
     .codec_id         = AV_CODEC_ID_NONE, \
-    .priv_data_size   = sizeof(PayloadContext), \
-    .close            = qt_rtp_close,   \
+    .alloc            = qt_rtp_new,    \
+    .free             = qt_rtp_free,   \
     .parse_packet     = qt_rtp_parse_packet, \
 }
 
