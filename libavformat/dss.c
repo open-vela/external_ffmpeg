@@ -2,20 +2,20 @@
  * Digital Speech Standard (DSS) demuxer
  * Copyright (c) 2014 Oleksij Rempel <linux@rempel-privat.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,7 +78,8 @@ static int dss_read_metadata_date(AVFormatContext *s, unsigned int offset,
     if (ret < DSS_TIME_SIZE)
         return ret < 0 ? ret : AVERROR_EOF;
 
-    sscanf(string, "%2d%2d%2d%2d%2d%2d", &y, &month, &d, &h, &minute, &sec);
+    if (sscanf(string, "%2d%2d%2d%2d%2d%2d", &y, &month, &d, &h, &minute, &sec) != 6)
+        return AVERROR_INVALIDDATA;
     /* We deal with a two-digit year here, so set the default date to 2000
      * and hope it will never be used in the next century. */
     snprintf(datetime, sizeof(datetime), "%.4d-%.2d-%.2dT%.2d:%.2d:%.2d",
@@ -210,11 +211,10 @@ static int dss_sp_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     DSSDemuxContext *ctx = s->priv_data;
     int read_size, ret, offset = 0, buff_offset = 0;
+    int64_t pos = avio_tell(s->pb);
 
     if (ctx->counter == 0)
         dss_skip_audio_header(s, pkt);
-
-    pkt->pos = avio_tell(s->pb);
 
     if (ctx->swap) {
         read_size   = DSS_FRAME_SIZE - 2;
@@ -229,6 +229,7 @@ static int dss_sp_read_packet(AVFormatContext *s, AVPacket *pkt)
         return ret;
 
     pkt->duration     = 0;
+    pkt->pos = pos;
     pkt->stream_index = 0;
 
     if (ctx->counter < 0) {
@@ -264,11 +265,11 @@ static int dss_723_1_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     DSSDemuxContext *ctx = s->priv_data;
     int size, byte, ret, offset;
+    int64_t pos = avio_tell(s->pb);
 
     if (ctx->counter == 0)
         dss_skip_audio_header(s, pkt);
 
-    pkt->pos = avio_tell(s->pb);
     /* We make one byte-step here. Don't forget to add offset. */
     byte = avio_r8(s->pb);
     if (byte == 0xff)
@@ -281,6 +282,7 @@ static int dss_723_1_read_packet(AVFormatContext *s, AVPacket *pkt)
     ret = av_new_packet(pkt, size);
     if (ret < 0)
         return ret;
+    pkt->pos = pos;
 
     pkt->data[0]  = byte;
     offset        = 1;
@@ -325,7 +327,7 @@ static int dss_read_close(AVFormatContext *s)
 {
     DSSDemuxContext *ctx = s->priv_data;
 
-    av_free(ctx->dss_sp_buf);
+    av_freep(&ctx->dss_sp_buf);
 
     return 0;
 }

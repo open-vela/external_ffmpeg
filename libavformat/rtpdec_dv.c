@@ -2,20 +2,20 @@
  * RTP parser for DV payload format (RFC 6469)
  * Copyright (c) 2015 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,6 @@
 
 #include "libavcodec/bytestream.h"
 
-#include "avio_internal.h"
 #include "rtpdec_formats.h"
 
 struct PayloadContext {
@@ -32,15 +31,42 @@ struct PayloadContext {
     int         bundled_audio;
 };
 
-static av_cold void dv_close_context(PayloadContext *data)
+static av_cold PayloadContext *dv_new_context(void)
 {
-    ffio_free_dyn_buf(&data->buf);
+    return av_mallocz(sizeof(PayloadContext));
+}
+
+static void dv_free_dyn_buffer(AVIOContext **dyn_buf)
+{
+    uint8_t *ptr_dyn_buffer;
+    avio_close_dyn_buf(*dyn_buf, &ptr_dyn_buffer);
+    av_free(ptr_dyn_buffer);
+    *dyn_buf = NULL;
+}
+
+static av_cold void dv_free_context(PayloadContext *data)
+{
+    dv_free_dyn_buffer(&data->buf);
+    av_free(data);
+}
+
+static av_cold int dv_init(AVFormatContext *ctx, int st_index,
+                           PayloadContext *data)
+{
+    av_dlog(ctx, "dv_init() for stream %d\n", st_index);
+
+    if (st_index < 0)
+        return 0;
+
+    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_FULL;
+
+    return 0;
 }
 
 static av_cold int dv_sdp_parse_fmtp_config(AVFormatContext *s,
                                             AVStream *stream,
                                             PayloadContext *dv_data,
-                                            const char *attr, const char *value)
+                                            char *attr, char *value)
 {
     /* does the DV stream include audio? */
     if (!strcmp(attr, "audio") && !strcmp(value, "bundled"))
@@ -97,7 +123,7 @@ static int dv_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_dv_ctx,
 
     /* drop data of previous packets in case of non-continuous (lossy) packet stream */
     if (rtp_dv_ctx->buf && rtp_dv_ctx->timestamp != *timestamp) {
-        ffio_free_dyn_buf(&rtp_dv_ctx->buf);
+        dv_free_dyn_buffer(&rtp_dv_ctx->buf);
     }
 
     /* sanity check for size of input packet: 1 byte payload at least */
@@ -135,9 +161,9 @@ RTPDynamicProtocolHandler ff_dv_dynamic_handler = {
     .enc_name         = "DV",
     .codec_type       = AVMEDIA_TYPE_VIDEO,
     .codec_id         = AV_CODEC_ID_DVVIDEO,
-    .need_parsing     = AVSTREAM_PARSE_FULL,
+    .init             = dv_init,
     .parse_sdp_a_line = dv_parse_sdp_line,
-    .priv_data_size   = sizeof(PayloadContext),
-    .close             = dv_close_context,
+    .alloc            = dv_new_context,
+    .free             = dv_free_context,
     .parse_packet     = dv_handle_packet,
 };

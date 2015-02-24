@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Colin McQuillian
  * Copyright (c) 2010 Josh Allmann
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,13 +28,12 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavcodec/bytestream.h"
 
-#include <assert.h>
-
-#include "avio_internal.h"
+#include "internal.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
 
@@ -50,10 +49,35 @@ struct PayloadContext {
     int split_pkts;
 };
 
-static void xiph_close_context(PayloadContext * data)
+static PayloadContext *xiph_new_context(void)
 {
-    ffio_free_dyn_buf(&data->fragment);
-    av_free(data->split_buf);
+    return av_mallocz(sizeof(PayloadContext));
+}
+
+static inline void free_fragment(PayloadContext * data)
+{
+    if (data->fragment) {
+        uint8_t* p;
+        avio_close_dyn_buf(data->fragment, &p);
+        av_free(p);
+        data->fragment = NULL;
+    }
+}
+
+static void xiph_free_context(PayloadContext * data)
+{
+    free_fragment(data);
+    av_freep(&data->split_buf);
+    av_freep(&data);
+}
+
+static av_cold int xiph_vorbis_init(AVFormatContext *ctx, int st_index,
+                                    PayloadContext *data)
+{
+    if (st_index < 0)
+        return 0;
+    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_HEADERS;
+    return 0;
 }
 
 
@@ -159,7 +183,7 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         int res;
 
         // end packet has been lost somewhere, so drop buffered data
-        ffio_free_dyn_buf(&data->fragment);
+        free_fragment(data);
 
         if((res = avio_open_dyn_buf(&data->fragment)) < 0)
             return res;
@@ -168,11 +192,11 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         data->timestamp = *timestamp;
 
     } else {
-        assert(fragmented < 4);
+        av_assert1(fragmented < 4);
         if (data->timestamp != *timestamp) {
             // skip if fragmented timestamp is incorrect;
             // a start packet has been lost somewhere
-            ffio_free_dyn_buf(&data->fragment);
+            free_fragment(data);
             av_log(ctx, AV_LOG_ERROR, "RTP timestamps don't match!\n");
             return AVERROR_INVALIDDATA;
         }
@@ -232,7 +256,7 @@ parse_packed_headers(const uint8_t * packed_headers,
 
     if (packed_headers_end - packed_headers < 9) {
         av_log(codec, AV_LOG_ERROR,
-               "Invalid %td byte packed header.",
+               "Invalid %"PTRDIFF_SPECIFIER" byte packed header.",
                packed_headers_end - packed_headers);
         return AVERROR_INVALIDDATA;
     }
@@ -254,7 +278,7 @@ parse_packed_headers(const uint8_t * packed_headers,
     if (packed_headers_end - packed_headers != length ||
         length1 > length || length2 > length - length1) {
         av_log(codec, AV_LOG_ERROR,
-               "Bad packed header lengths (%d,%d,%td,%d)\n", length1,
+               "Bad packed header lengths (%d,%d,%"PTRDIFF_SPECIFIER",%d)\n", length1,
                length2, packed_headers_end - packed_headers, length);
         return AVERROR_INVALIDDATA;
     }
@@ -265,11 +289,11 @@ parse_packed_headers(const uint8_t * packed_headers,
      * -- FF_INPUT_BUFFER_PADDING_SIZE required */
     extradata_alloc = length + length/255 + 3 + FF_INPUT_BUFFER_PADDING_SIZE;
 
-    ptr = codec->extradata = av_malloc(extradata_alloc);
-    if (!ptr) {
+    if (ff_alloc_extradata(codec, extradata_alloc)) {
         av_log(codec, AV_LOG_ERROR, "Out of memory\n");
         return AVERROR(ENOMEM);
     }
+    ptr = codec->extradata;
     *ptr++ = 2;
     ptr += av_xiphlacing(ptr, length1);
     ptr += av_xiphlacing(ptr, length2);
@@ -285,7 +309,7 @@ parse_packed_headers(const uint8_t * packed_headers,
 static int xiph_parse_fmtp_pair(AVFormatContext *s,
                                 AVStream* stream,
                                 PayloadContext *xiph_data,
-                                const char *attr, const char *value)
+                                char *attr, char *value)
 {
     AVCodecContext *codec = stream->codec;
     int result = 0;
@@ -370,9 +394,9 @@ RTPDynamicProtocolHandler ff_theora_dynamic_handler = {
     .enc_name         = "theora",
     .codec_type       = AVMEDIA_TYPE_VIDEO,
     .codec_id         = AV_CODEC_ID_THEORA,
-    .priv_data_size   = sizeof(PayloadContext),
     .parse_sdp_a_line = xiph_parse_sdp_line,
-    .close            = xiph_close_context,
+    .alloc            = xiph_new_context,
+    .free             = xiph_free_context,
     .parse_packet     = xiph_handle_packet,
 };
 
@@ -380,9 +404,9 @@ RTPDynamicProtocolHandler ff_vorbis_dynamic_handler = {
     .enc_name         = "vorbis",
     .codec_type       = AVMEDIA_TYPE_AUDIO,
     .codec_id         = AV_CODEC_ID_VORBIS,
-    .need_parsing     = AVSTREAM_PARSE_HEADERS,
-    .priv_data_size   = sizeof(PayloadContext),
+    .init             = xiph_vorbis_init,
     .parse_sdp_a_line = xiph_parse_sdp_line,
-    .close            = xiph_close_context,
+    .alloc            = xiph_new_context,
+    .free             = xiph_free_context,
     .parse_packet     = xiph_handle_packet,
 };

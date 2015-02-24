@@ -2,20 +2,20 @@
  * RTP AMR Depacketizer, RFC 3267
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,10 +38,18 @@ struct PayloadContext {
     int channels;
 };
 
-static av_cold int amr_init(AVFormatContext *s, int st_index, PayloadContext *data)
+static PayloadContext *amr_new_context(void)
 {
+    PayloadContext *data = av_mallocz(sizeof(PayloadContext));
+    if (!data)
+        return data;
     data->channels = 1;
-    return 0;
+    return data;
+}
+
+static void amr_free_context(PayloadContext *data)
+{
+    av_free(data);
 }
 
 static int amr_handle_packet(AVFormatContext *ctx, PayloadContext *data,
@@ -134,7 +142,7 @@ static int amr_handle_packet(AVFormatContext *ctx, PayloadContext *data,
 
 static int amr_parse_fmtp(AVFormatContext *s,
                           AVStream *stream, PayloadContext *data,
-                          const char *attr, const char *value)
+                          char *attr, char *value)
 {
     /* Some AMR SDP configurations contain "octet-align", without
      * the trailing =1. Therefore, if the value is empty,
@@ -143,7 +151,7 @@ static int amr_parse_fmtp(AVFormatContext *s,
     if (!strcmp(value, "")) {
         av_log(s, AV_LOG_WARNING, "AMR fmtp attribute %s had "
                                   "nonstandard empty value\n", attr);
-        value = "1";
+        strcpy(value, "1");
     }
     if (!strcmp(attr, "octet-align"))
         data->octet_align = atoi(value);
@@ -186,9 +194,9 @@ RTPDynamicProtocolHandler ff_amr_nb_dynamic_handler = {
     .enc_name         = "AMR",
     .codec_type       = AVMEDIA_TYPE_AUDIO,
     .codec_id         = AV_CODEC_ID_AMR_NB,
-    .priv_data_size   = sizeof(PayloadContext),
-    .init             = amr_init,
     .parse_sdp_a_line = amr_parse_sdp_line,
+    .alloc            = amr_new_context,
+    .free             = amr_free_context,
     .parse_packet     = amr_handle_packet,
 };
 
@@ -196,8 +204,8 @@ RTPDynamicProtocolHandler ff_amr_wb_dynamic_handler = {
     .enc_name         = "AMR-WB",
     .codec_type       = AVMEDIA_TYPE_AUDIO,
     .codec_id         = AV_CODEC_ID_AMR_WB,
-    .priv_data_size   = sizeof(PayloadContext),
-    .init             = amr_init,
     .parse_sdp_a_line = amr_parse_sdp_line,
+    .alloc            = amr_new_context,
+    .free             = amr_free_context,
     .parse_packet     = amr_handle_packet,
 };
