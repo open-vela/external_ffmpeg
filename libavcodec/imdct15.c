@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,11 +105,11 @@ av_cold int ff_imdct15_init(IMDCT15Context **ps, int N)
     s->len4 = len2 / 2;
     s->len2 = len2;
 
-    s->tmp  = av_malloc_array(len, 2 * sizeof(*s->tmp));
+    s->tmp  = av_malloc(len * 2 * sizeof(*s->tmp));
     if (!s->tmp)
         goto fail;
 
-    s->twiddle_exptab  = av_malloc_array(s->len4, sizeof(*s->twiddle_exptab));
+    s->twiddle_exptab  = av_malloc(s->len4 * sizeof(*s->twiddle_exptab));
     if (!s->twiddle_exptab)
         goto fail;
 
