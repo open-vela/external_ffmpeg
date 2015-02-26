@@ -3356,7 +3356,6 @@ static int check_keyboard_interaction(int64_t cur_time)
 static void *input_thread(void *arg)
 {
     InputFile *f = arg;
-    unsigned flags = f->non_blocking ? AV_THREAD_MESSAGE_NONBLOCK : 0;
     int ret = 0;
 
     while (1) {
@@ -3372,15 +3371,7 @@ static void *input_thread(void *arg)
             break;
         }
         av_dup_packet(&pkt);
-        ret = av_thread_message_queue_send(f->in_thread_queue, &pkt, flags);
-        if (flags && ret == AVERROR(EAGAIN)) {
-            flags = 0;
-            ret = av_thread_message_queue_send(f->in_thread_queue, &pkt, flags);
-            av_log(f->ctx, AV_LOG_WARNING,
-                   "Thread message queue blocking; consider raising the "
-                   "thread_queue_size option (current value: %d)\n",
-                   f->thread_queue_size);
-        }
+        ret = av_thread_message_queue_send(f->in_thread_queue, &pkt, 0);
         if (ret < 0) {
             if (ret != AVERROR_EOF)
                 av_log(f->ctx, AV_LOG_ERROR,
@@ -3429,7 +3420,7 @@ static int init_input_threads(void)
             strcmp(f->ctx->iformat->name, "lavfi"))
             f->non_blocking = 1;
         ret = av_thread_message_queue_alloc(&f->in_thread_queue,
-                                            f->thread_queue_size, sizeof(AVPacket));
+                                            8, sizeof(AVPacket));
         if (ret < 0)
             return ret;
 
