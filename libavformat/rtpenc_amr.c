@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Luca Abeni
  * Copyright (c) 2009 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,18 +30,13 @@
 void ff_rtp_send_amr(AVFormatContext *s1, const uint8_t *buff, int size)
 {
     RTPMuxContext *s          = s1->priv_data;
-    AVStream *st              = s1->streams[0];
     int max_header_toc_size   = 1 + s->max_frames_per_packet;
     uint8_t *p;
     int len;
 
     /* Test if the packet must be sent. */
     len = s->buf_ptr - s->buf;
-    if (s->num_frames &&
-        (s->num_frames == s->max_frames_per_packet ||
-         len + size - 1 > s->max_payload_size ||
-         av_compare_ts(s->cur_timestamp - s->timestamp, st->time_base,
-                       s1->max_delay, AV_TIME_BASE_Q) >= 0)) {
+    if (s->num_frames == s->max_frames_per_packet || (len && len + size - 1 > s->max_payload_size)) {
         int header_size = s->num_frames + 1;
         p = s->buf + max_header_toc_size - header_size;
         if (p != s->buf)

@@ -2,25 +2,24 @@
  * RTP packetization for Xiph audio and video
  * Copyright (c) 2010 Josh Allmann
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/intreadwrite.h"
-
+#include "libavutil/avassert.h"
 #include "avformat.h"
 #include "rtpenc.h"
 
@@ -32,11 +31,10 @@
 void ff_rtp_send_xiph(AVFormatContext *s1, const uint8_t *buff, int size)
 {
     RTPMuxContext *s = s1->priv_data;
-    AVStream *st = s1->streams[0];
     int max_pkt_size, xdt, frag;
     uint8_t *q;
 
-    max_pkt_size = s->max_payload_size - 6; // ident+frag+tdt/vdt+pkt_num+pkt_length
+    max_pkt_size = s->max_payload_size;
 
     // set xiph data type
     switch (*buff) {
@@ -75,30 +73,25 @@ void ff_rtp_send_xiph(AVFormatContext *s1, const uint8_t *buff, int size)
         uint8_t *ptr     = s->buf_ptr + 2 + size; // what we're going to write
         int remaining    = end_ptr - ptr;
 
-        assert(s->num_frames <= s->max_frames_per_packet);
-        if (s->num_frames > 0 &&
-            (remaining < 0 ||
-             s->num_frames == s->max_frames_per_packet ||
-             av_compare_ts(s->cur_timestamp - s->timestamp, st->time_base,
-                           s1->max_delay, AV_TIME_BASE_Q) >= 0)) {
-            // send previous packets now; no room for new data, or too much delay
+        av_assert1(s->num_frames <= s->max_frames_per_packet);
+        if ((s->num_frames > 0 && remaining < 0) ||
+            s->num_frames == s->max_frames_per_packet) {
+            // send previous packets now; no room for new data
             ff_rtp_send_data(s1, s->buf, s->buf_ptr - s->buf, 0);
             s->num_frames = 0;
         }
 
         // buffer current frame to send later
-        if (0 == s->num_frames)
-            s->timestamp = s->cur_timestamp;
+        if (0 == s->num_frames) s->timestamp = s->cur_timestamp;
         s->num_frames++;
 
         // Set packet header. Normally, this is OR'd with frag and xdt,
         // but those are zero, so omitted here
         *q++ = s->num_frames;
 
-        if (s->num_frames > 1)
-            q = s->buf_ptr; // jump ahead if needed
-        AV_WB16(q, size);
-        q += 2;
+        if (s->num_frames > 1) q = s->buf_ptr; // jump ahead if needed
+        *q++ = (size >> 8) & 0xff;
+        *q++ = size & 0xff;
         memcpy(q, buff, size);
         q += size;
         s->buf_ptr = q;
@@ -119,8 +112,8 @@ void ff_rtp_send_xiph(AVFormatContext *s1, const uint8_t *buff, int size)
 
         // set packet headers
         *q++ = (frag << 6) | (xdt << 4); // num_frames = 0
-        AV_WB16(q, len);
-        q += 2;
+        *q++ = (len >> 8) & 0xff;
+        *q++ = len & 0xff;
         // set packet body
         memcpy(q, buff, len);
         q += len;
