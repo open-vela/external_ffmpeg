@@ -2,20 +2,20 @@
  * RTP parser for loss tolerant payload format for MP3 audio (RFC 5219)
  * Copyright (c) 2015 Gilles Chanteperdrix <gch@xenomai.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -98,7 +98,7 @@ static int mpa_robust_parse_packet(AVFormatContext *ctx, PayloadContext *data,
         pkt->stream_index = st->index;
         memcpy(pkt->data, buf, adu_size);
 
-        data->split_pos += adu_size;
+        data->split_pos = (buf - data->split_buf) + adu_size;
 
         if (data->split_pos == data->split_buf_size) {
             av_freep(&data->split_buf);
