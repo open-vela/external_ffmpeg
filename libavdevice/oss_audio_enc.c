@@ -2,20 +2,20 @@
  * Linux audio grab interface
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,9 +27,7 @@
 #include <sys/soundcard.h>
 #endif
 
-#if HAVE_UNISTD_H
 #include <unistd.h>
-#endif
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
@@ -37,7 +35,7 @@
 
 #include "libavcodec/avcodec.h"
 
-#include "avdevice.h"
+#include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 
 #include "oss_audio.h"
@@ -94,13 +92,6 @@ static int audio_write_trailer(AVFormatContext *s1)
     return 0;
 }
 
-static const AVClass oss_muxer_class = {
-    .class_name     = "OSS muxer",
-    .item_name      = av_default_item_name,
-    .version        = LIBAVUTIL_VERSION_INT,
-    .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
-};
-
 AVOutputFormat ff_oss_muxer = {
     .name           = "oss",
     .long_name      = NULL_IF_CONFIG_SMALL("OSS (Open Sound System) playback"),
@@ -114,5 +105,4 @@ AVOutputFormat ff_oss_muxer = {
     .write_packet   = audio_write_packet,
     .write_trailer  = audio_write_trailer,
     .flags          = AVFMT_NOFILE,
-    .priv_class     = &oss_muxer_class,
 };
