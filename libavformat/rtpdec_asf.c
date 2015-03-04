@@ -2,20 +2,20 @@
  * Microsoft RTP/ASF support.
  * Copyright (c) 2008 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
  * @author Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/base64.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
@@ -103,8 +102,6 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
         AVDictionary *opts = NULL;
         int len = strlen(p) * 6 / 8;
         char *buf = av_mallocz(len);
-        AVInputFormat *iformat;
-
         av_base64_decode(buf, p, len);
 
         if (rtp_asf_fix_header(buf, len) < 0)
@@ -114,19 +111,11 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
         if (rt->asf_ctx) {
             avformat_close_input(&rt->asf_ctx);
         }
-        if (!(iformat = av_find_input_format("asf")))
-            return AVERROR_DEMUXER_NOT_FOUND;
         if (!(rt->asf_ctx = avformat_alloc_context()))
             return AVERROR(ENOMEM);
         rt->asf_ctx->pb      = &pb;
         av_dict_set(&opts, "no_resync_search", "1", 0);
-
-        if ((ret = ff_copy_whitelists(rt->asf_ctx, s)) < 0) {
-            av_dict_free(&opts);
-            return ret;
-        }
-
-        ret = avformat_open_input(&rt->asf_ctx, "", iformat, &opts);
+        ret = avformat_open_input(&rt->asf_ctx, "", &ff_asf_demuxer, &opts);
         av_dict_free(&opts);
         if (ret < 0)
             return ret;
@@ -199,7 +188,7 @@ static int asfrtp_parse_packet(AVFormatContext *s, PayloadContext *asf,
 
         av_freep(&asf->buf);
 
-        ffio_init_context(pb, (uint8_t *)buf, len, 0, NULL, NULL, NULL, NULL);
+        ffio_init_context(pb, buf, len, 0, NULL, NULL, NULL, NULL);
 
         while (avio_tell(pb) + 4 < len) {
             int start_off = avio_tell(pb);
