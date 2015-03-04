@@ -1,20 +1,24 @@
 /*
  * DCA compatible decoder data
+ * Copyright (C) 2004 Gildas Bazin
+ * Copyright (C) 2004 Benjamin Zores
+ * Copyright (C) 2006 Benjamin Larsson
+ * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +28,6 @@
 #include "libavutil/error.h"
 
 #include "dca.h"
-#include "dca_syncwords.h"
 #include "put_bits.h"
 
 const uint32_t avpriv_dca_sample_rates[16] = {
@@ -32,7 +35,7 @@ const uint32_t avpriv_dca_sample_rates[16] = {
     12000, 24000, 48000, 96000, 192000
 };
 
-int ff_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
+int avpriv_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
                              int max_size)
 {
     uint32_t mrk;
@@ -46,18 +49,18 @@ int ff_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
 
     mrk = AV_RB32(src);
     switch (mrk) {
-    case DCA_SYNCWORD_CORE_BE:
+    case DCA_MARKER_RAW_BE:
         memcpy(dst, src, src_size);
         return src_size;
-    case DCA_SYNCWORD_CORE_LE:
+    case DCA_MARKER_RAW_LE:
         for (i = 0; i < (src_size + 1) >> 1; i++)
             *sdst++ = av_bswap16(*ssrc++);
         return src_size;
-    case DCA_SYNCWORD_CORE_14B_BE:
-    case DCA_SYNCWORD_CORE_14B_LE:
+    case DCA_MARKER_14B_BE:
+    case DCA_MARKER_14B_LE:
         init_put_bits(&pb, dst, max_size);
         for (i = 0; i < (src_size + 1) >> 1; i++, src += 2) {
-            tmp = ((mrk == DCA_SYNCWORD_CORE_14B_BE) ? AV_RB16(src) : AV_RL16(src)) & 0x3FFF;
+            tmp = ((mrk == DCA_MARKER_14B_BE) ? AV_RB16(src) : AV_RL16(src)) & 0x3FFF;
             put_bits(&pb, 14, tmp);
         }
         flush_put_bits(&pb);
