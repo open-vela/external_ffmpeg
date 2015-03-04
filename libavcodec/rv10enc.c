@@ -3,20 +3,20 @@
  * Copyright (c) 2000,2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,7 @@
 #include "mpegvideo.h"
 #include "put_bits.h"
 
-int ff_rv10_encode_picture_header(MpegEncContext *s, int picture_number)
+void ff_rv10_encode_picture_header(MpegEncContext *s, int picture_number)
 {
     int full_frame= 0;
 
@@ -48,17 +48,12 @@ int ff_rv10_encode_picture_header(MpegEncContext *s, int picture_number)
     /* if multiple packets per frame are sent, the position at which
        to display the macroblocks is coded here */
     if(!full_frame){
-        if (s->mb_width * s->mb_height >= (1U << 12)) {
-            avpriv_report_missing_feature(s, "Encoding frames with 4096 or more macroblocks");
-            return AVERROR(ENOSYS);
-        }
         put_bits(&s->pb, 6, 0); /* mb_x */
         put_bits(&s->pb, 6, 0); /* mb_y */
         put_bits(&s->pb, 12, s->mb_width * s->mb_height);
     }
 
     put_bits(&s->pb, 3, 0);     /* ignored */
-    return 0;
 }
 
 FF_MPV_GENERIC_CLASS(rv10)
