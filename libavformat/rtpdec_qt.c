@@ -2,20 +2,20 @@
  * RTP/Quicktime support.
  * Copyright (c) 2009 Ronald S. Bultje
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,8 +47,7 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
     AVIOContext pb;
     GetBitContext gb;
     int packing_scheme, has_payload_desc, has_packet_info, alen,
-        has_marker_bit = flags & RTP_FLAG_MARKER,
-        keyframe;
+        has_marker_bit = flags & RTP_FLAG_MARKER;
 
     if (qt->remaining) {
         int num = qt->pkt.size / qt->bytes_per_frame;
@@ -72,7 +71,7 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
      * http://developer.apple.com/quicktime/icefloe/dispatch026.html
      */
     init_get_bits(&gb, buf, len << 3);
-    ffio_init_context(&pb, buf, len, 0, NULL, NULL, NULL, NULL);
+    ffio_init_context(&pb, (uint8_t*)buf, len, 0, NULL, NULL, NULL, NULL);
 
     if (len < 4)
         return AVERROR_INVALIDDATA;
@@ -80,7 +79,8 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
     skip_bits(&gb, 4); // version
     if ((packing_scheme = get_bits(&gb, 2)) == 0)
         return AVERROR_INVALIDDATA;
-    keyframe            = get_bits1(&gb);
+    if (get_bits1(&gb))
+        flags          |= RTP_FLAG_KEY;
     has_payload_desc    = get_bits1(&gb);
     has_packet_info     = get_bits1(&gb);
     skip_bits(&gb, 23); // reserved:7, cache payload info:1, payload ID:15
@@ -196,7 +196,7 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
 
             qt->pkt.size = 0;
             qt->pkt.data = NULL;
-            pkt->flags        = keyframe ? AV_PKT_FLAG_KEY : 0;
+            pkt->flags        = flags & RTP_FLAG_KEY ? AV_PKT_FLAG_KEY : 0;
             pkt->stream_index = st->index;
             memset(pkt->data + pkt->size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
             return 0;
@@ -211,7 +211,7 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
         if (av_new_packet(pkt, qt->bytes_per_frame))
             return AVERROR(ENOMEM);
         memcpy(pkt->data, buf + avio_tell(&pb), qt->bytes_per_frame);
-        pkt->flags = keyframe ? AV_PKT_FLAG_KEY : 0;
+        pkt->flags = flags & RTP_FLAG_KEY ? AV_PKT_FLAG_KEY : 0;
         pkt->stream_index = st->index;
         if (qt->remaining > 0) {
             av_freep(&qt->pkt.data);
