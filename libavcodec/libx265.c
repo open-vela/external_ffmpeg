@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -246,7 +246,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = x265_encoder_encode(ctx->encoder, &nal, &nnal,
                               pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
 
     if (!nnal)
         return 0;
@@ -271,19 +271,6 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     pkt->pts = x265pic_out.pts;
     pkt->dts = x265pic_out.dts;
-
-    switch (x265pic_out.sliceType) {
-    case X265_TYPE_IDR:
-    case X265_TYPE_I:
-        avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-        break;
-    case X265_TYPE_P:
-        avctx->coded_frame->pict_type = AV_PICTURE_TYPE_P;
-        break;
-    case X265_TYPE_B:
-        avctx->coded_frame->pict_type = AV_PICTURE_TYPE_B;
-        break;
-    }
 
     *got_packet = 1;
     return 0;
