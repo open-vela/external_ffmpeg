@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -168,16 +168,16 @@ static int config_output(AVFilterLink *outlink)
         bs2b->filter = bs2b_cross_feed_u8;
         break;
     case AV_SAMPLE_FMT_S16:
-        bs2b->filter = bs2b_cross_feed_s16;
+        bs2b->filter = (void*)bs2b_cross_feed_s16;
         break;
     case AV_SAMPLE_FMT_S32:
-        bs2b->filter = bs2b_cross_feed_s32;
+        bs2b->filter = (void*)bs2b_cross_feed_s32;
         break;
     case AV_SAMPLE_FMT_FLT:
-        bs2b->filter = bs2b_cross_feed_f;
+        bs2b->filter = (void*)bs2b_cross_feed_f;
         break;
     case AV_SAMPLE_FMT_DBL:
-        bs2b->filter = bs2b_cross_feed_d;
+        bs2b->filter = (void*)bs2b_cross_feed_d;
         break;
     default:
         return AVERROR_BUG;
