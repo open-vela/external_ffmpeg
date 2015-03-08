@@ -214,8 +214,6 @@ static void restore_median(uint8_t *src, int step, int stride,
         slice_start  = ((slice * height) / slices) & cmask;
         slice_height = ((((slice + 1) * height) / slices) & cmask) -
                        slice_start;
-        if (!slice_height)
-            continue;
 
         if (!slice_height)
             continue;
