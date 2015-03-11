@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,18 +25,6 @@
 
 #include "idctdsp.h"
 #include "xvididct.h"
-
-static void xvid_idct_sse2_put(uint8_t *dest, int line_size, short *block)
-{
-    ff_xvid_idct_sse2(block);
-    ff_put_pixels_clamped(block, dest, line_size);
-}
-
-static void xvid_idct_sse2_add(uint8_t *dest, int line_size, short *block)
-{
-    ff_xvid_idct_sse2(block);
-    ff_add_pixels_clamped(block, dest, line_size);
-}
 
 av_cold void ff_xvid_idct_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
                                    unsigned high_bit_depth)
@@ -62,9 +50,9 @@ av_cold void ff_xvid_idct_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
         c->perm_type = FF_IDCT_PERM_NONE;
     }
 
-    if (EXTERNAL_SSE2(cpu_flags)) {
-        c->idct_put  = xvid_idct_sse2_put;
-        c->idct_add  = xvid_idct_sse2_add;
+    if (INLINE_SSE2(cpu_flags)) {
+        c->idct_put  = ff_xvid_idct_sse2_put;
+        c->idct_add  = ff_xvid_idct_sse2_add;
         c->idct      = ff_xvid_idct_sse2;
         c->perm_type = FF_IDCT_PERM_SSE2;
     }
