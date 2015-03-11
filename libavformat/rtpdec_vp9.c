@@ -2,20 +2,20 @@
  * RTP parser for VP9 payload format (draft version 0) - experimental
  * Copyright (c) 2015 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -113,6 +113,11 @@ static int vp9_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_vp9_ctx,
      *   PictureID:  8 or 16 bits including the M bit.
      */
     if (has_pic_id) {
+        if (len < 1) {
+            av_log(ctx, AV_LOG_ERROR, "Too short RTP/VP9 packet\n");
+            return AVERROR_INVALIDDATA;
+        }
+
         /* check for 1-byte or 2-byte picture index */
         if (buf[0] & 0x80) {
             if (len < 2) {
