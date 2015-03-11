@@ -4,20 +4,20 @@
  * Copyright (C) 2012 Paul B Mahol
  * Copyright (C) 2014 Niels Möller
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -514,8 +514,8 @@ int ff_dca_xll_decode_audio(DCAContext *s, AVFrame *frame)
             }
             for (i = 0; i < chset->channels; i++) {
                 int param_index = params->seg_type ? 0 : i;
+                int bits        = params->pancABIT0[param_index];
                 int part0       = params->nSamplPart0[param_index];
-                int bits        = part0 ? params->pancABIT0[param_index] : 0;
                 int *sample_buf = s->xll_sample_buf +
                                   (in_channel + i) * s->xll_smpl_in_seg;
 
