@@ -3,27 +3,29 @@
  * Copyright (C) 2004 Gildas Bazin
  * Copyright (c) 2006 Benjamin Larsson
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdint.h>
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/mem.h"
 
+#include "dca.h"
 #include "dcadata.h"
 
 /* Generic tables */
@@ -7295,21 +7297,7 @@ DECLARE_ALIGNED(16, const float, ff_dca_fir_32bands_nonperfect)[512] = {
     +1.390191784E-007
 };
 
-/* pre-scale lfe fir coefficients
- *
- * Permuted compared to table D.8 in the spec. First, the table in the
- * spec has twice the number of coefficients, but they are reflected,
- * T[i] = T[511 - i]. Furthermore, the indices are permuted, so that
- *
- *   lfe_fir_64[8 * k + j] = T[64 * j + k]
- *
- * for 0 <= k < 32 and 0 <= j < 8. (This corresponds to adding a
- * leading zero to the 8-bit index, and rotating it right by 3 bits
- * as a 9-bit field). Values with j >= 4 can be reflected, as
- *
- *   lfe_fir_64[8 * k + j] = T[64 * (7 - j) + (63 - k)]
- *
- * so all values in T get included. */
+/* pre-scale lfe fir coefficients */
 #define SCALE(c) ((c) / (256.0f * 32768.0f))
 DECLARE_ALIGNED(16, const float, ff_dca_lfe_fir_64)[256] = {
     SCALE(2.658434386830777e-4), SCALE(9.029330685734748e-3),
@@ -7442,18 +7430,6 @@ DECLARE_ALIGNED(16, const float, ff_dca_lfe_fir_64)[256] = {
     SCALE(3.165979683399200e-2), SCALE(1.527829794213176e-3),
 };
 
-/* Permuted compared to table D.8 in the spec. First, the table in the
- * spec has twice the number of coefficients, but they are reflected,
- * T[i] = T[511 - i]. Furthermore, the indices are permuted, so that
- *
- *   lfe_fir_128[4 * k + j] = T[128 * j + k]
- *
- * for 0 <= k < 64 and 0 <= j < 4. Values with j >= 2 can be
- * reflected, as
- *
- *   lfe_fir_128[4 * k + j] = T[128 * (3 - j) + (127 - k)]
- *
- * so all values in T get included. */
 DECLARE_ALIGNED(16, const float, ff_dca_lfe_fir_128)[256] = {
     SCALE(0.00053168571), SCALE(0.15878495574), SCALE(0.68603444099), SCALE(0.15492856503),
     SCALE(0.00016358691), SCALE(0.16269733012), SCALE(0.68591803312), SCALE(0.15112841129),
@@ -7687,6 +7663,95 @@ const float ff_dca_default_coeffs[10][6][2] = {
  *
  * where Ch(n) represents the subband samples in the (n)th audio channel.
  */
+
+const uint32_t ff_dca_map_xxch_to_native[28] = {
+    AV_CH_FRONT_CENTER,
+    AV_CH_FRONT_LEFT,
+    AV_CH_FRONT_RIGHT,
+    AV_CH_SIDE_LEFT,
+    AV_CH_SIDE_RIGHT,
+    AV_CH_LOW_FREQUENCY,
+    AV_CH_BACK_CENTER,
+    AV_CH_BACK_LEFT,
+    AV_CH_BACK_RIGHT,
+    AV_CH_SIDE_LEFT,           /* side surround left -- dup sur side L */
+    AV_CH_SIDE_RIGHT,          /* side surround right -- dup sur side R */
+    AV_CH_FRONT_LEFT_OF_CENTER,
+    AV_CH_FRONT_RIGHT_OF_CENTER,
+    AV_CH_TOP_FRONT_LEFT,
+    AV_CH_TOP_FRONT_CENTER,
+    AV_CH_TOP_FRONT_RIGHT,
+    AV_CH_LOW_FREQUENCY,        /* lfe2 -- duplicate lfe1 position */
+    AV_CH_FRONT_LEFT_OF_CENTER, /* side front left -- dup front cntr L */
+    AV_CH_FRONT_RIGHT_OF_CENTER,/* side front right -- dup front cntr R */
+    AV_CH_TOP_CENTER,           /* overhead */
+    AV_CH_TOP_FRONT_LEFT,       /* side high left -- dup */
+    AV_CH_TOP_FRONT_RIGHT,      /* side high right -- dup */
+    AV_CH_TOP_BACK_CENTER,
+    AV_CH_TOP_BACK_LEFT,
+    AV_CH_TOP_BACK_RIGHT,
+    AV_CH_BACK_CENTER,          /* rear low center -- dup */
+    AV_CH_BACK_LEFT,            /* rear low left -- dup */
+    AV_CH_BACK_RIGHT            /* read low right -- dup  */
+};
+
+/* -1 are reserved or unknown */
+const int ff_dca_ext_audio_descr_mask[8] = {
+    DCA_EXT_XCH,
+    -1,
+    DCA_EXT_X96,
+    DCA_EXT_XCH | DCA_EXT_X96,
+    -1,
+    -1,
+    DCA_EXT_XXCH,
+    -1,
+};
+
+/* Tables for mapping dts channel configurations to libavcodec multichannel api.
+ * Some compromises have been made for special configurations. Most configurations
+ * are never used so complete accuracy is not needed.
+ *
+ * L = left, R = right, C = center, S = surround, F = front, R = rear, T = total, OV = overhead.
+ * S  -> side, when both rear and back are configured move one of them to the side channel
+ * OV -> center back
+ * All 2 channel configurations -> AV_CH_LAYOUT_STEREO
+ */
+const uint64_t ff_dca_core_channel_layout[16] = {
+    AV_CH_FRONT_CENTER,                                                     ///< 1, A
+    AV_CH_LAYOUT_STEREO,                                                    ///< 2, A + B (dual mono)
+    AV_CH_LAYOUT_STEREO,                                                    ///< 2, L + R (stereo)
+    AV_CH_LAYOUT_STEREO,                                                    ///< 2, (L + R) + (L - R) (sum-difference)
+    AV_CH_LAYOUT_STEREO,                                                    ///< 2, LT + RT (left and right total)
+    AV_CH_LAYOUT_STEREO | AV_CH_FRONT_CENTER,                               ///< 3, C + L + R
+    AV_CH_LAYOUT_STEREO | AV_CH_BACK_CENTER,                                ///< 3, L + R + S
+    AV_CH_LAYOUT_STEREO | AV_CH_FRONT_CENTER | AV_CH_BACK_CENTER,           ///< 4, C + L + R + S
+    AV_CH_LAYOUT_STEREO | AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT,               ///< 4, L + R + SL + SR
+
+    AV_CH_LAYOUT_STEREO | AV_CH_FRONT_CENTER | AV_CH_SIDE_LEFT |
+    AV_CH_SIDE_RIGHT,                                                       ///< 5, C + L + R + SL + SR
+
+    AV_CH_LAYOUT_STEREO | AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT |
+    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_RIGHT_OF_CENTER,               ///< 6, CL + CR + L + R + SL + SR
+
+    AV_CH_LAYOUT_STEREO | AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT |
+    AV_CH_FRONT_CENTER  | AV_CH_BACK_CENTER,                                ///< 6, C + L + R + LR + RR + OV
+
+    AV_CH_FRONT_CENTER | AV_CH_FRONT_RIGHT_OF_CENTER |
+    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_BACK_CENTER   |
+    AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT,                                     ///< 6, CF + CR + LF + RF + LR + RR
+
+    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_CENTER   |
+    AV_CH_FRONT_RIGHT_OF_CENTER | AV_CH_LAYOUT_STEREO |
+    AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT,                                     ///< 7, CL + C + CR + L + R + SL + SR
+
+    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_RIGHT_OF_CENTER |
+    AV_CH_LAYOUT_STEREO | AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT |
+    AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT,                                     ///< 8, CL + CR + L + R + SL1 + SL2 + SR1 + SR2
+
+    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_CENTER   |
+    AV_CH_FRONT_RIGHT_OF_CENTER | AV_CH_LAYOUT_STEREO |
+    AV_CH_SIDE_LEFT | AV_CH_BACK_CENTER | AV_CH_SIDE_RIGHT,                 ///< 8, CL + C + CR + L + R + SL + S + SR
+};
 
 const int8_t ff_dca_lfe_index[16] = {
     1, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 1, 3, 2, 3
