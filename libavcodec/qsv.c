@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -117,19 +117,12 @@ static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession ses
 
             MFXQueryIMPL(q->internal_session, &impl);
 
-            switch (MFX_IMPL_BASETYPE(impl)) {
-            case MFX_IMPL_SOFTWARE:
+            if (impl & MFX_IMPL_SOFTWARE)
                 desc = "software";
-                break;
-            case MFX_IMPL_HARDWARE:
-            case MFX_IMPL_HARDWARE2:
-            case MFX_IMPL_HARDWARE3:
-            case MFX_IMPL_HARDWARE4:
+            else if (impl & MFX_IMPL_HARDWARE)
                 desc = "hardware accelerated";
-                break;
-            default:
+            else
                 desc = "unknown";
-            }
 
             av_log(avctx, AV_LOG_VERBOSE,
                    "Initialized an internal MFX session using %s implementation\n",
