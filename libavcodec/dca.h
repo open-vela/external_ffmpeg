@@ -5,20 +5,20 @@
  * Copyright (C) 2006 Benjamin Larsson
  * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,21 +41,8 @@
 #define DCA_SUBFRAMES_MAX     (16)
 #define DCA_BLOCKS_MAX        (16)
 #define DCA_LFE_MAX            (3)
-
-#define DCA_PRIM_CHANNELS_MAX  (7)
-#define DCA_ABITS_MAX         (32)      /* Should be 28 */
-#define DCA_SUBSUBFRAMES_MAX   (4)
-#define DCA_SUBFRAMES_MAX     (16)
-#define DCA_BLOCKS_MAX        (16)
-#define DCA_LFE_MAX            (3)
-#define DCA_XLL_FBANDS_MAX     (4)
-#define DCA_XLL_SEGMENTS_MAX  (16)
-#define DCA_XLL_CHSETS_MAX    (16)
-#define DCA_XLL_CHANNELS_MAX  (16)
-#define DCA_XLL_AORDER_MAX    (15)
-
-/* Arbitrary limit; not sure what the maximum really is, but much larger. */
-#define DCA_XLL_DMIX_NCOEFFS_MAX (18)
+#define DCA_CHSETS_MAX         (4)
+#define DCA_CHSET_CHANS_MAX    (8)
 
 #define DCA_MAX_FRAME_SIZE       16384
 #define DCA_MAX_EXSS_HEADER_SIZE  4096
@@ -75,63 +62,8 @@ enum DCAExtensionMask {
     DCA_EXT_EXSS_XLL   = 0x200, ///< lossless extension in ExSS
 };
 
-typedef struct XllChSetSubHeader {
-    int channels;               ///< number of channels in channel set, at most 16
-    int residual_encode;        ///< residual channel encoding
-    int bit_resolution;         ///< input sample bit-width
-    int bit_width;              ///< original input sample bit-width
-    int sampling_frequency;     ///< sampling frequency
-    int samp_freq_interp;       ///< sampling frequency interpolation multiplier
-    int replacement_set;        ///< replacement channel set group
-    int active_replace_set;     ///< current channel set is active channel set
-    int primary_ch_set;
-    int downmix_coeff_code_embedded;
-    int downmix_embedded;
-    int downmix_type;
-    int hier_chset;             ///< hierarchical channel set
-    int downmix_ncoeffs;
-    int downmix_coeffs[DCA_XLL_DMIX_NCOEFFS_MAX];
-    int ch_mask_enabled;
-    int ch_mask;
-    int mapping_coeffs_present;
-    int num_freq_bands;
-
-    /* m_nOrigChanOrder */
-    uint8_t orig_chan_order[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX];
-    uint8_t orig_chan_order_inv[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX];
-    /* Coefficients for channel pairs (at most 8), m_anPWChPairsCoeffs */
-    int8_t pw_ch_pairs_coeffs[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX/2];
-    /* m_nCurrHighestLPCOrder */
-    uint8_t adapt_order_max[DCA_XLL_FBANDS_MAX];
-    /* m_pnAdaptPredOrder */
-    uint8_t adapt_order[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX];
-    /* m_pnFixedPredOrder */
-    uint8_t fixed_order[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX];
-    /* m_pnLPCReflCoeffsQInd, unsigned version */
-    uint8_t lpc_refl_coeffs_q_ind[DCA_XLL_FBANDS_MAX]
-                                 [DCA_XLL_CHANNELS_MAX][DCA_XLL_AORDER_MAX];
-
-    int lsb_fsize[DCA_XLL_FBANDS_MAX];
-    int8_t scalable_lsbs[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX];
-    int8_t bit_width_adj_per_ch[DCA_XLL_FBANDS_MAX][DCA_XLL_CHANNELS_MAX];
-} XllChSetSubHeader;
-
-typedef struct XllNavi {
-    GetBitContext gb;  // Context for parsing the data segments
-    unsigned band_size[DCA_XLL_FBANDS_MAX];
-    unsigned segment_size[DCA_XLL_FBANDS_MAX][DCA_XLL_SEGMENTS_MAX];
-    unsigned chset_size[DCA_XLL_FBANDS_MAX][DCA_XLL_SEGMENTS_MAX][DCA_XLL_CHSETS_MAX];
-} XllNavi;
-
-typedef struct QMF64_table {
-    float dct4_coeff[32][32];
-    float dct2_coeff[32][32];
-    float rcos[32];
-    float rsin[32];
-} QMF64_table;
-
 typedef struct DCAContext {
-    AVClass *class;             ///< class for AVOptions
+    const AVClass *class;       ///< class for AVOptions
     AVCodecContext *avctx;
     /* Frame header */
     int frame_type;             ///< type of the current frame
@@ -202,10 +134,8 @@ typedef struct DCAContext {
 
     /* Subband samples history (for ADPCM) */
     DECLARE_ALIGNED(16, float, subband_samples_hist)[DCA_PRIM_CHANNELS_MAX][DCA_SUBBANDS][4];
-    /* Half size is sufficient for core decoding, but for 96 kHz data
-     * we need QMF with 64 subbands and 1024 samples. */
-    DECLARE_ALIGNED(32, float, subband_fir_hist)[DCA_PRIM_CHANNELS_MAX][1024];
-    DECLARE_ALIGNED(32, float, subband_fir_noidea)[DCA_PRIM_CHANNELS_MAX][64];
+    DECLARE_ALIGNED(32, float, subband_fir_hist)[DCA_PRIM_CHANNELS_MAX][512];
+    DECLARE_ALIGNED(32, float, subband_fir_noidea)[DCA_PRIM_CHANNELS_MAX][32];
     int hist_index[DCA_PRIM_CHANNELS_MAX];
     DECLARE_ALIGNED(32, float, raXin)[32];
 
@@ -227,30 +157,25 @@ typedef struct DCAContext {
     int current_subsubframe;
 
     int core_ext_mask;          ///< present extensions in the core substream
-    int exss_ext_mask;          ///< Non-core extensions
 
     /* XCh extension information */
     int xch_present;            ///< XCh extension present and valid
     int xch_base_channel;       ///< index of first (only) channel containing XCH data
     int xch_disable;            ///< whether the XCh extension should be decoded or not
 
-    /* XLL extension information */
-    int xll_disable;
-    int xll_nch_sets;           ///< number of channel sets per frame
-    int xll_channels;           ///< total number of channels (in all channel sets)
-    int xll_residual_channels;  ///< number of residual channels
-    int xll_segments;           ///< number of segments per frame
-    int xll_log_smpl_in_seg;    ///< supposedly this is "nBits4SamplLoci"
-    int xll_smpl_in_seg;        ///< samples in segment per one frequency band for the first channel set
-    int xll_bits4seg_size;      ///< number of bits used to read segment size
-    int xll_banddata_crc;       ///< presence of CRC16 within each frequency band
-    int xll_scalable_lsb;
-    int xll_bits4ch_mask;       ///< channel position mask
-    int xll_fixed_lsb_width;
-    XllChSetSubHeader xll_chsets[DCA_XLL_CHSETS_MAX];
-    XllNavi xll_navi;
-    int *xll_sample_buf;
-    unsigned int xll_sample_buf_size;
+    /* XXCH extension information */
+    int xxch_chset;
+    int xxch_nbits_spk_mask;
+    uint32_t xxch_core_spkmask;
+    uint32_t xxch_spk_masks[4]; /* speaker masks, last element is core mask */
+    int xxch_chset_nch[4];
+    float xxch_dmix_sf[DCA_CHSETS_MAX];
+
+    uint32_t xxch_dmix_embedded;  /* lower layer has mix pre-embedded, per chset */
+    float xxch_dmix_coeff[DCA_PRIM_CHANNELS_MAX][32]; /* worst case sizing */
+
+    int8_t xxch_order_tab[32];
+    int8_t lfe_index;
 
     /* ExSS header parser */
     int static_fields;          ///< static fields present
@@ -259,14 +184,12 @@ typedef struct DCAContext {
     int mix_config_num_ch[4];   ///< number of channels in each mix out configuration
 
     int profile;
-    int one2one_map_chtospkr;
 
     int debug_flag;             ///< used for suppressing repeated error messages output
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
     FFTContext imdct;
     SynthFilterContext synth;
     DCADSPContext dcadsp;
-    QMF64_table *qmf64_table;
     FmtConvertContext fmt_conv;
 } DCAContext;
 
@@ -275,13 +198,12 @@ extern av_export const uint32_t avpriv_dca_sample_rates[16];
 /**
  * Convert bitstream to one representation based on sync marker
  */
-int ff_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
+int avpriv_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
                              int max_size);
 
-void ff_dca_exss_parse_header(DCAContext *s);
+int ff_dca_xbr_parse_frame(DCAContext *s);
+int ff_dca_xxch_decode_frame(DCAContext *s);
 
-int ff_dca_xll_decode_header(DCAContext *s);
-int ff_dca_xll_decode_navi(DCAContext *s, int asset_end);
-int ff_dca_xll_decode_audio(DCAContext *s, AVFrame *frame);
+void ff_dca_exss_parse_header(DCAContext *s);
 
 #endif /* AVCODEC_DCA_H */
