@@ -2,20 +2,20 @@
  * SCTP protocol
  * Copyright (c) 2012 Luca Barbato
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,6 @@
 
 #include "libavutil/intreadwrite.h"
 #include "libavutil/parseutils.h"
-#include "libavutil/opt.h"
 #include "avformat.h"
 #include "internal.h"
 #include "network.h"
@@ -99,7 +98,7 @@ static int ff_sctp_recvmsg(int s, void *msg, size_t len, struct sockaddr *from,
     if (msg_flags)
         *msg_flags = inmsg.msg_flags;
 
-    for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg != NULL;
+    for (cmsg = CMSG_FIRSTHDR(&inmsg); cmsg;
          cmsg = CMSG_NXTHDR(&inmsg, cmsg)) {
         if ((IPPROTO_SCTP == cmsg->cmsg_level) &&
             (SCTP_SNDRCV  == cmsg->cmsg_type))
@@ -122,7 +121,7 @@ static int ff_sctp_send(int s, const void *msg, size_t len,
     outmsg.msg_name       = NULL;
     outmsg.msg_namelen    = 0;
     outmsg.msg_iov        = &iov;
-    iov.iov_base          = msg;
+    iov.iov_base          = (void*)msg;
     iov.iov_len           = len;
     outmsg.msg_iovlen     = 1;
     outmsg.msg_controllen = 0;
@@ -148,32 +147,11 @@ static int ff_sctp_send(int s, const void *msg, size_t len,
 }
 
 typedef struct SCTPContext {
-    const AVClass *class;
     int fd;
-    int listen;
-    int timeout;
-    int listen_timeout;
     int max_streams;
     struct sockaddr_storage dest_addr;
+    socklen_t dest_addr_len;
 } SCTPContext;
-
-#define OFFSET(x) offsetof(SCTPContext, x)
-#define D AV_OPT_FLAG_DECODING_PARAM
-#define E AV_OPT_FLAG_ENCODING_PARAM
-static const AVOption options[] = {
-    { "listen",          "Listen for incoming connections",  OFFSET(listen),         AV_OPT_TYPE_INT, { .i64 = 0 },     0,       1,         .flags = D|E },
-    { "timeout",         "Connection timeout (in milliseconds)", OFFSET(timeout),    AV_OPT_TYPE_INT, { .i64 = 10000 }, INT_MIN, INT_MAX,   .flags = D|E },
-    { "listen_timeout",  "Bind timeout (in milliseconds)",   OFFSET(listen_timeout), AV_OPT_TYPE_INT, { .i64 = -1 },    INT_MIN, INT_MAX,   .flags = D|E },
-    { "max_streams",     "Max stream to allocate",           OFFSET(max_streams), AV_OPT_TYPE_INT, { .i64 = 0 },              0, INT16_MAX, .flags = D|E },
-    { NULL }
-};
-
-static const AVClass sctp_class = {
-    .class_name = "sctp",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
 
 static int sctp_open(URLContext *h, const char *uri, int flags)
 {
@@ -186,7 +164,7 @@ static int sctp_open(URLContext *h, const char *uri, int flags)
     SCTPContext *s = h->priv_data;
     const char *p;
     char buf[256];
-    int ret;
+    int ret, listen_socket = 0;
     char hostname[1024], proto[1024], path[1024];
     char portstr[10];
 
@@ -199,10 +177,11 @@ static int sctp_open(URLContext *h, const char *uri, int flags)
         return AVERROR(EINVAL);
     }
 
+    s->max_streams = 0;
     p = strchr(uri, '?');
     if (p) {
         if (av_find_info_tag(buf, sizeof(buf), "listen", p))
-            s->listen = 1;
+            listen_socket = 1;
         if (av_find_info_tag(buf, sizeof(buf), "max_streams", p))
             s->max_streams = strtol(buf, NULL, 10);
     }
@@ -219,29 +198,23 @@ static int sctp_open(URLContext *h, const char *uri, int flags)
 
     cur_ai = ai;
 
-restart:
     fd = ff_socket(cur_ai->ai_family, SOCK_STREAM, IPPROTO_SCTP);
-    if (fd < 0) {
-        ret = ff_neterrno();
+    if (fd < 0)
         goto fail;
-    }
 
-    if (s->listen) {
-        if ((fd = ff_listen_bind(fd, cur_ai->ai_addr, cur_ai->ai_addrlen,
-                                 s->listen_timeout, h)) < 0) {
-            ret = fd;
-            goto fail1;
-        }
-    } else {
-        if ((ret = ff_listen_connect(fd, cur_ai->ai_addr, cur_ai->ai_addrlen,
-                                     s->timeout, h, !!cur_ai->ai_next)) < 0) {
+    s->dest_addr_len = sizeof(s->dest_addr);
 
-            if (ret == AVERROR_EXIT)
-                goto fail1;
-            else
-                goto fail;
-        }
-    }
+    if (listen_socket) {
+        int fd1;
+        ret = bind(fd, cur_ai->ai_addr, cur_ai->ai_addrlen);
+        listen(fd, 100);
+        fd1 = accept(fd, NULL, NULL);
+        closesocket(fd);
+        fd  = fd1;
+    } else
+        ret = connect(fd, cur_ai->ai_addr, cur_ai->ai_addrlen);
+
+    ff_socket_nonblock(fd, 1);
 
     event.sctp_data_io_event = 1;
     /* TODO: Subscribe to more event types and handle them */
@@ -250,20 +223,17 @@ restart:
                    sizeof(event)) != 0) {
         av_log(h, AV_LOG_ERROR,
                "SCTP ERROR: Unable to subscribe to events\n");
-        goto fail1;
+        goto fail;
     }
 
     if (s->max_streams) {
         initparams.sinit_max_instreams = s->max_streams;
         initparams.sinit_num_ostreams  = s->max_streams;
         if (setsockopt(fd, IPPROTO_SCTP, SCTP_INITMSG, &initparams,
-                       sizeof(initparams)) < 0) {
+                       sizeof(initparams)) < 0)
             av_log(h, AV_LOG_ERROR,
                    "SCTP ERROR: Unable to initialize socket max streams %d\n",
                    s->max_streams);
-            ret = ff_neterrno();
-            goto fail1;
-        }
     }
 
     h->priv_data   = s;
@@ -273,15 +243,6 @@ restart:
     return 0;
 
 fail:
-    if (cur_ai->ai_next) {
-        /* Retry with the next sockaddr */
-        cur_ai = cur_ai->ai_next;
-        if (fd >= 0)
-            closesocket(fd);
-        ret = 0;
-        goto restart;
-    }
-fail1:
     ret = AVERROR(EIO);
     freeaddrinfo(ai);
     return ret;
@@ -335,8 +296,10 @@ static int sctp_write(URLContext *h, const uint8_t *buf, int size)
         /*StreamId is introduced as a 2byte code into the stream*/
         struct sctp_sndrcvinfo info = { 0 };
         info.sinfo_stream           = AV_RB16(buf);
-        if (info.sinfo_stream > s->max_streams)
+        if (info.sinfo_stream > s->max_streams) {
+            av_log(h, AV_LOG_ERROR, "bad input data\n");
             return AVERROR_BUG;
+        }
         ret = ff_sctp_send(s->fd, buf + 2, size - 2, &info, MSG_EOR);
     } else
         ret = send(s->fd, buf, size, MSG_NOSIGNAL);
@@ -366,5 +329,4 @@ URLProtocol ff_sctp_protocol = {
     .url_get_file_handle = sctp_get_file_handle,
     .priv_data_size      = sizeof(SCTPContext),
     .flags               = URL_PROTOCOL_FLAG_NETWORK,
-    .priv_data_class     = &sctp_class,
 };
