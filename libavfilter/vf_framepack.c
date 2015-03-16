@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2013 Vittorio Giovara
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -82,6 +82,7 @@ static int config_output(AVFilterLink *outlink)
     int width            = ctx->inputs[LEFT]->w;
     int height           = ctx->inputs[LEFT]->h;
     AVRational time_base = ctx->inputs[LEFT]->time_base;
+    AVRational frame_rate = ctx->inputs[LEFT]->frame_rate;
 
     // check size and fps match on the other input
     if (width  != ctx->inputs[RIGHT]->w ||
@@ -93,10 +94,17 @@ static int config_output(AVFilterLink *outlink)
         return AVERROR_INVALIDDATA;
     } else if (av_cmp_q(time_base, ctx->inputs[RIGHT]->time_base) != 0) {
         av_log(ctx, AV_LOG_ERROR,
-               "Left and right framerates differ (%d/%d vs %d/%d).\n",
+               "Left and right time bases differ (%d/%d vs %d/%d).\n",
                time_base.num, time_base.den,
                ctx->inputs[RIGHT]->time_base.num,
                ctx->inputs[RIGHT]->time_base.den);
+        return AVERROR_INVALIDDATA;
+    } else if (av_cmp_q(frame_rate, ctx->inputs[RIGHT]->frame_rate) != 0) {
+        av_log(ctx, AV_LOG_ERROR,
+               "Left and right framerates differ (%d/%d vs %d/%d).\n",
+               frame_rate.num, frame_rate.den,
+               ctx->inputs[RIGHT]->frame_rate.num,
+               ctx->inputs[RIGHT]->frame_rate.den);
         return AVERROR_INVALIDDATA;
     }
 
@@ -108,6 +116,8 @@ static int config_output(AVFilterLink *outlink)
     switch (s->format) {
     case AV_STEREO3D_FRAMESEQUENCE:
         time_base.den *= 2;
+        frame_rate.num *= 2;
+
         s->double_pts = AV_NOPTS_VALUE;
         break;
     case AV_STEREO3D_COLUMNS:
@@ -126,6 +136,7 @@ static int config_output(AVFilterLink *outlink)
     outlink->w         = width;
     outlink->h         = height;
     outlink->time_base = time_base;
+    outlink->frame_rate= frame_rate;
 
     return 0;
 }
@@ -144,8 +155,8 @@ static void horizontal_frame_pack(FramepackContext *s,
         uint8_t *dstp         = dst->data[plane];
 
         if (plane == 1 || plane == 2) {
-            length = -(-(dst->width / 2) >> s->pix_desc->log2_chroma_w);
-            lines  = -(-(dst->height)    >> s->pix_desc->log2_chroma_h);
+            length = FF_CEIL_RSHIFT(dst->width / 2, s->pix_desc->log2_chroma_w);
+            lines  = FF_CEIL_RSHIFT(dst->height,    s->pix_desc->log2_chroma_h);
         }
 
         if (interleaved) {
