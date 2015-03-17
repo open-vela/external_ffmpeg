@@ -2,20 +2,20 @@
  * Common Ut Video header
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,7 +56,6 @@ enum {
     UTVIDEO_RGBA = MKTAG(0x00, 0x00, 0x02, 0x18),
     UTVIDEO_420  = MKTAG('Y', 'V', '1', '2'),
     UTVIDEO_422  = MKTAG('Y', 'U', 'Y', '2'),
-    UTVIDEO_444  = MKTAG('Y', 'V', '2', '4'),
 };
 
 /* Mapping of libavcodec prediction modes to Ut Video's */
@@ -77,7 +76,6 @@ typedef struct UtvideoContext {
     int      compression;
     int      interlaced;
     int      frame_pred;
-    int      pro;
 
     int      slice_stride;
     uint8_t *slice_bits, *slice_buffer[4];
@@ -85,13 +83,12 @@ typedef struct UtvideoContext {
 } UtvideoContext;
 
 typedef struct HuffEntry {
-    uint16_t sym;
+    uint8_t  sym;
     uint8_t  len;
     uint32_t code;
 } HuffEntry;
 
 /* Compare huffman tree nodes */
 int ff_ut_huff_cmp_len(const void *a, const void *b);
-int ff_ut10_huff_cmp_len(const void *a, const void *b);
 
 #endif /* AVCODEC_UTVIDEO_H */
