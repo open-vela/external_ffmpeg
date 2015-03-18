@@ -2,20 +2,20 @@
  * RTP input format
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,12 +31,6 @@
 #include "rtpdec_formats.h"
 
 #define MIN_FEEDBACK_INTERVAL 200000 /* 200 ms in us */
-
-static RTPDynamicProtocolHandler gsm_dynamic_handler = {
-    .enc_name   = "GSM",
-    .codec_type = AVMEDIA_TYPE_AUDIO,
-    .codec_id   = AV_CODEC_ID_GSM,
-};
 
 static RTPDynamicProtocolHandler realmedia_mp3_dynamic_handler = {
     .enc_name   = "X-MP3-draft-00",
@@ -58,7 +52,7 @@ static RTPDynamicProtocolHandler opus_dynamic_handler = {
 
 static RTPDynamicProtocolHandler t140_dynamic_handler = { /* RFC 4103 */
     .enc_name   = "t140",
-    .codec_type = AVMEDIA_TYPE_SUBTITLE,
+    .codec_type = AVMEDIA_TYPE_DATA,
     .codec_id   = AV_CODEC_ID_TEXT,
 };
 
@@ -108,7 +102,6 @@ void ff_register_rtp_dynamic_payload_handlers(void)
     ff_register_dynamic_payload_handler(&ff_vorbis_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_vp8_dynamic_handler);
     ff_register_dynamic_payload_handler(&ff_vp9_dynamic_handler);
-    ff_register_dynamic_payload_handler(&gsm_dynamic_handler);
     ff_register_dynamic_payload_handler(&opus_dynamic_handler);
     ff_register_dynamic_payload_handler(&realmedia_mp3_dynamic_handler);
     ff_register_dynamic_payload_handler(&speex_dynamic_handler);
@@ -678,8 +671,8 @@ void ff_rtp_reset_packet_queue(RTPDemuxContext *s)
 {
     while (s->queue) {
         RTPPacket *next = s->queue->next;
-        av_freep(&s->queue->buf);
-        av_freep(&s->queue);
+        av_free(s->queue->buf);
+        av_free(s->queue);
         s->queue = next;
     }
     s->seq       = 0;
@@ -737,8 +730,8 @@ static int rtp_parse_queued_packet(RTPDemuxContext *s, AVPacket *pkt)
     /* Parse the first packet in the queue, and dequeue it */
     rv   = rtp_parse_packet_internal(s, pkt, s->queue->buf, s->queue->len);
     next = s->queue->next;
-    av_freep(&s->queue->buf);
-    av_freep(&s->queue);
+    av_free(s->queue->buf);
+    av_free(s->queue);
     s->queue = next;
     s->queue_len--;
     return rv;
@@ -860,7 +853,7 @@ int ff_parse_fmtp(AVFormatContext *s,
     int value_size = strlen(p) + 1;
 
     if (!(value = av_malloc(value_size))) {
-        av_log(NULL, AV_LOG_ERROR, "Failed to allocate data for FMTP.\n");
+        av_log(NULL, AV_LOG_ERROR, "Failed to allocate data for FMTP.");
         return AVERROR(ENOMEM);
     }
 
