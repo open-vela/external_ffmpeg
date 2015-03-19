@@ -360,7 +360,7 @@ static int udp_socket_create(UDPContext *s, struct sockaddr_storage *addr,
 
     if (((struct sockaddr *) &s->dest_addr)->sa_family)
         family = ((struct sockaddr *) &s->dest_addr)->sa_family;
-    res0 = udp_resolve_host(localaddr[0] ? localaddr : NULL, s->local_port,
+    res0 = udp_resolve_host((localaddr && localaddr[0]) ? localaddr : NULL, s->local_port,
                             SOCK_DGRAM, family, AI_PASSIVE);
     if (!res0)
         goto fail;
