@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -198,7 +198,6 @@ static int vdpau_h264_decode_slice(AVCodecContext *avctx,
 static int vdpau_h264_end_frame(AVCodecContext *avctx)
 {
     H264Context *h = avctx->priv_data;
-    H264SliceContext *sl = &h->slice_ctx[0];
     H264Picture *pic = h->cur_pic_ptr;
     struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
     int val;
@@ -207,7 +206,7 @@ static int vdpau_h264_end_frame(AVCodecContext *avctx)
     if (val < 0)
         return val;
 
-    ff_h264_draw_horiz_band(h, sl, 0, h->avctx->height);
+    ff_h264_draw_horiz_band(h, 0, h->avctx->height);
     return 0;
 }
 
