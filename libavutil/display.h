@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,9 +55,9 @@
  * Extract the rotation component of the transformation matrix.
  *
  * @param matrix the transformation matrix
- * @return the angle (in degrees) by which the transformation rotates the frame
- *         counterclockwise. The angle will be in range [-180.0, 180.0],
- *         or NaN if the matrix is singular.
+ * @return the angle (in degrees) by which the transformation rotates the frame.
+ *         The angle will be in range [-180.0, 180.0], or NaN if the matrix is
+ *         singular.
  *
  * @note floating point numbers are inherently inexact, so callers are
  *       recommended to round the return value to nearest integer before use.
@@ -65,8 +65,8 @@
 double av_display_rotation_get(const int32_t matrix[9]);
 
 /**
- * Initialize a transformation matrix describing a pure counterclockwise
- * rotation by the specified angle (in degrees).
+ * Initialize a transformation matrix describing a pure rotation by the
+ * specified angle (in degrees).
  *
  * @param matrix an allocated transformation matrix (will be fully overwritten
  *               by this function)
