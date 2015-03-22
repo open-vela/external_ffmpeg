@@ -3,20 +3,20 @@
  * Copyright (c) 2004 Roman Shaposhnik
  * Copyright (c) 2008 Alessandro Sappia
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,16 +27,6 @@
 #elif HAVE_LIBDC1394_1
 #include <libraw1394/raw1394.h>
 #include <libdc1394/dc1394_control.h>
-
-#include "libavutil/internal.h"
-#include "libavutil/log.h"
-#include "libavutil/mathematics.h"
-#include "libavutil/opt.h"
-#include "libavutil/parseutils.h"
-#include "libavutil/pixdesc.h"
-
-#include "libavformat/avformat.h"
-#include "libavformat/internal.h"
 
 #define DC1394_VIDEO_MODE_320x240_YUV422 MODE_320x240_YUV422
 #define DC1394_VIDEO_MODE_640x480_YUV411 MODE_640x480_YUV411
@@ -50,6 +40,16 @@
 #define DC1394_FRAMERATE_120   FRAMERATE_120
 #define DC1394_FRAMERATE_240   FRAMERATE_240
 #endif
+
+#include "libavutil/internal.h"
+#include "libavutil/log.h"
+#include "libavutil/mathematics.h"
+#include "libavutil/opt.h"
+#include "libavutil/parseutils.h"
+#include "libavutil/pixdesc.h"
+
+#include "libavformat/avformat.h"
+#include "libavformat/internal.h"
 
 typedef struct dc1394_data {
     AVClass *class;
@@ -116,6 +116,7 @@ static const AVClass libdc1394_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
 
