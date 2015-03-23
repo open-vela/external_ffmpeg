@@ -2,20 +2,20 @@
  * Quicktime Planar RGB (8BPS) Video Decoder
  * Copyright (C) 2003 Roberto Togni
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@
  *
  * Supports: PAL8 (RGB 8bpp, paletted)
  *         : BGR24 (RGB 24bpp) (can also output it as RGB32)
- *         : RGB32 (RGB 32bpp, 4th plane is alpha)
+ *         : RGB32 (RGB 32bpp, 4th plane is probably alpha and it's ignored)
  *
  */
 
@@ -66,17 +66,26 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     unsigned int dlen, p, row;
     const unsigned char *lp, *dp, *ep;
     unsigned char count;
+    unsigned int px_inc;
     unsigned int planes     = c->planes;
     unsigned char *planemap = c->planemap;
     int ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     ep = encoded + buf_size;
 
     /* Set data pointer after line lengths */
     dp = encoded + planes * (height << 1);
+
+    /* Ignore alpha plane, don't know what to do with it */
+    if (planes == 4)
+        planes--;
+
+    px_inc = planes + (avctx->pix_fmt == AV_PIX_FMT_RGB32);
 
     for (p = 0; p < planes; p++) {
         /* Lines length pointer for this plane */
@@ -96,21 +105,21 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 if ((count = *dp++) <= 127) {
                     count++;
                     dlen -= count + 1;
-                    if (pixptr_end - pixptr < count * planes)
+                    if (pixptr_end - pixptr < count * px_inc)
                         break;
                     if (ep - dp < count)
                         return AVERROR_INVALIDDATA;
                     while (count--) {
                         *pixptr = *dp++;
-                        pixptr += planes;
+                        pixptr += px_inc;
                     }
                 } else {
                     count = 257 - count;
-                    if (pixptr_end - pixptr < count * planes)
+                    if (pixptr_end - pixptr < count * px_inc)
                         break;
                     while (count--) {
                         *pixptr = *dp;
-                        pixptr += planes;
+                        pixptr += px_inc;
                     }
                     dp++;
                     dlen -= 2;
@@ -171,7 +180,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         c->planemap[0] = HAVE_BIGENDIAN ? 1 : 2; // 1st plane is red
         c->planemap[1] = HAVE_BIGENDIAN ? 2 : 1; // 2nd plane is green
         c->planemap[2] = HAVE_BIGENDIAN ? 3 : 0; // 3rd plane is blue
-        c->planemap[3] = HAVE_BIGENDIAN ? 0 : 3; // 4th plane is alpha
+        c->planemap[3] = HAVE_BIGENDIAN ? 0 : 3; // 4th plane is alpha???
     }
     return 0;
 }
