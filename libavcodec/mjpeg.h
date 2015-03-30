@@ -8,20 +8,20 @@
  * aspecting, new decode_frame mechanism and apple mjpeg-b support
  *                                  by Alex Beregszaszi
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,8 +33,13 @@
 #ifndef AVCODEC_MJPEG_H
 #define AVCODEC_MJPEG_H
 
+#include "libavutil/internal.h"
+
+#include "avcodec.h"
+#include "put_bits.h"
+
 /* JPEG marker codes */
-enum JpegMarker {
+typedef enum {
     /* start of frame */
     SOF0  = 0xc0,       /* baseline */
     SOF1  = 0xc1,       /* extended sequential, huffman */
@@ -113,10 +118,17 @@ enum JpegMarker {
     TEM   = 0x01,       /* temporary private use for arithmetic coding */
 
     /* 0x02 -> 0xbf reserved */
-};
+} JPEG_MARKER;
+
+static inline void put_marker(PutBitContext *p, int code)
+{
+    put_bits(p, 8, 0xff);
+    put_bits(p, 8, code);
+}
 
 #define PREDICT(ret, topleft, top, left, predictor)\
     switch(predictor){\
+        case 0: ret= 0; break;\
         case 1: ret= left; break;\
         case 2: ret= top; break;\
         case 3: ret= topleft; break;\
@@ -126,5 +138,20 @@ enum JpegMarker {
         default:\
         case 7: ret= (left + top)>>1; break;\
     }
+
+extern av_export const uint8_t avpriv_mjpeg_bits_dc_luminance[];
+extern av_export const uint8_t avpriv_mjpeg_val_dc[];
+
+extern av_export const uint8_t avpriv_mjpeg_bits_dc_chrominance[];
+
+extern av_export const uint8_t avpriv_mjpeg_bits_ac_luminance[];
+extern av_export const uint8_t avpriv_mjpeg_val_ac_luminance[];
+
+extern av_export const uint8_t avpriv_mjpeg_bits_ac_chrominance[];
+extern av_export const uint8_t avpriv_mjpeg_val_ac_chrominance[];
+
+void ff_mjpeg_build_huffman_codes(uint8_t *huff_size, uint16_t *huff_code,
+                                  const uint8_t *bits_table,
+                                  const uint8_t *val_table);
 
 #endif /* AVCODEC_MJPEG_H */
