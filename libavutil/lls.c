@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,7 @@
 #include "version.h"
 #include "lls.h"
 
-static void update_lls(LLSModel *m, double *var)
+static void update_lls(LLSModel *m, const double *var)
 {
     int i, j;
 
@@ -100,7 +100,7 @@ void avpriv_solve_lls(LLSModel *m, double threshold, unsigned short min_order)
     }
 }
 
-static double evaluate_lls(LLSModel *m, double *param, int order)
+static double evaluate_lls(LLSModel *m, const double *param, int order)
 {
     int i;
     double out = 0;
@@ -120,25 +120,6 @@ av_cold void avpriv_init_lls(LLSModel *m, int indep_count)
     if (ARCH_X86)
         ff_init_lls_x86(m);
 }
-
-#if FF_API_LLS_PRIVATE
-av_cold void av_init_lls(LLSModel *m, int indep_count)
-{
-    avpriv_init_lls(m, indep_count);
-}
-void av_update_lls(LLSModel *m, double *param, double decay)
-{
-    m->update_lls(m, param);
-}
-void av_solve_lls(LLSModel *m, double threshold, int min_order)
-{
-    avpriv_solve_lls(m, threshold, min_order);
-}
-double av_evaluate_lls(LLSModel *m, double *param, int order)
-{
-    return m->evaluate_lls(m, param, order);
-}
-#endif /* FF_API_LLS_PRIVATE */
 
 #ifdef TEST
 

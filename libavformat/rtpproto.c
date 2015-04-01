@@ -2,20 +2,20 @@
  * RTP network protocol
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
 
 #include "libavutil/parseutils.h"
 #include "libavutil/avstring.h"
-#include "libavutil/opt.h"
 #include "avformat.h"
 #include "avio_internal.h"
 #include "rtp.h"
@@ -43,45 +42,13 @@
 #endif
 
 typedef struct RTPContext {
-    const AVClass *class;
     URLContext *rtp_hd, *rtcp_hd;
     int rtp_fd, rtcp_fd, nb_ssm_include_addrs, nb_ssm_exclude_addrs;
     struct sockaddr_storage **ssm_include_addrs, **ssm_exclude_addrs;
     int write_to_source;
     struct sockaddr_storage last_rtp_source, last_rtcp_source;
     socklen_t last_rtp_source_len, last_rtcp_source_len;
-    int ttl;
-    int buffer_size;
-    int rtcp_port, local_rtpport, local_rtcpport;
-    int connect;
-    int pkt_size;
-    char *sources;
-    char *block;
 } RTPContext;
-
-#define OFFSET(x) offsetof(RTPContext, x)
-#define D AV_OPT_FLAG_DECODING_PARAM
-#define E AV_OPT_FLAG_ENCODING_PARAM
-static const AVOption options[] = {
-    { "ttl",                "Time to live (in milliseconds, multicast only)",                   OFFSET(ttl),             AV_OPT_TYPE_INT,    { .i64 = -1 },    -1, INT_MAX, .flags = D|E },
-    { "buffer_size",        "Send/Receive buffer size (in bytes)",                              OFFSET(buffer_size),     AV_OPT_TYPE_INT,    { .i64 = -1 },    -1, INT_MAX, .flags = D|E },
-    { "rtcp_port",          "Custom rtcp port",                                                 OFFSET(rtcp_port),       AV_OPT_TYPE_INT,    { .i64 = -1 },    -1, INT_MAX, .flags = D|E },
-    { "local_rtpport",      "Local rtp port",                                                   OFFSET(local_rtpport),   AV_OPT_TYPE_INT,    { .i64 = -1 },    -1, INT_MAX, .flags = D|E },
-    { "local_rtcpport",     "Local rtcp port",                                                  OFFSET(local_rtcpport),  AV_OPT_TYPE_INT,    { .i64 = -1 },    -1, INT_MAX, .flags = D|E },
-    { "connect",            "Connect socket",                                                   OFFSET(connect),         AV_OPT_TYPE_INT,    { .i64 =  0 },     0, 1,       .flags = D|E },
-    { "write_to_source",    "Send packets to the source address of the latest received packet", OFFSET(write_to_source), AV_OPT_TYPE_INT,    { .i64 =  0 },     0, 1,       .flags = D|E },
-    { "pkt_size",           "Maximum packet size",                                              OFFSET(pkt_size),        AV_OPT_TYPE_INT,    { .i64 = -1 },    -1, INT_MAX, .flags = D|E },
-    { "sources",            "Source list",                                                      OFFSET(sources),         AV_OPT_TYPE_STRING, { .str = NULL },               .flags = D|E },
-    { "block",              "Block list",                                                       OFFSET(block),           AV_OPT_TYPE_STRING, { .str = NULL },               .flags = D|E },
-    { NULL }
-};
-
-static const AVClass rtp_class = {
-    .class_name = "rtp",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
 
 /**
  * If no filename is given to av_open_input_file because you want to
@@ -221,24 +188,26 @@ static av_printf_format(3, 4) void url_add_option(char *buf, int buf_size, const
     va_end(ap);
 }
 
-static void build_udp_url(RTPContext *s,
-                          char *buf, int buf_size,
-                          const char *hostname,
-                          int port, int local_port,
+static void build_udp_url(char *buf, int buf_size,
+                          const char *hostname, int port,
+                          int local_port, int ttl,
+                          int max_packet_size, int connect,
+                          int dscp,
                           const char *include_sources,
                           const char *exclude_sources)
 {
     ff_url_join(buf, buf_size, "udp", NULL, hostname, port, NULL);
     if (local_port >= 0)
         url_add_option(buf, buf_size, "localport=%d", local_port);
-    if (s->ttl >= 0)
-        url_add_option(buf, buf_size, "ttl=%d", s->ttl);
-    if (s->buffer_size >= 0)
-        url_add_option(buf, buf_size, "buffer_size=%d", s->buffer_size);
-    if (s->pkt_size >= 0)
-        url_add_option(buf, buf_size, "pkt_size=%d", s->pkt_size);
-    if (s->connect)
+    if (ttl >= 0)
+        url_add_option(buf, buf_size, "ttl=%d", ttl);
+    if (max_packet_size >=0)
+        url_add_option(buf, buf_size, "pkt_size=%d", max_packet_size);
+    if (connect)
         url_add_option(buf, buf_size, "connect=1");
+    if (dscp >= 0)
+        url_add_option(buf, buf_size, "dscp=%d", dscp);
+    url_add_option(buf, buf_size, "fifo_size=0");
     if (include_sources && include_sources[0])
         url_add_option(buf, buf_size, "sources=%s", include_sources);
     if (exclude_sources && exclude_sources[0])
@@ -298,6 +267,7 @@ static void rtp_parse_addr_list(URLContext *h, char *buf,
  *         'sources=ip[,ip]'  : list allowed source IP addresses
  *         'block=ip[,ip]'    : list disallowed source IP addresses
  *         'write_to_source=0/1' : send packets to the source address of the latest received packet
+ *         'dscp=n'           : set DSCP value to n (QoS)
  * deprecated option:
  *         'localport=n'      : set the local port to n
  *
@@ -310,73 +280,94 @@ static void rtp_parse_addr_list(URLContext *h, char *buf,
 static int rtp_open(URLContext *h, const char *uri, int flags)
 {
     RTPContext *s = h->priv_data;
-    int rtp_port;
+    int rtp_port, rtcp_port,
+        ttl, connect,
+        local_rtp_port, local_rtcp_port, max_packet_size, dscp;
     char hostname[256], include_sources[1024] = "", exclude_sources[1024] = "";
-    char *sources = include_sources, *block = exclude_sources;
     char buf[1024];
     char path[1024];
     const char *p;
+    int i, max_retry_count = 3;
 
     av_url_split(NULL, 0, NULL, 0, hostname, sizeof(hostname), &rtp_port,
                  path, sizeof(path), uri);
     /* extract parameters */
-    if (s->rtcp_port < 0)
-        s->rtcp_port = rtp_port + 1;
+    ttl = -1;
+    rtcp_port = rtp_port+1;
+    local_rtp_port = -1;
+    local_rtcp_port = -1;
+    max_packet_size = -1;
+    connect = 0;
+    dscp = -1;
 
     p = strchr(uri, '?');
     if (p) {
         if (av_find_info_tag(buf, sizeof(buf), "ttl", p)) {
-            s->ttl = strtol(buf, NULL, 10);
+            ttl = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "rtcpport", p)) {
-            s->rtcp_port = strtol(buf, NULL, 10);
+            rtcp_port = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "localport", p)) {
-            s->local_rtpport = strtol(buf, NULL, 10);
+            local_rtp_port = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "localrtpport", p)) {
-            s->local_rtpport = strtol(buf, NULL, 10);
+            local_rtp_port = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "localrtcpport", p)) {
-            s->local_rtcpport = strtol(buf, NULL, 10);
+            local_rtcp_port = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "pkt_size", p)) {
-            s->pkt_size = strtol(buf, NULL, 10);
+            max_packet_size = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "connect", p)) {
-            s->connect = strtol(buf, NULL, 10);
+            connect = strtol(buf, NULL, 10);
         }
         if (av_find_info_tag(buf, sizeof(buf), "write_to_source", p)) {
             s->write_to_source = strtol(buf, NULL, 10);
         }
+        if (av_find_info_tag(buf, sizeof(buf), "dscp", p)) {
+            dscp = strtol(buf, NULL, 10);
+        }
         if (av_find_info_tag(buf, sizeof(buf), "sources", p)) {
             av_strlcpy(include_sources, buf, sizeof(include_sources));
-
             rtp_parse_addr_list(h, buf, &s->ssm_include_addrs, &s->nb_ssm_include_addrs);
-        } else {
-            rtp_parse_addr_list(h, s->sources, &s->ssm_include_addrs, &s->nb_ssm_include_addrs);
-            sources = s->sources;
         }
         if (av_find_info_tag(buf, sizeof(buf), "block", p)) {
             av_strlcpy(exclude_sources, buf, sizeof(exclude_sources));
             rtp_parse_addr_list(h, buf, &s->ssm_exclude_addrs, &s->nb_ssm_exclude_addrs);
-        } else {
-            rtp_parse_addr_list(h, s->block, &s->ssm_exclude_addrs, &s->nb_ssm_exclude_addrs);
-            block = s->block;
         }
     }
 
-    build_udp_url(s, buf, sizeof(buf),
-                  hostname, rtp_port, s->local_rtpport, sources, block);
-    if (ffurl_open(&s->rtp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
-        goto fail;
-    if (s->local_rtpport >= 0 && s->local_rtcpport < 0)
-        s->local_rtcpport = ff_udp_get_local_port(s->rtp_hd) + 1;
-
-    build_udp_url(s, buf, sizeof(buf),
-                  hostname, s->rtcp_port, s->local_rtcpport, sources, block);
-    if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
-        goto fail;
+    for (i = 0;i < max_retry_count;i++) {
+        build_udp_url(buf, sizeof(buf),
+                      hostname, rtp_port, local_rtp_port, ttl, max_packet_size,
+                      connect, dscp, include_sources, exclude_sources);
+        if (ffurl_open(&s->rtp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
+            goto fail;
+        local_rtp_port = ff_udp_get_local_port(s->rtp_hd);
+        if(local_rtp_port == 65535) {
+            local_rtp_port = -1;
+            continue;
+        }
+        if (local_rtcp_port<0) {
+            local_rtcp_port = local_rtp_port + 1;
+            build_udp_url(buf, sizeof(buf),
+                          hostname, rtcp_port, local_rtcp_port, ttl, max_packet_size,
+                          connect, dscp, include_sources, exclude_sources);
+            if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0) {
+                local_rtp_port = local_rtcp_port = -1;
+                continue;
+            }
+            break;
+        }
+        build_udp_url(buf, sizeof(buf),
+                      hostname, rtcp_port, local_rtcp_port, ttl, max_packet_size,
+                      connect, dscp, include_sources, exclude_sources);
+        if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
+            goto fail;
+        break;
+    }
 
     /* just to ease handle access. XXX: need to suppress direct handle
        access */
@@ -519,10 +510,10 @@ static int rtp_close(URLContext *h)
     int i;
 
     for (i = 0; i < s->nb_ssm_include_addrs; i++)
-        av_free(s->ssm_include_addrs[i]);
+        av_freep(&s->ssm_include_addrs[i]);
     av_freep(&s->ssm_include_addrs);
     for (i = 0; i < s->nb_ssm_exclude_addrs; i++)
-        av_free(s->ssm_exclude_addrs[i]);
+        av_freep(&s->ssm_exclude_addrs[i]);
     av_freep(&s->ssm_exclude_addrs);
 
     ffurl_close(s->rtp_hd);
@@ -583,5 +574,4 @@ URLProtocol ff_rtp_protocol = {
     .url_get_multi_file_handle = rtp_get_multi_file_handle,
     .priv_data_size            = sizeof(RTPContext),
     .flags                     = URL_PROTOCOL_FLAG_NETWORK,
-    .priv_data_class           = &rtp_class,
 };
