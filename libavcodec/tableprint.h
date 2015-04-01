@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,16 +81,6 @@ void write_float_2d_array   (const void *, int, int);
 #define FMT "zu"
 #endif
 
-#define WRITE_ARRAY_ALIGNED(prefix, align, type, name)  \
-    do {                                                \
-        const size_t array_size = FF_ARRAY_ELEMS(name); \
-        printf(prefix" DECLARE_ALIGNED("#align", "      \
-               #type", "#name")[%"FMT"] = {\n",         \
-               array_size);                             \
-        write_##type##_array(name, array_size);         \
-        printf("};\n");                                 \
-    } while(0)
-
 #define WRITE_ARRAY(prefix, type, name)                 \
     do {                                                \
         const size_t array_size = FF_ARRAY_ELEMS(name); \
@@ -114,7 +104,6 @@ void write_float_2d_array   (const void *, int, int);
 WRITE_1D_FUNC(int8_t,   "%3"PRIi8, 15)
 WRITE_1D_FUNC(uint8_t,  "0x%02"PRIx8, 15)
 WRITE_1D_FUNC(uint16_t, "0x%08"PRIx16, 7)
-WRITE_1D_FUNC(int16_t,  "%5"PRIi16, 7)
 WRITE_1D_FUNC(uint32_t, "0x%08"PRIx32, 7)
 WRITE_1D_FUNC(float,    "%.18e", 3)
 
