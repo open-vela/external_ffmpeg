@@ -1,26 +1,27 @@
 /*
- * Icecast protocol for Libav
+ * Icecast protocol for FFmpeg
  * Copyright (c) 2014 Marvin Scholz
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 
 #include "libavutil/avstring.h"
+#include "libavutil/bprint.h"
 #include "libavutil/opt.h"
 
 #include "avformat.h"
@@ -65,27 +66,10 @@ static const AVOption options[] = {
 };
 
 
-static char *cat_header(char buf[], const char key[], const char value[])
+static void cat_header(AVBPrint *bp, const char key[], const char value[])
 {
-    if (NOT_EMPTY(value)) {
-        int len = strlen(key) + strlen(value) + 5;
-        int is_first = !buf;
-        char *tmp = NULL;
-
-        if (buf)
-            len += strlen(buf);
-        if (!(tmp = av_realloc(buf, len))) {
-            av_freep(&buf);
-            return NULL;
-        } else {
-            buf = tmp;
-        }
-        if (is_first)
-            *buf = '\0';
-
-        av_strlcatf(buf, len, "%s: %s\r\n", key, value);
-    }
-    return buf;
+    if (NOT_EMPTY(value))
+        av_bprintf(bp, "%s: %s\r\n", key, value);
 }
 
 static int icecast_close(URLContext *h)
@@ -107,20 +91,24 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
     char h_url[1024], host[1024], auth[1024], path[1024];
     char *headers = NULL, *user = NULL;
     int port, ret;
+    AVBPrint bp;
 
     if (flags & AVIO_FLAG_READ)
         return AVERROR(ENOSYS);
 
+    av_bprint_init(&bp, 0, 1);
+
     // Build header strings
-    headers = cat_header(headers, "Ice-Name", s->name);
-    headers = cat_header(headers, "Ice-Description", s->description);
-    headers = cat_header(headers, "Ice-URL", s->url);
-    headers = cat_header(headers, "Ice-Genre", s->genre);
-    headers = cat_header(headers, "Ice-Public", s->public ? "1" : "0");
-    if (!headers) {
+    cat_header(&bp, "Ice-Name", s->name);
+    cat_header(&bp, "Ice-Description", s->description);
+    cat_header(&bp, "Ice-URL", s->url);
+    cat_header(&bp, "Ice-Genre", s->genre);
+    cat_header(&bp, "Ice-Public", s->public ? "1" : "0");
+    if (!av_bprint_is_complete(&bp)) {
         ret = AVERROR(ENOMEM);
         goto cleanup;
     }
+    av_bprint_finalize(&bp, &headers);
 
     // Set options
     av_dict_set(&opt_dict, "method", s->legacy_icecast ? "SOURCE" : "PUT", 0);
@@ -141,7 +129,7 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
 
     // Check for auth data in URI
     if (auth[0]) {
-        char *sep = strchr(auth,':');
+        char *sep = strchr(auth, ':');
         if (sep) {
             *sep = 0;
             sep++;
@@ -179,7 +167,6 @@ static int icecast_open(URLContext *h, const char *uri, int flags)
     ret = ffurl_open(&s->hd, h_url, AVIO_FLAG_READ_WRITE, NULL, &opt_dict);
 
 cleanup:
-    // Free variables
     av_freep(&user);
     av_freep(&headers);
     av_dict_free(&opt_dict);
