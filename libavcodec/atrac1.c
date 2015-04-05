@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Maxim Poliakovski
  * Copyright (c) 2009 Benjamin Larsson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -80,7 +80,7 @@ typedef struct AT1Ctx {
     DECLARE_ALIGNED(32, float, high)[512];
     float*              bands[3];
     FFTContext          mdct_ctx[3];
-    AVFloatDSPContext   *fdsp;
+    AVFloatDSPContext   fdsp;
 } AT1Ctx;
 
 /** size of the transform in samples in the long mode for each QMF band */
@@ -140,7 +140,7 @@ static int at1_imdct_block(AT1SUCtx* su, AT1Ctx *q)
             at1_imdct(q, &q->spec[pos], &su->spectrum[0][ref_pos + start_pos], nbits, band_num);
 
             /* overlap and window */
-            q->fdsp->vector_fmul_window(&q->bands[band_num][start_pos], prev_buf,
+            q->fdsp.vector_fmul_window(&q->bands[band_num][start_pos], prev_buf,
                                        &su->spectrum[0][ref_pos + start_pos], ff_sine_32, 16);
 
             prev_buf = &su->spectrum[0][ref_pos+start_pos + 16];
@@ -242,7 +242,7 @@ static int at1_unpack_dequant(GetBitContext* gb, AT1SUCtx* su,
                      */
                     spec[pos+i] = get_sbits(gb, word_len) * scale_factor * max_quant;
                 }
-            } else { /* word_len = 0 -> empty BFU, zero all specs in the empty BFU */
+            } else { /* word_len = 0 -> empty BFU, zero all specs in the emty BFU */
                 memset(&spec[pos], 0, num_specs * sizeof(float));
             }
         }
@@ -287,8 +287,10 @@ static int atrac1_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = AT1_SU_SAMPLES;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     for (ch = 0; ch < avctx->channels; ch++) {
         AT1SUCtx* su = &q->SUs[ch];
@@ -324,8 +326,6 @@ static av_cold int atrac1_decode_end(AVCodecContext * avctx)
     ff_mdct_end(&q->mdct_ctx[1]);
     ff_mdct_end(&q->mdct_ctx[2]);
 
-    av_freep(&q->fdsp);
-
     return 0;
 }
 
@@ -343,11 +343,6 @@ static av_cold int atrac1_decode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    if (avctx->block_align <= 0) {
-        av_log(avctx, AV_LOG_ERROR, "Unsupported block align.");
-        return AVERROR_PATCHWELCOME;
-    }
-
     /* Init the mdct transforms */
     if ((ret = ff_mdct_init(&q->mdct_ctx[0], 6, 1, -1.0/ (1 << 15))) ||
         (ret = ff_mdct_init(&q->mdct_ctx[1], 8, 1, -1.0/ (1 << 15))) ||
@@ -361,7 +356,7 @@ static av_cold int atrac1_decode_init(AVCodecContext *avctx)
 
     ff_atrac_generate_tables();
 
-    q->fdsp = avpriv_float_dsp_alloc(avctx->flags & CODEC_FLAG_BITEXACT);
+    avpriv_float_dsp_init(&q->fdsp, avctx->flags & CODEC_FLAG_BITEXACT);
 
     q->bands[0] = q->low;
     q->bands[1] = q->mid;
