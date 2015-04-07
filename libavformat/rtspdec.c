@@ -2,20 +2,20 @@
  * RTSP demuxer
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -113,7 +113,7 @@ static int rtsp_send_reply(AVFormatContext *s, enum RTSPStatusCode code,
     if (extracontent)
         av_strlcat(message, extracontent, sizeof(message));
     av_strlcat(message, "\r\n", sizeof(message));
-    av_dlog(s, "Sending response:\n%s", message);
+    av_log(s, AV_LOG_TRACE, "Sending response:\n%s", message);
     ffurl_write(rt->rtsp_hd_out, message, strlen(message));
 
     return 0;
@@ -149,7 +149,7 @@ static inline int rtsp_read_request(AVFormatContext *s,
         if (ret)
             return ret;
         if (rbuflen > 1) {
-            av_dlog(s, "Parsing[%d]: %s\n", rbuflen, rbuf);
+            av_log(s, AV_LOG_TRACE, "Parsing[%d]: %s\n", rbuflen, rbuf);
             ff_rtsp_parse_line(request, rbuf, rt, method);
         }
     } while (rbuflen > 0);
@@ -292,7 +292,7 @@ static int rtsp_read_setup(AVFormatContext *s, char* host, char *controlurl)
             snprintf(buf, sizeof(buf), "%d", rt->buffer_size);
             av_dict_set(&opts, "buffer_size", buf, 0);
             ff_url_join(url, sizeof(url), "rtp", NULL, host, localport, NULL);
-            av_dlog(s, "Opening: %s", url);
+            av_log(s, AV_LOG_TRACE, "Opening: %s", url);
             ret = ffurl_open(&rtsp_st->rtp_handle, url, AVIO_FLAG_READ_WRITE,
                              &s->interrupt_callback, &opts);
             av_dict_free(&opts);
@@ -304,7 +304,7 @@ static int rtsp_read_setup(AVFormatContext *s, char* host, char *controlurl)
             return ret;
         }
 
-        av_dlog(s, "Listening on: %d",
+        av_log(s, AV_LOG_TRACE, "Listening on: %d",
                 ff_rtp_get_local_rtp_port(rtsp_st->rtp_handle));
         if ((ret = ff_rtsp_open_transport_ctx(s, rtsp_st))) {
             rtsp_send_reply(s, RTSP_STATUS_TRANSPORT, NULL, request.seq);
@@ -366,10 +366,8 @@ static inline int parse_command_line(AVFormatContext *s, const char *line,
     const char *linept, *searchlinept;
     linept = strchr(line, ' ');
 
-    if (!linept) {
-        av_log(s, AV_LOG_ERROR, "Error parsing method string\n");
+    if (!linept)
         return AVERROR_INVALIDDATA;
-    }
 
     if (linept - line > methodsize - 1) {
         av_log(s, AV_LOG_ERROR, "Method string too long\n");
@@ -549,7 +547,7 @@ static int rtsp_read_play(AVFormatContext *s)
         }
         ff_rtsp_send_cmd(s, "PLAY", rt->control_uri, cmd, reply, NULL);
         if (reply->status_code != RTSP_STATUS_OK) {
-            return ff_rtsp_averror(reply->status_code, -1);
+            return -1;
         }
         if (rt->transport == RTSP_TRANSPORT_RTP &&
             reply->range_start != AV_NOPTS_VALUE) {
@@ -559,7 +557,6 @@ static int rtsp_read_play(AVFormatContext *s)
                 AVStream *st = NULL;
                 if (!rtpctx || rtsp_st->stream_index < 0)
                     continue;
-
                 st = s->streams[rtsp_st->stream_index];
                 rtpctx->range_start_offset =
                     av_rescale_q(reply->range_start, AV_TIME_BASE_Q,
@@ -582,7 +579,7 @@ static int rtsp_read_pause(AVFormatContext *s)
     else if (!(rt->server_type == RTSP_SERVER_REAL && rt->need_subscription)) {
         ff_rtsp_send_cmd(s, "PAUSE", rt->control_uri, NULL, reply, NULL);
         if (reply->status_code != RTSP_STATUS_OK) {
-            return ff_rtsp_averror(reply->status_code, -1);
+            return -1;
         }
     }
     rt->state = RTSP_STATE_PAUSED;
@@ -609,12 +606,12 @@ int ff_rtsp_setup_input_streams(AVFormatContext *s, RTSPMessageHeader *reply)
                    sizeof(cmd));
     }
     ff_rtsp_send_cmd(s, "DESCRIBE", rt->control_uri, cmd, reply, &content);
-    if (reply->status_code != RTSP_STATUS_OK) {
-        av_freep(&content);
-        return ff_rtsp_averror(reply->status_code, AVERROR_INVALIDDATA);
-    }
     if (!content)
         return AVERROR_INVALIDDATA;
+    if (reply->status_code != RTSP_STATUS_OK) {
+        av_freep(&content);
+        return AVERROR_INVALIDDATA;
+    }
 
     av_log(s, AV_LOG_VERBOSE, "SDP:\n%s\n", content);
     /* now we got the SDP description, we parse it */
@@ -727,7 +724,7 @@ static int rtsp_read_header(AVFormatContext *s)
             return ret;
 
         rt->real_setup_cache = !s->nb_streams ? NULL :
-            av_mallocz_array(s->nb_streams, 2 * sizeof(*rt->real_setup_cache));
+            av_mallocz(2 * s->nb_streams * sizeof(*rt->real_setup_cache));
         if (!rt->real_setup_cache && s->nb_streams)
             return AVERROR(ENOMEM);
         rt->real_setup = rt->real_setup_cache + s->nb_streams;
@@ -735,10 +732,10 @@ static int rtsp_read_header(AVFormatContext *s)
         if (rt->initial_pause) {
             /* do not start immediately */
         } else {
-            if ((ret = rtsp_read_play(s)) < 0) {
+            if (rtsp_read_play(s) < 0) {
                 ff_rtsp_close_streams(s);
                 ff_rtsp_close_connections(s);
-                return ret;
+                return AVERROR_INVALIDDATA;
             }
         }
     }
@@ -753,7 +750,7 @@ int ff_rtsp_tcp_read_packet(AVFormatContext *s, RTSPStream **prtsp_st,
     int id, len, i, ret;
     RTSPStream *rtsp_st;
 
-    av_dlog(s, "tcp_read_packet:\n");
+    av_log(s, AV_LOG_TRACE, "tcp_read_packet:\n");
 redo:
     for (;;) {
         RTSPMessageHeader reply;
@@ -772,8 +769,8 @@ redo:
         return -1;
     id  = buf[0];
     len = AV_RB16(buf + 1);
-    av_dlog(s, "id=%d len=%d\n", id, len);
-    if (len > buf_size || len < 8)
+    av_log(s, AV_LOG_TRACE, "id=%d len=%d\n", id, len);
+    if (len > buf_size || len < 12)
         goto redo;
     /* get the data */
     ret = ffurl_read_complete(rt->rtsp_hd, buf, len);
@@ -832,7 +829,7 @@ retry:
                 ff_rtsp_send_cmd(s, "SET_PARAMETER", rt->control_uri,
                                  cmd, reply, NULL);
                 if (reply->status_code != RTSP_STATUS_OK)
-                    return ff_rtsp_averror(reply->status_code, AVERROR_INVALIDDATA);
+                    return AVERROR_INVALIDDATA;
                 rt->need_subscription = 1;
             }
         }
@@ -867,7 +864,7 @@ retry:
             ff_rtsp_send_cmd(s, "SET_PARAMETER", rt->control_uri,
                              cmd, reply, NULL);
             if (reply->status_code != RTSP_STATUS_OK)
-                return ff_rtsp_averror(reply->status_code, AVERROR_INVALIDDATA);
+                return AVERROR_INVALIDDATA;
             rt->need_subscription = 0;
 
             if (rt->state == RTSP_STATE_STREAMING)
@@ -928,7 +925,6 @@ static int rtsp_read_seek(AVFormatContext *s, int stream_index,
                           int64_t timestamp, int flags)
 {
     RTSPState *rt = s->priv_data;
-    int ret;
 
     rt->seek_timestamp = av_rescale_q(timestamp,
                                       s->streams[stream_index]->time_base,
@@ -938,11 +934,11 @@ static int rtsp_read_seek(AVFormatContext *s, int stream_index,
     case RTSP_STATE_IDLE:
         break;
     case RTSP_STATE_STREAMING:
-        if ((ret = rtsp_read_pause(s)) != 0)
-            return ret;
+        if (rtsp_read_pause(s) != 0)
+            return -1;
         rt->state = RTSP_STATE_SEEKING;
-        if ((ret = rtsp_read_play(s)) != 0)
-            return ret;
+        if (rtsp_read_play(s) != 0)
+            return -1;
         break;
     case RTSP_STATE_PAUSED:
         rt->state = RTSP_STATE_IDLE;
