@@ -1,20 +1,20 @@
 /*
  * Canopus HQX decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -182,7 +182,7 @@ static void hqx_idct_put(uint16_t *dst, ptrdiff_t stride,
 
     for (i = 0; i < 8; i++) {
         for (j = 0; j < 8; j++) {
-            int v = av_clip(block[j + i * 8] + 0x800, 0, 0x1000);
+            int v = av_clip(block[j + i * 8] + 0x800, 0, 0xFFF);
             dst[j] = (v << 4) | (v >> 8);
         }
         dst += stride >> 1;
@@ -545,7 +545,7 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
     }
     ret = av_image_check_size(ctx->width, ctx->height, 0, avctx);
     if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid stored dimenstions %dx%d.\n",
+        av_log(avctx, AV_LOG_ERROR, "Invalid stored dimensions %dx%d.\n",
                ctx->width, ctx->height);
         return AVERROR_INVALIDDATA;
     }
@@ -580,10 +580,8 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     ret = ff_get_buffer(avctx, pic, 0);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+    if (ret < 0)
         return ret;
-    }
 
     for (slice = 0; slice < 16; slice++) {
         if (slice_off[slice] < HQX_HEADER_SIZE ||
@@ -592,8 +590,8 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
             av_log(avctx, AV_LOG_ERROR, "Invalid slice size.\n");
             break;
         }
-        ret = init_get_bits(&gb, src + slice_off[slice],
-                            (slice_off[slice + 1] - slice_off[slice]) * 8);
+        ret = init_get_bits8(&gb, src + slice_off[slice],
+                             slice_off[slice + 1] - slice_off[slice]);
         if (ret < 0)
             return ret;
         ret = decode_slice(ctx, pic, &gb, slice, decode_func);
