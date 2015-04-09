@@ -2,20 +2,20 @@
  * Common code between the AC-3 encoder and decoder
  * Copyright (c) 2000 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -200,9 +200,9 @@ int ff_ac3_bit_alloc_calc_mask(AC3BitAllocParameters *s, int16_t *band_psd,
             if (band >= AC3_CRITICAL_BANDS || dba_lengths[seg] > AC3_CRITICAL_BANDS-band)
                 return -1;
             if (dba_values[seg] >= 4) {
-                delta = (dba_values[seg] - 3) * 128;
+                delta = (dba_values[seg] - 3) << 7;
             } else {
-                delta = (dba_values[seg] - 4) * 128;
+                delta = (dba_values[seg] - 4) << 7;
             }
             for (i = 0; i < dba_lengths[seg]; i++) {
                 mask[band++] += delta;
