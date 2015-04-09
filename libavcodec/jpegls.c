@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Michael Niedermayer
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,6 +25,7 @@
  * JPEG-LS common code.
  */
 
+#include "internal.h"
 #include "jpegls.h"
 
 void ff_jpegls_init_state(JLSState *state)
@@ -38,8 +39,10 @@ void ff_jpegls_init_state(JLSState *state)
     for (state->qbpp = 0; (1 << state->qbpp) < state->range; state->qbpp++)
         ;
 
-    state->bpp   = FFMAX(av_log2(state->maxval) + 1, 2);
-    state->limit = 2*(state->bpp + FFMAX(state->bpp, 8)) - state->qbpp;
+    if (state->bpp < 8)
+        state->limit = 2 * state->bpp - state->qbpp + 16;
+    else
+        state->limit = 4 * state->bpp - state->qbpp;
 
     for (i = 0; i < 367; i++) {
         state->A[i] = FFMAX(state->range + 32 >> 6, 2);
@@ -96,5 +99,5 @@ void ff_jpegls_reset_coding_parameters(JLSState *s, int reset_all)
 
     if (s->reset == 0 || reset_all)
         s->reset = 64;
-    av_dlog(NULL, "[JPEG-LS RESET] T=%i,%i,%i\n", s->T1, s->T2, s->T3);
+    ff_dlog(NULL, "[JPEG-LS RESET] T=%i,%i,%i\n", s->T1, s->T2, s->T3);
 }

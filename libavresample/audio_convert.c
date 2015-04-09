@@ -2,20 +2,20 @@
  * Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -319,7 +319,7 @@ int ff_audio_convert(AudioConvert *ac, AudioData *out, AudioData *in)
 
     if (ac->dc) {
         /* dithered conversion */
-        av_dlog(ac->avr, "%d samples - audio_convert: %s to %s (dithered)\n",
+        av_log(ac->avr, AV_LOG_TRACE, "%d samples - audio_convert: %s to %s (dithered)\n",
                 len, av_get_sample_fmt_name(ac->in_fmt),
                 av_get_sample_fmt_name(ac->out_fmt));
 
@@ -337,7 +337,7 @@ int ff_audio_convert(AudioConvert *ac, AudioData *out, AudioData *in)
             use_generic = 0;
         }
     }
-    av_dlog(ac->avr, "%d samples - audio_convert: %s to %s (%s)\n", len,
+    av_log(ac->avr, AV_LOG_TRACE, "%d samples - audio_convert: %s to %s (%s)\n", len,
             av_get_sample_fmt_name(ac->in_fmt),
             av_get_sample_fmt_name(ac->out_fmt),
             use_generic ? ac->func_descr_generic : ac->func_descr);

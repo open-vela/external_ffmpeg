@@ -2,20 +2,20 @@
  * RTP output format
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -98,7 +98,7 @@ static int rtp_write_header(AVFormatContext *s1)
     }
     st = s1->streams[0];
     if (!is_supported(st->codec->codec_id)) {
-        av_log(s1, AV_LOG_ERROR, "Unsupported codec %s\n", avcodec_get_name(st->codec->codec_id));
+        av_log(s1, AV_LOG_ERROR, "Unsupported codec %x\n", st->codec->codec_id);
 
         return -1;
     }
@@ -121,19 +121,16 @@ static int rtp_write_header(AVFormatContext *s1)
         s->ssrc = av_get_random_seed();
     s->first_packet = 1;
     s->first_rtcp_ntp_time = ff_ntp_time();
-    if (s1->start_time_realtime != 0  &&  s1->start_time_realtime != AV_NOPTS_VALUE)
+    if (s1->start_time_realtime)
         /* Round the NTP time to whole milliseconds. */
         s->first_rtcp_ntp_time = (s1->start_time_realtime / 1000) * 1000 +
                                  NTP_OFFSET_US;
     // Pick a random sequence start number, but in the lower end of the
     // available range, so that any wraparound doesn't happen immediately.
     // (Immediate wraparound would be an issue for SRTP.)
-    if (s->seq < 0) {
-        if (s1->flags & AVFMT_FLAG_BITEXACT) {
-            s->seq = 0;
-        } else
-            s->seq = av_get_random_seed() & 0x0fff;
-    } else
+    if (s->seq < 0)
+        s->seq = av_get_random_seed() & 0x0fff;
+    else
         s->seq &= 0xffff; // Use the given parameter, wrapped to the right interval
 
     if (s1->packet_size) {
@@ -262,7 +259,7 @@ static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time, int bye)
     RTPMuxContext *s = s1->priv_data;
     uint32_t rtp_ts;
 
-    av_dlog(s1, "RTCP: %02x %"PRIx64" %x\n", s->payload_type, ntp_time, s->timestamp);
+    av_log(s1, AV_LOG_TRACE, "RTCP: %02x %"PRIx64" %x\n", s->payload_type, ntp_time, s->timestamp);
 
     s->last_rtcp_ntp_time = ntp_time;
     rtp_ts = av_rescale_q(ntp_time - s->first_rtcp_ntp_time, (AVRational){1, 1000000},
@@ -307,7 +304,7 @@ void ff_rtp_send_data(AVFormatContext *s1, const uint8_t *buf1, int len, int m)
 {
     RTPMuxContext *s = s1->priv_data;
 
-    av_dlog(s1, "rtp_send_data size=%d\n", len);
+    av_log(s1, AV_LOG_TRACE, "rtp_send_data size=%d\n", len);
 
     /* build the RTP header */
     avio_w8(s1->pb, RTP_VERSION << 6);
@@ -495,7 +492,7 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     int rtcp_bytes;
     int size= pkt->size;
 
-    av_dlog(s1, "%d: write len=%d\n", pkt->stream_index, size);
+    av_log(s1, AV_LOG_TRACE, "%d: write len=%d\n", pkt->stream_index, size);
 
     rtcp_bytes = ((s->octet_count - s->last_octet_count) * RTCP_TX_RATIO_NUM) /
         RTCP_TX_RATIO_DEN;
@@ -561,10 +558,6 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
             const uint8_t *mb_info =
                 av_packet_get_side_data(pkt, AV_PKT_DATA_H263_MB_INFO,
                                         &mb_info_size);
-            if (!mb_info) {
-                av_log(s1, AV_LOG_ERROR, "failed to allocate side data\n");
-                return AVERROR(ENOMEM);
-            }
             ff_rtp_send_h263_rfc2190(s1, pkt->data, size, mb_info, mb_info_size);
             break;
         }
