@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,20 +100,7 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     }
 
     if (x265_param_default_preset(ctx->params, ctx->preset, ctx->tune) < 0) {
-        int i;
-
-        av_log(avctx, AV_LOG_ERROR, "Error setting preset/tune %s/%s.\n", ctx->preset, ctx->tune);
-        av_log(avctx, AV_LOG_INFO, "Possible presets:");
-        for (i = 0; x265_preset_names[i]; i++)
-            av_log(avctx, AV_LOG_INFO, " %s", x265_preset_names[i]);
-
-        av_log(avctx, AV_LOG_INFO, "\n");
-        av_log(avctx, AV_LOG_INFO, "Possible tunes:");
-        for (i = 0; x265_tune_names[i]; i++)
-            av_log(avctx, AV_LOG_INFO, " %s", x265_tune_names[i]);
-
-        av_log(avctx, AV_LOG_INFO, "\n");
-
+        av_log(avctx, AV_LOG_ERROR, "Invalid preset or tune.\n");
         return AVERROR(EINVAL);
     }
 
@@ -259,7 +246,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = x265_encoder_encode(ctx->encoder, &nal, &nnal,
                               pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
 
     if (!nnal)
         return 0;
