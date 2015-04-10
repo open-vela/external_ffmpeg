@@ -4,20 +4,20 @@
  * Copyright (C) 2012 Paul B Mahol
  * Copyright (C) 2014 Niels Möller
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -393,7 +393,7 @@ static void dca_xll_inv_adapt_pred(int *samples, int nsamples, unsigned order,
             for (; j < order; j++)
                 s += (int64_t) c[j] * prev[DCA_XLL_AORDER_MAX + i - 1 - j];
 
-            samples[i] -= av_clip_intp2((s + 0x8000) >> 16, 24);
+            samples[i] -= av_clip((s + 0x8000) >> 16, -0x1000000, 0xffffff);
         }
     }
     for (i = order; i < nsamples; i++) {
@@ -402,7 +402,7 @@ static void dca_xll_inv_adapt_pred(int *samples, int nsamples, unsigned order,
 
         /* NOTE: Equations seem to imply addition, while the
          * pseudocode seems to use subtraction.*/
-        samples[i] -= av_clip_intp2((s + 0x8000) >> 16, 24);
+        samples[i] -= av_clip((s + 0x8000) >> 16, -0x1000000, 0xffffff);
     }
 }
 
