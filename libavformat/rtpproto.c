@@ -2,20 +2,20 @@
  * RTP network protocol
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -225,6 +225,7 @@ static void build_udp_url(RTPContext *s,
                           char *buf, int buf_size,
                           const char *hostname,
                           int port, int local_port,
+                          int dscp,
                           const char *include_sources,
                           const char *exclude_sources)
 {
@@ -239,6 +240,9 @@ static void build_udp_url(RTPContext *s,
         url_add_option(buf, buf_size, "pkt_size=%d", s->pkt_size);
     if (s->connect)
         url_add_option(buf, buf_size, "connect=1");
+    if (dscp >= 0)
+        url_add_option(buf, buf_size, "dscp=%d", dscp);
+    url_add_option(buf, buf_size, "fifo_size=0");
     if (include_sources && include_sources[0])
         url_add_option(buf, buf_size, "sources=%s", include_sources);
     if (exclude_sources && exclude_sources[0])
@@ -298,6 +302,7 @@ static void rtp_parse_addr_list(URLContext *h, char *buf,
  *         'sources=ip[,ip]'  : list allowed source IP addresses
  *         'block=ip[,ip]'    : list disallowed source IP addresses
  *         'write_to_source=0/1' : send packets to the source address of the latest received packet
+ *         'dscp=n'           : set DSCP value to n (QoS)
  * deprecated option:
  *         'localport=n'      : set the local port to n
  *
@@ -311,15 +316,18 @@ static int rtp_open(URLContext *h, const char *uri, int flags)
 {
     RTPContext *s = h->priv_data;
     int rtp_port;
+    int dscp;
     char hostname[256], include_sources[1024] = "", exclude_sources[1024] = "";
     char *sources = include_sources, *block = exclude_sources;
     char buf[1024];
     char path[1024];
     const char *p;
+    int i, max_retry_count = 3;
 
     av_url_split(NULL, 0, NULL, 0, hostname, sizeof(hostname), &rtp_port,
                  path, sizeof(path), uri);
     /* extract parameters */
+    dscp = -1;
     if (s->rtcp_port < 0)
         s->rtcp_port = rtp_port + 1;
 
@@ -349,6 +357,9 @@ static int rtp_open(URLContext *h, const char *uri, int flags)
         if (av_find_info_tag(buf, sizeof(buf), "write_to_source", p)) {
             s->write_to_source = strtol(buf, NULL, 10);
         }
+        if (av_find_info_tag(buf, sizeof(buf), "dscp", p)) {
+            dscp = strtol(buf, NULL, 10);
+        }
         if (av_find_info_tag(buf, sizeof(buf), "sources", p)) {
             av_strlcpy(include_sources, buf, sizeof(include_sources));
 
@@ -366,17 +377,35 @@ static int rtp_open(URLContext *h, const char *uri, int flags)
         }
     }
 
-    build_udp_url(s, buf, sizeof(buf),
-                  hostname, rtp_port, s->local_rtpport, sources, block);
-    if (ffurl_open(&s->rtp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
-        goto fail;
-    if (s->local_rtpport >= 0 && s->local_rtcpport < 0)
-        s->local_rtcpport = ff_udp_get_local_port(s->rtp_hd) + 1;
-
-    build_udp_url(s, buf, sizeof(buf),
-                  hostname, s->rtcp_port, s->local_rtcpport, sources, block);
-    if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
-        goto fail;
+    for (i = 0; i < max_retry_count; i++) {
+        build_udp_url(s, buf, sizeof(buf),
+                      hostname, rtp_port, s->local_rtpport,
+                      dscp, sources, block);
+        if (ffurl_open(&s->rtp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
+            goto fail;
+        s->local_rtpport = ff_udp_get_local_port(s->rtp_hd);
+        if(s->local_rtpport == 65535) {
+            s->local_rtpport = -1;
+            continue;
+        }
+        if (s->local_rtcpport < 0) {
+            s->local_rtcpport = s->local_rtpport + 1;
+            build_udp_url(s, buf, sizeof(buf),
+                          hostname, s->rtcp_port, s->local_rtcpport,
+                          dscp, sources, block);
+            if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0) {
+                s->local_rtpport = s->local_rtcpport = -1;
+                continue;
+            }
+            break;
+        }
+        build_udp_url(s, buf, sizeof(buf),
+                      hostname, s->rtcp_port, s->local_rtcpport,
+                      dscp, sources, block);
+        if (ffurl_open(&s->rtcp_hd, buf, flags, &h->interrupt_callback, NULL) < 0)
+            goto fail;
+        break;
+    }
 
     /* just to ease handle access. XXX: need to suppress direct handle
        access */
@@ -519,10 +548,10 @@ static int rtp_close(URLContext *h)
     int i;
 
     for (i = 0; i < s->nb_ssm_include_addrs; i++)
-        av_free(s->ssm_include_addrs[i]);
+        av_freep(&s->ssm_include_addrs[i]);
     av_freep(&s->ssm_include_addrs);
     for (i = 0; i < s->nb_ssm_exclude_addrs; i++)
-        av_free(s->ssm_exclude_addrs[i]);
+        av_freep(&s->ssm_exclude_addrs[i]);
     av_freep(&s->ssm_exclude_addrs);
 
     ffurl_close(s->rtp_hd);
