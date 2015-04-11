@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... direct mb/block decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -159,11 +159,11 @@ void ff_h264_direct_ref_list_init(const H264Context *const h, H264SliceContext *
     }
 }
 
-static void await_reference_mb_row(const H264Context *const h, H264Ref *ref,
+static void await_reference_mb_row(const H264Context *const h, H264Picture *ref,
                                    int mb_y)
 {
     int ref_field         = ref->reference - 1;
-    int ref_field_picture = ref->parent->field_picture;
+    int ref_field_picture = ref->field_picture;
     int ref_height        = 16 * h->mb_height >> ref_field_picture;
 
     if (!HAVE_THREADS || !(h->avctx->active_thread_type & FF_THREAD_FRAME))
@@ -172,7 +172,7 @@ static void await_reference_mb_row(const H264Context *const h, H264Ref *ref,
     /* FIXME: It can be safe to access mb stuff
      * even if pixels aren't deblocked yet. */
 
-    ff_thread_await_progress(&ref->parent->tf,
+    ff_thread_await_progress(&ref->tf,
                              FFMIN(16 * mb_y >> ref_field_picture,
                                    ref_height - 1),
                              ref_field_picture && ref_field);
@@ -196,7 +196,7 @@ static void pred_spatial_direct_motion(const H264Context *const h, H264SliceCont
 
     assert(sl->ref_list[1][0].reference & 3);
 
-    await_reference_mb_row(h, &sl->ref_list[1][0],
+    await_reference_mb_row(h, sl->ref_list[1][0].parent,
                            sl->mb_y + !!IS_INTERLACED(*mb_type));
 
 #define MB_TYPE_16x16_OR_INTRA (MB_TYPE_16x16 | MB_TYPE_INTRA4x4 | \
@@ -237,7 +237,6 @@ static void pred_spatial_direct_motion(const H264Context *const h, H264SliceCont
                 else
                     mv[list] = AV_RN32A(C);
             }
-            av_assert2(ref[list] < (sl->ref_count[list] << !!FRAME_MBAFF(h)));
         } else {
             int mask = ~(MB_TYPE_L0 << (2 * list));
             mv[list]  = 0;
@@ -321,10 +320,10 @@ single_col:
         }
     }
 
-    await_reference_mb_row(h, &sl->ref_list[1][0], mb_y);
+    await_reference_mb_row(h, sl->ref_list[1][0].parent, mb_y);
 
-    l1mv0  = (void*)&sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
-    l1mv1  = (void*)&sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
+    l1mv0  = &sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
+    l1mv1  = &sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
     l1ref0 = &sl->ref_list[1][0].parent->ref_index[0][4 * mb_xy];
     l1ref1 = &sl->ref_list[1][0].parent->ref_index[1][4 * mb_xy];
     if (!b8_stride) {
@@ -480,7 +479,7 @@ static void pred_temp_direct_motion(const H264Context *const h, H264SliceContext
 
     assert(sl->ref_list[1][0].reference & 3);
 
-    await_reference_mb_row(h, &sl->ref_list[1][0],
+    await_reference_mb_row(h, sl->ref_list[1][0].parent,
                            sl->mb_y + !!IS_INTERLACED(*mb_type));
 
     if (IS_INTERLACED(sl->ref_list[1][0].parent->mb_type[mb_xy])) { // AFL/AFR/FR/FL -> AFL/FL
@@ -545,10 +544,10 @@ single_col:
         }
     }
 
-    await_reference_mb_row(h, &sl->ref_list[1][0], mb_y);
+    await_reference_mb_row(h, sl->ref_list[1][0].parent, mb_y);
 
-    l1mv0  = (void*)&sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
-    l1mv1  = (void*)&sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
+    l1mv0  = &sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
+    l1mv1  = &sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
     l1ref0 = &sl->ref_list[1][0].parent->ref_index[0][4 * mb_xy];
     l1ref1 = &sl->ref_list[1][0].parent->ref_index[1][4 * mb_xy];
     if (!b8_stride) {
