@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include <interface/mmal/util/mmal_util.h>
 #include <interface/mmal/util/mmal_util_params.h>
 #include <interface/mmal/util/mmal_default_components.h>
-#include <interface/mmal/vc/mmal_vc_api.h>
 
 #include "avcodec.h"
 #include "internal.h"
@@ -183,8 +182,6 @@ static av_cold int ffmmal_close_decoder(AVCodecContext *avctx)
     if (ctx->bsfc)
         av_bitstream_filter_close(ctx->bsfc);
 
-    mmal_vc_deinit();
-
     return 0;
 }
 
@@ -323,11 +320,6 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     int ret = 0;
 
     bcm_host_init();
-
-    if (mmal_vc_init()) {
-        av_log(avctx, AV_LOG_ERROR, "Cannot initialize MMAL VC driver!\n");
-        return AVERROR(ENOSYS);
-    }
 
     if ((ret = ff_get_format(avctx, avctx->codec->pix_fmts)) < 0)
         return ret;
