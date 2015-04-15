@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -123,22 +123,6 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     ctx->params->sourceWidth     = avctx->width;
     ctx->params->sourceHeight    = avctx->height;
     ctx->params->bEnablePsnr     = !!(avctx->flags & CODEC_FLAG_PSNR);
-
-    if ((avctx->color_primaries <= AVCOL_PRI_BT2020 &&
-         avctx->color_primaries != AVCOL_PRI_UNSPECIFIED) ||
-        (avctx->color_trc <= AVCOL_TRC_BT2020_12 &&
-         avctx->color_trc != AVCOL_TRC_UNSPECIFIED) ||
-        (avctx->colorspace <= AVCOL_SPC_BT2020_CL &&
-         avctx->colorspace != AVCOL_SPC_UNSPECIFIED)) {
-
-        ctx->params->vui.bEnableVideoSignalTypePresentFlag  = 1;
-        ctx->params->vui.bEnableColorDescriptionPresentFlag = 1;
-
-        // x265 validates the parameters internally
-        ctx->params->vui.colorPrimaries          = avctx->color_primaries;
-        ctx->params->vui.transferCharacteristics = avctx->color_trc;
-        ctx->params->vui.matrixCoeffs            = avctx->colorspace;
-    }
 
     if (avctx->sample_aspect_ratio.num > 0 && avctx->sample_aspect_ratio.den > 0) {
         char sar[12];
@@ -275,7 +259,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = x265_encoder_encode(ctx->encoder, &nal, &nnal,
                               pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_UNKNOWN;
+        return AVERROR_EXTERNAL;
 
     if (!nnal)
         return 0;
