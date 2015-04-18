@@ -2,20 +2,20 @@
  * QuickDraw (qdrw) codec
  * Copyright (c) 2004 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,110 +27,102 @@
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
+#include "bytestream.h"
 #include "internal.h"
 
 static int decode_frame(AVCodecContext *avctx,
                         void *data, int *got_frame,
                         AVPacket *avpkt)
 {
-    const uint8_t *buf     = avpkt->data;
-    const uint8_t *buf_end = avpkt->data + avpkt->size;
-    int buf_size           = avpkt->size;
     AVFrame * const p      = data;
+    GetByteContext gbc;
     uint8_t* outdata;
     int colors;
     int i, ret;
     uint32_t *pal;
-    int r, g, b;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
 
     outdata = p->data[0];
 
-    if (buf_end - buf < 0x68 + 4)
+    bytestream2_init(&gbc, avpkt->data, avpkt->size);
+
+    if (bytestream2_get_bytes_left(&gbc) < 0x68 + 4) {
+        av_log(avctx, AV_LOG_ERROR, "Frame is too small %d\n",
+               bytestream2_get_bytes_left(&gbc));
         return AVERROR_INVALIDDATA;
-    buf   += 0x68; /* jump to palette */
-    colors = AV_RB32(buf);
-    buf   += 4;
+    }
+
+    /* jump to palette */
+    bytestream2_skip(&gbc, 0x68);
+    colors = bytestream2_get_be32(&gbc);
 
     if (colors < 0 || colors > 256) {
         av_log(avctx, AV_LOG_ERROR, "Error color count - %i(0x%X)\n", colors, colors);
         return AVERROR_INVALIDDATA;
     }
-    if (buf_end - buf < (colors + 1) * 8)
+    if (bytestream2_get_bytes_left(&gbc) < (colors + 1) * 8) {
+        av_log(avctx, AV_LOG_ERROR, "Palette is too small %d\n",
+               bytestream2_get_bytes_left(&gbc));
         return AVERROR_INVALIDDATA;
+    }
 
     pal = (uint32_t*)p->data[1];
     for (i = 0; i <= colors; i++) {
-        unsigned int idx;
-        idx = AV_RB16(buf); /* color index */
-        buf += 2;
-
+        uint8_t r, g, b;
+        unsigned int idx = bytestream2_get_be16(&gbc); /* color index */
         if (idx > 255) {
             av_log(avctx, AV_LOG_ERROR, "Palette index out of range: %u\n", idx);
-            buf += 6;
+            bytestream2_skip(&gbc, 6);
             continue;
         }
-        r = *buf++;
-        buf++;
-        g = *buf++;
-        buf++;
-        b = *buf++;
-        buf++;
-        pal[idx] = 0xFFU << 24 | r << 16 | g << 8 | b;
+        r = bytestream2_get_byte(&gbc);
+        bytestream2_skip(&gbc, 1);
+        g = bytestream2_get_byte(&gbc);
+        bytestream2_skip(&gbc, 1);
+        b = bytestream2_get_byte(&gbc);
+        bytestream2_skip(&gbc, 1);
+        pal[idx] = (r << 16) | (g << 8) | b;
     }
     p->palette_has_changed = 1;
 
-    if (buf_end - buf < 18)
-        return AVERROR_INVALIDDATA;
-    buf += 18; /* skip unneeded data */
+    /* skip unneeded data */
+    bytestream2_skip(&gbc, 18);
+
     for (i = 0; i < avctx->height; i++) {
         int size, left, code, pix;
-        const uint8_t *next;
-        uint8_t *out;
-        int tsize = 0;
+        uint8_t *out = outdata;
 
-        /* decode line */
-        out  = outdata;
-        size = AV_RB16(buf); /* size of packed line */
-        buf += 2;
-        if (buf_end - buf < size)
+        /* size of packed line */
+        size = left = bytestream2_get_be16(&gbc);
+        if (bytestream2_get_bytes_left(&gbc) < size)
             return AVERROR_INVALIDDATA;
 
-        left = size;
-        next = buf + size;
+        /* decode line */
         while (left > 0) {
-            code = *buf++;
+            code = bytestream2_get_byte(&gbc);
             if (code & 0x80 ) { /* run */
-                pix = *buf++;
-                if ((out + (257 - code)) > (outdata +  p->linesize[0]))
-                    break;
+                pix = bytestream2_get_byte(&gbc);
                 memset(out, pix, 257 - code);
                 out   += 257 - code;
-                tsize += 257 - code;
                 left  -= 2;
             } else { /* copy */
-                if ((out + code) > (outdata +  p->linesize[0]))
-                    break;
-                if (buf_end - buf < code + 1)
-                    return AVERROR_INVALIDDATA;
-                memcpy(out, buf, code + 1);
+                bytestream2_get_buffer(&gbc, out, code + 1);
                 out   += code + 1;
-                buf   += code + 1;
                 left  -= 2 + code;
-                tsize += code + 1;
             }
         }
-        buf = next;
         outdata += p->linesize[0];
     }
 
     *got_frame      = 1;
 
-    return buf_size;
+    return avpkt->size;
 }
 
 static av_cold int decode_init(AVCodecContext *avctx)
