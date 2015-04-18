@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,9 +47,16 @@ static const uint8_t center_levels[4] = { 4, 5, 6, 5 };
 static const uint8_t surround_levels[4] = { 4, 6, 7, 6 };
 
 
-int avpriv_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr)
+int avpriv_ac3_parse_header2(GetBitContext *gbc, AC3HeaderInfo **phdr)
 {
     int frame_size_code;
+    AC3HeaderInfo *hdr;
+
+    if (!*phdr)
+        *phdr = av_mallocz(sizeof(AC3HeaderInfo));
+    if (!*phdr)
+        return AVERROR(ENOMEM);
+    hdr = *phdr;
 
     memset(hdr, 0, sizeof(*hdr));
 
@@ -144,19 +151,28 @@ int avpriv_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr)
     return 0;
 }
 
+int avpriv_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr)
+{
+    AC3HeaderInfo tmp, *ptmp = &tmp;
+    int ret = avpriv_ac3_parse_header2(gbc, &ptmp);
+
+    memcpy(hdr, ptmp, ((intptr_t)&tmp.channel_layout) - ((intptr_t)&tmp) + sizeof(uint64_t));
+    return ret;
+}
+
 static int ac3_sync(uint64_t state, AACAC3ParseContext *hdr_info,
         int *need_next_header, int *new_frame_start)
 {
     int err;
     union {
         uint64_t u64;
-        uint8_t  u8[8];
+        uint8_t  u8[8 + FF_INPUT_BUFFER_PADDING_SIZE];
     } tmp = { av_be2ne64(state) };
-    AC3HeaderInfo hdr;
+    AC3HeaderInfo hdr, *phdr = &hdr;
     GetBitContext gbc;
 
     init_get_bits(&gbc, tmp.u8+8-AC3_HEADER_SIZE, 54);
-    err = avpriv_ac3_parse_header(&gbc, &hdr);
+    err = avpriv_ac3_parse_header2(&gbc, &phdr);
 
     if(err < 0)
         return 0;
