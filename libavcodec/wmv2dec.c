@@ -1,26 +1,25 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avcodec.h"
 #include "h263.h"
-#include "internal.h"
 #include "intrax8.h"
 #include "mathops.h"
 #include "mpegutils.h"
@@ -174,16 +173,7 @@ int ff_wmv2_decode_secondary_picture_header(MpegEncContext *s)
 
         parse_mb_skip(w);
         cbp_index = decode012(&s->gb);
-        if (s->qscale <= 10) {
-            int map[3]         = { 0, 2, 1 };
-            w->cbp_table_index = map[cbp_index];
-        } else if (s->qscale <= 20) {
-            int map[3]         = { 1, 0, 2 };
-            w->cbp_table_index = map[cbp_index];
-        } else {
-            int map[3]         = {2,1,0};
-            w->cbp_table_index = map[cbp_index];
-        }
+        w->cbp_table_index = wmv2_get_cbp_table_index(s, cbp_index);
 
         if (w->mspel_bit)
             s->mspel = get_bits1(&s->gb);
@@ -427,15 +417,15 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         }
     } else {
         if (s->pict_type == AV_PICTURE_TYPE_P)
-            ff_dlog(s->avctx, "%d%d ", s->inter_intra_pred, cbp);
-        ff_dlog(s->avctx, "I at %d %d %d %06X\n", s->mb_x, s->mb_y,
+            av_dlog(s->avctx, "%d%d ", s->inter_intra_pred, cbp);
+        av_dlog(s->avctx, "I at %d %d %d %06X\n", s->mb_x, s->mb_y,
                 ((cbp & 3) ? 1 : 0) + ((cbp & 0x3C) ? 2 : 0),
                 show_bits(&s->gb, 24));
         s->ac_pred = get_bits1(&s->gb);
         if (s->inter_intra_pred) {
             s->h263_aic_dir = get_vlc2(&s->gb, ff_inter_intra_vlc.table,
                                        INTER_INTRA_VLC_BITS, 1);
-            ff_dlog(s->avctx, "%d%d %d %d/",
+            av_dlog(s->avctx, "%d%d %d %d/",
                     s->ac_pred, s->h263_aic_dir, s->mb_x, s->mb_y);
         }
         if (s->per_mb_rl_table && cbp) {
@@ -461,6 +451,8 @@ static av_cold int wmv2_decode_init(AVCodecContext *avctx)
 {
     Wmv2Context *const w = avctx->priv_data;
     int ret;
+
+    avctx->flags |= CODEC_FLAG_EMU_EDGE;
 
     if ((ret = ff_msmpeg4_decode_init(avctx)) < 0)
         return ret;
