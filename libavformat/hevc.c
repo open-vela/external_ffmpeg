@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Tim Walker <tdskywalker@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -799,7 +799,7 @@ static void hvcc_init(HEVCDecoderConfigurationRecord *hvcc)
 
     /*
      * Initialize this field with an invalid value which can be used to detect
-     * whether we didn't see any VUI (in wich case it should be reset to zero).
+     * whether we didn't see any VUI (in which case it should be reset to zero).
      */
     hvcc->min_spatial_segmentation_idc = MAX_SPATIAL_SEGMENTATION + 1;
 }
@@ -849,51 +849,51 @@ static int hvcc_write(AVIOContext *pb, HEVCDecoderConfigurationRecord *hvcc)
     hvcc->avgFrameRate      = 0;
     hvcc->constantFrameRate = 0;
 
-    av_log(NULL, AV_LOG_TRACE,  "configurationVersion:                %"PRIu8"\n",
+    av_dlog(NULL,  "configurationVersion:                %"PRIu8"\n",
             hvcc->configurationVersion);
-    av_log(NULL, AV_LOG_TRACE,  "general_profile_space:               %"PRIu8"\n",
+    av_dlog(NULL,  "general_profile_space:               %"PRIu8"\n",
             hvcc->general_profile_space);
-    av_log(NULL, AV_LOG_TRACE,  "general_tier_flag:                   %"PRIu8"\n",
+    av_dlog(NULL,  "general_tier_flag:                   %"PRIu8"\n",
             hvcc->general_tier_flag);
-    av_log(NULL, AV_LOG_TRACE,  "general_profile_idc:                 %"PRIu8"\n",
+    av_dlog(NULL,  "general_profile_idc:                 %"PRIu8"\n",
             hvcc->general_profile_idc);
-    av_log(NULL, AV_LOG_TRACE, "general_profile_compatibility_flags: 0x%08"PRIx32"\n",
+    av_dlog(NULL, "general_profile_compatibility_flags: 0x%08"PRIx32"\n",
             hvcc->general_profile_compatibility_flags);
-    av_log(NULL, AV_LOG_TRACE, "general_constraint_indicator_flags:  0x%012"PRIx64"\n",
+    av_dlog(NULL, "general_constraint_indicator_flags:  0x%012"PRIx64"\n",
             hvcc->general_constraint_indicator_flags);
-    av_log(NULL, AV_LOG_TRACE,  "general_level_idc:                   %"PRIu8"\n",
+    av_dlog(NULL,  "general_level_idc:                   %"PRIu8"\n",
             hvcc->general_level_idc);
-    av_log(NULL, AV_LOG_TRACE,  "min_spatial_segmentation_idc:        %"PRIu16"\n",
+    av_dlog(NULL,  "min_spatial_segmentation_idc:        %"PRIu16"\n",
             hvcc->min_spatial_segmentation_idc);
-    av_log(NULL, AV_LOG_TRACE,  "parallelismType:                     %"PRIu8"\n",
+    av_dlog(NULL,  "parallelismType:                     %"PRIu8"\n",
             hvcc->parallelismType);
-    av_log(NULL, AV_LOG_TRACE,  "chromaFormat:                        %"PRIu8"\n",
+    av_dlog(NULL,  "chromaFormat:                        %"PRIu8"\n",
             hvcc->chromaFormat);
-    av_log(NULL, AV_LOG_TRACE,  "bitDepthLumaMinus8:                  %"PRIu8"\n",
+    av_dlog(NULL,  "bitDepthLumaMinus8:                  %"PRIu8"\n",
             hvcc->bitDepthLumaMinus8);
-    av_log(NULL, AV_LOG_TRACE,  "bitDepthChromaMinus8:                %"PRIu8"\n",
+    av_dlog(NULL,  "bitDepthChromaMinus8:                %"PRIu8"\n",
             hvcc->bitDepthChromaMinus8);
-    av_log(NULL, AV_LOG_TRACE,  "avgFrameRate:                        %"PRIu16"\n",
+    av_dlog(NULL,  "avgFrameRate:                        %"PRIu16"\n",
             hvcc->avgFrameRate);
-    av_log(NULL, AV_LOG_TRACE,  "constantFrameRate:                   %"PRIu8"\n",
+    av_dlog(NULL,  "constantFrameRate:                   %"PRIu8"\n",
             hvcc->constantFrameRate);
-    av_log(NULL, AV_LOG_TRACE,  "numTemporalLayers:                   %"PRIu8"\n",
+    av_dlog(NULL,  "numTemporalLayers:                   %"PRIu8"\n",
             hvcc->numTemporalLayers);
-    av_log(NULL, AV_LOG_TRACE,  "temporalIdNested:                    %"PRIu8"\n",
+    av_dlog(NULL,  "temporalIdNested:                    %"PRIu8"\n",
             hvcc->temporalIdNested);
-    av_log(NULL, AV_LOG_TRACE,  "lengthSizeMinusOne:                  %"PRIu8"\n",
+    av_dlog(NULL,  "lengthSizeMinusOne:                  %"PRIu8"\n",
             hvcc->lengthSizeMinusOne);
-    av_log(NULL, AV_LOG_TRACE,  "numOfArrays:                         %"PRIu8"\n",
+    av_dlog(NULL,  "numOfArrays:                         %"PRIu8"\n",
             hvcc->numOfArrays);
     for (i = 0; i < hvcc->numOfArrays; i++) {
-        av_log(NULL, AV_LOG_TRACE, "array_completeness[%"PRIu8"]:               %"PRIu8"\n",
+        av_dlog(NULL, "array_completeness[%"PRIu8"]:               %"PRIu8"\n",
                 i, hvcc->array[i].array_completeness);
-        av_log(NULL, AV_LOG_TRACE, "NAL_unit_type[%"PRIu8"]:                    %"PRIu8"\n",
+        av_dlog(NULL, "NAL_unit_type[%"PRIu8"]:                    %"PRIu8"\n",
                 i, hvcc->array[i].NAL_unit_type);
-        av_log(NULL, AV_LOG_TRACE, "numNalus[%"PRIu8"]:                         %"PRIu16"\n",
+        av_dlog(NULL, "numNalus[%"PRIu8"]:                         %"PRIu16"\n",
                 i, hvcc->array[i].numNalus);
         for (j = 0; j < hvcc->array[i].numNalus; j++)
-            av_log(NULL, AV_LOG_TRACE,
+            av_dlog(NULL,
                     "nalUnitLength[%"PRIu8"][%"PRIu16"]:                 %"PRIu16"\n",
                     i, j, hvcc->array[i].nalUnitLength[j]);
     }
