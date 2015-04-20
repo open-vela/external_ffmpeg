@@ -2,20 +2,20 @@
  * "Real" compatible muxer.
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avformat.h"
@@ -221,8 +221,8 @@ static int rv10_write_header(AVFormatContext *ctx,
                 coded_frame_size--;
             avio_wb32(s, coded_frame_size); /* frame length */
             avio_wb32(s, 0x51540); /* unknown */
-            avio_wb32(s, 0x249f0); /* unknown */
-            avio_wb32(s, 0x249f0); /* unknown */
+            avio_wb32(s, stream->enc->bit_rate / 8 * 60); /* bytes per minute */
+            avio_wb32(s, stream->enc->bit_rate / 8 * 60); /* bytes per minute */
             avio_wb16(s, 0x01);
             /* frame length : seems to be very important */
             avio_wb16(s, coded_frame_size);
@@ -313,6 +313,11 @@ static int rm_write_header(AVFormatContext *s)
     int n;
     AVCodecContext *codec;
 
+    if (s->nb_streams > 2) {
+        av_log(s, AV_LOG_ERROR, "At most 2 streams are currently supported for muxing in RM\n");
+        return AVERROR_PATCHWELCOME;
+    }
+
     for(n=0;n<s->nb_streams;n++) {
         AVStream *st = s->streams[n];
 
@@ -355,23 +360,31 @@ static int rm_write_header(AVFormatContext *s)
 
 static int rm_write_audio(AVFormatContext *s, const uint8_t *buf, int size, int flags)
 {
+    uint8_t *buf1;
     RMMuxContext *rm = s->priv_data;
     AVIOContext *pb = s->pb;
     StreamInfo *stream = rm->audio_stream;
     int i;
 
+    /* XXX: suppress this malloc */
+    buf1 = av_malloc(size * sizeof(uint8_t));
+    if (!buf1)
+        return AVERROR(ENOMEM);
+
     write_packet_header(s, stream, size, !!(flags & AV_PKT_FLAG_KEY));
 
     if (stream->enc->codec_id == AV_CODEC_ID_AC3) {
         /* for AC-3, the words seem to be reversed */
-        for (i = 0; i < size; i += 2) {
-            avio_w8(pb, buf[i + 1]);
-            avio_w8(pb, buf[i]);
+        for(i=0;i<size;i+=2) {
+            buf1[i] = buf[i+1];
+            buf1[i+1] = buf[i];
         }
+        avio_write(pb, buf1, size);
     } else {
         avio_write(pb, buf, size);
     }
     stream->nb_frames++;
+    av_free(buf1);
     return 0;
 }
 
@@ -388,8 +401,8 @@ static int rm_write_video(AVFormatContext *s, const uint8_t *buf, int size, int 
        not sure I understood everything, but it works !! */
 #if 1
     if (size > MAX_PACKET_SIZE) {
-        avpriv_report_missing_feature(s, "Muxing packets larger than 64 kB");
-        return AVERROR(ENOSYS);
+        av_log(s, AV_LOG_ERROR, "Muxing packets larger than 64 kB (%d) is not supported\n", size);
+        return AVERROR_PATCHWELCOME;
     }
     write_packet_header(s, stream, size + 7 + (size >= 0x4000)*4, key_frame);
     /* bit 7: '1' if final packet of a frame converted in several packets */
