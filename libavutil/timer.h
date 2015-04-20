@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,6 +40,8 @@
 
 #if   ARCH_ARM
 #   include "arm/timer.h"
+#elif ARCH_BFIN
+#   include "bfin/timer.h"
 #elif ARCH_PPC
 #   include "ppc/timer.h"
 #elif ARCH_X86
@@ -54,10 +56,6 @@
 #   endif
 #endif
 
-#ifndef FF_TIMER_UNITS
-#   define FF_TIMER_UNITS "UNITS"
-#endif
-
 #ifdef AV_READ_TIME
 #define START_TIMER                             \
     uint64_t tend;                              \
@@ -69,8 +67,6 @@
         static uint64_t tsum   = 0;                                       \
         static int tcount      = 0;                                       \
         static int tskip_count = 0;                                       \
-        static int thistogram[32] = {0};                                  \
-        thistogram[av_log2(tend - tstart)]++;                             \
         if (tcount < 2                        ||                          \
             tend - tstart < 8 * tsum / tcount ||                          \
             tend - tstart < 2000) {                                       \
@@ -79,13 +75,9 @@
         } else                                                            \
             tskip_count++;                                                \
         if (((tcount + tskip_count) & (tcount + tskip_count - 1)) == 0) { \
-            int i;                                                        \
             av_log(NULL, AV_LOG_ERROR,                                    \
-                   "%7"PRIu64" " FF_TIMER_UNITS " in %s,%8d runs,%7d skips",          \
+                   "%"PRIu64" UNITS in %s, %d runs, %d skips\n",          \
                    tsum * 10 / tcount, id, tcount, tskip_count);          \
-            for (i = 0; i < 32; i++)                                      \
-                av_log(NULL, AV_LOG_VERBOSE, " %2d", av_log2(2*thistogram[i]));\
-            av_log(NULL, AV_LOG_ERROR, "\n");                             \
         }                                                                 \
     }
 #else
