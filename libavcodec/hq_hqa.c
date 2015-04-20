@@ -1,20 +1,20 @@
 /*
  * Canopus HQ/HQA decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -255,8 +255,7 @@ static int hqa_decode_frame(HQContext *ctx, AVFrame *pic, size_t data_size)
 
     av_log(ctx->avctx, AV_LOG_VERBOSE, "HQA Profile\n");
 
-    quant = bytestream2_get_byte(&ctx->gbc);
-    bytestream2_skip(&ctx->gbc, 3);
+    quant = bytestream2_get_be32(&ctx->gbc);
     if (quant >= NUM_HQ_QUANTS) {
         av_log(ctx->avctx, AV_LOG_ERROR,
                "Invalid quantization matrix %d.\n", quant);
