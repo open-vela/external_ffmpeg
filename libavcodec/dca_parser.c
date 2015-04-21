@@ -5,20 +5,20 @@
  * Copyright (C) 2006 Benjamin Larsson
  * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,20 +32,13 @@ typedef struct DCAParseContext {
     uint32_t lastmarker;
     int size;
     int framesize;
+    int hd_pos;
 } DCAParseContext;
 
-#define IS_CORE_MARKER(state) \
-    (((state & 0xFFFFFFFFF0FF) == (((uint64_t)DCA_SYNCWORD_CORE_14B_LE << 16) | 0xF007)) || \
-     ((state & 0xFFFFFFFFFFF0) == (((uint64_t)DCA_SYNCWORD_CORE_14B_BE << 16) | 0x07F0)) || \
-     ((state & 0xFFFFFFFF00FC) == (((uint64_t)DCA_SYNCWORD_CORE_LE     << 16) | 0x00FC)) || \
-     ((state & 0xFFFFFFFFFC00) == (((uint64_t)DCA_SYNCWORD_CORE_BE     << 16) | 0xFC00)))
-
-#define IS_EXSS_MARKER(state)   ((state & 0xFFFFFFFF) == DCA_SYNCWORD_SUBSTREAM)
-
-#define IS_MARKER(state)    (IS_CORE_MARKER(state) || IS_EXSS_MARKER(state))
-
-#define CORE_MARKER(state)  ((state >> 16) & 0xFFFFFFFF)
-#define EXSS_MARKER(state)  (state & 0xFFFFFFFF)
+#define IS_MARKER(state, i, buf, buf_size) \
+    ((state == DCA_SYNCWORD_CORE_14B_LE && (i < buf_size - 2) && (buf[i + 1] & 0xF0) == 0xF0 &&  buf[i + 2]         == 0x07) || \
+     (state == DCA_SYNCWORD_CORE_14B_BE && (i < buf_size - 2) &&  buf[i + 1]         == 0x07 && (buf[i + 2] & 0xF0) == 0xF0) || \
+      state == DCA_SYNCWORD_CORE_LE || state == DCA_SYNCWORD_CORE_BE)
 
 /**
  * Find the end of the current frame in the bitstream.
@@ -55,23 +48,24 @@ static int dca_find_frame_end(DCAParseContext *pc1, const uint8_t *buf,
                               int buf_size)
 {
     int start_found, i;
-    uint64_t state;
+    uint32_t state;
     ParseContext *pc = &pc1->pc;
 
     start_found = pc->frame_start_found;
-    state       = pc->state64;
+    state       = pc->state;
 
     i = 0;
     if (!start_found) {
         for (i = 0; i < buf_size; i++) {
             state = (state << 8) | buf[i];
-            if (IS_MARKER(state)) {
-                if (!pc1->lastmarker || CORE_MARKER(state) == pc1->lastmarker || pc1->lastmarker == DCA_SYNCWORD_SUBSTREAM) {
+            if (IS_MARKER(state, i, buf, buf_size)) {
+                if (pc1->lastmarker && state == pc1->lastmarker) {
                     start_found = 1;
-                    if (IS_EXSS_MARKER(state))
-                        pc1->lastmarker = EXSS_MARKER(state);
-                    else
-                        pc1->lastmarker = CORE_MARKER(state);
+                    i++;
+                    break;
+                } else if (!pc1->lastmarker) {
+                    start_found     = 1;
+                    pc1->lastmarker = state;
                     i++;
                     break;
                 }
@@ -82,18 +76,20 @@ static int dca_find_frame_end(DCAParseContext *pc1, const uint8_t *buf,
         for (; i < buf_size; i++) {
             pc1->size++;
             state = (state << 8) | buf[i];
-            if (IS_MARKER(state) && (CORE_MARKER(state) == pc1->lastmarker || pc1->lastmarker == DCA_SYNCWORD_SUBSTREAM)) {
+            if (state == DCA_SYNCWORD_SUBSTREAM && !pc1->hd_pos)
+                pc1->hd_pos = pc1->size;
+            if (state == pc1->lastmarker && IS_MARKER(state, i, buf, buf_size)) {
                 if (pc1->framesize > pc1->size)
                     continue;
                 pc->frame_start_found = 0;
-                pc->state64           = -1;
+                pc->state             = -1;
                 pc1->size             = 0;
-                return IS_EXSS_MARKER(state) ? i - 3 : i - 5;
+                return i - 3;
             }
         }
     }
     pc->frame_start_found = start_found;
-    pc->state64           = state;
+    pc->state             = state;
     return END_NOT_FOUND;
 }
 
@@ -115,7 +111,7 @@ static int dca_parse_params(const uint8_t *buf, int buf_size, int *duration,
     if (buf_size < 12)
         return AVERROR_INVALIDDATA;
 
-    if ((ret = avpriv_dca_convert_bitstream(buf, 12, hdr, 12)) < 0)
+    if ((ret = ff_dca_convert_bitstream(buf, 12, hdr, 12)) < 0)
         return ret;
 
     init_get_bits(&gb, hdr, 96);
