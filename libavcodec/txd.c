@@ -4,27 +4,27 @@
  *
  * See also: http://wiki.multimedia.cx/index.php?title=TXD
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/intreadwrite.h"
 #include "libavutil/imgutils.h"
-#include "avcodec.h"
 #include "bytestream.h"
+#include "avcodec.h"
 #include "internal.h"
 #include "s3tc.h"
 
@@ -66,10 +66,8 @@ static int txd_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
         return ret;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
 
     p->pict_type = AV_PICTURE_TYPE_I;
 
@@ -82,6 +80,8 @@ static int txd_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             v = bytestream2_get_be32(&gb);
             pal[y] = (v >> 8) + (v << 24);
         }
+        if (bytestream2_get_bytes_left(&gb) < w * h)
+            return AVERROR_INVALIDDATA;
         bytestream2_skip(&gb, 4);
         for (y=0; y<h; y++) {
             bytestream2_get_buffer(&gb, ptr, w);
@@ -94,9 +94,13 @@ static int txd_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             if (!(flags & 1))
                 goto unsupported;
         case FF_S3TC_DXT1:
+            if (bytestream2_get_bytes_left(&gb) < (w/4) * (h/4) * 8)
+                return AVERROR_INVALIDDATA;
             ff_decode_dxt1(&gb, ptr, w, h, stride);
             break;
         case FF_S3TC_DXT3:
+            if (bytestream2_get_bytes_left(&gb) < (w/4) * (h/4) * 16)
+                return AVERROR_INVALIDDATA;
             ff_decode_dxt3(&gb, ptr, w, h, stride);
             break;
         default:
@@ -106,6 +110,8 @@ static int txd_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         switch (d3d_format) {
         case 0x15:
         case 0x16:
+            if (bytestream2_get_bytes_left(&gb) < h * w * 4)
+                return AVERROR_INVALIDDATA;
             for (y=0; y<h; y++) {
                 bytestream2_get_buffer(&gb, ptr, w * 4);
                 ptr += stride;
