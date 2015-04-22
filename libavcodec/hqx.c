@@ -1,20 +1,20 @@
 /*
  * Canopus HQX decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -458,7 +458,7 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
     }
     ret = av_image_check_size(ctx->width, ctx->height, 0, avctx);
     if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid stored dimenstions %dx%d.\n",
+        av_log(avctx, AV_LOG_ERROR, "Invalid stored dimensions %dx%d.\n",
                ctx->width, ctx->height);
         return AVERROR_INVALIDDATA;
     }
@@ -492,10 +492,8 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     ret = ff_get_buffer(avctx, ctx->pic, 0);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+    if (ret < 0)
         return ret;
-    }
 
     avctx->execute2(avctx, decode_slice_thread, NULL, NULL, 16);
 
@@ -523,10 +521,13 @@ static av_cold int hqx_decode_close(AVCodecContext *avctx)
 static av_cold int hqx_decode_init(AVCodecContext *avctx)
 {
     HQXContext *ctx = avctx->priv_data;
+    int ret = ff_hqx_init_vlcs(ctx);
+    if (ret < 0)
+        hqx_decode_close(avctx);
 
     ff_hqxdsp_init(&ctx->hqxdsp);
 
-    return ff_hqx_init_vlcs(ctx);
+    return ret;
 }
 
 AVCodec ff_hqx_decoder = {
@@ -539,6 +540,4 @@ AVCodec ff_hqx_decoder = {
     .decode         = hqx_decode_frame,
     .close          = hqx_decode_close,
     .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_SLICE_THREADS,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_INIT_CLEANUP,
 };

@@ -1,20 +1,20 @@
 /*
  * Canopus HQ/HQA decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -6204,7 +6204,6 @@ static const uint8_t hq_tab_16[] = {
 };
 
 static const uint8_t hq_tab_17[] = {
-     0,  0, 25,  8, 34,  0, 59,  8, 68,  0, 13, 24, 22, 16, 47,
     24, 56, 16, 78, 25, 10, 32, 28, 41, 44, 32, 58, 41, 78, 32,
      8, 57, 31, 49, 38, 57, 61, 49, 68, 57,  1,  0, 26,  8, 35,
      0, 60,  8, 69,  0, 14, 24, 23, 16, 47, 25, 57, 16, 77, 25,
@@ -8358,7 +8357,7 @@ const HQProfile ff_hq_profile[NUM_HQ_PROFILES] = {
     { hq_tab_14,  352,  240,  8, 22,  15 },
     { hq_tab_15,  352,  288,  8, 18,  22 },
     { hq_tab_16,  176,  144,  8,  9,  11 },
-    { hq_tab_17, 1280, 1024, 16, 20, 256 },
+    { hq_tab_17, 1280, 1024, 16, 20, 128 },
     { hq_tab_18, 1280,  960, 16, 25, 192 },
     { hq_tab_19, 1024,  768, 16, 24, 128 },
     { hq_tab_20,  704,  480,  8, 20,  66 },
