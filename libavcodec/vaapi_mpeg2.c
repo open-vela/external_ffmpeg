@@ -20,7 +20,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "internal.h"
 #include "mpegutils.h"
 #include "vaapi_internal.h"
 #include "internal.h"
