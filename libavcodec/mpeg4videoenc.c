@@ -3,20 +3,20 @@
  * Copyright (c) 2000,2001 Fabrice Bellard
  * Copyright (c) 2002-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -208,7 +208,7 @@ static inline int decide_ac_pred(MpegEncContext *s, int16_t block[6][64],
 }
 
 /**
- * modify mb_type & qscale so that encoding is actually possible in mpeg4
+ * modify mb_type & qscale so that encoding is acually possible in mpeg4
  */
 void ff_clean_mpeg4_qscales(MpegEncContext *s)
 {
@@ -278,19 +278,19 @@ static inline void mpeg4_encode_dc(PutBitContext *s, int level, int n)
 
     if (n < 4) {
         /* luminance */
-        put_bits(s, ff_mpeg4_DCtab_lum[size][1], ff_mpeg4_DCtab_lum[size][0]);
+        put_bits(&s->pb, ff_mpeg4_DCtab_lum[size][1], ff_mpeg4_DCtab_lum[size][0]);
     } else {
         /* chrominance */
-        put_bits(s, ff_mpeg4_DCtab_chrom[size][1], ff_mpeg4_DCtab_chrom[size][0]);
+        put_bits(&s->pb, ff_mpeg4_DCtab_chrom[size][1], ff_mpeg4_DCtab_chrom[size][0]);
     }
 
     /* encode remaining bits */
     if (size > 0) {
         if (level < 0)
             level = (-level) ^ ((1 << size) - 1);
-        put_bits(s, size, level);
+        put_bits(&s->pb, size, level);
         if (size > 8)
-            put_bits(s, 1, 1);
+            put_bits(&s->pb, 1, 1);
     }
 #endif
 }
@@ -430,7 +430,7 @@ static inline void mpeg4_encode_blocks(MpegEncContext *s, int16_t block[6][64],
     int i;
 
     if (scan_table) {
-        if (s->flags2 & CODEC_FLAG2_NO_OUTPUT) {
+        if (s->avctx->flags2 & CODEC_FLAG2_NO_OUTPUT) {
             for (i = 0; i < 6; i++)
                 skip_put_bits(&s->pb,
                               mpeg4_get_block_length(s, block[i], i,
@@ -442,7 +442,7 @@ static inline void mpeg4_encode_blocks(MpegEncContext *s, int16_t block[6][64],
                                    intra_dc[i], scan_table[i], dc_pb, ac_pb);
         }
     } else {
-        if (s->flags2 & CODEC_FLAG2_NO_OUTPUT) {
+        if (s->avctx->flags2 & CODEC_FLAG2_NO_OUTPUT) {
             for (i = 0; i < 6; i++)
                 skip_put_bits(&s->pb,
                               mpeg4_get_block_length(s, block[i], i, 0,
@@ -507,7 +507,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
     PutBitContext *const pb2    = s->data_partitioning ? &s->pb2 : &s->pb;
     PutBitContext *const tex_pb = s->data_partitioning && s->pict_type != AV_PICTURE_TYPE_B ? &s->tex_pb : &s->pb;
     PutBitContext *const dc_pb  = s->data_partitioning && s->pict_type != AV_PICTURE_TYPE_I ? &s->pb2 : &s->pb;
-    const int interleaved_stats = (s->flags & CODEC_FLAG_PASS1) && !s->data_partitioning ? 1 : 0;
+    const int interleaved_stats = (s->avctx->flags & CODEC_FLAG_PASS1) && !s->data_partitioning ? 1 : 0;
 
     if (!s->mb_intra) {
         int i, cbp;
@@ -525,9 +525,9 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                     s->last_mv[i][1][1] = 0;
             }
 
-            av_assert2(s->dquant >= -2 && s->dquant <= 2);
-            av_assert2((s->dquant & 1) == 0);
-            av_assert2(mb_type >= 0);
+            assert(s->dquant >= -2 && s->dquant <= 2);
+            assert((s->dquant & 1) == 0);
+            assert(mb_type >= 0);
 
             /* nothing to do if this MB was skipped in the next P Frame */
             if (s->next_picture.mbskip_table[s->mb_y * s->mb_stride + s->mb_x]) {  // FIXME avoid DCT & ...
@@ -547,7 +547,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
 
             if ((cbp | motion_x | motion_y | mb_type) == 0) {
                 /* direct MB with MV={0,0} */
-                av_assert2(s->dquant == 0);
+                assert(s->dquant == 0);
 
                 put_bits(&s->pb, 1, 1); /* mb not coded modb1=1 */
 
@@ -584,12 +584,12 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                 s->misc_bits += get_bits_diff(s);
 
             if (!mb_type) {
-                av_assert2(s->mv_dir & MV_DIRECT);
+                assert(s->mv_dir & MV_DIRECT);
                 ff_h263_encode_motion_vector(s, motion_x, motion_y, 1);
                 s->b_count++;
                 s->f_count++;
             } else {
-                av_assert2(mb_type > 0 && mb_type < 4);
+                assert(mb_type > 0 && mb_type < 4);
                 if (s->mv_type != MV_TYPE_FIELD) {
                     if (s->mv_dir & MV_DIR_FORWARD) {
                         ff_h263_encode_motion_vector(s,
@@ -669,6 +669,10 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
 
                     x = s->mb_x * 16;
                     y = s->mb_y * 16;
+                    if (x + 16 > s->width)
+                        x = s->width - 16;
+                    if (y + 16 > s->height)
+                        y = s->height - 16;
 
                     offset = x + y * s->linesize;
                     p_pic  = s->new_picture.f->data[0] + offset;
@@ -685,21 +689,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                         b_pic = pic->f->data[0] + offset;
                         if (!pic->shared)
                             b_pic += INPLACE_OFFSET;
-
-                        if (x + 16 > s->width || y + 16 > s->height) {
-                            int x1, y1;
-                            int xe = FFMIN(16, s->width - x);
-                            int ye = FFMIN(16, s->height - y);
-                            diff = 0;
-                            for (y1 = 0; y1 < ye; y1++) {
-                                for (x1 = 0; x1 < xe; x1++) {
-                                    diff += FFABS(p_pic[x1 + y1 * s->linesize] - b_pic[x1 + y1 * s->linesize]);
-                                }
-                            }
-                            diff = diff * 256 / (xe * ye);
-                        } else {
-                            diff = s->mecc.sad[0](NULL, p_pic, b_pic, s->linesize, 16);
-                        }
+                        diff = s->mecc.sad[0](NULL, p_pic, b_pic, s->linesize, 16);
                         if (diff > s->qscale * 70) {  // FIXME check that 70 is optimal
                             s->mb_skipped = 0;
                             break;
@@ -764,7 +754,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                 if (s->dquant)
                     put_bits(pb2, 2, dquant_code[s->dquant + 2]);
 
-                av_assert2(!s->progressive_sequence);
+                assert(!s->progressive_sequence);
                 if (cbp)
                     put_bits(pb2, 1, s->interlaced_dct);
                 put_bits(pb2, 1, 1);
@@ -788,7 +778,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                                              s->mv[0][1][1] - pred_y,
                                              s->f_code);
             } else {
-                av_assert2(s->mv_type == MV_TYPE_8X8);
+                assert(s->mv_type == MV_TYPE_8X8);
                 put_bits(&s->pb,
                          ff_h263_inter_MCBPC_bits[cbpc + 16],
                          ff_h263_inter_MCBPC_code[cbpc + 16]);
@@ -832,7 +822,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
         for (i = 0; i < 6; i++)
             dc_diff[i] = ff_mpeg4_pred_dc(s, i, block[i][0], &dir[i], 1);
 
-        if (s->flags & CODEC_FLAG_AC_PRED) {
+        if (s->avctx->flags & CODEC_FLAG_AC_PRED) {
             s->ac_pred = decide_ac_pred(s, block, dir, scan_table, zigzag_last_index);
         } else {
             for (i = 0; i < 6; i++)
@@ -904,7 +894,7 @@ void ff_set_mpeg4_time(MpegEncContext *s)
         ff_mpeg4_init_direct_mv(s);
     } else {
         s->last_time_base = s->time_base;
-        s->time_base      = FFUDIV(s->time, s->avctx->time_base.den);
+        s->time_base      = s->time / s->avctx->time_base.den;
     }
 }
 
@@ -920,20 +910,23 @@ static void mpeg4_encode_gop_header(MpegEncContext *s)
     if (s->reordered_input_picture[1])
         time = FFMIN(time, s->reordered_input_picture[1]->f->pts);
     time = time * s->avctx->time_base.num;
-    s->last_time_base = FFUDIV(time, s->avctx->time_base.den);
 
-    seconds = FFUDIV(time, s->avctx->time_base.den);
-    minutes = FFUDIV(seconds, 60); seconds = FFUMOD(seconds, 60);
-    hours   = FFUDIV(minutes, 60); minutes = FFUMOD(minutes, 60);
-    hours   = FFUMOD(hours  , 24);
+    seconds  = time / s->avctx->time_base.den;
+    minutes  = seconds / 60;
+    seconds %= 60;
+    hours    = minutes / 60;
+    minutes %= 60;
+    hours   %= 24;
 
     put_bits(&s->pb, 5, hours);
     put_bits(&s->pb, 6, minutes);
     put_bits(&s->pb, 1, 1);
     put_bits(&s->pb, 6, seconds);
 
-    put_bits(&s->pb, 1, !!(s->flags & CODEC_FLAG_CLOSED_GOP));
+    put_bits(&s->pb, 1, !!(s->avctx->flags & CODEC_FLAG_CLOSED_GOP));
     put_bits(&s->pb, 1, 0);  // broken link == NO
+
+    s->last_time_base = time / s->avctx->time_base.den;
 
     ff_mpeg4_stuffing(&s->pb);
 }
@@ -1018,8 +1011,6 @@ static void mpeg4_encode_vol_header(MpegEncContext *s,
 
     put_bits(&s->pb, 4, s->aspect_ratio_info); /* aspect ratio info */
     if (s->aspect_ratio_info == FF_ASPECT_EXTENDED) {
-        av_reduce(&s->avctx->sample_aspect_ratio.num, &s->avctx->sample_aspect_ratio.den,
-                   s->avctx->sample_aspect_ratio.num,  s->avctx->sample_aspect_ratio.den, 255);
         put_bits(&s->pb, 8, s->avctx->sample_aspect_ratio.num);
         put_bits(&s->pb, 8, s->avctx->sample_aspect_ratio.den);
     }
@@ -1078,7 +1069,7 @@ static void mpeg4_encode_vol_header(MpegEncContext *s,
     ff_mpeg4_stuffing(&s->pb);
 
     /* user data */
-    if (!(s->flags & CODEC_FLAG_BITEXACT)) {
+    if (!(s->avctx->flags & CODEC_FLAG_BITEXACT)) {
         put_bits(&s->pb, 16, 0);
         put_bits(&s->pb, 16, 0x1B2);    /* user_data */
         avpriv_put_string(&s->pb, LIBAVCODEC_IDENT, 0);
@@ -1092,7 +1083,7 @@ void ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number)
     int time_div, time_mod;
 
     if (s->pict_type == AV_PICTURE_TYPE_I) {
-        if (!(s->flags & CODEC_FLAG_GLOBAL_HEADER)) {
+        if (!(s->avctx->flags & CODEC_FLAG_GLOBAL_HEADER)) {
             if (s->strict_std_compliance < FF_COMPLIANCE_VERY_STRICT)  // HACK, the reference sw is buggy
                 mpeg4_encode_visual_object_header(s);
             if (s->strict_std_compliance < FF_COMPLIANCE_VERY_STRICT || picture_number == 0)  // HACK, the reference sw is buggy
@@ -1108,10 +1099,11 @@ void ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number)
     put_bits(&s->pb, 16, VOP_STARTCODE);    /* vop header */
     put_bits(&s->pb, 2, s->pict_type - 1);  /* pict type: I = 0 , P = 1 */
 
-    time_div  = FFUDIV(s->time, s->avctx->time_base.den);
-    time_mod  = FFUMOD(s->time, s->avctx->time_base.den);
+    assert(s->time >= 0);
+    time_div  = s->time / s->avctx->time_base.den;
+    time_mod  = s->time % s->avctx->time_base.den;
     time_incr = time_div - s->last_time_base;
-    av_assert0(time_incr >= 0);
+    assert(time_incr >= 0);
     while (time_incr--)
         put_bits(&s->pb, 1, 1);
 
@@ -1199,8 +1191,8 @@ static av_cold void init_uni_mpeg4_rl_tab(RLTable *rl, uint32_t *bits_tab,
 {
     int slevel, run, last;
 
-    av_assert0(MAX_LEVEL >= 64);
-    av_assert0(MAX_RUN >= 63);
+    assert(MAX_LEVEL >= 64);
+    assert(MAX_RUN >= 63);
 
     for (slevel = -64; slevel < 64; slevel++) {
         if (slevel == 0)
@@ -1295,11 +1287,6 @@ static av_cold int encode_init(AVCodecContext *avctx)
     int ret;
     static int done = 0;
 
-    if (avctx->width >= (1<<13) || avctx->height >= (1<<13)) {
-        av_log(avctx, AV_LOG_ERROR, "dimensions too large for MPEG-4\n");
-        return AVERROR(EINVAL);
-    }
-
     if ((ret = ff_mpv_encode_init(avctx)) < 0)
         return ret;
 
@@ -1325,7 +1312,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
     s->y_dc_scale_table         = ff_mpeg4_y_dc_scale_table;
     s->c_dc_scale_table         = ff_mpeg4_c_dc_scale_table;
 
-    if (s->flags & CODEC_FLAG_GLOBAL_HEADER) {
+    if (s->avctx->flags & CODEC_FLAG_GLOBAL_HEADER) {
         s->avctx->extradata = av_malloc(1024);
         init_put_bits(&s->pb, s->avctx->extradata, 1024);
 
