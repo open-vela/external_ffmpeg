@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Michael Niedermayer
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
 
 #include "avcodec.h"
 #include "get_bits.h"
+#include "put_bits.h"
 #include "golomb.h"
 #include "internal.h"
 #include "mathops.h"
@@ -254,10 +255,8 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
     PutBitContext pb, pb2;
     GetBitContext gb;
     uint8_t *buf2 = NULL;
-    uint8_t *zero = NULL;
-    uint8_t *cur  = NULL;
-    uint8_t *last = NULL;
-    JLSState *state;
+    uint8_t *zero, *cur, *last;
+    JLSState *state = NULL;
     int i, size, ret;
     int comps;
 
@@ -267,15 +266,13 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
     else
         comps = 3;
 
-    if ((ret = ff_alloc_packet(pkt, avctx->width * avctx->height * comps * 4 +
-                               FF_MIN_BUFFER_SIZE)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+    if ((ret = ff_alloc_packet2(avctx, pkt, avctx->width  *avctx->height * comps * 4 +
+                                FF_MIN_BUFFER_SIZE)) < 0)
         return ret;
-    }
 
     buf2 = av_malloc(pkt->size);
     if (!buf2)
-        goto memfail;
+        goto fail;
 
     init_put_bits(&pb, pkt->data, pkt->size);
     init_put_bits(&pb2, buf2, pkt->size);
@@ -307,8 +304,7 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
 
     state = av_mallocz(sizeof(JLSState));
     if (!state)
-        goto memfail;
-
+        goto fail;
     /* initialize JPEG-LS state from JPEG parameters */
     state->near = near;
     state->bpp  = (avctx->pix_fmt == AV_PIX_FMT_GRAY16) ? 16 : 8;
@@ -317,10 +313,11 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
 
     ls_store_lse(state, &pb);
 
-    zero = last = av_mallocz(p->linesize[0]);
+    zero = av_mallocz(FFABS(p->linesize[0]));
     if (!zero)
-        goto memfail;
+        goto fail;
 
+    last = zero;
     cur  = p->data[0];
     if (avctx->pix_fmt == AV_PIX_FMT_GRAY8) {
         int t = 0;
@@ -404,12 +401,10 @@ static int encode_picture_ls(AVCodecContext *avctx, AVPacket *pkt,
     pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
     return 0;
-
-memfail:
-    av_free_packet(pkt);
+fail:
     av_freep(&buf2);
     av_freep(&state);
-    av_freep(&zero);
+
     return AVERROR(ENOMEM);
 }
 
@@ -446,12 +441,11 @@ AVCodec ff_jpegls_encoder = {
     .id             = AV_CODEC_ID_JPEGLS,
     .init           = encode_init_ls,
     .close          = encode_close,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .encode2        = encode_picture_ls,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_BGR24, AV_PIX_FMT_RGB24,
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY16,
         AV_PIX_FMT_NONE
     },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_INIT_CLEANUP,
 };

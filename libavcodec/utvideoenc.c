@@ -2,20 +2,20 @@
  * Ut Video encoder
  * Copyright (c) 2012 Jan Ekström
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@ static av_cold int utvideo_encode_close(AVCodecContext *avctx)
     UtvideoContext *c = avctx->priv_data;
     int i;
 
-    av_freep(&avctx->coded_frame);
+    av_frame_free(&avctx->coded_frame);
     av_freep(&c->slice_bits);
     for (i = 0; i < 4; i++)
         av_freep(&c->slice_buffer[i]);
@@ -389,7 +389,7 @@ static int write_huff_codes(uint8_t *src, uint8_t *dst, int dst_size,
 }
 
 static int encode_plane(AVCodecContext *avctx, uint8_t *src,
-                        uint8_t *dst, int stride,
+                        uint8_t *dst, int stride, int plane_no,
                         int width, int height, PutByteContext *pb)
 {
     UtvideoContext *c        = avctx->priv_data;
@@ -399,15 +399,17 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     HuffEntry he[256];
 
     uint32_t offset = 0, slice_len = 0;
+    const int cmask = ~(!plane_no && avctx->pix_fmt == AV_PIX_FMT_YUV420P);
     int      i, sstart, send = 0;
     int      symbol;
+    int      ret;
 
     /* Do prediction / make planes */
     switch (c->frame_pred) {
     case PRED_NONE:
         for (i = 0; i < c->slices; i++) {
             sstart = send;
-            send   = height * (i + 1) / c->slices;
+            send   = height * (i + 1) / c->slices & cmask;
             av_image_copy_plane(dst + sstart * width, width,
                                 src + sstart * stride, stride,
                                 width, send - sstart);
@@ -416,7 +418,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     case PRED_LEFT:
         for (i = 0; i < c->slices; i++) {
             sstart = send;
-            send   = height * (i + 1) / c->slices;
+            send   = height * (i + 1) / c->slices & cmask;
             left_predict(src + sstart * stride, dst + sstart * width,
                          stride, width, send - sstart);
         }
@@ -424,7 +426,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     case PRED_MEDIAN:
         for (i = 0; i < c->slices; i++) {
             sstart = send;
-            send   = height * (i + 1) / c->slices;
+            send   = height * (i + 1) / c->slices & cmask;
             median_predict(c, src + sstart * stride, dst + sstart * width,
                            stride, width, send - sstart);
         }
@@ -443,7 +445,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
         /* If non-zero count is found, see if it matches width * height */
         if (counts[symbol]) {
             /* Special case if only one symbol was used */
-            if (counts[symbol] == width * height) {
+            if (counts[symbol] == width * (int64_t)height) {
                 /*
                  * Write a zero for the single symbol
                  * used in the plane, else 0xFF.
@@ -467,7 +469,8 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     }
 
     /* Calculate huffman lengths */
-    ff_huff_gen_len_table(lengths, counts);
+    if ((ret = ff_huff_gen_len_table(lengths, counts, 256, 1)) < 0)
+        return ret;
 
     /*
      * Write the plane's header into the output packet:
@@ -487,14 +490,14 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
     send = 0;
     for (i = 0; i < c->slices; i++) {
         sstart  = send;
-        send    = height * (i + 1) / c->slices;
+        send    = height * (i + 1) / c->slices & cmask;
 
         /*
          * Write the huffman codes to a buffer,
          * get the offset in bits and convert to bytes.
          */
         offset += write_huff_codes(dst + sstart * width, c->slice_bits,
-                                   width * (send - sstart), width,
+                                   width * height + 4, width,
                                    send - sstart, he) >> 3;
 
         slice_len = offset - slice_len;
@@ -541,22 +544,17 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int i, ret = 0;
 
     /* Allocate a new packet if needed, and set it to the pointer dst */
-    ret = ff_alloc_packet(pkt, (256 + 4 * c->slices + width * height) *
-                          c->planes + 4);
+    ret = ff_alloc_packet2(avctx, pkt, (256 + 4 * c->slices + width * height) *
+                           c->planes + 4);
 
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR,
-               "Error allocating the output packet, or the provided packet "
-               "was too small.\n");
+    if (ret < 0)
         return ret;
-    }
 
     dst = pkt->data;
 
     bytestream2_init_writer(&pb, dst, pkt->size);
 
-    av_fast_malloc(&c->slice_bits, &c->slice_bits_size,
-                   width * height + FF_INPUT_BUFFER_PADDING_SIZE);
+    av_fast_padded_malloc(&c->slice_bits, &c->slice_bits_size, width * height + 4);
 
     if (!c->slice_bits) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer 2.\n");
@@ -574,7 +572,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_RGBA:
         for (i = 0; i < c->planes; i++) {
             ret = encode_plane(avctx, c->slice_buffer[i] + 2 * c->slice_stride,
-                               c->slice_buffer[i], c->slice_stride,
+                               c->slice_buffer[i], c->slice_stride, i,
                                width, height, &pb);
 
             if (ret) {
@@ -586,7 +584,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_YUV422P:
         for (i = 0; i < c->planes; i++) {
             ret = encode_plane(avctx, pic->data[i], c->slice_buffer[0],
-                               pic->linesize[i], width >> !!i, height, &pb);
+                               pic->linesize[i], i, width >> !!i, height, &pb);
 
             if (ret) {
                 av_log(avctx, AV_LOG_ERROR, "Error encoding plane %d.\n", i);
@@ -597,7 +595,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_YUV420P:
         for (i = 0; i < c->planes; i++) {
             ret = encode_plane(avctx, pic->data[i], c->slice_buffer[0],
-                               pic->linesize[i], width >> !!i, height >> !!i,
+                               pic->linesize[i], i, width >> !!i, height >> !!i,
                                &pb);
 
             if (ret) {
@@ -645,6 +643,7 @@ AVCodec ff_utvideo_encoder = {
     .init           = utvideo_encode_init,
     .encode2        = utvideo_encode_frame,
     .close          = utvideo_encode_close,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .pix_fmts       = (const enum AVPixelFormat[]) {
                           AV_PIX_FMT_RGB24, AV_PIX_FMT_RGBA, AV_PIX_FMT_YUV422P,
                           AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
