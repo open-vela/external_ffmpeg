@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,7 +51,7 @@ static void vdpau_h264_clear_rf(VdpReferenceFrameH264 *rf)
 static void vdpau_h264_set_rf(VdpReferenceFrameH264 *rf, H264Picture *pic,
                               int pic_structure)
 {
-    VdpVideoSurface surface = ff_vdpau_get_surface_id(pic->f);
+    VdpVideoSurface surface = ff_vdpau_get_surface_id(&pic->f);
 
     if (pic_structure == 0)
         pic_structure = pic->reference;
@@ -88,7 +88,7 @@ static void vdpau_h264_set_reference_frames(AVCodecContext *avctx)
             if (!pic || !pic->reference)
                 continue;
             pic_frame_idx = pic->long_ref ? pic->pic_id : pic->frame_num;
-            surface_ref = ff_vdpau_get_surface_id(pic->f);
+            surface_ref = ff_vdpau_get_surface_id(&pic->f);
 
             rf2 = &info->referenceFrames[0];
             while (rf2 != rf) {
@@ -203,7 +203,7 @@ static int vdpau_h264_end_frame(AVCodecContext *avctx)
     struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
     int val;
 
-    val = ff_vdpau_common_end_frame(avctx, pic->f, pic_ctx);
+    val = ff_vdpau_common_end_frame(avctx, &pic->f, pic_ctx);
     if (val < 0)
         return val;
 

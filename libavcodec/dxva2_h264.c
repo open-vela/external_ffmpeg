@@ -3,20 +3,20 @@
  *
  * copyright (c) 2009 Laurent Aimar
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,7 +51,7 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
     memset(pp, 0, sizeof(*pp));
     /* Configure current picture */
     fill_picture_entry(&pp->CurrPic,
-                       ff_dxva2_get_surface_index(ctx, current_picture->f),
+                       ff_dxva2_get_surface_index(ctx, &current_picture->f),
                        h->picture_structure == PICT_BOTTOM_FIELD);
     /* Configure the set of references */
     pp->UsedForReferenceFlags  = 0;
@@ -67,7 +67,7 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
         }
         if (r) {
             fill_picture_entry(&pp->RefFrameList[i],
-                               ff_dxva2_get_surface_index(ctx, r->f),
+                               ff_dxva2_get_surface_index(ctx, &r->f),
                                r->long_ref != 0);
 
             if ((r->reference & PICT_TOP_FIELD) && r->field_poc[0] != INT_MAX)
@@ -96,7 +96,7 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
                                         ((h->sps.mb_aff &&
                                         (h->picture_structure == PICT_FRAME)) <<  1) |
                                         (h->sps.residual_color_transform_flag <<  2) |
-                                        /* sp_for_switch_flag (not implemented by Libav) */
+                                        /* sp_for_switch_flag (not implemented by FFmpeg) */
                                         (0                                    <<  3) |
                                         (h->sps.chroma_format_idc             <<  4) |
                                         ((h->nal_ref_idc != 0)                <<  6) |
@@ -152,8 +152,8 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
     pp->deblocking_filter_control_present_flag = h->pps.deblocking_filter_parameters_present;
     pp->redundant_pic_cnt_present_flag= h->pps.redundant_pic_cnt_present;
     pp->Reserved8BitsB                = 0;
-    pp->slice_group_change_rate_minus1= 0;  /* XXX not implemented by Libav */
-    //pp->SliceGroupMap[810];               /* XXX not implemented by Libav */
+    pp->slice_group_change_rate_minus1= 0;  /* XXX not implemented by FFmpeg */
+    //pp->SliceGroupMap[810];               /* XXX not implemented by FFmpeg */
 }
 
 static void fill_scaling_lists(struct dxva_context *ctx, const H264Context *h, DXVA_Qmatrix_H264 *qm)
@@ -244,9 +244,9 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
                 unsigned plane;
                 unsigned index;
                 if (ctx->workaround & FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO)
-                    index = ff_dxva2_get_surface_index(ctx, r->f);
+                    index = ff_dxva2_get_surface_index(ctx, &r->f);
                 else
-                    index = get_refpic_index(pp, ff_dxva2_get_surface_index(ctx, r->f));
+                    index = get_refpic_index(pp, ff_dxva2_get_surface_index(ctx, &r->f));
                 fill_picture_entry(&slice->RefPicList[list][i], index,
                                    r->reference == PICT_BOTTOM_FIELD);
                 for (plane = 0; plane < 3; plane++) {
@@ -275,7 +275,7 @@ static void fill_slice_long(AVCodecContext *avctx, DXVA_Slice_H264_Long *slice,
             }
         }
     }
-    slice->slice_qs_delta    = 0; /* XXX not implemented by Libav */
+    slice->slice_qs_delta    = 0; /* XXX not implemented by FFmpeg */
     slice->slice_qp_delta    = sl->qscale - h->pps.init_qp;
     slice->redundant_pic_cnt = sl->redundant_pic_count;
     if (sl->slice_type == AV_PICTURE_TYPE_B)
@@ -454,7 +454,7 @@ static int dxva2_h264_end_frame(AVCodecContext *avctx)
 
     if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0)
         return -1;
-    ret = ff_dxva2_common_end_frame(avctx, h->cur_pic_ptr->f,
+    ret = ff_dxva2_common_end_frame(avctx, &h->cur_pic_ptr->f,
                                     &ctx_pic->pp, sizeof(ctx_pic->pp),
                                     &ctx_pic->qm, sizeof(ctx_pic->qm),
                                     commit_bitstream_and_slice_buffer);
