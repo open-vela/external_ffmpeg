@@ -5,20 +5,20 @@
  *
  * msmpeg4v1 & v2 stuff by Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@
 #include "libavutil/avutil.h"
 #include "libavutil/mem.h"
 #include "mpegvideo.h"
-#include "msmpeg4.h"
 #include "h263.h"
 #include "internal.h"
 #include "mpeg4video.h"
@@ -160,8 +159,8 @@ av_cold int ff_msmpeg4_encode_init(MpegEncContext *s)
 static void find_best_tables(MpegEncContext * s)
 {
     int i;
-    int best       =-1, best_size       =9999999;
-    int chroma_best=-1, best_chroma_size=9999999;
+    int best        = 0, best_size        = INT_MAX;
+    int chroma_best = 0, best_chroma_size = INT_MAX;
 
     for(i=0; i<3; i++){
         int level;
@@ -284,14 +283,15 @@ void ff_msmpeg4_encode_picture_header(MpegEncContext * s, int picture_number)
 
 void ff_msmpeg4_encode_ext_header(MpegEncContext * s)
 {
-        put_bits(&s->pb, 5, s->avctx->time_base.den / s->avctx->time_base.num); //yes 29.97 -> 29
+        unsigned fps = s->avctx->time_base.den / s->avctx->time_base.num / FFMAX(s->avctx->ticks_per_frame, 1);
+        put_bits(&s->pb, 5, FFMIN(fps, 31)); //yes 29.97 -> 29
 
         put_bits(&s->pb, 11, FFMIN(s->bit_rate/1024, 2047));
 
         if(s->msmpeg4_version>=3)
             put_bits(&s->pb, 1, s->flipflop_rounding);
         else
-            assert(s->flipflop_rounding==0);
+            av_assert0(s->flipflop_rounding==0);
 }
 
 void ff_msmpeg4_encode_motion(MpegEncContext * s,
@@ -504,7 +504,7 @@ void ff_msmpeg4_encode_mb(MpegEncContext * s,
 static void msmpeg4_encode_dc(MpegEncContext * s, int level, int n, int *dir_ptr)
 {
     int sign, code;
-    int pred, extquant;
+    int pred, av_uninit(extquant);
     int extrabits = 0;
 
     int16_t *dc_val;
