@@ -5,20 +5,20 @@
  * Copyright (c) 2001 Juan J. Sierralta P
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -90,7 +90,7 @@ static const uint8_t wrong_run[102] = {
 av_const int ff_h263_aspect_to_info(AVRational aspect){
     int i;
 
-    if(aspect.num==0 || aspect.den==0) aspect= (AVRational){1,1};
+    if(aspect.num==0) aspect= (AVRational){1,1};
 
     for(i=1; i<6; i++){
         if(av_cmp_q(ff_h263_pixel_aspect[i], aspect) == 0){
@@ -228,10 +228,18 @@ void ff_h263_encode_picture_header(MpegEncContext * s, int picture_number)
     if(s->h263_slice_structured){
         put_bits(&s->pb, 1, 1);
 
-        av_assert1(s->mb_x == 0 && s->mb_y == 0);
+        assert(s->mb_x == 0 && s->mb_y == 0);
         ff_h263_encode_mba(s);
 
         put_bits(&s->pb, 1, 1);
+    }
+
+    if(s->h263_aic){
+         s->y_dc_scale_table=
+         s->c_dc_scale_table= ff_aic_dc_scale_table;
+    }else{
+        s->y_dc_scale_table=
+        s->c_dc_scale_table= ff_mpeg1_dc_scale_table;
     }
 }
 
@@ -262,7 +270,7 @@ void ff_h263_encode_gob_header(MpegEncContext * s, int mb_line)
 }
 
 /**
- * modify qscale so that encoding is actually possible in h263 (limit difference to -2..2)
+ * modify qscale so that encoding is acually possible in h263 (limit difference to -2..2)
  */
 void ff_clean_h263_qscales(MpegEncContext *s){
     int i;
@@ -387,7 +395,7 @@ static void h263_encode_block(MpegEncContext * s, int16_t * block, int n)
                 put_bits(&s->pb, 1, last);
                 put_bits(&s->pb, 6, run);
 
-                av_assert2(slevel != 0);
+                assert(slevel != 0);
 
                 if(level < 128)
                     put_sbits(&s->pb, 8, slevel);
@@ -408,7 +416,7 @@ static void h263_encode_block(MpegEncContext * s, int16_t * block, int n)
 }
 
 /* Encode MV differences on H.263+ with Unrestricted MV mode */
-static void h263p_encode_umotion(PutBitContext *pb, int val)
+static void h263p_encode_umotion(MpegEncContext * s, int val)
 {
     short sval = 0;
     short i = 0;
@@ -418,11 +426,11 @@ static void h263p_encode_umotion(PutBitContext *pb, int val)
     int tcode;
 
     if ( val == 0)
-        put_bits(pb, 1, 1);
+        put_bits(&s->pb, 1, 1);
     else if (val == 1)
-        put_bits(pb, 3, 0);
+        put_bits(&s->pb, 3, 0);
     else if (val == -1)
-        put_bits(pb, 3, 2);
+        put_bits(&s->pb, 3, 2);
     else {
 
         sval = ((val < 0) ? (short)(-val):(short)val);
@@ -441,7 +449,7 @@ static void h263p_encode_umotion(PutBitContext *pb, int val)
             i--;
         }
         code = ((code << 1) | (val < 0)) << 1;
-        put_bits(pb, (2*n_bits)+1, code);
+        put_bits(&s->pb, (2*n_bits)+1, code);
     }
 }
 
@@ -498,8 +506,8 @@ void ff_h263_encode_mb(MpegEncContext * s,
                                                 motion_y - pred_y, 1);
             }
             else {
-                h263p_encode_umotion(&s->pb, motion_x - pred_x);
-                h263p_encode_umotion(&s->pb, motion_y - pred_y);
+                h263p_encode_umotion(s, motion_x - pred_x);
+                h263p_encode_umotion(s, motion_y - pred_y);
                 if (((motion_x - pred_x) == 1) && ((motion_y - pred_y) == 1))
                     /* To prevent Start Code emulation */
                     put_bits(&s->pb,1,1);
@@ -527,8 +535,8 @@ void ff_h263_encode_mb(MpegEncContext * s,
                                                     motion_y - pred_y, 1);
                 }
                 else {
-                    h263p_encode_umotion(&s->pb, motion_x - pred_x);
-                    h263p_encode_umotion(&s->pb, motion_y - pred_y);
+                    h263p_encode_umotion(s, motion_x - pred_x);
+                    h263p_encode_umotion(s, motion_y - pred_y);
                     if (((motion_x - pred_x) == 1) && ((motion_y - pred_y) == 1))
                         /* To prevent Start Code emulation */
                         put_bits(&s->pb,1,1);
@@ -540,7 +548,7 @@ void ff_h263_encode_mb(MpegEncContext * s,
             s->mv_bits+= get_bits_diff(s);
         }
     } else {
-        av_assert2(s->mb_intra);
+        assert(s->mb_intra);
 
         cbp = 0;
         if (s->h263_aic) {
@@ -644,14 +652,14 @@ void ff_h263_encode_mb(MpegEncContext * s,
     }
 }
 
-void ff_h263_encode_motion(PutBitContext *pb, int val, int f_code)
+void ff_h263_encode_motion(MpegEncContext * s, int val, int f_code)
 {
     int range, bit_size, sign, code, bits;
 
     if (val == 0) {
         /* zero vector */
         code = 0;
-        put_bits(pb, ff_mvtab[code][1], ff_mvtab[code][0]);
+        put_bits(&s->pb, ff_mvtab[code][1], ff_mvtab[code][0]);
     } else {
         bit_size = f_code - 1;
         range = 1 << bit_size;
@@ -665,9 +673,9 @@ void ff_h263_encode_motion(PutBitContext *pb, int val, int f_code)
         code = (val >> bit_size) + 1;
         bits = val & (range - 1);
 
-        put_bits(pb, ff_mvtab[code][1] + 1, (ff_mvtab[code][0] << 1) | sign);
+        put_bits(&s->pb, ff_mvtab[code][1] + 1, (ff_mvtab[code][0] << 1) | sign);
         if (bit_size > 0) {
-            put_bits(pb, bit_size, bits);
+            put_bits(&s->pb, bit_size, bits);
         }
     }
 }
@@ -719,8 +727,8 @@ static av_cold void init_uni_h263_rl_tab(RLTable *rl, uint32_t *bits_tab,
 {
     int slevel, run, last;
 
-    av_assert0(MAX_LEVEL >= 64);
-    av_assert0(MAX_RUN   >= 63);
+    assert(MAX_LEVEL >= 64);
+    assert(MAX_RUN   >= 63);
 
     for(slevel=-64; slevel<64; slevel++){
         if(slevel==0) continue;
@@ -809,15 +817,12 @@ av_cold void ff_h263_encode_init(MpegEncContext *s)
             s->min_qcoeff= -127;
             s->max_qcoeff=  127;
         }
+        s->y_dc_scale_table=
+        s->c_dc_scale_table= ff_mpeg1_dc_scale_table;
         break;
     default: //nothing needed - default table already set in mpegvideo.c
         s->min_qcoeff= -127;
         s->max_qcoeff=  127;
-    }
-    if(s->h263_aic){
-         s->y_dc_scale_table=
-         s->c_dc_scale_table= ff_aic_dc_scale_table;
-    }else{
         s->y_dc_scale_table=
         s->c_dc_scale_table= ff_mpeg1_dc_scale_table;
     }
