@@ -2914,8 +2914,6 @@ typedef struct AVCodecContext {
 
 #define FF_PROFILE_VP9_0                            0
 #define FF_PROFILE_VP9_1                            1
-#define FF_PROFILE_VP9_2                            2
-#define FF_PROFILE_VP9_3                            3
 
     /**
      * level
