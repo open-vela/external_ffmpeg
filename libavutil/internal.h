@@ -44,7 +44,7 @@
 #endif
 
 #ifndef emms_c
-#   define emms_c()
+#   define emms_c() while(0)
 #endif
 
 #ifndef attribute_align_arg
