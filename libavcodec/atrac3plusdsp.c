@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -599,8 +599,8 @@ void ff_atrac3p_ipqf(FFTContext *dct_ctx, Atrac3pIPQFChannelCtx *hist,
                      const float *in, float *out)
 {
     int i, s, sb, t, pos_now, pos_next;
-    DECLARE_ALIGNED(32, float, idct_in)[ATRAC3P_SUBBANDS];
-    DECLARE_ALIGNED(32, float, idct_out)[ATRAC3P_SUBBANDS];
+    LOCAL_ALIGNED(32, float, idct_in, [ATRAC3P_SUBBANDS]);
+    LOCAL_ALIGNED(32, float, idct_out, [ATRAC3P_SUBBANDS]);
 
     memset(out, 0, ATRAC3P_FRAME_SAMPLES * sizeof(*out));
 
