@@ -3,20 +3,20 @@
  * Copyright (c) 2004 Konstantin Shishkov
  * Copyright (c) 2015 Vittorio Giovara
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -61,7 +61,7 @@ static int parse_palette(AVCodecContext *avctx, GetByteContext *gbc,
         bytestream2_skip(gbc, 1);
         b = bytestream2_get_byte(gbc);
         bytestream2_skip(gbc, 1);
-        pal[idx] = (0xFFU << 24) | (r << 16) | (g << 8) | b;
+        pal[idx] = 0xFFU << 24 | r << 16 | g << 8 | b;
     }
     return 0;
 }
@@ -124,9 +124,9 @@ static int decode_frame(AVCodecContext *avctx,
     int w, h, ret;
 
     bytestream2_init(&gbc, avpkt->data, avpkt->size);
-
-    /* PICT images start with a 512 bytes empty header */
-    if (bytestream2_peek_be32(&gbc) == 0)
+    if (   avpkt->size >= 552
+        && AV_RB32(&avpkt->data[ 10]) != 0x001102FF
+        && AV_RB32(&avpkt->data[522]) == 0x001102FF)
         bytestream2_skip(&gbc, 512);
 
     /* smallest PICT header */
@@ -191,10 +191,8 @@ static int decode_frame(AVCodecContext *avctx,
                        bytestream2_get_bytes_left(&gbc));
                 return AVERROR_INVALIDDATA;
             }
-            if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-                av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
                 return ret;
-            }
 
             parse_palette(avctx, &gbc, (uint32_t *)p->data[1], colors);
             p->palette_has_changed = 1;
