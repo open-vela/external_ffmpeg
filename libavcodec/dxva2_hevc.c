@@ -3,20 +3,20 @@
  *
  * copyright (c) 2014 - 2015 Hendrik Leppkes
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,7 +57,7 @@ static void fill_picture_parameters(const AVCodecContext *avctx, AVDXVAContext *
                                     DXVA_PicParams_HEVC *pp)
 {
     const HEVCFrame *current_picture = h->ref;
-    int i, j;
+    int i, j, k;
 
     memset(pp, 0, sizeof(*pp));
 
@@ -155,34 +155,30 @@ static void fill_picture_parameters(const AVCodecContext *avctx, AVDXVAContext *
     pp->log2_parallel_merge_level_minus2 = h->pps->log2_parallel_merge_level - 2;
     pp->CurrPicOrderCntVal               = h->poc;
 
-    // fill RefPicList from the DPB
-    for (i = 0, j = 0; i < FF_ARRAY_ELEMS(pp->RefPicList); i++) {
-        const HEVCFrame *frame = NULL;
-        while (!frame && j < FF_ARRAY_ELEMS(h->DPB)) {
-            if (&h->DPB[j] != current_picture && (h->DPB[j].flags & (HEVC_FRAME_FLAG_LONG_REF | HEVC_FRAME_FLAG_SHORT_REF)))
-                frame = &h->DPB[j];
-            j++;
-        }
+    // empty the lists
+    memset(&pp->RefPicList, 0xff, sizeof(pp->RefPicList));
+    memset(&pp->RefPicSetStCurrBefore, 0xff, sizeof(pp->RefPicSetStCurrBefore));
+    memset(&pp->RefPicSetStCurrAfter, 0xff, sizeof(pp->RefPicSetStCurrAfter));
+    memset(&pp->RefPicSetLtCurr, 0xff, sizeof(pp->RefPicSetLtCurr));
 
-        if (frame) {
-            fill_picture_entry(&pp->RefPicList[i], ff_dxva2_get_surface_index(avctx, ctx, frame->frame), !!(frame->flags & HEVC_FRAME_FLAG_LONG_REF));
-            pp->PicOrderCntValList[i] = frame->poc;
-        } else {
-            pp->RefPicList[i].bPicEntry = 0xff;
-            pp->PicOrderCntValList[i]   = 0;
+    // fill RefPicList from the DPB
+    for (i = 0, j = 0; i < FF_ARRAY_ELEMS(h->DPB); i++) {
+        const HEVCFrame *frame = &h->DPB[i];
+        if (frame != current_picture && (frame->flags & (HEVC_FRAME_FLAG_LONG_REF | HEVC_FRAME_FLAG_SHORT_REF))) {
+            fill_picture_entry(&pp->RefPicList[j], ff_dxva2_get_surface_index(avctx, ctx, frame->frame), !!(frame->flags & HEVC_FRAME_FLAG_LONG_REF));
+            pp->PicOrderCntValList[j] = frame->poc;
+            j++;
         }
     }
 
     #define DO_REF_LIST(ref_idx, ref_list) { \
         const RefPicList *rpl = &h->rps[ref_idx]; \
-        for (i = 0, j = 0; i < FF_ARRAY_ELEMS(pp->ref_list); i++) { \
-            const HEVCFrame *frame = NULL; \
-            while (!frame && j < rpl->nb_refs) \
-                frame = rpl->ref[j++]; \
-            if (frame) \
-                pp->ref_list[i] = get_refpic_index(pp, ff_dxva2_get_surface_index(avctx, ctx, frame->frame)); \
-            else \
-                pp->ref_list[i] = 0xff; \
+        av_assert0(rpl->nb_refs <= FF_ARRAY_ELEMS(pp->ref_list)); \
+        for (j = 0, k = 0; j < rpl->nb_refs; j++) { \
+            if (rpl->ref[j]) { \
+                pp->ref_list[k] = get_refpic_index(pp, ff_dxva2_get_surface_index(avctx, ctx, rpl->ref[j]->frame)); \
+                k++; \
+            } \
         } \
     }
 
@@ -213,12 +209,12 @@ static void fill_scaling_lists(AVDXVAContext *ctx, const HEVCContext *h, DXVA_Qm
             qm->ucScalingLists2[i][j] = sl->sl[2][i][pos];
 
             if (i < 2)
-                qm->ucScalingLists3[i][j] = sl->sl[3][i * 3][pos];
+                qm->ucScalingLists3[i][j] = sl->sl[3][i][pos];
         }
 
         qm->ucScalingListDCCoefSizeID2[i] = sl->sl_dc[0][i];
         if (i < 2)
-            qm->ucScalingListDCCoefSizeID3[i] = sl->sl_dc[1][i * 3];
+            qm->ucScalingListDCCoefSizeID3[i] = sl->sl_dc[1][i];
     }
 }
 
