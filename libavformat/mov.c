@@ -2298,6 +2298,8 @@ static int mov_read_ctts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     av_log(c->fc, AV_LOG_TRACE, "track[%i].ctts.entries = %i\n", c->fc->nb_streams-1, entries);
 
+    av_freep(&sc->ctts_data);
+
     if (!entries)
         return 0;
     if (entries >= UINT_MAX / sizeof(*sc->ctts_data))
