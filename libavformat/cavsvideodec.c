@@ -2,25 +2,26 @@
  * RAW Chinese AVS video demuxer
  * Copyright (c) 2009  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avformat.h"
 #include "rawdec.h"
+#include "libavcodec/internal.h"
 
 #define CAVS_SEQ_START_CODE       0x000001b0
 #define CAVS_PIC_I_START_CODE     0x000001b3
@@ -33,10 +34,10 @@ static int cavsvideo_probe(AVProbeData *p)
 {
     uint32_t code= -1;
     int pic=0, seq=0, slice_pos = 0;
-    int i;
+    const uint8_t *ptr = p->buf, *end = p->buf + p->buf_size;
 
-    for(i=0; i<p->buf_size; i++){
-        code = (code<<8) + p->buf[i];
+    while (ptr < end) {
+        ptr = avpriv_find_start_code(ptr, end, &code);
         if ((code & 0xffffff00) == 0x100) {
             if(code < CAVS_SEQ_START_CODE) {
                 /* slices have to be consecutive */
@@ -49,7 +50,7 @@ static int cavsvideo_probe(AVProbeData *p)
             if (code == CAVS_SEQ_START_CODE) {
                 seq++;
                 /* check for the only currently supported profile */
-                if(p->buf[i+1] != CAVS_PROFILE_JIZHUN)
+                if (*ptr != CAVS_PROFILE_JIZHUN)
                     return 0;
             } else if ((code == CAVS_PIC_I_START_CODE) ||
                        (code == CAVS_PIC_PB_START_CODE)) {
@@ -61,7 +62,7 @@ static int cavsvideo_probe(AVProbeData *p)
         }
     }
     if(seq && seq*9<=pic*10)
-        return AVPROBE_SCORE_EXTENSION;
+        return AVPROBE_SCORE_EXTENSION+1;
     return 0;
 }
 

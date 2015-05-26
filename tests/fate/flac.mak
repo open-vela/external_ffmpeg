@@ -22,5 +22,7 @@ fate-flac-24-%: CMD = enc_dec_pcm flac wav s24le $(subst $(SAMPLES),$(TARGET_SAM
 fate-flac-%: CMP = oneoff
 fate-flac-%: FUZZ = 0
 
-FATE_SAMPLES_AVCONV += $(FATE_FLAC)
+FATE_FLAC-$(call ENCMUX, FLAC, FLAC) += $(FATE_FLAC)
+
+FATE_SAMPLES_AVCONV += $(FATE_FLAC-yes)
 fate-flac: $(FATE_FLAC)
