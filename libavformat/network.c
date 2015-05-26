@@ -1,48 +1,130 @@
 /*
- * Copyright (c) 2007 The Libav Project
+ * Copyright (c) 2007 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <fcntl.h>
 #include "network.h"
-#include "tls.h"
 #include "url.h"
 #include "libavcodec/internal.h"
+#include "libavutil/avutil.h"
 #include "libavutil/mem.h"
+#include "libavutil/time.h"
 
-void ff_tls_init(void)
+#if HAVE_THREADS
+#if HAVE_PTHREADS
+#include <pthread.h>
+#elif HAVE_OS2THREADS
+#include "compat/os2threads.h"
+#else
+#include "compat/w32pthreads.h"
+#endif
+#endif
+
+#if CONFIG_OPENSSL
+#include <openssl/ssl.h>
+static int openssl_init;
+#if HAVE_THREADS
+#include <openssl/crypto.h>
+pthread_mutex_t *openssl_mutexes;
+static void openssl_lock(int mode, int type, const char *file, int line)
 {
-#if CONFIG_TLS_OPENSSL_PROTOCOL
-    ff_openssl_init();
+    if (mode & CRYPTO_LOCK)
+        pthread_mutex_lock(&openssl_mutexes[type]);
+    else
+        pthread_mutex_unlock(&openssl_mutexes[type]);
+}
+#if !defined(WIN32) && OPENSSL_VERSION_NUMBER < 0x10000000
+static unsigned long openssl_thread_id(void)
+{
+    return (intptr_t) pthread_self();
+}
 #endif
-#if CONFIG_TLS_GNUTLS_PROTOCOL
-    ff_gnutls_init();
 #endif
+#endif
+#if CONFIG_GNUTLS
+#include <gnutls/gnutls.h>
+#if HAVE_THREADS && GNUTLS_VERSION_NUMBER <= 0x020b00
+#include <gcrypt.h>
+#include <errno.h>
+GCRY_THREAD_OPTION_PTHREAD_IMPL;
+#endif
+#endif
+
+int ff_tls_init(void)
+{
+    avpriv_lock_avformat();
+#if CONFIG_OPENSSL
+    if (!openssl_init) {
+        SSL_library_init();
+        SSL_load_error_strings();
+#if HAVE_THREADS
+        if (!CRYPTO_get_locking_callback()) {
+            int i;
+            openssl_mutexes = av_malloc_array(sizeof(pthread_mutex_t), CRYPTO_num_locks());
+            if (!openssl_mutexes) {
+                avpriv_unlock_avformat();
+                return AVERROR(ENOMEM);
+            }
+            for (i = 0; i < CRYPTO_num_locks(); i++)
+                pthread_mutex_init(&openssl_mutexes[i], NULL);
+            CRYPTO_set_locking_callback(openssl_lock);
+#if !defined(WIN32) && OPENSSL_VERSION_NUMBER < 0x10000000
+            CRYPTO_set_id_callback(openssl_thread_id);
+#endif
+        }
+#endif
+    }
+    openssl_init++;
+#endif
+#if CONFIG_GNUTLS
+#if HAVE_THREADS && GNUTLS_VERSION_NUMBER < 0x020b00
+    if (gcry_control(GCRYCTL_ANY_INITIALIZATION_P) == 0)
+        gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
+#endif
+    gnutls_global_init();
+#endif
+    avpriv_unlock_avformat();
+
+    return 0;
 }
 
 void ff_tls_deinit(void)
 {
-#if CONFIG_TLS_OPENSSL_PROTOCOL
-    ff_openssl_deinit();
+    avpriv_lock_avformat();
+#if CONFIG_OPENSSL
+    openssl_init--;
+    if (!openssl_init) {
+#if HAVE_THREADS
+        if (CRYPTO_get_locking_callback() == openssl_lock) {
+            int i;
+            CRYPTO_set_locking_callback(NULL);
+            for (i = 0; i < CRYPTO_num_locks(); i++)
+                pthread_mutex_destroy(&openssl_mutexes[i]);
+            av_free(openssl_mutexes);
+        }
 #endif
-#if CONFIG_TLS_GNUTLS_PROTOCOL
-    ff_gnutls_deinit();
+    }
 #endif
+#if CONFIG_GNUTLS
+    gnutls_global_deinit();
+#endif
+    avpriv_unlock_avformat();
 }
 
 int ff_network_inited_globally;
@@ -72,6 +154,26 @@ int ff_network_wait_fd(int fd, int write)
     int ret;
     ret = poll(&p, 1, 100);
     return ret < 0 ? ff_neterrno() : p.revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
+}
+
+int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterruptCB *int_cb)
+{
+    int ret;
+    int64_t wait_start = 0;
+
+    while (1) {
+        if (ff_check_interrupt(int_cb))
+            return AVERROR_EXIT;
+        ret = ff_network_wait_fd(fd, write);
+        if (ret != AVERROR(EAGAIN))
+            return ret;
+        if (timeout > 0) {
+            if (!wait_start)
+                wait_start = av_gettime_relative();
+            else if (av_gettime_relative() - wait_start > timeout)
+                return AVERROR(ETIMEDOUT);
+        }
+    }
 }
 
 void ff_network_close(void)
@@ -129,7 +231,7 @@ static int ff_poll_interrupt(struct pollfd *p, nfds_t nfds, int timeout,
         ret = poll(p, nfds, POLLING_TIME);
         if (ret != 0)
             break;
-    } while (timeout < 0 || runs-- > 0);
+    } while (timeout <= 0 || runs-- > 0);
 
     if (!ret)
         return AVERROR(ETIMEDOUT);
@@ -149,8 +251,10 @@ int ff_socket(int af, int type, int proto)
     {
         fd = socket(af, type, proto);
 #if HAVE_FCNTL
-        if (fd != -1)
-            fcntl(fd, F_SETFD, FD_CLOEXEC);
+        if (fd != -1) {
+            if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+                av_log(NULL, AV_LOG_DEBUG, "Failed to set close on exec\n");
+        }
 #endif
     }
     return fd;
@@ -162,7 +266,9 @@ int ff_listen_bind(int fd, const struct sockaddr *addr,
     int ret;
     int reuse = 1;
     struct pollfd lp = { fd, POLLIN, 0 };
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) {
+        av_log(NULL, AV_LOG_WARNING, "setsockopt(SO_REUSEADDR) failed\n");
+    }
     ret = bind(fd, addr, addrlen);
     if (ret)
         return ff_neterrno();
@@ -181,7 +287,9 @@ int ff_listen_bind(int fd, const struct sockaddr *addr,
 
     closesocket(fd);
 
-    ff_socket_nonblock(ret, 1);
+    if (ff_socket_nonblock(ret, 1) < 0)
+        av_log(NULL, AV_LOG_DEBUG, "ff_socket_nonblock failed\n");
+
     return ret;
 }
 
@@ -193,7 +301,8 @@ int ff_listen_connect(int fd, const struct sockaddr *addr,
     int ret;
     socklen_t optlen;
 
-    ff_socket_nonblock(fd, 1);
+    if (ff_socket_nonblock(fd, 1) < 0)
+        av_log(NULL, AV_LOG_DEBUG, "ff_socket_nonblock failed\n");
 
     while ((ret = connect(fd, addr, addrlen))) {
         ret = ff_neterrno();
