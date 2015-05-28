@@ -3,20 +3,20 @@
  * Copyright (c) 2007-2011 Peter Ross (pross@xvid.org)
  * Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,14 +81,14 @@ static av_cold int decode_init(AVCodecContext *avctx)
         frame_len_bits = 11;
     }
 
-    if (avctx->channels > MAX_CHANNELS) {
-        av_log(avctx, AV_LOG_ERROR, "too many channels: %d\n", avctx->channels);
-        return -1;
+    if (avctx->channels < 1 || avctx->channels > MAX_CHANNELS) {
+        av_log(avctx, AV_LOG_ERROR, "invalid number of channels: %d\n", avctx->channels);
+        return AVERROR_INVALIDDATA;
     }
     avctx->channel_layout = avctx->channels == 1 ? AV_CH_LAYOUT_MONO :
                                                    AV_CH_LAYOUT_STEREO;
 
-    s->version_b = avctx->extradata && avctx->extradata[3] == 'b';
+    s->version_b = avctx->extradata_size >= 4 && avctx->extradata[3] == 'b';
 
     if (avctx->codec->id == AV_CODEC_ID_BINKAUDIO_RDFT) {
         // audio is already interleaved for the RDFT format variant
@@ -305,9 +305,11 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         buf = av_realloc(s->packet_buffer, avpkt->size + FF_INPUT_BUFFER_PADDING_SIZE);
         if (!buf)
             return AVERROR(ENOMEM);
+        memset(buf + avpkt->size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
         s->packet_buffer = buf;
         memcpy(s->packet_buffer, avpkt->data, avpkt->size);
-        init_get_bits(gb, s->packet_buffer, avpkt->size * 8);
+        if ((ret = init_get_bits8(gb, s->packet_buffer, avpkt->size)) < 0)
+            return ret;
         consumed = avpkt->size;
 
         /* skip reported size */
@@ -316,10 +318,8 @@ static int decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = s->frame_len;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     if (decode_block(s, (float **)frame->extended_data,
                      avctx->codec->id == AV_CODEC_ID_BINKAUDIO_DCT)) {
