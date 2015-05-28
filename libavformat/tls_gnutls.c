@@ -37,7 +37,6 @@
 
 #if HAVE_THREADS && GNUTLS_VERSION_NUMBER <= 0x020b00
 #include <gcrypt.h>
-#include "libavutil/thread.h"
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
 #endif
 
