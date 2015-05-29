@@ -543,7 +543,6 @@ TESTPROGS = seek                                                        \
             url                                                         \
 
 TESTPROGS-$(CONFIG_NETWORK)              += noproxy
-TESTPROGS-$(CONFIG_FFRTMPCRYPT_PROTOCOL) += rtmpdh
 
 TOOLS     = aviocat                                                     \
             ismindex                                                    \
