@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The FFmpeg Project
+ * Copyright (c) 2002 The Libav Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,15 +56,18 @@ typedef struct Wmv2Context {
 
 void ff_wmv2_common_init(Wmv2Context *w);
 
-static av_always_inline int wmv2_get_cbp_table_index(MpegEncContext *s, int cbp_index)
-{
-    static const uint8_t map[3][3] = {
-        { 0, 2, 1 },
-        { 1, 0, 2 },
-        { 2, 1, 0 },
-    };
+int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64]);
+int ff_wmv2_encode_picture_header(MpegEncContext * s, int picture_number);
+void ff_wmv2_encode_mb(MpegEncContext * s, int16_t block[6][64],
+                       int motion_x, int motion_y);
+int ff_wmv2_decode_picture_header(MpegEncContext * s);
+int ff_wmv2_decode_secondary_picture_header(MpegEncContext * s);
+void ff_wmv2_add_mb(MpegEncContext *s, int16_t block[6][64],
+                    uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr);
 
-    return map[(s->qscale > 10) + (s->qscale > 20)][cbp_index];
-}
+void ff_mspel_motion(MpegEncContext *s,
+                     uint8_t *dest_y, uint8_t *dest_cb, uint8_t *dest_cr,
+                     uint8_t **ref_picture, op_pixels_func (*pix_op)[4],
+                     int motion_x, int motion_y, int h);
 
 #endif /* AVCODEC_WMV2_H */
