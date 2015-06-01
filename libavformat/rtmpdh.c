@@ -4,20 +4,20 @@
  * Copyright (c) 2009-2010 Howard Chu
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,8 +46,8 @@
     "F71C35FDAD44CFD2D74F9208BE258FF324943328F67329C0" \
     "FFFFFFFFFFFFFFFF"
 
-#if CONFIG_GMP || CONFIG_GCRYPT
-#if CONFIG_GMP
+#if CONFIG_NETTLE || CONFIG_GCRYPT
+#if CONFIG_NETTLE
 #define bn_new(bn)                      \
     do {                                \
         bn = av_malloc(sizeof(*bn));    \
@@ -65,17 +65,12 @@
 #define bn_sub_word(bn, w)          mpz_sub_ui(bn, bn, w)
 #define bn_cmp_1(bn)                mpz_cmp_ui(bn, 1)
 #define bn_num_bytes(bn)            (mpz_sizeinbase(bn, 2) + 7) / 8
-#define bn_bn2bin(bn, buf, len)                     \
-    do {                                            \
-        memset(buf, 0, len);                        \
-        if (bn_num_bytes(bn) <= len)                \
-            mpz_export(buf, NULL, 1, 1, 0, 0, bn);  \
-    } while (0)
+#define bn_bn2bin(bn, buf, len)     nettle_mpz_get_str_256(len, buf, bn)
 #define bn_bin2bn(bn, buf, len)                     \
     do {                                            \
         bn_new(bn);                                 \
         if (bn)                                     \
-            mpz_import(bn, len, 1, 1, 0, 0, buf);   \
+            nettle_mpz_set_str_256_u(bn, len, buf); \
     } while (0)
 #define bn_hex2bn(bn, buf, ret)                     \
     do {                                            \
