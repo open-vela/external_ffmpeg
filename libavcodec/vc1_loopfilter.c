@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,6 @@ void ff_vc1_loop_filter_iblk(VC1Context *v, int pq)
         if (s->mb_x)
             v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 16 * s->linesize, s->linesize, pq);
         v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 16 * s->linesize + 8, s->linesize, pq);
-        if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY))
         for (j = 0; j < 2; j++) {
             v->vc1dsp.vc1_v_loop_filter8(s->dest[j + 1], s->uvlinesize, pq);
             if (s->mb_x)
@@ -52,10 +51,8 @@ void ff_vc1_loop_filter_iblk(VC1Context *v, int pq)
     if (s->mb_y == s->end_mb_y - 1) {
         if (s->mb_x) {
             v->vc1dsp.vc1_h_loop_filter16(s->dest[0], s->linesize, pq);
-            if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY)) {
             v->vc1dsp.vc1_h_loop_filter8(s->dest[1], s->uvlinesize, pq);
             v->vc1dsp.vc1_h_loop_filter8(s->dest[2], s->uvlinesize, pq);
-            }
         }
         v->vc1dsp.vc1_h_loop_filter16(s->dest[0] + 8, s->linesize, pq);
     }
@@ -76,7 +73,6 @@ void ff_vc1_loop_filter_iblk_delayed(VC1Context *v, int pq)
                 if (s->mb_x >= 2)
                     v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 32 * s->linesize - 16, s->linesize, pq);
                 v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 32 * s->linesize - 8, s->linesize, pq);
-                if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY))
                 for (j = 0; j < 2; j++) {
                     v->vc1dsp.vc1_v_loop_filter8(s->dest[j + 1] - 8 * s->uvlinesize - 8, s->uvlinesize, pq);
                     if (s->mb_x >= 2) {
@@ -94,7 +90,6 @@ void ff_vc1_loop_filter_iblk_delayed(VC1Context *v, int pq)
                 if (s->mb_x)
                     v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 32 * s->linesize, s->linesize, pq);
                 v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 32 * s->linesize + 8, s->linesize, pq);
-                if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY))
                 for (j = 0; j < 2; j++) {
                     v->vc1dsp.vc1_v_loop_filter8(s->dest[j + 1] - 8 * s->uvlinesize, s->uvlinesize, pq);
                     if (s->mb_x >= 2) {
@@ -110,7 +105,7 @@ void ff_vc1_loop_filter_iblk_delayed(VC1Context *v, int pq)
                 if (s->mb_x >= 2)
                     v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 16 * s->linesize - 16, s->linesize, pq);
                 v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 16 * s->linesize - 8, s->linesize, pq);
-                if (s->mb_x >= 2 && (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY))) {
+                if (s->mb_x >= 2) {
                     for (j = 0; j < 2; j++) {
                         v->vc1dsp.vc1_h_loop_filter8(s->dest[j + 1] - 8 * s->uvlinesize - 8, s->uvlinesize, pq);
                     }
@@ -121,7 +116,7 @@ void ff_vc1_loop_filter_iblk_delayed(VC1Context *v, int pq)
                 if (s->mb_x)
                     v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 16 * s->linesize, s->linesize, pq);
                 v->vc1dsp.vc1_h_loop_filter16(s->dest[0] - 16 * s->linesize + 8, s->linesize, pq);
-                if (s->mb_x && (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY))) {
+                if (s->mb_x) {
                     for (j = 0; j < 2; j++) {
                         v->vc1dsp.vc1_h_loop_filter8(s->dest[j + 1] - 8 * s->uvlinesize, s->uvlinesize, pq);
                     }
@@ -155,7 +150,7 @@ void ff_vc1_smooth_overlap_filter_iblk(VC1Context *v)
                                       v->block[v->cur_blk_idx][0]);
             v->vc1dsp.vc1_h_s_overlap(v->block[v->left_blk_idx][3],
                                       v->block[v->cur_blk_idx][2]);
-            if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY)) {
+            if (!(s->avctx->flags & CODEC_FLAG_GRAY)) {
                 v->vc1dsp.vc1_h_s_overlap(v->block[v->left_blk_idx][4],
                                           v->block[v->cur_blk_idx][4]);
                 v->vc1dsp.vc1_h_s_overlap(v->block[v->left_blk_idx][5],
@@ -174,7 +169,7 @@ void ff_vc1_smooth_overlap_filter_iblk(VC1Context *v)
                                           v->block[v->cur_blk_idx][0]);
                 v->vc1dsp.vc1_v_s_overlap(v->block[v->top_blk_idx][3],
                                           v->block[v->cur_blk_idx][1]);
-                if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY)) {
+                if (!(s->avctx->flags & CODEC_FLAG_GRAY)) {
                     v->vc1dsp.vc1_v_s_overlap(v->block[v->top_blk_idx][4],
                                               v->block[v->cur_blk_idx][4]);
                     v->vc1dsp.vc1_v_s_overlap(v->block[v->top_blk_idx][5],
@@ -194,7 +189,7 @@ void ff_vc1_smooth_overlap_filter_iblk(VC1Context *v)
                                       v->block[v->left_blk_idx][0]);
             v->vc1dsp.vc1_v_s_overlap(v->block[v->topleft_blk_idx][3],
                                       v->block[v->left_blk_idx][1]);
-            if (!CONFIG_GRAY || !(s->avctx->flags & CODEC_FLAG_GRAY)) {
+            if (!(s->avctx->flags & CODEC_FLAG_GRAY)) {
                 v->vc1dsp.vc1_v_s_overlap(v->block[v->topleft_blk_idx][4],
                                           v->block[v->left_blk_idx][4]);
                 v->vc1dsp.vc1_v_s_overlap(v->block[v->topleft_blk_idx][5],
@@ -214,7 +209,7 @@ static av_always_inline void vc1_apply_p_v_loop_filter(VC1Context *v, int block_
     int mb_cbp         = v->cbp[s->mb_x - s->mb_stride],
         block_cbp      = mb_cbp      >> (block_num * 4), bottom_cbp,
         mb_is_intra    = v->is_intra[s->mb_x - s->mb_stride],
-        block_is_intra = mb_is_intra >> block_num, bottom_is_intra;
+        block_is_intra = mb_is_intra >> (block_num * 4), bottom_is_intra;
     int idx, linesize  = block_num > 3 ? s->uvlinesize : s->linesize, ttblk;
     uint8_t *dst;
 
@@ -336,22 +331,21 @@ void ff_vc1_apply_p_loop_filter(VC1Context *v)
 {
     MpegEncContext *s = &v->s;
     int i;
-    int block_count = CONFIG_GRAY && (s->avctx->flags & CODEC_FLAG_GRAY) ? 4 : 6;
 
-    for (i = 0; i < block_count; i++) {
+    for (i = 0; i < 6; i++) {
         vc1_apply_p_v_loop_filter(v, i);
     }
 
     /* V always precedes H, therefore we run H one MB before V;
      * at the end of a row, we catch up to complete the row */
     if (s->mb_x) {
-        for (i = 0; i < block_count; i++) {
+        for (i = 0; i < 6; i++) {
             vc1_apply_p_h_loop_filter(v, i);
         }
         if (s->mb_x == s->mb_width - 1) {
             s->mb_x++;
             ff_update_block_index(s);
-            for (i = 0; i < block_count; i++) {
+            for (i = 0; i < 6; i++) {
                 vc1_apply_p_h_loop_filter(v, i);
             }
         }

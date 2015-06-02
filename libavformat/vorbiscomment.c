@@ -2,20 +2,20 @@
  * VorbisComment writer
  * Copyright (c) 2009 James Darnley
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,13 +34,12 @@ const AVMetadataConv ff_vorbiscomment_metadata_conv[] = {
     { "ALBUMARTIST", "album_artist"},
     { "TRACKNUMBER", "track"  },
     { "DISCNUMBER",  "disc"   },
-    { "DESCRIPTION", "comment" },
     { 0 }
 };
 
-int64_t ff_vorbiscomment_length(AVDictionary *m, const char *vendor_string)
+int ff_vorbiscomment_length(AVDictionary *m, const char *vendor_string)
 {
-    int64_t len = 8;
+    int len = 8;
     len += strlen(vendor_string);
     if (m) {
         AVDictionaryEntry *tag = NULL;
@@ -61,10 +60,8 @@ int ff_vorbiscomment_write(uint8_t **p, AVDictionary **m,
         AVDictionaryEntry *tag = NULL;
         bytestream_put_le32(p, count);
         while ((tag = av_dict_get(*m, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-            int64_t len1 = strlen(tag->key);
-            int64_t len2 = strlen(tag->value);
-            if (len1+1+len2 > UINT32_MAX)
-                return AVERROR(EINVAL);
+            unsigned int len1 = strlen(tag->key);
+            unsigned int len2 = strlen(tag->value);
             bytestream_put_le32(p, len1+1+len2);
             bytestream_put_buffer(p, tag->key, len1);
             bytestream_put_byte(p, '=');
