@@ -7,20 +7,20 @@
  * mostly rewritten by Michael Niedermayer <michaelni@gmx.at>
  * and improved by Zdenek Kabelac <kabi@users.sf.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -138,28 +138,27 @@ static void DEF(put, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_
 static void DEF(avg, pixels16_x2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 {
     MOVQ_BFE(mm6);
+    JUMPALIGN();
+    do {
         __asm__ volatile(
-            ".p2align 3                 \n\t"
-            "1:                         \n\t"
-            "movq  (%1), %%mm0          \n\t"
-            "movq  1(%1), %%mm1         \n\t"
-            "movq  (%2), %%mm3          \n\t"
+            "movq  %1, %%mm0            \n\t"
+            "movq  1%1, %%mm1           \n\t"
+            "movq  %0, %%mm3            \n\t"
             PAVGB(%%mm0, %%mm1, %%mm2, %%mm6)
             PAVGB_MMX(%%mm3, %%mm2, %%mm0, %%mm6)
-            "movq  %%mm0, (%2)          \n\t"
-            "movq  8(%1), %%mm0         \n\t"
-            "movq  9(%1), %%mm1         \n\t"
-            "movq  8(%2), %%mm3         \n\t"
+            "movq  %%mm0, %0            \n\t"
+            "movq  8%1, %%mm0           \n\t"
+            "movq  9%1, %%mm1           \n\t"
+            "movq  8%0, %%mm3           \n\t"
             PAVGB(%%mm0, %%mm1, %%mm2, %%mm6)
             PAVGB_MMX(%%mm3, %%mm2, %%mm0, %%mm6)
-            "movq  %%mm0, 8(%2)         \n\t"
-            "add    %3, %1              \n\t"
-            "add    %3, %2              \n\t"
-            "subl   $1, %0              \n\t"
-            "jnz    1b                  \n\t"
-            :"+g"(h), "+S"(pixels), "+D"(block)
-            :"r"((x86_reg)line_size)
+            "movq  %%mm0, 8%0           \n\t"
+            :"+m"(*block)
+            :"m"(*pixels)
             :"memory");
+        pixels += line_size;
+        block += line_size;
+    } while (--h);
 }
 
 static void DEF(avg, pixels8_y2)(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
