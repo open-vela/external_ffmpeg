@@ -3425,6 +3425,7 @@ static int mov_read_header(AVFormatContext *s)
             break;
         }
     }
+    ff_configure_buffers_for_index(s, AV_TIME_BASE);
 
     return 0;
 }
