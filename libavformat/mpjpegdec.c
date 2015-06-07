@@ -2,20 +2,20 @@
  * Multipart JPEG format
  * Copyright (c) 2015 Luca Barbato
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -88,7 +88,7 @@ static int mpjpeg_read_probe(AVProbeData *p)
         return AVERROR(ENOMEM);
 
     if (p->buf_size < 2 || p->buf[0] != '-' || p->buf[1] != '-')
-        goto end;
+        return 0;
 
     while (!pb->eof_reached) {
         ret = get_line(pb, line, sizeof(line));
@@ -101,7 +101,7 @@ static int mpjpeg_read_probe(AVProbeData *p)
             break;
         }
     }
-end:
+
     av_free(pb);
 
     return ret;

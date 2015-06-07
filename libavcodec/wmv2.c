@@ -1,26 +1,25 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avcodec.h"
 #include "idctdsp.h"
-#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "msmpeg4data.h"
 #include "simple_idct.h"
@@ -103,8 +102,8 @@ void ff_mspel_motion(MpegEncContext *s, uint8_t *dest_y,
 {
     Wmv2Context *const w = (Wmv2Context *) s;
     uint8_t *ptr;
-    int dxy, offset, mx, my, src_x, src_y, v_edge_pos;
-    ptrdiff_t linesize, uvlinesize;
+    int dxy, mx, my, src_x, src_y, v_edge_pos;
+    ptrdiff_t offset, linesize, uvlinesize;
     int emu = 0;
 
     dxy   = ((motion_y & 1) << 1) | (motion_x & 1);
@@ -128,11 +127,11 @@ void ff_mspel_motion(MpegEncContext *s, uint8_t *dest_y,
 
     if (src_x < 1 || src_y < 1 || src_x + 17 >= s->h_edge_pos ||
         src_y + h + 1 >= v_edge_pos) {
-        s->vdsp.emulated_edge_mc(s->sc.edge_emu_buffer, ptr - 1 - s->linesize,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, ptr - 1 - s->linesize,
                                  s->linesize, s->linesize, 19, 19,
                                  src_x - 1, src_y - 1,
                                  s->h_edge_pos, s->v_edge_pos);
-        ptr = s->sc.edge_emu_buffer + 1 + s->linesize;
+        ptr = s->edge_emu_buffer + 1 + s->linesize;
         emu = 1;
     }
 
@@ -144,21 +143,13 @@ void ff_mspel_motion(MpegEncContext *s, uint8_t *dest_y,
     if (s->avctx->flags & CODEC_FLAG_GRAY)
         return;
 
-    if (s->out_format == FMT_H263) {
-        dxy = 0;
-        if ((motion_x & 3) != 0)
-            dxy |= 1;
-        if ((motion_y & 3) != 0)
-            dxy |= 2;
-        mx = motion_x >> 2;
-        my = motion_y >> 2;
-    } else {
-        mx   = motion_x / 2;
-        my   = motion_y / 2;
-        dxy  = ((my & 1) << 1) | (mx & 1);
-        mx >>= 1;
-        my >>= 1;
-    }
+    dxy = 0;
+    if ((motion_x & 3) != 0)
+        dxy |= 1;
+    if ((motion_y & 3) != 0)
+        dxy |= 2;
+    mx = motion_x >> 2;
+    my = motion_y >> 2;
 
     src_x = s->mb_x * 8 + mx;
     src_y = s->mb_y * 8 + my;
@@ -171,23 +162,23 @@ void ff_mspel_motion(MpegEncContext *s, uint8_t *dest_y,
     offset = (src_y * uvlinesize) + src_x;
     ptr    = ref_picture[1] + offset;
     if (emu) {
-        s->vdsp.emulated_edge_mc(s->sc.edge_emu_buffer, ptr,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, ptr,
                                  s->uvlinesize, s->uvlinesize,
                                  9, 9,
                                  src_x, src_y,
                                  s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        ptr = s->sc.edge_emu_buffer;
+        ptr = s->edge_emu_buffer;
     }
     pix_op[1][dxy](dest_cb, ptr, uvlinesize, h >> 1);
 
     ptr = ref_picture[2] + offset;
     if (emu) {
-        s->vdsp.emulated_edge_mc(s->sc.edge_emu_buffer, ptr,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, ptr,
                                  s->uvlinesize, s->uvlinesize,
                                  9, 9,
                                  src_x, src_y,
                                  s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        ptr = s->sc.edge_emu_buffer;
+        ptr = s->edge_emu_buffer;
     }
     pix_op[1][dxy](dest_cr, ptr, uvlinesize, h >> 1);
 }

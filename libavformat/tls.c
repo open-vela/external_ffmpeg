@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,30 @@
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 
+static void set_options(TLSShared *c, const char *uri)
+{
+    char buf[1024];
+    const char *p = strchr(uri, '?');
+    if (!p)
+        return;
+
+    if (!c->ca_file && av_find_info_tag(buf, sizeof(buf), "cafile", p))
+        c->ca_file = av_strdup(buf);
+
+    if (!c->verify && av_find_info_tag(buf, sizeof(buf), "verify", p)) {
+        char *endptr = NULL;
+        c->verify = strtol(buf, &endptr, 10);
+        if (buf == endptr)
+            c->verify = 1;
+    }
+
+    if (!c->cert_file && av_find_info_tag(buf, sizeof(buf), "cert", p))
+        c->cert_file = av_strdup(buf);
+
+    if (!c->key_file && av_find_info_tag(buf, sizeof(buf), "key", p))
+        c->key_file = av_strdup(buf);
+}
+
 int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AVDictionary **options)
 {
     int port;
@@ -37,6 +61,8 @@ int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AV
     struct addrinfo hints = { 0 }, *ai = NULL;
     const char *proxy_path;
     int use_proxy;
+
+    set_options(c, uri);
 
     if (c->listen)
         snprintf(opts, sizeof(opts), "?listen=1");
