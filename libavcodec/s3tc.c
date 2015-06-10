@@ -4,20 +4,20 @@
  *
  * see also: http://wiki.multimedia.cx/index.php?title=S3TC
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
 #include "s3tc.h"
 
 static inline void dxt1_decode_pixels(GetByteContext *gb, uint32_t *d,
-                                      unsigned int w, unsigned int h,
                                       unsigned int qstride, unsigned int flag,
                                       uint64_t alpha) {
     unsigned int x, y, c0, c1, a = (!flag * 255u) << 24;
@@ -63,15 +62,11 @@ static inline void dxt1_decode_pixels(GetByteContext *gb, uint32_t *d,
     colors[2] = rb2 + g2 + a;
 
     pixels = bytestream2_get_le32(gb);
-    for (y=0; y<h; y++) {
-        for (x=0; x<w; x++) {
+    for (y=0; y<4; y++) {
+        for (x=0; x<4; x++) {
             a        = (alpha & 0x0f) << 28;
             a       += a >> 4;
             d[x]     = a + colors[pixels&3];
-            pixels >>= 2;
-            alpha  >>= 4;
-        }
-        for (; x<4; x++) {
             pixels >>= 2;
             alpha  >>= 4;
         }
@@ -82,21 +77,21 @@ static inline void dxt1_decode_pixels(GetByteContext *gb, uint32_t *d,
 void ff_decode_dxt1(GetByteContext *gb, uint8_t *dst,
                     const unsigned int w, const unsigned int h,
                     const unsigned int stride) {
-    unsigned int x, y, qstride = stride/4;
+    unsigned int bx, by, qstride = stride/4;
     uint32_t *d = (uint32_t *) dst;
 
-    for (y=0; y < h; y += 4, d += stride-w)
-        for (x = 0; x < w; d += FFMIN(4, w-x), x += 4)
-            dxt1_decode_pixels(gb, d, FFMIN(4, w-x), FFMIN(4, h-y), qstride, 0, 0LL);
+    for (by=0; by < h/4; by++, d += stride-w)
+        for (bx = 0; bx < w / 4; bx++, d += 4)
+            dxt1_decode_pixels(gb, d, qstride, 0, 0LL);
 }
 
 void ff_decode_dxt3(GetByteContext *gb, uint8_t *dst,
                     const unsigned int w, const unsigned int h,
                     const unsigned int stride) {
-    unsigned int x, y, qstride = stride/4;
+    unsigned int bx, by, qstride = stride/4;
     uint32_t *d = (uint32_t *) dst;
 
-    for (y=0; y < h; y += 4, d += stride-w)
-        for (x = 0; x < w; d += FFMIN(4, w-x), x += 4)
-            dxt1_decode_pixels(gb, d, FFMIN(4, w-x), FFMIN(4, h-y), qstride, 1, bytestream2_get_le64(gb));
+    for (by=0; by < h/4; by++, d += stride-w)
+        for (bx = 0; bx < w / 4; bx++, d += 4)
+            dxt1_decode_pixels(gb, d, qstride, 1, bytestream2_get_le64(gb));
 }
