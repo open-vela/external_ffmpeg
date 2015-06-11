@@ -2,20 +2,20 @@
  * "Real" compatible muxer.
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avformat.h"
@@ -29,7 +29,7 @@ typedef struct StreamInfo {
     int packet_max_size;
     /* codec related output */
     int bit_rate;
-    AVRational frame_rate;
+    float frame_rate;
     int nb_frames;    /* current frame number */
     int total_frames; /* total number of frames */
     int num;
@@ -102,7 +102,7 @@ static int rv10_write_header(AVFormatContext *ctx,
         nb_packets += stream->nb_packets;
         packet_total_size += stream->packet_total_size;
         /* select maximum duration */
-        v = av_rescale_q_rnd(stream->total_frames, (AVRational){1000, 1}, stream->frame_rate, AV_ROUND_ZERO);
+        v = (int) (1000.0 * (float)stream->total_frames / stream->frame_rate);
         if (v > duration)
             duration = v;
     }
@@ -178,7 +178,7 @@ static int rv10_write_header(AVFormatContext *ctx,
         if (!s->seekable || !stream->total_frames)
             avio_wb32(s, (int)(3600 * 1000));
         else
-            avio_wb32(s, av_rescale_q_rnd(stream->total_frames, (AVRational){1000, 1},  stream->frame_rate, AV_ROUND_ZERO));
+            avio_wb32(s, (int)(stream->total_frames * 1000 / stream->frame_rate));
         put_str8(s, desc);
         put_str8(s, mimetype);
         avio_wb32(s, codec_data_size);
@@ -221,8 +221,8 @@ static int rv10_write_header(AVFormatContext *ctx,
                 coded_frame_size--;
             avio_wb32(s, coded_frame_size); /* frame length */
             avio_wb32(s, 0x51540); /* unknown */
-            avio_wb32(s, stream->enc->bit_rate / 8 * 60); /* bytes per minute */
-            avio_wb32(s, stream->enc->bit_rate / 8 * 60); /* bytes per minute */
+            avio_wb32(s, 0x249f0); /* unknown */
+            avio_wb32(s, 0x249f0); /* unknown */
             avio_wb16(s, 0x01);
             /* frame length : seems to be very important */
             avio_wb16(s, coded_frame_size);
@@ -252,9 +252,9 @@ static int rv10_write_header(AVFormatContext *ctx,
                 ffio_wfourcc(s,"RV20");
             avio_wb16(s, stream->enc->width);
             avio_wb16(s, stream->enc->height);
-            avio_wb16(s, stream->frame_rate.num / stream->frame_rate.den); /* frames per seconds ? */
+            avio_wb16(s, (int) stream->frame_rate); /* frames per seconds ? */
             avio_wb32(s,0);     /* unknown meaning */
-            avio_wb16(s, stream->frame_rate.num / stream->frame_rate.den);  /* unknown meaning */
+            avio_wb16(s, (int) stream->frame_rate);  /* unknown meaning */
             avio_wb32(s,0);     /* unknown meaning */
             avio_wb16(s, 8);    /* unknown meaning */
             /* Seems to be the codec version: only use basic H263. The next
@@ -300,7 +300,7 @@ static void write_packet_header(AVFormatContext *ctx, StreamInfo *stream,
     avio_wb16(s,0); /* version */
     avio_wb16(s,length + 12);
     avio_wb16(s, stream->num); /* stream number */
-    timestamp = av_rescale_q_rnd(stream->nb_frames, (AVRational){1000, 1}, stream->frame_rate, AV_ROUND_ZERO);
+    timestamp = (1000 * (float)stream->nb_frames) / stream->frame_rate;
     avio_wb32(s, timestamp); /* timestamp */
     avio_w8(s, 0); /* reserved */
     avio_w8(s, key_frame ? 2 : 0); /* flags */
@@ -312,11 +312,6 @@ static int rm_write_header(AVFormatContext *s)
     StreamInfo *stream;
     int n;
     AVCodecContext *codec;
-
-    if (s->nb_streams > 2) {
-        av_log(s, AV_LOG_ERROR, "At most 2 streams are currently supported for muxing in RM\n");
-        return AVERROR_PATCHWELCOME;
-    }
 
     for(n=0;n<s->nb_streams;n++) {
         AVStream *st = s->streams[n];
@@ -332,7 +327,7 @@ static int rm_write_header(AVFormatContext *s)
         switch(codec->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
             rm->audio_stream = stream;
-            stream->frame_rate = (AVRational){codec->sample_rate, codec->frame_size};
+            stream->frame_rate = (float)codec->sample_rate / (float)codec->frame_size;
             /* XXX: dummy values */
             stream->packet_max_size = 1024;
             stream->nb_packets = 0;
@@ -341,7 +336,7 @@ static int rm_write_header(AVFormatContext *s)
         case AVMEDIA_TYPE_VIDEO:
             rm->video_stream = stream;
             // TODO: should be avg_frame_rate
-            stream->frame_rate = av_inv_q(st->time_base);
+            stream->frame_rate = (float)st->time_base.den / (float)st->time_base.num;
             /* XXX: dummy values */
             stream->packet_max_size = 4096;
             stream->nb_packets = 0;
@@ -393,8 +388,8 @@ static int rm_write_video(AVFormatContext *s, const uint8_t *buf, int size, int 
        not sure I understood everything, but it works !! */
 #if 1
     if (size > MAX_PACKET_SIZE) {
-        av_log(s, AV_LOG_ERROR, "Muxing packets larger than 64 kB (%d) is not supported\n", size);
-        return AVERROR_PATCHWELCOME;
+        avpriv_report_missing_feature(s, "Muxing packets larger than 64 kB");
+        return AVERROR(ENOSYS);
     }
     write_packet_header(s, stream, size + 7 + (size >= 0x4000)*4, key_frame);
     /* bit 7: '1' if final packet of a frame converted in several packets */
