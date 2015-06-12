@@ -3,20 +3,20 @@
  * (c)1997-99 by H. Dietz and R. Fisher
  * Converted to C and improved by Fabrice Bellard.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,7 +45,7 @@
         "cpuid                       \n\t"                      \
         "xchg   %%"REG_b", %%"REG_S                             \
         : "=a" (eax), "=S" (ebx), "=c" (ecx), "=d" (edx)        \
-        : "0" (index), "2"(0))
+        : "0" (index))
 
 #define xgetbv(index, eax, edx)                                 \
     __asm__ (".byte 0x0f, 0x01, 0xd0" : "=a"(eax), "=d"(edx) : "c" (index))
@@ -143,7 +143,7 @@ int ff_get_cpu_flags_x86(void)
     if (max_std_level >= 7) {
         cpuid(7, eax, ebx, ecx, edx);
 #if HAVE_AVX2
-        if ((rval & AV_CPU_FLAG_AVX) && (ebx & 0x00000020))
+        if (ebx & 0x00000020)
             rval |= AV_CPU_FLAG_AVX2;
 #endif /* HAVE_AVX2 */
         /* BMI1/2 don't need OS support */
