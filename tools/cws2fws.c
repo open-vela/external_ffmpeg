@@ -22,7 +22,7 @@
 #ifdef DEBUG
 #define dbgprintf printf
 #else
-#define dbgprintf(...)
+#define dbgprintf(...) do { if (0) printf(__VA_ARGS__); } while (0)
 #endif
 
 int main(int argc, char *argv[])
@@ -31,7 +31,6 @@ int main(int argc, char *argv[])
     char buf_in[1024], buf_out[65536];
     z_stream zstream;
     struct stat statbuf;
-    int ret = 1;
 
     if (argc < 3) {
         printf("Usage: %s <infile.swf> <outfile.swf>\n", argv[0]);
@@ -53,15 +52,20 @@ int main(int argc, char *argv[])
 
     if (read(fd_in, &buf_in, 8) != 8) {
         printf("Header error\n");
-        goto out;
+        close(fd_in);
+        close(fd_out);
+        return 1;
     }
 
     if (buf_in[0] != 'C' || buf_in[1] != 'W' || buf_in[2] != 'S') {
         printf("Not a compressed flash file\n");
-        goto out;
+        return 1;
     }
 
-    fstat(fd_in, &statbuf);
+    if (fstat(fd_in, &statbuf) < 0) {
+        perror("fstat failed");
+        return 1;
+    }
     comp_len   = statbuf.st_size;
     uncomp_len = buf_in[4] | (buf_in[5] << 8) | (buf_in[6] << 16) | (buf_in[7] << 24);
 
@@ -72,13 +76,16 @@ int main(int argc, char *argv[])
     buf_in[0] = 'F';
     if (write(fd_out, &buf_in, 8) < 8) {
         perror("Error writing output file");
-        goto out;
+        return 1;
     }
 
     zstream.zalloc = NULL;
     zstream.zfree  = NULL;
     zstream.opaque = NULL;
-    inflateInit(&zstream);
+    if (inflateInit(&zstream) != Z_OK) {
+        fprintf(stderr, "inflateInit failed\n");
+        return 1;
+    }
 
     for (i = 0; i < comp_len - 8;) {
         int ret, len = read(fd_in, &buf_in, 1024);
@@ -96,7 +103,7 @@ int main(int argc, char *argv[])
         if (ret != Z_STREAM_END && ret != Z_OK) {
             printf("Error while decompressing: %d\n", ret);
             inflateEnd(&zstream);
-            goto out;
+            return 1;
         }
 
         dbgprintf("a_in: %d t_in: %lu a_out: %d t_out: %lu -- %lu out\n",
@@ -106,8 +113,7 @@ int main(int argc, char *argv[])
         if (write(fd_out, &buf_out, zstream.total_out - last_out) <
             zstream.total_out - last_out) {
             perror("Error writing output file");
-            inflateEnd(&zstream);
-            goto out;
+            return 1;
         }
 
         i += len;
@@ -125,18 +131,15 @@ int main(int argc, char *argv[])
         buf_in[2] = ((zstream.total_out + 8) >> 16) & 0xff;
         buf_in[3] = ((zstream.total_out + 8) >> 24) & 0xff;
 
-        lseek(fd_out, 4, SEEK_SET);
-        if (write(fd_out, &buf_in, 4) < 4) {
+        if (   lseek(fd_out, 4, SEEK_SET) < 0
+            || write(fd_out, &buf_in, 4) < 4) {
             perror("Error writing output file");
-            inflateEnd(&zstream);
-            goto out;
+            return 1;
         }
     }
 
-    ret = 0;
     inflateEnd(&zstream);
-out:
     close(fd_in);
     close(fd_out);
-    return ret;
+    return 0;
 }
