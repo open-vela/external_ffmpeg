@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2007 Vitor Sessak <vitor1001@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,7 +38,7 @@
  * @param rand_state A random number generator state. Should be already initialized by av_lfg_init().
  * @return < 0 in case of error, 0 otherwise
  */
-int avpriv_do_elbg(int *points, int dim, int numpoints, int *codebook,
+int ff_do_elbg(int *points, int dim, int numpoints, int *codebook,
                int numCB, int num_steps, int *closest_cb,
                AVLFG *rand_state);
 
@@ -46,11 +46,11 @@ int avpriv_do_elbg(int *points, int dim, int numpoints, int *codebook,
  * Initialize the **codebook vector for the elbg algorithm. If you have already
  * a codebook and you want to refine it, you shouldn't call this function.
  * If numpoints < 8*numCB this function fills **codebook with random numbers.
- * If not, it calls avpriv_do_elbg for a (smaller) random sample of the points in
- * **points. Get the same parameters as avpriv_do_elbg.
+ * If not, it calls ff_do_elbg for a (smaller) random sample of the points in
+ * **points. Get the same parameters as ff_do_elbg.
  * @return < 0 in case of error, 0 otherwise
  */
-int avpriv_init_elbg(int *points, int dim, int numpoints, int *codebook,
+int ff_init_elbg(int *points, int dim, int numpoints, int *codebook,
                  int numCB, int num_steps, int *closest_cb,
                  AVLFG *rand_state);
 
