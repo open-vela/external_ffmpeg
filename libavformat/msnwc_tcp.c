@@ -67,7 +67,7 @@ static int msnwc_tcp_probe(AVProbeData *p)
         }
     }
 
-    return 0;
+    return -1;
 }
 
 static int msnwc_tcp_read_header(AVFormatContext *ctx)
