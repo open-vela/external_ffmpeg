@@ -2,20 +2,20 @@
  * ISS (.iss) file demuxer
  * Copyright (c) 2008 Jaikrishnan Menon <realityman@gmx.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,17 +76,31 @@ static av_cold int iss_read_header(AVFormatContext *s)
 
     get_token(pb, token, sizeof(token)); //"IMA_ADPCM_Sound"
     get_token(pb, token, sizeof(token)); //packet size
-    sscanf(token, "%d", &iss->packet_size);
+    if (sscanf(token, "%d", &iss->packet_size) != 1) {
+        av_log(s, AV_LOG_ERROR, "Failed parsing packet size\n");
+        return AVERROR_INVALIDDATA;
+    }
     get_token(pb, token, sizeof(token)); //File ID
     get_token(pb, token, sizeof(token)); //out size
     get_token(pb, token, sizeof(token)); //stereo
-    sscanf(token, "%d", &stereo);
+    if (sscanf(token, "%d", &stereo) != 1) {
+        av_log(s, AV_LOG_ERROR, "Failed parsing stereo flag\n");
+        return AVERROR_INVALIDDATA;
+    }
     get_token(pb, token, sizeof(token)); //Unknown1
     get_token(pb, token, sizeof(token)); //RateDivisor
-    sscanf(token, "%d", &rate_divisor);
+    if (sscanf(token, "%d", &rate_divisor) != 1) {
+        av_log(s, AV_LOG_ERROR, "Failed parsing rate_divisor\n");
+        return AVERROR_INVALIDDATA;
+    }
     get_token(pb, token, sizeof(token)); //Unknown2
     get_token(pb, token, sizeof(token)); //Version ID
     get_token(pb, token, sizeof(token)); //Size
+
+    if (iss->packet_size <= 0) {
+        av_log(s, AV_LOG_ERROR, "packet_size %d is invalid\n", iss->packet_size);
+        return AVERROR_INVALIDDATA;
+    }
 
     iss->sample_start_pos = avio_tell(pb);
 
