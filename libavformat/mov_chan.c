@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -344,7 +344,7 @@ static const struct MovChannelLayoutMap mov_ch_layout_map_9ch[] = {
     { 0, 0 },
 };
 
-static const struct MovChannelLayoutMap *mov_ch_layout_map[] = {
+static const struct MovChannelLayoutMap * const mov_ch_layout_map[] = {
     mov_ch_layout_map_misc,
     mov_ch_layout_map_1ch,
     mov_ch_layout_map_2ch,
@@ -426,6 +426,7 @@ static const enum MovChannelLayoutTag mov_ch_layouts_wav[] = {
     MOV_CH_LAYOUT_MPEG_7_1_A,
     MOV_CH_LAYOUT_MPEG_7_1_C,
     MOV_CH_LAYOUT_SMPTE_DTV,
+    0,
 };
 
 static const struct {
@@ -575,6 +576,7 @@ int ff_mov_read_chan(AVFormatContext *s, AVIOContext *pb, AVStream *st,
         avio_rl32(pb);                      // mCoordinates[0]
         avio_rl32(pb);                      // mCoordinates[1]
         avio_rl32(pb);                      // mCoordinates[2]
+        size -= 20;
         if (layout_tag == 0) {
             uint32_t mask_incr = mov_get_channel_label(label);
             if (mask_incr == 0) {
@@ -589,6 +591,7 @@ int ff_mov_read_chan(AVFormatContext *s, AVIOContext *pb, AVStream *st,
             st->codec->channel_layout = label_mask;
     } else
         st->codec->channel_layout = ff_mov_get_channel_layout(layout_tag, bitmap);
+    avio_skip(pb, size - 12);
 
     return 0;
 }

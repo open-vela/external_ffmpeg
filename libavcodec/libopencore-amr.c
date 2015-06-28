@@ -1,21 +1,21 @@
 /*
  * AMR Audio decoder stub
- * Copyright (c) 2003 the ffmpeg project
+ * Copyright (c) 2003 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,8 @@ static int amr_decode_fix_avctx(AVCodecContext *avctx)
 {
     const int is_amr_wb = 1 + (avctx->codec_id == AV_CODEC_ID_AMR_WB);
 
-    avctx->sample_rate = 8000 * is_amr_wb;
+    if (!avctx->sample_rate)
+        avctx->sample_rate = 8000 * is_amr_wb;
 
     if (avctx->channels > 1) {
         avpriv_report_missing_feature(avctx, "multi-channel AMR");
@@ -103,10 +104,8 @@ static int amr_nb_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = 160;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     dec_mode    = (buf[0] >> 3) & 0x000F;
     packet_size = block_size[dec_mode] + 1;
@@ -181,7 +180,7 @@ static const AVOption options[] = {
     { NULL }
 };
 
-static const AVClass class = {
+static const AVClass amrnb_class = {
     "libopencore_amrnb", av_default_item_name, options, LIBAVUTIL_VERSION_INT
 };
 
@@ -189,7 +188,7 @@ static av_cold int amr_nb_encode_init(AVCodecContext *avctx)
 {
     AMRContext *s = avctx->priv_data;
 
-    if (avctx->sample_rate != 8000) {
+    if (avctx->sample_rate != 8000 && avctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
         av_log(avctx, AV_LOG_ERROR, "Only 8000Hz sample rate supported\n");
         return AVERROR(ENOSYS);
     }
@@ -206,7 +205,6 @@ static av_cold int amr_nb_encode_init(AVCodecContext *avctx)
     s->enc_state = Encoder_Interface_init(s->enc_dtx);
     if (!s->enc_state) {
         av_log(avctx, AV_LOG_ERROR, "Encoder_Interface_init error\n");
-        av_freep(&avctx->coded_frame);
         return -1;
     }
 
@@ -238,14 +236,12 @@ static int amr_nb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         s->enc_bitrate = avctx->bit_rate;
     }
 
-    if ((ret = ff_alloc_packet(avpkt, 32))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, 32)) < 0)
         return ret;
-    }
 
     if (frame) {
         if (frame->nb_samples < avctx->frame_size) {
-            flush_buf = av_mallocz(avctx->frame_size * sizeof(*flush_buf));
+            flush_buf = av_mallocz_array(avctx->frame_size, sizeof(*flush_buf));
             if (!flush_buf)
                 return AVERROR(ENOMEM);
             memcpy(flush_buf, samples, frame->nb_samples * sizeof(*flush_buf));
@@ -260,7 +256,7 @@ static int amr_nb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     } else {
         if (s->enc_last_frame < 0)
             return 0;
-        flush_buf = av_mallocz(avctx->frame_size * sizeof(*flush_buf));
+        flush_buf = av_mallocz_array(avctx->frame_size, sizeof(*flush_buf));
         if (!flush_buf)
             return AVERROR(ENOMEM);
         samples = flush_buf;
@@ -270,7 +266,7 @@ static int amr_nb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     written = Encoder_Interface_Encode(s->enc_state, s->enc_mode, samples,
                                        avpkt->data, 0);
     ff_dlog(avctx, "amr_nb_encode_frame encoded %u bytes, bitrate %u, first byte was %#02x\n",
-            written, s->enc_mode, frame[0]);
+            written, s->enc_mode, avpkt->data[0]);
 
     /* Get the next frame pts/duration */
     ff_af_queue_remove(&s->afq, avctx->frame_size, &avpkt->pts,
@@ -294,7 +290,7 @@ AVCodec ff_libopencore_amrnb_encoder = {
     .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_SMALL_LAST_FRAME,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
-    .priv_class     = &class,
+    .priv_class     = &amrnb_class,
 };
 #endif /* CONFIG_LIBOPENCORE_AMRNB_ENCODER */
 
@@ -336,10 +332,8 @@ static int amr_wb_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = 320;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     mode        = (buf[0] >> 3) & 0x000F;
     packet_size = block_size[mode];
@@ -347,6 +341,10 @@ static int amr_wb_decode_frame(AVCodecContext *avctx, void *data,
     if (packet_size > buf_size) {
         av_log(avctx, AV_LOG_ERROR, "amr frame too short (%u, should be %u)\n",
                buf_size, packet_size + 1);
+        return AVERROR_INVALIDDATA;
+    }
+    if (!packet_size) {
+        av_log(avctx, AV_LOG_ERROR, "amr packet_size invalid\n");
         return AVERROR_INVALIDDATA;
     }
 
