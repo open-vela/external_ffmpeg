@@ -1,20 +1,20 @@
 /*
  * H263 internal header
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #ifndef AVCODEC_H263_H
@@ -95,10 +95,11 @@ int av_const h263_get_picture_format(int width, int height);
 
 void ff_clean_h263_qscales(MpegEncContext *s);
 int ff_h263_resync(MpegEncContext *s);
-void ff_h263_encode_motion(PutBitContext *pb, int val, int f_code);
+const uint8_t *ff_h263_find_resync_marker(const uint8_t *p, const uint8_t *end);
+void ff_h263_encode_motion(MpegEncContext * s, int val, int f_code);
 
 
-static inline int h263_get_motion_length(int val, int f_code){
+static inline int h263_get_motion_length(MpegEncContext * s, int val, int f_code){
     int l, bit_size, code;
 
     if (val == 0) {
@@ -118,11 +119,11 @@ static inline int h263_get_motion_length(int val, int f_code){
 static inline void ff_h263_encode_motion_vector(MpegEncContext * s, int x, int y, int f_code){
     if (s->avctx->flags2 & CODEC_FLAG2_NO_OUTPUT) {
         skip_put_bits(&s->pb,
-            h263_get_motion_length(x, f_code)
-           +h263_get_motion_length(y, f_code));
+            h263_get_motion_length(s, x, f_code)
+           +h263_get_motion_length(s, y, f_code));
     }else{
-        ff_h263_encode_motion(&s->pb, x, f_code);
-        ff_h263_encode_motion(&s->pb, y, f_code);
+        ff_h263_encode_motion(s, x, f_code);
+        ff_h263_encode_motion(s, y, f_code);
     }
 }
 
