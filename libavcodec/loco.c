@@ -2,20 +2,20 @@
  * LOCO codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ enum LOCO_MODE {
 typedef struct LOCOContext {
     AVCodecContext *avctx;
     int lossy;
-    int mode;
+    enum LOCO_MODE mode;
 } LOCOContext;
 
 typedef struct RICEContext {
@@ -130,9 +130,15 @@ static int loco_decode_plane(LOCOContext *l, uint8_t *data, int width, int heigh
 {
     RICEContext rc;
     int val;
+    int ret;
     int i, j;
 
-    init_get_bits(&rc.gb, buf, buf_size*8);
+    if(buf_size<=0)
+        return -1;
+
+    if ((ret = init_get_bits8(&rc.gb, buf, buf_size)) < 0)
+        return ret;
+
     rc.save  = 0;
     rc.run   = 0;
     rc.run2  = 0;
@@ -165,6 +171,23 @@ static int loco_decode_plane(LOCOContext *l, uint8_t *data, int width, int heigh
     return (get_bits_count(&rc.gb) + 7) >> 3;
 }
 
+static void rotate_faulty_loco(uint8_t *data, int width, int height, int stride, int step)
+{
+    int y;
+
+    for (y=1; y<height; y++) {
+        if (width>=y) {
+            memmove(data + y*stride,
+                    data + y*(stride + step),
+                    step*(width-y));
+            if (y+1 < height)
+                memmove(data + y*stride + step*(width-y),
+                        data + (y+1)*stride,
+                        step*y);
+        }
+    }
+}
+
 static int decode_frame(AVCodecContext *avctx,
                         void *data, int *got_frame,
                         AVPacket *avpkt)
@@ -175,88 +198,72 @@ static int decode_frame(AVCodecContext *avctx,
     AVFrame * const p     = data;
     int decoded, ret;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
     p->key_frame = 1;
 
+#define ADVANCE_BY_DECODED do { \
+    if (decoded < 0 || decoded >= buf_size) goto buf_too_small; \
+    buf += decoded; buf_size -= decoded; \
+} while(0)
     switch(l->mode) {
     case LOCO_CYUY2: case LOCO_YUY2: case LOCO_UYVY:
         decoded = loco_decode_plane(l, p->data[0], avctx->width, avctx->height,
                                     p->linesize[0], buf, buf_size, 1);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
+        ADVANCE_BY_DECODED;
         decoded = loco_decode_plane(l, p->data[1], avctx->width / 2, avctx->height,
                                     p->linesize[1], buf, buf_size, 1);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
+        ADVANCE_BY_DECODED;
         decoded = loco_decode_plane(l, p->data[2], avctx->width / 2, avctx->height,
                                     p->linesize[2], buf, buf_size, 1);
         break;
     case LOCO_CYV12: case LOCO_YV12:
         decoded = loco_decode_plane(l, p->data[0], avctx->width, avctx->height,
                                     p->linesize[0], buf, buf_size, 1);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
+        ADVANCE_BY_DECODED;
         decoded = loco_decode_plane(l, p->data[2], avctx->width / 2, avctx->height / 2,
                                     p->linesize[2], buf, buf_size, 1);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
+        ADVANCE_BY_DECODED;
         decoded = loco_decode_plane(l, p->data[1], avctx->width / 2, avctx->height / 2,
                                     p->linesize[1], buf, buf_size, 1);
         break;
     case LOCO_CRGB: case LOCO_RGB:
         decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1), avctx->width, avctx->height,
                                     -p->linesize[0], buf, buf_size, 3);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
+        ADVANCE_BY_DECODED;
         decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1) + 1, avctx->width, avctx->height,
                                     -p->linesize[0], buf, buf_size, 3);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
+        ADVANCE_BY_DECODED;
         decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1) + 2, avctx->width, avctx->height,
                                     -p->linesize[0], buf, buf_size, 3);
+        if (avctx->width & 1)
+            rotate_faulty_loco(p->data[0] + p->linesize[0]*(avctx->height-1), avctx->width, avctx->height, -p->linesize[0], 3);
         break;
+    case LOCO_CRGBA:
     case LOCO_RGBA:
-        decoded = loco_decode_plane(l, p->data[0], avctx->width, avctx->height,
-                                    p->linesize[0], buf, buf_size, 4);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
-        decoded = loco_decode_plane(l, p->data[0] + 1, avctx->width, avctx->height,
-                                    p->linesize[0], buf, buf_size, 4);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
-        decoded = loco_decode_plane(l, p->data[0] + 2, avctx->width, avctx->height,
-                                    p->linesize[0], buf, buf_size, 4);
-        if (decoded >= buf_size)
-            goto buf_too_small;
-        buf += decoded; buf_size -= decoded;
-
-        decoded = loco_decode_plane(l, p->data[0] + 3, avctx->width, avctx->height,
-                                    p->linesize[0], buf, buf_size, 4);
+        decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1), avctx->width, avctx->height,
+                                    -p->linesize[0], buf, buf_size, 4);
+        ADVANCE_BY_DECODED;
+        decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1) + 1, avctx->width, avctx->height,
+                                    -p->linesize[0], buf, buf_size, 4);
+        ADVANCE_BY_DECODED;
+        decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1) + 2, avctx->width, avctx->height,
+                                    -p->linesize[0], buf, buf_size, 4);
+        ADVANCE_BY_DECODED;
+        decoded = loco_decode_plane(l, p->data[0] + p->linesize[0]*(avctx->height-1) + 3, avctx->width, avctx->height,
+                                    -p->linesize[0], buf, buf_size, 4);
         break;
+    default:
+        av_assert0(0);
     }
+
+    if (decoded < 0 || decoded > buf_size)
+        goto buf_too_small;
+    buf_size -= decoded;
 
     *got_frame      = 1;
 
-    return buf_size;
+    return avpkt->size - buf_size;
 buf_too_small:
     av_log(avctx, AV_LOG_ERROR, "Input data too small.\n");
     return AVERROR(EINVAL);
@@ -303,7 +310,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         break;
     case LOCO_CRGBA:
     case LOCO_RGBA:
-        avctx->pix_fmt = AV_PIX_FMT_RGB32;
+        avctx->pix_fmt = AV_PIX_FMT_BGRA;
         break;
     default:
         av_log(avctx, AV_LOG_INFO, "Unknown colorspace, index = %i\n", l->mode);
