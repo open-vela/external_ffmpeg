@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV encoder/decoder shared code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,84 +76,7 @@ int ff_qsv_error(int mfx_err)
         return AVERROR_UNKNOWN;
     }
 }
-static int ff_qsv_set_display_handle(AVCodecContext *avctx, mfxSession session)
-{
-    // this code is only required for Linux.  It searches for a valid
-    // display handle.  First in /dev/dri/renderD then in /dev/dri/card
-#ifdef AVCODEC_QSV_LINUX_SESSION_HANDLE
-    // VAAPI display handle
-    int ret = 0;
-    VADisplay va_dpy = NULL;
-    VAStatus va_res = VA_STATUS_SUCCESS;
-    int major_version = 0, minor_version = 0;
-    int fd = -1;
-    char adapterpath[256];
-    int adapter_num;
 
-    //search for valid graphics device
-    for (adapter_num = 0;adapter_num < 6;adapter_num++) {
-
-        if (adapter_num<3) {
-            snprintf(adapterpath,sizeof(adapterpath),
-                "/dev/dri/renderD%d", adapter_num+128);
-        } else {
-            snprintf(adapterpath,sizeof(adapterpath),
-                "/dev/dri/card%d", adapter_num-3);
-        }
-
-        fd = open(adapterpath, O_RDWR);
-        if (fd < 0) {
-            av_log(avctx, AV_LOG_ERROR,
-                "mfx init: %s fd open failed\n", adapterpath);
-            continue;
-        }
-
-        va_dpy = vaGetDisplayDRM(fd);
-        if (!va_dpy) {
-            av_log(avctx, AV_LOG_ERROR,
-                "mfx init: %s vaGetDisplayDRM failed\n", adapterpath);
-            close(fd);
-            continue;
-        }
-
-        va_res = vaInitialize(va_dpy, &major_version, &minor_version);
-        if (VA_STATUS_SUCCESS != va_res) {
-            av_log(avctx, AV_LOG_ERROR,
-                "mfx init: %s vaInitialize failed\n", adapterpath);
-            close(fd);
-            fd = -1;
-            continue;
-        } else {
-            av_log(avctx, AV_LOG_VERBOSE,
-            "mfx initialization: %s vaInitialize successful\n",adapterpath);
-            ret = MFXVideoCORE_SetHandle(session,
-                  (mfxHandleType)MFX_HANDLE_VA_DISPLAY, (mfxHDL)va_dpy);
-            if (ret < 0) {
-                av_log(avctx, AV_LOG_ERROR,
-                "Error %d during set display handle\n", ret);
-                return ff_qsv_error(ret);
-            }
-            break;
-        }
-    }
-#endif //AVCODEC_QSV_LINUX_SESSION_HANDLE
-    return 0;
-}
-/**
- * @brief Initialize a MSDK session
- *
- * Media SDK is based on sessions, so this is the prerequisite
- * initialization for HW acceleration.  For Windows the session is
- * complete and ready to use, for Linux a display handle is
- * required.  For releases of Media Server Studio >= 2015 R4 the
- * render nodes interface is preferred (/dev/dri/renderD).
- * Using Media Server Studio 2015 R4 or newer is recommended
- * but the older /dev/dri/card interface is also searched
- * for broader compatibility.
- *
- * @param avctx    ffmpeg metadata for this codec context
- * @param session  the MSDK session used
- */
 int ff_qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session)
 {
     mfxIMPL impl   = MFX_IMPL_AUTO_ANY;
@@ -167,10 +90,6 @@ int ff_qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session)
         av_log(avctx, AV_LOG_ERROR, "Error initializing an internal MFX session\n");
         return ff_qsv_error(ret);
     }
-
-    ret = ff_qsv_set_display_handle(avctx, *session);
-    if (ret < 0)
-        return ret;
 
     MFXQueryIMPL(*session, &impl);
 
