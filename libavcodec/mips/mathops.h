@@ -1,20 +1,21 @@
 /*
  * Copyright (c) 2009 Mans Rullgard <mans@mansr.com>
+ * Copyright (c) 2015 Zhou Xiaoyong <zhouxiaoyong@loongson.cn>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,55 +28,39 @@
 
 #if HAVE_INLINE_ASM
 
-#if HAVE_LOONGSON
+#if HAVE_LOONGSON3
 
-static inline av_const int64_t MAC64(int64_t d, int a, int b)
+#define MULH MULH
+static inline av_const int MULH(int a, int b)
 {
-    int64_t m;
-    __asm__ ("dmult.g %1, %2, %3 \n\t"
-             "daddu   %0, %0, %1 \n\t"
-             : "+r"(d), "=&r"(m) : "r"(a), "r"(b));
-    return d;
-}
-#define MAC64(d, a, b) ((d) = MAC64(d, a, b))
-
-static inline av_const int64_t MLS64(int64_t d, int a, int b)
-{
-    int64_t m;
-    __asm__ ("dmult.g %1, %2, %3 \n\t"
-             "dsubu   %0, %0, %1 \n\t"
-             : "+r"(d), "=&r"(m) : "r"(a), "r"(b));
-    return d;
-}
-#define MLS64(d, a, b) ((d) = MLS64(d, a, b))
-
-#elif ARCH_MIPS64
-
-static inline av_const int64_t MAC64(int64_t d, int a, int b)
-{
-    int64_t m;
-    __asm__ ("dmult %2, %3     \n\t"
-             "mflo  %1         \n\t"
-             "daddu %0, %0, %1 \n\t"
-             : "+r"(d), "=&r"(m) : "r"(a), "r"(b)
+    int c;
+    __asm__ ("dmult %1, %2      \n\t"
+             "mflo %0           \n\t"
+             "dsrl %0, %0, 32   \n\t"
+             : "=r"(c)
+             : "r"(a),"r"(b)
              : "hi", "lo");
-    return d;
+    return c;
 }
-#define MAC64(d, a, b) ((d) = MAC64(d, a, b))
 
-static inline av_const int64_t MLS64(int64_t d, int a, int b)
+#define mid_pred mid_pred
+static inline av_const int mid_pred(int a, int b, int c)
 {
-    int64_t m;
-    __asm__ ("dmult %2, %3     \n\t"
-             "mflo  %1         \n\t"
-             "dsubu %0, %0, %1 \n\t"
-             : "+r"(d), "=&r"(m) : "r"(a), "r"(b)
-             : "hi", "lo");
-    return d;
+    int t = b;
+    __asm__ ("sgt $8, %1, %2    \n\t"
+             "movn %0, %1, $8   \n\t"
+             "movn %1, %2, $8   \n\t"
+             "sgt $8, %1, %3    \n\t"
+             "movz %1, %3, $8   \n\t"
+             "sgt $8, %0, %1    \n\t"
+             "movn %0, %1, $8   \n\t"
+             : "+&r"(t),"+&r"(a)
+             : "r"(b),"r"(c)
+             : "$8");
+    return t;
 }
-#define MLS64(d, a, b) ((d) = MLS64(d, a, b))
 
-#endif
+#endif /* HAVE_LOONGSON3 */
 
 #endif /* HAVE_INLINE_ASM */
 

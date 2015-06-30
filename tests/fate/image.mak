@@ -5,7 +5,7 @@ FATE_ALIASPIX += fate-aliaspix-gray
 fate-aliaspix-gray: CMD = framecrc -i $(TARGET_SAMPLES)/aliaspix/firstgray.pix -pix_fmt gray
 
 FATE_ALIASPIX-$(call DEMDEC, IMAGE2, ALIAS_PIX) += $(FATE_ALIASPIX)
-FATE_SAMPLES_AVCONV += $(FATE_ALIASPIX-yes)
+FATE_IMAGE += $(FATE_ALIASPIX-yes)
 fate-aliaspix: $(FATE_ALIASPIX-yes)
 
 FATE_BRENDERPIX += fate-brenderpix-24
@@ -24,15 +24,15 @@ FATE_BRENDERPIX += fate-brenderpix-y400a
 fate-brenderpix-y400a: CMD = framecrc -c:v brender_pix -i $(TARGET_SAMPLES)/brenderpix/gears.pix
 
 FATE_BRENDERPIX-$(call DEMDEC, IMAGE2, BRENDER_PIX) += $(FATE_BRENDERPIX)
-FATE_SAMPLES_AVCONV += $(FATE_BRENDERPIX-yes)
+FATE_IMAGE += $(FATE_BRENDERPIX-yes)
 fate-brenderpix: $(FATE_BRENDERPIX-yes)
 
-FATE_SAMPLES_AVCONV-$(call PARSERDEMDEC, BMP, IMAGE2PIPE, BMP) += fate-bmpparser
-fate-bmpparser: CMD = framecrc -f image2pipe -i $(TARGET_SAMPLES)/bmp/libav_4x_concat.bmp -pix_fmt rgb24
+FATE_IMAGE-$(call PARSERDEMDEC, BMP, IMAGE2PIPE, BMP) += fate-bmpparser
+fate-bmpparser: CMD = framecrc -f image2pipe -i $(TARGET_SAMPLES)/bmp/numbers.bmp -pix_fmt rgb24
 
 define FATE_IMGSUITE_DDS
 FATE_DDS += fate-dds-$(1)
-fate-dds-$(1): CMD = framecrc -i $(TARGET_SAMPLES)/dds/libav_$(1).dds $(DDS_OPTS_$(1))
+fate-dds-$(1): CMD = framecrc -i $(TARGET_SAMPLES)/dds/fate_$(1).dds $(DDS_OPTS_$(1))
 endef
 
 DDS_OPTS_pal     = -sws_flags +accurate_rnd+bitexact -pix_fmt rgba
@@ -41,14 +41,14 @@ DDS_FMT = argb argb-aexp dx10-bc1 dx10-bc1a dx10-bc2 dx10-bc3 dx10-bc4 dx10-bc5 
 $(foreach FMT,$(DDS_FMT),$(eval $(call FATE_IMGSUITE_DDS,$(FMT))))
 
 FATE_DDS-$(call DEMDEC, IMAGE2, DDS) += $(FATE_DDS)
-FATE_SAMPLES_AVCONV += $(FATE_DDS-yes)
+FATE_IMAGE += $(FATE_DDS-yes)
 fate-dds: $(FATE_DDS-yes)
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, DPX) += fate-dpx
+FATE_IMAGE-$(call DEMDEC, IMAGE2, DPX) += fate-dpx
 fate-dpx: CMD = framecrc -i $(TARGET_SAMPLES)/dpx/lighthouse_rgb48.dpx
 
 FATE_SAMPLES_AVCONV-$(call PARSERDEMDEC, DPX, IMAGE2PIPE, DPX) += fate-dpxparser
-fate-dpxparser: CMD = framecrc -f image2pipe -i $(TARGET_SAMPLES)/dpx/libav_4x_concat.dpx -sws_flags +accurate_rnd+bitexact
+fate-dpxparser: CMD = framecrc -f image2pipe -i $(TARGET_SAMPLES)/dpx/lena_4x_concat.dpx -sws_flags +accurate_rnd+bitexact
 
 FATE_EXR += fate-exr-slice-raw
 fate-exr-slice-raw: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgba_slice_raw.exr -pix_fmt rgba64le
@@ -67,63 +67,63 @@ fate-exr-slice-pxr24: CMD = framecrc -i $(TARGET_SAMPLES)/exr/rgb_slice_pxr24.ex
 
 FATE_EXR-$(call DEMDEC, IMAGE2, EXR) += $(FATE_EXR)
 
-FATE_SAMPLES_AVCONV += $(FATE_EXR-yes)
+FATE_IMAGE += $(FATE_EXR-yes)
 fate-exr: $(FATE_EXR-yes)
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, QDRAW) += fate-pict
+FATE_IMAGE-$(call DEMDEC, IMAGE2, QDRAW) += fate-pict
 fate-pict: CMD = framecrc -i $(TARGET_SAMPLES)/quickdraw/TRU256.PCT -pix_fmt rgb24
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, PICTOR) += fate-pictor
-fate-pictor: CMD = framecrc -c pictor -i $(TARGET_SAMPLES)/pictor/MFISH.PIC -pix_fmt rgb24
+FATE_IMAGE-$(call DEMDEC, IMAGE2, PICTOR) += fate-pictor
+fate-pictor: CMD = framecrc -i $(TARGET_SAMPLES)/pictor/MFISH.PIC -pix_fmt rgb24
 
-FATE_SAMPLES_AVCONV-$(call PARSERDEMDEC, PNG, IMAGE2PIPE, PNG) += fate-pngparser
-fate-pngparser: CMD = framecrc -f image2pipe -i $(TARGET_SAMPLES)/png1/libav_4x_concat.png -pix_fmt rgba
+FATE_IMAGE-$(call PARSERDEMDEC, PNG, IMAGE2PIPE, PNG) += fate-pngparser
+fate-pngparser: CMD = framecrc -f image2pipe -i $(TARGET_SAMPLES)/png1/feed_4x_concat.png -pix_fmt rgba
 
 define FATE_IMGSUITE_PNG
 FATE_PNG += fate-png-$(1)
-fate-png-$(1): CMD = framecrc -i $(TARGET_SAMPLES)/png1/libav_$(1).png -sws_flags +accurate_rnd+bitexact -pix_fmt rgb24
+fate-png-$(1): CMD = framecrc -i $(TARGET_SAMPLES)/png1/lena-$(1).png -sws_flags +accurate_rnd+bitexact -pix_fmt rgb24
 endef
 
 PNG_COLORSPACES = gray8 gray16 rgb24 rgb48 rgba ya8 ya16
 $(foreach CLSP,$(PNG_COLORSPACES),$(eval $(call FATE_IMGSUITE_PNG,$(CLSP))))
 
 FATE_PNG-$(call DEMDEC, IMAGE2, PNG) += $(FATE_PNG)
-FATE_SAMPLES_AVCONV += $(FATE_PNG-yes)
+FATE_IMAGE += $(FATE_PNG-yes)
 fate-png: $(FATE_PNG-yes)
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, IMAGE2, PTX) += fate-ptx
+FATE_IMAGE-$(call DEMDEC, IMAGE2, PTX) += fate-ptx
 fate-ptx: CMD = framecrc -i $(TARGET_SAMPLES)/ptx/_113kw_pic.ptx -pix_fmt rgb24
 
 FATE_SGI += fate-sgi-gray
-fate-sgi-gray: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/vulap_gray.sgi -pix_fmt gray
+fate-sgi-gray: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/lena_gray.sgi -pix_fmt gray
 
 FATE_SGI += fate-sgi-gray16
-fate-sgi-gray16: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/vulap_gray16.sgi -pix_fmt gray16le
+fate-sgi-gray16: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/lena_gray16.sgi -pix_fmt gray16le
 
 FATE_SGI += fate-sgi-rgb24
-fate-sgi-rgb24: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/vulap_rgb24.sgi -pix_fmt rgb24
+fate-sgi-rgb24: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/lena_rgb24.sgi -pix_fmt rgb24
 
 FATE_SGI += fate-sgi-rgb24-rle
 fate-sgi-rgb24-rle: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/uvmap_rgb24_rle.sgi -pix_fmt rgb24
 
 FATE_SGI += fate-sgi-rgb48
-fate-sgi-rgb48: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/vulap_rgb48.sgi -pix_fmt rgb48be
+fate-sgi-rgb48: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/lena_rgb48.sgi -pix_fmt rgb48be
 
 FATE_SGI += fate-sgi-rgb48-rle
 fate-sgi-rgb48-rle: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/uvmap_rgb48_rle.sgi -pix_fmt rgb48be
 
 FATE_SGI += fate-sgi-rgba
-fate-sgi-rgba: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/vulap_rgba.sgi -pix_fmt rgba
+fate-sgi-rgba: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/lena_rgba.sgi -pix_fmt rgba
 
 FATE_SGI += fate-sgi-rgba64
-fate-sgi-rgba64: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/vulap_rgba64.sgi -pix_fmt rgba64be
+fate-sgi-rgba64: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/lena_rgba64.sgi -pix_fmt rgba64be
 
 FATE_SGI += fate-sgi-rgba64-rle
 fate-sgi-rgba64-rle: CMD = framecrc -i $(TARGET_SAMPLES)/sgi/maya_rgba64_rle.sgi -pix_fmt rgba64be
 
 FATE_SGI-$(call DEMDEC, IMAGE2, SGI) += $(FATE_SGI)
 
-FATE_SAMPLES_AVCONV += $(FATE_SGI-yes)
+FATE_IMAGE += $(FATE_SGI-yes)
 fate-sgi: $(FATE_SGI-yes)
 
 FATE_SUNRASTER += fate-sunraster-1bit-raw
@@ -149,7 +149,7 @@ fate-sunraster-24bit-rle: CMD = framecrc -i $(TARGET_SAMPLES)/sunraster/lena-24b
 
 FATE_SUNRASTER-$(call DEMDEC, IMAGE2, SUNRAST) += $(FATE_SUNRASTER)
 
-FATE_SAMPLES_AVCONV += $(FATE_SUNRASTER-yes)
+FATE_IMAGE += $(FATE_SUNRASTER-yes)
 fate-sunraster: $(FATE_SUNRASTER-yes)
 
 FATE_TARGA = CBW8       \
@@ -168,7 +168,7 @@ FATE_TARGA := $(FATE_TARGA:%=fate-targa-conformance-%)  \
 
 FATE_TARGA-$(call DEMDEC, IMAGE2, TARGA) += $(FATE_TARGA)
 
-FATE_SAMPLES_AVCONV += $(FATE_TARGA-yes)
+FATE_IMAGE += $(FATE_TARGA-yes)
 fate-targa: $(FATE_TARGA-yes)
 
 fate-targa-conformance-CBW8:  CMD = framecrc -i $(TARGET_SAMPLES)/targa-conformance/CBW8.TGA
@@ -192,8 +192,11 @@ fate-tiff-fax-g3s: CMD = framecrc -i $(TARGET_SAMPLES)/CCITT_fax/G31DS.TIF
 
 FATE_TIFF-$(call DEMDEC, IMAGE2, TIFF) += $(FATE_TIFF)
 
-FATE_SAMPLES_AVCONV += $(FATE_TIFF-yes)
+FATE_IMAGE += $(FATE_TIFF-yes)
 fate-tiff: $(FATE_TIFF-yes)
+
+FATE_IMAGE-$(call DEMDEC, IMAGE2, XFACE) += fate-xface
+fate-xface: CMD = framecrc -i $(TARGET_SAMPLES)/xface/lena.xface
 
 FATE_XBM += fate-xbm10
 fate-xbm10: CMD = framecrc -i $(TARGET_SAMPLES)/xbm/xl.xbm
@@ -202,5 +205,10 @@ FATE_XBM += fate-xbm11
 fate-xbm11: CMD = framecrc -i $(TARGET_SAMPLES)/xbm/lbw.xbm
 
 FATE_XBM-$(call DEMDEC, IMAGE2, XBM) += $(FATE_XBM)
-FATE_SAMPLES_AVCONV += $(FATE_XBM-yes)
+FATE_IMAGE += $(FATE_XBM-yes)
 fate-xbm: $(FATE_XBM-yes)
+
+FATE_IMAGE += $(FATE_IMAGE-yes)
+
+FATE_SAMPLES_FFMPEG += $(FATE_IMAGE)
+fate-image: $(FATE_IMAGE)
