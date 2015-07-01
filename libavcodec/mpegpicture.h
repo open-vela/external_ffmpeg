@@ -1,20 +1,20 @@
 /*
  * Mpeg video formats-related defines and utility functions
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@
 #include "motion_est.h"
 #include "thread.h"
 
-#define MAX_PICTURE_COUNT 32
+#define MAX_PICTURE_COUNT 36
 #define EDGE_WIDTH 16
 
 typedef struct ScratchpadContext {
@@ -67,6 +67,9 @@ typedef struct Picture {
     AVBufferRef *mc_mb_var_buf;
     uint16_t *mc_mb_var;        ///< Table for motion compensated MB variances
 
+    int alloc_mb_width;         ///< mb_width used to allocate tables
+    int alloc_mb_height;        ///< mb_height used to allocate tables
+
     AVBufferRef *mb_mean_buf;
     uint8_t *mb_mean;           ///< Table for MB luminance
 
@@ -75,14 +78,16 @@ typedef struct Picture {
 
     int field_picture;          ///< whether or not the picture was encoded in separate fields
 
-    int mb_var_sum;             ///< sum of MB variance for current frame
-    int mc_mb_var_sum;          ///< motion compensated MB variance for current frame
+    int64_t mb_var_sum;         ///< sum of MB variance for current frame
+    int64_t mc_mb_var_sum;      ///< motion compensated MB variance for current frame
 
-    int b_frame_score;          /* */
+    int b_frame_score;
     int needs_realloc;          ///< Picture needs to be reallocated (eg due to a frame size change)
 
     int reference;
     int shared;
+
+    uint64_t error[AV_NUM_DATA_POINTERS];
 } Picture;
 
 /**
@@ -92,7 +97,7 @@ typedef struct Picture {
 int ff_alloc_picture(AVCodecContext *avctx, Picture *pic, MotionEstContext *me,
                      ScratchpadContext *sc, int shared, int encoding,
                      int chroma_x_shift, int chroma_y_shift, int out_format,
-                     int mb_stride, int mb_height, int b8_stride,
+                     int mb_stride, int mb_width, int mb_height, int b8_stride,
                      ptrdiff_t *linesize, ptrdiff_t *uvlinesize);
 
 int ff_mpeg_framesize_alloc(AVCodecContext *avctx, MotionEstContext *me,
