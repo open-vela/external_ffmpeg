@@ -1,37 +1,33 @@
 /*
- * VDA H264 HW acceleration.
+ * VDA H.264 hardware acceleration
  *
  * copyright (c) 2011 Sebastien Zwickert
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <CoreFoundation/CFDictionary.h>
 #include <CoreFoundation/CFNumber.h>
 #include <CoreFoundation/CFData.h>
+#include <CoreFoundation/CFString.h>
 
-#include "vda.h"
 #include "libavutil/avutil.h"
 #include "h264.h"
-
-struct vda_buffer {
-    CVPixelBufferRef cv_buffer;
-};
 #include "internal.h"
+#include "vda.h"
 #include "vda_internal.h"
 
 typedef struct VDAContext {
@@ -47,7 +43,7 @@ typedef struct VDAContext {
     CVImageBufferRef frame;
 } VDAContext;
 
-/* Decoder callback that adds the vda frame to the queue in display order. */
+/* Decoder callback that adds the VDA frame to the queue in display order. */
 static void vda_decoder_callback(void *vda_hw_ctx,
                                  CFDictionaryRef user_info,
                                  OSStatus status,
@@ -55,9 +51,6 @@ static void vda_decoder_callback(void *vda_hw_ctx,
                                  CVImageBufferRef image_buffer)
 {
     struct vda_context *vda_ctx = vda_hw_ctx;
-
-    if (infoFlags & kVDADecodeInfo_FrameDropped)
-        vda_ctx->cv_buffer = NULL;
 
     if (!image_buffer)
         return;
@@ -94,7 +87,7 @@ static int vda_old_h264_start_frame(AVCodecContext *avctx,
                                 av_unused uint32_t size)
 {
     VDAContext *vda = avctx->internal->hwaccel_priv_data;
-    struct vda_context *vda_ctx = avctx->hwaccel_context;
+    struct vda_context *vda_ctx         = avctx->hwaccel_context;
 
     if (!vda_ctx->decoder)
         return -1;
@@ -108,8 +101,8 @@ static int vda_old_h264_decode_slice(AVCodecContext *avctx,
                                  const uint8_t *buffer,
                                  uint32_t size)
 {
-    VDAContext *vda             = avctx->internal->hwaccel_priv_data;
-    struct vda_context *vda_ctx = avctx->hwaccel_context;
+    VDAContext *vda                     = avctx->internal->hwaccel_priv_data;
+    struct vda_context *vda_ctx         = avctx->hwaccel_context;
     void *tmp;
 
     if (!vda_ctx->decoder)
@@ -131,21 +124,12 @@ static int vda_old_h264_decode_slice(AVCodecContext *avctx,
     return 0;
 }
 
-static void vda_h264_release_buffer(void *opaque, uint8_t *data)
-{
-    struct vda_buffer *context = opaque;
-    CVPixelBufferRelease(context->cv_buffer);
-    av_free(context);
-}
-
 static int vda_old_h264_end_frame(AVCodecContext *avctx)
 {
     H264Context *h                      = avctx->priv_data;
     VDAContext *vda                     = avctx->internal->hwaccel_priv_data;
     struct vda_context *vda_ctx         = avctx->hwaccel_context;
     AVFrame *frame                      = h->cur_pic_ptr->f;
-    struct vda_buffer *context;
-    AVBufferRef *buffer;
     int status;
 
     if (!vda_ctx->decoder || !vda->bitstream)
@@ -157,20 +141,6 @@ static int vda_old_h264_end_frame(AVCodecContext *avctx)
     if (status)
         av_log(avctx, AV_LOG_ERROR, "Failed to decode frame (%d)\n", status);
 
-    if (!vda_ctx->use_ref_buffer || status)
-        return status;
-
-    context = av_mallocz(sizeof(*context));
-    buffer = av_buffer_create(NULL, 0, vda_h264_release_buffer, context, 0);
-    if (!context || !buffer) {
-        CVPixelBufferRelease(vda_ctx->cv_buffer);
-        av_free(context);
-        return -1;
-    }
-
-    context->cv_buffer = vda_ctx->cv_buffer;
-    frame->buf[3] = buffer;
-
     return status;
 }
 
@@ -178,7 +148,7 @@ int ff_vda_create_decoder(struct vda_context *vda_ctx,
                           uint8_t *extradata,
                           int extradata_size)
 {
-    OSStatus status;
+    OSStatus status = kVDADecoderNoErr;
     CFNumberRef height;
     CFNumberRef width;
     CFNumberRef format;
@@ -188,10 +158,7 @@ int ff_vda_create_decoder(struct vda_context *vda_ctx,
     CFMutableDictionaryRef io_surface_properties;
     CFNumberRef cv_pix_fmt;
 
-    vda_ctx->priv_bitstream = NULL;
-    vda_ctx->priv_allocated_size = 0;
-
-    /* Each VCL NAL in the bitstream sent to the decoder
+    /* Each VCL NAL in the bistream sent to the decoder
      * is preceded by a 4 bytes length header.
      * Change the avcC atom header if needed, to signal headers of 4 bytes. */
     if (extradata_size >= 4 && (extradata[4] & 0x03) != 0x03) {
@@ -233,9 +200,9 @@ int ff_vda_create_decoder(struct vda_context *vda_ctx,
                                                       0,
                                                       &kCFTypeDictionaryKeyCallBacks,
                                                       &kCFTypeDictionaryValueCallBacks);
-    cv_pix_fmt  = CFNumberCreate(kCFAllocatorDefault,
-                                 kCFNumberSInt32Type,
-                                 &vda_ctx->cv_pix_fmt_type);
+    cv_pix_fmt      = CFNumberCreate(kCFAllocatorDefault,
+                                     kCFNumberSInt32Type,
+                                     &vda_ctx->cv_pix_fmt_type);
     CFDictionarySetValue(buffer_attributes,
                          kCVPixelBufferPixelFormatTypeKey,
                          cv_pix_fmt);
@@ -274,11 +241,9 @@ int ff_vda_destroy_decoder(struct vda_context *vda_ctx)
 static int vda_h264_uninit(AVCodecContext *avctx)
 {
     VDAContext *vda = avctx->internal->hwaccel_priv_data;
-    if (vda) {
-        av_freep(&vda->bitstream);
-        if (vda->frame)
-            CVPixelBufferRelease(vda->frame);
-    }
+    av_freep(&vda->bitstream);
+    if (vda->frame)
+        CVPixelBufferRelease(vda->frame);
     return 0;
 }
 
@@ -320,20 +285,9 @@ static int vda_h264_start_frame(AVCodecContext *avctx,
                                 uint32_t size)
 {
     VDAContext *vda = avctx->internal->hwaccel_priv_data;
-    H264Context *h  = avctx->priv_data;
 
-    if (h->is_avc == 1) {
-        void *tmp;
-        vda->bitstream_size = 0;
-        tmp = av_fast_realloc(vda->bitstream,
-                              &vda->allocated_size,
-                              size);
-        vda->bitstream = tmp;
-        memcpy(vda->bitstream, buffer, size);
-        vda->bitstream_size = size;
-    } else {
-        vda->bitstream_size = 0;
-    }
+    vda->bitstream_size = 0;
+
     return 0;
 }
 
@@ -342,11 +296,7 @@ static int vda_h264_decode_slice(AVCodecContext *avctx,
                                  uint32_t size)
 {
     VDAContext *vda       = avctx->internal->hwaccel_priv_data;
-    H264Context *h  = avctx->priv_data;
     void *tmp;
-
-    if (h->is_avc == 1)
-        return 0;
 
     tmp = av_fast_realloc(vda->bitstream,
                           &vda->allocated_size,
@@ -434,7 +384,7 @@ int ff_vda_default_init(AVCodecContext *avctx)
 
     // kCVPixelFormatType_420YpCbCr8Planar;
 
-    /* Each VCL NAL in the bitstream sent to the decoder
+    /* Each VCL NAL in the bistream sent to the decoder
      * is preceded by a 4 bytes length header.
      * Change the avcC atom header if needed, to signal headers of 4 bytes. */
     if (avctx->extradata_size >= 4 && (avctx->extradata[4] & 0x03) != 0x03) {
