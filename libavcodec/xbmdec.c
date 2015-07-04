@@ -1,20 +1,22 @@
 /*
  * XBM image format
  *
- * This file is part of Libav.
+ * Copyright (c) 2012 Paul B Mahol
  *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,43 +26,54 @@
 #include "internal.h"
 #include "mathops.h"
 
+static int convert(uint8_t x)
+{
+    if (x >= 'a')
+        x -= 87;
+    else if (x >= 'A')
+        x -= 55;
+    else
+        x -= '0';
+    return x;
+}
+
+static int parse_str_int(const uint8_t *p, int len, const uint8_t *key)
+{
+    const uint8_t *end = p + len;
+
+    for(; p<end - strlen(key); p++) {
+        if (!memcmp(p, key, strlen(key)))
+            break;
+    }
+    p += strlen(key);
+    if (p >= end)
+        return INT_MIN;
+
+    for(; p<end; p++) {
+        char *eptr;
+        int64_t ret = strtol(p, &eptr, 10);
+        if ((const uint8_t *)eptr != p)
+            return ret;
+    }
+    return INT_MIN;
+}
+
 static int xbm_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame, AVPacket *avpkt)
 {
     AVFrame *p = data;
-    int ret, linesize, i;
+    int ret, linesize, i, j;
     int width  = 0;
     int height = 0;
-    const uint8_t *ptr = avpkt->data;
+    const uint8_t *end, *ptr = avpkt->data;
+    const uint8_t *next;
     uint8_t *dst;
 
     avctx->pix_fmt = AV_PIX_FMT_MONOWHITE;
-    while (!width || !height) {
-        ptr += strcspn(ptr, "#");
-        if (ptr >= avpkt->data + avpkt->size) {
-            av_log(avctx, AV_LOG_ERROR, "End of file reached.\n");
-            return AVERROR_INVALIDDATA;
-        }
-        if (strncmp(ptr, "#define", 7) != 0) {
-            av_log(avctx, AV_LOG_ERROR,
-                   "Unexpected preprocessor directive.\n");
-            return AVERROR_INVALIDDATA;
-        }
-        // skip the name
-        ptr += strcspn(ptr, "_") + 1;
-        // get width or height
-        if (strncmp(ptr, "width", 5) == 0) {
-            ptr += strcspn(ptr, " ");
-            width = strtol(ptr, NULL, 10);
-        } else if (strncmp(ptr, "height", 6) == 0) {
-            ptr += strcspn(ptr, " ");
-            height = strtol(ptr, NULL, 10);
-        } else {
-            // skip offset and unknown variables
-            av_log(avctx, AV_LOG_VERBOSE,
-                   "Ignoring preprocessor directive.\n");
-        }
-    }
+    end = avpkt->data + avpkt->size;
+
+    width  = parse_str_int(avpkt->data, avpkt->size, "_width");
+    height = parse_str_int(avpkt->data, avpkt->size, "_height");
 
     if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
         return ret;
@@ -68,46 +81,48 @@ static int xbm_decode_frame(AVCodecContext *avctx, void *data,
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
 
-    // go to start of image data
-    ptr += strcspn(ptr, "{");
+    // goto start of image data
+    next = memchr(ptr, '{', avpkt->size);
+    if (!next)
+        next = memchr(ptr, '(', avpkt->size);
+    if (!next)
+        return AVERROR_INVALIDDATA;
+    ptr = next + 1;
 
     linesize = (avctx->width + 7) / 8;
     for (i = 0; i < avctx->height; i++) {
-        int eol = 0, e = 0;
         dst = p->data[0] + i * p->linesize[0];
-        if (ptr >= avpkt->data + avpkt->size) {
-            av_log(avctx, AV_LOG_ERROR, "End of file reached.\n");
-            return AVERROR_INVALIDDATA;
-        }
-        do {
-            int val;
-            uint8_t *endptr;
+        for (j = 0; j < linesize; j++) {
+            uint8_t val;
 
-            ptr += strcspn(ptr, "x") - 1; // -1 to get 0x
-            val = strtol(ptr, (char **)&endptr, 16);
+            while (ptr < end && *ptr != 'x' && *ptr != '$')
+                ptr++;
 
-            if (endptr - ptr == 4) {
-                // XBM X11 format
+            ptr ++;
+            if (ptr < end && av_isxdigit(*ptr)) {
+                val = convert(*ptr++);
+                if (av_isxdigit(*ptr))
+                    val = (val << 4) + convert(*ptr++);
                 *dst++ = ff_reverse[val];
-                eol = linesize;
-            } else if (endptr - ptr == 6) {
-                // XBM X10 format
-                *dst++ = ff_reverse[val >> 8];
-                *dst++ = ff_reverse[val & 0xFF];
-                eol = linesize / 2; // 2 bytes read
+                if (av_isxdigit(*ptr) && j+1 < linesize) {
+                    j++;
+                    val = convert(*ptr++);
+                    if (av_isxdigit(*ptr))
+                        val = (val << 4) + convert(*ptr++);
+                    *dst++ = ff_reverse[val];
+                }
             } else {
                 av_log(avctx, AV_LOG_ERROR,
                        "Unexpected data at %.8s.\n", ptr);
                 return AVERROR_INVALIDDATA;
             }
-            ptr = endptr;
-        } while (++e < eol);
+        }
     }
 
     p->key_frame = 1;
     p->pict_type = AV_PICTURE_TYPE_I;
 
-    *got_frame = 1;
+    *got_frame       = 1;
 
     return avpkt->size;
 }
