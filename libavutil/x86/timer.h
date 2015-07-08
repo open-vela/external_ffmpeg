@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,13 +25,17 @@
 
 #if HAVE_INLINE_ASM
 
-#define FF_TIMER_UNITS "decicycles"
 #define AV_READ_TIME read_time
 
 static inline uint64_t read_time(void)
 {
     uint32_t a, d;
-    __asm__ volatile("rdtsc" : "=a" (a), "=d" (d));
+    __asm__ volatile(
+#if ARCH_X86_64 || defined(__SSE2__)
+                     "lfence \n\t"
+#endif
+                     "rdtsc  \n\t"
+                     : "=a" (a), "=d" (d));
     return ((uint64_t)d << 32) + a;
 }
 

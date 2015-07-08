@@ -4,20 +4,20 @@
  * copyright (c) 2013 Yukinori Yamazoe
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,6 +49,8 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         return AVERROR_BUG;
     q->param.mfx.CodecId = ret;
 
+    q->width_align = avctx->codec_id == AV_CODEC_ID_HEVC ? 32 : 16;
+
     if (avctx->level > 0)
         q->param.mfx.CodecLevel = avctx->level;
 
@@ -65,29 +67,18 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->param.mfx.BufferSizeInKB     = 0;
 
     q->param.mfx.FrameInfo.FourCC         = MFX_FOURCC_NV12;
+    q->param.mfx.FrameInfo.Width          = FFALIGN(avctx->width, q->width_align);
+    q->param.mfx.FrameInfo.Height         = FFALIGN(avctx->height, 32);
     q->param.mfx.FrameInfo.CropX          = 0;
     q->param.mfx.FrameInfo.CropY          = 0;
     q->param.mfx.FrameInfo.CropW          = avctx->width;
     q->param.mfx.FrameInfo.CropH          = avctx->height;
     q->param.mfx.FrameInfo.AspectRatioW   = avctx->sample_aspect_ratio.num;
     q->param.mfx.FrameInfo.AspectRatioH   = avctx->sample_aspect_ratio.den;
+    q->param.mfx.FrameInfo.PicStruct      = MFX_PICSTRUCT_PROGRESSIVE;
     q->param.mfx.FrameInfo.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
     q->param.mfx.FrameInfo.BitDepthLuma   = 8;
     q->param.mfx.FrameInfo.BitDepthChroma = 8;
-    q->param.mfx.FrameInfo.Width          = FFALIGN(avctx->width, 16);
-
-    if (avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
-       /* A true field layout (TFF or BFF) is not important here,
-          it will specified later during frame encoding. But it is important
-          to specify is frame progressive or not because allowed heigh alignment
-          does depend by this.
-        */
-        q->param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_FIELD_TFF;
-        q->param.mfx.FrameInfo.Height    = FFALIGN(avctx->height, 32);
-    } else {
-        q->param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_PROGRESSIVE;
-        q->param.mfx.FrameInfo.Height    = FFALIGN(avctx->height, 16);
-    }
 
     if (avctx->framerate.den > 0 && avctx->framerate.num > 0) {
         q->param.mfx.FrameInfo.FrameRateExtN = avctx->framerate.num;
@@ -135,15 +126,19 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         break;
     }
 
-    q->extco.Header.BufferId      = MFX_EXTBUFF_CODING_OPTION;
-    q->extco.Header.BufferSz      = sizeof(q->extco);
-    q->extco.CAVLC                = avctx->coder_type == FF_CODER_TYPE_VLC ?
-                                    MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
+    // the HEVC encoder plugin currently fails if coding options
+    // are provided
+    if (avctx->codec_id != AV_CODEC_ID_HEVC) {
+        q->extco.Header.BufferId      = MFX_EXTBUFF_CODING_OPTION;
+        q->extco.Header.BufferSz      = sizeof(q->extco);
+        q->extco.CAVLC                = avctx->coder_type == FF_CODER_TYPE_VLC ?
+                                        MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
 
-    q->extparam[0] = (mfxExtBuffer *)&q->extco;
+        q->extparam[0] = (mfxExtBuffer *)&q->extco;
 
-    q->param.ExtParam    = q->extparam;
-    q->param.NumExtParam = FF_ARRAY_ELEMS(q->extparam);
+        q->param.ExtParam    = q->extparam;
+        q->param.NumExtParam = FF_ARRAY_ELEMS(q->extparam);
+    }
 
     return 0;
 }
@@ -164,6 +159,7 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
         (mfxExtBuffer*)&extradata,
     };
 
+    int need_pps = avctx->codec_id != AV_CODEC_ID_MPEG2VIDEO;
     int ret;
 
     q->param.ExtParam    = ext_buffers;
@@ -175,19 +171,20 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
 
     q->packet_size = q->param.mfx.BufferSizeInKB * 1000;
 
-    if (!extradata.SPSBufSize || !extradata.PPSBufSize) {
+    if (!extradata.SPSBufSize || (need_pps && !extradata.PPSBufSize)) {
         av_log(avctx, AV_LOG_ERROR, "No extradata returned from libmfx.\n");
         return AVERROR_UNKNOWN;
     }
 
-    avctx->extradata = av_malloc(extradata.SPSBufSize + extradata.PPSBufSize +
+    avctx->extradata = av_malloc(extradata.SPSBufSize + need_pps * extradata.PPSBufSize +
                                  FF_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata)
         return AVERROR(ENOMEM);
 
     memcpy(avctx->extradata,                        sps_buf, extradata.SPSBufSize);
-    memcpy(avctx->extradata + extradata.SPSBufSize, pps_buf, extradata.PPSBufSize);
-    avctx->extradata_size = extradata.SPSBufSize + extradata.PPSBufSize;
+    if (need_pps)
+        memcpy(avctx->extradata + extradata.SPSBufSize, pps_buf, extradata.PPSBufSize);
+    avctx->extradata_size = extradata.SPSBufSize + need_pps * extradata.PPSBufSize;
     memset(avctx->extradata + avctx->extradata_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
 
     return 0;
@@ -208,7 +205,8 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     }
 
     if (!q->session) {
-        ret = ff_qsv_init_internal_session(avctx, &q->internal_session);
+        ret = ff_qsv_init_internal_session(avctx, &q->internal_session,
+                                           q->load_plugins);
         if (ret < 0)
             return ret;
 
@@ -226,9 +224,7 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     }
 
     ret = MFXVideoENCODE_Init(q->session, &q->param);
-    if (MFX_WRN_PARTIAL_ACCELERATION==ret) {
-        av_log(avctx, AV_LOG_WARNING, "Encoder will work with partial HW acceleration\n");
-    } else if (ret < 0) {
+    if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing the encoder\n");
         return ff_qsv_error(ret);
     }
@@ -314,9 +310,9 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
     }
 
     /* make a copy if the input is not padded as libmfx requires */
-    if (frame->height & 31 || frame->linesize[0] & 15) {
+    if (frame->height & 31 || frame->linesize[0] & (q->width_align - 1)) {
         qf->frame->height = FFALIGN(frame->height, 32);
-        qf->frame->width  = FFALIGN(frame->width, 16);
+        qf->frame->width  = FFALIGN(frame->width, q->width_align);
 
         ret = ff_get_buffer(q->avctx, qf->frame, AV_GET_BUFFER_FLAG_REF);
         if (ret < 0)

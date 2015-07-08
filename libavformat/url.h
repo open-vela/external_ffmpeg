@@ -1,19 +1,19 @@
 /*
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,6 @@ typedef struct URLContext {
     int is_streamed;            /**< true if streamed (no seek possible), default = false */
     int is_connected;
     AVIOInterruptCB interrupt_callback;
-    int64_t rw_timeout;         /**< maximum time to wait for (network) read/write operation completion, in mcs */
 } URLContext;
 
 typedef struct URLProtocol {
@@ -87,11 +86,6 @@ typedef struct URLProtocol {
     const AVClass *priv_data_class;
     int flags;
     int (*url_check)(URLContext *h, int mask);
-    int (*url_open_dir)(URLContext *h);
-    int (*url_read_dir)(URLContext *h, AVIODirEntry **next);
-    int (*url_close_dir)(URLContext *h);
-    int (*url_delete)(URLContext *h);
-    int (*url_move)(URLContext *h_src, URLContext *h_dst);
 } URLProtocol;
 
 /**
@@ -104,7 +98,7 @@ typedef struct URLProtocol {
  * is to be opened
  * @param int_cb interrupt callback to use for the URLContext, may be
  * NULL
- * @return >= 0 in case of success, a negative value corresponding to an
+ * @return 0 in case of success, a negative value corresponding to an
  * AVERROR code in case of failure
  */
 int ffurl_alloc(URLContext **puc, const char *filename, int flags,
@@ -133,7 +127,7 @@ int ffurl_connect(URLContext *uc, AVDictionary **options);
  * @param options  A dictionary filled with protocol-private options. On return
  * this parameter will be destroyed and replaced with a dict containing options
  * that were not found. May be NULL.
- * @return >= 0 in case of success, a negative value corresponding to an
+ * @return 0 in case of success, a negative value corresponding to an
  * AVERROR code in case of failure
  */
 int ffurl_open(URLContext **puc, const char *filename, int flags,
@@ -185,12 +179,11 @@ int64_t ffurl_seek(URLContext *h, int64_t pos, int whence);
 
 /**
  * Close the resource accessed by the URLContext h, and free the
- * memory used by it. Also set the URLContext pointer to NULL.
+ * memory used by it.
  *
  * @return a negative value if an error condition occurred, 0
  * otherwise
  */
-int ffurl_closep(URLContext **h);
 int ffurl_close(URLContext *h);
 
 /**
@@ -274,7 +267,7 @@ int ff_url_join(char *str, int size, const char *proto,
                 const char *authorization, const char *hostname,
                 int port, const char *fmt, ...) av_printf_format(7, 8);
 
-/**
+/*
  * Convert a relative url into an absolute url, given a base url.
  *
  * @param buf the buffer where output absolute url is written
@@ -284,13 +277,6 @@ int ff_url_join(char *str, int size, const char *proto,
  */
 void ff_make_absolute_url(char *buf, int size, const char *base,
                           const char *rel);
-
-/**
- * Allocate directory entry with default values.
- *
- * @return entry or NULL on error
- */
-AVIODirEntry *ff_alloc_dir_entry(void);
 
 
 #endif /* AVFORMAT_URL_H */
