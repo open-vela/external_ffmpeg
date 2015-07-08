@@ -3,20 +3,20 @@
  * Copyright (c) 2005-2006 Oded Shimon ( ods15 ods15 dyndns org )
  * Copyright (c) 2006-2007 Maxim Gavrilov ( maxim.gavrilov gmail com )
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,13 +76,12 @@ enum BandType {
     ZERO_BT        = 0,     ///< Scalefactors and spectral data are all zero.
     FIRST_PAIR_BT  = 5,     ///< This and later band types encode two values (rather than four) with one code word.
     ESC_BT         = 11,    ///< Spectral data are coded with an escape sequence.
-    RESERVED_BT    = 12,    ///< Band types following are encoded differently from others.
     NOISE_BT       = 13,    ///< Spectral data are scaled white noise not coded in the bitstream.
-    INTENSITY_BT2  = 14,    ///< Scalefactor data are intensity stereo positions (out of phase).
-    INTENSITY_BT   = 15,    ///< Scalefactor data are intensity stereo positions (in phase).
+    INTENSITY_BT2  = 14,    ///< Scalefactor data are intensity stereo positions.
+    INTENSITY_BT   = 15,    ///< Scalefactor data are intensity stereo positions.
 };
 
-#define IS_CODEBOOK_UNSIGNED(x) (((x) - 1) & 10)
+#define IS_CODEBOOK_UNSIGNED(x) ((x - 1) & 10)
 
 enum ChannelPosition {
     AAC_CHANNEL_OFF   = 0,
@@ -141,10 +140,6 @@ typedef struct PredictorState {
 #define SCALE_MAX_POS   255    ///< scalefactor index maximum value
 #define SCALE_MAX_DIFF   60    ///< maximum scalefactor difference allowed by standard
 #define SCALE_DIFF_ZERO  60    ///< codebook index corresponding to zero scalefactor indices difference
-
-#define NOISE_PRE       256    ///< preamble for NOISE_BT, put in bitstream with the first noise band
-#define NOISE_PRE_BITS    9    ///< length of preamble
-#define NOISE_OFFSET     90    ///< subtracted from global gain, used as offset for the preamble
 
 /**
  * Long Term Prediction
@@ -238,10 +233,7 @@ typedef struct SingleChannelElement {
     float sf[120];                                  ///< scalefactors
     int sf_idx[128];                                ///< scalefactor indices (used by encoder)
     uint8_t zeroes[128];                            ///< band is not coded (used by encoder)
-    float  is_ener[128];                            ///< Intensity stereo pos (used by encoder)
-    float pns_ener[128];                            ///< Noise energy values (used by encoder)
-    DECLARE_ALIGNED(32, float,   pcoeffs)[1024];    ///< coefficients for IMDCT, pristine
-    DECLARE_ALIGNED(32, float,   coeffs)[1024];     ///< coefficients for IMDCT, maybe processed
+    DECLARE_ALIGNED(32, float,   coeffs)[1024];     ///< coefficients for IMDCT
     DECLARE_ALIGNED(32, float,   saved)[1536];      ///< overlap
     DECLARE_ALIGNED(32, float,   ret_buf)[2048];    ///< PCM output buffer
     DECLARE_ALIGNED(16, float,   ltp_state)[3072];  ///< time signal for LTP
@@ -253,13 +245,10 @@ typedef struct SingleChannelElement {
  * channel element - generic struct for SCE/CPE/CCE/LFE
  */
 typedef struct ChannelElement {
-    int present;
     // CPE specific
     int common_window;        ///< Set if channels share a common 'IndividualChannelStream' in bitstream.
     int     ms_mode;          ///< Signals mid/side stereo flags coding mode (used by encoder)
-    uint8_t is_mode;          ///< Set if any bands have been encoded using intensity stereo (used by encoder)
     uint8_t ms_mask[128];     ///< Set if mid/side stereo is used for each scalefactor window band
-    uint8_t is_mask[128];     ///< Set if intensity stereo is used (used by encoder)
     // shared
     SingleChannelElement ch[2];
     // CCE specific
@@ -270,8 +259,7 @@ typedef struct ChannelElement {
 /**
  * main AAC context
  */
-struct AACContext {
-    AVClass        *class;
+typedef struct AACContext {
     AVCodecContext *avctx;
     AVFrame *frame;
 
@@ -285,7 +273,6 @@ struct AACContext {
     ChannelElement          *che[4][MAX_ELEM_ID];
     ChannelElement  *tag_che_map[4][MAX_ELEM_ID];
     int tags_mapped;
-    int warned_remapping_once;
     /** @} */
 
     /**
@@ -305,7 +292,7 @@ struct AACContext {
     FFTContext mdct_ld;
     FFTContext mdct_ltp;
     IMDCT15Context *mdct480;
-    AVFloatDSPContext *fdsp;
+    AVFloatDSPContext fdsp;
     int random_state;
     /** @} */
 
@@ -316,31 +303,9 @@ struct AACContext {
     SingleChannelElement *output_element[MAX_CHANNELS]; ///< Points to each SingleChannelElement
     /** @} */
 
-
-    /**
-     * @name Japanese DTV specific extension
-     * @{
-     */
-    int force_dmono_mode;///< 0->not dmono, 1->use first channel, 2->use second channel
-    int dmono_mode;      ///< 0->not dmono, 1->use first channel, 2->use second channel
-    /** @} */
-
     DECLARE_ALIGNED(32, float, temp)[128];
 
     OutputConfiguration oc[2];
-    int warned_num_aac_frames;
-
-    /* aacdec functions pointers */
-    void (*imdct_and_windowing)(AACContext *ac, SingleChannelElement *sce);
-    void (*apply_ltp)(AACContext *ac, SingleChannelElement *sce);
-    void (*apply_tns)(float coef[1024], TemporalNoiseShaping *tns,
-                      IndividualChannelStream *ics, int decode);
-    void (*windowing_and_mdct_ltp)(AACContext *ac, float *out,
-                                   float *in, IndividualChannelStream *ics);
-    void (*update_ltp)(AACContext *ac, SingleChannelElement *sce);
-
-};
-
-void ff_aacdec_init_mips(AACContext *c);
+} AACContext;
 
 #endif /* AVCODEC_AAC_H */
