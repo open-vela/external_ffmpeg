@@ -2,20 +2,20 @@
  * libdcadec decoder wrapper
  * Copyright (C) 2015 Hendrik Leppkes
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,6 +41,7 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
 {
     DCADecContext *s = avctx->priv_data;
     AVFrame *frame = data;
+    struct dcadec_exss_info *exss;
     int ret, i, k;
     int **samples, nsamples, channel_mask, sample_rate, bits_per_sample, profile;
     uint32_t mrk;
@@ -58,7 +59,10 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
         if (!s->buffer)
             return AVERROR(ENOMEM);
 
-        if ((ret = ff_dca_convert_bitstream(avpkt->data, avpkt->size, s->buffer, s->buffer_size)) < 0)
+        for (i = 0, ret = AVERROR_INVALIDDATA; i < input_size - 3 && ret < 0; i++)
+            ret = avpriv_dca_convert_bitstream(input + i, input_size - i, s->buffer, s->buffer_size);
+
+        if (ret < 0)
             return ret;
 
         input      = s->buffer;
@@ -67,12 +71,12 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
 
     if ((ret = dcadec_context_parse(s->ctx, input, input_size)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "dcadec_context_parse() failed: %d (%s)\n", -ret, dcadec_strerror(ret));
-        return AVERROR_UNKNOWN;
+        return AVERROR_EXTERNAL;
     }
     if ((ret = dcadec_context_filter(s->ctx, &samples, &nsamples, &channel_mask,
                                      &sample_rate, &bits_per_sample, &profile)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "dcadec_context_filter() failed: %d (%s)\n", -ret, dcadec_strerror(ret));
-        return AVERROR_UNKNOWN;
+        return AVERROR_EXTERNAL;
     }
 
     avctx->channels       = av_get_channel_layout_nb_channels(channel_mask);
@@ -81,7 +85,7 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
 
     if (bits_per_sample == 16)
         avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
-    else if (bits_per_sample <= 24)
+    else if (bits_per_sample > 16 && bits_per_sample <= 24)
         avctx->sample_fmt = AV_SAMPLE_FMT_S32P;
     else {
         av_log(avctx, AV_LOG_ERROR, "Unsupported number of bits per sample: %d\n",
@@ -123,6 +127,26 @@ static int dcadec_decode_frame(AVCodecContext *avctx, void *data,
         dcadec_context_free_core_info(info);
     } else
         avctx->bit_rate = 0;
+
+#if HAVE_STRUCT_DCADEC_EXSS_INFO_MATRIX_ENCODING
+    if (exss = dcadec_context_get_exss_info(s->ctx)) {
+        enum AVMatrixEncoding matrix_encoding = AV_MATRIX_ENCODING_NONE;
+
+        switch(exss->matrix_encoding) {
+        case DCADEC_MATRIX_ENCODING_SURROUND:
+            matrix_encoding = AV_MATRIX_ENCODING_DOLBY;
+            break;
+        case DCADEC_MATRIX_ENCODING_HEADPHONE:
+            matrix_encoding = AV_MATRIX_ENCODING_DOLBYHEADPHONE;
+            break;
+        }
+        dcadec_context_free_exss_info(exss);
+
+        if (matrix_encoding != AV_MATRIX_ENCODING_NONE &&
+            (ret = ff_side_data_update_matrix_encoding(frame, matrix_encoding)) < 0)
+            return ret;
+    }
+#endif
 
     frame->nb_samples = nsamples;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
@@ -167,8 +191,13 @@ static av_cold int dcadec_close(AVCodecContext *avctx)
 static av_cold int dcadec_init(AVCodecContext *avctx)
 {
     DCADecContext *s = avctx->priv_data;
+    int flags = 0;
 
-    s->ctx = dcadec_context_create(0);
+    /* Affects only lossy DTS profiles. DTS-HD MA is always bitexact */
+    if (avctx->flags & CODEC_FLAG_BITEXACT)
+        flags |= DCADEC_FLAG_CORE_BIT_EXACT;
+
+    s->ctx = dcadec_context_create(flags);
     if (!s->ctx)
         return AVERROR(ENOMEM);
 
