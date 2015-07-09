@@ -5,20 +5,20 @@
  * Copyright (C) 2006 Benjamin Larsson
  * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,6 +41,8 @@
 #define DCA_SUBFRAMES_MAX     (16)
 #define DCA_BLOCKS_MAX        (16)
 #define DCA_LFE_MAX            (3)
+#define DCA_CHSETS_MAX         (4)
+#define DCA_CHSET_CHANS_MAX    (8)
 
 #define DCA_PRIM_CHANNELS_MAX  (7)
 #define DCA_ABITS_MAX         (32)      /* Should be 28 */
@@ -131,7 +133,7 @@ typedef struct QMF64_table {
 } QMF64_table;
 
 typedef struct DCAContext {
-    AVClass *class;             ///< class for AVOptions
+    const AVClass *class;       ///< class for AVOptions
     AVCodecContext *avctx;
     /* Frame header */
     int frame_type;             ///< type of the current frame
@@ -234,6 +236,20 @@ typedef struct DCAContext {
     int xch_base_channel;       ///< index of first (only) channel containing XCH data
     int xch_disable;            ///< whether the XCh extension should be decoded or not
 
+    /* XXCH extension information */
+    int xxch_chset;
+    int xxch_nbits_spk_mask;
+    uint32_t xxch_core_spkmask;
+    uint32_t xxch_spk_masks[4]; /* speaker masks, last element is core mask */
+    int xxch_chset_nch[4];
+    float xxch_dmix_sf[DCA_CHSETS_MAX];
+
+    uint32_t xxch_dmix_embedded;  /* lower layer has mix pre-embedded, per chset */
+    float xxch_dmix_coeff[DCA_PRIM_CHANNELS_MAX][32]; /* worst case sizing */
+
+    int8_t xxch_order_tab[32];
+    int8_t lfe_index;
+
     /* XLL extension information */
     int xll_disable;
     int xll_nch_sets;           ///< number of channel sets per frame
@@ -262,7 +278,7 @@ typedef struct DCAContext {
     int one2one_map_chtospkr;
 
     int debug_flag;             ///< used for suppressing repeated error messages output
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
     FFTContext imdct;
     SynthFilterContext synth;
     DCADSPContext dcadsp;
@@ -275,8 +291,11 @@ extern av_export const uint32_t avpriv_dca_sample_rates[16];
 /**
  * Convert bitstream to one representation based on sync marker
  */
-int ff_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
+int avpriv_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
                              int max_size);
+
+int ff_dca_xbr_parse_frame(DCAContext *s);
+int ff_dca_xxch_decode_frame(DCAContext *s);
 
 void ff_dca_exss_parse_header(DCAContext *s);
 

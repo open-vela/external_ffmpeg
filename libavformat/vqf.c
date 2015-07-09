@@ -2,20 +2,20 @@
  * VQF demuxer
  * Copyright (c) 2009 Vitor Sessak
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,6 +42,9 @@ static int vqf_probe(AVProbeData *probe_packet)
 
     if (!memcmp(probe_packet->buf + 4, "00052200", 8))
         return AVPROBE_SCORE_MAX;
+
+    if (AV_RL32(probe_packet->buf + 12) > (1<<27))
+        return AVPROBE_SCORE_EXTENSION/2;
 
     return AVPROBE_SCORE_EXTENSION;
 }
@@ -132,15 +135,16 @@ static int vqf_read_header(AVFormatContext *s)
             rate_flag           = AV_RB32(comm_chunk + 8);
             avio_skip(s->pb, len-12);
 
+            if (st->codec->channels <= 0) {
+                av_log(s, AV_LOG_ERROR, "Invalid number of channels\n");
+                return AVERROR_INVALIDDATA;
+            }
+
             st->codec->bit_rate              = read_bitrate*1000;
             break;
         case MKTAG('D','S','I','Z'): // size of compressed data
         {
-            char buf[8] = {0};
-            int size = avio_rb32(s->pb);
-
-            snprintf(buf, sizeof(buf), "%d", size);
-            av_dict_set(&s->metadata, "size", buf, 0);
+            av_dict_set_int(&s->metadata, "size", avio_rb32(s->pb), 0);
         }
             break;
         case MKTAG('Y','E','A','R'): // recording date
@@ -158,7 +162,7 @@ static int vqf_read_header(AVFormatContext *s)
 
         header_size -= len;
 
-    } while (header_size >= 0);
+    } while (header_size >= 0 && !avio_feof(s->pb));
 
     switch (rate_flag) {
     case -1:
@@ -215,9 +219,8 @@ static int vqf_read_header(AVFormatContext *s)
     avpriv_set_pts_info(st, 64, size, st->codec->sample_rate);
 
     /* put first 12 bytes of COMM chunk in extradata */
-    if (!(st->codec->extradata = av_malloc(12 + FF_INPUT_BUFFER_PADDING_SIZE)))
+    if (ff_alloc_extradata(st->codec, 12))
         return AVERROR(ENOMEM);
-    st->codec->extradata_size = 12;
     memcpy(st->codec->extradata, comm_chunk, 12);
 
     ff_metadata_conv_ctx(s, NULL, vqf_metadata_conv);
@@ -242,7 +245,7 @@ static int vqf_read_packet(AVFormatContext *s, AVPacket *pkt)
     pkt->data[1] = c->last_frame_bits;
     ret = avio_read(s->pb, pkt->data+2, size);
 
-    if (ret<=0) {
+    if (ret != size) {
         av_free_packet(pkt);
         return AVERROR(EIO);
     }
@@ -258,7 +261,7 @@ static int vqf_read_seek(AVFormatContext *s,
 {
     VqfContext *c = s->priv_data;
     AVStream *st;
-    int ret;
+    int64_t ret;
     int64_t pos;
 
     st = s->streams[stream_index];
