@@ -2,26 +2,25 @@
  * RTP JPEG-compressed video Packetizer, RFC 2435
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavcodec/bytestream.h"
 #include "libavcodec/mjpeg.h"
-#include "libavcodec/jpegtables.h"
 #include "libavutil/intreadwrite.h"
 #include "rtpenc.h"
 
@@ -41,8 +40,8 @@ void ff_rtp_send_jpeg(AVFormatContext *s1, const uint8_t *buf, int size)
     s->timestamp = s->cur_timestamp;
 
     /* convert video pixel dimensions from pixels to blocks */
-    w = FF_CEIL_RSHIFT(s1->streams[0]->codec->width, 3);
-    h = FF_CEIL_RSHIFT(s1->streams[0]->codec->height, 3);
+    w = (s1->streams[0]->codec->width  + 7) >> 3;
+    h = (s1->streams[0]->codec->height + 7) >> 3;
 
     /* get the pixel format type or fail */
     if (s1->streams[0]->codec->pix_fmt == AV_PIX_FMT_YUVJ422P ||
@@ -64,7 +63,7 @@ void ff_rtp_send_jpeg(AVFormatContext *s1, const uint8_t *buf, int size)
             continue;
 
         if (buf[i + 1] == DQT) {
-            if (buf[i + 4] & 0xF0)
+            if (buf[i + 4])
                 av_log(s1, AV_LOG_WARNING,
                        "Only 8-bit precision is supported.\n");
 
@@ -82,33 +81,9 @@ void ff_rtp_send_jpeg(AVFormatContext *s1, const uint8_t *buf, int size)
                        "Only 1x1 chroma blocks are supported. Aborted!\n");
                 return;
             }
-        } else if (buf[i + 1] == DHT) {
-            if (   AV_RB16(&buf[i + 2]) < 418
-                || i + 420 >= size
-                || buf[i +   4] != 0x00
-                || buf[i +  33] != 0x01
-                || buf[i +  62] != 0x10
-                || buf[i + 241] != 0x11
-                || memcmp(buf + i +   5, avpriv_mjpeg_bits_dc_luminance   + 1, 16)
-                || memcmp(buf + i +  21, avpriv_mjpeg_val_dc, 12)
-                || memcmp(buf + i +  34, avpriv_mjpeg_bits_dc_chrominance + 1, 16)
-                || memcmp(buf + i +  50, avpriv_mjpeg_val_dc, 12)
-                || memcmp(buf + i +  63, avpriv_mjpeg_bits_ac_luminance   + 1, 16)
-                || memcmp(buf + i +  79, avpriv_mjpeg_val_ac_luminance, 162)
-                || memcmp(buf + i + 242, avpriv_mjpeg_bits_ac_chrominance + 1, 16)
-                || memcmp(buf + i + 258, avpriv_mjpeg_val_ac_chrominance, 162)) {
-                av_log(s1, AV_LOG_ERROR,
-                       "RFC 2435 requires standard Huffman tables for jpeg\n");
-                return;
-            }
         } else if (buf[i + 1] == SOS) {
             /* SOS is last marker in the header */
             i += AV_RB16(&buf[i + 2]) + 2;
-            if (i > size) {
-                av_log(s1, AV_LOG_ERROR,
-                       "Insufficient data. Aborted!\n");
-                return;
-            }
             break;
         }
     }

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,11 +39,6 @@ static int adx_read_packet(AVFormatContext *s, AVPacket *pkt)
     ADXDemuxerContext *c = s->priv_data;
     AVCodecContext *avctx = s->streams[0]->codec;
     int ret, size;
-
-    if (avctx->channels <= 0) {
-        av_log(s, AV_LOG_ERROR, "invalid number of channels %d\n", avctx->channels);
-        return AVERROR_INVALIDDATA;
-    }
 
     size = BLOCK_SIZE * avctx->channels;
 
@@ -81,8 +76,14 @@ static int adx_read_header(AVFormatContext *s)
     c->header_size = avio_rb16(s->pb) + 4;
     avio_seek(s->pb, -4, SEEK_CUR);
 
-    if (ff_get_extradata(avctx, s->pb, c->header_size) < 0)
+    avctx->extradata = av_mallocz(c->header_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!avctx->extradata)
         return AVERROR(ENOMEM);
+    if (avio_read(s->pb, avctx->extradata, c->header_size) < c->header_size) {
+        av_freep(&avctx->extradata);
+        return AVERROR(EIO);
+    }
+    avctx->extradata_size = c->header_size;
 
     if (avctx->extradata_size < 12) {
         av_log(s, AV_LOG_ERROR, "Invalid extradata size.\n");
