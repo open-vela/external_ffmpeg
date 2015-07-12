@@ -1,20 +1,20 @@
 /*
  * HEVC common code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,14 +29,12 @@
 
 /* FIXME: This is adapted from ff_h264_decode_nal, avoiding duplication
  * between these functions would be nice. */
-int ff_hevc_extract_rbsp(HEVCContext *s, const uint8_t *src, int length,
+int ff_hevc_extract_rbsp(const uint8_t *src, int length,
                          HEVCNAL *nal)
 {
     int i, si, di;
     uint8_t *dst;
 
-    if (s)
-        nal->skipped_bytes = 0;
 #define STARTCODE_TEST                                                  \
         if (i + 2 < length && src[i + 1] == 0 && src[i + 2] <= 3) {     \
             if (src[i + 2] != 3) {                                      \
@@ -110,22 +108,6 @@ int ff_hevc_extract_rbsp(HEVCContext *s, const uint8_t *src, int length,
                 dst[di++] = 0;
                 si       += 3;
 
-                if (s && nal->skipped_bytes_pos) {
-                    nal->skipped_bytes++;
-                    if (nal->skipped_bytes_pos_size < nal->skipped_bytes) {
-                        nal->skipped_bytes_pos_size *= 2;
-                        av_assert0(nal->skipped_bytes_pos_size >= nal->skipped_bytes);
-                        av_reallocp_array(&nal->skipped_bytes_pos,
-                                nal->skipped_bytes_pos_size,
-                                sizeof(*nal->skipped_bytes_pos));
-                        if (!nal->skipped_bytes_pos) {
-                            nal->skipped_bytes_pos_size = 0;
-                            return AVERROR(ENOMEM);
-                        }
-                    }
-                    if (nal->skipped_bytes_pos)
-                        nal->skipped_bytes_pos[nal->skipped_bytes-1] = di - 1;
-                }
                 continue;
             } else // next start code
                 goto nsc;
@@ -166,14 +148,14 @@ static int hls_nal_unit(HEVCNAL *nal, AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
 
     av_log(avctx, AV_LOG_DEBUG,
-           "nal_unit_type: %d, nuh_layer_id: %d, temporal_id: %d\n",
+           "nal_unit_type: %d, nuh_layer_id: %dtemporal_id: %d\n",
            nal->type, nuh_layer_id, nal->temporal_id);
 
     return nuh_layer_id == 0;
 }
 
 
-int ff_hevc_split_packet(HEVCContext *s, HEVCPacket *pkt, const uint8_t *buf, int length,
+int ff_hevc_split_packet(HEVCPacket *pkt, const uint8_t *buf, int length,
                          AVCodecContext *avctx, int is_nalff, int nal_length_size)
 {
     int consumed, ret = 0;
@@ -195,15 +177,13 @@ int ff_hevc_split_packet(HEVCContext *s, HEVCPacket *pkt, const uint8_t *buf, in
                 return AVERROR_INVALIDDATA;
             }
         } else {
-            /* search start code */
-            while (buf[0] != 0 || buf[1] != 0 || buf[2] != 1) {
-                ++buf;
-                --length;
-                if (length < 4) {
-                    av_log(avctx, AV_LOG_ERROR, "No start code is found.\n");
-                    return AVERROR_INVALIDDATA;
-                }
+            if (buf[2] == 0) {
+                length--;
+                buf++;
+                continue;
             }
+            if (buf[0] != 0 || buf[1] != 0 || buf[2] != 1)
+                return AVERROR_INVALIDDATA;
 
             buf           += 3;
             length        -= 3;
@@ -212,30 +192,20 @@ int ff_hevc_split_packet(HEVCContext *s, HEVCPacket *pkt, const uint8_t *buf, in
 
         if (pkt->nals_allocated < pkt->nb_nals + 1) {
             int new_size = pkt->nals_allocated + 1;
-            void *tmp = av_realloc_array(pkt->nals, new_size, sizeof(*pkt->nals));
-
+            HEVCNAL *tmp = av_realloc_array(pkt->nals, new_size, sizeof(*tmp));
             if (!tmp)
                 return AVERROR(ENOMEM);
 
             pkt->nals = tmp;
             memset(pkt->nals + pkt->nals_allocated, 0,
-                   (new_size - pkt->nals_allocated) * sizeof(*pkt->nals));
-
-            nal = &pkt->nals[pkt->nb_nals];
-            nal->skipped_bytes_pos_size = 1024; // initial buffer size
-            nal->skipped_bytes_pos = av_malloc_array(nal->skipped_bytes_pos_size, sizeof(*nal->skipped_bytes_pos));
-            if (!nal->skipped_bytes_pos)
-                return AVERROR(ENOMEM);
-
+                   (new_size - pkt->nals_allocated) * sizeof(*tmp));
             pkt->nals_allocated = new_size;
         }
-        nal = &pkt->nals[pkt->nb_nals];
+        nal = &pkt->nals[pkt->nb_nals++];
 
-        consumed = ff_hevc_extract_rbsp(s, buf, extract_length, nal);
+        consumed = ff_hevc_extract_rbsp(buf, extract_length, nal);
         if (consumed < 0)
             return consumed;
-
-        pkt->nb_nals++;
 
         ret = init_get_bits8(&nal->gb, nal->data, nal->size);
         if (ret < 0)
@@ -256,4 +226,3 @@ int ff_hevc_split_packet(HEVCContext *s, HEVCPacket *pkt, const uint8_t *buf, in
 
     return 0;
 }
-
