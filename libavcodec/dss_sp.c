@@ -2,20 +2,20 @@
  * Digital Speech Standard - Standard Play mode (DSS SP) audio decoder.
  * Copyright (C) 2014 Oleksij Rempel <linux@rempel-privat.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,7 @@
 
 #define DSS_SP_FRAME_SIZE        42
 #define DSS_SP_SAMPLE_COUNT     (66 * SUBFRAMES)
-#define DSS_SP_FORMULA(a, b, c) (((((a) << 15) + (b) * (c)) + 0x4000) >> 15)
+#define DSS_SP_FORMULA(a, b, c) ((((a) << 15) + (b) * (c)) + 0x4000) >> 15
 
 typedef struct DssSpSubframe {
     int16_t gain;
@@ -50,7 +50,6 @@ typedef struct DssSpFrame {
 } DssSpFrame;
 
 typedef struct DssSpContext {
-    AVCodecContext *avctx;
     int32_t excitation[288 + 6];
     int32_t history[187];
     DssSpFrame fparam;
@@ -297,7 +296,6 @@ static av_cold int dss_sp_decode_init(AVCodecContext *avctx)
 
     memset(p->history, 0, sizeof(p->history));
     p->pulse_dec_mode = 1;
-    p->avctx          = avctx;
 
     return 0;
 }
@@ -380,7 +378,7 @@ static void dss_sp_unpack_coeffs(DssSpContext *p, const uint8_t *src)
                 if (C72_binomials[index] <= combined_pulse_pos) {
                     combined_pulse_pos -= C72_binomials[index];
 
-                    fparam->sf[subframe_idx].pulse_pos[6 - index] = i;
+                    fparam->sf[subframe_idx].pulse_pos[(index ^ 7) - 1] = i;
 
                     if (!index)
                         break;
@@ -402,15 +400,10 @@ static void dss_sp_unpack_coeffs(DssSpContext *p, const uint8_t *src)
 
     combined_pitch /= 151;
 
-    for (i = 1; i < SUBFRAMES - 1; i++) {
+    for (i = 1; i < SUBFRAMES; i++) {
         fparam->pitch_lag[i] = combined_pitch % 48;
         combined_pitch      /= 48;
     }
-    if (combined_pitch > 47) {
-        av_log (p->avctx, AV_LOG_WARNING, "combined_pitch was too large\n");
-        combined_pitch = 0;
-    }
-    fparam->pitch_lag[i] = combined_pitch;
 
     pitch_lag = fparam->pitch_lag[0];
     for (i = 1; i < SUBFRAMES; i++) {

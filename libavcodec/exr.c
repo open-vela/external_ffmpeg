@@ -2,20 +2,20 @@
  * OpenEXR (.exr) image decoder
  * Copyright (c) 2009 Jimmy Christensen
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -722,8 +722,8 @@ static int piz_uncompress(EXRContext *s, const uint8_t *src, int ssize,
     if (!td->lut)
         td->lut = av_malloc(1 << 17);
     if (!td->bitmap || !td->lut) {
-        av_freep(&td->bitmap);
-        av_freep(&td->lut);
+        av_free(td->bitmap);
+        av_free(td->lut);
         return AVERROR(ENOMEM);
     }
 
@@ -1009,22 +1009,6 @@ static int decode_header(EXRContext *s)
 {
     int current_channel_offset = 0;
     int magic_number, version, flags, i;
-
-    s->xmin               = ~0;
-    s->xmax               = ~0;
-    s->ymin               = ~0;
-    s->ymax               = ~0;
-    s->xdelta             = ~0;
-    s->ydelta             = ~0;
-    s->channel_offsets[0] = -1;
-    s->channel_offsets[1] = -1;
-    s->channel_offsets[2] = -1;
-    s->channel_offsets[3] = -1;
-    s->pixel_type         = EXR_UNKNOWN;
-    s->compression        = EXR_UNKN;
-    s->nb_channels        = 0;
-    s->w                  = 0;
-    s->h                  = 0;
 
     if (bytestream2_get_bytes_left(&s->gb) < 10) {
         av_log(s->avctx, AV_LOG_ERROR, "Header too short to parse.\n");
@@ -1366,6 +1350,21 @@ static av_cold int decode_init(AVCodecContext *avctx)
     float one_gamma = 1.0f / s->gamma;
 
     s->avctx              = avctx;
+    s->xmin               = ~0;
+    s->xmax               = ~0;
+    s->ymin               = ~0;
+    s->ymax               = ~0;
+    s->xdelta             = ~0;
+    s->ydelta             = ~0;
+    s->channel_offsets[0] = -1;
+    s->channel_offsets[1] = -1;
+    s->channel_offsets[2] = -1;
+    s->channel_offsets[3] = -1;
+    s->pixel_type         = EXR_UNKNOWN;
+    s->compression        = EXR_UNKN;
+    s->nb_channels        = 0;
+    s->w                  = 0;
+    s->h                  = 0;
 
     if (one_gamma > 0.9999f && one_gamma < 1.0001f) {
         for (i = 0; i < 65536; ++i)
