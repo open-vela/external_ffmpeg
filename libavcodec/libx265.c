@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,8 +66,6 @@ static av_cold int libx265_encode_close(AVCodecContext *avctx)
 {
     libx265Context *ctx = avctx->priv_data;
 
-    av_frame_free(&avctx->coded_frame);
-
     ctx->api->param_free(ctx->params);
 
     if (ctx->encoder)
@@ -90,12 +88,6 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
                "4:2:2 and 4:4:4 support is not fully defined for HEVC yet. "
                "Set -strict experimental to encode anyway.\n");
         return AVERROR(ENOSYS);
-    }
-
-    avctx->coded_frame = av_frame_alloc();
-    if (!avctx->coded_frame) {
-        av_log(avctx, AV_LOG_ERROR, "Could not allocate frame.\n");
-        return AVERROR(ENOMEM);
     }
 
     ctx->params = ctx->api->param_alloc();
@@ -280,7 +272,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = ctx->api->encoder_encode(ctx->encoder, &nal, &nnal,
                                    pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_EXTERNAL;
+        return AVERROR_UNKNOWN;
 
     if (!nnal)
         return 0;
@@ -306,6 +298,8 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     pkt->pts = x265pic_out.pts;
     pkt->dts = x265pic_out.dts;
 
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
     switch (x265pic_out.sliceType) {
     case X265_TYPE_IDR:
     case X265_TYPE_I:
@@ -318,6 +312,8 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         avctx->coded_frame->pict_type = AV_PICTURE_TYPE_B;
         break;
     }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     *got_packet = 1;
     return 0;
@@ -342,10 +338,10 @@ static const enum AVPixelFormat x265_csp_twelve[] = {
 
 static av_cold void libx265_encode_init_csp(AVCodec *codec)
 {
-    if (x265_api_get(10))
-        codec->pix_fmts = x265_csp_twelve;
-    else if (x265_api_get(8))
+    if (x265_max_bit_depth == 8)
         codec->pix_fmts = x265_csp_eight;
+    else if (x265_max_bit_depth == 12)
+        codec->pix_fmts = x265_csp_twelve;
 }
 
 #define OFFSET(x) offsetof(libx265Context, x)

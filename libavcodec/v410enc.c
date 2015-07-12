@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2011 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,15 +28,8 @@
 static av_cold int v410_encode_init(AVCodecContext *avctx)
 {
     if (avctx->width & 1) {
-        av_log(avctx, AV_LOG_ERROR, "v410 requires width to be even.\n");
+        av_log(avctx, AV_LOG_ERROR, "v410 requires even width.\n");
         return AVERROR_INVALIDDATA;
-    }
-
-    avctx->coded_frame = av_frame_alloc();
-
-    if (!avctx->coded_frame) {
-        av_log(avctx, AV_LOG_ERROR, "Could not allocate frame.\n");
-        return AVERROR(ENOMEM);
     }
 
     return 0;
@@ -50,12 +43,18 @@ static int v410_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     uint32_t val;
     int i, j, ret;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, avctx->width * avctx->height * 4)) < 0)
+    if ((ret = ff_alloc_packet(pkt, avctx->width * avctx->height * 4)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
+    }
     dst = pkt->data;
 
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
     avctx->coded_frame->key_frame = 1;
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     y = (uint16_t *)pic->data[0];
     u = (uint16_t *)pic->data[1];
@@ -79,13 +78,6 @@ static int v410_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     return 0;
 }
 
-static av_cold int v410_encode_close(AVCodecContext *avctx)
-{
-    av_frame_free(&avctx->coded_frame);
-
-    return 0;
-}
-
 AVCodec ff_v410_encoder = {
     .name         = "v410",
     .long_name    = NULL_IF_CONFIG_SMALL("Uncompressed 4:4:4 10-bit"),
@@ -93,6 +85,5 @@ AVCodec ff_v410_encoder = {
     .id           = AV_CODEC_ID_V410,
     .init         = v410_encode_init,
     .encode2      = v410_encode_frame,
-    .close        = v410_encode_close,
     .pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV444P10, AV_PIX_FMT_NONE },
 };
