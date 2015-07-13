@@ -3,26 +3,28 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdint.h>
 #include <string.h>
 
+#include "libavutil/avassert.h"
+#include "libavutil/atomic.h"
 #include "libavutil/mem.h"
 
 #include "internal.h"
@@ -40,20 +42,21 @@ AVCodecParser *av_parser_next(const AVCodecParser *p)
 
 void av_register_codec_parser(AVCodecParser *parser)
 {
-    parser->next = av_first_parser;
-    av_first_parser = parser;
+    do {
+        parser->next = av_first_parser;
+    } while (parser->next != avpriv_atomic_ptr_cas((void * volatile *)&av_first_parser, parser->next, parser));
 }
 
 AVCodecParserContext *av_parser_init(int codec_id)
 {
-    AVCodecParserContext *s;
+    AVCodecParserContext *s = NULL;
     AVCodecParser *parser;
     int ret;
 
     if (codec_id == AV_CODEC_ID_NONE)
         return NULL;
 
-    for (parser = av_first_parser; parser != NULL; parser = parser->next) {
+    for (parser = av_first_parser; parser; parser = parser->next) {
         if (parser->codec_ids[0] == codec_id ||
             parser->codec_ids[1] == codec_id ||
             parser->codec_ids[2] == codec_id ||
@@ -66,25 +69,18 @@ AVCodecParserContext *av_parser_init(int codec_id)
 found:
     s = av_mallocz(sizeof(AVCodecParserContext));
     if (!s)
-        return NULL;
+        goto err_out;
     s->parser = parser;
-    if (parser->priv_data_size) {
-        s->priv_data = av_mallocz(parser->priv_data_size);
-        if (!s->priv_data) {
-            av_free(s);
-            return NULL;
-        }
-    }
+    s->priv_data = av_mallocz(parser->priv_data_size);
+    if (!s->priv_data)
+        goto err_out;
+    s->fetch_timestamp=1;
+    s->pict_type = AV_PICTURE_TYPE_I;
     if (parser->parser_init) {
         ret = parser->parser_init(s);
-        if (ret != 0) {
-            av_free(s->priv_data);
-            av_free(s);
-            return NULL;
-        }
+        if (ret != 0)
+            goto err_out;
     }
-    s->fetch_timestamp      = 1;
-    s->pict_type            = AV_PICTURE_TYPE_I;
     s->key_frame            = -1;
     s->convergence_duration = 0;
     s->dts_sync_point       = INT_MIN;
@@ -93,25 +89,37 @@ found:
     s->format               = -1;
 
     return s;
+
+err_out:
+    if (s)
+        av_freep(&s->priv_data);
+    av_free(s);
+    return NULL;
 }
 
-void ff_fetch_timestamp(AVCodecParserContext *s, int off, int remove)
+void ff_fetch_timestamp(AVCodecParserContext *s, int off, int remove, int fuzzy)
 {
     int i;
 
-    s->dts    =
-    s->pts    = AV_NOPTS_VALUE;
-    s->pos    = -1;
-    s->offset = 0;
+    if (!fuzzy) {
+        s->dts    =
+        s->pts    = AV_NOPTS_VALUE;
+        s->pos    = -1;
+        s->offset = 0;
+    }
     for (i = 0; i < AV_PARSER_PTS_NB; i++) {
         if (s->cur_offset + off >= s->cur_frame_offset[i] &&
             (s->frame_offset < s->cur_frame_offset[i] ||
-             (!s->frame_offset && !s->next_frame_offset)) &&
-            s->cur_frame_end[i]) {
-            s->dts    = s->cur_frame_dts[i];
-            s->pts    = s->cur_frame_pts[i];
-            s->pos    = s->cur_frame_pos[i];
-            s->offset = s->next_frame_offset - s->cur_frame_offset[i];
+             (!s->frame_offset && !s->next_frame_offset)) && // first field/frame
+            // check disabled since MPEG-TS does not send complete PES packets
+            /*s->next_frame_offset + off <*/  s->cur_frame_end[i]){
+
+            if (!fuzzy || s->cur_frame_dts[i] != AV_NOPTS_VALUE) {
+                s->dts    = s->cur_frame_dts[i];
+                s->pts    = s->cur_frame_pts[i];
+                s->pos    = s->cur_frame_pos[i];
+                s->offset = s->next_frame_offset - s->cur_frame_offset[i];
+            }
             if (remove)
                 s->cur_frame_offset[i] = INT64_MAX;
             if (s->cur_offset + off < s->cur_frame_end[i])
@@ -154,11 +162,12 @@ int av_parser_parse2(AVCodecParserContext *s, AVCodecContext *avctx,
         s->last_pts        = s->pts;
         s->last_dts        = s->dts;
         s->last_pos        = s->pos;
-        ff_fetch_timestamp(s, 0, 0);
+        ff_fetch_timestamp(s, 0, 0, 0);
     }
     /* WARNING: the returned index can be negative */
     index = s->parser->parser_parse(s, avctx, (const uint8_t **) poutbuf,
                                     poutbuf_size, buf, buf_size);
+    av_assert0(index > -0x20000000); // The API does not allow returning AVERROR codes
     /* update the file pointer */
     if (*poutbuf_size) {
         /* fill the data for the current frame */
@@ -214,7 +223,7 @@ void av_parser_close(AVCodecParserContext *s)
     if (s) {
         if (s->parser->parser_close)
             s->parser->parser_close(s);
-        av_free(s->priv_data);
+        av_freep(&s->priv_data);
         av_free(s);
     }
 }
@@ -245,8 +254,11 @@ int ff_combine_frame(ParseContext *pc, int next,
                                            *buf_size + pc->index +
                                            FF_INPUT_BUFFER_PADDING_SIZE);
 
-        if (!new_buffer)
+        if (!new_buffer) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to reallocate parser buffer to %d\n", *buf_size + pc->index + FF_INPUT_BUFFER_PADDING_SIZE);
+            pc->index = 0;
             return AVERROR(ENOMEM);
+        }
         pc->buffer = new_buffer;
         memcpy(&pc->buffer[pc->index], *buf, *buf_size);
         pc->index += *buf_size;
@@ -261,9 +273,12 @@ int ff_combine_frame(ParseContext *pc, int next,
         void *new_buffer = av_fast_realloc(pc->buffer, &pc->buffer_size,
                                            next + pc->index +
                                            FF_INPUT_BUFFER_PADDING_SIZE);
-
-        if (!new_buffer)
+        if (!new_buffer) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to reallocate parser buffer to %d\n", next + pc->index + FF_INPUT_BUFFER_PADDING_SIZE);
+            pc->overread_index =
+            pc->index = 0;
             return AVERROR(ENOMEM);
+        }
         pc->buffer = new_buffer;
         if (next > -FF_INPUT_BUFFER_PADDING_SIZE)
             memcpy(&pc->buffer[pc->index], *buf,
@@ -298,13 +313,14 @@ void ff_parse_close(AVCodecParserContext *s)
 
 int ff_mpeg4video_split(AVCodecContext *avctx, const uint8_t *buf, int buf_size)
 {
-    int i;
     uint32_t state = -1;
+    const uint8_t *ptr = buf, *end = buf + buf_size;
 
-    for (i = 0; i < buf_size; i++) {
-        state = state << 8 | buf[i];
+    while (ptr < end) {
+        ptr = avpriv_find_start_code(ptr, end, &state);
         if (state == 0x1B3 || state == 0x1B6)
-            return i - 3;
+            return ptr - 4 - buf;
     }
+
     return 0;
 }

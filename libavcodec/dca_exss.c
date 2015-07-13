@@ -1,20 +1,20 @@
 /*
  * DCA ExSS extension
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -316,6 +316,8 @@ void ff_dca_exss_parse_header(DCAContext *s)
         }
     }
 
+    av_assert0(num_assets > 0); // silence a warning
+
     for (i = 0; i < num_assets; i++)
         asset_size[i] = get_bits_long(&s->gb, 16 + 4 * blownup) + 1;
 
@@ -324,7 +326,6 @@ void ff_dca_exss_parse_header(DCAContext *s)
             return;
     }
 
-    if (num_assets > 0) {
         j = get_bits_count(&s->gb);
         if (start_pos + hdrsize * 8 > j)
             skip_bits_long(&s->gb, start_pos + hdrsize * 8 - j);
@@ -337,6 +338,13 @@ void ff_dca_exss_parse_header(DCAContext *s)
 
             /* parse extensions that we know about */
             switch (mkr) {
+            case DCA_SYNCWORD_XBR:
+                ff_dca_xbr_parse_frame(s);
+                break;
+            case DCA_SYNCWORD_XXCH:
+                ff_dca_xxch_decode_frame(s);
+                s->core_ext_mask |= DCA_EXT_XXCH; /* xxx use for chan reordering */
+                break;
             case DCA_SYNCWORD_XLL:
                 if (s->xll_disable) {
                     av_log(s->avctx, AV_LOG_DEBUG,
@@ -349,11 +357,9 @@ void ff_dca_exss_parse_header(DCAContext *s)
                     ff_dca_xll_decode_navi(s, end_pos) == 0)
                     s->exss_ext_mask |= DCA_EXT_EXSS_XLL;
                 break;
-            case DCA_SYNCWORD_XBR:
-            case DCA_SYNCWORD_XXCH:
             default:
-                av_log(s->avctx, AV_LOG_VERBOSE,
-                       "DTS-ExSS: unknown marker = 0x%08"PRIx32"\n", mkr);
+                av_log(s->avctx, AV_LOG_DEBUG,
+                       "DTS-ExSS: unknown marker = 0x%08x\n", mkr);
             }
 
             /* skip to end of block */
@@ -364,5 +370,4 @@ void ff_dca_exss_parse_header(DCAContext *s)
             if (j < end_pos)
                 skip_bits_long(&s->gb, end_pos - j);
         }
-    }
 }
