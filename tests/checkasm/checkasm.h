@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -30,7 +30,6 @@
 #include "libavutil/timer.h"
 
 void checkasm_check_h264pred(void);
-void checkasm_check_h264qpel(void);
 
 intptr_t (*checkasm_check_func(intptr_t (*func)(), const char *name, ...))() av_printf_format(2, 3);
 int checkasm_bench_func(void);
@@ -110,7 +109,7 @@ void checkasm_stack_clobber(uint64_t clobber, ...);
         }\
     } while (0)
 #else
-#define bench_new(...) while(0)
+#define bench_new(...)
 #endif
 
 #endif
