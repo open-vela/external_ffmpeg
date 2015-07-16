@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,13 +51,13 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format)
 static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession session)
 {
     if (!session) {
-        if (!q->internal_session) {
-            int ret = ff_qsv_init_internal_session(avctx, &q->internal_session, NULL);
+        if (!q->internal_qs.session) {
+            int ret = ff_qsv_init_internal_session(avctx, &q->internal_qs, NULL);
             if (ret < 0)
                 return ret;
         }
 
-        q->session = q->internal_session;
+        q->session = q->internal_qs.session;
     } else {
         q->session = session;
     }
@@ -282,9 +282,7 @@ int ff_qsv_decode_close(QSVContext *q)
         av_freep(&cur);
         cur = q->work_frames;
     }
-
-    if (q->internal_session)
-        MFXClose(q->internal_session);
+    ff_qsv_close_internal_session(&q->internal_qs);
 
     return 0;
 }
