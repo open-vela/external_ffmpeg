@@ -2,20 +2,19 @@
  * AviSynth/AvxSynth support
  * Copyright (c) 2012 AvxSynth Team.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,12 +31,12 @@
 #ifdef _WIN32
   #include <windows.h>
   #undef EXTERN_C
-  #include <avisynth/avisynth_c.h>
+  #include "compat/avisynth/avisynth_c.h"
   #define AVISYNTH_LIB "avisynth"
   #define USING_AVISYNTH
 #else
   #include <dlfcn.h>
-  #include <avxsynth/avxsynth_c.h>
+  #include "compat/avisynth/avxsynth_c.h"
   #define AVISYNTH_NAME "libavxsynth"
   #define AVISYNTH_LIB AVISYNTH_NAME SLIBSUF
 
@@ -405,7 +404,7 @@ static int avisynth_open_file(AVFormatContext *s)
     avs->vi   = avs_library.avs_get_video_info(avs->clip);
 
 #ifdef USING_AVISYNTH
-    /* On Windows, libav supports AviSynth interface version 6 or higher.
+    /* On Windows, FFmpeg supports AviSynth interface version 6 or higher.
      * This includes AviSynth 2.6 RC1 or higher, and AviSynth+ r1718 or higher,
      * and excludes 2.5 and the 2.6 alphas. Since AvxSynth identifies itself
      * as interface version 3 like 2.5.8, this needs to be special-cased. */

@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -72,21 +72,7 @@ static const struct {
     const char *suffix;
     int flag;
 } cpus[] = {
-#if   ARCH_AARCH64
-    { "ARMV8",    "armv8",    AV_CPU_FLAG_ARMV8 },
-    { "NEON",     "neon",     AV_CPU_FLAG_NEON },
-#elif ARCH_ARM
-    { "ARMV5TE",  "armv5te",  AV_CPU_FLAG_ARMV5TE },
-    { "ARMV6",    "armv6",    AV_CPU_FLAG_ARMV6 },
-    { "ARMV6T2",  "armv6t2",  AV_CPU_FLAG_ARMV6T2 },
-    { "VFP",      "vfp",      AV_CPU_FLAG_VFP },
-    { "VFPV3",    "vfp3",     AV_CPU_FLAG_VFPV3 },
-    { "NEON",     "neon",     AV_CPU_FLAG_NEON },
-#elif ARCH_PPC
-    { "ALTIVEC",  "altivec",  AV_CPU_FLAG_ALTIVEC },
-    { "VSX",      "vsx",      AV_CPU_FLAG_VSX },
-    { "POWER8",   "power8",   AV_CPU_FLAG_POWER8 },
-#elif ARCH_X86
+#if ARCH_X86
     { "MMX",      "mmx",      AV_CPU_FLAG_MMX|AV_CPU_FLAG_CMOV },
     { "MMXEXT",   "mmxext",   AV_CPU_FLAG_MMXEXT },
     { "3DNOW",    "3dnow",    AV_CPU_FLAG_3DNOW },
@@ -334,7 +320,7 @@ int main(int argc, char *argv[])
 
     if (!tests[0] || !cpus[0].flag) {
         fprintf(stderr, "checkasm: no tests to perform\n");
-        return 0;
+        return 1;
     }
 
     if (argc > 1 && !strncmp(argv[1], "--bench", 7)) {
