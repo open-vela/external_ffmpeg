@@ -2,20 +2,20 @@
  * DirectDraw Surface image decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,7 +105,6 @@ typedef struct DDSContext {
 
     const uint8_t *tex_data; // Compressed texture
     int tex_ratio;           // Compression ratio
-    int slice_size;          // Optimal slice size
 
     /* Pointer to the selected compress or decompress function. */
     int (*tex_funct)(uint8_t *dst, ptrdiff_t stride, const uint8_t *block);
@@ -358,13 +357,13 @@ static int parse_pixel_format(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_BGR24;
         /* 32 bpp */
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_RGBA; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_BGR0; // opaque
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_BGRA; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_RGB0; // opaque
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0xff000000)
-            avctx->pix_fmt = AV_PIX_FMT_RGBA;
-        else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0xff000000)
             avctx->pix_fmt = AV_PIX_FMT_BGRA;
+        else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0xff000000)
+            avctx->pix_fmt = AV_PIX_FMT_RGBA;
         /* give up */
         else {
             av_log(avctx, AV_LOG_ERROR, "Unknown pixel format "
@@ -415,30 +414,16 @@ static int parse_pixel_format(AVCodecContext *avctx)
 }
 
 static int decompress_texture_thread(AVCodecContext *avctx, void *arg,
-                                     int slice, int thread_nb)
+                                     int block_nb, int thread_nb)
 {
     DDSContext *ctx = avctx->priv_data;
     AVFrame *frame = arg;
-    const uint8_t *d = ctx->tex_data;
-    int w_block = avctx->coded_width / TEXTURE_BLOCK_W;
-    int x, y;
-    int start_slice, end_slice;
+    int x = (TEXTURE_BLOCK_W * block_nb) % avctx->coded_width;
+    int y = TEXTURE_BLOCK_H * (TEXTURE_BLOCK_W * block_nb / avctx->coded_width);
+    uint8_t *p = frame->data[0] + x * 4 + y * frame->linesize[0];
+    const uint8_t *d = ctx->tex_data + block_nb * ctx->tex_ratio;
 
-    start_slice = slice * ctx->slice_size;
-    end_slice   = FFMIN(start_slice + ctx->slice_size, avctx->coded_height);
-
-    start_slice /= TEXTURE_BLOCK_H;
-    end_slice   /= TEXTURE_BLOCK_H;
-
-    for (y = start_slice; y < end_slice; y++) {
-        uint8_t *p = frame->data[0] + y * frame->linesize[0] * TEXTURE_BLOCK_H;
-        int off  = y * w_block;
-        for (x = 0; x < w_block; x++) {
-            ctx->tex_funct(p + x * 16, frame->linesize[0],
-                           d + (off + x) * ctx->tex_ratio);
-        }
-    }
-
+    ctx->tex_funct(p, frame->linesize[0], d);
     return 0;
 }
 
@@ -583,7 +568,7 @@ static int dds_decode(AVCodecContext *avctx, void *data,
     DDSContext *ctx = avctx->priv_data;
     GetByteContext *gbc = &ctx->gbc;
     AVFrame *frame = data;
-    int mipmap;
+    int blocks, mipmap;
     int ret;
 
     ff_texturedsp_init(&ctx->texdsp);
@@ -633,23 +618,24 @@ static int dds_decode(AVCodecContext *avctx, void *data,
         return ret;
 
     if (ctx->compressed) {
-        int slices = FFMIN(avctx->thread_count,
-                           avctx->coded_height / TEXTURE_BLOCK_H);
-        ctx->slice_size = avctx->coded_height / slices;
-
         /* Use the decompress function on the texture, one block per thread. */
         ctx->tex_data = gbc->buffer;
-        avctx->execute2(avctx, decompress_texture_thread, frame, NULL, slices);
+        blocks = avctx->coded_width * avctx->coded_height / (TEXTURE_BLOCK_W * TEXTURE_BLOCK_H);
+        avctx->execute2(avctx, decompress_texture_thread, frame, NULL, blocks);
     } else {
         int linesize = av_image_get_linesize(avctx->pix_fmt, frame->width, 0);
 
         if (ctx->paletted) {
             int i;
-            uint32_t *p = (uint32_t *)frame->data[1];
-
             /* Use the first 1024 bytes as palette, then copy the rest. */
+            bytestream2_get_buffer(gbc, frame->data[1], 256 * 4);
             for (i = 0; i < 256; i++)
-                p[i] = bytestream2_get_le32(gbc);
+                AV_WN32(frame->data[1] + i*4,
+                        (frame->data[1][2+i*4]<<0)+
+                        (frame->data[1][1+i*4]<<8)+
+                        (frame->data[1][0+i*4]<<16)+
+                        (frame->data[1][3+i*4]<<24)
+                );
 
             frame->palette_has_changed = 1;
         }
@@ -660,7 +646,11 @@ static int dds_decode(AVCodecContext *avctx, void *data,
     }
 
     /* Run any post processing here if needed. */
-    if (avctx->pix_fmt == AV_PIX_FMT_RGBA || avctx->pix_fmt == AV_PIX_FMT_YA8)
+    if (avctx->pix_fmt == AV_PIX_FMT_BGRA ||
+        avctx->pix_fmt == AV_PIX_FMT_RGBA ||
+        avctx->pix_fmt == AV_PIX_FMT_RGB0 ||
+        avctx->pix_fmt == AV_PIX_FMT_BGR0 ||
+        avctx->pix_fmt == AV_PIX_FMT_YA8)
         run_postproc(avctx, frame);
 
     /* Frame is ready to be output. */

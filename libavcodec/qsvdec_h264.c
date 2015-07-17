@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,9 +33,7 @@
 
 #include "avcodec.h"
 #include "internal.h"
-#include "qsv_internal.h"
 #include "qsvdec.h"
-#include "qsv.h"
 
 typedef struct QSVH264Context {
     AVClass *class;
@@ -130,8 +128,6 @@ static av_cold int qsv_decode_init(AVCodecContext *avctx)
     }
     s->parser->flags |= PARSER_FLAG_COMPLETE_FRAMES;
 
-    s->qsv.iopattern = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
-
     return 0;
 fail:
     qsv_decode_close(avctx);
@@ -157,7 +153,6 @@ static int qsv_process_data(AVCodecContext *avctx, AVFrame *frame,
     if (s->parser->format       != s->orig_pix_fmt    ||
         s->parser->coded_width  != avctx->coded_width ||
         s->parser->coded_height != avctx->coded_height) {
-        mfxSession session = NULL;
 
         enum AVPixelFormat pix_fmts[3] = { AV_PIX_FMT_QSV,
                                            AV_PIX_FMT_NONE,
@@ -187,15 +182,7 @@ static int qsv_process_data(AVCodecContext *avctx, AVFrame *frame,
 
         avctx->pix_fmt = ret;
 
-        if (avctx->hwaccel_context) {
-            AVQSVContext *user_ctx = avctx->hwaccel_context;
-            session               = user_ctx->session;
-            s->qsv.iopattern      = user_ctx->iopattern;
-            s->qsv.ext_buffers    = user_ctx->ext_buffers;
-            s->qsv.nb_ext_buffers = user_ctx->nb_ext_buffers;
-        }
-
-        ret = ff_qsv_decode_init(avctx, &s->qsv, session);
+        ret = ff_qsv_decode_init(avctx, &s->qsv);
         if (ret < 0)
             goto reinit_fail;
     }

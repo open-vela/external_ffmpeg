@@ -4,20 +4,20 @@
  * copyright (c) 2013 Yukinori Yamazoe
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,18 +67,30 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->param.mfx.BufferSizeInKB     = 0;
 
     q->param.mfx.FrameInfo.FourCC         = MFX_FOURCC_NV12;
-    q->param.mfx.FrameInfo.Width          = FFALIGN(avctx->width, q->width_align);
-    q->param.mfx.FrameInfo.Height         = FFALIGN(avctx->height, 32);
     q->param.mfx.FrameInfo.CropX          = 0;
     q->param.mfx.FrameInfo.CropY          = 0;
     q->param.mfx.FrameInfo.CropW          = avctx->width;
     q->param.mfx.FrameInfo.CropH          = avctx->height;
     q->param.mfx.FrameInfo.AspectRatioW   = avctx->sample_aspect_ratio.num;
     q->param.mfx.FrameInfo.AspectRatioH   = avctx->sample_aspect_ratio.den;
-    q->param.mfx.FrameInfo.PicStruct      = MFX_PICSTRUCT_PROGRESSIVE;
     q->param.mfx.FrameInfo.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
     q->param.mfx.FrameInfo.BitDepthLuma   = 8;
     q->param.mfx.FrameInfo.BitDepthChroma = 8;
+    q->param.mfx.FrameInfo.Width          = FFALIGN(avctx->width, q->width_align);
+
+    if (avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
+       /* A true field layout (TFF or BFF) is not important here,
+          it will specified later during frame encoding. But it is important
+          to specify is frame progressive or not because allowed heigh alignment
+          does depend by this.
+        */
+        q->param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_FIELD_TFF;
+        q->height_align = 32;
+    } else {
+        q->param.mfx.FrameInfo.PicStruct = MFX_PICSTRUCT_PROGRESSIVE;
+        q->height_align = 16;
+    }
+   q->param.mfx.FrameInfo.Height    = FFALIGN(avctx->height, q->height_align);
 
     if (avctx->framerate.den > 0 && avctx->framerate.num > 0) {
         q->param.mfx.FrameInfo.FrameRateExtN = avctx->framerate.num;
@@ -210,12 +222,12 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     }
 
     if (!q->session) {
-        ret = ff_qsv_init_internal_session(avctx, &q->internal_session,
+        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs,
                                            q->load_plugins);
         if (ret < 0)
             return ret;
 
-        q->session = q->internal_session;
+        q->session = q->internal_qs.session;
     }
 
     ret = init_video_param(avctx, q);
@@ -229,7 +241,9 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     }
 
     ret = MFXVideoENCODE_Init(q->session, &q->param);
-    if (ret < 0) {
+    if (MFX_WRN_PARTIAL_ACCELERATION==ret) {
+        av_log(avctx, AV_LOG_WARNING, "Encoder will work with partial HW acceleration\n");
+    } else if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing the encoder\n");
         return ff_qsv_error(ret);
     }
@@ -311,8 +325,9 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
     }
 
     /* make a copy if the input is not padded as libmfx requires */
-    if (frame->height & 31 || frame->linesize[0] & (q->width_align - 1)) {
-        qf->frame->height = FFALIGN(frame->height, 32);
+    if (     frame->height & (q->height_align - 1) ||
+        frame->linesize[0] & (q->width_align - 1)) {
+        qf->frame->height = FFALIGN(frame->height, q->height_align);
         qf->frame->width  = FFALIGN(frame->width, q->width_align);
 
         ret = ff_get_buffer(q->avctx, qf->frame, AV_GET_BUFFER_FLAG_REF);
@@ -403,19 +418,29 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
 
     do {
         ret = MFXVideoENCODE_EncodeFrameAsync(q->session, NULL, surf, bs, &sync);
-        if (ret == MFX_WRN_DEVICE_BUSY)
+        if (ret == MFX_WRN_DEVICE_BUSY) {
             av_usleep(1);
-    } while (ret > 0);
+            continue;
+        }
+        break;
+    } while ( 1 );
 
     if (ret < 0) {
         av_packet_unref(&new_pkt);
         av_freep(&bs);
-        return (ret == MFX_ERR_MORE_DATA) ? 0 : ff_qsv_error(ret);
+        if (ret == MFX_ERR_MORE_DATA)
+            return 0;
+        av_log(avctx, AV_LOG_ERROR, "EncodeFrameAsync returned %d\n", ret);
+        return ff_qsv_error(ret);
     }
 
-    if (ret == MFX_WRN_INCOMPATIBLE_VIDEO_PARAM && frame->interlaced_frame)
-        print_interlace_msg(avctx, q);
-
+    if (ret == MFX_WRN_INCOMPATIBLE_VIDEO_PARAM) {
+        if (frame->interlaced_frame)
+            print_interlace_msg(avctx, q);
+        else
+            av_log(avctx, AV_LOG_WARNING,
+                   "EncodeFrameAsync returned 'incompatible param' code\n");
+    }
     if (sync) {
         av_fifo_generic_write(q->async_fifo, &new_pkt, sizeof(new_pkt), NULL);
         av_fifo_generic_write(q->async_fifo, &sync,    sizeof(sync),    NULL);
@@ -483,10 +508,9 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     QSVFrame *cur;
 
     MFXVideoENCODE_Close(q->session);
-    if (q->internal_session)
-        MFXClose(q->internal_session);
-    q->session          = NULL;
-    q->internal_session = NULL;
+    q->session = NULL;
+
+    ff_qsv_close_internal_session(&q->internal_qs);
 
     cur = q->work_frames;
     while (cur) {
