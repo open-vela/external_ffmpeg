@@ -1,20 +1,20 @@
 /*
  * Canopus HQ/HQA decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -121,7 +121,7 @@ static int hq_decode_frame(HQContext *ctx, AVFrame *pic,
     uint32_t slice_off[21];
     int slice, start_off, next_off, i, ret;
 
-    if (prof_num >= NUM_HQ_PROFILES) {
+    if ((unsigned)prof_num >= NUM_HQ_PROFILES) {
         profile = &ff_hq_profile[0];
         avpriv_request_sample(ctx->avctx, "HQ Profile %d", prof_num);
     } else {
@@ -137,10 +137,8 @@ static int hq_decode_frame(HQContext *ctx, AVFrame *pic,
     ctx->avctx->pix_fmt             = AV_PIX_FMT_YUV422P;
 
     ret = ff_get_buffer(ctx->avctx, pic, 0);
-    if (ret < 0) {
-        av_log(ctx->avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+    if (ret < 0)
         return ret;
-    }
 
     /* Offsets are stored from CUV position, so adjust them accordingly. */
     for (i = 0; i < profile->num_slices + 1; i++)
@@ -267,10 +265,8 @@ static int hqa_decode_frame(HQContext *ctx, AVFrame *pic, size_t data_size)
     }
 
     ret = ff_get_buffer(ctx->avctx, pic, 0);
-    if (ret < 0) {
-        av_log(ctx->avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+    if (ret < 0)
         return ret;
-    }
 
     /* Offsets are stored from HQA1 position, so adjust them accordingly. */
     for (i = 0; i < num_slices + 1; i++)
@@ -302,7 +298,8 @@ static int hq_hqa_decode_frame(AVCodecContext *avctx, void *data,
     AVFrame *pic = data;
     uint32_t info_tag;
     unsigned int data_size;
-    int tag, ret;
+    int ret;
+    unsigned tag;
 
     bytestream2_init(&ctx->gbc, avpkt->data, avpkt->size);
     if (bytestream2_get_bytes_left(&ctx->gbc) < 4 + 4) {
@@ -310,11 +307,9 @@ static int hq_hqa_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    info_tag = bytestream2_peek_le32(&ctx->gbc);
+    info_tag = bytestream2_get_le32(&ctx->gbc);
     if (info_tag == MKTAG('I', 'N', 'F', 'O')) {
-        int info_size;
-        bytestream2_skip(&ctx->gbc, 4);
-        info_size = bytestream2_get_le32(&ctx->gbc);
+        int info_size = bytestream2_get_le32(&ctx->gbc);
         if (bytestream2_get_bytes_left(&ctx->gbc) < info_size) {
             av_log(avctx, AV_LOG_ERROR, "Invalid INFO size (%d).\n", info_size);
             return AVERROR_INVALIDDATA;
