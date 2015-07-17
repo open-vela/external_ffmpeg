@@ -2,20 +2,20 @@
  * Snappy module
  * Copyright (c) Luca Barbato
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,14 +38,23 @@
 #include "bytestream.h"
 
 /**
- * Decompress an input buffer using Snappy algorithm. Caller is
- * responsible of freeing the memory allocated in buf.
+ * Get the uncompressed length of an input buffer compressed using the Snappy
+ * algorithm. The GetByteContext is not advanced.
  *
  * @param gb    input GetByteContext.
- * @param buf   output buffer pointer.
- * @param size  output buffer size.
+ * @return      A positive length on success, AVERROR otherwise.
+ */
+ int64_t ff_snappy_peek_uncompressed_length(GetByteContext *gb);
+
+/**
+ * Decompress an input buffer using Snappy algorithm.
+ *
+ * @param gb    input GetByteContext.
+ * @param buf   input buffer pointer.
+ * @param size  input/output on input, the size of buffer, on output, the size
+ *              of the uncompressed data.
  * @return      0 if success, AVERROR otherwise.
  */
-int ff_snappy_uncompress(GetByteContext *gb, uint8_t **buf, int64_t *size);
+int ff_snappy_uncompress(GetByteContext *gb, uint8_t *buf, int64_t *size);
 
 #endif /* AVCODEC_SNAPPY_H */
