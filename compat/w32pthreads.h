@@ -4,20 +4,20 @@
  * Authors: Steven Walters <kemuri9@gmail.com>
  *          Pegasys Inc. <http://www.pegasys-inc.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,8 @@
  * w32threads to pthreads wrapper
  */
 
-#ifndef LIBAV_COMPAT_W32PTHREADS_H
-#define LIBAV_COMPAT_W32PTHREADS_H
+#ifndef FFMPEG_COMPAT_W32PTHREADS_H
+#define FFMPEG_COMPAT_W32PTHREADS_H
 
 /* Build up a pthread-like API using underlying Windows API. Have only static
  * methods so as to not conflict with a potentially linked in pthread-win32
@@ -40,6 +40,7 @@
 #include <process.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
@@ -118,9 +119,10 @@ static inline int pthread_mutex_unlock(pthread_mutex_t *m)
 }
 
 #if _WIN32_WINNT >= 0x0600
-static inline void pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
+static inline int pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
 {
     InitializeConditionVariable(cond);
+    return 0;
 }
 
 /* native condition variables do not destroy */
@@ -164,28 +166,29 @@ static void (WINAPI *cond_signal)(pthread_cond_t *cond);
 static BOOL (WINAPI *cond_wait)(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                 DWORD milliseconds);
 
-static av_unused void pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
+static av_unused int pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
 {
     win32_cond_t *win32_cond = NULL;
     if (cond_init) {
         cond_init(cond);
-        return;
+        return 0;
     }
 
     /* non native condition variables */
     win32_cond = av_mallocz(sizeof(win32_cond_t));
     if (!win32_cond)
-        return;
+        return ENOMEM;
     cond->Ptr = win32_cond;
     win32_cond->semaphore = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
     if (!win32_cond->semaphore)
-        return;
+        return ENOMEM;
     win32_cond->waiters_done = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!win32_cond->waiters_done)
-        return;
+        return ENOMEM;
 
     pthread_mutex_init(&win32_cond->mtx_waiter_count, NULL);
     pthread_mutex_init(&win32_cond->mtx_broadcast, NULL);
+    return 0;
 }
 
 static av_unused void pthread_cond_destroy(pthread_cond_t *cond)
@@ -310,4 +313,4 @@ static av_unused void w32thread_init(void)
 
 }
 
-#endif /* LIBAV_COMPAT_W32PTHREADS_H */
+#endif /* FFMPEG_COMPAT_W32PTHREADS_H */
