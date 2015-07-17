@@ -2,20 +2,20 @@
  * Vidvox Hap decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,19 +78,20 @@ static int setup_texture(AVCodecContext *avctx, size_t length)
     const char *compressorstr;
     int ret;
 
-    if ((avctx->codec_tag == MKTAG('H','a','p','1') && (ctx->section_type & 0x0F) != HAP_FMT_RGBDXT1)
-        || (avctx->codec_tag == MKTAG('H','a','p','5') && (ctx->section_type & 0x0F) != HAP_FMT_RGBADXT5)
-        || (avctx->codec_tag == MKTAG('H','a','p','Y') && (ctx->section_type & 0x0F) != HAP_FMT_YCOCGDXT5))
-        return AVERROR_INVALIDDATA;
-
     switch (ctx->section_type & 0x0F) {
     case HAP_FMT_RGBDXT1:
+        ctx->tex_rat = 8;
+        ctx->tex_fun = ctx->dxtc.dxt1_block;
         texture_name = "DXT1";
         break;
     case HAP_FMT_RGBADXT5:
+        ctx->tex_rat = 16;
+        ctx->tex_fun = ctx->dxtc.dxt5_block;
         texture_name = "DXT5";
         break;
     case HAP_FMT_YCOCGDXT5:
+        ctx->tex_rat = 16;
+        ctx->tex_fun = ctx->dxtc.dxt5ys_block;
         texture_name = "DXT5-YCoCg-scaled";
         break;
     default:
@@ -107,13 +108,8 @@ static int setup_texture(AVCodecContext *avctx, size_t length)
         compressorstr = "none";
         break;
     case HAP_COMP_SNAPPY:
-        snappy_size = ff_snappy_peek_uncompressed_length(gbc);
-        ret = av_reallocp(&ctx->snappied, snappy_size);
-        if (ret < 0) {
-            return ret;
-        }
         /* Uncompress the frame */
-        ret = ff_snappy_uncompress(gbc, ctx->snappied, &snappy_size);
+        ret = ff_snappy_uncompress(gbc, &ctx->snappied, &snappy_size);
         if (ret < 0) {
              av_log(avctx, AV_LOG_ERROR, "Snappy uncompress error\n");
              return ret;
@@ -181,8 +177,7 @@ static int hap_decode(AVCodecContext *avctx, void *data,
     ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
-    if (avctx->codec->update_thread_context)
-        ff_thread_finish_setup(avctx);
+    ff_thread_finish_setup(avctx);
 
     /* Use the decompress function on the texture, one block per thread */
     avctx->execute2(avctx, decompress_texture_thread, tframe.f, NULL, blocks);
@@ -215,22 +210,6 @@ static av_cold int hap_init(AVCodecContext *avctx)
 
     ff_texturedsp_init(&ctx->dxtc);
 
-    switch (avctx->codec_tag) {
-    case MKTAG('H','a','p','1'):
-        ctx->tex_rat = 8;
-        ctx->tex_fun = ctx->dxtc.dxt1_block;
-        break;
-    case MKTAG('H','a','p','5'):
-        ctx->tex_rat = 16;
-        ctx->tex_fun = ctx->dxtc.dxt5_block;
-        break;
-    case MKTAG('H','a','p','Y'):
-        ctx->tex_rat = 16;
-        ctx->tex_fun = ctx->dxtc.dxt5ys_block;
-        break;
-    default:
-        return AVERROR_DECODER_NOT_FOUND;
-    }
     return 0;
 }
 
