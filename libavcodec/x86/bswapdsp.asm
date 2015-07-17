@@ -1,21 +1,23 @@
 ;******************************************************************************
 ;* optimized bswap buffer functions
 ;* Copyright (c) 2008 Loren Merritt
+;* Copyright (c) 2003-2013 Michael Niedermayer
+;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -24,12 +26,14 @@
 SECTION_RODATA
 pb_bswap32: db 3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
 
+cextern pb_80
+
 SECTION_TEXT
 
 ; %1 = aligned/unaligned
 %macro BSWAP_LOOPS  1
-    mov      r3d, r2d
-    sar      r2d, 3
+    mov      r3, r2
+    sar      r2, 3
     jz       .left4_%1
 .loop8_%1:
     mov%1    m0, [r1 +  0]
@@ -57,11 +61,11 @@ SECTION_TEXT
 %endif
     add      r0, 32
     add      r1, 32
-    dec      r2d
+    dec      r2
     jnz      .loop8_%1
 .left4_%1:
-    mov      r2d, r3d
-    test     r3d, 4
+    mov      r2, r3
+    and      r3, 4
     jz       .left
     mov%1    m0, [r1]
 %if cpuflag(ssse3)
@@ -84,11 +88,14 @@ SECTION_TEXT
 %macro BSWAP32_BUF 0
 %if cpuflag(ssse3)
 cglobal bswap32_buf, 3,4,3
+    mov      r3, r1
     mova     m2, [pb_bswap32]
 %else
 cglobal bswap32_buf, 3,4,5
+    mov      r3, r1
 %endif
-    test     r1, 15
+    or       r3, r0
+    and      r3, 15
     jz       .start_align
     BSWAP_LOOPS  u
     jmp      .left
@@ -96,7 +103,8 @@ cglobal bswap32_buf, 3,4,5
     BSWAP_LOOPS  a
 .left:
 %if cpuflag(ssse3)
-    test     r2d, 2
+    mov      r3, r2
+    and      r2, 2
     jz       .left1
     movq     m0, [r1]
     pshufb   m0, m2
@@ -104,13 +112,13 @@ cglobal bswap32_buf, 3,4,5
     add      r1, 8
     add      r0, 8
 .left1:
-    test     r2d, 1
+    and      r3, 1
     jz       .end
     mov      r2d, [r1]
     bswap    r2d
     mov      [r0], r2d
 %else
-    and      r2d, 3
+    and      r2, 3
     jz       .end
 .loop2:
     mov      r3d, [r1]
@@ -118,7 +126,7 @@ cglobal bswap32_buf, 3,4,5
     mov      [r0], r3d
     add      r1, 4
     add      r0, 4
-    dec      r2d
+    dec      r2
     jnz      .loop2
 %endif
 .end:
