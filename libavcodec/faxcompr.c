@@ -2,20 +2,20 @@
  * CCITT Fax Group 3 and 4 decompression
  * Copyright (c) 2008 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -165,8 +165,6 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
     int run_off       = *ref++;
     unsigned int offs = 0, run = 0;
 
-    runend--; // for the last written 0
-
     while (offs < width) {
         int cmode = get_vlc2(gb, ccitt_group3_2d_vlc.table, 9, 1);
         if (cmode == -1) {
@@ -174,10 +172,12 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
             return AVERROR_INVALIDDATA;
         }
         if (!cmode) { //pass mode
-            run_off += *ref++;
+            if (run_off < width)
+                run_off += *ref++;
             run      = run_off - offs;
             offs     = run_off;
-            run_off += *ref++;
+            if (run_off < width)
+                run_off += *ref++;
             if (offs > width) {
                 av_log(avctx, AV_LOG_ERROR, "Run went out of bounds\n");
                 return AVERROR_INVALIDDATA;
@@ -230,13 +230,19 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
             mode      = !mode;
         }
         //sync line pointers
-        while (run_off <= offs) {
+        while (offs < width && run_off <= offs) {
             run_off += *ref++;
             run_off += *ref++;
         }
     }
     *runs++ = saved_run;
-    *runs++ = 0;
+    if (saved_run) {
+        if (runs >= runend) {
+            av_log(avctx, AV_LOG_ERROR, "Run overrun\n");
+            return -1;
+        }
+        *runs++ = 0;
+    }
     return 0;
 }
 
@@ -245,7 +251,7 @@ static void put_line(uint8_t *dst, int size, int width, const int *runs)
     PutBitContext pb;
     int run, mode = ~0, pix_left = width, run_idx = 0;
 
-    init_put_bits(&pb, dst, size * 8);
+    init_put_bits(&pb, dst, size);
     while (pix_left > 0) {
         run       = runs[run_idx++];
         mode      = ~mode;
@@ -279,9 +285,10 @@ int ff_ccitt_unpack(AVCodecContext *avctx, const uint8_t *src, int srcsize,
     int *runs, *ref = NULL, *runend;
     int ret;
     int runsize = avctx->width + 2;
+    int has_eol;
 
-    runs = av_malloc(runsize * sizeof(runs[0]));
-    ref  = av_malloc(runsize * sizeof(ref[0]));
+    runs = av_malloc_array(runsize, sizeof(runs[0]));
+    ref  = av_malloc_array(runsize, sizeof(ref[0]));
     if (!runs || !ref) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -289,7 +296,10 @@ int ff_ccitt_unpack(AVCodecContext *avctx, const uint8_t *src, int srcsize,
     ref[0] = avctx->width;
     ref[1] = 0;
     ref[2] = 0;
-    init_get_bits(&gb, src, srcsize * 8);
+    if ((ret = init_get_bits8(&gb, src, srcsize)) < 0)
+        goto fail;
+    has_eol = show_bits(&gb, 12) == 1 || show_bits(&gb, 16) == 1;
+
     for (j = 0; j < height; j++) {
         runend = runs + runsize;
         if (compr == TIFF_G4) {
@@ -300,6 +310,7 @@ int ff_ccitt_unpack(AVCodecContext *avctx, const uint8_t *src, int srcsize,
         } else {
             int g3d1 = (compr == TIFF_G3) && !(opts & 1);
             if (compr != TIFF_CCITT_RLE &&
+                has_eol &&
                 find_group3_syncmarker(&gb, srcsize * 8) < 0)
                 break;
             if (compr == TIFF_CCITT_RLE || g3d1 || get_bits1(&gb))

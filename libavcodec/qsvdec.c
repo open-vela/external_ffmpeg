@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,6 +34,7 @@
 
 #include "avcodec.h"
 #include "internal.h"
+#include "qsv.h"
 #include "qsv_internal.h"
 #include "qsvdec.h"
 
@@ -48,42 +49,28 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format)
     }
 }
 
-static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession session)
-{
-    if (!session) {
-        if (!q->internal_session) {
-            int ret = ff_qsv_init_internal_session(avctx, &q->internal_session, NULL);
-            if (ret < 0)
-                return ret;
-        }
-
-        q->session = q->internal_session;
-    } else {
-        q->session = session;
-    }
-
-    /* make sure the decoder is uninitialized */
-    MFXVideoDECODE_Close(q->session);
-
-    return 0;
-}
-
-int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, mfxSession session)
+int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q)
 {
     mfxVideoParam param = { { 0 } };
     int ret;
 
-    q->async_fifo = av_fifo_alloc((1 + q->async_depth) *
-                                  (sizeof(mfxSyncPoint) + sizeof(QSVFrame*)));
-    if (!q->async_fifo)
-        return AVERROR(ENOMEM);
+    q->iopattern  = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
 
-    ret = qsv_init_session(avctx, q, session);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error initializing an MFX session\n");
-        return ret;
+    if (avctx->hwaccel_context) {
+        AVQSVContext *qsv = avctx->hwaccel_context;
+
+        q->session        = qsv->session;
+        q->iopattern      = qsv->iopattern;
+        q->ext_buffers    = qsv->ext_buffers;
+        q->nb_ext_buffers = qsv->nb_ext_buffers;
     }
+    if (!q->session) {
+        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs, NULL);
+        if (ret < 0)
+            return ret;
 
+        q->session = q->internal_qs.session;
+    }
 
     ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
     if (ret < 0)
@@ -147,7 +134,7 @@ static void qsv_clear_unused_frames(QSVContext *q)
 {
     QSVFrame *cur = q->work_frames;
     while (cur) {
-        if (cur->surface && !cur->surface->Data.Locked && !cur->queued) {
+        if (cur->surface && !cur->surface->Data.Locked) {
             cur->surface = NULL;
             av_frame_unref(cur->frame);
         }
@@ -196,12 +183,12 @@ static int get_surface(AVCodecContext *avctx, QSVContext *q, mfxFrameSurface1 **
     return 0;
 }
 
-static QSVFrame *find_frame(QSVContext *q, mfxFrameSurface1 *surf)
+static AVFrame *find_frame(QSVContext *q, mfxFrameSurface1 *surf)
 {
     QSVFrame *cur = q->work_frames;
     while (cur) {
         if (surf == cur->surface)
-            return cur;
+            return cur->frame;
         cur = cur->next;
     }
     return NULL;
@@ -211,7 +198,6 @@ int ff_qsv_decode(AVCodecContext *avctx, QSVContext *q,
                   AVFrame *frame, int *got_frame,
                   AVPacket *avpkt)
 {
-    QSVFrame *out_frame;
     mfxFrameSurface1 *insurf;
     mfxFrameSurface1 *outsurf;
     mfxSyncPoint sync;
@@ -246,36 +232,20 @@ int ff_qsv_decode(AVCodecContext *avctx, QSVContext *q,
     }
 
     if (sync) {
-        QSVFrame *out_frame = find_frame(q, outsurf);
+        AVFrame *src_frame;
 
-        if (!out_frame) {
+        MFXVideoCORE_SyncOperation(q->session, sync, 60000);
+
+        src_frame = find_frame(q, outsurf);
+        if (!src_frame) {
             av_log(avctx, AV_LOG_ERROR,
                    "The returned surface does not correspond to any frame\n");
             return AVERROR_BUG;
         }
 
-        out_frame->queued = 1;
-        av_fifo_generic_write(q->async_fifo, &out_frame, sizeof(out_frame), NULL);
-        av_fifo_generic_write(q->async_fifo, &sync,      sizeof(sync),      NULL);
-    }
-
-    if (!av_fifo_space(q->async_fifo) ||
-        (!avpkt->size && av_fifo_size(q->async_fifo))) {
-        AVFrame *src_frame;
-
-        av_fifo_generic_read(q->async_fifo, &out_frame, sizeof(out_frame), NULL);
-        av_fifo_generic_read(q->async_fifo, &sync,      sizeof(sync),      NULL);
-        out_frame->queued = 0;
-
-        MFXVideoCORE_SyncOperation(q->session, sync, 60000);
-
-        src_frame = out_frame->frame;
-
         ret = av_frame_ref(frame, src_frame);
         if (ret < 0)
             return ret;
-
-        outsurf = out_frame->surface;
 
         frame->pkt_pts = frame->pts = outsurf->Data.TimeStamp;
 
@@ -304,12 +274,7 @@ int ff_qsv_decode_close(QSVContext *q)
         av_freep(&cur);
         cur = q->work_frames;
     }
-
-    av_fifo_free(q->async_fifo);
-    q->async_fifo = NULL;
-
-    if (q->internal_session)
-        MFXClose(q->internal_session);
+    ff_qsv_close_internal_session(&q->internal_qs);
 
     return 0;
 }

@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Benjamin Larsson
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,12 +34,8 @@ static int aea_read_probe(AVProbeData *p)
 
     /* Magic is '00 08 00 00' in Little Endian*/
     if (AV_RL32(p->buf)==0x800) {
-        int bsm_s, bsm_e, inb_s, inb_e, ch;
-        ch    = p->buf[264];
-        bsm_s = p->buf[2048];
-        inb_s = p->buf[2048+1];
-        inb_e = p->buf[2048+210];
-        bsm_e = p->buf[2048+211];
+        int ch, i;
+        ch = p->buf[264];
 
         if (ch != 1 && ch != 2)
             return 0;
@@ -48,8 +44,17 @@ static int aea_read_probe(AVProbeData *p)
          * the block size mode bytes have to be the same
          * the info bytes have to be the same
          */
-        if (bsm_s == bsm_e && inb_s == inb_e)
-            return AVPROBE_SCORE_MAX / 4 + 1;
+        for (i = 2048; i + 211 < p->buf_size; i+= 212) {
+            int bsm_s, bsm_e, inb_s, inb_e;
+            bsm_s = p->buf[0];
+            inb_s = p->buf[1];
+            inb_e = p->buf[210];
+            bsm_e = p->buf[211];
+
+            if (bsm_s != bsm_e || inb_s != inb_e)
+                return 0;
+        }
+        return AVPROBE_SCORE_MAX / 4 + 1;
     }
     return 0;
 }
