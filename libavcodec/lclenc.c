@@ -2,20 +2,20 @@
  * LCL (LossLess Codec Library) Codec
  * Copyright (c) 2002-2004 Roberto Togni
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "lcl.h"
@@ -71,19 +72,15 @@ typedef struct LclEncContext {
  *
  */
 static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                        const AVFrame *pict, int *got_packet)
+                        const AVFrame *p, int *got_packet)
 {
     LclEncContext *c = avctx->priv_data;
-    const AVFrame * const p = pict;
     int i, ret;
     int zret; // Zlib return code
     int max_size = deflateBound(&c->zstream, avctx->width * avctx->height * 3);
 
-    if (!pkt->data &&
-        (ret = av_new_packet(pkt, max_size)) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Error allocating packet of size %d.\n", max_size);
-            return ret;
-    }
+    if ((ret = ff_alloc_packet2(avctx, pkt, max_size)) < 0)
+        return ret;
 
     if(avctx->pix_fmt != AV_PIX_FMT_BGR24){
         av_log(avctx, AV_LOG_ERROR, "Format not supported!\n");
@@ -132,17 +129,22 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     c->avctx= avctx;
 
-    assert(avctx->width && avctx->height);
+    av_assert0(avctx->width && avctx->height);
 
-    avctx->extradata= av_mallocz(8);
+    avctx->extradata = av_mallocz(8 + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata)
+        return AVERROR(ENOMEM);
+
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
         return AVERROR(ENOMEM);
 
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
     avctx->coded_frame->key_frame = 1;
 
-    // Will be user settable someday
-    c->compression = 6;
+    c->compression = avctx->compression_level == FF_COMPRESSION_DEFAULT ?
+                            COMP_ZLIB_NORMAL :
+                            av_clip(avctx->compression_level, 0, 9);
     c->flags = 0;
     c->imgtype = IMGTYPE_RGB24;
     avctx->bits_per_coded_sample= 24;
@@ -181,6 +183,8 @@ static av_cold int encode_end(AVCodecContext *avctx)
     av_freep(&avctx->extradata);
     deflateEnd(&c->zstream);
 
+    av_frame_free(&avctx->coded_frame);
+
     return 0;
 }
 
@@ -193,6 +197,7 @@ AVCodec ff_zlib_encoder = {
     .init           = encode_init,
     .encode2        = encode_frame,
     .close          = encode_end,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_BGR24, AV_PIX_FMT_NONE },
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,

@@ -8,20 +8,20 @@
  * aspecting, new decode_frame mechanism and apple mjpeg-b support
  *                                  by Alex Beregszaszi
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,7 +78,7 @@ static int ljpeg_encode_bgr(AVCodecContext *avctx, PutBitContext *pb,
         const int modified_predictor = y ? predictor : 1;
         uint8_t *ptr = frame->data[0] + (linesize * y);
 
-        if (pb->buf_end - pb->buf - (put_bits_count(pb) >> 3) < width * 3 * 3) {
+        if (pb->buf_end - pb->buf - (put_bits_count(pb) >> 3) < width * 3 * 4) {
             av_log(avctx, AV_LOG_ERROR, "encoded frame too large\n");
             return -1;
         }
@@ -87,9 +87,15 @@ static int ljpeg_encode_bgr(AVCodecContext *avctx, PutBitContext *pb,
             top[i]= left[i]= topleft[i]= buffer[0][i];
 
         for (x = 0; x < width; x++) {
-            buffer[x][1] =  ptr[3 * x + 0] -     ptr[3 * x + 1] + 0x100;
-            buffer[x][2] =  ptr[3 * x + 2] -     ptr[3 * x + 1] + 0x100;
-            buffer[x][0] = (ptr[3 * x + 0] + 2 * ptr[3 * x + 1] + ptr[3 * x + 2]) >> 2;
+            if(avctx->pix_fmt == AV_PIX_FMT_BGR24){
+                buffer[x][1] =  ptr[3 * x + 0] -     ptr[3 * x + 1] + 0x100;
+                buffer[x][2] =  ptr[3 * x + 2] -     ptr[3 * x + 1] + 0x100;
+                buffer[x][0] = (ptr[3 * x + 0] + 2 * ptr[3 * x + 1] + ptr[3 * x + 2]) >> 2;
+            }else{
+                buffer[x][1] =  ptr[4 * x + 0] -     ptr[4 * x + 1] + 0x100;
+                buffer[x][2] =  ptr[4 * x + 2] -     ptr[4 * x + 1] + 0x100;
+                buffer[x][0] = (ptr[4 * x + 0] + 2 * ptr[4 * x + 1] + ptr[4 * x + 2]) >> 2;
+            }
 
             for (i = 0; i < 3; i++) {
                 int pred, diff;
@@ -214,25 +220,28 @@ static int ljpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int max_pkt_size = FF_MIN_BUFFER_SIZE;
     int ret, header_bits;
 
-    if (avctx->pix_fmt == AV_PIX_FMT_BGR24)
-        max_pkt_size += width * height * 3 * 3;
+    if(    avctx->pix_fmt == AV_PIX_FMT_BGR0
+        || avctx->pix_fmt == AV_PIX_FMT_BGRA
+        || avctx->pix_fmt == AV_PIX_FMT_BGR24)
+        max_pkt_size += width * height * 3 * 4;
     else {
         max_pkt_size += mb_width * mb_height * 3 * 4
                         * s->hsample[0] * s->vsample[0];
     }
-    if ((ret = ff_alloc_packet(pkt, max_pkt_size)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", max_pkt_size);
+
+    if ((ret = ff_alloc_packet2(avctx, pkt, max_pkt_size)) < 0)
         return ret;
-    }
 
     init_put_bits(&pb, pkt->data, pkt->size);
 
     ff_mjpeg_encode_picture_header(avctx, &pb, &s->scantable,
-                                   s->matrix);
+                                   s->matrix, s->matrix);
 
     header_bits = put_bits_count(&pb);
 
-    if (avctx->pix_fmt == AV_PIX_FMT_BGR24)
+    if(    avctx->pix_fmt == AV_PIX_FMT_BGR0
+        || avctx->pix_fmt == AV_PIX_FMT_BGRA
+        || avctx->pix_fmt == AV_PIX_FMT_BGR24)
         ret = ljpeg_encode_bgr(avctx, &pb, pict);
     else
         ret = ljpeg_encode_yuv(avctx, &pb, pict);
@@ -241,6 +250,7 @@ static int ljpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     emms_c();
 
+    ff_mjpeg_escape_FF(&pb, header_bits >> 3);
     ff_mjpeg_encode_picture_trailer(&pb, header_bits);
 
     flush_put_bits(&pb);
@@ -255,6 +265,7 @@ static av_cold int ljpeg_encode_close(AVCodecContext *avctx)
 {
     LJpegEncContext *s = avctx->priv_data;
 
+    av_frame_free(&avctx->coded_frame);
     av_freep(&s->scratch);
 
     return 0;
@@ -263,7 +274,6 @@ static av_cold int ljpeg_encode_close(AVCodecContext *avctx)
 static av_cold int ljpeg_encode_init(AVCodecContext *avctx)
 {
     LJpegEncContext *s = avctx->priv_data;
-    int chroma_v_shift, chroma_h_shift;
 
     if ((avctx->pix_fmt == AV_PIX_FMT_YUV420P ||
          avctx->pix_fmt == AV_PIX_FMT_YUV422P ||
@@ -276,30 +286,22 @@ static av_cold int ljpeg_encode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
+
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
     avctx->coded_frame->key_frame = 1;
 
     s->scratch = av_malloc_array(avctx->width + 1, sizeof(*s->scratch));
+    if (!s->scratch)
+        goto fail;
 
     ff_idctdsp_init(&s->idsp, avctx);
     ff_init_scantable(s->idsp.idct_permutation, &s->scantable,
                       ff_zigzag_direct);
 
-    av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &chroma_h_shift,
-                                     &chroma_v_shift);
-
-    if (avctx->pix_fmt   == AV_PIX_FMT_BGR24) {
-        s->vsample[0] = s->hsample[0] =
-        s->vsample[1] = s->hsample[1] =
-        s->vsample[2] = s->hsample[2] = 1;
-    } else {
-        s->vsample[0] = 2;
-        s->vsample[1] = 2 >> chroma_v_shift;
-        s->vsample[2] = 2 >> chroma_v_shift;
-        s->hsample[0] = 2;
-        s->hsample[1] = 2 >> chroma_h_shift;
-        s->hsample[2] = 2 >> chroma_h_shift;
-    }
+    ff_mjpeg_init_hvsample(avctx, s->hsample, s->vsample);
 
     ff_mjpeg_build_huffman_codes(s->huff_size_dc_luminance,
                                  s->huff_code_dc_luminance,
@@ -311,6 +313,9 @@ static av_cold int ljpeg_encode_init(AVCodecContext *avctx)
                                  avpriv_mjpeg_val_dc);
 
     return 0;
+fail:
+    ljpeg_encode_close(avctx);
+    return AVERROR(ENOMEM);
 }
 
 AVCodec ff_ljpeg_encoder = {
@@ -322,12 +327,10 @@ AVCodec ff_ljpeg_encoder = {
     .init           = ljpeg_encode_init,
     .encode2        = ljpeg_encode_frame,
     .close          = ljpeg_encode_close,
-    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVJ420P,
-                                                    AV_PIX_FMT_YUVJ422P,
-                                                    AV_PIX_FMT_YUVJ444P,
-                                                    AV_PIX_FMT_BGR24,
-                                                    AV_PIX_FMT_YUV420P,
-                                                    AV_PIX_FMT_YUV422P,
-                                                    AV_PIX_FMT_YUV444P,
-                                                    AV_PIX_FMT_NONE },
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
+    .pix_fmts       = (const enum AVPixelFormat[]){
+        AV_PIX_FMT_BGR24   , AV_PIX_FMT_BGRA    , AV_PIX_FMT_BGR0,
+        AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ422P,
+        AV_PIX_FMT_YUV420P , AV_PIX_FMT_YUV444P , AV_PIX_FMT_YUV422P,
+        AV_PIX_FMT_NONE},
 };

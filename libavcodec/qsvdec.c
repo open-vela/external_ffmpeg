@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,6 +34,7 @@
 
 #include "avcodec.h"
 #include "internal.h"
+#include "qsv.h"
 #include "qsv_internal.h"
 #include "qsvdec.h"
 
@@ -48,27 +49,7 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format)
     }
 }
 
-static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession session)
-{
-    if (!session) {
-        if (!q->internal_session) {
-            int ret = ff_qsv_init_internal_session(avctx, &q->internal_session, NULL);
-            if (ret < 0)
-                return ret;
-        }
-
-        q->session = q->internal_session;
-    } else {
-        q->session = session;
-    }
-
-    /* make sure the decoder is uninitialized */
-    MFXVideoDECODE_Close(q->session);
-
-    return 0;
-}
-
-int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, mfxSession session)
+int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q)
 {
     mfxVideoParam param = { { 0 } };
     int ret;
@@ -78,12 +59,23 @@ int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, mfxSession session)
     if (!q->async_fifo)
         return AVERROR(ENOMEM);
 
-    ret = qsv_init_session(avctx, q, session);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error initializing an MFX session\n");
-        return ret;
-    }
+    q->iopattern  = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
 
+    if (avctx->hwaccel_context) {
+        AVQSVContext *qsv = avctx->hwaccel_context;
+
+        q->session        = qsv->session;
+        q->iopattern      = qsv->iopattern;
+        q->ext_buffers    = qsv->ext_buffers;
+        q->nb_ext_buffers = qsv->nb_ext_buffers;
+    }
+    if (!q->session) {
+        ret = ff_qsv_init_internal_session(avctx, &q->internal_qs, NULL);
+        if (ret < 0)
+            return ret;
+
+        q->session = q->internal_qs.session;
+    }
 
     ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
     if (ret < 0)
@@ -308,8 +300,7 @@ int ff_qsv_decode_close(QSVContext *q)
     av_fifo_free(q->async_fifo);
     q->async_fifo = NULL;
 
-    if (q->internal_session)
-        MFXClose(q->internal_session);
+    ff_qsv_close_internal_session(&q->internal_qs);
 
     return 0;
 }
