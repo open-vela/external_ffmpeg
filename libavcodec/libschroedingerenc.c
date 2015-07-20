@@ -2,20 +2,20 @@
  * Dirac encoder support via Schroedinger libraries
  * Copyright (c) 2008 BBC, Anuradha Suraparaju <asuraparaju at gmail dot com >
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,6 +32,7 @@
 #include <schroedinger/schrovideoformat.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "libschroedinger.h"
@@ -378,22 +379,16 @@ static int libschroedinger_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     pkt_size = p_frame_output->size;
     if (last_frame_in_sequence && p_schro_params->enc_buf_size > 0)
         pkt_size += p_schro_params->enc_buf_size;
-    if ((ret = ff_alloc_packet(pkt, pkt_size)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", pkt_size);
+    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size)) < 0)
         goto error;
-    }
 
     memcpy(pkt->data, p_frame_output->p_encbuf, p_frame_output->size);
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
     avctx->coded_frame->key_frame = p_frame_output->key_frame;
-    avctx->coded_frame->pts = p_frame_output->frame_num;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
     /* Use the frame number of the encoded frame as the pts. It is OK to
      * do so since Dirac is a constant frame rate codec. It expects input
      * to be of constant frame rate. */
-    pkt->pts = p_frame_output->frame_num;
+    pkt->pts =
+    avctx->coded_frame->pts = p_frame_output->frame_num;
     pkt->dts = p_schro_params->dts++;
     enc_size = p_frame_output->size;
 
