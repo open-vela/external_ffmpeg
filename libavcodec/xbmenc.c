@@ -3,26 +3,37 @@
  *
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avcodec.h"
 #include "internal.h"
 #include "mathops.h"
+
+static av_cold int xbm_encode_init(AVCodecContext *avctx)
+{
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
+    return 0;
+}
 
 static int xbm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                             const AVFrame *p, int *got_packet)
@@ -32,8 +43,10 @@ static int xbm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     linesize = (avctx->width + 7) / 8;
     size     = avctx->height * (linesize * 7 + 2) + 110;
-    if ((ret = ff_alloc_packet2(avctx, pkt, size)) < 0)
+    if ((ret = ff_alloc_packet(pkt, size)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
+    }
 
     buf = pkt->data;
     ptr = p->data[0];
@@ -60,7 +73,8 @@ AVCodec ff_xbm_encoder = {
     .long_name    = NULL_IF_CONFIG_SMALL("XBM (X BitMap) image"),
     .type         = AVMEDIA_TYPE_VIDEO,
     .id           = AV_CODEC_ID_XBM,
+    .init         = xbm_encode_init,
     .encode2      = xbm_encode_frame,
     .pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_MONOWHITE,
-                                                   AV_PIX_FMT_NONE },
+                                                 AV_PIX_FMT_NONE },
 };
