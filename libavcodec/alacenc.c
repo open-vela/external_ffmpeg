@@ -2,20 +2,20 @@
  * ALAC audio encoder
  * Copyright (c) 2008  Jaikrishnan Menon <realityman@gmx.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,7 +66,7 @@ typedef struct AlacEncodeContext {
     int write_sample_size;
     int extra_bits;
     int32_t sample_buf[2][DEFAULT_FRAME_SIZE];
-    int32_t predictor_buf[2][DEFAULT_FRAME_SIZE];
+    int32_t predictor_buf[DEFAULT_FRAME_SIZE];
     int interlacing_shift;
     int interlacing_leftweight;
     PutBitContext pbctx;
@@ -253,14 +253,13 @@ static void alac_linear_predictor(AlacEncodeContext *s, int ch)
 {
     int i;
     AlacLPCContext lpc = s->lpc[ch];
-    int32_t *residual = s->predictor_buf[ch];
 
     if (lpc.lpc_order == 31) {
-        residual[0] = s->sample_buf[ch][0];
+        s->predictor_buf[0] = s->sample_buf[ch][0];
 
         for (i = 1; i < s->frame_size; i++) {
-            residual[i] = s->sample_buf[ch][i    ] -
-                          s->sample_buf[ch][i - 1];
+            s->predictor_buf[i] = s->sample_buf[ch][i    ] -
+                                  s->sample_buf[ch][i - 1];
         }
 
         return;
@@ -270,11 +269,12 @@ static void alac_linear_predictor(AlacEncodeContext *s, int ch)
 
     if (lpc.lpc_order > 0) {
         int32_t *samples  = s->sample_buf[ch];
+        int32_t *residual = s->predictor_buf;
 
         // generate warm-up samples
         residual[0] = samples[0];
         for (i = 1; i <= lpc.lpc_order; i++)
-            residual[i] = sign_extend(samples[i] - samples[i-1], s->write_sample_size);
+            residual[i] = samples[i] - samples[i-1];
 
         // perform lpc on remaining samples
         for (i = lpc.lpc_order + 1; i < s->frame_size; i++) {
@@ -313,11 +313,11 @@ static void alac_linear_predictor(AlacEncodeContext *s, int ch)
     }
 }
 
-static void alac_entropy_coder(AlacEncodeContext *s, int ch)
+static void alac_entropy_coder(AlacEncodeContext *s)
 {
     unsigned int history = s->rc.initial_history;
     int sign_modifier = 0, i, k;
-    int32_t *samples = s->predictor_buf[ch];
+    int32_t *samples = s->predictor_buf;
 
     for (i = 0; i < s->frame_size;) {
         int x;
@@ -394,19 +394,6 @@ static void write_element(AlacEncodeContext *s,
         init_sample_buffers(s, channels, samples);
         write_element_header(s, element, instance);
 
-        // extract extra bits if needed
-        if (s->extra_bits) {
-            uint32_t mask = (1 << s->extra_bits) - 1;
-            for (j = 0; j < channels; j++) {
-                int32_t *extra = s->predictor_buf[j];
-                int32_t *smp   = s->sample_buf[j];
-                for (i = 0; i < s->frame_size; i++) {
-                    extra[i] = smp[i] & mask;
-                    smp[i] >>= s->extra_bits;
-                }
-            }
-        }
-
         if (channels == 2)
             alac_stereo_decorrelation(s);
         else
@@ -429,9 +416,11 @@ static void write_element(AlacEncodeContext *s,
 
         // write extra bits if needed
         if (s->extra_bits) {
+            uint32_t mask = (1 << s->extra_bits) - 1;
             for (i = 0; i < s->frame_size; i++) {
                 for (j = 0; j < channels; j++) {
-                    put_bits(pb, s->extra_bits, s->predictor_buf[j][i]);
+                    put_bits(pb, s->extra_bits, s->sample_buf[j][i] & mask);
+                    s->sample_buf[j][i] >>= s->extra_bits;
                 }
             }
         }
@@ -443,11 +432,10 @@ static void write_element(AlacEncodeContext *s,
             // TODO: determine when this will actually help. for now it's not used.
             if (prediction_type == 15) {
                 // 2nd pass 1st order filter
-                int32_t *residual = s->predictor_buf[i];
                 for (j = s->frame_size - 1; j > 0; j--)
-                    residual[j] -= residual[j - 1];
+                    s->predictor_buf[j] -= s->predictor_buf[j - 1];
             }
-            alac_entropy_coder(s, i);
+            alac_entropy_coder(s);
         }
     }
 }
@@ -618,8 +606,10 @@ static int alac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     else
         max_frame_size = s->max_coded_frame_size;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, 2 * max_frame_size)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, 2 * max_frame_size))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     /* use verbatim mode for compression_level 0 */
     if (s->compression_level) {

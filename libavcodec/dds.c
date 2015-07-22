@@ -2,20 +2,20 @@
  * DirectDraw Surface image decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,7 +105,7 @@ typedef struct DDSContext {
 
     const uint8_t *tex_data; // Compressed texture
     int tex_ratio;           // Compression ratio
-    int slice_count;         // Number of slices for threaded operations
+    int slice_size;          // Optimal slice size
 
     /* Pointer to the selected compress or decompress function. */
     int (*tex_funct)(uint8_t *dst, ptrdiff_t stride, const uint8_t *block);
@@ -358,9 +358,9 @@ static int parse_pixel_format(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_BGR24;
         /* 32 bpp */
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_BGR0; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_BGRA; // opaque
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_RGB0; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_RGBA; // opaque
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0xff000000)
             avctx->pix_fmt = AV_PIX_FMT_BGRA;
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0xff000000)
@@ -421,23 +421,14 @@ static int decompress_texture_thread(AVCodecContext *avctx, void *arg,
     AVFrame *frame = arg;
     const uint8_t *d = ctx->tex_data;
     int w_block = avctx->coded_width / TEXTURE_BLOCK_W;
-    int h_block = avctx->coded_height / TEXTURE_BLOCK_H;
     int x, y;
     int start_slice, end_slice;
-    int base_blocks_per_slice = h_block / ctx->slice_count;
-    int remainder_blocks = h_block % ctx->slice_count;
 
-    /* When the frame height (in blocks) doesn't divide evenly between the
-     * number of slices, spread the remaining blocks evenly between the first
-     * operations */
-    start_slice = slice * base_blocks_per_slice;
-    /* Add any extra blocks (one per slice) that have been added before this slice */
-    start_slice += FFMIN(slice, remainder_blocks);
+    start_slice = slice * ctx->slice_size;
+    end_slice   = FFMIN(start_slice + ctx->slice_size, avctx->coded_height);
 
-    end_slice = start_slice + base_blocks_per_slice;
-    /* Add an extra block if there are still remainder blocks to be accounted for */
-    if (slice < remainder_blocks)
-        end_slice++;
+    start_slice /= TEXTURE_BLOCK_H;
+    end_slice   /= TEXTURE_BLOCK_H;
 
     for (y = start_slice; y < end_slice; y++) {
         uint8_t *p = frame->data[0] + y * frame->linesize[0] * TEXTURE_BLOCK_H;
@@ -642,26 +633,27 @@ static int dds_decode(AVCodecContext *avctx, void *data,
         return ret;
 
     if (ctx->compressed) {
-        ctx->slice_count = av_clip(avctx->thread_count, 1,
-                                   avctx->coded_height / TEXTURE_BLOCK_H);
+        int slices = FFMIN(avctx->thread_count,
+                           avctx->coded_height / TEXTURE_BLOCK_H);
+        ctx->slice_size = avctx->coded_height / slices;
 
         /* Use the decompress function on the texture, one block per thread. */
         ctx->tex_data = gbc->buffer;
-        avctx->execute2(avctx, decompress_texture_thread, frame, NULL, ctx->slice_count);
+        avctx->execute2(avctx, decompress_texture_thread, frame, NULL, slices);
     } else {
         int linesize = av_image_get_linesize(avctx->pix_fmt, frame->width, 0);
 
         if (ctx->paletted) {
             int i;
+            uint8_t *p = frame->data[1];
+
             /* Use the first 1024 bytes as palette, then copy the rest. */
-            bytestream2_get_buffer(gbc, frame->data[1], 256 * 4);
-            for (i = 0; i < 256; i++)
-                AV_WN32(frame->data[1] + i*4,
-                        (frame->data[1][2+i*4]<<0)+
-                        (frame->data[1][1+i*4]<<8)+
-                        (frame->data[1][0+i*4]<<16)+
-                        (frame->data[1][3+i*4]<<24)
-                );
+            for (i = 0; i < 256; i++) {
+                p[i * 4 + 2] = bytestream2_get_byte(gbc);
+                p[i * 4 + 1] = bytestream2_get_byte(gbc);
+                p[i * 4 + 0] = bytestream2_get_byte(gbc);
+                p[i * 4 + 3] = bytestream2_get_byte(gbc);
+            }
 
             frame->palette_has_changed = 1;
         }
@@ -674,8 +666,6 @@ static int dds_decode(AVCodecContext *avctx, void *data,
     /* Run any post processing here if needed. */
     if (avctx->pix_fmt == AV_PIX_FMT_BGRA ||
         avctx->pix_fmt == AV_PIX_FMT_RGBA ||
-        avctx->pix_fmt == AV_PIX_FMT_RGB0 ||
-        avctx->pix_fmt == AV_PIX_FMT_BGR0 ||
         avctx->pix_fmt == AV_PIX_FMT_YA8)
         run_postproc(avctx, frame);
 

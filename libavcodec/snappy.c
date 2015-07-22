@@ -2,20 +2,20 @@
  * Snappy decompression algorithm
  * Copyright (c) 2015 Luca Barbato
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -128,17 +128,7 @@ static int64_t decode_len(GetByteContext *gb)
     return len;
 }
 
-int64_t ff_snappy_peek_uncompressed_length(GetByteContext *gb)
-{
-    int pos = bytestream2_get_bytes_left(gb);
-    int64_t len = decode_len(gb);
-
-    bytestream2_seek(gb, -pos, SEEK_END);
-
-    return len;
-}
-
-int ff_snappy_uncompress(GetByteContext *gb, uint8_t *buf, int64_t *size)
+int ff_snappy_uncompress(GetByteContext *gb, uint8_t **buf, int64_t *size)
 {
     int64_t len = decode_len(gb);
     int ret     = 0;
@@ -147,11 +137,11 @@ int ff_snappy_uncompress(GetByteContext *gb, uint8_t *buf, int64_t *size)
     if (len < 0)
         return len;
 
-    if (len > *size)
-        return AVERROR_BUFFER_TOO_SMALL;
+    if ((ret = av_reallocp(buf, len)) < 0)
+        return AVERROR(ENOMEM);
 
     *size = len;
-    p     = buf;
+    p     = *buf;
 
     while (bytestream2_get_bytes_left(gb) > 0) {
         uint8_t s = bytestream2_get_byte(gb);
@@ -162,13 +152,13 @@ int ff_snappy_uncompress(GetByteContext *gb, uint8_t *buf, int64_t *size)
             ret = snappy_literal(gb, p, len, val);
             break;
         case SNAPPY_COPY_1:
-            ret = snappy_copy1(gb, buf, p, len, val);
+            ret = snappy_copy1(gb, *buf, p, len, val);
             break;
         case SNAPPY_COPY_2:
-            ret = snappy_copy2(gb, buf, p, len, val);
+            ret = snappy_copy2(gb, *buf, p, len, val);
             break;
         case SNAPPY_COPY_4:
-            ret = snappy_copy4(gb, buf, p, len, val);
+            ret = snappy_copy4(gb, *buf, p, len, val);
             break;
         }
 
