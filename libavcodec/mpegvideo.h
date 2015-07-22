@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,6 +35,7 @@
 #include "error_resilience.h"
 #include "fdctdsp.h"
 #include "get_bits.h"
+#include "h264chroma.h"
 #include "h263dsp.h"
 #include "hpeldsp.h"
 #include "idctdsp.h"
@@ -55,12 +56,13 @@
 #include "videodsp.h"
 
 #include "libavutil/opt.h"
+#include "libavutil/timecode.h"
 
 #define FRAME_SKIPPED 100 ///< return value for header parsers if frame is not coded
 
 #define MAX_FCODE 7
 
-#define MAX_THREADS 16
+#define MAX_THREADS 32
 
 #define MAX_B_FRAMES 16
 
@@ -196,7 +198,7 @@ typedef struct MpegEncContext {
     uint8_t *coded_block_base;
     uint8_t *coded_block;          ///< used for coded block pattern prediction (msmpeg4v3, wmv1)
     int16_t (*ac_val_base)[16];
-    int16_t (*ac_val[3])[16];      ///< used for for mpeg4 AC prediction, all 3 arrays must be continuous
+    int16_t (*ac_val[3])[16];      ///< used for mpeg4 AC prediction, all 3 arrays must be continuous
     int mb_skipped;                ///< MUST BE SET only during DECODING
     uint8_t *mbskip_table;        /**< used to avoid copy if macroblock skipped (for black regions for example)
                                    and used for b-frame encoding & decoding (contains skip table of next P Frame) */
@@ -213,11 +215,14 @@ typedef struct MpegEncContext {
     int *lambda_table;
     int adaptive_quant;         ///< use adaptive quantization
     int dquant;                 ///< qscale difference to prev qscale
+    int closed_gop;             ///< MPEG1/2 GOP is closed
     int pict_type;              ///< AV_PICTURE_TYPE_I, AV_PICTURE_TYPE_P, AV_PICTURE_TYPE_B, ...
+    int vbv_delay;
     int last_pict_type; //FIXME removes
     int last_non_b_pict_type;   ///< used for mpeg4 gmc b-frames & ratecontrol
     int droppable;
     int frame_rate_index;
+    AVRational mpeg2_frame_rate_ext;
     int last_lambda_for[5];     ///< last lambda for a specific pict type
     int skipdct;                ///< skip dct and code zero residual
 
@@ -227,6 +232,7 @@ typedef struct MpegEncContext {
 
     BlockDSPContext bdsp;
     FDCTDSPContext fdsp;
+    H264ChromaContext h264chroma;
     HpelDSPContext hdsp;
     IDCTDSPContext idsp;
     MECmpContext mecc;
@@ -311,18 +317,22 @@ typedef struct MpegEncContext {
     int ac_esc_length;       ///< num of bits needed to encode the longest esc
     uint8_t *intra_ac_vlc_length;
     uint8_t *intra_ac_vlc_last_length;
+    uint8_t *intra_chroma_ac_vlc_length;
+    uint8_t *intra_chroma_ac_vlc_last_length;
     uint8_t *inter_ac_vlc_length;
     uint8_t *inter_ac_vlc_last_length;
     uint8_t *luma_dc_vlc_length;
 #define UNI_AC_ENC_INDEX(run,level) ((run)*128 + (level))
 
-    int coded_score[8];
+    int coded_score[12];
 
     /** precomputed matrix (combine qscale and DCT renorm) */
     int (*q_intra_matrix)[64];
+    int (*q_chroma_intra_matrix)[64];
     int (*q_inter_matrix)[64];
     /** identical to the above but for MMX & these are not permutated, second 64 entries are bias*/
     uint16_t (*q_intra_matrix16)[2][64];
+    uint16_t (*q_chroma_intra_matrix16)[2][64];
     uint16_t (*q_inter_matrix16)[2][64];
 
     /* noise reduction */
@@ -333,6 +343,7 @@ typedef struct MpegEncContext {
     /* bit rate control */
     int64_t total_bits;
     int frame_bits;                ///< bits used for the current frame
+    int stuffing_bits;             ///< bits used for stuffing
     int next_lambda;               ///< next lambda used for retrying to encode a frame
     RateControlContext rc_context; ///< contains stuff only accessed in ratecontrol.c
 
@@ -364,6 +375,7 @@ typedef struct MpegEncContext {
     int prev_mb_info, last_mb_info;
     uint8_t *mb_info_ptr;
     int mb_info_size;
+    int ehc_mode;
     int rc_strategy;
 
     /* H.263+ specific */
@@ -415,6 +427,7 @@ typedef struct MpegEncContext {
 
     /* MJPEG specific */
     struct MJpegContext *mjpeg_ctx;
+    int esc_pos;
 
     /* MSMPEG4 specific */
     int mv_table_index;
@@ -456,11 +469,13 @@ typedef struct MpegEncContext {
     int q_scale_type;
     int intra_vlc_format;
     int alternate_scan;
+    int seq_disp_ext;
     int repeat_first_field;
     int chroma_420_type;
     int chroma_format;
 #define CHROMA_420 1
 #define CHROMA_422 2
+#define CHROMA_444 3
     int chroma_x_shift;//depend on pix_format, that depend on chroma_format
     int chroma_y_shift;
 
@@ -474,7 +489,12 @@ typedef struct MpegEncContext {
     /* RTP specific */
     int rtp_mode;
 
+    char *tc_opt_str;        ///< timecode option string
+    AVTimecode tc;           ///< timecode context
+
     uint8_t *ptr_lastgob;
+    int swap_uv;             //vcr2 codec is an MPEG-2 variant with U and V swapped
+    int pack_pblocks;        //xvmc needs to keep blocks without gaps.
     int16_t (*pblocks[12])[64];
 
     int16_t (*block)[64]; ///< points to one of the following blocks
@@ -510,7 +530,7 @@ typedef struct MpegEncContext {
 
     /**
      * ratecontrol qmin qmax limiting method
-     * 0-> clipping, 1-> use a nice continuous function to limit qscale wthin qmin/qmax.
+     * 0-> clipping, 1-> use a nice continuous function to limit qscale within qmin/qmax.
      */
     float rc_qsquish;
     float rc_qmod_amp;
@@ -519,6 +539,7 @@ typedef struct MpegEncContext {
     float rc_buffer_aggressivity;
     float border_masking;
     int lmin, lmax;
+    int vbv_ignore_qmax;
 
     char *rc_eq;
 
@@ -545,7 +566,9 @@ typedef struct MpegEncContext {
 #define FF_MPV_FLAG_NAQ          0x0010
 #define FF_MPV_FLAG_MV0          0x0020
 
+#ifndef FF_MPV_OFFSET
 #define FF_MPV_OFFSET(x) offsetof(MpegEncContext, x)
+#endif
 #define FF_MPV_OPT_FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
 #define FF_MPV_COMMON_OPTS \
 { "mpv_flags",      "Flags common for all mpegvideo-based encoders.", FF_MPV_OFFSET(mpv_flags), AV_OPT_TYPE_FLAGS, { .i64 = 0 }, INT_MIN, INT_MAX, FF_MPV_OPT_FLAGS, "mpv_flags" },\
@@ -593,16 +616,21 @@ extern const AVOption ff_mpv_generic_options[];
  */
 void ff_mpv_common_defaults(MpegEncContext *s);
 
+void ff_dct_encode_init_x86(MpegEncContext *s);
+
 int ff_mpv_common_init(MpegEncContext *s);
 void ff_mpv_common_init_arm(MpegEncContext *s);
+void ff_mpv_common_init_axp(MpegEncContext *s);
 void ff_mpv_common_init_neon(MpegEncContext *s);
 void ff_mpv_common_init_ppc(MpegEncContext *s);
 void ff_mpv_common_init_x86(MpegEncContext *s);
+void ff_mpv_common_init_mips(MpegEncContext *s);
 
 int ff_mpv_common_frame_size_change(MpegEncContext *s);
 void ff_mpv_common_end(MpegEncContext *s);
 
 void ff_mpv_decode_defaults(MpegEncContext *s);
+void ff_mpv_decode_init(MpegEncContext *s, AVCodecContext *avctx);
 void ff_mpv_decode_mb(MpegEncContext *s, int16_t block[12][64]);
 void ff_mpv_report_decode_progress(MpegEncContext *s);
 
@@ -615,11 +643,20 @@ void ff_mpv_encode_init_x86(MpegEncContext *s);
 int ff_mpv_encode_end(AVCodecContext *avctx);
 int ff_mpv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
                           const AVFrame *frame, int *got_packet);
+int ff_mpv_reallocate_putbitbuffer(MpegEncContext *s, size_t threshold, size_t size_increase);
 
 void ff_clean_intra_table_entries(MpegEncContext *s);
 void ff_mpeg_draw_horiz_band(MpegEncContext *s, int y, int h);
 void ff_mpeg_flush(AVCodecContext *avctx);
-void ff_print_debug_info(MpegEncContext *s, Picture *p);
+
+void ff_print_debug_info(MpegEncContext *s, Picture *p, AVFrame *pict);
+void ff_print_debug_info2(AVCodecContext *avctx, AVFrame *pict, uint8_t *mbskip_table,
+                         uint32_t *mbtype_table, int8_t *qscale_table, int16_t (*motion_val[2])[2],
+                         int *low_delay,
+                         int mb_width, int mb_height, int mb_stride, int quarter_sample);
+
+int ff_mpv_export_qp_table(MpegEncContext *s, AVFrame *f, Picture *p, int qp_type);
+
 void ff_write_quant_matrix(PutBitContext *pb, uint16_t *matrix);
 
 int ff_update_duplicate_context(MpegEncContext *dst, MpegEncContext *src);
@@ -627,6 +664,7 @@ int ff_mpeg_update_thread_context(AVCodecContext *dst, const AVCodecContext *src
 void ff_set_qscale(MpegEncContext * s, int qscale);
 
 void ff_mpv_idct_init(MpegEncContext *s);
+int ff_dct_encode_init(MpegEncContext *s);
 void ff_convert_matrix(MpegEncContext *s, int (*qmat)[64], uint16_t (*qmat16)[2][64],
                        const uint16_t *quant_matrix, int bias, int qmin, int qmax, int intra);
 int ff_dct_quantize_c(MpegEncContext *s, int16_t *block, int n, int qscale, int *overflow);
@@ -641,7 +679,7 @@ void ff_mpv_motion(MpegEncContext *s,
                    qpel_mc_func (*qpix_op)[16]);
 
 static inline void ff_update_block_index(MpegEncContext *s){
-    const int block_size = 8;
+    const int block_size= 8 >> s->avctx->lowres;
 
     s->block_index[0]+=2;
     s->block_index[1]+=2;

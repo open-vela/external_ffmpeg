@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,7 +62,7 @@ static av_cold int wmv2_encode_init(AVCodecContext *avctx)
     ff_wmv2_common_init(w);
 
     avctx->extradata_size = 4;
-    avctx->extradata      = av_mallocz(avctx->extradata_size + 10);
+    avctx->extradata      = av_mallocz(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata)
         return AVERROR(ENOMEM);
 
@@ -88,10 +88,10 @@ int ff_wmv2_encode_picture_header(MpegEncContext *s, int picture_number)
     w->abt_type        = 0;
     w->j_type          = 0;
 
-    assert(s->flipflop_rounding);
+    av_assert0(s->flipflop_rounding);
 
     if (s->pict_type == AV_PICTURE_TYPE_I) {
-        assert(s->no_rounding == 1);
+        av_assert0(s->no_rounding == 1);
         if (w->j_type_bit)
             put_bits(&s->pb, 1, w->j_type);
 
@@ -112,16 +112,7 @@ int ff_wmv2_encode_picture_header(MpegEncContext *s, int picture_number)
         put_bits(&s->pb, 2, SKIP_TYPE_NONE);
 
         ff_msmpeg4_code012(&s->pb, cbp_index = 0);
-        if (s->qscale <= 10) {
-            int map[3]         = { 0, 2, 1 };
-            w->cbp_table_index = map[cbp_index];
-        } else if (s->qscale <= 20) {
-            int map[3]         = { 1, 0, 2 };
-            w->cbp_table_index = map[cbp_index];
-        } else {
-            int map[3]         = { 2, 1, 0 };
-            w->cbp_table_index = map[cbp_index];
-        }
+        w->cbp_table_index = wmv2_get_cbp_table_index(s, cbp_index);
 
         if (w->mspel_bit)
             put_bits(&s->pb, 1, s->mspel);
@@ -174,10 +165,12 @@ void ff_wmv2_encode_mb(MpegEncContext *s, int16_t block[6][64],
                  ff_wmv2_inter_table[w->cbp_table_index][cbp + 64][1],
                  ff_wmv2_inter_table[w->cbp_table_index][cbp + 64][0]);
 
+        s->misc_bits += get_bits_diff(s);
         /* motion vector */
         ff_h263_pred_motion(s, 0, 0, &pred_x, &pred_y);
         ff_msmpeg4_encode_motion(s, motion_x - pred_x,
                                  motion_y - pred_y);
+        s->mv_bits += get_bits_diff(s);
     } else {
         /* compute cbp */
         cbp       = 0;
@@ -210,10 +203,15 @@ void ff_wmv2_encode_mb(MpegEncContext *s, int16_t block[6][64],
                      ff_table_inter_intra[s->h263_aic_dir][1],
                      ff_table_inter_intra[s->h263_aic_dir][0]);
         }
+        s->misc_bits += get_bits_diff(s);
     }
 
     for (i = 0; i < 6; i++)
         ff_msmpeg4_encode_block(s, block[i], i);
+    if (s->mb_intra)
+        s->i_tex_bits += get_bits_diff(s);
+    else
+        s->p_tex_bits += get_bits_diff(s);
 }
 
 static const AVClass wmv2_class = {
@@ -235,4 +233,5 @@ AVCodec ff_wmv2_encoder = {
     .close          = ff_mpv_encode_end,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE },
+    .priv_class     = &wmv2_class,
 };
