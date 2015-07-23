@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -139,11 +139,8 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     if (!c->listen && !c->numerichost)
         gnutls_server_name_set(p->session, GNUTLS_NAME_DNS, c->host, strlen(c->host));
     gnutls_certificate_allocate_credentials(&p->cred);
-    if (c->ca_file) {
-        ret = gnutls_certificate_set_x509_trust_file(p->cred, c->ca_file, GNUTLS_X509_FMT_PEM);
-        if (ret < 0)
-            av_log(h, AV_LOG_ERROR, "%s\n", gnutls_strerror(ret));
-    }
+    if (c->ca_file)
+        gnutls_certificate_set_x509_trust_file(p->cred, c->ca_file, GNUTLS_X509_FMT_PEM);
 #if GNUTLS_VERSION_MAJOR >= 3
     else
         gnutls_certificate_set_x509_system_trust(p->cred);
@@ -161,8 +158,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
             ret = AVERROR(EIO);
             goto fail;
         }
-    } else if (c->cert_file || c->key_file)
-        av_log(h, AV_LOG_ERROR, "cert and key required\n");
+    }
     gnutls_credentials_set(p->session, GNUTLS_CRD_CERTIFICATE, p->cred);
     gnutls_transport_set_pull_function(p->session, gnutls_url_pull);
     gnutls_transport_set_push_function(p->session, gnutls_url_push);

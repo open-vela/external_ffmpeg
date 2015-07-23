@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@
 
 #include "avcodec.h"
 #include "internal.h"
-#include "qsv.h"
 #include "qsv_internal.h"
 #include "qsvdec.h"
 
@@ -49,84 +48,69 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format)
     }
 }
 
-int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, AVPacket *avpkt)
+static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession session)
 {
-    mfxVideoParam param = { { 0 } };
-    mfxBitstream bs   = { { { 0 } } };
-    int ret;
-
-    q->iopattern  = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
-    if (!q->session) {
-        if (avctx->hwaccel_context) {
-            AVQSVContext *qsv = avctx->hwaccel_context;
-
-            q->session        = qsv->session;
-            q->iopattern      = qsv->iopattern;
-            q->ext_buffers    = qsv->ext_buffers;
-            q->nb_ext_buffers = qsv->nb_ext_buffers;
-        }
-        if (!q->session) {
-            ret = ff_qsv_init_internal_session(avctx, &q->internal_qs, NULL);
+    if (!session) {
+        if (!q->internal_session) {
+            int ret = ff_qsv_init_internal_session(avctx, &q->internal_session, NULL);
             if (ret < 0)
                 return ret;
-
-            q->session = q->internal_qs.session;
         }
+
+        q->session = q->internal_session;
+    } else {
+        q->session = session;
     }
 
-    if (avpkt->size) {
-        bs.Data       = avpkt->data;
-        bs.DataLength = avpkt->size;
-        bs.MaxLength  = bs.DataLength;
-        bs.TimeStamp  = avpkt->pts;
-    } else
-        return AVERROR_INVALIDDATA;
+    /* make sure the decoder is uninitialized */
+    MFXVideoDECODE_Close(q->session);
 
-    ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Unsupported codec_id %08x\n", avctx->codec_id);
-        return ret;
-    }
+    return 0;
+}
 
-    param.mfx.CodecId = ret;
-
-    ret = MFXVideoDECODE_DecodeHeader(q->session, &bs, &param);
-    if (MFX_ERR_MORE_DATA==ret) {
-        /* this code means that header not found so we return packet size to skip
-           a current packet
-         */
-        return avpkt->size;
-    } else if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Decode header error %d\n", ret);
-        return ff_qsv_error(ret);
-    }
-    param.IOPattern   = q->iopattern;
-    param.AsyncDepth  = q->async_depth;
-    param.ExtParam    = q->ext_buffers;
-    param.NumExtParam = q->nb_ext_buffers;
-    param.mfx.FrameInfo.BitDepthLuma   = 8;
-    param.mfx.FrameInfo.BitDepthChroma = 8;
-
-    ret = MFXVideoDECODE_Init(q->session, &param);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error initializing the MFX video decoder\n");
-        return ff_qsv_error(ret);
-    }
-
-    avctx->pix_fmt      = AV_PIX_FMT_NV12;
-    avctx->profile      = param.mfx.CodecProfile;
-    avctx->level        = param.mfx.CodecLevel;
-    avctx->coded_width  = param.mfx.FrameInfo.Width;
-    avctx->coded_height = param.mfx.FrameInfo.Height;
-    avctx->width        = param.mfx.FrameInfo.CropW - param.mfx.FrameInfo.CropX;
-    avctx->height       = param.mfx.FrameInfo.CropH - param.mfx.FrameInfo.CropY;
+int ff_qsv_decode_init(AVCodecContext *avctx, QSVContext *q, mfxSession session)
+{
+    mfxVideoParam param = { { 0 } };
+    int ret;
 
     q->async_fifo = av_fifo_alloc((1 + q->async_depth) *
                                   (sizeof(mfxSyncPoint) + sizeof(QSVFrame*)));
     if (!q->async_fifo)
         return AVERROR(ENOMEM);
 
-    q->engine_ready = 1;
+    ret = qsv_init_session(avctx, q, session);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error initializing an MFX session\n");
+        return ret;
+    }
+
+
+    ret = ff_qsv_codec_id_to_mfx(avctx->codec_id);
+    if (ret < 0)
+        return ret;
+
+    param.mfx.CodecId      = ret;
+    param.mfx.CodecProfile = avctx->profile;
+    param.mfx.CodecLevel   = avctx->level;
+
+    param.mfx.FrameInfo.BitDepthLuma   = 8;
+    param.mfx.FrameInfo.BitDepthChroma = 8;
+    param.mfx.FrameInfo.Shift          = 0;
+    param.mfx.FrameInfo.FourCC         = MFX_FOURCC_NV12;
+    param.mfx.FrameInfo.Width          = avctx->coded_width;
+    param.mfx.FrameInfo.Height         = avctx->coded_height;
+    param.mfx.FrameInfo.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
+
+    param.IOPattern   = q->iopattern;
+    param.AsyncDepth  = q->async_depth;
+    param.ExtParam    = q->ext_buffers;
+    param.NumExtParam = q->nb_ext_buffers;
+
+    ret = MFXVideoDECODE_Init(q->session, &param);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error initializing the MFX video decoder\n");
+        return ff_qsv_error(ret);
+    }
 
     return 0;
 }
@@ -234,11 +218,6 @@ int ff_qsv_decode(AVCodecContext *avctx, QSVContext *q,
     mfxBitstream bs = { { { 0 } } };
     int ret;
 
-    if (!q->engine_ready) {
-        ret = ff_qsv_decode_init(avctx, q, avpkt);
-        if (ret)
-            return ret;
-    }
     if (avpkt->size) {
         bs.Data       = avpkt->data;
         bs.DataLength = avpkt->size;
@@ -329,12 +308,8 @@ int ff_qsv_decode_close(QSVContext *q)
     av_fifo_free(q->async_fifo);
     q->async_fifo = NULL;
 
-    MFXVideoDECODE_Close(q->session);
-    q->session = NULL;
-
-    ff_qsv_close_internal_session(&q->internal_qs);
-
-    q->engine_ready = 0;
+    if (q->internal_session)
+        MFXClose(q->internal_session);
 
     return 0;
 }
