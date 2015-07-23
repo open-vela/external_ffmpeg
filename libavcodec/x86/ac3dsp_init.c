@@ -2,20 +2,20 @@
  * x86-optimized AC-3 DSP functions
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,6 +63,11 @@ void ff_apply_window_int16_ssse3(int16_t *output, const int16_t *input,
                                  const int16_t *window, unsigned int len);
 void ff_apply_window_int16_ssse3_atom(int16_t *output, const int16_t *input,
                                       const int16_t *window, unsigned int len);
+
+#if ARCH_X86_32 && defined(__INTEL_COMPILER)
+#       undef HAVE_7REGS
+#       define HAVE_7REGS 0
+#endif
 
 #if HAVE_SSE_INLINE && HAVE_7REGS
 
@@ -160,7 +165,7 @@ static void ac3_downmix_sse(float **samples, float (*matrix)[2],
                matrix_cmp[3][0] == matrix_cmp[4][0]) {
         MIX5(IF1, IF0);
     } else {
-        DECLARE_ALIGNED(16, float, matrix_simd)[AC3_MAX_CHANNELS][2][4];
+        LOCAL_ALIGNED(16, float, matrix_simd, [AC3_MAX_CHANNELS], [2][4]);
         float *samp[AC3_MAX_CHANNELS];
 
         for (j = 0; j < in_ch; j++)
