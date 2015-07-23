@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Henrik Gramner
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -22,6 +22,7 @@
 #include "checkasm.h"
 #include "libavcodec/h264qpel.h"
 #include "libavutil/common.h"
+#include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 
 static const uint32_t pixel_mask[3] = { 0xffffffff, 0x01ff01ff, 0x03ff03ff };
@@ -48,10 +49,10 @@ static const uint32_t pixel_mask[3] = { 0xffffffff, 0x01ff01ff, 0x03ff03ff };
 
 void checkasm_check_h264qpel(void)
 {
-    DECLARE_ALIGNED(16, uint8_t, buf0)[BUF_SIZE];
-    DECLARE_ALIGNED(16, uint8_t, buf1)[BUF_SIZE];
-    DECLARE_ALIGNED(16, uint8_t, dst0)[BUF_SIZE];
-    DECLARE_ALIGNED(16, uint8_t, dst1)[BUF_SIZE];
+    LOCAL_ALIGNED_16(uint8_t, buf0, [BUF_SIZE]);
+    LOCAL_ALIGNED_16(uint8_t, buf1, [BUF_SIZE]);
+    LOCAL_ALIGNED_16(uint8_t, dst0, [BUF_SIZE]);
+    LOCAL_ALIGNED_16(uint8_t, dst1, [BUF_SIZE]);
     H264QpelContext h;
     int op, bit_depth, i, j;
 
