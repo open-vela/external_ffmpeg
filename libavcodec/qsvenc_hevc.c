@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV based HEVC encoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,11 +36,11 @@
 #include "qsv_internal.h"
 #include "qsvenc.h"
 
-enum LoadPlugin {
+enum {
     LOAD_PLUGIN_NONE,
     LOAD_PLUGIN_HEVC_SW,
     LOAD_PLUGIN_HEVC_HW,
-};
+} LoadPlugin;
 
 typedef struct QSVHEVCEncContext {
     AVClass *class;
@@ -68,7 +68,7 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
     }
 
     /* parse the SPS */
-    ret = ff_hevc_extract_rbsp(avctx->extradata + 4, avctx->extradata_size - 4, &sps_nal);
+    ret = ff_hevc_extract_rbsp(NULL, avctx->extradata + 4, avctx->extradata_size - 4, &sps_nal);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error unescaping the SPS buffer\n");
         return ret;
