@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -53,20 +53,17 @@
 #endif
 
 /* List of tests to invoke */
-static const struct {
-    const char *name;
-    void (*func)(void);
-} tests[] = {
+static void (* const tests[])(void) = {
 #if CONFIG_BSWAPDSP
-    { "bswapdsp", checkasm_check_bswapdsp },
+    checkasm_check_bswapdsp,
 #endif
 #if CONFIG_H264PRED
-    { "h264pred", checkasm_check_h264pred },
+    checkasm_check_h264pred,
 #endif
 #if CONFIG_H264QPEL
-    { "h264qpel", checkasm_check_h264qpel },
+    checkasm_check_h264qpel,
 #endif
-    { NULL }
+    NULL
 };
 
 /* List of cpu flags to check */
@@ -130,7 +127,6 @@ static struct {
     CheckasmFunc *funcs;
     CheckasmFunc *current_func;
     CheckasmFuncVersion *current_func_ver;
-    const char *current_test_name;
     const char *bench_pattern;
     int bench_pattern_len;
     int num_checked;
@@ -318,10 +314,8 @@ static void check_cpu_flag(const char *name, int flag)
         int i;
 
         state.cpu_flag_name = name;
-        for (i = 0; tests[i].func; i++) {
-            state.current_test_name = tests[i].name;
-            tests[i].func();
-        }
+        for (i = 0; tests[i]; i++)
+            tests[i]();
     }
 }
 
@@ -338,7 +332,7 @@ int main(int argc, char *argv[])
 {
     int i, seed, ret = 0;
 
-    if (!tests[0].func || !cpus[0].flag) {
+    if (!tests[0] || !cpus[0].flag) {
         fprintf(stderr, "checkasm: no tests to perform\n");
         return 0;
     }
@@ -470,15 +464,19 @@ void checkasm_report(const char *name, ...)
     static int prev_checked, prev_failed, max_length;
 
     if (state.num_checked > prev_checked) {
-        int pad_length = max_length + 4;
-        va_list arg;
-
         print_cpu_name();
-        pad_length -= fprintf(stderr, " - %s.", state.current_test_name);
-        va_start(arg, name);
-        pad_length -= vfprintf(stderr, name, arg);
-        va_end(arg);
-        fprintf(stderr, "%*c", FFMAX(pad_length, 0) + 2, '[');
+
+        if (*name) {
+            int pad_length = max_length;
+            va_list arg;
+
+            fprintf(stderr, " - ");
+            va_start(arg, name);
+            pad_length -= vfprintf(stderr, name, arg);
+            va_end(arg);
+            fprintf(stderr, "%*c", FFMAX(pad_length, 0) + 2, '[');
+        } else
+            fprintf(stderr, " - %-*s [", max_length, state.current_func->name);
 
         if (state.num_failed == prev_failed)
             color_printf(COLOR_GREEN, "OK");
@@ -489,13 +487,16 @@ void checkasm_report(const char *name, ...)
         prev_checked = state.num_checked;
         prev_failed  = state.num_failed;
     } else if (!state.cpu_flag) {
-        /* Calculate the amount of padding required to make the output vertically aligned */
-        int length = strlen(state.current_test_name);
-        va_list arg;
+        int length;
 
-        va_start(arg, name);
-        length += vsnprintf(NULL, 0, name, arg);
-        va_end(arg);
+        /* Calculate the amount of padding required to make the output vertically aligned */
+        if (*name) {
+            va_list arg;
+            va_start(arg, name);
+            length = vsnprintf(NULL, 0, name, arg);
+            va_end(arg);
+        } else
+            length = strlen(state.current_func->name);
 
         if (length > max_length)
             max_length = length;
