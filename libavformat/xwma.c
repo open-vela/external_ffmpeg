@@ -2,20 +2,20 @@
  * xWMA demuxer
  * Copyright (c) 2011 Max Horn
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ static int xwma_read_header(AVFormatContext *s)
     int64_t size;
     int ret = 0;
     uint32_t dpds_table_size = 0;
-    uint32_t *dpds_table = 0;
+    uint32_t *dpds_table = NULL;
     unsigned int tag;
     AVIOContext *pb = s->pb;
     AVStream *st;
@@ -75,7 +75,7 @@ static int xwma_read_header(AVFormatContext *s)
     if (!st)
         return AVERROR(ENOMEM);
 
-    ret = ff_get_wav_header(s, pb, st->codec, size);
+    ret = ff_get_wav_header(s, pb, st->codec, size, 0);
     if (ret < 0)
         return ret;
     st->need_parsing = AVSTREAM_PARSE_NONE;
@@ -104,11 +104,10 @@ static int xwma_read_header(AVFormatContext *s)
             avpriv_request_sample(s, "Unexpected extradata (%d bytes)",
                                   st->codec->extradata_size);
         } else {
-            st->codec->extradata_size = 6;
-            st->codec->extradata      = av_mallocz(6 + FF_INPUT_BUFFER_PADDING_SIZE);
-            if (!st->codec->extradata)
+            if (ff_alloc_extradata(st->codec, 6))
                 return AVERROR(ENOMEM);
 
+            memset(st->codec->extradata, 0, st->codec->extradata_size);
             /* setup extradata with our experimentally obtained value */
             st->codec->extradata[4] = 31;
         }
@@ -131,7 +130,7 @@ static int xwma_read_header(AVFormatContext *s)
     /* parse the remaining RIFF chunks */
     for (;;) {
         if (pb->eof_reached) {
-            ret = AVERROR_INVALIDDATA;
+            ret = AVERROR_EOF;
             goto fail;
         }
         /* read next chunk tag */
@@ -167,13 +166,13 @@ static int xwma_read_header(AVFormatContext *s)
             if (dpds_table_size == 0 || dpds_table_size >= INT_MAX / 4) {
                 av_log(s, AV_LOG_ERROR,
                        "dpds chunk size %"PRId64" invalid\n", size);
-                return -1;
+                return AVERROR_INVALIDDATA;
             }
 
             /* Allocate some temporary storage to keep the dpds data around.
              * for processing later on.
              */
-            dpds_table = av_malloc(dpds_table_size * sizeof(uint32_t));
+            dpds_table = av_malloc_array(dpds_table_size, sizeof(uint32_t));
             if (!dpds_table) {
                 return AVERROR(ENOMEM);
             }

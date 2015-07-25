@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Henrik Gramner
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -23,6 +23,7 @@
 #include "libavcodec/avcodec.h"
 #include "libavcodec/h264pred.h"
 #include "libavutil/common.h"
+#include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 
 static const int codec_ids[4] = { AV_CODEC_ID_H264, AV_CODEC_ID_VP8, AV_CODEC_ID_RV40, AV_CODEC_ID_SVQ3 };
@@ -232,8 +233,8 @@ void checkasm_check_h264pred(void)
         { check_pred8x8l,  "pred8x8l"  },
     };
 
-    DECLARE_ALIGNED(16, uint8_t, buf0)[BUF_SIZE];
-    DECLARE_ALIGNED(16, uint8_t, buf1)[BUF_SIZE];
+    LOCAL_ALIGNED_16(uint8_t, buf0, [BUF_SIZE]);
+    LOCAL_ALIGNED_16(uint8_t, buf1, [BUF_SIZE]);
     H264PredContext h;
     int test, codec, chroma_format, bit_depth;
 
