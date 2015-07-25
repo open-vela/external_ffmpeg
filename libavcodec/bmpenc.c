@@ -3,25 +3,24 @@
  * Copyright (c) 2006, 2007 Michel Bardiaux
  * Copyright (c) 2009 Daniel Verkamp <daniel at drv.nu>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/imgutils.h"
-#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "bmp.h"
@@ -33,9 +32,6 @@ static const uint32_t rgb444_masks[]  = { 0x0F00, 0x00F0, 0x000F };
 
 static av_cold int bmp_encode_init(AVCodecContext *avctx){
     switch (avctx->pix_fmt) {
-    case AV_PIX_FMT_BGRA:
-        avctx->bits_per_coded_sample = 32;
-        break;
     case AV_PIX_FMT_BGR24:
         avctx->bits_per_coded_sample = 24;
         break;
@@ -57,7 +53,7 @@ static av_cold int bmp_encode_init(AVCodecContext *avctx){
         break;
     default:
         av_log(avctx, AV_LOG_INFO, "unsupported pixel format\n");
-        return AVERROR(EINVAL);
+        return -1;
     }
 
     return 0;
@@ -69,7 +65,6 @@ static int bmp_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     const AVFrame * const p = pict;
     int n_bytes_image, n_bytes_per_row, n_bytes, i, n, hsize, ret;
     const uint32_t *pal = NULL;
-    uint32_t palette256[256];
     int pad_bytes_per_row, pal_entries = 0, compression = BMP_RGB;
     int bit_count = avctx->bits_per_coded_sample;
     uint8_t *ptr, *buf;
@@ -96,10 +91,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
     case AV_PIX_FMT_RGB4_BYTE:
     case AV_PIX_FMT_BGR4_BYTE:
     case AV_PIX_FMT_GRAY8:
-        av_assert1(bit_count == 8);
-        avpriv_set_systematic_pal2(palette256, avctx->pix_fmt);
-        pal = palette256;
-        break;
+        avpriv_set_systematic_pal2((uint32_t*)p->data[1], avctx->pix_fmt);
     case AV_PIX_FMT_PAL8:
         pal = (uint32_t *)p->data[1];
         break;
@@ -118,8 +110,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #define SIZE_BITMAPINFOHEADER 40
     hsize = SIZE_BITMAPFILEHEADER + SIZE_BITMAPINFOHEADER + (pal_entries << 2);
     n_bytes = n_bytes_image + hsize;
-    if ((ret = ff_alloc_packet2(avctx, pkt, n_bytes)) < 0)
+    if ((ret = ff_alloc_packet(pkt, n_bytes)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
+    }
     buf = pkt->data;
     bytestream_put_byte(&buf, 'B');                   // BITMAPFILEHEADER.bfType
     bytestream_put_byte(&buf, 'M');                   // do.
@@ -171,8 +165,8 @@ AVCodec ff_bmp_encoder = {
     .init           = bmp_encode_init,
     .encode2        = bmp_encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]){
-        AV_PIX_FMT_BGRA, AV_PIX_FMT_BGR24,
-        AV_PIX_FMT_RGB565, AV_PIX_FMT_RGB555, AV_PIX_FMT_RGB444,
+        AV_PIX_FMT_BGR24,
+        AV_PIX_FMT_RGB555, AV_PIX_FMT_RGB444, AV_PIX_FMT_RGB565,
         AV_PIX_FMT_RGB8, AV_PIX_FMT_BGR8, AV_PIX_FMT_RGB4_BYTE, AV_PIX_FMT_BGR4_BYTE, AV_PIX_FMT_GRAY8, AV_PIX_FMT_PAL8,
         AV_PIX_FMT_MONOBLACK,
         AV_PIX_FMT_NONE
