@@ -3,20 +3,20 @@
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  * Copyright (C) 2015 Tom Butterworth <bangnoise@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,10 +37,10 @@
 #include "bytestream.h"
 #include "hap.h"
 #include "internal.h"
-#include "memory.h"
 #include "snappy.h"
 #include "texturedsp.h"
 #include "thread.h"
+#include "memory.h"
 
 /* The first three bytes are the size of the section past the header, or zero
  * if the length is stored in the next long word. The fourth byte in the first
@@ -162,11 +162,10 @@ static int hap_parse_frame_header(AVCodecContext *avctx)
     if (ret != 0)
         return ret;
 
-    if ((avctx->codec_tag == MKTAG('H','a','p','1') && (section_type & 0x0F) != HAP_FMT_RGBDXT1) ||
-        (avctx->codec_tag == MKTAG('H','a','p','5') && (section_type & 0x0F) != HAP_FMT_RGBADXT5) ||
-        (avctx->codec_tag == MKTAG('H','a','p','Y') && (section_type & 0x0F) != HAP_FMT_YCOCGDXT5)) {
-        av_log(avctx, AV_LOG_ERROR,
-               "Invalid texture format %#04x.\n", section_type & 0x0F);
+    if ((avctx->codec_tag == MKTAG('H','a','p','1') && (section_type & 0x0F) != HAP_FMT_RGBDXT1)
+        || (avctx->codec_tag == MKTAG('H','a','p','5') && (section_type & 0x0F) != HAP_FMT_RGBADXT5)
+        || (avctx->codec_tag == MKTAG('H','a','p','Y') && (section_type & 0x0F) != HAP_FMT_YCOCGDXT5)) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid texture format %#04x.\n", section_type & 0x0F);
         return AVERROR_INVALIDDATA;
     }
 
@@ -252,7 +251,6 @@ static int decompress_chunks_thread(AVCodecContext *avctx, void *arg,
     if (chunk->compressor == HAP_COMP_SNAPPY) {
         int ret;
         int64_t uncompressed_size = ctx->tex_size;
-
         /* Uncompress the frame */
         ret = ff_snappy_uncompress(&gbc, dst, &uncompressed_size);
         if (ret < 0) {
@@ -309,6 +307,7 @@ static int hap_decode(AVCodecContext *avctx, void *data,
     HapContext *ctx = avctx->priv_data;
     ThreadFrame tframe;
     int ret, i;
+    int tex_size;
 
     bytestream2_init(&ctx->gbc, avpkt->data, avpkt->size);
 
@@ -322,12 +321,14 @@ static int hap_decode(AVCodecContext *avctx, void *data,
     ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
-    ff_thread_finish_setup(avctx);
+    if (avctx->codec->update_thread_context)
+        ff_thread_finish_setup(avctx);
 
     /* Unpack the DXT texture */
     if (hap_can_use_tex_in_place(ctx)) {
         /* Only DXTC texture compression in a contiguous block */
         ctx->tex_data = ctx->gbc.buffer;
+        tex_size = bytestream2_get_bytes_left(&ctx->gbc);
     } else {
         /* Perform the second-stage decompression */
         ret = av_reallocp(&ctx->tex_buf, ctx->tex_size);
@@ -343,6 +344,14 @@ static int hap_decode(AVCodecContext *avctx, void *data,
         }
 
         ctx->tex_data = ctx->tex_buf;
+        tex_size = ctx->tex_size;
+    }
+
+    if (tex_size < (avctx->coded_width  / TEXTURE_BLOCK_W)
+                  *(avctx->coded_height / TEXTURE_BLOCK_H)
+                  *ctx->tex_rat) {
+        av_log(avctx, AV_LOG_ERROR, "Insufficient data\n");
+        return AVERROR_INVALIDDATA;
     }
 
     /* Use the decompress function on the texture, one block per thread */
@@ -423,8 +432,8 @@ AVCodec ff_hap_decoder = {
     .decode         = hap_decode,
     .close          = hap_close,
     .priv_data_size = sizeof(HapContext),
-    .capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS |
-                      AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_SLICE_THREADS |
+                      CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };

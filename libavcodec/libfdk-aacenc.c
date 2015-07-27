@@ -2,7 +2,7 @@
  * AAC encoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -292,7 +292,7 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     if (avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
         avctx->extradata_size = info.confSize;
         avctx->extradata      = av_mallocz(avctx->extradata_size +
-                                           AV_INPUT_BUFFER_PADDING_SIZE);
+                                           FF_INPUT_BUFFER_PADDING_SIZE);
         if (!avctx->extradata) {
             ret = AVERROR(ENOMEM);
             goto error;
@@ -342,10 +342,8 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
 
     /* The maximum packet size is 6144 bits aka 768 bytes per channel. */
-    if ((ret = ff_alloc_packet(avpkt, FFMAX(8192, 768 * avctx->channels)))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, FFMAX(8192, 768 * avctx->channels), 0)) < 0)
         return ret;
-    }
 
     out_ptr                   = avpkt->data;
     out_buffer_size           = avpkt->size;
@@ -419,7 +417,7 @@ AVCodec ff_libfdk_aac_encoder = {
     .init                  = aac_encode_init,
     .encode2               = aac_encode_frame,
     .close                 = aac_encode_close,
-    .capabilities          = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_DELAY,
+    .capabilities          = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY,
     .sample_fmts           = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                             AV_SAMPLE_FMT_NONE },
     .priv_class            = &aac_enc_class,

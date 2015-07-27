@@ -405,7 +405,7 @@ int main(int argc, char **argv)
     decoder_ctx->codec_id = AV_CODEC_ID_H264;
     if (video_st->codec->extradata_size) {
         decoder_ctx->extradata = av_mallocz(video_st->codec->extradata_size +
-                                            AV_INPUT_BUFFER_PADDING_SIZE);
+                                            FF_INPUT_BUFFER_PADDING_SIZE);
         if (!decoder_ctx->extradata) {
             ret = AVERROR(ENOMEM);
             goto finish;

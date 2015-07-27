@@ -5,20 +5,20 @@
  * Copyright (C) 2006 Benjamin Larsson
  * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -113,13 +113,13 @@ static int dca_parse_params(const uint8_t *buf, int buf_size, int *duration,
                             int *sample_rate, int *framesize)
 {
     GetBitContext gb;
-    uint8_t hdr[12 + AV_INPUT_BUFFER_PADDING_SIZE] = { 0 };
+    uint8_t hdr[12 + FF_INPUT_BUFFER_PADDING_SIZE] = { 0 };
     int ret, sample_blocks, sr_code;
 
     if (buf_size < 12)
         return AVERROR_INVALIDDATA;
 
-    if ((ret = ff_dca_convert_bitstream(buf, 12, hdr, 12)) < 0)
+    if ((ret = avpriv_dca_convert_bitstream(buf, 12, hdr, 12)) < 0)
         return ret;
 
     init_get_bits(&gb, hdr, 96);

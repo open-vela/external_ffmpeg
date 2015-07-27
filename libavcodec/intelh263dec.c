@@ -1,20 +1,20 @@
 /*
  * H.263i decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,8 +38,7 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
     }
     s->picture_number = get_bits(&s->gb, 8); /* picture timestamp */
 
-    if (get_bits1(&s->gb) != 1) {
-        av_log(s->avctx, AV_LOG_ERROR, "Bad marker\n");
+    if (check_marker(&s->gb, "after picture_number") != 1) {
         return -1;      /* marker */
     }
     if (get_bits1(&s->gb) != 0) {
@@ -59,14 +58,14 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
 
     s->pict_type = AV_PICTURE_TYPE_I + get_bits1(&s->gb);
 
-    s->unrestricted_mv = get_bits1(&s->gb);
-    s->h263_long_vectors = s->unrestricted_mv;
+    s->h263_long_vectors = get_bits1(&s->gb);
 
     if (get_bits1(&s->gb) != 0) {
         av_log(s->avctx, AV_LOG_ERROR, "SAC not supported\n");
         return -1;      /* SAC: off */
     }
     s->obmc= get_bits1(&s->gb);
+    s->unrestricted_mv = s->obmc || s->h263_long_vectors;
     s->pb_frame = get_bits1(&s->gb);
 
     if (format < 6) {
@@ -82,7 +81,7 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
         }
         if(get_bits(&s->gb, 2))
             av_log(s->avctx, AV_LOG_ERROR, "Bad value for reserved field\n");
-        s->loop_filter = get_bits1(&s->gb);
+        s->loop_filter = get_bits1(&s->gb) * !s->avctx->lowres;
         if(get_bits1(&s->gb))
             av_log(s->avctx, AV_LOG_ERROR, "Bad value for reserved field\n");
         if(get_bits1(&s->gb))
@@ -95,7 +94,7 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
     if(format == 6){
         int ar = get_bits(&s->gb, 4);
         skip_bits(&s->gb, 9); // display width
-        skip_bits1(&s->gb);
+        check_marker(&s->gb, "in dimensions");
         skip_bits(&s->gb, 9); // display height
         if(ar == 15){
             s->avctx->sample_aspect_ratio.num = get_bits(&s->gb, 8); // aspect ratio - width
@@ -116,9 +115,8 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
     }
 
     /* PEI */
-    while (get_bits1(&s->gb) != 0) {
-        skip_bits(&s->gb, 8);
-    }
+    if (skip_1stop_8data_bits(&s->gb) < 0)
+        return AVERROR_INVALIDDATA;
     s->f_code = 1;
 
     s->y_dc_scale_table=
@@ -138,7 +136,7 @@ AVCodec ff_h263i_decoder = {
     .init           = ff_h263_decode_init,
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DRAW_HORIZ_BAND | AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_NONE

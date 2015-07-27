@@ -2,20 +2,20 @@
  * Duck TrueMotion 1.0 Decoder
  * Copyright (C) 2003 Alex Beregszaszi & Mike Melanson
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -415,6 +415,8 @@ static int truemotion1_decode_header(TrueMotion1Context *s)
         ff_set_sar(s->avctx, s->avctx->sample_aspect_ratio);
 
         av_fast_malloc(&s->vert_pred, &s->vert_pred_size, s->avctx->width * sizeof(unsigned int));
+        if (!s->vert_pred)
+            return AVERROR(ENOMEM);
     }
 
     /* There is 1 change bit per 4 pixels, so each change byte represents
@@ -483,6 +485,8 @@ static av_cold int truemotion1_decode_init(AVCodecContext *avctx)
     /* there is a vertical predictor for each pixel in a line; each vertical
      * predictor is 0 to start with */
     av_fast_malloc(&s->vert_pred, &s->vert_pred_size, s->avctx->width * sizeof(unsigned int));
+    if (!s->vert_pred)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -871,10 +875,8 @@ static int truemotion1_decode_frame(AVCodecContext *avctx,
     if ((ret = truemotion1_decode_header(s)) < 0)
         return ret;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
-    }
 
     if (compression_types[s->compression].algorithm == ALGO_RGB24H) {
         truemotion1_decode_24bit(s);
@@ -896,7 +898,7 @@ static av_cold int truemotion1_decode_end(AVCodecContext *avctx)
     TrueMotion1Context *s = avctx->priv_data;
 
     av_frame_free(&s->frame);
-    av_free(s->vert_pred);
+    av_freep(&s->vert_pred);
 
     return 0;
 }
@@ -910,5 +912,5 @@ AVCodec ff_truemotion1_decoder = {
     .init           = truemotion1_decode_init,
     .close          = truemotion1_decode_end,
     .decode         = truemotion1_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

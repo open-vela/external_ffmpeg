@@ -2,20 +2,20 @@
  * HEVC MP4 to Annex B byte stream format filter
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,18 +67,18 @@ static int hevc_extradata_to_annexb(AVCodecContext *avctx)
         for (j = 0; j < cnt; j++) {
             int nalu_len = bytestream2_get_be16(&gb);
 
-            if (4 + AV_INPUT_BUFFER_PADDING_SIZE + nalu_len > SIZE_MAX - new_extradata_size) {
+            if (4 + FF_INPUT_BUFFER_PADDING_SIZE + nalu_len > SIZE_MAX - new_extradata_size) {
                 ret = AVERROR_INVALIDDATA;
                 goto fail;
             }
-            ret = av_reallocp(&new_extradata, new_extradata_size + nalu_len + 4 + AV_INPUT_BUFFER_PADDING_SIZE);
+            ret = av_reallocp(&new_extradata, new_extradata_size + nalu_len + 4 + FF_INPUT_BUFFER_PADDING_SIZE);
             if (ret < 0)
                 goto fail;
 
             AV_WB32(new_extradata + new_extradata_size, 1); // add the startcode
             bytestream2_get_buffer(&gb, new_extradata + new_extradata_size + 4, nalu_len);
             new_extradata_size += 4 + nalu_len;
-            memset(new_extradata + new_extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+            memset(new_extradata + new_extradata_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
         }
     }
 

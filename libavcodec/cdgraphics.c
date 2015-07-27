@@ -2,20 +2,20 @@
  * CD Graphics Video Decoder
  * Copyright (c) 2009 Michael Tison
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -119,7 +119,7 @@ static void cdg_load_palette(CDGraphicsContext *cc, uint8_t *data, int low)
         r = ((color >> 8) & 0x000F) * 17;
         g = ((color >> 4) & 0x000F) * 17;
         b = ((color     ) & 0x000F) * 17;
-        palette[i + array_offset] = r << 16 | g << 8 | b;
+        palette[i + array_offset] = 0xFFU << 24 | r << 16 | g << 8 | b;
     }
     cc->frame->palette_has_changed = 1;
 }
@@ -265,20 +265,27 @@ static int cdg_decode_frame(AVCodecContext *avctx,
     int buf_size       = avpkt->size;
     int ret;
     uint8_t command, inst;
-    uint8_t cdg_data[CDG_DATA_SIZE];
+    uint8_t cdg_data[CDG_DATA_SIZE] = {0};
     AVFrame *frame = data;
     CDGraphicsContext *cc = avctx->priv_data;
 
+    if (buf_size < CDG_MINIMUM_PKT_SIZE) {
+        av_log(avctx, AV_LOG_ERROR, "buffer too small for decoder\n");
+        return AVERROR(EINVAL);
+    }
+    if (buf_size > CDG_HEADER_SIZE + CDG_DATA_SIZE) {
+        av_log(avctx, AV_LOG_ERROR, "buffer too big for decoder\n");
+        return AVERROR(EINVAL);
+    }
+
     bytestream2_init(&gb, avpkt->data, avpkt->size);
 
-
-    ret = ff_reget_buffer(avctx, cc->frame);
-    if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, cc->frame)) < 0)
         return ret;
-    }
-    if (!avctx->frame_number)
+    if (!avctx->frame_number) {
         memset(cc->frame->data[0], 0, cc->frame->linesize[0] * avctx->height);
+        memset(cc->frame->data[1], 0, AVPALETTE_SIZE);
+    }
 
     command = bytestream2_get_byte(&gb);
     inst    = bytestream2_get_byte(&gb);
@@ -325,11 +332,8 @@ static int cdg_decode_frame(AVCodecContext *avctx,
                 return AVERROR(EINVAL);
             }
 
-            ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF);
-            if (ret) {
-                av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
                 return ret;
-            }
 
             cdg_scroll(cc, cdg_data, frame, inst == CDG_INST_SCROLL_COPY);
             av_frame_unref(cc->frame);
@@ -372,5 +376,5 @@ AVCodec ff_cdgraphics_decoder = {
     .init           = cdg_decode_init,
     .close          = cdg_decode_end,
     .decode         = cdg_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

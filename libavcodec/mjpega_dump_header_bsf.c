@@ -2,20 +2,20 @@
  * MJPEG A dump header bitstream filter
  * Copyright (c) 2006 Baptiste Coudurier
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,7 +44,7 @@ static int mjpega_dump_header(AVBitStreamFilterContext *bsfc, AVCodecContext *av
     }
 
     *poutbuf_size = 0;
-    *poutbuf = av_malloc(buf_size + 44 + AV_INPUT_BUFFER_PADDING_SIZE);
+    *poutbuf = av_malloc(buf_size + 44 + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!*poutbuf)
         return AVERROR(ENOMEM);
     poutbufp = *poutbuf;
@@ -90,7 +90,6 @@ static int mjpega_dump_header(AVBitStreamFilterContext *bsfc, AVCodecContext *av
 }
 
 AVBitStreamFilter ff_mjpega_dump_header_bsf = {
-    "mjpegadump",
-    0,
-    mjpega_dump_header,
+    .name   = "mjpegadump",
+    .filter = mjpega_dump_header,
 };

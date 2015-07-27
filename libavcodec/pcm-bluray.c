@@ -2,20 +2,20 @@
  * LPCM codecs for PCM format found in Blu-ray PCM streams
  * Copyright (c) 2009, 2013 Christian Schmidt
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -71,13 +71,14 @@ static int pcm_bluray_parse_header(AVCodecContext *avctx,
 
     /* get the sample depth and derive the sample format from it */
     avctx->bits_per_coded_sample = bits_per_samples[header[3] >> 6];
-    if (!avctx->bits_per_coded_sample) {
-        av_log(avctx, AV_LOG_ERROR, "reserved sample depth (0)\n");
+    if (!(avctx->bits_per_coded_sample == 16 || avctx->bits_per_coded_sample == 24)) {
+        av_log(avctx, AV_LOG_ERROR, "unsupported sample depth (%d)\n", avctx->bits_per_coded_sample);
         return AVERROR_INVALIDDATA;
     }
     avctx->sample_fmt = avctx->bits_per_coded_sample == 16 ? AV_SAMPLE_FMT_S16
                                                            : AV_SAMPLE_FMT_S32;
-    avctx->bits_per_raw_sample = avctx->bits_per_coded_sample;
+    if (avctx->sample_fmt == AV_SAMPLE_FMT_S32)
+        avctx->bits_per_raw_sample = avctx->bits_per_coded_sample;
 
     /* get the sample rate. Not all values are used. */
     switch (header[2] & 0x0f) {
@@ -154,10 +155,8 @@ static int pcm_bluray_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = samples;
-    if ((retval = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((retval = ff_get_buffer(avctx, frame, 0)) < 0)
         return retval;
-    }
     dst16 = (int16_t *)frame->data[0];
     dst32 = (int32_t *)frame->data[0];
 
@@ -308,7 +307,7 @@ AVCodec ff_pcm_bluray_decoder = {
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_PCM_BLURAY,
     .decode         = pcm_bluray_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]){
         AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32, AV_SAMPLE_FMT_NONE
     },

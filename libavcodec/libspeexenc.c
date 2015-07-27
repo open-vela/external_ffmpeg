@@ -2,20 +2,20 @@
  * Copyright (C) 2009 Justin Ruggles
  * Copyright (c) 2009 Xuggle Incorporated
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,7 +76,7 @@
  *     encodes them with just enough bits to reproduce the background noise.
  *
  * Discontinuous Transmission (DTX)
- *     DTX is an addition to VAD/VBR operation, that allows to stop transmitting
+ *     DTX is an addition to VAD/VBR operation, that makes it possible to stop transmitting
  *     completely when the background noise is stationary.
  *     In file-based operation only 5 bits are used for such frames.
  */
@@ -92,6 +92,7 @@
 #include "internal.h"
 #include "audio_frame_queue.h"
 
+/* TODO: Think about converting abr, vad, dtx and such flags to a bit field */
 typedef struct LibSpeexEncContext {
     AVClass *class;             ///< AVClass for private options
     SpeexBits bits;             ///< libspeex bitwriter context
@@ -244,7 +245,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
     header_data = speex_header_to_packet(&s->header, &header_size);
 
     /* allocate extradata */
-    avctx->extradata = av_malloc(header_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    avctx->extradata = av_malloc(header_size + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata) {
         speex_header_free(header_data);
         speex_encoder_destroy(s->enc_state);
@@ -293,10 +294,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     /* write output if all frames for the packet have been encoded */
     if (s->pkt_frame_count == s->frames_per_packet) {
         s->pkt_frame_count = 0;
-        if ((ret = ff_alloc_packet(avpkt, speex_bits_nbytes(&s->bits)))) {
-            av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+        if ((ret = ff_alloc_packet2(avctx, avpkt, speex_bits_nbytes(&s->bits), 0)) < 0)
             return ret;
-        }
         ret = speex_bits_write(&s->bits, avpkt->data, avpkt->size);
         speex_bits_reset(&s->bits);
 
@@ -335,7 +334,7 @@ static const AVOption options[] = {
     { NULL },
 };
 
-static const AVClass class = {
+static const AVClass speex_class = {
     .class_name = "libspeex",
     .item_name  = av_default_item_name,
     .option     = options,
@@ -357,13 +356,13 @@ AVCodec ff_libspeex_encoder = {
     .init           = encode_init,
     .encode2        = encode_frame,
     .close          = encode_close,
-    .capabilities   = AV_CODEC_CAP_DELAY,
+    .capabilities   = CODEC_CAP_DELAY,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
     .channel_layouts = (const uint64_t[]){ AV_CH_LAYOUT_MONO,
                                            AV_CH_LAYOUT_STEREO,
                                            0 },
     .supported_samplerates = (const int[]){ 8000, 16000, 32000, 0 },
-    .priv_class     = &class,
+    .priv_class     = &speex_class,
     .defaults       = defaults,
 };

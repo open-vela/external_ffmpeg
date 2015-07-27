@@ -2,20 +2,20 @@
  * Bethesda VID video decoder
  * Copyright (C) 2007 Nicholas Tung
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,7 +59,8 @@ static int set_palette(BethsoftvidContext *ctx)
         return AVERROR_INVALIDDATA;
 
     for(a = 0; a < 256; a++){
-        palette[a] = bytestream2_get_be24u(&ctx->g) * 4;
+        palette[a] = 0xFFU << 24 | bytestream2_get_be24u(&ctx->g) * 4;
+        palette[a] |= palette[a] >> 6 & 0x30303;
     }
     ctx->frame->palette_has_changed = 1;
     return 0;
@@ -78,10 +79,8 @@ static int bethsoftvid_decode_frame(AVCodecContext *avctx,
     int code, ret;
     int yoffset;
 
-    if ((ret = ff_reget_buffer(avctx, vid->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, vid->frame)) < 0)
         return ret;
-    }
     wrap_to_next_line = vid->frame->linesize[0] - avctx->width;
 
     if (avpkt->side_data_elems > 0 &&
@@ -163,5 +162,5 @@ AVCodec ff_bethsoftvid_decoder = {
     .init           = bethsoftvid_decode_init,
     .close          = bethsoftvid_decode_end,
     .decode         = bethsoftvid_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

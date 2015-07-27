@@ -6,20 +6,20 @@
  * to Michael Niedermayer <michaelni@gmx.at> for writing initial
  * implementation.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,7 +45,7 @@
  */
 static void validate_thread_parameters(AVCodecContext *avctx)
 {
-    int frame_threading_supported = (avctx->codec->capabilities & AV_CODEC_CAP_FRAME_THREADS)
+    int frame_threading_supported = (avctx->codec->capabilities & CODEC_CAP_FRAME_THREADS)
                                 && !(avctx->flags  & AV_CODEC_FLAG_TRUNCATED)
                                 && !(avctx->flags  & AV_CODEC_FLAG_LOW_DELAY)
                                 && !(avctx->flags2 & AV_CODEC_FLAG2_CHUNKS);
@@ -53,10 +53,10 @@ static void validate_thread_parameters(AVCodecContext *avctx)
         avctx->active_thread_type = 0;
     } else if (frame_threading_supported && (avctx->thread_type & FF_THREAD_FRAME)) {
         avctx->active_thread_type = FF_THREAD_FRAME;
-    } else if (avctx->codec->capabilities & AV_CODEC_CAP_SLICE_THREADS &&
+    } else if (avctx->codec->capabilities & CODEC_CAP_SLICE_THREADS &&
                avctx->thread_type & FF_THREAD_SLICE) {
         avctx->active_thread_type = FF_THREAD_SLICE;
-    } else if (!(avctx->codec->capabilities & AV_CODEC_CAP_AUTO_THREADS)) {
+    } else if (!(avctx->codec->capabilities & CODEC_CAP_AUTO_THREADS)) {
         avctx->thread_count       = 1;
         avctx->active_thread_type = 0;
     }

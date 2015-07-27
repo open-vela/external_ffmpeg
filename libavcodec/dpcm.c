@@ -1,21 +1,21 @@
 /*
  * Assorted DPCM codecs
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -118,7 +118,7 @@ static av_cold int dpcm_decode_init(AVCodecContext *avctx)
     int i;
 
     if (avctx->channels < 1 || avctx->channels > 2) {
-        av_log(avctx, AV_LOG_INFO, "invalid number of channels\n");
+        av_log(avctx, AV_LOG_ERROR, "invalid number of channels\n");
         return AVERROR(EINVAL);
     }
 
@@ -205,13 +205,14 @@ static int dpcm_decode_frame(AVCodecContext *avctx, void *data,
         av_log(avctx, AV_LOG_ERROR, "packet is too small\n");
         return AVERROR(EINVAL);
     }
+    if (out % avctx->channels) {
+        av_log(avctx, AV_LOG_WARNING, "channels have differing number of samples\n");
+    }
 
     /* get output buffer */
-    frame->nb_samples = out / avctx->channels;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = (out + avctx->channels - 1) / avctx->channels;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     output_samples = (int16_t *)frame->data[0];
     samples_end = output_samples + out;
 
@@ -333,7 +334,7 @@ AVCodec ff_ ## name_ ## _decoder = {                        \
     .priv_data_size = sizeof(DPCMContext),                  \
     .init           = dpcm_decode_init,                     \
     .decode         = dpcm_decode_frame,                    \
-    .capabilities   = AV_CODEC_CAP_DR1,                     \
+    .capabilities   = CODEC_CAP_DR1,                        \
 }
 
 DPCM_DECODER(AV_CODEC_ID_INTERPLAY_DPCM, interplay_dpcm, "DPCM Interplay");

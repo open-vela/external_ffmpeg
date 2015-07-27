@@ -2,20 +2,20 @@
  * Interface to libfaac for aac encoding
  * Copyright (c) 2002 Gildas Bazin <gbazin@netcourrier.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,6 @@ typedef struct FaacAudioContext {
     faacEncHandle faac_handle;
     AudioFrameQueue afq;
 } FaacAudioContext;
-
 
 static av_cold int Faac_encode_close(AVCodecContext *avctx)
 {
@@ -139,7 +138,7 @@ static av_cold int Faac_encode_init(AVCodecContext *avctx)
 
         if (!faacEncGetDecoderSpecificInfo(s->faac_handle, &buffer,
                                            &decoder_specific_info_size)) {
-            avctx->extradata = av_malloc(decoder_specific_info_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            avctx->extradata = av_malloc(decoder_specific_info_size + FF_INPUT_BUFFER_PADDING_SIZE);
             if (!avctx->extradata) {
                 ret = AVERROR(ENOMEM);
                 goto error;
@@ -152,9 +151,20 @@ static av_cold int Faac_encode_init(AVCodecContext *avctx)
     }
 
     if (!faacEncSetConfiguration(s->faac_handle, faac_cfg)) {
-        av_log(avctx, AV_LOG_ERROR, "libfaac doesn't support this output format!\n");
-        ret = AVERROR(EINVAL);
-        goto error;
+        int i;
+        for (i = avctx->bit_rate/1000; i ; i--) {
+            faac_cfg->bitRate = 1000*i / avctx->channels;
+            if (faacEncSetConfiguration(s->faac_handle, faac_cfg))
+                break;
+        }
+        if (!i) {
+            av_log(avctx, AV_LOG_ERROR, "libfaac doesn't support this output format!\n");
+            ret = AVERROR(EINVAL);
+            goto error;
+        } else {
+            avctx->bit_rate = 1000*i;
+            av_log(avctx, AV_LOG_WARNING, "libfaac doesn't support the specified bitrate, using %dkbit/s instead\n", i);
+        }
     }
 
     avctx->initial_padding = FAAC_DELAY_SAMPLES;
@@ -174,10 +184,8 @@ static int Faac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     int num_samples  = frame ? frame->nb_samples : 0;
     void *samples    = frame ? frame->data[0]    : NULL;
 
-    if ((ret = ff_alloc_packet(avpkt, (7 + 768) * avctx->channels))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, (7 + 768) * avctx->channels, 0)) < 0)
         return ret;
-    }
 
     bytes_written = faacEncEncode(s->faac_handle, samples,
                                   num_samples * avctx->channels,
@@ -232,7 +240,7 @@ AVCodec ff_libfaac_encoder = {
     .init           = Faac_encode_init,
     .encode2        = Faac_encode_frame,
     .close          = Faac_encode_close,
-    .capabilities   = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_DELAY,
+    .capabilities   = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
     .profiles       = NULL_IF_CONFIG_SMALL(profiles),

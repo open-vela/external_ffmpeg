@@ -2,20 +2,20 @@
  * 8088flex TMV video decoder
  * Copyright (c) 2009 Daniel Verkamp <daniel at drv.nu>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,7 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "libavutil/internal.h"
+#include "libavutil/xga_font_data.h"
 
 #include "cga_data.h"
 
@@ -45,10 +46,8 @@ static int tmv_decode_frame(AVCodecContext *avctx, void *data,
     unsigned x, y, fg, bg, c;
     int ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     if (avpkt->size < 2*char_rows*char_cols) {
         av_log(avctx, AV_LOG_ERROR,
@@ -63,6 +62,7 @@ static int tmv_decode_frame(AVCodecContext *avctx, void *data,
 
     frame->palette_has_changed = 1;
     memcpy(frame->data[1], ff_cga_palette, 16 * 4);
+    memset(frame->data[1] + 16 * 4, 0, AVPALETTE_SIZE - 16 * 4);
 
     for (y = 0; y < char_rows; y++) {
         for (x = 0; x < char_cols; x++) {
@@ -70,7 +70,7 @@ static int tmv_decode_frame(AVCodecContext *avctx, void *data,
             bg = *src  >> 4;
             fg = *src++ & 0xF;
             ff_draw_pc_font(dst + x * 8, frame->linesize[0],
-                            ff_cga_font, 8, c, fg, bg);
+                            avpriv_cga_font, 8, c, fg, bg);
         }
         dst += frame->linesize[0] * 8;
     }
@@ -93,5 +93,5 @@ AVCodec ff_tmv_decoder = {
     .id             = AV_CODEC_ID_TMV,
     .init           = tmv_decode_init,
     .decode         = tmv_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

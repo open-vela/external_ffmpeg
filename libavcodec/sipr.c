@@ -4,20 +4,20 @@
  * Copyright (c) 2008 Vladimir Voroshilov
  * Copyright (c) 2009 Vitor Sessak
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -139,7 +139,7 @@ const float ff_pow_0_5[] = {
     1.0/(1 << 13), 1.0/(1 << 14), 1.0/(1 << 15), 1.0/(1 << 16)
 };
 
-static void dequant(float *out, const int *idx, const float *cbs[])
+static void dequant(float *out, const int *idx, const float * const cbs[])
 {
     int i;
     int stride  = 2;
@@ -543,10 +543,8 @@ static int sipr_decode_frame(AVCodecContext *avctx, void *data,
     /* get output buffer */
     frame->nb_samples = mode_par->frames_per_packet * subframe_size *
                         mode_par->subframe_count;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     samples = (float *)frame->data[0];
 
     init_get_bits(&gb, buf, mode_par->bits_per_frame);
@@ -572,5 +570,5 @@ AVCodec ff_sipr_decoder = {
     .priv_data_size = sizeof(SiprContext),
     .init           = sipr_decoder_init,
     .decode         = sipr_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

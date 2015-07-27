@@ -1,20 +1,21 @@
 /*
  * Sierra VMD audio decoder
+ * Copyright (c) 2004 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,6 +35,7 @@
 
 #include <string.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
@@ -74,7 +76,7 @@ static av_cold int vmdaudio_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "invalid number of channels\n");
         return AVERROR(EINVAL);
     }
-    if (avctx->block_align < 1) {
+    if (avctx->block_align < 1 || avctx->block_align % avctx->channels) {
         av_log(avctx, AV_LOG_ERROR, "invalid block align\n");
         return AVERROR(EINVAL);
     }
@@ -180,17 +182,16 @@ static int vmdaudio_decode_frame(AVCodecContext *avctx, void *data,
     /* get output buffer */
     frame->nb_samples = ((silent_chunks + audio_chunks) * avctx->block_align) /
                         avctx->channels;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     output_samples_u8  =            frame->data[0];
     output_samples_s16 = (int16_t *)frame->data[0];
 
     /* decode silent chunks */
     if (silent_chunks > 0) {
-        int silent_size = FFMIN(avctx->block_align * silent_chunks,
-                                frame->nb_samples * avctx->channels);
+        int silent_size = avctx->block_align * silent_chunks;
+        av_assert0(avctx->block_align * silent_chunks <= frame->nb_samples * avctx->channels);
+
         if (s->out_bps == 2) {
             memset(output_samples_s16, 0x00, silent_size * 2);
             output_samples_s16 += silent_size;
@@ -202,8 +203,9 @@ static int vmdaudio_decode_frame(AVCodecContext *avctx, void *data,
 
     /* decode audio chunks */
     if (audio_chunks > 0) {
-        buf_end = buf + (buf_size & ~(avctx->channels > 1));
-        while (buf + s->chunk_size <= buf_end) {
+        buf_end = buf + buf_size;
+        av_assert0((buf_size & (avctx->channels > 1)) == 0);
+        while (buf_end - buf >= s->chunk_size) {
             if (s->out_bps == 2) {
                 decode_audio_s16(output_samples_s16, buf, s->chunk_size,
                                  avctx->channels);
@@ -229,5 +231,5 @@ AVCodec ff_vmdaudio_decoder = {
     .priv_data_size = sizeof(VmdAudioContext),
     .init           = vmdaudio_decode_init,
     .decode         = vmdaudio_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

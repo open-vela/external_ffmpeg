@@ -2,20 +2,20 @@
  * TDSC decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -124,8 +124,8 @@ static av_cold int tdsc_init(AVCodecContext *avctx)
     ctx->jpeg_avctx->flags = avctx->flags;
     ctx->jpeg_avctx->flags2 = avctx->flags2;
     ctx->jpeg_avctx->dct_algo = avctx->dct_algo;
-    ctx->jpeg_avctx->idct_algo = avctx->idct_algo;;
-    ret = avcodec_open2(ctx->jpeg_avctx, codec, NULL);
+    ctx->jpeg_avctx->idct_algo = avctx->idct_algo;
+    ret = ff_codec_open2_recursive(ctx->jpeg_avctx, codec, NULL);
     if (ret < 0)
         return ret;
 
@@ -621,7 +621,7 @@ AVCodec ff_tdsc_decoder = {
     .decode         = tdsc_decode_frame,
     .close          = tdsc_close,
     .priv_data_size = sizeof(TDSCContext),
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };

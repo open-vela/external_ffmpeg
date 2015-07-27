@@ -1,20 +1,20 @@
 /*
  * Mpeg video formats-related picture management functions
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,17 +56,26 @@ do {\
 int ff_mpeg_framesize_alloc(AVCodecContext *avctx, MotionEstContext *me,
                             ScratchpadContext *sc, int linesize)
 {
-    int alloc_size = FFALIGN(FFABS(linesize) + 32, 32);
+    int alloc_size = FFALIGN(FFABS(linesize) + 64, 32);
+
+    if (avctx->hwaccel || avctx->codec->capabilities & CODEC_CAP_HWACCEL_VDPAU)
+        return 0;
+
+    if (linesize < 24) {
+        av_log(avctx, AV_LOG_ERROR, "Image too small, temporary buffers cannot function\n");
+        return AVERROR_PATCHWELCOME;
+    }
 
     // edge emu needs blocksize + filter length - 1
     // (= 17x17 for  halfpel / 21x21 for  h264)
     // VC1 computes luma and chroma simultaneously and needs 19X19 + 9x9
     // at uvlinesize. It supports only YUV420 so 24x24 is enough
     // linesize * interlaced * MBsize
-    FF_ALLOCZ_OR_GOTO(avctx, sc->edge_emu_buffer, alloc_size * 2 * 24,
+    // we also use this buffer for encoding in encode_mb_internal() needig an additional 32 lines
+    FF_ALLOCZ_ARRAY_OR_GOTO(avctx, sc->edge_emu_buffer, alloc_size, 4 * 68,
                       fail);
 
-    FF_ALLOCZ_OR_GOTO(avctx, me->scratchpad, alloc_size * 2 * 16 * 3,
+    FF_ALLOCZ_ARRAY_OR_GOTO(avctx, me->scratchpad, alloc_size, 4 * 16 * 2,
                       fail)
     me->temp            = me->scratchpad;
     sc->rd_scratchpad   = me->scratchpad;
@@ -165,8 +174,8 @@ static int alloc_frame_buffer(AVCodecContext *avctx,  Picture *pic,
     return 0;
 }
 
-static int alloc_picture_tables(Picture *pic, int encoding, int out_format,
-                                int mb_stride, int mb_height, int b8_stride)
+static int alloc_picture_tables(AVCodecContext *avctx, Picture *pic, int encoding, int out_format,
+                                int mb_stride, int mb_width, int mb_height, int b8_stride)
 {
     const int big_mb_num    = mb_stride * (mb_height + 1) + 1;
     const int mb_array_size = mb_stride * mb_height;
@@ -189,7 +198,8 @@ static int alloc_picture_tables(Picture *pic, int encoding, int out_format,
             return AVERROR(ENOMEM);
     }
 
-    if (out_format == FMT_H263 || encoding) {
+    if (out_format == FMT_H263 || encoding || avctx->debug_mv ||
+        (avctx->flags2 & AV_CODEC_FLAG2_EXPORT_MVS)) {
         int mv_size        = 2 * (b8_array_size + 4) * sizeof(int16_t);
         int ref_index_size = 4 * mb_array_size;
 
@@ -201,6 +211,9 @@ static int alloc_picture_tables(Picture *pic, int encoding, int out_format,
         }
     }
 
+    pic->alloc_mb_width  = mb_width;
+    pic->alloc_mb_height = mb_height;
+
     return 0;
 }
 
@@ -211,16 +224,21 @@ static int alloc_picture_tables(Picture *pic, int encoding, int out_format,
 int ff_alloc_picture(AVCodecContext *avctx, Picture *pic, MotionEstContext *me,
                      ScratchpadContext *sc, int shared, int encoding,
                      int chroma_x_shift, int chroma_y_shift, int out_format,
-                     int mb_stride, int mb_height, int b8_stride,
+                     int mb_stride, int mb_width, int mb_height, int b8_stride,
                      ptrdiff_t *linesize, ptrdiff_t *uvlinesize)
 {
     int i, ret;
 
+    if (pic->qscale_table_buf)
+        if (   pic->alloc_mb_width  != mb_width
+            || pic->alloc_mb_height != mb_height)
+            ff_free_picture_tables(pic);
+
     if (shared) {
-        assert(pic->f->data[0]);
+        av_assert0(pic->f->data[0]);
         pic->shared = 1;
     } else {
-        assert(!pic->f->buf[0]);
+        av_assert0(!pic->f->buf[0]);
         if (alloc_frame_buffer(avctx, pic, me, sc,
                                chroma_x_shift, chroma_y_shift,
                                *linesize, *uvlinesize) < 0)
@@ -231,8 +249,8 @@ int ff_alloc_picture(AVCodecContext *avctx, Picture *pic, MotionEstContext *me,
     }
 
     if (!pic->qscale_table_buf)
-        ret = alloc_picture_tables(pic, encoding, out_format,
-                                   mb_stride, mb_height, b8_stride);
+        ret = alloc_picture_tables(avctx, pic, encoding, out_format,
+                                   mb_stride, mb_width, mb_height, b8_stride);
     else
         ret = make_tables_writable(pic);
     if (ret < 0)
@@ -268,6 +286,8 @@ fail:
  */
 void ff_mpeg_unref_picture(AVCodecContext *avctx, Picture *pic)
 {
+    int off = offsetof(Picture, mb_mean) + sizeof(pic->mb_mean);
+
     pic->tf.f = pic->f;
     /* WM Image / Screen codecs allocate internal buffers with different
      * dimensions / colorspaces; ignore user-defined callbacks for these. */
@@ -282,6 +302,8 @@ void ff_mpeg_unref_picture(AVCodecContext *avctx, Picture *pic)
 
     if (pic->needs_realloc)
         ff_free_picture_tables(pic);
+
+    memset((uint8_t*)pic + off, 0, sizeof(*pic) - off);
 }
 
 int ff_update_picture_tables(Picture *dst, Picture *src)
@@ -322,6 +344,9 @@ do {                                                                          \
         dst->motion_val[i] = src->motion_val[i];
         dst->ref_index[i]  = src->ref_index[i];
     }
+
+    dst->alloc_mb_width  = src->alloc_mb_width;
+    dst->alloc_mb_height = src->alloc_mb_height;
 
     return 0;
 }
@@ -373,7 +398,7 @@ static inline int pic_is_unused(Picture *pic)
     return 0;
 }
 
-static int find_unused_picture(Picture *picture, int shared)
+static int find_unused_picture(AVCodecContext *avctx, Picture *picture, int shared)
 {
     int i;
 
@@ -389,12 +414,26 @@ static int find_unused_picture(Picture *picture, int shared)
         }
     }
 
-    return AVERROR_INVALIDDATA;
+    av_log(avctx, AV_LOG_FATAL,
+           "Internal error, picture buffer overflow\n");
+    /* We could return -1, but the codec would crash trying to draw into a
+     * non-existing frame anyway. This is safer than waiting for a random crash.
+     * Also the return of this is never useful, an encoder must only allocate
+     * as much as allowed in the specification. This has no relationship to how
+     * much libavcodec could allocate (and MAX_PICTURE_COUNT is always large
+     * enough for such valid streams).
+     * Plus, a decoder has to check stream validity and remove frames if too
+     * many reference frames are around. Waiting for "OOM" is not correct at
+     * all. Similarly, missing reference frames have to be replaced by
+     * interpolated/MC frames, anything else is a bug in the codec ...
+     */
+    abort();
+    return -1;
 }
 
 int ff_find_unused_picture(AVCodecContext *avctx, Picture *picture, int shared)
 {
-    int ret = find_unused_picture(picture, shared);
+    int ret = find_unused_picture(avctx, picture, shared);
 
     if (ret >= 0 && ret < MAX_PICTURE_COUNT) {
         if (picture[ret].needs_realloc) {
@@ -409,6 +448,9 @@ int ff_find_unused_picture(AVCodecContext *avctx, Picture *picture, int shared)
 void ff_free_picture_tables(Picture *pic)
 {
     int i;
+
+    pic->alloc_mb_width  =
+    pic->alloc_mb_height = 0;
 
     av_buffer_unref(&pic->mb_var_buf);
     av_buffer_unref(&pic->mc_mb_var_buf);

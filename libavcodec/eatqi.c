@@ -2,20 +2,20 @@
  * Electronic Arts TQI Video Decoder
  * Copyright (c) 2007-2009 Peter Ross <pross@xvid.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -121,10 +121,8 @@ static int tqi_decode_frame(AVCodecContext *avctx,
     if (ret < 0)
         return ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     av_fast_padded_malloc(&t->bitstream_buf, &t->bitstream_buf_size,
                           buf_end - buf);
@@ -139,9 +137,10 @@ static int tqi_decode_frame(AVCodecContext *avctx,
     for (s->mb_x=0; s->mb_x<(avctx->width+15)/16; s->mb_x++)
     {
         if (tqi_decode_mb(s, t->block) < 0)
-            break;
+            goto end;
         tqi_idct_put(t, frame, t->block);
     }
+    end:
 
     *got_frame = 1;
     return buf_size;
@@ -150,7 +149,7 @@ static int tqi_decode_frame(AVCodecContext *avctx,
 static av_cold int tqi_decode_end(AVCodecContext *avctx)
 {
     TqiContext *t = avctx->priv_data;
-    av_free(t->bitstream_buf);
+    av_freep(&t->bitstream_buf);
     return 0;
 }
 
@@ -163,5 +162,5 @@ AVCodec ff_eatqi_decoder = {
     .init           = tqi_decode_init,
     .close          = tqi_decode_end,
     .decode         = tqi_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

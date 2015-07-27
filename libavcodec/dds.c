@@ -2,20 +2,20 @@
  * DirectDraw Surface image decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -358,9 +358,9 @@ static int parse_pixel_format(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_BGR24;
         /* 32 bpp */
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_BGRA; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_BGR0; // opaque
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_RGBA; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_RGB0; // opaque
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0xff000000)
             avctx->pix_fmt = AV_PIX_FMT_BGRA;
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0xff000000)
@@ -653,17 +653,15 @@ static int dds_decode(AVCodecContext *avctx, void *data,
 
         if (ctx->paletted) {
             int i;
-            uint32_t *p = (uint32_t*) frame->data[1];
-
             /* Use the first 1024 bytes as palette, then copy the rest. */
-            for (i = 0; i < 256; i++) {
-                uint32_t rgba = 0;
-                rgba |= bytestream2_get_byte(gbc) << 16;
-                rgba |= bytestream2_get_byte(gbc) << 8;
-                rgba |= bytestream2_get_byte(gbc) << 0;
-                rgba |= bytestream2_get_byte(gbc) << 24;
-                p[i] = rgba;
-            }
+            bytestream2_get_buffer(gbc, frame->data[1], 256 * 4);
+            for (i = 0; i < 256; i++)
+                AV_WN32(frame->data[1] + i*4,
+                        (frame->data[1][2+i*4]<<0)+
+                        (frame->data[1][1+i*4]<<8)+
+                        (frame->data[1][0+i*4]<<16)+
+                        (frame->data[1][3+i*4]<<24)
+                );
 
             frame->palette_has_changed = 1;
         }
@@ -676,6 +674,8 @@ static int dds_decode(AVCodecContext *avctx, void *data,
     /* Run any post processing here if needed. */
     if (avctx->pix_fmt == AV_PIX_FMT_BGRA ||
         avctx->pix_fmt == AV_PIX_FMT_RGBA ||
+        avctx->pix_fmt == AV_PIX_FMT_RGB0 ||
+        avctx->pix_fmt == AV_PIX_FMT_BGR0 ||
         avctx->pix_fmt == AV_PIX_FMT_YA8)
         run_postproc(avctx, frame);
 
@@ -694,6 +694,6 @@ AVCodec ff_dds_decoder = {
     .id             = AV_CODEC_ID_DDS,
     .decode         = dds_decode,
     .priv_data_size = sizeof(DDSContext),
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_SLICE_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE
 };

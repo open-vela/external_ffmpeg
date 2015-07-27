@@ -1,21 +1,21 @@
 /*
  * Autodesk RLE Decoder
- * Copyright (C) 2005 the ffmpeg project
+ * Copyright (c) 2005 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,15 +36,39 @@ typedef struct AascContext {
     AVCodecContext *avctx;
     GetByteContext gb;
     AVFrame *frame;
+
+    uint32_t palette[AVPALETTE_COUNT];
+    int palette_size;
 } AascContext;
 
 static av_cold int aasc_decode_init(AVCodecContext *avctx)
 {
     AascContext *s = avctx->priv_data;
+    uint8_t *ptr;
+    int i;
 
     s->avctx = avctx;
+    switch (avctx->bits_per_coded_sample) {
+    case 8:
+        avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
-    avctx->pix_fmt = AV_PIX_FMT_BGR24;
+        ptr = avctx->extradata;
+        s->palette_size = FFMIN(avctx->extradata_size, AVPALETTE_SIZE);
+        for (i = 0; i < s->palette_size / 4; i++) {
+            s->palette[i] = 0xFFU << 24 | AV_RL32(ptr);
+            ptr += 4;
+        }
+        break;
+    case 16:
+        avctx->pix_fmt = AV_PIX_FMT_RGB555LE;
+        break;
+    case 24:
+        avctx->pix_fmt = AV_PIX_FMT_BGR24;
+        break;
+    default:
+        av_log(avctx, AV_LOG_ERROR, "Unsupported bit depth: %d\n", avctx->bits_per_coded_sample);
+        return -1;
+    }
 
     s->frame = av_frame_alloc();
     if (!s->frame)
@@ -60,27 +84,35 @@ static int aasc_decode_frame(AVCodecContext *avctx,
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
     AascContext *s     = avctx->priv_data;
-    int compr, i, stride, ret;
+    int compr, i, stride, psize, ret;
 
-    if (buf_size < 4)
+    if (buf_size < 4) {
+        av_log(avctx, AV_LOG_ERROR, "frame too short\n");
         return AVERROR_INVALIDDATA;
-
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
-        return ret;
     }
+
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+        return ret;
 
     compr     = AV_RL32(buf);
     buf      += 4;
     buf_size -= 4;
+    psize = avctx->bits_per_coded_sample / 8;
+    switch (avctx->codec_tag) {
+    case MKTAG('A', 'A', 'S', '4'):
+        bytestream2_init(&s->gb, buf - 4, buf_size + 4);
+        ff_msrle_decode(avctx, (AVPicture*)s->frame, 8, &s->gb);
+        break;
+    case MKTAG('A', 'A', 'S', 'C'):
     switch (compr) {
     case 0:
-        stride = (avctx->width * 3 + 3) & ~3;
+        stride = (avctx->width * psize + psize) & ~psize;
         if (buf_size < stride * avctx->height)
             return AVERROR_INVALIDDATA;
         for (i = avctx->height - 1; i >= 0; i--) {
-            memcpy(s->frame->data[0] + i * s->frame->linesize[0], buf, avctx->width * 3);
+            memcpy(s->frame->data[0] + i * s->frame->linesize[0], buf, avctx->width * psize);
             buf += stride;
+            buf_size -= stride;
         }
         break;
     case 1:
@@ -91,6 +123,14 @@ static int aasc_decode_frame(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "Unknown compression type %d\n", compr);
         return AVERROR_INVALIDDATA;
     }
+        break;
+    default:
+        av_log(avctx, AV_LOG_ERROR, "Unknown FourCC: %X\n", avctx->codec_tag);
+        return -1;
+    }
+
+    if (avctx->pix_fmt == AV_PIX_FMT_PAL8)
+        memcpy(s->frame->data[1], s->palette, s->palette_size);
 
     *got_frame = 1;
     if ((ret = av_frame_ref(data, s->frame)) < 0)
@@ -118,5 +158,5 @@ AVCodec ff_aasc_decoder = {
     .init           = aasc_decode_init,
     .close          = aasc_decode_end,
     .decode         = aasc_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

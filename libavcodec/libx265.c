@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -225,7 +225,7 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
             return AVERROR_INVALIDDATA;
         }
 
-        avctx->extradata = av_malloc(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        avctx->extradata = av_malloc(avctx->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
         if (!avctx->extradata) {
             av_log(avctx, AV_LOG_ERROR,
                    "Cannot allocate HEVC header of size %d.\n", avctx->extradata_size);
@@ -272,7 +272,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = ctx->api->encoder_encode(ctx->encoder, &nal, &nnal,
                                    pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_UNKNOWN;
+        return AVERROR_EXTERNAL;
 
     if (!nnal)
         return 0;
@@ -338,10 +338,10 @@ static const enum AVPixelFormat x265_csp_twelve[] = {
 
 static av_cold void libx265_encode_init_csp(AVCodec *codec)
 {
-    if (x265_max_bit_depth == 8)
-        codec->pix_fmts = x265_csp_eight;
-    else if (x265_max_bit_depth == 12)
+    if (x265_api_get(10))
         codec->pix_fmts = x265_csp_twelve;
+    else if (x265_api_get(8))
+        codec->pix_fmts = x265_csp_eight;
 }
 
 #define OFFSET(x) offsetof(libx265Context, x)
@@ -378,5 +378,5 @@ AVCodec ff_libx265_encoder = {
     .priv_data_size   = sizeof(libx265Context),
     .priv_class       = &class,
     .defaults         = x265_defaults,
-    .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS,
+    .capabilities     = CODEC_CAP_DELAY | CODEC_CAP_AUTO_THREADS,
 };

@@ -2,20 +2,20 @@
  * MxPEG clip file demuxer
  * Copyright (c) 2010 Anatoly Nenashev
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -75,7 +75,7 @@ static int mxg_read_header(AVFormatContext *s)
 static uint8_t* mxg_find_startmarker(uint8_t *p, uint8_t *end)
 {
     for (; p < end - 3; p += 4) {
-        uint32_t x = *(uint32_t*)p;
+        uint32_t x = AV_RN32(p);
 
         if (x & (~(x+0x01010101)) & 0x80808080) {
             if (p[0] == 0xff) {
@@ -102,17 +102,19 @@ static int mxg_update_cache(AVFormatContext *s, unsigned int cache_size)
     MXGContext *mxg = s->priv_data;
     unsigned int current_pos = mxg->buffer_ptr - mxg->buffer;
     unsigned int soi_pos;
+    uint8_t *buffer;
     int ret;
 
     /* reallocate internal buffer */
     if (current_pos > current_pos + cache_size)
         return AVERROR(ENOMEM);
-    if (mxg->soi_ptr) soi_pos = mxg->soi_ptr - mxg->buffer;
-    mxg->buffer = av_fast_realloc(mxg->buffer, &mxg->buffer_size,
-                                  current_pos + cache_size +
-                                  AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!mxg->buffer)
+    soi_pos = mxg->soi_ptr - mxg->buffer;
+    buffer = av_fast_realloc(mxg->buffer, &mxg->buffer_size,
+                             current_pos + cache_size +
+                             FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!buffer)
         return AVERROR(ENOMEM);
+    mxg->buffer = buffer;
     mxg->buffer_ptr = mxg->buffer + current_pos;
     if (mxg->soi_ptr) mxg->soi_ptr = mxg->buffer + soi_pos;
 
@@ -134,7 +136,7 @@ static int mxg_read_packet(AVFormatContext *s, AVPacket *pkt)
     uint8_t *startmarker_ptr, *end, *search_end, marker;
     MXGContext *mxg = s->priv_data;
 
-    while (!s->pb->eof_reached && !s->pb->error){
+    while (!avio_feof(s->pb) && !s->pb->error){
         if (mxg->cache_size <= OVERREAD_SIZE) {
             /* update internal buffer */
             ret = mxg_update_cache(s, DEFAULT_PACKET_SIZE + OVERREAD_SIZE);

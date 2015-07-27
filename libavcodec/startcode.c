@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,7 @@ int ff_startcode_find_candidate_c(const uint8_t *buf, int size)
     int i = 0;
 #if HAVE_FAST_UNALIGNED
     /* we check i < size instead of i + 3 / 7 because it is
-     * simpler and there must be AV_INPUT_BUFFER_PADDING_SIZE
+     * simpler and there must be FF_INPUT_BUFFER_PADDING_SIZE
      * bytes at the end.
      */
 #if HAVE_FAST_64BIT

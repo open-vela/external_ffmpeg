@@ -1,20 +1,20 @@
 /*
  * FLV decoding.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,17 +25,6 @@
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
 
-void ff_flv2_decode_ac_esc(GetBitContext *gb, int *level, int *run, int *last)
-{
-    int is11 = get_bits1(gb);
-    *last = get_bits1(gb);
-    *run  = get_bits(gb, 6);
-    if (is11)
-        *level = get_sbits(gb, 11);
-    else
-        *level = get_sbits(gb, 7);
-}
-
 int ff_flv_decode_picture_header(MpegEncContext *s)
 {
     int format, width, height;
@@ -43,12 +32,12 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
     /* picture header */
     if (get_bits_long(&s->gb, 17) != 1) {
         av_log(s->avctx, AV_LOG_ERROR, "Bad picture start code\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
     format = get_bits(&s->gb, 5);
     if (format != 0 && format != 1) {
         av_log(s->avctx, AV_LOG_ERROR, "Bad picture format\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
     s->h263_flv       = format + 1;
     s->picture_number = get_bits(&s->gb, 8); /* picture timestamp */
@@ -87,7 +76,7 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
         break;
     }
     if (av_image_check_size(width, height, 0, s->avctx))
-        return -1;
+        return AVERROR(EINVAL);
     s->width  = width;
     s->height = height;
 
@@ -105,9 +94,13 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
     s->h263_long_vectors = 0;
 
     /* PEI */
-    while (get_bits1(&s->gb) != 0)
-        skip_bits(&s->gb, 8);
+    if (skip_1stop_8data_bits(&s->gb) < 0)
+        return AVERROR_INVALIDDATA;
+
     s->f_code = 1;
+
+    if (s->ehc_mode)
+        s->avctx->sample_aspect_ratio= (AVRational){1,2};
 
     if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
         av_log(s->avctx, AV_LOG_DEBUG, "%c esc_type:%d, qp:%d num:%d\n",
@@ -129,7 +122,8 @@ AVCodec ff_flv_decoder = {
     .init           = ff_h263_decode_init,
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DRAW_HORIZ_BAND | AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
+    .max_lowres     = 3,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE },
 };

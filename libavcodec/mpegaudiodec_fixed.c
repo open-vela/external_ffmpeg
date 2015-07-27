@@ -1,27 +1,27 @@
 /*
  * Fixed-point MPEG audio decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "config.h"
 #include "libavutil/samplefmt.h"
 
-#define CONFIG_FLOAT 0
+#define USE_FLOATS 0
 
 #include "mpegaudio.h"
 
@@ -47,7 +47,7 @@ AVCodec ff_mp1_decoder = {
     .priv_data_size = sizeof(MPADecodeContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .flush          = flush,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S16,
@@ -63,7 +63,7 @@ AVCodec ff_mp2_decoder = {
     .priv_data_size = sizeof(MPADecodeContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .flush          = flush,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S16,
@@ -79,7 +79,7 @@ AVCodec ff_mp3_decoder = {
     .priv_data_size = sizeof(MPADecodeContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .flush          = flush,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S16,
@@ -95,7 +95,7 @@ AVCodec ff_mp3adu_decoder = {
     .priv_data_size = sizeof(MPADecodeContext),
     .init           = decode_init,
     .decode         = decode_frame_adu,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .flush          = flush,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S16,
@@ -112,7 +112,7 @@ AVCodec ff_mp3on4_decoder = {
     .init           = decode_init_mp3on4,
     .close          = decode_close_mp3on4,
     .decode         = decode_frame_mp3on4,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .flush          = flush_mp3on4,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
