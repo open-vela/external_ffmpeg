@@ -34,10 +34,6 @@ $(FATE_MP3): CMP = oneoff
 $(FATE_MP3): CMP_UNIT = f32
 $(FATE_MP3): FUZZ = 17
 
-ifdef HAVE_NEON
-fate-mp3-float-conf-hecommon: FUZZ = 0.70
-endif
-
 FATE_MP3-$(call DEMDEC, MP3, MP3FLOAT) += $(FATE_MP3)
 
 FATE_SAMPLES_AVCONV += $(FATE_MP3-yes)
