@@ -2,20 +2,20 @@
  * Metadata demuxer
  * Copyright (c) 2010 Anton Khirnov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,7 +50,7 @@ static void get_line(AVIOContext *s, uint8_t *buf, int size)
                 buf[i++] = c;
         }
         buf[i] = 0;
-    } while (!avio_feof(s) && (buf[0] == ';' || buf[0] == '#' || buf[0] == 0));
+    } while (!s->eof_reached && (buf[0] == ';' || buf[0] == '#' || buf[0] == 0));
 }
 
 static AVChapter *read_chapter(AVFormatContext *s)
@@ -78,11 +78,10 @@ static AVChapter *read_chapter(AVFormatContext *s)
     return avpriv_new_chapter(s, s->nb_chapters, tb, start, end, NULL);
 }
 
-static uint8_t *unescape(const uint8_t *buf, int size)
+static uint8_t *unescape(uint8_t *buf, int size)
 {
     uint8_t *ret = av_malloc(size + 1);
-    uint8_t *p1  = ret;
-    const uint8_t *p2 = buf;
+    uint8_t *p1  = ret, *p2 = buf;
 
     if (!ret)
         return NULL;
@@ -96,10 +95,9 @@ static uint8_t *unescape(const uint8_t *buf, int size)
     return ret;
 }
 
-static int read_tag(const uint8_t *line, AVDictionary **m)
+static int read_tag(uint8_t *line, AVDictionary **m)
 {
-    uint8_t *key, *value;
-    const uint8_t *p = line;
+    uint8_t *key, *value, *p = line;
 
     /* find first not escaped '=' */
     while (1) {
@@ -130,14 +128,14 @@ static int read_header(AVFormatContext *s)
     AVDictionary **m = &s->metadata;
     uint8_t line[1024];
 
-    while(!avio_feof(s->pb)) {
+    while(!s->pb->eof_reached) {
         get_line(s->pb, line, sizeof(line));
 
         if (!memcmp(line, ID_STREAM, strlen(ID_STREAM))) {
             AVStream *st = avformat_new_stream(s, NULL);
 
             if (!st)
-                return AVERROR(ENOMEM);
+                return -1;
 
             st->codec->codec_type = AVMEDIA_TYPE_DATA;
             st->codec->codec_id   = AV_CODEC_ID_FFMETADATA;
@@ -147,7 +145,7 @@ static int read_header(AVFormatContext *s)
             AVChapter *ch = read_chapter(s);
 
             if (!ch)
-                return AVERROR(ENOMEM);
+                return -1;
 
             m = &ch->metadata;
         } else
