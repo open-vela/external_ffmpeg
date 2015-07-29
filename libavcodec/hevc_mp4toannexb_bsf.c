@@ -2,20 +2,20 @@
  * HEVC MP4 to Annex B byte stream format filter
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,21 +35,9 @@ typedef struct HEVCBSFContext {
     int      extradata_parsed;
 
     int logged_nonmp4_warning;
-
-    /* When private_spspps is zero then spspps_buf points to global extradata
-       and bsf does replace a global extradata to own-allocated version (default
-       behaviour).
-       When private_spspps is non-zero the bsf uses a private version of spspps buf.
-       This mode necessary when bsf uses in decoder, else bsf has issues after
-       decoder re-initialization. Use the "private_spspps_buf" argument to
-       activate this mode.
-     */
-    int      private_spspps;
-    uint8_t *spspps_buf;
-    uint32_t spspps_size;
 } HEVCBSFContext;
 
-static int hevc_extradata_to_annexb(HEVCBSFContext* ctx, AVCodecContext *avctx)
+static int hevc_extradata_to_annexb(AVCodecContext *avctx)
 {
     GetByteContext gb;
     int length_size, num_arrays, i, j;
@@ -94,13 +82,9 @@ static int hevc_extradata_to_annexb(HEVCBSFContext* ctx, AVCodecContext *avctx)
         }
     }
 
-    if (!ctx->private_spspps) {
-        av_freep(&avctx->extradata);
-        avctx->extradata      = new_extradata;
-        avctx->extradata_size = new_extradata_size;
-    }
-    ctx->spspps_buf  = new_extradata;
-    ctx->spspps_size = new_extradata_size;
+    av_freep(&avctx->extradata);
+    avctx->extradata      = new_extradata;
+    avctx->extradata_size = new_extradata_size;
 
     if (!new_extradata_size)
         av_log(avctx, AV_LOG_WARNING, "No parameter sets in the extradata\n");
@@ -138,10 +122,8 @@ static int hevc_mp4toannexb_filter(AVBitStreamFilterContext *bsfc,
             *poutbuf_size = buf_size;
             return 0;
         }
-        if (args && strstr(args, "private_spspps_buf"))
-            ctx->private_spspps = 1;
 
-        ret = hevc_extradata_to_annexb(ctx, avctx);
+        ret = hevc_extradata_to_annexb(avctx);
         if (ret < 0)
             return ret;
         ctx->length_size      = ret;
@@ -166,7 +148,7 @@ static int hevc_mp4toannexb_filter(AVBitStreamFilterContext *bsfc,
         /* prepend extradata to IRAP frames */
         is_irap       = nalu_type >= 16 && nalu_type <= 23;
         add_extradata = is_irap && !got_irap;
-        extra_size    = add_extradata * ctx->spspps_size;
+        extra_size    = add_extradata * avctx->extradata_size;
         got_irap     |= is_irap;
 
         if (SIZE_MAX - out_size < 4             ||
@@ -181,7 +163,7 @@ static int hevc_mp4toannexb_filter(AVBitStreamFilterContext *bsfc,
             goto fail;
 
         if (add_extradata)
-            memcpy(out + out_size, ctx->spspps_buf, extra_size);
+            memcpy(out + out_size, avctx->extradata, extra_size);
         AV_WB32(out + out_size + extra_size, 1);
         bytestream2_get_buffer(&gb, out + out_size + 4 + extra_size, nalu_size);
         out_size += 4 + nalu_size + extra_size;
@@ -197,16 +179,8 @@ fail:
     return ret;
 }
 
-static void hevc_mp4toannexb_close(AVBitStreamFilterContext *bsfc)
-{
-    HEVCBSFContext *ctx = bsfc->priv_data;
-    if (ctx->private_spspps)
-        av_freep(&ctx->spspps_buf);
-}
-
 AVBitStreamFilter ff_hevc_mp4toannexb_bsf = {
     "hevc_mp4toannexb",
     sizeof(HEVCBSFContext),
     hevc_mp4toannexb_filter,
-    hevc_mp4toannexb_close,
 };
