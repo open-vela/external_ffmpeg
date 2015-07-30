@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2004 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,7 @@
 #include "libavcodec/h264qpel.h"
 #include "hpeldsp_altivec.h"
 
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
 
 #define PUT_OP_U8_ALTIVEC(d, s, dst) d = s
 #define AVG_OP_U8_ALTIVEC(d, s, dst) d = vec_avg(dst, s)
@@ -191,79 +191,86 @@ static void OPNAME ## h264_qpel ## SIZE ## _mc32_ ## CODETYPE(uint8_t *dst, cons
     OPNAME ## pixels ## SIZE ## _l2_ ## CODETYPE(dst, halfV, halfHV, stride, SIZE, SIZE);\
 }\
 
-#if HAVE_BIGENDIAN
-#define put_unligned_store(s, dest) {    \
-    tmp1 = vec_ld(0, dest);              \
-    mask = vec_lvsl(0, dest);            \
-    tmp2 = vec_ld(15, dest);             \
-    edges = vec_perm(tmp2, tmp1, mask);  \
-    align = vec_lvsr(0, dest);           \
-    tmp2 = vec_perm(s, edges, align);    \
-    tmp1 = vec_perm(edges, s, align);    \
-    vec_st(tmp2, 15, dest);              \
-    vec_st(tmp1, 0 , dest);              \
- }
-#else
-#define put_unligned_store(s, dest) vec_vsx_st(s, 0, dest);
-#endif /* HAVE_BIGENDIAN */
-
 static inline void put_pixels16_l2_altivec( uint8_t * dst, const uint8_t * src1,
                                     const uint8_t * src2, int dst_stride,
                                     int src_stride1, int h)
 {
     int i;
-    vec_u8 a, b, d, mask_;
-#if HAVE_BIGENDIAN
-    vec_u8 tmp1, tmp2, mask, edges, align;
+    vec_u8 a, b, d, tmp1, tmp2, mask, mask_, edges, align;
+
     mask_ = vec_lvsl(0, src2);
-#endif
 
     for (i = 0; i < h; i++) {
-        a = unaligned_load(i * src_stride1, src1);
-        b = load_with_perm_vec(i * 16, src2, mask_);
+
+        tmp1 = vec_ld(i * src_stride1, src1);
+        mask = vec_lvsl(i * src_stride1, src1);
+        tmp2 = vec_ld(i * src_stride1 + 15, src1);
+
+        a = vec_perm(tmp1, tmp2, mask);
+
+        tmp1 = vec_ld(i * 16, src2);
+        tmp2 = vec_ld(i * 16 + 15, src2);
+
+        b = vec_perm(tmp1, tmp2, mask_);
+
+        tmp1 = vec_ld(0, dst);
+        mask = vec_lvsl(0, dst);
+        tmp2 = vec_ld(15, dst);
+
         d = vec_avg(a, b);
-        put_unligned_store(d, dst);
+
+        edges = vec_perm(tmp2, tmp1, mask);
+
+        align = vec_lvsr(0, dst);
+
+        tmp2 = vec_perm(d, edges, align);
+        tmp1 = vec_perm(edges, d, align);
+
+        vec_st(tmp2, 15, dst);
+        vec_st(tmp1, 0 , dst);
+
         dst += dst_stride;
     }
 }
-
-#if HAVE_BIGENDIAN
-#define avg_unligned_store(s, dest){            \
-    tmp1 = vec_ld(0, dest);                     \
-    mask = vec_lvsl(0, dest);                   \
-    tmp2 = vec_ld(15, dest);                    \
-    a = vec_avg(vec_perm(tmp1, tmp2, mask), s); \
-    edges = vec_perm(tmp2, tmp1, mask);         \
-    align = vec_lvsr(0, dest);                  \
-    tmp2 = vec_perm(a, edges, align);           \
-    tmp1 = vec_perm(edges, a, align);           \
-    vec_st(tmp2, 15, dest);                     \
-    vec_st(tmp1, 0 , dest);                     \
- }
-#else
-#define avg_unligned_store(s, dest){            \
-    a = vec_avg(vec_vsx_ld(0, dst), s);         \
-    vec_vsx_st(a, 0, dst);                      \
- }
-#endif /* HAVE_BIGENDIAN */
 
 static inline void avg_pixels16_l2_altivec( uint8_t * dst, const uint8_t * src1,
                                     const uint8_t * src2, int dst_stride,
                                     int src_stride1, int h)
 {
     int i;
-    vec_u8 a, b, d, mask_;
+    vec_u8 a, b, d, tmp1, tmp2, mask, mask_, edges, align;
 
-#if HAVE_BIGENDIAN
-    vec_u8 tmp1, tmp2, mask, edges, align;
     mask_ = vec_lvsl(0, src2);
-#endif
 
     for (i = 0; i < h; i++) {
-        a = unaligned_load(i * src_stride1, src1);
-        b = load_with_perm_vec(i * 16, src2, mask_);
-        d = vec_avg(a, b);
-        avg_unligned_store(d, dst);
+
+        tmp1 = vec_ld(i * src_stride1, src1);
+        mask = vec_lvsl(i * src_stride1, src1);
+        tmp2 = vec_ld(i * src_stride1 + 15, src1);
+
+        a = vec_perm(tmp1, tmp2, mask);
+
+        tmp1 = vec_ld(i * 16, src2);
+        tmp2 = vec_ld(i * 16 + 15, src2);
+
+        b = vec_perm(tmp1, tmp2, mask_);
+
+        tmp1 = vec_ld(0, dst);
+        mask = vec_lvsl(0, dst);
+        tmp2 = vec_ld(15, dst);
+
+        d = vec_avg(vec_perm(tmp1, tmp2, mask), vec_avg(a, b));
+
+        edges = vec_perm(tmp2, tmp1, mask);
+
+        align = vec_lvsr(0, dst);
+
+        tmp2 = vec_perm(d, edges, align);
+        tmp1 = vec_perm(edges, d, align);
+
+        vec_st(tmp2, 15, dst);
+        vec_st(tmp1, 0 , dst);
+
         dst += dst_stride;
     }
 }
@@ -279,7 +286,7 @@ H264_MC(avg_, 16, altivec)
 
 av_cold void ff_h264qpel_init_ppc(H264QpelContext *c, int bit_depth)
 {
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
     const int high_bit_depth = bit_depth > 8;
 
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
