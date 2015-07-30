@@ -2,20 +2,20 @@
  * XSUB subtitle decoder
  * Copyright (c) 2007 Reimar Döffinger
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -58,11 +58,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     GetBitContext gb;
     int has_alpha = avctx->codec_tag == MKTAG('D','X','S','A');
 
-    memset(sub, 0, sizeof(*sub));
-
     // check that at least header fits
     if (buf_size < 27 + 7 * 2 + 4 * (3 + has_alpha)) {
-        av_log(avctx, AV_LOG_ERROR, "coded frame too small\n");
+        av_log(avctx, AV_LOG_ERROR, "coded frame size %d too small\n", buf_size);
         return -1;
     }
 
@@ -97,12 +95,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     sub->rects =  av_mallocz(sizeof(*sub->rects));
     if (!sub->rects)
         return AVERROR(ENOMEM);
+
     sub->rects[0] = av_mallocz(sizeof(*sub->rects[0]));
     if (!sub->rects[0]) {
         av_freep(&sub->rects);
         return AVERROR(ENOMEM);
     }
-    sub->num_rects = 1;
     sub->rects[0]->x = x; sub->rects[0]->y = y;
     sub->rects[0]->w = w; sub->rects[0]->h = h;
     sub->rects[0]->type = SUBTITLE_BITMAP;
@@ -117,6 +115,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
         av_freep(&sub->rects);
         return AVERROR(ENOMEM);
     }
+    sub->num_rects = 1;
 
     // read palette
     for (i = 0; i < sub->rects[0]->nb_colors; i++)
