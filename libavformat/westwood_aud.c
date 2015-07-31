@@ -1,21 +1,21 @@
 /*
  * Westwood Studios AUD Format Demuxer
- * Copyright (c) 2003 The FFmpeg Project
+ * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -69,6 +69,8 @@ static int wsaud_probe(AVProbeData *p)
     if (p->buf[10] & 0xFC)
         return 0;
 
+    /* note: only check for WS IMA (type 99) right now since there is no
+     * support for type 1 */
     if (p->buf[11] != 99 && p->buf[11] != 1)
         return 0;
 
@@ -151,7 +153,7 @@ static int wsaud_read_packet(AVFormatContext *s,
            Specifically, this is needed to signal when a packet should be
            decoding as raw 8-bit pcm or variable-size ADPCM. */
         int out_size = AV_RL16(&preamble[2]);
-        if ((ret = av_new_packet(pkt, chunk_size + 4)) < 0)
+        if ((ret = av_new_packet(pkt, chunk_size + 4)))
             return ret;
         if ((ret = avio_read(pb, &pkt->data[4], chunk_size)) != chunk_size)
             return ret < 0 ? ret : AVERROR(EIO);
