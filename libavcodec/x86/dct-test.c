@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,37 +21,6 @@
 #include "fdct.h"
 #include "xvididct.h"
 #include "simple_idct.h"
-
-#if (CONFIG_PRORES_DECODER || CONFIG_PRORES_LGPL_DECODER) && ARCH_X86_64 && HAVE_YASM
-void ff_prores_idct_put_10_sse2(uint16_t *dst, int linesize,
-                                int16_t *block, int16_t *qmat);
-
-#define PR_WRAP(INSN) \
-static void ff_prores_idct_put_10_##INSN##_wrap(int16_t *dst){ \
-    LOCAL_ALIGNED(16, int16_t, qmat, [64]); \
-    LOCAL_ALIGNED(16, int16_t, tmp, [64]); \
-    int i; \
- \
-    for(i=0; i<64; i++){ \
-        qmat[i]=4; \
-        tmp[i]= dst[i]; \
-    } \
-    ff_prores_idct_put_10_##INSN (dst, 16, tmp, qmat); \
- \
-    for(i=0; i<64; i++) { \
-         dst[i] -= 512; \
-    } \
-}
-
-PR_WRAP(sse2)
-
-# if HAVE_AVX_EXTERNAL
-void ff_prores_idct_put_10_avx(uint16_t *dst, int linesize,
-                               int16_t *block, int16_t *qmat);
-PR_WRAP(avx)
-# endif
-
-#endif
 
 static const struct algo fdct_tab_arch[] = {
 #if HAVE_MMX_INLINE
@@ -70,25 +39,21 @@ static const struct algo idct_tab_arch[] = {
 #if HAVE_MMX_INLINE
     { "SIMPLE-MMX",  ff_simple_idct_mmx,  FF_IDCT_PERM_SIMPLE, AV_CPU_FLAG_MMX },
 #endif
-#if CONFIG_MPEG4_DECODER && HAVE_YASM
-#if ARCH_X86_32
+#if CONFIG_MPEG4_DECODER
+#if HAVE_MMX_INLINE
     { "XVID-MMX",    ff_xvid_idct_mmx,    FF_IDCT_PERM_NONE,   AV_CPU_FLAG_MMX,    1 },
+#endif
+#if HAVE_MMXEXT_INLINE
     { "XVID-MMXEXT", ff_xvid_idct_mmxext, FF_IDCT_PERM_NONE,   AV_CPU_FLAG_MMXEXT, 1 },
 #endif
-#if HAVE_SSE2_EXTERNAL
+#if HAVE_SSE2_INLINE
     { "XVID-SSE2",   ff_xvid_idct_sse2,   FF_IDCT_PERM_SSE2,   AV_CPU_FLAG_SSE2,   1 },
 #endif
-#endif /* CONFIG_MPEG4_DECODER && HAVE_YASM */
-#if (CONFIG_PRORES_DECODER || CONFIG_PRORES_LGPL_DECODER) && ARCH_X86_64 && HAVE_YASM
-    { "PR-SSE2",     ff_prores_idct_put_10_sse2_wrap, FF_IDCT_PERM_TRANSPOSE, AV_CPU_FLAG_SSE2, 1 },
-# if HAVE_AVX_EXTERNAL
-    { "PR-AVX",      ff_prores_idct_put_10_avx_wrap, FF_IDCT_PERM_TRANSPOSE, AV_CPU_FLAG_AVX, 1 },
-# endif
-#endif
+#endif /* CONFIG_MPEG4_DECODER */
     { 0 }
 };
 
-static const uint8_t idct_simple_mmx_perm[64] = {
+static short idct_simple_mmx_perm[64] = {
     0x00, 0x08, 0x04, 0x09, 0x01, 0x0C, 0x05, 0x0D,
     0x10, 0x18, 0x14, 0x19, 0x11, 0x1C, 0x15, 0x1D,
     0x20, 0x28, 0x24, 0x29, 0x21, 0x2C, 0x25, 0x2D,
