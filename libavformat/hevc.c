@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Tim Walker <tdskywalker@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -189,7 +189,7 @@ static void skip_sub_layer_hrd_parameters(GetBitContext *gb,
     }
 }
 
-static int skip_hrd_parameters(GetBitContext *gb, uint8_t cprms_present_flag,
+static void skip_hrd_parameters(GetBitContext *gb, uint8_t cprms_present_flag,
                                 unsigned int max_sub_layers_minus1)
 {
     unsigned int i;
@@ -246,11 +246,8 @@ static int skip_hrd_parameters(GetBitContext *gb, uint8_t cprms_present_flag,
         else
             low_delay_hrd_flag = get_bits1(gb);
 
-        if (!low_delay_hrd_flag) {
+        if (!low_delay_hrd_flag)
             cpb_cnt_minus1 = get_ue_golomb_long(gb);
-            if (cpb_cnt_minus1 > 31)
-                return AVERROR_INVALIDDATA;
-        }
 
         if (nal_hrd_parameters_present_flag)
             skip_sub_layer_hrd_parameters(gb, cpb_cnt_minus1,
@@ -260,8 +257,6 @@ static int skip_hrd_parameters(GetBitContext *gb, uint8_t cprms_present_flag,
             skip_sub_layer_hrd_parameters(gb, cpb_cnt_minus1,
                                           sub_pic_hrd_params_present_flag);
     }
-
-    return 0;
 }
 
 static void skip_timing_info(GetBitContext *gb)
@@ -449,7 +444,7 @@ static int parse_rps(GetBitContext *gb, unsigned int rps_idx,
          *
          * NumDeltaPocs[RefRpsIdx]: num_delta_pocs[rps_idx - 1]
          */
-        for (i = 0; i <= num_delta_pocs[rps_idx - 1]; i++) {
+        for (i = 0; i < num_delta_pocs[rps_idx - 1]; i++) {
             uint8_t use_delta_flag = 0;
             uint8_t used_by_curr_pic_flag = get_bits1(gb);
             if (!used_by_curr_pic_flag)
@@ -461,9 +456,6 @@ static int parse_rps(GetBitContext *gb, unsigned int rps_idx,
     } else {
         unsigned int num_negative_pics = get_ue_golomb_long(gb);
         unsigned int num_positive_pics = get_ue_golomb_long(gb);
-
-        if ((num_positive_pics + (uint64_t)num_negative_pics) * 2 > get_bits_left(gb))
-            return AVERROR_INVALIDDATA;
 
         num_delta_pocs[rps_idx] = num_negative_pics + num_positive_pics;
 
@@ -807,7 +799,7 @@ static void hvcc_init(HEVCDecoderConfigurationRecord *hvcc)
 
     /*
      * Initialize this field with an invalid value which can be used to detect
-     * whether we didn't see any VUI (in which case it should be reset to zero).
+     * whether we didn't see any VUI (in wich case it should be reset to zero).
      */
     hvcc->min_spatial_segmentation_idc = MAX_SPATIAL_SEGMENTATION + 1;
 }
