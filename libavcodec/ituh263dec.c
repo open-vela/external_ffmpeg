@@ -5,20 +5,20 @@
  * Copyright (c) 2001 Juan J. Sierralta P
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
  * h263 decoder.
  */
 
+#define UNCHECKED_BITSTREAM_READER 1
 #include <limits.h>
 
 #include "libavutil/attributes.h"
@@ -106,11 +107,9 @@ static VLC cbpc_b_vlc;
 /* XXX: find a better solution to handle static init */
 av_cold void ff_h263_decode_init_vlc(void)
 {
-    static int done = 0;
+    static volatile int done = 0;
 
     if (!done) {
-        done = 1;
-
         INIT_VLC_STATIC(&ff_h263_intra_MCBPC_vlc, INTRA_MCBPC_VLC_BITS, 9,
                  ff_h263_intra_MCBPC_bits, 1, 1,
                  ff_h263_intra_MCBPC_code, 1, 1, 72);
@@ -133,6 +132,7 @@ av_cold void ff_h263_decode_init_vlc(void)
         INIT_VLC_STATIC(&cbpc_b_vlc, CBPC_B_VLC_BITS, 4,
                  &ff_cbpc_b_tab[0][1], 2, 1,
                  &ff_cbpc_b_tab[0][0], 2, 1, 8);
+        done = 1;
     }
 }
 
@@ -175,17 +175,17 @@ static int h263_decode_gob_header(MpegEncContext *s)
         return -1;
 
     if(s->h263_slice_structured){
-        if(get_bits1(&s->gb)==0)
+        if(check_marker(&s->gb, "before MBA")==0)
             return -1;
 
         ff_h263_decode_mba(s);
 
         if(s->mb_num > 1583)
-            if(get_bits1(&s->gb)==0)
+            if(check_marker(&s->gb, "after MBA")==0)
                 return -1;
 
         s->qscale = get_bits(&s->gb, 5); /* SQUANT */
-        if(get_bits1(&s->gb)==0)
+        if(check_marker(&s->gb, "after SQUANT")==0)
             return -1;
         skip_bits(&s->gb, 2); /* GFID */
     }else{
@@ -203,27 +203,6 @@ static int h263_decode_gob_header(MpegEncContext *s)
         return -1;
 
     return 0;
-}
-
-/**
- * Find the next resync_marker.
- * @param p pointer to buffer to scan
- * @param end pointer to the end of the buffer
- * @return pointer to the next resync_marker, or end if none was found
- */
-const uint8_t *ff_h263_find_resync_marker(const uint8_t *restrict p, const uint8_t * restrict end)
-{
-    assert(p < end);
-
-    end-=2;
-    p++;
-    for(;p<end; p+=2){
-        if(!*p){
-            if     (!p[-1] && p[1]) return p - 1;
-            else if(!p[ 1] && p[2]) return p;
-        }
-    }
-    return end+2;
 }
 
 /**
@@ -328,7 +307,7 @@ static int h263p_decode_umotion(MpegEncContext * s, int pred)
    code >>= 1;
 
    code = (sign) ? (pred - code) : (pred + code);
-   ff_dlog(s->avctx,"H.263+ UMV Motion = %d\n", code);
+   ff_tlog(s->avctx,"H.263+ UMV Motion = %d\n", code);
    return code;
 
 }
@@ -350,7 +329,7 @@ static void preview_obmc(MpegEncContext *s){
         s->block_index[i]+= 1;
     s->mb_x++;
 
-    assert(s->pict_type == AV_PICTURE_TYPE_P);
+    av_assert2(s->pict_type == AV_PICTURE_TYPE_P);
 
     do{
         if (get_bits1(&s->gb)) {
@@ -444,7 +423,7 @@ static void h263_decode_dquant(MpegEncContext *s){
 static int h263_decode_block(MpegEncContext * s, int16_t * block,
                              int n, int coded)
 {
-    int code, level, i, j, last, run;
+    int level, i, j, run;
     RLTable *rl = &ff_h263_rl_inter;
     const uint8_t *scan_table;
     GetBitContext gb= s->gb;
@@ -485,7 +464,7 @@ static int h263_decode_block(MpegEncContext * s, int16_t * block,
             level = get_bits(&s->gb, 8);
             if((level&0x7F) == 0){
                 av_log(s->avctx, AV_LOG_ERROR, "illegal dc %d at %d %d\n", level, s->mb_x, s->mb_y);
-                if (s->avctx->err_recognition & AV_EF_BITSTREAM)
+                if (s->avctx->err_recognition & (AV_EF_BITSTREAM|AV_EF_COMPLIANT))
                     return -1;
             }
             if (level == 255)
@@ -503,39 +482,67 @@ static int h263_decode_block(MpegEncContext * s, int16_t * block,
         return 0;
     }
 retry:
+    {
+    OPEN_READER(re, &s->gb);
+    i--; // offset by -1 to allow direct indexing of scan_table
     for(;;) {
-        code = get_vlc2(&s->gb, rl->vlc.table, TEX_VLC_BITS, 2);
-        if (code < 0){
-            av_log(s->avctx, AV_LOG_ERROR, "illegal ac vlc code at %dx%d\n", s->mb_x, s->mb_y);
-            return -1;
-        }
-        if (code == rl->n) {
+        UPDATE_CACHE(re, &s->gb);
+        GET_RL_VLC(level, run, re, &s->gb, rl->rl_vlc[0], TEX_VLC_BITS, 2, 0);
+        if (run == 66) {
+            if (level){
+                CLOSE_READER(re, &s->gb);
+                av_log(s->avctx, AV_LOG_ERROR, "illegal ac vlc code at %dx%d\n", s->mb_x, s->mb_y);
+                return -1;
+            }
             /* escape */
             if (CONFIG_FLV_DECODER && s->h263_flv > 1) {
-                ff_flv2_decode_ac_esc(&s->gb, &level, &run, &last);
+                int is11 = SHOW_UBITS(re, &s->gb, 1);
+                SKIP_CACHE(re, &s->gb, 1);
+                run = SHOW_UBITS(re, &s->gb, 7) + 1;
+                if (is11) {
+                    SKIP_COUNTER(re, &s->gb, 1 + 7);
+                    UPDATE_CACHE(re, &s->gb);
+                    level = SHOW_SBITS(re, &s->gb, 11);
+                    SKIP_COUNTER(re, &s->gb, 11);
+                } else {
+                    SKIP_CACHE(re, &s->gb, 7);
+                    level = SHOW_SBITS(re, &s->gb, 7);
+                    SKIP_COUNTER(re, &s->gb, 1 + 7 + 7);
+                }
             } else {
-                last = get_bits1(&s->gb);
-                run = get_bits(&s->gb, 6);
-                level = (int8_t)get_bits(&s->gb, 8);
+                run = SHOW_UBITS(re, &s->gb, 7) + 1;
+                SKIP_CACHE(re, &s->gb, 7);
+                level = (int8_t)SHOW_UBITS(re, &s->gb, 8);
+                SKIP_COUNTER(re, &s->gb, 7 + 8);
                 if(level == -128){
+                    UPDATE_CACHE(re, &s->gb);
                     if (s->codec_id == AV_CODEC_ID_RV10) {
                         /* XXX: should patch encoder too */
-                        level = get_sbits(&s->gb, 12);
+                        level = SHOW_SBITS(re, &s->gb, 12);
+                        SKIP_COUNTER(re, &s->gb, 12);
                     }else{
-                        level = get_bits(&s->gb, 5);
-                        level |= get_sbits(&s->gb, 6)<<5;
+                        level = SHOW_UBITS(re, &s->gb, 5);
+                        SKIP_CACHE(re, &s->gb, 5);
+                        level |= SHOW_SBITS(re, &s->gb, 6)<<5;
+                        SKIP_COUNTER(re, &s->gb, 5 + 6);
                     }
                 }
             }
         } else {
-            run = rl->table_run[code];
-            level = rl->table_level[code];
-            last = code >= rl->last;
-            if (get_bits1(&s->gb))
+            if (SHOW_UBITS(re, &s->gb, 1))
                 level = -level;
+            SKIP_COUNTER(re, &s->gb, 1);
         }
         i += run;
         if (i >= 64){
+            CLOSE_READER(re, &s->gb);
+            // redo update without last flag, revert -1 offset
+            i = i - run + ((run-1)&63) + 1;
+            if (i < 64) {
+                // only last marker, no overrun
+                block[scan_table[i]] = level;
+                break;
+            }
             if(s->alt_inter_vlc && rl == &ff_h263_rl_inter && !s->mb_intra){
                 //Looks like a hack but no, it's the way it is supposed to work ...
                 rl = &ff_rl_intra_aic;
@@ -549,9 +556,7 @@ retry:
         }
         j = scan_table[i];
         block[j] = level;
-        if (last)
-            break;
-        i++;
+    }
     }
 not_coded:
     if (s->mb_intra && s->h263_aic) {
@@ -566,11 +571,13 @@ static int h263_skip_b_part(MpegEncContext *s, int cbp)
 {
     LOCAL_ALIGNED_16(int16_t, dblock, [64]);
     int i, mbi;
+    int bli[6];
 
     /* we have to set s->mb_intra to zero to decode B-part of PB-frame correctly
      * but real value should be restored in order to be used later (in OBMC condition)
      */
     mbi = s->mb_intra;
+    memcpy(bli, s->block_last_index, sizeof(bli));
     s->mb_intra = 0;
     for (i = 0; i < 6; i++) {
         if (h263_decode_block(s, dblock, i, cbp&32) < 0)
@@ -578,6 +585,7 @@ static int h263_skip_b_part(MpegEncContext *s, int cbp)
         cbp+=cbp;
     }
     s->mb_intra = mbi;
+    memcpy(s->block_last_index, bli, sizeof(bli));
     return 0;
 }
 
@@ -607,7 +615,7 @@ int ff_h263_decode_mb(MpegEncContext *s,
     const int xy= s->mb_x + s->mb_y * s->mb_stride;
     int cbpb = 0, pb_mv_count = 0;
 
-    assert(!s->h263_pred);
+    av_assert2(!s->h263_pred);
 
     if (s->pict_type == AV_PICTURE_TYPE_P) {
         do{
@@ -747,15 +755,13 @@ int ff_h263_decode_mb(MpegEncContext *s,
         }else
             cbp=0;
 
-        assert(!s->mb_intra);
+        av_assert2(!s->mb_intra);
 
         if(IS_QUANT(mb_type)){
             h263_decode_dquant(s);
         }
 
         if(IS_DIRECT(mb_type)){
-            if (!s->pp_time)
-                return AVERROR_INVALIDDATA;
             s->mv_dir = MV_DIR_FORWARD | MV_DIR_BACKWARD | MV_DIRECT;
             mb_type |= ff_mpeg4_set_direct_mv(s, 0, 0);
         }else{
@@ -874,6 +880,10 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
 
     align_get_bits(&s->gb);
 
+    if (show_bits(&s->gb, 2) == 2 && s->avctx->frame_number == 0) {
+         av_log(s->avctx, AV_LOG_WARNING, "Header looks like RTP instead of H.263\n");
+    }
+
     startcode= get_bits(&s->gb, 22-8);
 
     for(i= get_bits_left(&s->gb); i>24; i-=8) {
@@ -894,9 +904,7 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
     s->picture_number= (s->picture_number&~0xFF) + i;
 
     /* PTYPE starts here */
-    if (get_bits1(&s->gb) != 1) {
-        /* marker */
-        av_log(s->avctx, AV_LOG_ERROR, "Bad marker\n");
+    if (check_marker(&s->gb, "in PTYPE") != 1) {
         return -1;
     }
     if (get_bits1(&s->gb) != 0) {
@@ -920,6 +928,8 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
         /* H.263v1 */
         width = ff_h263_format[format][0];
         height = ff_h263_format[format][1];
+        if (!width)
+            return -1;
 
         s->pict_type = AV_PICTURE_TYPE_I + get_bits1(&s->gb);
 
@@ -961,6 +971,8 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
             s->h263_aic = get_bits1(&s->gb); /* Advanced Intra Coding (AIC) */
             s->loop_filter= get_bits1(&s->gb);
             s->unrestricted_mv = s->umvplus || s->obmc || s->loop_filter;
+            if(s->avctx->lowres)
+                s->loop_filter = 0;
 
             s->h263_slice_structured= get_bits1(&s->gb);
             if (get_bits1(&s->gb) != 0) {
@@ -1013,7 +1025,7 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
                 6-14 - reserved
                 */
                 width = (get_bits(&s->gb, 9) + 1) * 4;
-                skip_bits1(&s->gb);
+                check_marker(&s->gb, "in dimensions");
                 height = get_bits(&s->gb, 9) * 4;
                 ff_dlog(s->avctx, "\nH.263+ Custom picture: %dx%d\n",width,height);
                 if (s->aspect_ratio_info == FF_ASPECT_EXTENDED) {
@@ -1028,6 +1040,7 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
                 height = ff_h263_format[format][1];
                 s->avctx->sample_aspect_ratio= (AVRational){12,11};
             }
+            s->avctx->sample_aspect_ratio.den <<= s->ehc_mode;
             if ((width == 0) || (height == 0))
                 return -1;
             s->width = width;
@@ -1103,20 +1116,17 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
     }
 
     /* PEI */
-    while (get_bits1(&s->gb) != 0) {
-        skip_bits(&s->gb, 8);
-    }
+    if (skip_1stop_8data_bits(&s->gb) < 0)
+        return AVERROR_INVALIDDATA;
 
     if(s->h263_slice_structured){
-        if (get_bits1(&s->gb) != 1) {
-            av_log(s->avctx, AV_LOG_ERROR, "SEPB1 marker missing\n");
+        if (check_marker(&s->gb, "SEPB1") != 1) {
             return -1;
         }
 
         ff_h263_decode_mba(s);
 
-        if (get_bits1(&s->gb) != 1) {
-            av_log(s->avctx, AV_LOG_ERROR, "SEPB2 marker missing\n");
+        if (check_marker(&s->gb, "SEPB2") != 1) {
             return -1;
         }
     }
@@ -1131,7 +1141,7 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
     }
 
         ff_h263_show_pict_info(s);
-    if (s->pict_type == AV_PICTURE_TYPE_I && s->codec_tag == AV_RL32("ZYGO")){
+    if (s->pict_type == AV_PICTURE_TYPE_I && s->codec_tag == AV_RL32("ZYGO") && get_bits_left(&s->gb) >= 85 + 13*3*16 + 50){
         int i,j;
         for(i=0; i<85; i++) av_log(s->avctx, AV_LOG_DEBUG, "%d", get_bits1(&s->gb));
         av_log(s->avctx, AV_LOG_DEBUG, "\n");
