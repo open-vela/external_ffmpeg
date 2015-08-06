@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The FFmpeg Project
+ * Copyright (c) 2002 The Libav Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -174,7 +174,16 @@ int ff_wmv2_decode_secondary_picture_header(MpegEncContext *s)
 
         parse_mb_skip(w);
         cbp_index = decode012(&s->gb);
-        w->cbp_table_index = wmv2_get_cbp_table_index(s, cbp_index);
+        if (s->qscale <= 10) {
+            int map[3]         = { 0, 2, 1 };
+            w->cbp_table_index = map[cbp_index];
+        } else if (s->qscale <= 20) {
+            int map[3]         = { 1, 0, 2 };
+            w->cbp_table_index = map[cbp_index];
+        } else {
+            int map[3]         = {2,1,0};
+            w->cbp_table_index = map[cbp_index];
+        }
 
         if (w->mspel_bit)
             s->mspel = get_bits1(&s->gb);
@@ -452,8 +461,6 @@ static av_cold int wmv2_decode_init(AVCodecContext *avctx)
 {
     Wmv2Context *const w = avctx->priv_data;
     int ret;
-
-    avctx->flags |= CODEC_FLAG_EMU_EDGE;
 
     if ((ret = ff_msmpeg4_decode_init(avctx)) < 0)
         return ret;

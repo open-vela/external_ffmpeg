@@ -1,22 +1,20 @@
 ;******************************************************************************
 ;* MMX-optimized H.263 loop filter
-;* Copyright (c) 2003-2013 Michael Niedermayer
-;* Copyright (c) 2013 Daniel Kang
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -26,7 +24,7 @@ SECTION_RODATA
 cextern pb_FC
 cextern h263_loop_filter_strength
 
-SECTION .text
+SECTION_TEXT
 
 %macro H263_LOOP_FILTER 5
     pxor         m7, m7
