@@ -5,20 +5,20 @@
  *               2008 Benjamin Larsson
  *               2011 David Goldwich
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -175,13 +175,9 @@ static int nprobe(AVFormatContext *s, uint8_t *enc_header, unsigned size,
     taglen  = AV_RB32(&enc_header[pos + 32]);
     datalen = AV_RB32(&enc_header[pos + 36]) >> 4;
 
-    pos += 44;
-    if (size - pos < taglen)
-        return -1;
+    pos += 44LL + taglen;
 
-    pos += taglen;
-
-    if (datalen << 4 > size - pos)
+    if (pos + (((uint64_t)datalen) << 4) > size)
         return -1;
 
     av_des_init(&av_des, n_val, 192, 1);
@@ -300,7 +296,7 @@ static int oma_read_header(AVFormatContext *s)
     ID3v2ExtraMeta *extra_meta = NULL;
     OMAContext *oc = s->priv_data;
 
-    ff_id3v2_read(s, ID3v2_EA3_MAGIC, &extra_meta);
+    ff_id3v2_read(s, ID3v2_EA3_MAGIC, &extra_meta, 0);
     ret = avio_read(s->pb, buf, EA3_HEADER_SIZE);
     if (ret < EA3_HEADER_SIZE)
         return -1;
@@ -356,12 +352,10 @@ static int oma_read_header(AVFormatContext *s)
 
         /* fake the ATRAC3 extradata
          * (wav format, makes stream copy to wav work) */
-        st->codec->extradata_size = 14;
-        edata = av_mallocz(14 + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!edata)
+        if (ff_alloc_extradata(st->codec, 14))
             return AVERROR(ENOMEM);
 
-        st->codec->extradata = edata;
+        edata = st->codec->extradata;
         AV_WL16(&edata[0],  1);             // always 1
         AV_WL32(&edata[2],  samplerate);    // samples rate
         AV_WL16(&edata[6],  jsflag);        // coding mode
@@ -391,7 +385,7 @@ static int oma_read_header(AVFormatContext *s)
         avpriv_set_pts_info(st, 64, 1, samplerate);
         break;
     case OMA_CODECID_MP3:
-        st->need_parsing = AVSTREAM_PARSE_FULL;
+        st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
         framesize = 1024;
         break;
     case OMA_CODECID_LPCM:
@@ -436,9 +430,9 @@ static int oma_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->stream_index = 0;
 
-    if (pos > 0) {
+    if (pos >= oc->content_start && byte_rate > 0) {
         pkt->pts =
-        pkt->dts = av_rescale(pos, st->time_base.den,
+        pkt->dts = av_rescale(pos - oc->content_start, st->time_base.den,
                               byte_rate * (int64_t)st->time_base.num);
     }
 
@@ -466,7 +460,7 @@ static int oma_read_probe(AVProbeData *p)
     /* This check cannot overflow as tag_len has at most 28 bits */
     if (p->buf_size < tag_len + 5)
         /* EA3 header comes late, might be outside of the probe buffer */
-        return tag_len ? AVPROBE_SCORE_EXTENSION : 0;
+        return tag_len ? AVPROBE_SCORE_EXTENSION/2 : 0;
 
     buf += tag_len;
 
@@ -480,7 +474,7 @@ static int oma_read_seek(struct AVFormatContext *s,
                          int stream_index, int64_t timestamp, int flags)
 {
     OMAContext *oc = s->priv_data;
-    int err = ff_pcm_read_seek(s, stream_index, timestamp, flags);
+    int64_t err = ff_pcm_read_seek(s, stream_index, timestamp, flags);
 
     if (!oc->encrypted)
         return err;

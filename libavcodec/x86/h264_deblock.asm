@@ -7,20 +7,20 @@
 ;*          Fiona Glaser <fiona@x264.com>
 ;*          Oskar Arvidsson <oskar@irock.se>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -384,8 +384,10 @@ cglobal deblock_h_luma_8, 5,9,0,0x60+16*WIN64
 
 INIT_XMM sse2
 DEBLOCK_LUMA
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA
+%endif
 
 %else
 
@@ -444,13 +446,13 @@ cglobal deblock_%1_luma_8, 5,5,8,2*%2
 ;                        int8_t *tc0)
 ;-----------------------------------------------------------------------------
 INIT_MMX cpuname
-cglobal deblock_h_luma_8, 0,5,8,0x60+HAVE_ALIGNED_STACK*12
+cglobal deblock_h_luma_8, 0,5,8,0x60+12
     mov    r0, r0mp
     mov    r3, r1m
     lea    r4, [r3*3]
     sub    r0, 4
     lea    r1, [r0+r4]
-%define pix_tmp esp+12*HAVE_ALIGNED_STACK
+%define pix_tmp esp+12
 
     ; transpose 6x16 -> tmp space
     TRANSPOSE6x8_MEM  PASS8ROWS(r0, r1, r3, r4), pix_tmp
@@ -499,8 +501,10 @@ INIT_MMX mmxext
 DEBLOCK_LUMA v8, 8
 INIT_XMM sse2
 DEBLOCK_LUMA v, 16
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA v, 16
+%endif
 
 %endif ; ARCH
 
@@ -772,8 +776,10 @@ cglobal deblock_h_luma_intra_8, 2,4,8,0x80
 
 INIT_XMM sse2
 DEBLOCK_LUMA_INTRA v
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA_INTRA v
+%endif
 %if ARCH_X86_64 == 0
 INIT_MMX mmxext
 DEBLOCK_LUMA_INTRA v8
@@ -836,7 +842,11 @@ cglobal deblock_h_chroma_8, 5,7
     TRANSPOSE4x8_LOAD  bw, wd, dq, PASS8ROWS(t5, r0, r1, t6)
     movq  buf0, m0
     movq  buf1, m3
-    call ff_chroma_inter_body_mmxext
+    LOAD_MASK  r2d, r3d
+    movd       m6, [r4] ; tc0
+    punpcklbw  m6, m6
+    pand       m7, m6
+    DEBLOCK_P0_Q0
     movq  m0, buf0
     movq  m3, buf1
     TRANSPOSE8x4B_STORE PASS8ROWS(t5, r0, r1, t6)
