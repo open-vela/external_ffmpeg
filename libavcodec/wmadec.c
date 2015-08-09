@@ -1,21 +1,21 @@
 /*
  * WMA compatible decoder
- * Copyright (c) 2002 The FFmpeg Project
+ * Copyright (c) 2002 The Libav Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,9 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "wma.h"
+
+#undef NDEBUG
+#include <assert.h>
 
 #define EXPVLCBITS 8
 #define EXPMAX     ((19 + EXPVLCBITS - 1) / EXPVLCBITS)
@@ -90,16 +93,6 @@ static av_cold int wma_decode_init(AVCodecContext *avctx)
     s->use_exp_vlc            = flags2 & 0x0001;
     s->use_bit_reservoir      = flags2 & 0x0002;
     s->use_variable_block_len = flags2 & 0x0004;
-
-    if (avctx->codec->id == AV_CODEC_ID_WMAV2 && avctx->extradata_size >= 8){
-        if (AV_RL16(extradata+4)==0xd && s->use_variable_block_len){
-            av_log(avctx, AV_LOG_WARNING, "Disabling use_variable_block_len, if this fails contact the ffmpeg developers and send us the file\n");
-            s->use_variable_block_len= 0; // this fixes issue1503
-        }
-    }
-
-    for (i=0; i<MAX_CHANNELS; i++)
-        s->max_exponent[i] = 1.0;
 
     if (ff_wma_init(avctx, flags2) < 0)
         return -1;
@@ -387,14 +380,14 @@ static void wma_window(WMACodecContext *s, float *out)
         block_len = s->block_len;
         bsize     = s->frame_len_bits - s->block_len_bits;
 
-        s->fdsp->vector_fmul_add(out, in, s->windows[bsize],
+        s->fdsp.vector_fmul_add(out, in, s->windows[bsize],
                                 out, block_len);
     } else {
         block_len = 1 << s->prev_block_len_bits;
         n         = (s->block_len - block_len) / 2;
         bsize     = s->frame_len_bits - s->prev_block_len_bits;
 
-        s->fdsp->vector_fmul_add(out + n, in + n, s->windows[bsize],
+        s->fdsp.vector_fmul_add(out + n, in + n, s->windows[bsize],
                                 out + n, block_len);
 
         memcpy(out + n + block_len, in + n + block_len, n * sizeof(float));
@@ -408,7 +401,7 @@ static void wma_window(WMACodecContext *s, float *out)
         block_len = s->block_len;
         bsize     = s->frame_len_bits - s->block_len_bits;
 
-        s->fdsp->vector_fmul_reverse(out, in, s->windows[bsize], block_len);
+        s->fdsp.vector_fmul_reverse(out, in, s->windows[bsize], block_len);
     } else {
         block_len = 1 << s->next_block_len_bits;
         n         = (s->block_len - block_len) / 2;
@@ -416,7 +409,7 @@ static void wma_window(WMACodecContext *s, float *out)
 
         memcpy(out, in, n * sizeof(float));
 
-        s->fdsp->vector_fmul_reverse(out + n, in + n, s->windows[bsize],
+        s->fdsp.vector_fmul_reverse(out + n, in + n, s->windows[bsize],
                                     block_len);
 
         memset(out + n + block_len, 0, n * sizeof(float));
@@ -482,11 +475,6 @@ static int wma_decode_block(WMACodecContext *s)
         s->block_len_bits      = s->frame_len_bits;
     }
 
-    if (s->frame_len_bits - s->block_len_bits >= s->nb_block_sizes){
-        av_log(s->avctx, AV_LOG_ERROR, "block_len_bits not initialized to a valid value\n");
-        return -1;
-    }
-
     /* now check if the block length is coherent with the frame length */
     s->block_len = 1 << s->block_len_bits;
     if ((s->block_pos + s->block_len) > s->frame_len) {
@@ -514,10 +502,6 @@ static int wma_decode_block(WMACodecContext *s)
      * coef escape coding */
     total_gain = 1;
     for (;;) {
-        if (get_bits_left(&s->gb) < 7) {
-            av_log(s->avctx, AV_LOG_ERROR, "total_gain overread\n");
-            return AVERROR_INVALIDDATA;
-        }
         a           = get_bits(&s->gb, 7);
         total_gain += a;
         if (a != 127)
@@ -697,7 +681,7 @@ static int wma_decode_block(WMACodecContext *s)
 
                 /* very high freqs : noise */
                 n     = s->block_len - s->coefs_end[bsize];
-                mult1 = mult * exponents[(-(1 << bsize)) >> esize];
+                mult1 = mult * exponents[((-1 << bsize)) >> esize];
                 for (i = 0; i < n; i++) {
                     *coefs++       = s->noise_table[s->noise_index] * mult1;
                     s->noise_index = (s->noise_index + 1) & (NOISE_TAB_SIZE - 1);
@@ -735,7 +719,7 @@ static int wma_decode_block(WMACodecContext *s)
             s->channel_coded[0] = 1;
         }
 
-        s->fdsp->butterflies_float(s->coefs[0], s->coefs[1], s->block_len);
+        s->fdsp.butterflies_float(s->coefs[0], s->coefs[1], s->block_len);
     }
 
 next:
@@ -827,8 +811,7 @@ static int wma_decode_superframe(AVCodecContext *avctx, void *data,
                buf_size, avctx->block_align);
         return AVERROR_INVALIDDATA;
     }
-    if (avctx->block_align)
-        buf_size = avctx->block_align;
+    buf_size = avctx->block_align;
 
     init_get_bits(&s->gb, buf, buf_size * 8);
 
@@ -836,38 +819,15 @@ static int wma_decode_superframe(AVCodecContext *avctx, void *data,
         /* read super frame header */
         skip_bits(&s->gb, 4); /* super frame index */
         nb_frames = get_bits(&s->gb, 4) - (s->last_superframe_len <= 0);
-        if (nb_frames <= 0) {
-            int is_error = nb_frames < 0 || get_bits_left(&s->gb) <= 8;
-            av_log(avctx, is_error ? AV_LOG_ERROR : AV_LOG_WARNING,
-                   "nb_frames is %d bits left %d\n",
-                   nb_frames, get_bits_left(&s->gb));
-            if (is_error)
-                return AVERROR_INVALIDDATA;
-
-            if ((s->last_superframe_len + buf_size - 1) >
-                MAX_CODED_SUPERFRAME_SIZE)
-                goto fail;
-
-            q   = s->last_superframe + s->last_superframe_len;
-            len = buf_size - 1;
-            while (len > 0) {
-                *q++ = get_bits (&s->gb, 8);
-                len --;
-            }
-            memset(q, 0, AV_INPUT_BUFFER_PADDING_SIZE);
-
-            s->last_superframe_len += 8*buf_size - 8;
-//             s->reset_block_lengths = 1; //XXX is this needed ?
-            *got_frame_ptr = 0;
-            return buf_size;
-        }
     } else
         nb_frames = 1;
 
     /* get output buffer */
     frame->nb_samples = nb_frames * s->frame_len;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     samples        = (float **) frame->extended_data;
     samples_offset = 0;
 
@@ -944,13 +904,13 @@ static int wma_decode_superframe(AVCodecContext *avctx, void *data,
         samples_offset += s->frame_len;
     }
 
-    ff_dlog(s->avctx, "%d %d %d %d outbytes:%"PTRDIFF_SPECIFIER" eaten:%d\n",
+    ff_dlog(s->avctx, "%d %d %d %d outbytes:%td eaten:%d\n",
             s->frame_len_bits, s->block_len_bits, s->frame_len, s->block_len,
             (int8_t *) samples - (int8_t *) data, avctx->block_align);
 
     *got_frame_ptr = 1;
 
-    return buf_size;
+    return avctx->block_align;
 
 fail:
     /* when error, we reset the bit reservoir */
@@ -966,7 +926,6 @@ static av_cold void flush(AVCodecContext *avctx)
     s->last_superframe_len = 0;
 }
 
-#if CONFIG_WMAV1_DECODER
 AVCodec ff_wmav1_decoder = {
     .name           = "wmav1",
     .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Audio 1"),
@@ -981,8 +940,7 @@ AVCodec ff_wmav1_decoder = {
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
-#endif
-#if CONFIG_WMAV2_DECODER
+
 AVCodec ff_wmav2_decoder = {
     .name           = "wmav2",
     .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Audio 2"),
@@ -997,4 +955,3 @@ AVCodec ff_wmav2_decoder = {
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
-#endif
