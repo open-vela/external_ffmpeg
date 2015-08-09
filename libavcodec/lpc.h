@@ -2,20 +2,20 @@
  * LPC utility code
  * Copyright (c) 2006  Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,9 @@
 #define AVCODEC_LPC_H
 
 #include <stdint.h>
+#include "libavutil/avassert.h"
+#include "libavutil/lls.h"
+#include "aac_defines.h"
 
 #define ORDER_METHOD_EST     0
 #define ORDER_METHOD_2LEVEL  1
@@ -66,7 +69,7 @@ typedef struct LPCContext {
     /**
      * Perform autocorrelation on input samples with delay of 0 to lag.
      * @param data  input samples.
-     *              constraints: no alignment needed, but must have have at
+     *              constraints: no alignment needed, but must have at
      *              least lag*sizeof(double) valid bytes preceding it, and
      *              size must be at least (len+1)*sizeof(double) if data is
      *              16-byte aligned or (len+2)*sizeof(double) if data is
@@ -78,6 +81,9 @@ typedef struct LPCContext {
      */
     void (*lpc_compute_autocorr)(const double *data, int len, int lag,
                                  double *autoc);
+
+    // TODO: these should be allocated to reduce ABI compatibility issues
+    LLSModel lls_models[2];
 } LPCContext;
 
 
@@ -106,11 +112,15 @@ void ff_lpc_init_x86(LPCContext *s);
  */
 void ff_lpc_end(LPCContext *s);
 
+#if USE_FIXED
+#define LPC_TYPE int
+#else
 #ifdef LPC_USE_DOUBLE
 #define LPC_TYPE double
 #else
 #define LPC_TYPE float
 #endif
+#endif // USE_FIXED
 
 /**
  * Schur recursion.
@@ -147,13 +157,15 @@ static inline void compute_ref_coefs(const LPC_TYPE *autoc, int max_order,
  * Levinson-Durbin recursion.
  * Produce LPC coefficients from autocorrelation data.
  */
-static inline int compute_lpc_coefs(const LPC_TYPE *autoc, int max_order,
+static inline int AAC_RENAME(compute_lpc_coefs)(const LPC_TYPE *autoc, int max_order,
                                     LPC_TYPE *lpc, int lpc_stride, int fail,
                                     int normalize)
 {
     int i, j;
     LPC_TYPE err = 0;
     LPC_TYPE *lpc_last = lpc;
+
+    av_assert2(normalize || !fail);
 
     if (normalize)
         err = *autoc++;
@@ -162,14 +174,14 @@ static inline int compute_lpc_coefs(const LPC_TYPE *autoc, int max_order,
         return -1;
 
     for(i=0; i<max_order; i++) {
-        LPC_TYPE r = -autoc[i];
+        LPC_TYPE r = AAC_SRA_R(-autoc[i], 5);
 
         if (normalize) {
             for(j=0; j<i; j++)
                 r -= lpc_last[j] * autoc[i-j-1];
 
             r /= err;
-            err *= 1.0 - (r * r);
+            err *= FIXR(1.0) - (r * r);
         }
 
         lpc[i] = r;
@@ -177,8 +189,8 @@ static inline int compute_lpc_coefs(const LPC_TYPE *autoc, int max_order,
         for(j=0; j < (i+1)>>1; j++) {
             LPC_TYPE f = lpc_last[    j];
             LPC_TYPE b = lpc_last[i-1-j];
-            lpc[    j] = f + r * b;
-            lpc[i-1-j] = b + r * f;
+            lpc[    j] = f + AAC_MUL26(r, b);
+            lpc[i-1-j] = b + AAC_MUL26(r, f);
         }
 
         if (fail && err < 0)
