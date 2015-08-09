@@ -4,35 +4,33 @@
  *
  * Copyright (C) 2008 NVIDIA
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef AVCODEC_VDPAU_INTERNAL_H
 #define AVCODEC_VDPAU_INTERNAL_H
 
-#include "config.h"
 #include <stdint.h>
-#if CONFIG_VDPAU
 #include <vdpau/vdpau.h>
-#endif
 
 #include "libavutil/frame.h"
 
 #include "avcodec.h"
+#include "vdpau.h"
 
 /** Extract VdpVideoSurface from an AVFrame */
 static inline uintptr_t ff_vdpau_get_surface_id(AVFrame *pic)
@@ -40,8 +38,6 @@ static inline uintptr_t ff_vdpau_get_surface_id(AVFrame *pic)
     return (uintptr_t)pic->data[3];
 }
 
-struct vdpau_picture_context;
-#if CONFIG_VDPAU
 union VDPAUPictureInfo {
     VdpPictureInfoH264        h264;
     VdpPictureInfoMPEG1Or2    mpeg;
@@ -50,12 +46,7 @@ union VDPAUPictureInfo {
 #ifdef VDP_DECODER_PROFILE_H264_HIGH_444_PREDICTIVE
     VdpPictureInfoH264Predictive h264_predictive;
 #endif
-#ifdef VDP_DECODER_PROFILE_HEVC_MAIN
-    VdpPictureInfoHEVC        hevc;
-#endif
 };
-
-#include "vdpau.h"
 
 typedef struct VDPAUHWContext {
     AVVDPAUContext context;
@@ -114,8 +105,6 @@ struct vdpau_picture_context {
 
 int ff_vdpau_common_init(AVCodecContext *avctx, VdpDecoderProfile profile,
                          int level);
-#endif //CONFIG_VDPAU
-
 int ff_vdpau_common_uninit(AVCodecContext *avctx);
 
 int ff_vdpau_common_start_frame(struct vdpau_picture_context *pic,

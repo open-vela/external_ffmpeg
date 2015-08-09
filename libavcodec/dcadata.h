@@ -1,20 +1,20 @@
 /*
  * DCA compatible decoder data
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,11 +57,6 @@ extern const uint16_t ff_dca_dmixtable[FF_DCA_DMIXTABLE_SIZE];
 extern const uint32_t ff_dca_inv_dmixtable[FF_DCA_INV_DMIXTABLE_SIZE];
 
 extern const float ff_dca_default_coeffs[10][6][2];
-
-extern const uint32_t ff_dca_map_xxch_to_native[28];
-extern const int ff_dca_ext_audio_descr_mask[8];
-
-extern const uint64_t ff_dca_core_channel_layout[16];
 
 extern const int32_t ff_dca_sampling_freqs[16];
 
