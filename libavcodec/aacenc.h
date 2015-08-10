@@ -2,20 +2,20 @@
  * AAC encoder
  * Copyright (C) 2008 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,8 +30,20 @@
 #include "audio_frame_queue.h"
 #include "psymodel.h"
 
+typedef enum AACCoder {
+    AAC_CODER_FAAC = 0,
+    AAC_CODER_ANMR,
+    AAC_CODER_TWOLOOP,
+    AAC_CODER_FAST,
+
+    AAC_CODER_NB,
+}AACCoder;
+
 typedef struct AACEncOptions {
     int stereo_mode;
+    int aac_coder;
+    int pns;
+    int intensity_stereo;
 } AACEncOptions;
 
 struct AACEncContext;
@@ -42,8 +54,11 @@ typedef struct AACCoefficientsEncoder {
     void (*encode_window_bands_info)(struct AACEncContext *s, SingleChannelElement *sce,
                                      int win, int group_len, const float lambda);
     void (*quantize_and_encode_band)(struct AACEncContext *s, PutBitContext *pb, const float *in, int size,
-                                     int scale_idx, int cb, const float lambda);
-    void (*search_for_ms)(struct AACEncContext *s, ChannelElement *cpe, const float lambda);
+                                     int scale_idx, int cb, const float lambda, int rtz);
+    void (*set_special_band_scalefactors)(struct AACEncContext *s, SingleChannelElement *sce);
+    void (*search_for_pns)(struct AACEncContext *s, AVCodecContext *avctx, SingleChannelElement *sce);
+    void (*search_for_ms)(struct AACEncContext *s, ChannelElement *cpe);
+    void (*search_for_is)(struct AACEncContext *s, AVCodecContext *avctx, ChannelElement *cpe);
 } AACCoefficientsEncoder;
 
 extern AACCoefficientsEncoder ff_aac_coders[];
@@ -57,7 +72,7 @@ typedef struct AACEncContext {
     PutBitContext pb;
     FFTContext mdct1024;                         ///< long (1024 samples) frame transform context
     FFTContext mdct128;                          ///< short (128 samples) frame transform context
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
     float *planar_samples[6];                    ///< saved preprocessed input
 
     int samplerate_index;                        ///< MPEG-4 samplerate index
@@ -80,6 +95,6 @@ typedef struct AACEncContext {
     } buffer;
 } AACEncContext;
 
-extern float ff_aac_pow34sf_tab[428];
+void ff_aac_coder_init_mips(AACEncContext *c);
 
 #endif /* AVCODEC_AACENC_H */
