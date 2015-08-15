@@ -2,20 +2,20 @@
  * OpenH264 video encoder
  * Copyright (C) 2014 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -92,7 +92,7 @@ static av_cold int svc_encode_init(AVCodecContext *avctx)
 
     (*s->encoder)->GetDefaultParams(s->encoder, &param);
 
-    param.fMaxFrameRate              = avctx->time_base.den / avctx->time_base.num;
+    param.fMaxFrameRate              = 1/av_q2d(avctx->time_base);
     param.iPicWidth                  = avctx->width;
     param.iPicHeight                 = avctx->height;
     param.iTargetBitrate             = avctx->bit_rate;
@@ -202,7 +202,7 @@ static int svc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
     av_log(avctx, AV_LOG_DEBUG, "%d slices\n", fbi.sLayerInfo[fbi.iLayerNum - 1].iNalCount);
 
-    if ((ret = ff_alloc_packet(avpkt, size))) {
+    if ((ret = ff_alloc_packet2(avctx, avpkt, size, size))) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
     }

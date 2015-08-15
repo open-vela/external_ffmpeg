@@ -5,20 +5,20 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -26,11 +26,11 @@
 
 SECTION_RODATA 32
 
+cextern pw_1023
+%define pw_pixel_max pw_1023
 cextern pw_16
 cextern pw_1
 cextern pb_0
-
-pw_pixel_max: times 8 dw ((1 << 10)-1)
 
 pad10: times 8 dw 10*1023
 pad20: times 8 dw 20*1023
@@ -386,7 +386,7 @@ MC_CACHE MC10
 ; void ff_h264_qpel_mc02(uint8_t *dst, uint8_t *src, int stride)
 ;-----------------------------------------------------------------------------
 %macro V_FILT 10
-v_filt%9_%10_10
+v_filt%9_%10_10:
     add    r4, r2
 .no_addr4:
     FILT_V m0, m1, m2, m3, m4, m5, m6, m7
