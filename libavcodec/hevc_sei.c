@@ -5,20 +5,20 @@
  * Copyright (C) 2012 - 2013 Gildas Cocherel
  * Copyright (C) 2013 Vittorio Giovara
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,13 +56,10 @@ enum HEVC_SEI_TYPE {
 static int decode_nal_sei_decoded_picture_hash(HEVCContext *s)
 {
     int cIdx, i;
-    uint8_t hash_type;
-    //uint16_t picture_crc;
-    //uint32_t picture_checksum;
-    GetBitContext *gb = &s->HEVClc->gb;
-    hash_type = get_bits(gb, 8);
+    GetBitContext *gb = &s->HEVClc.gb;
+    uint8_t hash_type = get_bits(gb, 8);
 
-    for (cIdx = 0; cIdx < 3/*((s->sps->chroma_format_idc == 0) ? 1 : 3)*/; cIdx++) {
+    for (cIdx = 0; cIdx < 3; cIdx++) {
         if (hash_type == 0) {
             s->is_md5 = 1;
             for (i = 0; i < 16; i++)
@@ -71,7 +68,7 @@ static int decode_nal_sei_decoded_picture_hash(HEVCContext *s)
             // picture_crc = get_bits(gb, 16);
             skip_bits(gb, 16);
         } else if (hash_type == 2) {
-            // picture_checksum = get_bits_long(gb, 32);
+            // picture_checksum = get_bits(gb, 32);
             skip_bits(gb, 32);
         }
     }
@@ -80,7 +77,7 @@ static int decode_nal_sei_decoded_picture_hash(HEVCContext *s)
 
 static int decode_nal_sei_frame_packing_arrangement(HEVCContext *s)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
 
     get_ue_golomb(gb);                  // frame_packing_arrangement_id
     s->sei_frame_packing_present = !get_bits1(gb);
@@ -106,7 +103,7 @@ static int decode_nal_sei_frame_packing_arrangement(HEVCContext *s)
 
 static int decode_nal_sei_display_orientation(HEVCContext *s)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
 
     s->sei_display_orientation_present = !get_bits1(gb);
 
@@ -121,64 +118,9 @@ static int decode_nal_sei_display_orientation(HEVCContext *s)
     return 0;
 }
 
-static int decode_pic_timing(HEVCContext *s)
-{
-    GetBitContext *gb = &s->HEVClc->gb;
-    HEVCSPS *sps;
-
-    if (!s->ps.sps_list[s->active_seq_parameter_set_id])
-        return(AVERROR(ENOMEM));
-    sps = (HEVCSPS*)s->ps.sps_list[s->active_seq_parameter_set_id]->data;
-
-    if (sps->vui.frame_field_info_present_flag) {
-        int pic_struct = get_bits(gb, 4);
-        s->picture_struct = AV_PICTURE_STRUCTURE_UNKNOWN;
-        if (pic_struct == 2) {
-            av_log(s->avctx, AV_LOG_DEBUG, "BOTTOM Field\n");
-            s->picture_struct = AV_PICTURE_STRUCTURE_BOTTOM_FIELD;
-        } else if (pic_struct == 1) {
-            av_log(s->avctx, AV_LOG_DEBUG, "TOP Field\n");
-            s->picture_struct = AV_PICTURE_STRUCTURE_TOP_FIELD;
-        }
-        get_bits(gb, 2);                   // source_scan_type
-        get_bits(gb, 1);                   // duplicate_flag
-    }
-    return 1;
-}
-
-static int active_parameter_sets(HEVCContext *s)
-{
-    GetBitContext *gb = &s->HEVClc->gb;
-    int num_sps_ids_minus1;
-    int i;
-    unsigned active_seq_parameter_set_id;
-
-    get_bits(gb, 4); // active_video_parameter_set_id
-    get_bits(gb, 1); // self_contained_cvs_flag
-    get_bits(gb, 1); // num_sps_ids_minus1
-    num_sps_ids_minus1 = get_ue_golomb_long(gb); // num_sps_ids_minus1
-
-    if (num_sps_ids_minus1 < 0 || num_sps_ids_minus1 > 15) {
-        av_log(s->avctx, AV_LOG_ERROR, "num_sps_ids_minus1 %d invalid\n", num_sps_ids_minus1);
-        return AVERROR_INVALIDDATA;
-    }
-
-    active_seq_parameter_set_id = get_ue_golomb_long(gb);
-    if (active_seq_parameter_set_id >= MAX_SPS_COUNT) {
-        av_log(s->avctx, AV_LOG_ERROR, "active_parameter_set_id %d invalid\n", active_seq_parameter_set_id);
-        return AVERROR_INVALIDDATA;
-    }
-    s->active_seq_parameter_set_id = active_seq_parameter_set_id;
-
-    for (i = 1; i <= num_sps_ids_minus1; i++)
-        get_ue_golomb_long(gb); // active_seq_parameter_set_id[i]
-
-    return 0;
-}
-
 static int decode_nal_sei_prefix(HEVCContext *s, int type, int size)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
 
     switch (type) {
     case 256:  // Mismatched value from HM 8.1
@@ -187,17 +129,6 @@ static int decode_nal_sei_prefix(HEVCContext *s, int type, int size)
         return decode_nal_sei_frame_packing_arrangement(s);
     case SEI_TYPE_DISPLAY_ORIENTATION:
         return decode_nal_sei_display_orientation(s);
-    case SEI_TYPE_PICTURE_TIMING:
-        {
-            int ret = decode_pic_timing(s);
-            av_log(s->avctx, AV_LOG_DEBUG, "Skipped PREFIX SEI %d\n", type);
-            skip_bits(gb, 8 * size);
-            return ret;
-        }
-    case SEI_TYPE_ACTIVE_PARAMETER_SETS:
-        active_parameter_sets(s);
-        av_log(s->avctx, AV_LOG_DEBUG, "Skipped PREFIX SEI %d\n", type);
-        return 0;
     default:
         av_log(s->avctx, AV_LOG_DEBUG, "Skipped PREFIX SEI %d\n", type);
         skip_bits_long(gb, 8 * size);
@@ -207,7 +138,7 @@ static int decode_nal_sei_prefix(HEVCContext *s, int type, int size)
 
 static int decode_nal_sei_suffix(HEVCContext *s, int type, int size)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
 
     switch (type) {
     case SEI_TYPE_DECODED_PICTURE_HASH:
@@ -221,7 +152,7 @@ static int decode_nal_sei_suffix(HEVCContext *s, int type, int size)
 
 static int decode_nal_sei_message(HEVCContext *s)
 {
-    GetBitContext *gb = &s->HEVClc->gb;
+    GetBitContext *gb = &s->HEVClc.gb;
 
     int payload_type = 0;
     int payload_size = 0;
@@ -242,7 +173,7 @@ static int decode_nal_sei_message(HEVCContext *s)
     } else { /* nal_unit_type == NAL_SEI_SUFFIX */
         return decode_nal_sei_suffix(s, payload_type, payload_size);
     }
-    return 1;
+    return 0;
 }
 
 static int more_rbsp_data(GetBitContext *gb)
@@ -252,12 +183,8 @@ static int more_rbsp_data(GetBitContext *gb)
 
 int ff_hevc_decode_nal_sei(HEVCContext *s)
 {
-    int ret;
-
     do {
-        ret = decode_nal_sei_message(s);
-        if (ret < 0)
-            return(AVERROR(ENOMEM));
-    } while (more_rbsp_data(&s->HEVClc->gb));
-    return 1;
+        decode_nal_sei_message(s);
+    } while (more_rbsp_data(&s->HEVClc.gb));
+    return 0;
 }
