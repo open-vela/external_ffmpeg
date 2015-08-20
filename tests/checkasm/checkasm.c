@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -111,7 +111,7 @@ static const struct {
 
 typedef struct CheckasmFuncVersion {
     struct CheckasmFuncVersion *next;
-    void *func;
+    intptr_t (*func)();
     int ok;
     int cpu;
     int iterations;
@@ -387,10 +387,10 @@ int main(int argc, char *argv[])
 /* Decide whether or not the specified function needs to be tested and
  * allocate/initialize data structures if needed. Returns a pointer to a
  * reference function if the function should be tested, otherwise NULL */
-void *checkasm_check_func(void *func, const char *name, ...)
+intptr_t (*checkasm_check_func(intptr_t (*func)(), const char *name, ...))()
 {
     char name_buf[256];
-    void *ref = func;
+    intptr_t (*ref)() = func;
     CheckasmFuncVersion *v;
     int name_length;
     va_list arg;

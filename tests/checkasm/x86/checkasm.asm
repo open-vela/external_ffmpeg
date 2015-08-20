@@ -3,14 +3,14 @@
 ;* Copyright (c) 2008 Loren Merritt
 ;* Copyright (c) 2012 Henrik Gramner
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or modify
+;* Libav is free software; you can redistribute it and/or modify
 ;* it under the terms of the GNU General Public License as published by
 ;* the Free Software Foundation; either version 2 of the License, or
 ;* (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;* GNU General Public License for more details.
@@ -82,7 +82,7 @@ cglobal stack_clobber, 1,2
 %endif
 
 ;-----------------------------------------------------------------------------
-; void checkasm_checked_call(void *func, ...)
+; intptr_t checkasm_checked_call(intptr_t (*func)(), ...)
 ;-----------------------------------------------------------------------------
 INIT_XMM
 cglobal checked_call, 2,15,16,max_args*8+8
@@ -145,15 +145,10 @@ cglobal checked_call, 2,15,16,max_args*8+8
     or  r14, r5
 %endif
 
-    ; Call fail_func() with a descriptive message to mark it as a failure
-    ; if the called function didn't preserve all callee-saved registers.
-    ; Save the return value located in rdx:rax first to prevent clobbering.
     jz .ok
     mov  r9, rax
-    mov r10, rdx
     lea  r0, [error_message]
     call fail_func
-    mov rdx, r10
     mov rax, r9
 .ok:
     RET
@@ -167,7 +162,7 @@ cglobal checked_call, 2,15,16,max_args*8+8
 %define n6 dword 0x33627ba7
 
 ;-----------------------------------------------------------------------------
-; void checkasm_checked_call(void *func, ...)
+; intptr_t checkasm_checked_call(intptr_t (*func)(), ...)
 ;-----------------------------------------------------------------------------
 cglobal checked_call, 1,7
     mov  r3, n3
@@ -187,11 +182,9 @@ cglobal checked_call, 1,7
     or   r3, r5
     jz .ok
     mov  r3, eax
-    mov  r4, edx
     lea  r0, [error_message]
     mov [esp], r0
     call fail_func
-    mov  edx, r4
     mov  eax, r3
 .ok:
     add  esp, max_args*4

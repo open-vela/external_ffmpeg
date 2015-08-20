@@ -17,7 +17,8 @@ CHECKASMDIRS := $(sort $(dir $(CHECKASMOBJS)))
 $(CHECKASMOBJS): | $(CHECKASMDIRS)
 OBJDIRS += $(CHECKASMDIRS)
 
-tests/checkasm/checkasm.o: CFLAGS += -Umain
+# We rely on function pointers intentionally declared without specified argument types.
+tests/checkasm/%.o: CFLAGS := $(CFLAGS:-Wstrict-prototypes=-Wno-strict-prototypes)
 
 CHECKASM := tests/checkasm/checkasm$(EXESUF)
 
