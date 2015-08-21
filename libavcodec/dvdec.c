@@ -13,20 +13,20 @@
  * Many thanks to Dan Dennedy <dan@dennedy.org> for providing wealth
  * of DV technical info.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,12 +35,14 @@
  * DV decoder
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "libavutil/pixdesc.h"
 
 #include "avcodec.h"
 #include "dv.h"
+#include "dv_profile_internal.h"
 #include "dvdata.h"
 #include "get_bits.h"
 #include "idctdsp.h"
@@ -60,18 +62,136 @@ typedef struct BlockInfo {
 
 static const int dv_iweight_bits = 14;
 
+static const uint16_t dv_iweight_88[64] = {
+    32768, 16705, 16705, 17734, 17032, 17734, 18205, 18081,
+    18081, 18205, 18725, 18562, 19195, 18562, 18725, 19266,
+    19091, 19705, 19705, 19091, 19266, 21407, 19643, 20267,
+    20228, 20267, 19643, 21407, 22725, 21826, 20853, 20806,
+    20806, 20853, 21826, 22725, 23170, 23170, 21407, 21400,
+    21407, 23170, 23170, 24598, 23786, 22018, 22018, 23786,
+    24598, 25251, 24465, 22654, 24465, 25251, 25972, 25172,
+    25172, 25972, 26722, 27969, 26722, 29692, 29692, 31521,
+};
+static const uint16_t dv_iweight_248[64] = {
+    32768, 16384, 16705, 16705, 17734, 17734, 17734, 17734,
+    18081, 18081, 18725, 18725, 21407, 21407, 19091, 19091,
+    19195, 19195, 18205, 18205, 18725, 18725, 19705, 19705,
+    20267, 20267, 21826, 21826, 23170, 23170, 20806, 20806,
+    20267, 20267, 19266, 19266, 21407, 21407, 20853, 20853,
+    21400, 21400, 23786, 23786, 24465, 24465, 22018, 22018,
+    23170, 23170, 22725, 22725, 24598, 24598, 24465, 24465,
+    25172, 25172, 27969, 27969, 25972, 25972, 29692, 29692
+};
+
+/**
+ * The "inverse" DV100 weights are actually just the spec weights (zig-zagged).
+ */
+static const uint16_t dv_iweight_1080_y[64] = {
+    128,  16,  16,  17,  17,  17,  18,  18,
+     18,  18,  18,  18,  19,  18,  18,  19,
+     19,  19,  19,  19,  19,  42,  38,  40,
+     40,  40,  38,  42,  44,  43,  41,  41,
+     41,  41,  43,  44,  45,  45,  42,  42,
+     42,  45,  45,  48,  46,  43,  43,  46,
+     48,  49,  48,  44,  48,  49, 101,  98,
+     98, 101, 104, 109, 104, 116, 116, 123,
+};
+static const uint16_t dv_iweight_1080_c[64] = {
+    128,  16,  16,  17,  17,  17,  25,  25,
+     25,  25,  26,  25,  26,  25,  26,  26,
+     26,  27,  27,  26,  26,  42,  38,  40,
+     40,  40,  38,  42,  44,  43,  41,  41,
+     41,  41,  43,  44,  91,  91,  84,  84,
+     84,  91,  91,  96,  93,  86,  86,  93,
+     96, 197, 191, 177, 191, 197, 203, 197,
+    197, 203, 209, 219, 209, 232, 232, 246,
+};
+static const uint16_t dv_iweight_720_y[64] = {
+    128,  16,  16,  17,  17,  17,  18,  18,
+     18,  18,  18,  18,  19,  18,  18,  19,
+     19,  19,  19,  19,  19,  42,  38,  40,
+     40,  40,  38,  42,  44,  43,  41,  41,
+     41,  41,  43,  44,  68,  68,  63,  63,
+     63,  68,  68,  96,  92,  86,  86,  92,
+     96,  98,  96,  88,  96,  98, 202, 196,
+    196, 202, 208, 218, 208, 232, 232, 246,
+};
+static const uint16_t dv_iweight_720_c[64] = {
+    128,  24,  24,  26,  26,  26,  36,  36,
+     36,  36,  36,  36,  38,  36,  36,  38,
+     38,  38,  38,  38,  38,  84,  76,  80,
+     80,  80,  76,  84,  88,  86,  82,  82,
+     82,  82,  86,  88, 182, 182, 168, 168,
+    168, 182, 182, 192, 186, 192, 172, 186,
+    192, 394, 382, 354, 382, 394, 406, 394,
+    394, 406, 418, 438, 418, 464, 464, 492,
+};
+
+static void dv_init_weight_tables(DVVideoContext *ctx, const AVDVProfile *d)
+{
+    int j, i, c, s;
+    uint32_t *factor1 = &ctx->idct_factor[0],
+             *factor2 = &ctx->idct_factor[DV_PROFILE_IS_HD(d) ? 4096 : 2816];
+
+    if (DV_PROFILE_IS_HD(d)) {
+        /* quantization quanta by QNO for DV100 */
+        static const uint8_t dv100_qstep[16] = {
+            1, /* QNO = 0 and 1 both have no quantization */
+            1,
+            2, 3, 4, 5, 6, 7, 8, 16, 18, 20, 22, 24, 28, 52
+        };
+        const uint16_t *iweight1, *iweight2;
+
+        if (d->height == 720) {
+            iweight1 = &dv_iweight_720_y[0];
+            iweight2 = &dv_iweight_720_c[0];
+        } else {
+            iweight1 = &dv_iweight_1080_y[0];
+            iweight2 = &dv_iweight_1080_c[0];
+        }
+        for (c = 0; c < 4; c++) {
+            for (s = 0; s < 16; s++) {
+                for (i = 0; i < 64; i++) {
+                    *factor1++ = (dv100_qstep[s] << (c + 9)) * iweight1[i];
+                    *factor2++ = (dv100_qstep[s] << (c + 9)) * iweight2[i];
+                }
+            }
+        }
+    } else {
+        static const uint8_t dv_quant_areas[4] = { 6, 21, 43, 64 };
+        const uint16_t *iweight1 = &dv_iweight_88[0];
+        for (j = 0; j < 2; j++, iweight1 = &dv_iweight_248[0]) {
+            for (s = 0; s < 22; s++) {
+                for (i = c = 0; c < 4; c++) {
+                    for (; i < dv_quant_areas[c]; i++) {
+                        *factor1   = iweight1[i] << (ff_dv_quant_shifts[s][c] + 1);
+                        *factor2++ = (*factor1++) << 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
 static av_cold int dvvideo_decode_init(AVCodecContext *avctx)
 {
     DVVideoContext *s = avctx->priv_data;
     IDCTDSPContext idsp;
     int i;
 
+    memset(&idsp,0, sizeof(idsp));
     ff_idctdsp_init(&idsp, avctx);
 
     for (i = 0; i < 64; i++)
         s->dv_zigzag[0][i] = idsp.idct_permutation[ff_zigzag_direct[i]];
 
-    memcpy(s->dv_zigzag[1], ff_dv_zigzag248_direct, sizeof(s->dv_zigzag[1]));
+    if (avctx->lowres){
+        for (i = 0; i < 64; i++){
+            int j = ff_dv_zigzag248_direct[i];
+            s->dv_zigzag[1][i] = idsp.idct_permutation[(j & 7) + (j & 8) * 4 + (j & 48) / 2];
+        }
+    }else
+        memcpy(s->dv_zigzag[1], ff_dv_zigzag248_direct, sizeof(s->dv_zigzag[1]));
 
     s->idct_put[0] = idsp.idct_put;
     s->idct_put[1] = ff_simple_idct248_put;
@@ -169,11 +289,17 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     LOCAL_ALIGNED_16(int16_t, sblock, [5 * DV_MAX_BPM], [64]);
     LOCAL_ALIGNED_16(uint8_t, mb_bit_buffer, [80     + AV_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
     LOCAL_ALIGNED_16(uint8_t, vs_bit_buffer, [80 * 5 + AV_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
-    const int log2_blocksize = 3;
+    const int log2_blocksize = 3-s->avctx->lowres;
     int is_field_mode[5];
+    int vs_bit_buffer_damaged = 0;
+    int mb_bit_buffer_damaged[5] = {0};
+    int retried = 0;
+    int sta;
 
-    assert((((int) mb_bit_buffer) & 7) == 0);
-    assert((((int) vs_bit_buffer) & 7) == 0);
+    av_assert1((((int) mb_bit_buffer) & 7) == 0);
+    av_assert1((((int) vs_bit_buffer) & 7) == 0);
+
+retry:
 
     memset(sblock, 0, 5 * DV_MAX_BPM * sizeof(*sblock));
 
@@ -185,6 +311,14 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     for (mb_index = 0; mb_index < 5; mb_index++, mb1 += s->sys->bpm, block1 += s->sys->bpm * 64) {
         /* skip header */
         quant    = buf_ptr[3] & 0x0f;
+        if (avctx->error_concealment) {
+            if ((buf_ptr[3] >> 4) == 0x0E)
+                vs_bit_buffer_damaged = 1;
+            if (!mb_index) {
+                sta = buf_ptr[3] >> 4;
+            } else if (sta != (buf_ptr[3] >> 4))
+                vs_bit_buffer_damaged = 1;
+        }
         buf_ptr += 4;
         init_put_bits(&pb, mb_bit_buffer, 80);
         mb    = mb1;
@@ -229,10 +363,15 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
              * block is finished */
             if (mb->pos >= 64)
                 bit_copy(&pb, &gb);
+            if (mb->pos >= 64 && mb->pos < 127)
+                vs_bit_buffer_damaged = mb_bit_buffer_damaged[mb_index] = 1;
 
             block += 64;
             mb++;
         }
+
+        if (mb_bit_buffer_damaged[mb_index] > 0)
+            continue;
 
         /* pass 2: we can do it just after */
         ff_dlog(avctx, "***pass 2 size=%d MB#=%d\n", put_bits_count(&pb), mb_index);
@@ -247,6 +386,8 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
                 /* if still not finished, no need to parse other blocks */
                 if (mb->pos < 64)
                     break;
+                if (mb->pos < 127)
+                    vs_bit_buffer_damaged = mb_bit_buffer_damaged[mb_index] = 1;
             }
         }
         /* all blocks are finished, so the extra bytes can be used at
@@ -264,16 +405,24 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     flush_put_bits(&vs_pb);
     for (mb_index = 0; mb_index < 5; mb_index++) {
         for (j = 0; j < s->sys->bpm; j++) {
-            if (mb->pos < 64) {
+            if (mb->pos < 64 && get_bits_left(&gb) > 0 && !vs_bit_buffer_damaged) {
                 ff_dlog(avctx, "start %d:%d\n", mb_index, j);
                 dv_decode_ac(&gb, mb, block);
             }
-            if (mb->pos >= 64 && mb->pos < 127)
+
+            if (mb->pos >= 64 && mb->pos < 127) {
                 av_log(avctx, AV_LOG_ERROR,
                        "AC EOB marker is absent pos=%d\n", mb->pos);
+                vs_bit_buffer_damaged = 1;
+            }
             block += 64;
             mb++;
         }
+    }
+    if (vs_bit_buffer_damaged && !retried) {
+        av_log(avctx, AV_LOG_ERROR, "Concealing bitstream errors\n");
+        retried = 1;
+        goto retry;
     }
 
     /* compute idct and place blocks */
@@ -317,9 +466,9 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
                 int x, y;
                 mb->idct_put(pixels, 8, block);
                 for (y = 0; y < (1 << log2_blocksize); y++, c_ptr += s->frame->linesize[j], pixels += 8) {
-                    ptr1   = pixels + (1 << (log2_blocksize - 1));
+                    ptr1   = pixels + ((1 << (log2_blocksize))>>1);
                     c_ptr1 = c_ptr + (s->frame->linesize[j] << log2_blocksize);
-                    for (x = 0; x < (1 << (log2_blocksize - 1)); x++) {
+                    for (x = 0; x < (1 << FFMAX(log2_blocksize - 1, 0)); x++) {
                         c_ptr[x]  = pixels[x];
                         c_ptr1[x] = ptr1[x];
                     }
@@ -354,7 +503,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, void *data,
     int apt, is16_9, ret;
     const AVDVProfile *sys;
 
-    sys = av_dv_frame_profile(s->sys, buf, buf_size);
+    sys = ff_dv_frame_profile(avctx, s->sys, buf, buf_size);
     if (!sys || buf_size < sys->frame_size) {
         av_log(avctx, AV_LOG_ERROR, "could not find dv frame profile\n");
         return -1; /* NOTE: we only accept several full frames */
@@ -366,6 +515,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, void *data,
             av_log(avctx, AV_LOG_ERROR, "Error initializing the work tables.\n");
             return ret;
         }
+        dv_init_weight_tables(s, sys);
         s->sys = sys;
     }
 
@@ -388,12 +538,15 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, void *data,
         ff_set_sar(avctx, s->sys->sar[is16_9]);
     }
 
-    if (ff_get_buffer(avctx, s->frame, 0) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
-    }
+    if ((ret = ff_get_buffer(avctx, s->frame, 0)) < 0)
+        return ret;
     s->frame->interlaced_frame = 1;
     s->frame->top_field_first  = 0;
+
+    /* Determine the codec's field order from the packet */
+    if ( *vsc_pack == dv_video_control ) {
+        s->frame->top_field_first = !(vsc_pack[3] & 0x40);
+    }
 
     s->buf = buf;
     avctx->execute(avctx, dv_decode_video_segment, s->work_chunks, NULL,
@@ -416,4 +569,5 @@ AVCodec ff_dvvideo_decoder = {
     .init           = dvvideo_decode_init,
     .decode         = dvvideo_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
+    .max_lowres     = 3,
 };
