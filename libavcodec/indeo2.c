@@ -2,20 +2,20 @@
  * Intel Indeo 2 codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -54,15 +54,13 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
     int i;
     int j;
     int out = 0;
-    int c;
-    int t;
 
     if (width & 1)
         return AVERROR_INVALIDDATA;
 
     /* first line contain absolute values, other lines contain deltas */
     while (out < width) {
-        c = ir2_get_code(&ctx->gb);
+        int c = ir2_get_code(&ctx->gb);
         if (c >= 0x80) { /* we have a run */
             c -= 0x7F;
             if (out + c*2 > width)
@@ -79,7 +77,7 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
     for (j = 1; j < height; j++) {
         out = 0;
         while (out < width) {
-            c = ir2_get_code(&ctx->gb);
+            int c = ir2_get_code(&ctx->gb);
             if (c >= 0x80) { /* we have a skip */
                 c -= 0x7F;
                 if (out + c*2 > width)
@@ -89,7 +87,7 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
                     out++;
                 }
             } else { /* add two deltas from table */
-                t        = dst[out - pitch] + (table[c * 2] - 128);
+                int t    = dst[out - pitch] + (table[c * 2] - 128);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
                 out++;
@@ -149,10 +147,8 @@ static int ir2_decode_frame(AVCodecContext *avctx,
     AVFrame * const p    = s->picture;
     int start, ret;
 
-    if ((ret = ff_reget_buffer(avctx, p)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, p)) < 0)
         return ret;
-    }
 
     start = 48; /* hardcoded for now */
 
