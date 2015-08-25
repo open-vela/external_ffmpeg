@@ -8,7 +8,7 @@ base=$(dirname $0)
 base64=tests/base64
 
 test="${1#fate-}"
-samples=$2
+target_samples=$2
 target_exec=$3
 target_path=$4
 command=$5
@@ -43,7 +43,7 @@ compare(){
 }
 
 do_tiny_psnr(){
-    psnr=$(tests/tiny_psnr "$1" "$2" $cmp_unit $cmp_shift 0)
+    psnr=$(tests/tiny_psnr "$1" "$2" $cmp_unit $cmp_shift 0) || return 1
     val=$(expr "$psnr" : ".*$3: *\([0-9.]*\)")
     size1=$(expr "$psnr" : '.*bytes: *\([0-9]*\)')
     size2=$(expr "$psnr" : '.*bytes:[ 0-9]*/ *\([0-9]*\)')
@@ -51,6 +51,12 @@ do_tiny_psnr(){
     size_cmp=$(compare $size1 $size2 $size_tolerance)
     if [ "$val_cmp" != 0 ] || [ "$size_cmp" != 0 ]; then
         echo "$psnr"
+        if [ "$val_cmp" != 0 ]; then
+            echo "$3: |$val - $cmp_target| >= $fuzz"
+        fi
+        if [ "$size_cmp" != 0 ]; then
+            echo "size: |$size1 - $size2| >= $size_tolerance"
+        fi
         return 1
     fi
 }
@@ -72,38 +78,53 @@ run(){
     $target_exec $target_path/"$@"
 }
 
-probefmt(){
-    run avprobe -show_format_entry format_name -v 0 "$@"
+runecho(){
+    test "${V:-0}" -gt 0 && echo "$target_exec" $target_path/"$@" >&3
+    $target_exec $target_path/"$@" >&3
 }
 
-avconv(){
+probefmt(){
+    run ffprobe -show_entries format=format_name -print_format default=nw=1:nk=1 -v 0 "$@"
+}
+
+probeframes(){
+    run ffprobe -show_frames -v 0 "$@"
+}
+
+ffmpeg(){
     dec_opts="-hwaccel $hwaccel -threads $threads -thread_type $thread_type"
-    avconv_args="-nostats -cpuflags $cpuflags"
+    ffmpeg_args="-nostdin -nostats -cpuflags $cpuflags"
     for arg in $@; do
-        [ x${arg} = x-i ] && avconv_args="${avconv_args} ${dec_opts}"
-        avconv_args="${avconv_args} ${arg}"
+        [ x${arg} = x-i ] && ffmpeg_args="${ffmpeg_args} ${dec_opts}"
+        ffmpeg_args="${ffmpeg_args} ${arg}"
     done
-    run avconv ${avconv_args}
+    run ffmpeg ${ffmpeg_args}
 }
 
 framecrc(){
-    avconv "$@" -f framecrc -
+    ffmpeg "$@" -flags +bitexact -f framecrc -
 }
 
 framemd5(){
-    avconv "$@" -f framemd5 -
+    ffmpeg "$@" -flags +bitexact -f framemd5 -
 }
 
 crc(){
-    avconv "$@" -f crc -
+    ffmpeg "$@" -f crc -
 }
 
 md5(){
-    avconv "$@" md5:
+    ffmpeg "$@" md5:
 }
 
 pcm(){
-    avconv "$@" -vn -f s16le -
+    ffmpeg "$@" -vn -f s16le -
+}
+
+fmtstdout(){
+    fmt=$1
+    shift 1
+    ffmpeg -flags +bitexact "$@" -f $fmt -
 }
 
 enc_dec_pcm(){
@@ -115,8 +136,8 @@ enc_dec_pcm(){
     encfile="${outdir}/${test}.${out_fmt}"
     cleanfiles=$encfile
     encfile=$(target_path ${encfile})
-    avconv -i $src_file "$@" -f $out_fmt -y ${encfile} || return
-    avconv -f $out_fmt -i ${encfile} -c:a pcm_${pcm_fmt} -f ${dec_fmt} -
+    ffmpeg -i $src_file "$@" -f $out_fmt -y ${encfile} || return
+    ffmpeg -flags +bitexact -i ${encfile} -c:a pcm_${pcm_fmt} -f ${dec_fmt} -
 }
 
 FLAGS="-flags +bitexact -sws_flags +accurate_rnd+bitexact -fflags +bitexact"
@@ -137,20 +158,26 @@ enc_dec(){
     tsrcfile=$(target_path $srcfile)
     tencfile=$(target_path $encfile)
     tdecfile=$(target_path $decfile)
-    avconv -f $src_fmt $DEC_OPTS -i $tsrcfile $ENC_OPTS $enc_opt $FLAGS \
+    ffmpeg -f $src_fmt $DEC_OPTS -i $tsrcfile $ENC_OPTS $enc_opt $FLAGS \
         -f $enc_fmt -y $tencfile || return
     do_md5sum $encfile
     echo $(wc -c $encfile)
-    avconv $DEC_OPTS -i $tencfile $ENC_OPTS $dec_opt $FLAGS \
+    ffmpeg $8 $DEC_OPTS -i $tencfile $ENC_OPTS $dec_opt $FLAGS \
         -f $dec_fmt -y $tdecfile || return
     do_md5sum $decfile
     tests/tiny_psnr $srcfile $decfile $cmp_unit $cmp_shift
 }
 
+lavffatetest(){
+    t="${test#lavf-fate-}"
+    ref=${base}/ref/lavf-fate/$t
+    ${base}/lavf-regression.sh $t lavf-fate tests/vsynth1 "$target_exec" "$target_path" "$threads" "$thread_type" "$cpuflags" "$target_samples"
+}
+
 lavftest(){
     t="${test#lavf-}"
     ref=${base}/ref/lavf/$t
-    ${base}/lavf-regression.sh $t lavf tests/vsynth1 "$target_exec" "$target_path" "$threads" "$thread_type" "$cpuflags"
+    ${base}/lavf-regression.sh $t lavf tests/vsynth1 "$target_exec" "$target_path" "$threads" "$thread_type" "$cpuflags" "$target_samples"
 }
 
 video_filter(){
@@ -159,35 +186,69 @@ video_filter(){
     label=${test#filter-}
     raw_src="${target_path}/tests/vsynth1/%02d.pgm"
     printf '%-20s' $label
-    avconv $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src \
+    ffmpeg $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src \
         $FLAGS $ENC_OPTS -vf "$filters" -vcodec rawvideo -frames:v 5 $* -f nut md5:
 }
 
 pixfmts(){
     filter=${test#filter-pixfmts-}
+    filter=${filter%_*}
     filter_args=$1
+    prefilter_chain=$2
+    nframes=${3:-1}
 
     showfiltfmts="$target_exec $target_path/libavfilter/filtfmts-test"
-    exclude_fmts=${outfile}${filter}_exclude_fmts
-    out_fmts=${outfile}${filter}_out_fmts
+    scale_exclude_fmts=${outfile}_scale_exclude_fmts
+    scale_in_fmts=${outfile}_scale_in_fmts
+    scale_out_fmts=${outfile}_scale_out_fmts
+    in_fmts=${outfile}_in_fmts
 
     # exclude pixel formats which are not supported as input
-    avconv -pix_fmts list 2>/dev/null | awk 'NR > 8 && /^\..\./ { print $2 }' | sort >$exclude_fmts
-    $showfiltfmts scale | awk -F '[ \r]' '/^OUTPUT/{ print $3 }' | sort | comm -23 - $exclude_fmts >$out_fmts
+    $showfiltfmts scale | awk -F '[ \r]' '/^INPUT/{ fmt=substr($3, 5); print fmt }' | sort >$scale_in_fmts
+    $showfiltfmts scale | awk -F '[ \r]' '/^OUTPUT/{ fmt=substr($3, 5); print fmt }' | sort >$scale_out_fmts
+    comm -12 $scale_in_fmts $scale_out_fmts >$scale_exclude_fmts
 
-    pix_fmts=$($showfiltfmts $filter | awk -F '[ \r]' '/^INPUT/{ print $3 }' | sort | comm -12 - $out_fmts)
+    $showfiltfmts $filter | awk -F '[ \r]' '/^INPUT/{ fmt=substr($3, 5); print fmt }' | sort >$in_fmts
+    pix_fmts=$(comm -12 $scale_exclude_fmts $in_fmts)
 
     outertest=$test
     for pix_fmt in $pix_fmts; do
         test=$pix_fmt
-        video_filter "format=$pix_fmt,$filter=$filter_args" -pix_fmt $pix_fmt -frames:v 1
+        video_filter "${prefilter_chain}format=$pix_fmt,$filter=$filter_args" -pix_fmt $pix_fmt -frames:v $nframes
     done
 
-    rm $exclude_fmts $out_fmts
+    rm $in_fmts $scale_in_fmts $scale_out_fmts $scale_exclude_fmts
     test=$outertest
 }
 
+gapless(){
+    sample=$(target_path $1)
+    extra_args=$2
+
+    decfile1="${outdir}/${test}.out-1"
+    decfile2="${outdir}/${test}.out-2"
+    decfile3="${outdir}/${test}.out-3"
+    cleanfiles="$cleanfiles $decfile1 $decfile2 $decfile3"
+
+    # test packet data
+    ffmpeg $extra_args -i "$sample" -flags +bitexact -c:a copy -f framecrc -y $decfile1
+    do_md5sum $decfile1
+    # test decoded (and cut) data
+    ffmpeg $extra_args -i "$sample" -flags +bitexact -f wav md5:
+    # the same as above again, with seeking to the start
+    ffmpeg $extra_args -ss 0 -seek_timestamp 1 -i "$sample" -flags +bitexact -c:a copy -f framecrc -y $decfile2
+    do_md5sum $decfile2
+    ffmpeg $extra_args -ss 0 -seek_timestamp 1 -i "$sample" -flags +bitexact -f wav md5:
+    # test packet data, with seeking to a specific position
+    ffmpeg $extra_args -ss 5 -seek_timestamp 1 -i "$sample" -flags +bitexact -c:a copy -f framecrc -y $decfile3
+    do_md5sum $decfile3
+}
+
 mkdir -p "$outdir"
+
+# Disable globbing: command arguments may contain globbing characters and
+# must be kept verbatim
+set -f
 
 exec 3>&2
 eval $command >"$outfile" 2>$errfile
@@ -201,6 +262,7 @@ fi
 if test -e "$ref" || test $cmp = "oneline" ; then
     case $cmp in
         diff)   diff -u -b "$ref" "$outfile"            >$cmpfile ;;
+        rawdiff)diff -u    "$ref" "$outfile"            >$cmpfile ;;
         oneoff) oneoff     "$ref" "$outfile"            >$cmpfile ;;
         stddev) stddev     "$ref" "$outfile"            >$cmpfile ;;
         oneline)oneline    "$ref" "$outfile"            >$cmpfile ;;
@@ -228,5 +290,12 @@ if test $err != 0 && test $gen != "no" ; then
     err=$?
 fi
 
-test $err = 0 && rm -f $outfile $errfile $cmpfile $cleanfiles
+if test $err = 0; then
+    rm -f $outfile $errfile $cmpfile $cleanfiles
+elif test $gen = "no"; then
+    echo "Test $test failed. Look at $errfile for details."
+    test "${V:-0}" -gt 0 && cat $errfile
+else
+    echo "Updating reference failed, possibly no output file was generated."
+fi
 exit $err
