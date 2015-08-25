@@ -3,14 +3,14 @@
 ;* Copyright (c) 2008 Loren Merritt
 ;* Copyright (c) 2012 Henrik Gramner
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or modify
+;* Libav is free software; you can redistribute it and/or modify
 ;* it under the terms of the GNU General Public License as published by
 ;* the Free Software Foundation; either version 2 of the License, or
 ;* (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;* GNU General Public License for more details.
@@ -103,20 +103,16 @@ cglobal checked_call, 2,15,16,max_args*8+8
         mov  [rsp+(i-6)*8], r9
         %assign i i+1
     %endrep
-%else ; WIN64
+%else
     %assign i 4
     %rep max_args-4
         mov  r9, [rsp+stack_offset+(i+7)*8]
         mov  [rsp+i*8], r9
         %assign i i+1
     %endrep
+%endif
 
-    ; Move possible floating-point arguments to the correct registers
-    movq m0, r0
-    movq m1, r1
-    movq m2, r2
-    movq m3, r3
-
+%if WIN64
     %assign i 6
     %rep 16-6
         mova m %+ i, [x %+ i]

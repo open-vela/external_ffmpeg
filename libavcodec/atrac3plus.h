@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -122,7 +122,7 @@ typedef struct Atrac3pWaveSynthParams {
     int num_tone_bands;                     ///< number of PQF bands with tones
     uint8_t tone_sharing[ATRAC3P_SUBBANDS]; ///< 1 - subband-wise tone sharing flags
     uint8_t tone_master[ATRAC3P_SUBBANDS];  ///< 1 - subband-wise tone channel swapping
-    uint8_t invert_phase[ATRAC3P_SUBBANDS]; ///< 1 - subband-wise phase inversion
+    uint8_t phase_shift[ATRAC3P_SUBBANDS];  ///< 1 - subband-wise 180° phase shifting
     int tones_index;                        ///< total sum of tones in this unit
     Atrac3pWaveParam waves[48];
 } Atrac3pWaveSynthParams;
@@ -155,8 +155,10 @@ typedef struct Atrac3pChanUnitCtx {
 
 /**
  * Initialize VLC tables for bitstream parsing.
+ *
+ * @param[in]   codec    ptr to the AVCodec
  */
-void ff_atrac3p_init_vlcs(void);
+void ff_atrac3p_init_vlcs(AVCodec *codec);
 
 /**
  * Decode bitstream data of a channel unit.
@@ -167,8 +169,8 @@ void ff_atrac3p_init_vlcs(void);
  * @param[in]     avctx         ptr to the AVCodecContext
  * @return result code: 0 = OK, otherwise - error code
  */
-int ff_atrac3p_decode_channel_unit(GetBitContext *gb, Atrac3pChanUnitCtx *ctx,
-                                   int num_channels, AVCodecContext *avctx);
+int  ff_atrac3p_decode_channel_unit(GetBitContext *gb, Atrac3pChanUnitCtx *ctx,
+                                    int num_channels, AVCodecContext *avctx);
 
 /**
  * Initialize IMDCT transform.
