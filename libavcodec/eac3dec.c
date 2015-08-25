@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Bartlomiej Wolowiec <bartek.wolowiec@gmail.com>
  * Copyright (c) 2008 Justin Ruggles
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,7 +63,7 @@ typedef enum {
 
 #define EAC3_SR_CODE_REDUCED  3
 
-static void ff_eac3_apply_spectral_extension(AC3DecodeContext *s)
+void ff_eac3_apply_spectral_extension(AC3DecodeContext *s)
 {
     int bin, bnd, ch, i;
     uint8_t wrapflag[SPX_MAX_BANDS]={1,0,}, num_copy_sections, copy_sizes[SPX_MAX_BANDS];
@@ -101,7 +101,7 @@ static void ff_eac3_apply_spectral_extension(AC3DecodeContext *s)
         for (i = 0; i < num_copy_sections; i++) {
             memcpy(&s->transform_coeffs[ch][bin],
                    &s->transform_coeffs[ch][s->spx_dst_start_freq],
-                   copy_sizes[i]*sizeof(INTFLOAT));
+                   copy_sizes[i]*sizeof(float));
             bin += copy_sizes[i];
         }
 
@@ -124,7 +124,7 @@ static void ff_eac3_apply_spectral_extension(AC3DecodeContext *s)
             bin = s->spx_src_start_freq - 2;
             for (bnd = 0; bnd < s->num_spx_bands; bnd++) {
                 if (wrapflag[bnd]) {
-                    INTFLOAT *coeffs = &s->transform_coeffs[ch][bin];
+                    float *coeffs = &s->transform_coeffs[ch][bin];
                     coeffs[0] *= atten_tab[0];
                     coeffs[1] *= atten_tab[1];
                     coeffs[2] *= atten_tab[2];
@@ -142,11 +142,6 @@ static void ff_eac3_apply_spectral_extension(AC3DecodeContext *s)
         for (bnd = 0; bnd < s->num_spx_bands; bnd++) {
             float nscale = s->spx_noise_blend[ch][bnd] * rms_energy[bnd] * (1.0f / INT32_MIN);
             float sscale = s->spx_signal_blend[ch][bnd];
-#if USE_FIXED
-            // spx_noise_blend and spx_signal_blend are both FP.23
-            nscale *= 1.0 / (1<<23);
-            sscale *= 1.0 / (1<<23);
-#endif
             for (i = 0; i < s->spx_band_sizes[bnd]; i++) {
                 float noise  = nscale * (int32_t)av_lfg_get(&s->dith_state);
                 s->transform_coeffs[ch][bin]   *= sscale;
@@ -200,7 +195,7 @@ static void idct6(int pre_mant[6])
     pre_mant[5] = even0 - odd0;
 }
 
-static void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch)
+void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch)
 {
     int bin, blk, gs;
     int end_bap, gaq_mode;
@@ -293,7 +288,7 @@ static void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch)
     }
 }
 
-static int ff_eac3_parse_header(AC3DecodeContext *s)
+int ff_eac3_parse_header(AC3DecodeContext *s)
 {
     int i, blk, ch;
     int ac3_exponent_strategy, parse_aht_info, parse_spx_atten_data;
