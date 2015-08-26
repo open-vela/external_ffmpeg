@@ -2,20 +2,20 @@
  * MxPEG clip file demuxer
  * Copyright (c) 2010 Anatoly Nenashev
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -75,7 +75,7 @@ static int mxg_read_header(AVFormatContext *s)
 static uint8_t* mxg_find_startmarker(uint8_t *p, uint8_t *end)
 {
     for (; p < end - 3; p += 4) {
-        uint32_t x = AV_RN32(p);
+        uint32_t x = *(uint32_t*)p;
 
         if (x & (~(x+0x01010101)) & 0x80808080) {
             if (p[0] == 0xff) {
@@ -102,19 +102,17 @@ static int mxg_update_cache(AVFormatContext *s, unsigned int cache_size)
     MXGContext *mxg = s->priv_data;
     unsigned int current_pos = mxg->buffer_ptr - mxg->buffer;
     unsigned int soi_pos;
-    uint8_t *buffer;
     int ret;
 
     /* reallocate internal buffer */
     if (current_pos > current_pos + cache_size)
         return AVERROR(ENOMEM);
-    soi_pos = mxg->soi_ptr - mxg->buffer;
-    buffer = av_fast_realloc(mxg->buffer, &mxg->buffer_size,
-                             current_pos + cache_size +
-                             AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!buffer)
+    if (mxg->soi_ptr) soi_pos = mxg->soi_ptr - mxg->buffer;
+    mxg->buffer = av_fast_realloc(mxg->buffer, &mxg->buffer_size,
+                                  current_pos + cache_size +
+                                  AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!mxg->buffer)
         return AVERROR(ENOMEM);
-    mxg->buffer = buffer;
     mxg->buffer_ptr = mxg->buffer + current_pos;
     if (mxg->soi_ptr) mxg->soi_ptr = mxg->buffer + soi_pos;
 
@@ -136,7 +134,7 @@ static int mxg_read_packet(AVFormatContext *s, AVPacket *pkt)
     uint8_t *startmarker_ptr, *end, *search_end, marker;
     MXGContext *mxg = s->priv_data;
 
-    while (!avio_feof(s->pb) && !s->pb->error){
+    while (!s->pb->eof_reached && !s->pb->error){
         if (mxg->cache_size <= OVERREAD_SIZE) {
             /* update internal buffer */
             ret = mxg_update_cache(s, DEFAULT_PACKET_SIZE + OVERREAD_SIZE);
@@ -171,18 +169,13 @@ static int mxg_read_packet(AVFormatContext *s, AVPacket *pkt)
 
                 pkt->pts = pkt->dts = mxg->dts;
                 pkt->stream_index = 0;
-#if FF_API_DESTRUCT_PACKET
-FF_DISABLE_DEPRECATION_WARNINGS
-                pkt->destruct = NULL;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
                 pkt->buf  = NULL;
                 pkt->size = mxg->buffer_ptr - mxg->soi_ptr;
                 pkt->data = mxg->soi_ptr;
 
                 if (mxg->soi_ptr - mxg->buffer > mxg->cache_size) {
                     if (mxg->cache_size > 0) {
-                        memmove(mxg->buffer, mxg->buffer_ptr, mxg->cache_size);
+                        memcpy(mxg->buffer, mxg->buffer_ptr, mxg->cache_size);
                     }
 
                     mxg->buffer_ptr = mxg->buffer;
@@ -214,11 +207,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
                     /* time (GMT) of first sample in usec since 1970, little-endian */
                     pkt->pts = pkt->dts = AV_RL64(startmarker_ptr + 8);
                     pkt->stream_index = 1;
-#if FF_API_DESTRUCT_PACKET
-FF_DISABLE_DEPRECATION_WARNINGS
-                    pkt->destruct = NULL;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
                     pkt->buf  = NULL;
                     pkt->size = size - 14;
                     pkt->data = startmarker_ptr + 16;
