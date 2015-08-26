@@ -2,20 +2,20 @@
 ;* optimized audio functions
 ;* Copyright (c) 2008 Loren Merritt
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -40,15 +40,11 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
     paddd   m2, m1
     add     orderq, mmsize*2
     jl .loop
-%if mmsize == 16
-    movhlps m0, m2
-    paddd   m2, m0
-    pshuflw m0, m2, 0x4e
-%else
-    pshufw  m0, m2, 0x4e
-%endif
-    paddd   m2, m0
+    HADDD   m2, m0
     movd   eax, m2
+%if mmsize == 8
+    emms
+%endif
     RET
 %endmacro
 
@@ -80,17 +76,17 @@ cglobal vector_clip_int32%5, 5,5,%1, dst, src, min, max, len
     SPLATD    m4
     SPLATD    m5
 .loop:
-%assign %%i 1
+%assign %%i 0
 %rep %2
-    mova      m0,  [srcq+mmsize*0*%%i]
-    mova      m1,  [srcq+mmsize*1*%%i]
-    mova      m2,  [srcq+mmsize*2*%%i]
-    mova      m3,  [srcq+mmsize*3*%%i]
+    mova      m0,  [srcq+mmsize*(0+%%i)]
+    mova      m1,  [srcq+mmsize*(1+%%i)]
+    mova      m2,  [srcq+mmsize*(2+%%i)]
+    mova      m3,  [srcq+mmsize*(3+%%i)]
 %if %3
-    mova      m7,  [srcq+mmsize*4*%%i]
-    mova      m8,  [srcq+mmsize*5*%%i]
-    mova      m9,  [srcq+mmsize*6*%%i]
-    mova      m10, [srcq+mmsize*7*%%i]
+    mova      m7,  [srcq+mmsize*(4+%%i)]
+    mova      m8,  [srcq+mmsize*(5+%%i)]
+    mova      m9,  [srcq+mmsize*(6+%%i)]
+    mova      m10, [srcq+mmsize*(7+%%i)]
 %endif
     CLIPD  m0,  m4, m5, m6
     CLIPD  m1,  m4, m5, m6
@@ -102,17 +98,17 @@ cglobal vector_clip_int32%5, 5,5,%1, dst, src, min, max, len
     CLIPD  m9,  m4, m5, m6
     CLIPD  m10, m4, m5, m6
 %endif
-    mova  [dstq+mmsize*0*%%i], m0
-    mova  [dstq+mmsize*1*%%i], m1
-    mova  [dstq+mmsize*2*%%i], m2
-    mova  [dstq+mmsize*3*%%i], m3
+    mova  [dstq+mmsize*(0+%%i)], m0
+    mova  [dstq+mmsize*(1+%%i)], m1
+    mova  [dstq+mmsize*(2+%%i)], m2
+    mova  [dstq+mmsize*(3+%%i)], m3
 %if %3
-    mova  [dstq+mmsize*4*%%i], m7
-    mova  [dstq+mmsize*5*%%i], m8
-    mova  [dstq+mmsize*6*%%i], m9
-    mova  [dstq+mmsize*7*%%i], m10
+    mova  [dstq+mmsize*(4+%%i)], m7
+    mova  [dstq+mmsize*(5+%%i)], m8
+    mova  [dstq+mmsize*(6+%%i)], m9
+    mova  [dstq+mmsize*(7+%%i)], m10
 %endif
-%assign %%i %%i+1
+%assign %%i %%i+4*(%3+1)
 %endrep
     add     srcq, mmsize*4*(%2+%3)
     add     dstq, mmsize*4*(%2+%3)
@@ -135,3 +131,47 @@ VECTOR_CLIP_INT32 11, 1, 1, 0
 %else
 VECTOR_CLIP_INT32 6, 1, 0, 0
 %endif
+
+;-----------------------------------------------------
+;void ff_vector_clipf(float *dst, const float *src,
+;                     float min, float max, int len)
+;-----------------------------------------------------
+INIT_XMM sse
+%if UNIX64
+cglobal vector_clipf, 3,3,6, dst, src, len
+%else
+cglobal vector_clipf, 5,5,6, dst, src, min, max, len
+%endif
+%if WIN64
+    SWAP 0, 2
+    SWAP 1, 3
+%elif ARCH_X86_32
+    movss   m0, minm
+    movss   m1, maxm
+%endif
+    SPLATD  m0
+    SPLATD  m1
+        shl lend, 2
+        add srcq, lenq
+        add dstq, lenq
+        neg lenq
+.loop:
+    mova    m2,  [srcq+lenq+mmsize*0]
+    mova    m3,  [srcq+lenq+mmsize*1]
+    mova    m4,  [srcq+lenq+mmsize*2]
+    mova    m5,  [srcq+lenq+mmsize*3]
+    maxps   m2, m0
+    maxps   m3, m0
+    maxps   m4, m0
+    maxps   m5, m0
+    minps   m2, m1
+    minps   m3, m1
+    minps   m4, m1
+    minps   m5, m1
+    mova    [dstq+lenq+mmsize*0], m2
+    mova    [dstq+lenq+mmsize*1], m3
+    mova    [dstq+lenq+mmsize*2], m4
+    mova    [dstq+lenq+mmsize*3], m5
+    add     lenq, mmsize*4
+    jl .loop
+    REP_RET
