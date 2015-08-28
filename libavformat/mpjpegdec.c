@@ -2,20 +2,20 @@
  * Multipart JPEG format
  * Copyright (c) 2015 Luca Barbato
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,19 +40,6 @@ static int get_line(AVIOContext *pb, char *line, int line_size)
     return 0;
 }
 
-
-static void trim_right(char* p)
-{
-    char *end;
-    if (!p || !*p)
-        return;
-    end = p + strlen(p) - 1;
-    while (end != p && av_isspace(*end)) {
-        *end = '\0';
-        end--;
-    }
-}
-
 static int split_tag_value(char **tag, char **value, char *line)
 {
     char *p = line;
@@ -64,7 +51,6 @@ static int split_tag_value(char **tag, char **value, char *line)
 
     *p   = '\0';
     *tag = line;
-    trim_right(*tag);
 
     p++;
 
@@ -72,16 +58,29 @@ static int split_tag_value(char **tag, char **value, char *line)
         p++;
 
     *value = p;
-    trim_right(*value);
 
     return 0;
 }
 
-static int parse_multipart_header(AVIOContext *pb, void *log_ctx);
+static int check_content_type(char *line)
+{
+    char *tag, *value;
+    int ret = split_tag_value(&tag, &value, line);
+
+    if (ret < 0)
+        return ret;
+
+    if (av_strcasecmp(tag, "Content-type") ||
+        av_strcasecmp(value, "image/jpeg"))
+        return AVERROR_INVALIDDATA;
+
+    return 0;
+}
 
 static int mpjpeg_read_probe(AVProbeData *p)
 {
     AVIOContext *pb;
+    char line[128] = { 0 };
     int ret = 0;
 
     if (p->buf_size < 2 || p->buf[0] != '-' || p->buf[1] != '-')
@@ -91,7 +90,17 @@ static int mpjpeg_read_probe(AVProbeData *p)
     if (!pb)
         return AVERROR(ENOMEM);
 
-    ret = (parse_multipart_header(pb, NULL)>0)?AVPROBE_SCORE_MAX:0;
+    while (!pb->eof_reached) {
+        ret = get_line(pb, line, sizeof(line));
+        if (ret < 0)
+            break;
+
+        ret = check_content_type(line);
+        if (!ret) {
+            ret = AVPROBE_SCORE_MAX;
+            break;
+        }
+    }
 
     av_free(pb);
 
@@ -138,28 +147,25 @@ static int parse_content_length(const char *value)
     return val;
 }
 
-static int parse_multipart_header(AVIOContext *pb, void *log_ctx)
+static int parse_multipart_header(AVFormatContext *s)
 {
     char line[128];
     int found_content_type = 0;
     int ret, size = -1;
 
-    ret = get_line(pb, line, sizeof(line));
+    ret = get_line(s->pb, line, sizeof(line));
     if (ret < 0)
         return ret;
 
     if (strncmp(line, "--", 2))
         return AVERROR_INVALIDDATA;
 
-    while (!pb->eof_reached) {
+    while (!s->pb->eof_reached) {
         char *tag, *value;
 
-        ret = get_line(pb, line, sizeof(line));
-        if (ret < 0) {
-            if (ret == AVERROR_EOF)
-                break;
+        ret = get_line(s->pb, line, sizeof(line));
+        if (ret < 0)
             return ret;
-        }
 
         if (line[0] == '\0')
             break;
@@ -170,12 +176,9 @@ static int parse_multipart_header(AVIOContext *pb, void *log_ctx)
 
         if (!av_strcasecmp(tag, "Content-type")) {
             if (av_strcasecmp(value, "image/jpeg")) {
-                if (log_ctx) {
-                    av_log(log_ctx, AV_LOG_ERROR,
-                           "Unexpected %s : %s\n",
-                           tag, value);
-                }
-
+                av_log(s, AV_LOG_ERROR,
+                       "Unexpected %s : %s\n",
+                       tag, value);
                 return AVERROR_INVALIDDATA;
             } else
                 found_content_type = 1;
@@ -196,7 +199,7 @@ static int parse_multipart_header(AVIOContext *pb, void *log_ctx)
 static int mpjpeg_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     int ret;
-    int size = parse_multipart_header(s->pb, s);
+    int size = parse_multipart_header(s);
 
     if (size < 0)
         return size;
