@@ -2,20 +2,20 @@
  * LPC utility code
  * Copyright (c) 2006  Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,7 @@
 
 #define LPC_USE_DOUBLE
 #include "lpc.h"
+#include "libavutil/avassert.h"
 
 
 /**
@@ -36,12 +37,18 @@ static void lpc_apply_welch_window_c(const int32_t *data, int len,
     double w;
     double c;
 
-    /* The optimization in commit fa4ed8c does not support odd len.
-     * If someone wants odd len extend that change. */
-    assert(!(len & 1));
-
     n2 = (len >> 1);
     c = 2.0 / (len - 1.0);
+
+    if (len & 1) {
+        for(i=0; i<n2; i++) {
+            w = c - i - 1.0;
+            w = 1.0 - (w * w);
+            w_data[i] = data[i] * w;
+            w_data[len-1-i] = data[len-1-i] * w;
+        }
+        return;
+    }
 
     w_data+=n2;
       data+=n2;
@@ -179,8 +186,9 @@ int ff_lpc_calc_coefs(LPCContext *s,
     int i, j, pass = 0;
     int opt_order;
 
-    assert(max_order >= MIN_LPC_ORDER && max_order <= MAX_LPC_ORDER &&
+    av_assert2(max_order >= MIN_LPC_ORDER && max_order <= MAX_LPC_ORDER &&
            lpc_type > FF_LPC_TYPE_FIXED);
+    av_assert0(lpc_type == FF_LPC_TYPE_CHOLESKY || lpc_type == FF_LPC_TYPE_LEVINSON);
 
     /* reinit LPC context if parameters have changed */
     if (blocksize != s->blocksize || max_order != s->max_order ||
@@ -188,6 +196,9 @@ int ff_lpc_calc_coefs(LPCContext *s,
         ff_lpc_end(s);
         ff_lpc_init(s, blocksize, max_order, lpc_type);
     }
+
+    if(lpc_passes <= 0)
+        lpc_passes = 2;
 
     if (lpc_type == FF_LPC_TYPE_LEVINSON || (lpc_type == FF_LPC_TYPE_CHOLESKY && lpc_passes > 1)) {
         s->lpc_apply_welch_window(samples, blocksize, s->windowed_samples);
@@ -203,7 +214,7 @@ int ff_lpc_calc_coefs(LPCContext *s,
     }
 
     if (lpc_type == FF_LPC_TYPE_CHOLESKY) {
-        LLSModel m[2];
+        LLSModel *m = s->lls_models;
         LOCAL_ALIGNED(32, double, var, [FFALIGN(MAX_LPC_ORDER+1,4)]);
         double av_uninit(weight);
         memset(var, 0, FFALIGN(MAX_LPC_ORDER+1,4)*sizeof(*var));
@@ -244,6 +255,7 @@ int ff_lpc_calc_coefs(LPCContext *s,
         for(i=max_order-1; i>0; i--)
             ref[i] = ref[i-1] - ref[i];
     }
+
     opt_order = max_order;
 
     if(omethod == ORDER_METHOD_EST) {
@@ -257,6 +269,62 @@ int ff_lpc_calc_coefs(LPCContext *s,
     }
 
     return opt_order;
+}
+
+/**
+ * Simplified Levinson LPC accepting float samples
+ *
+ * @param lpc_type LPC method for determining coefficients,
+ *                 see #FFLPCType for details
+ */
+int ff_lpc_calc_levinson(LPCContext *s, const float *samples, int len,
+                         double lpc[][MAX_LPC_ORDER], int min_order,
+                         int max_order, int omethod)
+{
+    double ref[MAX_LPC_ORDER] = { 0 };
+    double autoc[MAX_LPC_ORDER+1];
+    double *w_data = s->windowed_samples;
+    int i, n2 = (len >> 1);
+    double w, c = 2.0 / (len - 1.0);
+
+    av_assert2(max_order >= MIN_LPC_ORDER && max_order <= MAX_LPC_ORDER);
+
+    /* reinit LPC context if parameters have changed */
+    if (len > s->blocksize || max_order > s->max_order) {
+        ff_lpc_end(s);
+        ff_lpc_init(s, len, max_order, FF_LPC_TYPE_LEVINSON);
+    }
+
+    /* Apply welch window */
+    if (len & 1) {
+        for(i=0; i<n2; i++) {
+            w = c - i - 1.0;
+            w = 1.0 - (w * w);
+            w_data[i] = samples[i] * w;
+            w_data[len-1-i] = samples[len-1-i] * w;
+        }
+    } else {
+        w_data+=n2;
+        samples+=n2;
+        for(i=0; i<n2; i++) {
+            w = c - n2 + i;
+            w = 1.0 - (w * w);
+            w_data[-i-1] = samples[-i-1] * w;
+            w_data[+i  ] = samples[+i  ] * w;
+        }
+    }
+
+    s->lpc_compute_autocorr(w_data, len, max_order, autoc);
+
+    compute_lpc_coefs(autoc, max_order, &lpc[0][0], max_order, 0, 1);
+
+    if(omethod == ORDER_METHOD_EST) {
+        for(i=0; i<max_order; i++)
+            ref[i] = fabs(lpc[i][i]);
+        return estimate_best_order(ref, min_order, max_order);
+    }
+
+    return max_order;
 }
 
 av_cold int ff_lpc_init(LPCContext *s, int blocksize, int max_order,
