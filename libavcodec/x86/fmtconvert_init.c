@@ -5,20 +5,20 @@
  *
  * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,10 +32,6 @@
 
 void ff_int32_to_float_fmul_scalar_sse (float *dst, const int32_t *src, float mul, int len);
 void ff_int32_to_float_fmul_scalar_sse2(float *dst, const int32_t *src, float mul, int len);
-void ff_int32_to_float_fmul_array8_sse (FmtConvertContext *c, float *dst, const int32_t *src,
-                                        const float *mul, int len);
-void ff_int32_to_float_fmul_array8_sse2(FmtConvertContext *c, float *dst, const int32_t *src,
-                                        const float *mul, int len);
 
 #endif /* HAVE_YASM */
 
@@ -46,11 +42,9 @@ av_cold void ff_fmt_convert_init_x86(FmtConvertContext *c, AVCodecContext *avctx
 
     if (EXTERNAL_SSE(cpu_flags)) {
         c->int32_to_float_fmul_scalar = ff_int32_to_float_fmul_scalar_sse;
-        c->int32_to_float_fmul_array8 = ff_int32_to_float_fmul_array8_sse;
     }
     if (EXTERNAL_SSE2(cpu_flags)) {
         c->int32_to_float_fmul_scalar = ff_int32_to_float_fmul_scalar_sse2;
-        c->int32_to_float_fmul_array8 = ff_int32_to_float_fmul_array8_sse2;
     }
 #endif /* HAVE_YASM */
 }

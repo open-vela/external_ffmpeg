@@ -5,20 +5,20 @@
  *               2008 Benjamin Larsson
  *               2011 David Goldwich
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -74,7 +74,7 @@ typedef struct OMAContext {
     uint8_t sm_val[8];
     uint8_t e_val[8];
     uint8_t iv[8];
-    struct AVDES av_des;
+    struct AVDES *av_des;
 } OMAContext;
 
 static void hex_log(AVFormatContext *s, int level,
@@ -125,27 +125,33 @@ static int rprobe(AVFormatContext *s, uint8_t *enc_header, unsigned size,
 {
     OMAContext *oc = s->priv_data;
     unsigned int pos;
-    struct AVDES av_des;
+    struct AVDES *av_des;
 
     if (!enc_header || !r_val ||
         size < OMA_ENC_HEADER_SIZE + oc->k_size + oc->e_size + oc->i_size ||
         size < OMA_RPROBE_M_VAL)
         return -1;
 
+    av_des = av_des_alloc();
+    if (!av_des)
+        return AVERROR(ENOMEM);
+
     /* m_val */
-    av_des_init(&av_des, r_val, 192, 1);
-    av_des_crypt(&av_des, oc->m_val, &enc_header[48], 1, NULL, 1);
+    av_des_init(av_des, r_val, 192, 1);
+    av_des_crypt(av_des, oc->m_val, &enc_header[48], 1, NULL, 1);
 
     /* s_val */
-    av_des_init(&av_des, oc->m_val, 64, 0);
-    av_des_crypt(&av_des, oc->s_val, NULL, 1, NULL, 0);
+    av_des_init(av_des, oc->m_val, 64, 0);
+    av_des_crypt(av_des, oc->s_val, NULL, 1, NULL, 0);
 
     /* sm_val */
     pos = OMA_ENC_HEADER_SIZE + oc->k_size + oc->e_size;
-    av_des_init(&av_des, oc->s_val, 64, 0);
-    av_des_mac(&av_des, oc->sm_val, &enc_header[pos], (oc->i_size >> 3));
+    av_des_init(av_des, oc->s_val, 64, 0);
+    av_des_mac(av_des, oc->sm_val, &enc_header[pos], (oc->i_size >> 3));
 
     pos += oc->i_size;
+
+    av_free(av_des);
 
     return memcmp(&enc_header[pos], oc->sm_val, 8) ? -1 : 0;
 }
@@ -156,7 +162,7 @@ static int nprobe(AVFormatContext *s, uint8_t *enc_header, unsigned size,
     OMAContext *oc = s->priv_data;
     uint64_t pos;
     uint32_t taglen, datalen;
-    struct AVDES av_des;
+    struct AVDES *av_des;
 
     if (!enc_header || !n_val ||
         size < OMA_ENC_HEADER_SIZE + oc->k_size + 4)
@@ -175,20 +181,31 @@ static int nprobe(AVFormatContext *s, uint8_t *enc_header, unsigned size,
     taglen  = AV_RB32(&enc_header[pos + 32]);
     datalen = AV_RB32(&enc_header[pos + 36]) >> 4;
 
-    pos += 44LL + taglen;
-
-    if (pos + (((uint64_t)datalen) << 4) > size)
+    pos += 44;
+    if (size - pos < taglen)
         return -1;
 
-    av_des_init(&av_des, n_val, 192, 1);
+    pos += taglen;
+
+    if (datalen << 4 > size - pos)
+        return -1;
+
+    av_des = av_des_alloc();
+    if (!av_des)
+        return AVERROR(ENOMEM);
+
+    av_des_init(av_des, n_val, 192, 1);
     while (datalen-- > 0) {
-        av_des_crypt(&av_des, oc->r_val, &enc_header[pos], 2, NULL, 1);
-        kset(s, oc->r_val, NULL, 16);
+        av_des_crypt(av_des, oc->r_val, &enc_header[pos], 2, NULL, 1);
+        kset(s, oc->r_val, NULL, 16); {
         if (!rprobe(s, enc_header, size, oc->r_val))
+            av_free(av_des);
             return 0;
+        }
         pos += 16;
     }
 
+    av_free(av_des);
     return -1;
 }
 
@@ -273,14 +290,18 @@ static int decrypt_init(AVFormatContext *s, ID3v2ExtraMeta *em, uint8_t *header)
         }
     }
 
+    oc->av_des = av_des_alloc();
+    if (!oc->av_des)
+        return AVERROR(ENOMEM);
+
     /* e_val */
-    av_des_init(&oc->av_des, oc->m_val, 64, 0);
-    av_des_crypt(&oc->av_des, oc->e_val,
+    av_des_init(oc->av_des, oc->m_val, 64, 0);
+    av_des_crypt(oc->av_des, oc->e_val,
                  &gdata[OMA_ENC_HEADER_SIZE + 40], 1, NULL, 0);
     hex_log(s, AV_LOG_DEBUG, "EK", oc->e_val, 8);
 
     /* init e_val */
-    av_des_init(&oc->av_des, oc->e_val, 64, 1);
+    av_des_init(oc->av_des, oc->e_val, 64, 1);
 
     return 0;
 }
@@ -296,7 +317,7 @@ static int oma_read_header(AVFormatContext *s)
     ID3v2ExtraMeta *extra_meta = NULL;
     OMAContext *oc = s->priv_data;
 
-    ff_id3v2_read(s, ID3v2_EA3_MAGIC, &extra_meta, 0);
+    ff_id3v2_read(s, ID3v2_EA3_MAGIC, &extra_meta);
     ret = avio_read(s->pb, buf, EA3_HEADER_SIZE);
     if (ret < EA3_HEADER_SIZE)
         return -1;
@@ -352,10 +373,12 @@ static int oma_read_header(AVFormatContext *s)
 
         /* fake the ATRAC3 extradata
          * (wav format, makes stream copy to wav work) */
-        if (ff_alloc_extradata(st->codec, 14))
+        st->codec->extradata_size = 14;
+        edata = av_mallocz(14 + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!edata)
             return AVERROR(ENOMEM);
 
-        edata = st->codec->extradata;
+        st->codec->extradata = edata;
         AV_WL16(&edata[0],  1);             // always 1
         AV_WL32(&edata[2],  samplerate);    // samples rate
         AV_WL16(&edata[6],  jsflag);        // coding mode
@@ -385,7 +408,7 @@ static int oma_read_header(AVFormatContext *s)
         avpriv_set_pts_info(st, 64, 1, samplerate);
         break;
     case OMA_CODECID_MP3:
-        st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+        st->need_parsing = AVSTREAM_PARSE_FULL;
         framesize = 1024;
         break;
     case OMA_CODECID_LPCM:
@@ -430,9 +453,9 @@ static int oma_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->stream_index = 0;
 
-    if (pos >= oc->content_start && byte_rate > 0) {
+    if (pos > 0) {
         pkt->pts =
-        pkt->dts = av_rescale(pos - oc->content_start, st->time_base.den,
+        pkt->dts = av_rescale(pos, st->time_base.den,
                               byte_rate * (int64_t)st->time_base.num);
     }
 
@@ -440,7 +463,7 @@ static int oma_read_packet(AVFormatContext *s, AVPacket *pkt)
         /* previous unencrypted block saved in IV for
          * the next packet (CBC mode) */
         if (ret == packet_size)
-            av_des_crypt(&oc->av_des, pkt->data, pkt->data,
+            av_des_crypt(oc->av_des, pkt->data, pkt->data,
                          (packet_size >> 3), oc->iv, 1);
         else
             memset(oc->iv, 0, 8);
@@ -460,7 +483,7 @@ static int oma_read_probe(AVProbeData *p)
     /* This check cannot overflow as tag_len has at most 28 bits */
     if (p->buf_size < tag_len + 5)
         /* EA3 header comes late, might be outside of the probe buffer */
-        return tag_len ? AVPROBE_SCORE_EXTENSION/2 : 0;
+        return tag_len ? AVPROBE_SCORE_EXTENSION : 0;
 
     buf += tag_len;
 
@@ -474,7 +497,7 @@ static int oma_read_seek(struct AVFormatContext *s,
                          int stream_index, int64_t timestamp, int flags)
 {
     OMAContext *oc = s->priv_data;
-    int64_t err = ff_pcm_read_seek(s, stream_index, timestamp, flags);
+    int err = ff_pcm_read_seek(s, stream_index, timestamp, flags);
 
     if (!oc->encrypted)
         return err;
@@ -496,6 +519,13 @@ wipe:
     return err;
 }
 
+static int oma_read_close(AVFormatContext *s)
+{
+    OMAContext *oc = s->priv_data;
+    av_free(oc->av_des);
+    return 0;
+}
+
 AVInputFormat ff_oma_demuxer = {
     .name           = "oma",
     .long_name      = NULL_IF_CONFIG_SMALL("Sony OpenMG audio"),
@@ -504,6 +534,7 @@ AVInputFormat ff_oma_demuxer = {
     .read_header    = oma_read_header,
     .read_packet    = oma_read_packet,
     .read_seek      = oma_read_seek,
+    .read_close     = oma_read_close,
     .flags          = AVFMT_GENERIC_INDEX,
     .extensions     = "oma,omg,aa3",
     .codec_tag      = (const AVCodecTag* const []){ff_oma_codec_tags, 0},
