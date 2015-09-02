@@ -1,10 +1,38 @@
 #!/bin/sh
 
+# Usage: version.sh <ffmpeg-root-dir> <output-version.h> <extra-version>
+
 # check for git short hash
-revision=$(cd "$1" && git describe --always 2> /dev/null)
+if ! test "$revision"; then
+    if (cd "$1" && grep git RELEASE 2> /dev/null >/dev/null) ; then
+        revision=$(cd "$1" && git describe --tags --match N 2> /dev/null)
+    else
+        revision=$(cd "$1" && git describe --tags --always 2> /dev/null)
+    fi
+fi
+
+# Shallow Git clones (--depth) do not have the N tag:
+# use 'git-YYYY-MM-DD-hhhhhhh'.
+test "$revision" || revision=$(cd "$1" &&
+  git log -1 --pretty=format:"git-%cd-%h" --date=short 2> /dev/null)
+
+# Snapshots from gitweb are in a directory called ffmpeg-hhhhhhh or
+# ffmpeg-HEAD-hhhhhhh.
+if [ -z "$revision" ]; then
+  srcdir=$(cd "$1" && pwd)
+  case "$srcdir" in
+    */ffmpeg-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+      git_hash="${srcdir##*-}";;
+    */ffmpeg-HEAD-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+      git_hash="${srcdir##*-}";;
+  esac
+fi
 
 # no revision number found
 test "$revision" || revision=$(cd "$1" && cat RELEASE 2> /dev/null)
+
+# Append the Git hash if we have one
+test "$revision" && test "$git_hash" && revision="$revision-$git_hash"
 
 # releases extract the version number from the VERSION file
 version=$(cd "$1" && cat VERSION 2> /dev/null)
@@ -17,10 +45,18 @@ if [ -z "$2" ]; then
     exit
 fi
 
-NEW_REVISION="#define LIBAV_VERSION \"$version\""
-OLD_REVISION=$(cat version.h 2> /dev/null)
+NEW_REVISION="#define FFMPEG_VERSION \"$version\""
+OLD_REVISION=$(cat "$2" 2> /dev/null | head -3 | tail -1)
 
-# Update version.h only on revision changes to avoid spurious rebuilds
+# String used for preprocessor guard
+GUARD=$(echo "$2" | sed 's/\//_/' | sed 's/\./_/' | tr '[:lower:]' '[:upper:]' | sed 's/LIB//')
+
+# Update version header only on revision changes to avoid spurious rebuilds
 if test "$NEW_REVISION" != "$OLD_REVISION"; then
-    echo "$NEW_REVISION" > "$2"
+    cat << EOF > "$2"
+#ifndef $GUARD
+#define $GUARD
+$NEW_REVISION
+#endif /* $GUARD */
+EOF
 fi
