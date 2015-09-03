@@ -2,20 +2,20 @@
  * Copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -243,8 +243,62 @@ int avresample_set_compensation(AVAudioResampleContext *avr, int sample_delta,
         return AVERROR(EINVAL);
 
     if (!avr->resample_needed) {
+#if FF_API_RESAMPLE_CLOSE_OPEN
+        /* if resampling was not enabled previously, re-initialize the
+           AVAudioResampleContext and force resampling */
+        int fifo_samples;
+        int restore_matrix = 0;
+        double matrix[AVRESAMPLE_MAX_CHANNELS * AVRESAMPLE_MAX_CHANNELS] = { 0 };
+
+        /* buffer any remaining samples in the output FIFO before closing */
+        fifo_samples = av_audio_fifo_size(avr->out_fifo);
+        if (fifo_samples > 0) {
+            fifo_buf = ff_audio_data_alloc(avr->out_channels, fifo_samples,
+                                           avr->out_sample_fmt, NULL);
+            if (!fifo_buf)
+                return AVERROR(EINVAL);
+            ret = ff_audio_data_read_from_fifo(avr->out_fifo, fifo_buf,
+                                               fifo_samples);
+            if (ret < 0)
+                goto reinit_fail;
+        }
+        /* save the channel mixing matrix */
+        if (avr->am) {
+            ret = avresample_get_matrix(avr, matrix, AVRESAMPLE_MAX_CHANNELS);
+            if (ret < 0)
+                goto reinit_fail;
+            restore_matrix = 1;
+        }
+
+        /* close the AVAudioResampleContext */
+        avresample_close(avr);
+
+        avr->force_resampling = 1;
+
+        /* restore the channel mixing matrix */
+        if (restore_matrix) {
+            ret = avresample_set_matrix(avr, matrix, AVRESAMPLE_MAX_CHANNELS);
+            if (ret < 0)
+                goto reinit_fail;
+        }
+
+        /* re-open the AVAudioResampleContext */
+        ret = avresample_open(avr);
+        if (ret < 0)
+            goto reinit_fail;
+
+        /* restore buffered samples to the output FIFO */
+        if (fifo_samples > 0) {
+            ret = ff_audio_data_add_to_fifo(avr->out_fifo, fifo_buf, 0,
+                                            fifo_samples);
+            if (ret < 0)
+                goto reinit_fail;
+            ff_audio_data_free(&fifo_buf);
+        }
+#else
         av_log(avr, AV_LOG_ERROR, "Unable to set resampling compensation\n");
         return AVERROR(EINVAL);
+#endif
     }
     c = avr->resample;
     c->compensation_distance = compensation_distance;
@@ -256,6 +310,7 @@ int avresample_set_compensation(AVAudioResampleContext *avr, int sample_delta,
     }
     return 0;
 
+reinit_fail:
     ff_audio_data_free(&fifo_buf);
     return ret;
 }
