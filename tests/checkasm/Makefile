@@ -2,6 +2,7 @@
 AVCODECOBJS-$(CONFIG_BSWAPDSP) += bswapdsp.o
 AVCODECOBJS-$(CONFIG_H264PRED) += h264pred.o
 AVCODECOBJS-$(CONFIG_H264QPEL) += h264qpel.o
+AVCODECOBJS-$(CONFIG_V210_ENCODER) += v210enc.o
 
 CHECKASMOBJS-$(CONFIG_AVCODEC) += $(AVCODECOBJS-yes)
 
@@ -16,8 +17,6 @@ CHECKASMOBJS := $(sort $(CHECKASMOBJS:%=tests/checkasm/%))
 CHECKASMDIRS := $(sort $(dir $(CHECKASMOBJS)))
 $(CHECKASMOBJS): | $(CHECKASMDIRS)
 OBJDIRS += $(CHECKASMDIRS)
-
-tests/checkasm/checkasm.o: CFLAGS += -Umain
 
 CHECKASM := tests/checkasm/checkasm$(EXESUF)
 

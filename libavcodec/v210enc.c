@@ -4,20 +4,20 @@
  * Copyright (C) 2009 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2009 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -82,6 +82,15 @@ static void v210_planar_pack_10_c(const uint16_t *y, const uint16_t *u,
     }
 }
 
+av_cold void ff_v210enc_init(V210EncContext *s)
+{
+    s->pack_line_8  = v210_planar_pack_8_c;
+    s->pack_line_10 = v210_planar_pack_10_c;
+
+    if (ARCH_X86)
+        ff_v210enc_init_x86(s);
+}
+
 static av_cold int encode_init(AVCodecContext *avctx)
 {
     V210EncContext *s = avctx->priv_data;
@@ -97,11 +106,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    s->pack_line_8  = v210_planar_pack_8_c;
-    s->pack_line_10 = v210_planar_pack_10_c;
-
-    if (ARCH_X86)
-        ff_v210enc_init_x86(s);
+    ff_v210enc_init(s);
 
     return 0;
 }
@@ -116,7 +121,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int h, w, ret;
     uint8_t *dst;
 
-    ret = ff_alloc_packet2(avctx, pkt, avctx->height * stride, avctx->height * stride);
+    ret = ff_alloc_packet(pkt, avctx->height * stride);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
