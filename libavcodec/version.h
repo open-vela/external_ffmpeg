@@ -1,19 +1,19 @@
 /*
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,9 +28,9 @@
 
 #include "libavutil/version.h"
 
-#define LIBAVCODEC_VERSION_MAJOR 57
-#define LIBAVCODEC_VERSION_MINOR  1
-#define LIBAVCODEC_VERSION_MICRO  0
+#define LIBAVCODEC_VERSION_MAJOR  57
+#define LIBAVCODEC_VERSION_MINOR   0
+#define LIBAVCODEC_VERSION_MICRO 100
 
 #define LIBAVCODEC_VERSION_INT  AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, \
                                                LIBAVCODEC_VERSION_MINOR, \
@@ -46,8 +46,21 @@
  * FF_API_* defines may be placed below to indicate public API that will be
  * dropped at a future version bump. The defines themselves are not part of
  * the public API and may change, break or disappear at any time.
+ *
+ * @note, when bumping the major version it is recommended to manually
+ * disable each FF_API_* in its own commit instead of disabling them all
+ * at once through the bump. This improves the git bisect-ability of the change.
  */
 
+#ifndef FF_API_VIMA_DECODER
+#define FF_API_VIMA_DECODER     (LIBAVCODEC_VERSION_MAJOR < 58)
+#endif
+#ifndef FF_API_AUDIO_CONVERT
+#define FF_API_AUDIO_CONVERT     (LIBAVCODEC_VERSION_MAJOR < 58)
+#endif
+#ifndef FF_API_AVCODEC_RESAMPLE
+#define FF_API_AVCODEC_RESAMPLE  FF_API_AUDIO_CONVERT
+#endif
 #ifndef FF_API_MISSING_SAMPLE
 #define FF_API_MISSING_SAMPLE    (LIBAVCODEC_VERSION_MAJOR < 58)
 #endif
@@ -96,9 +109,6 @@
 #ifndef FF_API_MAX_BFRAMES
 #define FF_API_MAX_BFRAMES       (LIBAVCODEC_VERSION_MAJOR < 58)
 #endif
-#ifndef FF_API_FAST_MALLOC
-#define FF_API_FAST_MALLOC       (LIBAVCODEC_VERSION_MAJOR < 58)
-#endif
 #ifndef FF_API_NEG_LINESIZES
 #define FF_API_NEG_LINESIZES     (LIBAVCODEC_VERSION_MAJOR < 58)
 #endif
@@ -135,8 +145,15 @@
 #ifndef FF_API_AFD
 #define FF_API_AFD               (LIBAVCODEC_VERSION_MAJOR < 58)
 #endif
+#ifndef FF_API_VISMV
+/* XXX: don't forget to drop the -vismv documentation */
+#define FF_API_VISMV             (LIBAVCODEC_VERSION_MAJOR < 58)
+#endif
 #ifndef FF_API_AUDIOENC_DELAY
 #define FF_API_AUDIOENC_DELAY    (LIBAVCODEC_VERSION_MAJOR < 58)
+#endif
+#ifndef FF_API_VAAPI_CONTEXT
+#define FF_API_VAAPI_CONTEXT     (LIBAVCODEC_VERSION_MAJOR < 58)
 #endif
 #ifndef FF_API_AVCTX_TIMEBASE
 #define FF_API_AVCTX_TIMEBASE    (LIBAVCODEC_VERSION_MAJOR < 59)
