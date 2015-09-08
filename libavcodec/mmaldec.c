@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
 
 #include <bcm_host.h>
 #include <interface/mmal/mmal.h>
-#include <interface/mmal/mmal_parameters_video.h>
 #include <interface/mmal/util/mmal_util.h>
 #include <interface/mmal/util/mmal_util_params.h>
 #include <interface/mmal/util/mmal_default_components.h>
@@ -278,9 +277,6 @@ static int ffmal_update_format(AVCodecContext *avctx)
     if ((status = mmal_port_parameter_set_uint32(decoder->output[0], MMAL_PARAMETER_EXTRA_BUFFERS, ctx->extra_buffers)))
         goto fail;
 
-    if ((status = mmal_port_parameter_set_boolean(decoder->output[0], MMAL_PARAMETER_VIDEO_INTERPOLATE_TIMESTAMPS, 0)))
-        goto fail;
-
     if (avctx->pix_fmt == AV_PIX_FMT_MMAL) {
         format_out->encoding = MMAL_ENCODING_OPAQUE;
     } else {
@@ -365,8 +361,10 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
             ret = AVERROR(ENOSYS);
             goto fail;
         }
-        av_bitstream_filter_filter(ctx->bsfc, avctx, "private_spspps_buf", &dummy_p, &dummy_int, NULL, 0, 0);
-    } else if (avctx->extradata_size) {
+        av_bitstream_filter_filter(ctx->bsfc, avctx, NULL, &dummy_p, &dummy_int, NULL, 0, 0);
+    }
+
+    if (avctx->extradata_size) {
         if ((status = mmal_format_extradata_alloc(format_in, avctx->extradata_size)))
             goto fail;
         format_in->extradata_size = avctx->extradata_size;
@@ -449,11 +447,13 @@ static int ffmmal_add_packet(AVCodecContext *avctx, AVPacket *avpkt)
     uint8_t *start;
     int ret = 0;
 
+    ctx->packets_sent++;
+
     if (avpkt->size) {
         if (ctx->bsfc) {
             uint8_t *tmp_data;
             int tmp_size;
-            if ((ret = av_bitstream_filter_filter(ctx->bsfc, avctx, "private_spspps_buf",
+            if ((ret = av_bitstream_filter_filter(ctx->bsfc, avctx, NULL,
                                                   &tmp_data, &tmp_size,
                                                   avpkt->data, avpkt->size,
                                                   avpkt->flags & AV_PKT_FLAG_KEY)) < 0)
@@ -474,14 +474,6 @@ static int ffmmal_add_packet(AVCodecContext *avctx, AVPacket *avpkt)
         }
         size = buf->size;
         data = buf->data;
-        ctx->packets_sent++;
-    } else {
-        if (!ctx->packets_sent) {
-            // Short-cut the flush logic to avoid upsetting MMAL.
-            ctx->eos_sent = 1;
-            ctx->eos_received = 1;
-            goto done;
-        }
     }
 
     start = data;
@@ -619,8 +611,10 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
         }
     }
 
-    frame->pkt_pts = buffer->pts == MMAL_TIME_UNKNOWN ? AV_NOPTS_VALUE : buffer->pts;
-    frame->pkt_dts = AV_NOPTS_VALUE;
+    if (buffer->pts != MMAL_TIME_UNKNOWN) {
+        frame->pkt_pts = buffer->pts;
+        frame->pts = buffer->pts;
+    }
 
 done:
     return ret;
@@ -649,8 +643,7 @@ static int ffmmal_read_frame(AVCodecContext *avctx, AVFrame *frame, int *got_fra
         // excessive buffering.
         // We also wait if we sent eos, but didn't receive it yet (think of decoding
         // stream with a very low number of frames).
-        if (ctx->frames_output || ctx->packets_sent > MAX_DELAYED_FRAMES ||
-            (ctx->packets_sent && ctx->eos_sent)) {
+        if (ctx->frames_output || ctx->packets_sent > MAX_DELAYED_FRAMES || ctx->eos_sent) {
             // MMAL will ignore broken input packets, which means the frame we
             // expect here may never arrive. Dealing with this correctly is
             // complicated, so here's a hack to avoid that it freezes forever
@@ -788,7 +781,6 @@ AVCodec ff_h264_mmal_decoder = {
     .flush          = ffmmal_flush,
     .priv_class     = &ffmmaldec_class,
     .capabilities   = AV_CODEC_CAP_DELAY,
-    .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL,
                                                      AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE},

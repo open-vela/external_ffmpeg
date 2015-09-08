@@ -18,8 +18,6 @@ CHECKASMDIRS := $(sort $(dir $(CHECKASMOBJS)))
 $(CHECKASMOBJS): | $(CHECKASMDIRS)
 OBJDIRS += $(CHECKASMDIRS)
 
-tests/checkasm/checkasm.o: CFLAGS += -Umain
-
 CHECKASM := tests/checkasm/checkasm$(EXESUF)
 
 $(CHECKASM): $(EXEOBJS) $(CHECKASMOBJS) $(FF_STATIC_DEP_LIBS)

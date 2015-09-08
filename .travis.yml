@@ -4,16 +4,16 @@ addons:
   apt:
     packages:
       - yasm
-      - diffutils
+      - bc
 compiler:
   - clang
   - gcc
 cache:
   directories:
-    - ffmpeg-samples
+    - libav-samples
 script:
-  - mkdir -p ffmpeg-samples
-  - ./configure --samples=ffmpeg-samples --cc=$CC
+  - mkdir -p libav-samples
+  - ./configure --samples=libav-samples --cc=$CC
   - make -j 8
   - make fate-rsync
   - make check -j 8
