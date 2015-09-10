@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@ av_cold void ff_fdctdsp_init(FDCTDSPContext *c, AVCodecContext *avctx)
 {
     const unsigned high_bit_depth = avctx->bits_per_raw_sample > 8;
 
-    if (avctx->bits_per_raw_sample == 10 || avctx->bits_per_raw_sample == 9) {
+    if (avctx->bits_per_raw_sample == 10) {
         c->fdct    = ff_jpeg_fdct_islow_10;
         c->fdct248 = ff_fdct248_islow_10;
     } else if (avctx->dct_algo == FF_DCT_FASTINT) {
