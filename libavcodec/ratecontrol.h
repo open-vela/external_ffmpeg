@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,8 +49,8 @@ typedef struct RateControlEntry{
     uint64_t expected_bits;
     int new_pict_type;
     float new_qscale;
-    int64_t mc_mb_var_sum;
-    int64_t mb_var_sum;
+    int mc_mb_var_sum;
+    int mb_var_sum;
     int i_count;
     int skip_count;
     int f_code;
@@ -71,8 +71,8 @@ typedef struct RateControlContext{
     double pass1_wanted_bits;     ///< bits which should have been outputed by the pass1 code (including complexity init)
     double last_qscale;
     double last_qscale_for[5];    ///< last qscale for a specific pict type, used for max_diff & ipb factor stuff
-    int64_t last_mc_mb_var_sum;
-    int64_t last_mb_var_sum;
+    int last_mc_mb_var_sum;
+    int last_mb_var_sum;
     uint64_t i_cplx_sum[5];
     uint64_t p_cplx_sum[5];
     uint64_t mv_bits_sum[5];
