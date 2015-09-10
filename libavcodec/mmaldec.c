@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -365,8 +365,10 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
             ret = AVERROR(ENOSYS);
             goto fail;
         }
-        av_bitstream_filter_filter(ctx->bsfc, avctx, "private_spspps_buf", &dummy_p, &dummy_int, NULL, 0, 0);
-    } else if (avctx->extradata_size) {
+        av_bitstream_filter_filter(ctx->bsfc, avctx, NULL, &dummy_p, &dummy_int, NULL, 0, 0);
+    }
+
+    if (avctx->extradata_size) {
         if ((status = mmal_format_extradata_alloc(format_in, avctx->extradata_size)))
             goto fail;
         format_in->extradata_size = avctx->extradata_size;
@@ -453,7 +455,7 @@ static int ffmmal_add_packet(AVCodecContext *avctx, AVPacket *avpkt)
         if (ctx->bsfc) {
             uint8_t *tmp_data;
             int tmp_size;
-            if ((ret = av_bitstream_filter_filter(ctx->bsfc, avctx, "private_spspps_buf",
+            if ((ret = av_bitstream_filter_filter(ctx->bsfc, avctx, NULL,
                                                   &tmp_data, &tmp_size,
                                                   avpkt->data, avpkt->size,
                                                   avpkt->flags & AV_PKT_FLAG_KEY)) < 0)

@@ -1,21 +1,20 @@
 /*
- * Various pretty-printing functions for use within FFmpeg
- * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
+ * Various pretty-printing functions for use within Libav
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,8 +26,6 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/mathematics.h"
-#include "libavutil/opt.h"
-#include "libavutil/avstring.h"
 #include "libavutil/replaygain.h"
 #include "libavutil/stereo3d.h"
 
@@ -79,7 +76,7 @@ void av_hex_dump_log(void *avcl, int level, const uint8_t *buf, int size)
     hex_dump_internal(avcl, NULL, level, buf, size);
 }
 
-static void pkt_dump_internal(void *avcl, FILE *f, int level, const AVPacket *pkt,
+static void pkt_dump_internal(void *avcl, FILE *f, int level, AVPacket *pkt,
                               int dump_payload, AVRational time_base)
 {
     HEXDUMP_PRINT("stream #%d:\n", pkt->stream_index);
@@ -103,13 +100,13 @@ static void pkt_dump_internal(void *avcl, FILE *f, int level, const AVPacket *pk
         av_hex_dump(f, pkt->data, pkt->size);
 }
 
-void av_pkt_dump2(FILE *f, const AVPacket *pkt, int dump_payload, const AVStream *st)
+void av_pkt_dump2(FILE *f, AVPacket *pkt, int dump_payload, AVStream *st)
 {
     pkt_dump_internal(NULL, f, 0, pkt, dump_payload, st->time_base);
 }
 
-void av_pkt_dump_log2(void *avcl, int level, const AVPacket *pkt, int dump_payload,
-                      const AVStream *st)
+void av_pkt_dump_log2(void *avcl, int level, AVPacket *pkt, int dump_payload,
+                      AVStream *st)
 {
     pkt_dump_internal(avcl, NULL, level, pkt, dump_payload, st->time_base);
 }
@@ -118,9 +115,7 @@ void av_pkt_dump_log2(void *avcl, int level, const AVPacket *pkt, int dump_paylo
 static void print_fps(double d, const char *postfix)
 {
     uint64_t v = lrintf(d * 100);
-    if (!v)
-        av_log(NULL, AV_LOG_INFO, "%1.4f %s", d, postfix);
-    else if (v % 100)
+    if (v % 100)
         av_log(NULL, AV_LOG_INFO, "%3.2f %s", d, postfix);
     else if (v % (100 * 1000))
         av_log(NULL, AV_LOG_INFO, "%1.0f %s", d, postfix);
@@ -135,22 +130,9 @@ static void dump_metadata(void *ctx, AVDictionary *m, const char *indent)
 
         av_log(ctx, AV_LOG_INFO, "%sMetadata:\n", indent);
         while ((tag = av_dict_get(m, "", tag, AV_DICT_IGNORE_SUFFIX)))
-            if (strcmp("language", tag->key)) {
-                const char *p = tag->value;
+            if (strcmp("language", tag->key))
                 av_log(ctx, AV_LOG_INFO,
-                       "%s  %-16s: ", indent, tag->key);
-                while (*p) {
-                    char tmp[256];
-                    size_t len = strcspn(p, "\x8\xa\xb\xc\xd");
-                    av_strlcpy(tmp, p, FFMIN(sizeof(tmp), len+1));
-                    av_log(ctx, AV_LOG_INFO, "%s", tmp);
-                    p += len;
-                    if (*p == 0xd) av_log(ctx, AV_LOG_INFO, " ");
-                    if (*p == 0xa) av_log(ctx, AV_LOG_INFO, "\n%s  %-16s: ", indent, "");
-                    if (*p) p++;
-                }
-                av_log(ctx, AV_LOG_INFO, "\n");
-            }
+                       "%s  %-16s: %s\n", indent, tag->key, tag->value);
     }
 }
 
@@ -377,8 +359,8 @@ static void dump_sidedata(void *ctx, AVStream *st, const char *indent)
             av_log(ctx, AV_LOG_INFO, "audio service type: ");
             dump_audioservicetype(ctx, &sd);
             break;
-        case AV_PKT_DATA_QUALITY_STATS:
-            av_log(ctx, AV_LOG_INFO, "quality factor: %d, pict_type: %c", AV_RL32(sd.data), av_get_picture_type_char(sd.data[4]));
+        case AV_PKT_DATA_QUALITY_FACTOR:
+            av_log(ctx, AV_LOG_INFO, "quality factor: %d", *(int *)sd.data);
             break;
         default:
             av_log(ctx, AV_LOG_WARNING,
@@ -398,15 +380,8 @@ static void dump_stream_format(AVFormatContext *ic, int i,
     int flags = (is_output ? ic->oformat->flags : ic->iformat->flags);
     AVStream *st = ic->streams[i];
     AVDictionaryEntry *lang = av_dict_get(st->metadata, "language", NULL, 0);
-    char *separator = ic->dump_separator;
-    char **codec_separator = av_opt_ptr(st->codec->av_class, st->codec, "dump_separator");
-    int use_format_separator = !*codec_separator;
 
-    if (use_format_separator)
-        *codec_separator = av_strdup(separator);
     avcodec_string(buf, sizeof(buf), st->codec, is_output);
-    if (use_format_separator)
-        av_freep(codec_separator);
     av_log(NULL, AV_LOG_INFO, "    Stream #%d:%d", index, i);
 
     /* the pid is an important information, so we display it */
@@ -423,27 +398,23 @@ static void dump_stream_format(AVFormatContext *ic, int i,
         av_cmp_q(st->sample_aspect_ratio, st->codec->sample_aspect_ratio)) {
         AVRational display_aspect_ratio;
         av_reduce(&display_aspect_ratio.num, &display_aspect_ratio.den,
-                  st->codec->width  * (int64_t)st->sample_aspect_ratio.num,
-                  st->codec->height * (int64_t)st->sample_aspect_ratio.den,
+                  st->codec->width  * st->sample_aspect_ratio.num,
+                  st->codec->height * st->sample_aspect_ratio.den,
                   1024 * 1024);
-        av_log(NULL, AV_LOG_INFO, ", SAR %d:%d DAR %d:%d",
+        av_log(NULL, AV_LOG_INFO, ", PAR %d:%d DAR %d:%d",
                st->sample_aspect_ratio.num, st->sample_aspect_ratio.den,
                display_aspect_ratio.num, display_aspect_ratio.den);
     }
 
     if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
         int fps = st->avg_frame_rate.den && st->avg_frame_rate.num;
-        int tbr = st->r_frame_rate.den && st->r_frame_rate.num;
         int tbn = st->time_base.den && st->time_base.num;
         int tbc = st->codec->time_base.den && st->codec->time_base.num;
 
-        if (fps || tbr || tbn || tbc)
-            av_log(NULL, AV_LOG_INFO, "%s", separator);
-
+        if (fps || tbn || tbc)
+            av_log(NULL, AV_LOG_INFO, "\n      ");
         if (fps)
-            print_fps(av_q2d(st->avg_frame_rate), tbr || tbn || tbc ? "fps, " : "fps");
-        if (tbr)
-            print_fps(av_q2d(st->r_frame_rate), tbn || tbc ? "tbr, " : "tbr");
+            print_fps(av_q2d(st->avg_frame_rate), tbn || tbc ? "fps, " : "fps");
         if (tbn)
             print_fps(1 / av_q2d(st->time_base), tbc ? "tbn, " : "tbn");
         if (tbc)
@@ -496,9 +467,8 @@ void av_dump_format(AVFormatContext *ic, int index,
         av_log(NULL, AV_LOG_INFO, "  Duration: ");
         if (ic->duration != AV_NOPTS_VALUE) {
             int hours, mins, secs, us;
-            int64_t duration = ic->duration + 5000;
-            secs  = duration / AV_TIME_BASE;
-            us    = duration % AV_TIME_BASE;
+            secs  = ic->duration / AV_TIME_BASE;
+            us    = ic->duration % AV_TIME_BASE;
             mins  = secs / 60;
             secs %= 60;
             hours = mins / 60;
