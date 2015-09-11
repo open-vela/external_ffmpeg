@@ -10,10 +10,10 @@ compiler:
   - gcc
 cache:
   directories:
-    - libav-samples
+    - ffmpeg-samples
 script:
-  - mkdir -p libav-samples
-  - ./configure --samples=libav-samples --cc=$CC
+  - mkdir -p ffmpeg-samples
+  - ./configure --samples=ffmpeg-samples --cc=$CC
   - make -j 8
   - make fate-rsync
   - make check -j 8
