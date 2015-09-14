@@ -3,20 +3,20 @@
  *
  * copyright (c) 2013 Luca Barbato
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,7 @@ typedef struct QSVContext {
 
     // the session we allocated internally, in case the caller did not provide
     // one
-    mfxSession internal_session;
+    QSVSession internal_qs;
 
     /**
      * a linked list of frames currently being used by QSV
@@ -49,11 +49,22 @@ typedef struct QSVContext {
     QSVFrame *work_frames;
 
     AVFifoBuffer *async_fifo;
+    AVFifoBuffer *input_fifo;
 
-    // the internal parser and codec context for parsing the data
-    AVCodecParserContext *parser;
-    AVCodecContext *avctx_internal;
-    enum AVPixelFormat orig_pix_fmt;
+    // we should to buffer input packets at some cases
+    // else it is not possible to handle dynamic stream changes correctly
+    // this fifo uses for input packets buffering
+    AVFifoBuffer *pkt_fifo;
+
+    // this flag indicates that header parsed,
+    // decoder instance created and ready to general decoding
+    int engine_ready;
+
+    // we can not just re-init decoder if different sequence header arrived
+    // we should to deliver all buffered frames but we can not decode new packets
+    // this time. So when reinit_pending is non-zero we flushing decoder and
+    // accumulate new arrived packets into pkt_fifo
+    int reinit_pending;
 
     // options set by the caller
     int async_depth;
@@ -67,12 +78,13 @@ typedef struct QSVContext {
 
 int ff_qsv_map_pixfmt(enum AVPixelFormat format);
 
-int ff_qsv_decode_init(AVCodecContext *s, QSVContext *q, mfxSession session);
+int ff_qsv_decode_init(AVCodecContext *s, QSVContext *q, AVPacket *avpkt);
 
-int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
-                        AVFrame *frame, int *got_frame, AVPacket *pkt);
+int ff_qsv_decode(AVCodecContext *s, QSVContext *q,
+                  AVFrame *frame, int *got_frame,
+                  AVPacket *avpkt);
 
-void ff_qsv_decode_flush(AVCodecContext *avctx, QSVContext *q);
+void ff_qsv_decode_reset(AVCodecContext *avctx, QSVContext *q);
 
 int ff_qsv_decode_close(QSVContext *q);
 

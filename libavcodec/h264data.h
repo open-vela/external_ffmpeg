@@ -2,20 +2,20 @@
  * H26L/H264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,7 +51,7 @@ static const uint8_t golomb_to_inter_cbp[48] = {
     17, 18, 20, 24, 19, 21, 26, 28, 23, 27, 29, 30, 22, 25, 38, 41
 };
 
-static const uint8_t zigzag_scan[16] = {
+static const uint8_t zigzag_scan[16+1] = {
     0 + 0 * 4, 1 + 0 * 4, 0 + 1 * 4, 0 + 2 * 4,
     1 + 1 * 4, 2 + 0 * 4, 3 + 0 * 4, 2 + 1 * 4,
     1 + 2 * 4, 0 + 3 * 4, 1 + 3 * 4, 2 + 2 * 4,
@@ -167,4 +167,23 @@ static const PMbInfo b_sub_mb_type_info[13] = {
     { MB_TYPE_8x8   | MB_TYPE_P0L0 | MB_TYPE_P0L1 | MB_TYPE_P1L0 | MB_TYPE_P1L1, 4, },
 };
 
+static const AVRational ff_h264_pixel_aspect[17] = {
+    {   0,  1 },
+    {   1,  1 },
+    {  12, 11 },
+    {  10, 11 },
+    {  16, 11 },
+    {  40, 33 },
+    {  24, 11 },
+    {  20, 11 },
+    {  32, 11 },
+    {  80, 33 },
+    {  18, 11 },
+    {  15, 11 },
+    {  64, 33 },
+    { 160, 99 },
+    {   4,  3 },
+    {   3,  2 },
+    {   2,  1 },
+};
 #endif /* AVCODEC_H264DATA_H */
