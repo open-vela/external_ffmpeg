@@ -2,20 +2,20 @@
  * Copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -235,6 +235,7 @@ int avresample_set_compensation(AVAudioResampleContext *avr, int sample_delta,
 {
     ResampleContext *c;
     AudioData *fifo_buf = NULL;
+    int ret = 0;
 
     if (compensation_distance < 0)
         return AVERROR(EINVAL);
@@ -253,8 +254,10 @@ int avresample_set_compensation(AVAudioResampleContext *avr, int sample_delta,
     } else {
         c->dst_incr = c->ideal_dst_incr;
     }
-
     return 0;
+
+    ff_audio_data_free(&fifo_buf);
+    return ret;
 }
 
 static int resample(ResampleContext *c, void *dst, const void *src,
