@@ -3,20 +3,20 @@
  * Copyright (c) 2002 Fabrice Bellard
  * Copyright (c) 2006 Ryan Martell <rdm4@martellventures.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,7 @@ typedef struct RTPDynamicProtocolHandler RTPDynamicProtocolHandler;
 #define RTP_MIN_PACKET_LENGTH 12
 #define RTP_MAX_PACKET_LENGTH 8192
 
-#define RTP_REORDER_QUEUE_DEFAULT_SIZE 500
+#define RTP_REORDER_QUEUE_DEFAULT_SIZE 10
 
 #define RTP_NOTS_VALUE ((uint32_t)-1)
 
@@ -175,9 +175,9 @@ struct RTPDemuxContext {
     /*@}*/
 
     /* rtcp sender statistics receive */
-    int64_t last_rtcp_ntp_time;
+    uint64_t last_rtcp_ntp_time;
     int64_t last_rtcp_reception_time;
-    int64_t first_rtcp_ntp_time;
+    uint64_t first_rtcp_ntp_time;
     uint32_t last_rtcp_timestamp;
     int64_t rtcp_ts_offset;
 
