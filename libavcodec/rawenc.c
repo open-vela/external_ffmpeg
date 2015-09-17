@@ -2,20 +2,20 @@
  * Raw Video Encoder
  * Copyright (c) 2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,7 +38,6 @@ static av_cold int raw_encode_init(AVCodecContext *avctx)
 #if FF_API_CODED_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-    avctx->coded_frame->key_frame = 1;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
     avctx->bits_per_coded_sample = av_get_bits_per_pixel(desc);
@@ -50,21 +49,21 @@ FF_ENABLE_DEPRECATION_WARNINGS
 static int raw_encode(AVCodecContext *avctx, AVPacket *pkt,
                       const AVFrame *frame, int *got_packet)
 {
-    int ret = avpicture_get_size(avctx->pix_fmt, avctx->width, avctx->height);
+    int ret = avpicture_get_size(frame->format, frame->width, frame->height);
 
     if (ret < 0)
         return ret;
 
-    if ((ret = ff_alloc_packet(pkt, ret)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, ret, ret)) < 0)
         return ret;
-    if ((ret = avpicture_layout((const AVPicture *)frame, avctx->pix_fmt, avctx->width,
-                                avctx->height, pkt->data, pkt->size)) < 0)
+    if ((ret = avpicture_layout((const AVPicture *)frame, frame->format, frame->width,
+                                frame->height, pkt->data, pkt->size)) < 0)
         return ret;
 
     if(avctx->codec_tag == AV_RL32("yuv2") && ret > 0 &&
-       avctx->pix_fmt   == AV_PIX_FMT_YUYV422) {
+       frame->format   == AV_PIX_FMT_YUYV422) {
         int x;
-        for(x = 1; x < avctx->height*avctx->width*2; x += 2)
+        for(x = 1; x < frame->height*frame->width*2; x += 2)
             pkt->data[x] ^= 0x80;
     }
     pkt->flags |= AV_PKT_FLAG_KEY;
