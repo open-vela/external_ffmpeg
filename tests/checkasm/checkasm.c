@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -60,23 +60,14 @@ static const struct {
 #if CONFIG_BSWAPDSP
     { "bswapdsp", checkasm_check_bswapdsp },
 #endif
-#if CONFIG_FLACDSP
-    { "flacdsp", checkasm_check_flacdsp },
-#endif
 #if CONFIG_H264PRED
     { "h264pred", checkasm_check_h264pred },
 #endif
 #if CONFIG_H264QPEL
     { "h264qpel", checkasm_check_h264qpel },
 #endif
-#if CONFIG_JPEG2000_DECODER
-    { "jpeg2000dsp", checkasm_check_jpeg2000dsp },
-#endif
 #if CONFIG_V210_ENCODER
     { "v210enc", checkasm_check_v210enc },
-#endif
-#if CONFIG_VP9_DECODER
-    { "vp9dsp", checkasm_check_vp9dsp },
 #endif
     { NULL }
 };
@@ -289,16 +280,12 @@ static void print_benchs(CheckasmFunc *f)
 /* ASCIIbetical sort except preserving natural order for numbers */
 static int cmp_func_names(const char *a, const char *b)
 {
-    const char *start = a;
     int ascii_diff, digit_diff;
 
-    for (; !(ascii_diff = *(const unsigned char*)a - *(const unsigned char*)b) && *a; a++, b++);
+    for (; !(ascii_diff = *a - *b) && *a; a++, b++);
     for (; av_isdigit(*a) && av_isdigit(*b); a++, b++);
 
-    if (a > start && av_isdigit(a[-1]) && (digit_diff = av_isdigit(*a) - av_isdigit(*b)))
-        return digit_diff;
-
-    return ascii_diff;
+    return (digit_diff = av_isdigit(*a) - av_isdigit(*b)) ? digit_diff : ascii_diff;
 }
 
 /* Perform a tree rotation in the specified direction and return the new root */
