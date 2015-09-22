@@ -1,9 +1,7 @@
-Libav
-=====
+FFmpeg README
+=============
 
-[![Build Status](https://travis-ci.org/libav/libav.svg)](https://travis-ci.org/libav/libav)
-
-Libav is a collection of libraries and tools to process multimedia content
+FFmpeg is a collection of libraries and tools to process multimedia content
 such as audio, video, subtitles and related metadata.
 
 ## Libraries
@@ -13,30 +11,39 @@ such as audio, video, subtitles and related metadata.
 * `libavutil` includes hashers, decompressors and miscellaneous utility functions.
 * `libavfilter` provides a mean to alter decoded Audio and Video through chain of filters.
 * `libavdevice` provides an abstraction to access capture and playback devices.
-* `libavresample` implements audio mixing and resampling routines.
+* `libswresample` implements audio mixing and resampling routines.
 * `libswscale` implements color conversion and scaling routines.
 
 ## Tools
 
-* [avconv](http://libav.org/avconv.html) is a command line toolbox to
+* [ffmpeg](http://ffmpeg.org/ffmpeg.html) is a command line toolbox to
   manipulate, convert and stream multimedia content.
-* [avplay](http://libav.org/avplay.html) is a minimalistic multimedia player.
-* [avprobe](http://libav.org/avprobe.html) is a simple analisys tool to inspect
+* [ffplay](http://ffmpeg.org/ffplay.html) is a minimalistic multimedia player.
+* [ffprobe](http://ffmpeg.org/ffprobe.html) is a simple analysis tool to inspect
   multimedia content.
+* [ffserver](http://ffmpeg.org/ffserver.html) is a multimedia streaming server
+  for live broadcasts.
 * Additional small tools such as `aviocat`, `ismindex` and `qt-faststart`.
 
 ## Documentation
 
 The offline documentation is available in the **doc/** directory.
 
-The online documentation is available in the main [website](http://libav.org)
-and in the [wiki](http://wiki.libav.org).
+The online documentation is available in the main [website](http://ffmpeg.org)
+and in the [wiki](http://trac.ffmpeg.org).
 
 ### Examples
 
-Conding examples are available in the **doc/example** directory.
+Coding examples are available in the **doc/examples** directory.
 
 ## License
 
-Libav codebase is mainly LGPL-licensed with optional components licensed under
+FFmpeg codebase is mainly LGPL-licensed with optional components licensed under
 GPL. Please refer to the LICENSE file for detailed information.
+
+## Contributing
+
+Patches should be submitted to the ffmpeg-devel mailing list using
+`git format-patch` or `git send-email`. Github pull requests should be
+avoided because they are not part of our review process. Few developers
+follow pull requests so they will likely be ignored.
