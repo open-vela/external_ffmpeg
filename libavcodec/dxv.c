@@ -2,20 +2,20 @@
  * Resolume DXV decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -314,15 +314,6 @@ static int dxv_decompress_lzf(AVCodecContext *avctx)
     return ff_lzf_uncompress(&ctx->gbc, &ctx->tex_data, &ctx->tex_size);
 }
 
-static int dxv_decompress_raw(AVCodecContext *avctx)
-{
-    DXVContext *ctx = avctx->priv_data;
-    GetByteContext *gbc = &ctx->gbc;
-
-    bytestream2_get_buffer(gbc, ctx->tex_data, ctx->tex_size);
-    return 0;
-}
-
 static int dxv_decode(AVCodecContext *avctx, void *data,
                       int *got_frame, AVPacket *avpkt)
 {
@@ -330,10 +321,8 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
     ThreadFrame tframe;
     GetByteContext *gbc = &ctx->gbc;
     int (*decompress_tex)(AVCodecContext *avctx);
-    const char *msgcomp, *msgtext;
     uint32_t tag;
-    int version_major, version_minor = 0;
-    int size = 0, old_type = 0;
+    int channels, size = 0, old_type = 0;
     int ret;
 
     bytestream2_init(gbc, avpkt->data, avpkt->size);
@@ -345,16 +334,14 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
         ctx->tex_funct = ctx->texdsp.dxt1_block;
         ctx->tex_rat   = 8;
         ctx->tex_step  = 8;
-        msgcomp = "DXTR1";
-        msgtext = "DXT1";
+        av_log(avctx, AV_LOG_DEBUG, "DXTR1 compression and DXT1 texture ");
         break;
     case MKBETAG('D', 'X', 'T', '5'):
         decompress_tex = dxv_decompress_dxt5;
         ctx->tex_funct = ctx->texdsp.dxt5_block;
         ctx->tex_rat   = 4;
         ctx->tex_step  = 16;
-        msgcomp = "DXTR5";
-        msgtext = "DXT5";
+        av_log(avctx, AV_LOG_DEBUG, "DXTR5 compression and DXT5 texture ");
         break;
     case MKBETAG('Y', 'C', 'G', '6'):
     case MKBETAG('Y', 'G', '1', '0'):
@@ -364,56 +351,34 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
         /* Old version does not have a real header, just size and type. */
         size = tag & 0x00FFFFFF;
         old_type = tag >> 24;
-        version_major = (old_type & 0x0F) - 1;
-
-        if (old_type & 0x80) {
-            msgcomp = "RAW";
-            decompress_tex = dxv_decompress_raw;
-        } else {
-            msgcomp = "LZF";
-            decompress_tex = dxv_decompress_lzf;
-        }
-
+        channels = old_type & 0x0F;
         if (old_type & 0x40) {
-            msgtext = "DXT5";
-
+            av_log(avctx, AV_LOG_DEBUG, "LZF compression and DXT5 texture ");
             ctx->tex_funct = ctx->texdsp.dxt5_block;
             ctx->tex_step  = 16;
-        } else if (old_type & 0x20 || version_major == 1) {
-            msgtext = "DXT1";
-
+        } else if (old_type & 0x20 || old_type & 0x2) {
+            av_log(avctx, AV_LOG_DEBUG, "LZF compression and DXT1 texture ");
             ctx->tex_funct = ctx->texdsp.dxt1_block;
             ctx->tex_step  = 8;
         } else {
             av_log(avctx, AV_LOG_ERROR, "Unsupported header (0x%08X)\n.", tag);
             return AVERROR_INVALIDDATA;
         }
+        decompress_tex = dxv_decompress_lzf;
         ctx->tex_rat = 1;
         break;
     }
 
     /* New header is 12 bytes long. */
     if (!old_type) {
-        version_major = bytestream2_get_byte(gbc) - 1;
-        version_minor = bytestream2_get_byte(gbc);
-
-        /* Encoder copies texture data when compression is not advantageous. */
-        if (bytestream2_get_byte(gbc)) {
-            msgcomp = "RAW";
-            ctx->tex_rat = 1;
-            decompress_tex = dxv_decompress_raw;
-        }
-
-        bytestream2_skip(gbc, 1); // unknown
+        channels = bytestream2_get_byte(gbc);
+        bytestream2_skip(gbc, 3); // unknown
         size = bytestream2_get_le32(gbc);
     }
-    av_log(avctx, AV_LOG_DEBUG,
-           "%s compression with %s texture (version %d.%d)\n",
-           msgcomp, msgtext, version_major, version_minor);
+    av_log(avctx, AV_LOG_DEBUG, "(%d channels)\n", channels);
 
     if (size != bytestream2_get_bytes_left(gbc)) {
-        av_log(avctx, AV_LOG_ERROR,
-               "Incomplete or invalid file (header %d, left %d).\n",
+        av_log(avctx, AV_LOG_ERROR, "Incomplete or invalid file (%u > %u)\n.",
                size, bytestream2_get_bytes_left(gbc));
         return AVERROR_INVALIDDATA;
     }
@@ -432,7 +397,6 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
     ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
-    ff_thread_finish_setup(avctx);
 
     /* Now decompress the texture with the standard functions. */
     avctx->execute2(avctx, decompress_texture_thread,
