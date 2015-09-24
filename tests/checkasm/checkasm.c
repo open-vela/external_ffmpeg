@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -60,14 +60,23 @@ static const struct {
 #if CONFIG_BSWAPDSP
     { "bswapdsp", checkasm_check_bswapdsp },
 #endif
+#if CONFIG_FLACDSP
+    { "flacdsp", checkasm_check_flacdsp },
+#endif
 #if CONFIG_H264PRED
     { "h264pred", checkasm_check_h264pred },
 #endif
 #if CONFIG_H264QPEL
     { "h264qpel", checkasm_check_h264qpel },
 #endif
+#if CONFIG_JPEG2000_DECODER
+    { "jpeg2000dsp", checkasm_check_jpeg2000dsp },
+#endif
 #if CONFIG_V210_ENCODER
     { "v210enc", checkasm_check_v210enc },
+#endif
+#if CONFIG_VP9_DECODER
+    { "vp9dsp", checkasm_check_vp9dsp },
 #endif
     { NULL }
 };
@@ -352,8 +361,9 @@ static void check_cpu_flag(const char *name, int flag)
     int old_cpu_flag = state.cpu_flag;
 
     flag |= old_cpu_flag;
-    av_set_cpu_flags_mask(flag);
-    state.cpu_flag = av_get_cpu_flags();
+    av_force_cpu_flags(-1);
+    state.cpu_flag = flag & av_get_cpu_flags();
+    av_force_cpu_flags(state.cpu_flag);
 
     if (!flag || state.cpu_flag != old_cpu_flag) {
         int i;
