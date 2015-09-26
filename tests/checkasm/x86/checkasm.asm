@@ -3,14 +3,14 @@
 ;* Copyright (c) 2008 Loren Merritt
 ;* Copyright (c) 2012 Henrik Gramner
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or modify
+;* Libav is free software; you can redistribute it and/or modify
 ;* it under the terms of the GNU General Public License as published by
 ;* the Free Software Foundation; either version 2 of the License, or
 ;* (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;* GNU General Public License for more details.
@@ -77,10 +77,8 @@ cglobal stack_clobber, 1,2
 
 %if WIN64
     %assign free_regs 7
-    DECLARE_REG_TMP 4
 %else
     %assign free_regs 9
-    DECLARE_REG_TMP 7
 %endif
 
 ;-----------------------------------------------------------------------------
@@ -88,7 +86,7 @@ cglobal stack_clobber, 1,2
 ;-----------------------------------------------------------------------------
 INIT_XMM
 cglobal checked_call, 2,15,16,max_args*8+8
-    mov  t0, r0
+    mov  r6, r0
 
     ; All arguments have been pushed on the stack instead of registers in order to
     ; test for incorrect assumptions that 32-bit ints are zero-extended to 64-bit.
@@ -131,7 +129,7 @@ cglobal checked_call, 2,15,16,max_args*8+8
     mov r %+ i, [n %+ i]
     %assign i i-1
 %endrep
-    call t0
+    call r6
 %assign i 14
 %rep 15-free_regs
     xor r %+ i, [n %+ i]
@@ -158,7 +156,6 @@ cglobal checked_call, 2,15,16,max_args*8+8
     mov  r9, rax
     mov r10, rdx
     lea  r0, [error_message]
-    xor eax, eax
     call fail_func
     mov rdx, r10
     mov rax, r9

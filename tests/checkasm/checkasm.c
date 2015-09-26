@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -60,23 +60,14 @@ static const struct {
 #if CONFIG_BSWAPDSP
     { "bswapdsp", checkasm_check_bswapdsp },
 #endif
-#if CONFIG_FLACDSP
-    { "flacdsp", checkasm_check_flacdsp },
-#endif
 #if CONFIG_H264PRED
     { "h264pred", checkasm_check_h264pred },
 #endif
 #if CONFIG_H264QPEL
     { "h264qpel", checkasm_check_h264qpel },
 #endif
-#if CONFIG_JPEG2000_DECODER
-    { "jpeg2000dsp", checkasm_check_jpeg2000dsp },
-#endif
 #if CONFIG_V210_ENCODER
     { "v210enc", checkasm_check_v210enc },
-#endif
-#if CONFIG_VP9_DECODER
-    { "vp9dsp", checkasm_check_vp9dsp },
 #endif
     { NULL }
 };
@@ -134,7 +125,6 @@ typedef struct CheckasmFuncVersion {
 typedef struct CheckasmFunc {
     struct CheckasmFunc *child[2];
     CheckasmFuncVersion versions;
-    uint8_t color; /* 0 = red, 1 = black */
     char name[1];
 } CheckasmFunc;
 
@@ -297,56 +287,23 @@ static int cmp_func_names(const char *a, const char *b)
     return (digit_diff = av_isdigit(*a) - av_isdigit(*b)) ? digit_diff : ascii_diff;
 }
 
-/* Perform a tree rotation in the specified direction and return the new root */
-static CheckasmFunc *rotate_tree(CheckasmFunc *f, int dir)
-{
-    CheckasmFunc *r = f->child[dir^1];
-    f->child[dir^1] = r->child[dir];
-    r->child[dir] = f;
-    r->color = f->color;
-    f->color = 0;
-    return r;
-}
-
-#define is_red(f) ((f) && !(f)->color)
-
-/* Balance a left-leaning red-black tree at the specified node */
-static void balance_tree(CheckasmFunc **root)
-{
-    CheckasmFunc *f = *root;
-
-    if (is_red(f->child[0]) && is_red(f->child[1])) {
-        f->color ^= 1;
-        f->child[0]->color = f->child[1]->color = 1;
-    }
-
-    if (!is_red(f->child[0]) && is_red(f->child[1]))
-        *root = rotate_tree(f, 0); /* Rotate left */
-    else if (is_red(f->child[0]) && is_red(f->child[0]->child[0]))
-        *root = rotate_tree(f, 1); /* Rotate right */
-}
-
 /* Get a node with the specified name, creating it if it doesn't exist */
-static CheckasmFunc *get_func(CheckasmFunc **root, const char *name)
+static CheckasmFunc *get_func(const char *name, int length)
 {
-    CheckasmFunc *f = *root;
+    CheckasmFunc *f, **f_ptr = &state.funcs;
 
-    if (f) {
-        /* Search the tree for a matching node */
+    /* Search the tree for a matching node */
+    while ((f = *f_ptr)) {
         int cmp = cmp_func_names(name, f->name);
-        if (cmp) {
-            f = get_func(&f->child[cmp > 0], name);
+        if (!cmp)
+            return f;
 
-            /* Rebalance the tree on the way up if a new node was inserted */
-            if (!f->versions.func)
-                balance_tree(root);
-        }
-    } else {
-        /* Allocate and insert a new node into the tree */
-        int name_length = strlen(name);
-        f = *root = checkasm_malloc(sizeof(CheckasmFunc) + name_length);
-        memcpy(f->name, name, name_length + 1);
+        f_ptr = &f->child[(cmp > 0)];
     }
+
+    /* Allocate and insert a new node into the tree */
+    f = *f_ptr = checkasm_malloc(sizeof(CheckasmFunc) + length);
+    memcpy(f->name, name, length+1);
 
     return f;
 }
@@ -448,8 +405,7 @@ void *checkasm_check_func(void *func, const char *name, ...)
     if (!func || name_length <= 0 || name_length >= sizeof(name_buf))
         return NULL;
 
-    state.current_func = get_func(&state.funcs, name_buf);
-    state.funcs->color = 1;
+    state.current_func = get_func(name_buf, name_length);
     v = &state.current_func->versions;
 
     if (v->func) {

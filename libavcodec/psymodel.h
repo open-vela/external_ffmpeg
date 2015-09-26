@@ -2,20 +2,20 @@
  * audio encoder psychoacoustic model
  * Copyright (C) 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,8 +29,6 @@
 /** maximum number of channels */
 #define PSY_MAX_CHANS 20
 
-#define AAC_CUTOFF(s) ((s)->bit_rate ? FFMIN3(4000 + (s)->bit_rate/8, 12000 + (s)->bit_rate/32, (s)->sample_rate / 2) : ((s)->sample_rate / 2))
-
 /**
  * single band psychoacoustic information
  */
@@ -38,7 +36,8 @@ typedef struct FFPsyBand {
     int   bits;
     float energy;
     float threshold;
-    float spread;    /* Energy spread over the band */
+    float distortion;
+    float perceptual_weight;
 } FFPsyBand;
 
 /**
@@ -66,7 +65,6 @@ typedef struct FFPsyWindowInfo {
     int window_shape;                 ///< window shape (sine/KBD/whatever)
     int num_windows;                  ///< number of windows in a frame
     int grouping[8];                  ///< window grouping (for e.g. AAC)
-    float clipping[8];                ///< maximum absolute normalized intensity in the given window for clip avoidance
     int *window_sizes;                ///< sequence of window sizes inside one frame (for eg. WMA)
 } FFPsyWindowInfo;
 
@@ -88,7 +86,6 @@ typedef struct FFPsyContext {
     struct {
         int size;                     ///< size of the bitresevoir in bits
         int bits;                     ///< number of bits used in the bitresevoir
-        int alloc;                    ///< number of bits allocated by the psy, or -1 if no allocation was done
     } bitres;
 
     void* model_priv_data;            ///< psychoacoustic model implementation private data
