@@ -2,20 +2,20 @@
  * R3D REDCODE demuxer
  * Copyright (c) 2008 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -86,9 +86,6 @@ static int r3d_read_red1(AVFormatContext *s)
     framerate.num = avio_rb16(s->pb);
     framerate.den = avio_rb16(s->pb);
     if (framerate.num > 0 && framerate.den > 0) {
-#if FF_API_R_FRAME_RATE
-        st->r_frame_rate =
-#endif
         st->avg_frame_rate = framerate;
     }
 
@@ -139,7 +136,8 @@ static int r3d_read_rdvo(AVFormatContext *s, Atom *atom)
 
     if (st->avg_frame_rate.num)
         st->duration = av_rescale_q(r3d->video_offsets_count,
-                                    av_inv_q(st->avg_frame_rate),
+                                    (AVRational){st->avg_frame_rate.den,
+                                                 st->avg_frame_rate.num},
                                     st->time_base);
     av_log(s, AV_LOG_TRACE, "duration %"PRId64"\n", st->duration);
 
@@ -266,7 +264,7 @@ static int r3d_read_redv(AVFormatContext *s, AVPacket *pkt, Atom *atom)
     if (st->avg_frame_rate.num)
         pkt->duration = (uint64_t)st->time_base.den*
             st->avg_frame_rate.den/st->avg_frame_rate.num;
-    av_log(s, AV_LOG_TRACE, "pkt dts %"PRId64" duration %d\n", pkt->dts, pkt->duration);
+    av_log(s, AV_LOG_TRACE, "pkt dts %"PRId64" duration %"PRId64"\n", pkt->dts, pkt->duration);
 
     return 0;
 }
@@ -314,9 +312,8 @@ static int r3d_read_reda(AVFormatContext *s, AVPacket *pkt, Atom *atom)
 
     pkt->stream_index = 1;
     pkt->dts = dts;
-    if (st->codec->sample_rate)
-        pkt->duration = av_rescale(samples, st->time_base.den, st->codec->sample_rate);
-    av_log(s, AV_LOG_TRACE, "pkt dts %"PRId64" duration %d samples %d sample rate %d\n",
+    pkt->duration = av_rescale(samples, st->time_base.den, st->codec->sample_rate);
+    av_log(s, AV_LOG_TRACE, "pkt dts %"PRId64" duration %"PRId64" samples %d sample rate %d\n",
             pkt->dts, pkt->duration, samples, st->codec->sample_rate);
 
     return 0;
@@ -372,7 +369,7 @@ static int r3d_seek(AVFormatContext *s, int stream_index, int64_t sample_time, i
         return -1;
 
     frame_num = av_rescale_q(sample_time, st->time_base,
-                             av_inv_q(st->avg_frame_rate));
+                             (AVRational){st->avg_frame_rate.den, st->avg_frame_rate.num});
     av_log(s, AV_LOG_TRACE, "seek frame num %d timestamp %"PRId64"\n",
             frame_num, sample_time);
 
