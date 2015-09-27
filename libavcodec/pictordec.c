@@ -2,20 +2,20 @@
  * Pictor/PC Paint decoder
  * Copyright (c) 2010 Peter Ross <pross@xvid.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,7 +105,7 @@ static int decode_frame(AVCodecContext *avctx,
     AVFrame *frame = data;
     uint32_t *palette;
     int bits_per_plane, bpp, etype, esize, npal, pos_after_pal;
-    int i, x, y, plane, tmp, ret;
+    int i, x, y, plane, tmp, ret, val;
 
     bytestream2_init(&s->g, avpkt->data, avpkt->size);
 
@@ -127,7 +127,7 @@ static int decode_frame(AVCodecContext *avctx,
         return AVERROR_PATCHWELCOME;
     }
 
-    if (bytestream2_peek_byte(&s->g) == 0xFF) {
+    if (bytestream2_peek_byte(&s->g) == 0xFF || bpp == 1 || bpp == 4 || bpp == 8) {
         bytestream2_skip(&s->g, 2);
         etype = bytestream2_get_le16(&s->g);
         esize = bytestream2_get_le16(&s->g);
@@ -140,16 +140,16 @@ static int decode_frame(AVCodecContext *avctx,
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
+    if (av_image_check_size(s->width, s->height, 0, avctx) < 0)
+        return -1;
     if (s->width != avctx->width && s->height != avctx->height) {
         ret = ff_set_dimensions(avctx, s->width, s->height);
         if (ret < 0)
             return ret;
     }
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     memset(frame->data[0], 0, s->height * frame->linesize[0]);
     frame->pict_type           = AV_PICTURE_TYPE_I;
     frame->palette_has_changed = 1;
@@ -165,7 +165,7 @@ static int decode_frame(AVCodecContext *avctx,
         npal = FFMIN(esize, 16);
         for (i = 0; i < npal; i++) {
             int pal_idx = bytestream2_get_byte(&s->g);
-            palette[i]  = ff_cga_palette[FFMIN(pal_idx, 16)];
+            palette[i]  = ff_cga_palette[FFMIN(pal_idx, 15)];
         }
     } else if (etype == 3) {
         npal = FFMIN(esize, 16);
@@ -175,13 +175,15 @@ static int decode_frame(AVCodecContext *avctx,
         }
     } else if (etype == 4 || etype == 5) {
         npal = FFMIN(esize / 3, 256);
-        for (i = 0; i < npal; i++)
+        for (i = 0; i < npal; i++) {
             palette[i] = bytestream2_get_be24(&s->g) << 2;
+            palette[i] |= 0xFFU << 24 | palette[i] >> 6 & 0x30303;
+        }
     } else {
         if (bpp == 1) {
             npal = 2;
-            palette[0] = 0x000000;
-            palette[1] = 0xFFFFFF;
+            palette[0] = 0xFF000000;
+            palette[1] = 0xFFFFFFFF;
         } else if (bpp == 2) {
             npal = 4;
             for (i = 0; i < npal; i++)
@@ -196,10 +198,11 @@ static int decode_frame(AVCodecContext *avctx,
     // skip remaining palette bytes
     bytestream2_seek(&s->g, pos_after_pal, SEEK_SET);
 
-    x = 0;
+    val = 0;
     y = s->height - 1;
-    plane = 0;
     if (bytestream2_get_le16(&s->g)) {
+        x = 0;
+        plane = 0;
         while (bytestream2_get_bytes_left(&s->g) >= 6) {
             int stop_size, marker, t1, t2;
 
@@ -213,7 +216,7 @@ static int decode_frame(AVCodecContext *avctx,
             while (plane < s->nb_planes &&
                    bytestream2_get_bytes_left(&s->g) > stop_size) {
                 int run = 1;
-                int val = bytestream2_get_byte(&s->g);
+                val = bytestream2_get_byte(&s->g);
                 if (val == marker) {
                     run = bytestream2_get_byte(&s->g);
                     if (run == 0)
@@ -232,9 +235,20 @@ static int decode_frame(AVCodecContext *avctx,
                 }
             }
         }
+
+        if (x < avctx->width) {
+            int run = (y + 1) * avctx->width - x;
+            if (bits_per_plane == 8)
+                picmemset_8bpp(s, frame, val, run, &x, &y);
+            else
+                picmemset(s, frame, val, run / (8 / bits_per_plane), &x, &y, &plane, bits_per_plane);
+        }
     } else {
-        avpriv_request_sample(avctx, "Uncompressed image");
-        return avpkt->size;
+        while (y >= 0 && bytestream2_get_bytes_left(&s->g) > 0) {
+            memcpy(frame->data[0] + y * frame->linesize[0], s->g.buffer, FFMIN(avctx->width, bytestream2_get_bytes_left(&s->g)));
+            bytestream2_skip(&s->g, avctx->width);
+            y--;
+        }
     }
 finish:
 
