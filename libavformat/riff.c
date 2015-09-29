@@ -2,20 +2,20 @@
  * RIFF common functions and data
  * Copyright (c) 2000 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,10 +25,7 @@
 #include "riff.h"
 
 /* Note: When encoding, the first matching tag is used, so order is
- * important if multiple tags are possible for a given codec.
- * Note also that this list is used for more than just riff, other
- * files use it as well.
- */
+ * important if multiple tags are possible for a given codec. */
 const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_H264,         MKTAG('H', '2', '6', '4') },
     { AV_CODEC_ID_H264,         MKTAG('h', '2', '6', '4') },
@@ -43,7 +40,6 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_H264,         MKTAG('G', 'A', 'V', 'C') }, /* GeoVision camera */
     { AV_CODEC_ID_H264,         MKTAG('U', 'M', 'S', 'V') },
     { AV_CODEC_ID_H264,         MKTAG('t', 's', 'h', 'd') },
-    { AV_CODEC_ID_H264,         MKTAG('I', 'N', 'M', 'C') },
     { AV_CODEC_ID_H263,         MKTAG('H', '2', '6', '3') },
     { AV_CODEC_ID_H263,         MKTAG('X', '2', '6', '3') },
     { AV_CODEC_ID_H263,         MKTAG('T', '2', '6', '3') },
@@ -55,7 +51,8 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_H263P,        MKTAG('H', '2', '6', '3') },
     { AV_CODEC_ID_H263I,        MKTAG('I', '2', '6', '3') }, /* Intel H.263 */
     { AV_CODEC_ID_H261,         MKTAG('H', '2', '6', '1') },
-    { AV_CODEC_ID_H263,         MKTAG('U', '2', '6', '3') },
+    { AV_CODEC_ID_H263P,        MKTAG('U', '2', '6', '3') },
+    { AV_CODEC_ID_H263P,        MKTAG('v', 'i', 'v', '1') },
     { AV_CODEC_ID_MPEG4,        MKTAG('F', 'M', 'P', '4') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'I', 'V', 'X') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'X', '5', '0') },
@@ -94,6 +91,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'M', 'K', '2') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'Y', 'M', '4') },
     { AV_CODEC_ID_MPEG4,        MKTAG('D', 'I', 'G', 'I') },
+    { AV_CODEC_ID_MPEG4,        MKTAG('I', 'N', 'M', 'C') },
     /* Ephv MPEG-4 */
     { AV_CODEC_ID_MPEG4,        MKTAG('E', 'P', 'H', 'V') },
     { AV_CODEC_ID_MPEG4,        MKTAG('E', 'M', '4', 'A') },
@@ -149,7 +147,6 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_DVVIDEO,      MKTAG('p', 'd', 'v', 'c') },
     { AV_CODEC_ID_DVVIDEO,      MKTAG('S', 'L', '2', '5') },
     { AV_CODEC_ID_DVVIDEO,      MKTAG('S', 'L', 'D', 'V') },
-    { AV_CODEC_ID_DVVIDEO,      MKTAG('A', 'V', 'd', '1') },
     { AV_CODEC_ID_MPEG1VIDEO,   MKTAG('m', 'p', 'g', '1') },
     { AV_CODEC_ID_MPEG1VIDEO,   MKTAG('m', 'p', 'g', '2') },
     { AV_CODEC_ID_MPEG2VIDEO,   MKTAG('m', 'p', 'g', '2') },
@@ -187,7 +184,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_MJPEG,        MKTAG('M', 'J', 'L', 'S') },
     { AV_CODEC_ID_MJPEG,        MKTAG('j', 'p', 'e', 'g') },
     { AV_CODEC_ID_MJPEG,        MKTAG('I', 'J', 'P', 'G') },
-    { AV_CODEC_ID_AVRN,         MKTAG('A', 'V', 'R', 'n') },
+    { AV_CODEC_ID_MJPEG,        MKTAG('A', 'V', 'R', 'n') },
     { AV_CODEC_ID_MJPEG,        MKTAG('A', 'C', 'D', 'V') },
     { AV_CODEC_ID_MJPEG,        MKTAG('Q', 'I', 'V', 'G') },
     /* SL M-JPEG */
@@ -247,11 +244,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_R10K,         MKTAG('R', '1', '0', 'k') },
     { AV_CODEC_ID_R210,         MKTAG('r', '2', '1', '0') },
     { AV_CODEC_ID_V210,         MKTAG('v', '2', '1', '0') },
-    { AV_CODEC_ID_V308,         MKTAG('v', '3', '0', '8') },
-    { AV_CODEC_ID_V408,         MKTAG('v', '4', '0', '8') },
-    { AV_CODEC_ID_AYUV,         MKTAG('A', 'Y', 'U', 'V') },
     { AV_CODEC_ID_V410,         MKTAG('v', '4', '1', '0') },
-    { AV_CODEC_ID_YUV4,         MKTAG('y', 'u', 'v', '4') },
     { AV_CODEC_ID_INDEO3,       MKTAG('I', 'V', '3', '1') },
     { AV_CODEC_ID_INDEO3,       MKTAG('I', 'V', '3', '2') },
     { AV_CODEC_ID_INDEO4,       MKTAG('I', 'V', '4', '1') },
@@ -289,7 +282,6 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_TRUEMOTION1,  MKTAG('P', 'V', 'E', 'Z') },
     { AV_CODEC_ID_MSZH,         MKTAG('M', 'S', 'Z', 'H') },
     { AV_CODEC_ID_ZLIB,         MKTAG('Z', 'L', 'I', 'B') },
-    { AV_CODEC_ID_SNOW,         MKTAG('S', 'N', 'O', 'W') },
     { AV_CODEC_ID_4XM,          MKTAG('4', 'X', 'M', 'V') },
     { AV_CODEC_ID_FLV1,         MKTAG('F', 'L', 'V', '1') },
     { AV_CODEC_ID_FLV1,         MKTAG('S', '2', '6', '3') },
@@ -341,20 +333,16 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_DPX,          MKTAG('d', 'p', 'x', ' ') },
     { AV_CODEC_ID_KGV1,         MKTAG('K', 'G', 'V', '1') },
     { AV_CODEC_ID_LAGARITH,     MKTAG('L', 'A', 'G', 'S') },
-    { AV_CODEC_ID_AMV,          MKTAG('A', 'M', 'V', 'F') },
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'R', 'A') },
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'R', 'G') },
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'Y', '0') },
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'Y', '2') },
-    /* Ut Video version 13.0.1 BT.709 codecs */
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'H', '0') },
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'H', '2') },
-    { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'Q', 'Y', '2') },
     { AV_CODEC_ID_VBLE,         MKTAG('V', 'B', 'L', 'E') },
     { AV_CODEC_ID_ESCAPE130,    MKTAG('E', '1', '3', '0') },
     { AV_CODEC_ID_DXTORY,       MKTAG('x', 't', 'o', 'r') },
     { AV_CODEC_ID_ZEROCODEC,    MKTAG('Z', 'E', 'C', 'O') },
-    { AV_CODEC_ID_Y41P,         MKTAG('Y', '4', '1', 'P') },
     { AV_CODEC_ID_FLIC,         MKTAG('A', 'F', 'L', 'C') },
     { AV_CODEC_ID_MSS1,         MKTAG('M', 'S', 'S', '1') },
     { AV_CODEC_ID_MSA1,         MKTAG('M', 'S', 'A', '1') },
@@ -363,8 +351,6 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_CLLC,         MKTAG('C', 'L', 'L', 'C') },
     { AV_CODEC_ID_MSS2,         MKTAG('M', 'S', 'S', '2') },
     { AV_CODEC_ID_SVQ3,         MKTAG('S', 'V', 'Q', '3') },
-    { AV_CODEC_ID_012V,         MKTAG('0', '1', '2', 'v') },
-    { AV_CODEC_ID_012V,         MKTAG('a', '1', '2', 'v') },
     { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '2') },
     { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '3') },
     { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '4') },
@@ -390,15 +376,13 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_PCM_ALAW,        0x0006 },
     { AV_CODEC_ID_PCM_MULAW,       0x0007 },
     { AV_CODEC_ID_WMAVOICE,        0x000A },
-    { AV_CODEC_ID_ADPCM_IMA_OKI,   0x0010 },
     { AV_CODEC_ID_ADPCM_IMA_WAV,   0x0011 },
     /* must come after adpcm_ima_wav in this list */
     { AV_CODEC_ID_PCM_ZORK,        0x0011 },
-    { AV_CODEC_ID_ADPCM_IMA_OKI,   0x0017 },
     { AV_CODEC_ID_ADPCM_YAMAHA,    0x0020 },
     { AV_CODEC_ID_TRUESPEECH,      0x0022 },
     { AV_CODEC_ID_GSM_MS,          0x0031 },
-    { AV_CODEC_ID_GSM_MS,          0x0032 },  /* msn audio */
+    { AV_CODEC_ID_GSM_MS,          0x0032 },
     { AV_CODEC_ID_AMR_NB,          0x0038 },  /* rogue format number */
     { AV_CODEC_ID_G723_1,          0x0042 },
     { AV_CODEC_ID_ADPCM_G726,      0x0045 },
@@ -413,9 +397,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_ADPCM_G726,      0x0064 },
     { AV_CODEC_ID_ADPCM_IMA_WAV,   0x0069 },
     { AV_CODEC_ID_METASOUND,       0x0075 },
-    { AV_CODEC_ID_G729,            0x0083 },
     { AV_CODEC_ID_AAC,             0x00ff },
-    { AV_CODEC_ID_G723_1,          0x0111 },
     { AV_CODEC_ID_SIPR,            0x0130 },
     { AV_CODEC_ID_WMAV1,           0x0160 },
     { AV_CODEC_ID_WMAV2,           0x0161 },
@@ -434,16 +416,11 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_AAC,             0x1600 },
     { AV_CODEC_ID_AAC_LATM,        0x1602 },
     { AV_CODEC_ID_AC3,             0x2000 },
-    /* There is no Microsoft Format Tag for E-AC3, the GUID has to be used */
-    { AV_CODEC_ID_EAC3,            0x2000 },
     { AV_CODEC_ID_DTS,             0x2001 },
-    { AV_CODEC_ID_SONIC,           0x2048 },
-    { AV_CODEC_ID_SONIC_LS,        0x2048 },
     { AV_CODEC_ID_PCM_MULAW,       0x6c75 },
     { AV_CODEC_ID_AAC,             0x706d },
     { AV_CODEC_ID_AAC,             0x4143 },
     { AV_CODEC_ID_XAN_DPCM,        0x594a },
-    { AV_CODEC_ID_G729,            0x729A },
     { AV_CODEC_ID_G723_1,          0xA100 }, /* Comverse Infosys Ltd. G723 1 */
     { AV_CODEC_ID_AAC,             0xA106 },
     { AV_CODEC_ID_SPEEX,           0xA109 },
@@ -480,11 +457,3 @@ const struct AVCodecTag *avformat_get_riff_audio_tags(void)
 {
     return ff_codec_wav_tags;
 }
-
-const AVCodecGuid ff_codec_wav_guids[] = {
-    { AV_CODEC_ID_AC3,      { 0x2C, 0x80, 0x6D, 0xE0, 0x46, 0xDB, 0xCF, 0x11, 0xB4, 0xD1, 0x00, 0x80, 0x5F, 0x6C, 0xBB, 0xEA } },
-    { AV_CODEC_ID_ATRAC3P,  { 0xBF, 0xAA, 0x23, 0xE9, 0x58, 0xCB, 0x71, 0x44, 0xA1, 0x19, 0xFF, 0xFA, 0x01, 0xE4, 0xCE, 0x62 } },
-    { AV_CODEC_ID_EAC3,     { 0xAF, 0x87, 0xFB, 0xA7, 0x02, 0x2D, 0xFB, 0x42, 0xA4, 0xD4, 0x05, 0xCD, 0x93, 0x84, 0x3B, 0xDD } },
-    { AV_CODEC_ID_MP2,      { 0x2B, 0x80, 0x6D, 0xE0, 0x46, 0xDB, 0xCF, 0x11, 0xB4, 0xD1, 0x00, 0x80, 0x5F, 0x6C, 0xBB, 0xEA } },
-    { AV_CODEC_ID_NONE }
-};
