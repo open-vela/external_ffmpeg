@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... cabac decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,11 +26,9 @@
  */
 
 #define CABAC(h) 1
-#define UNCHECKED_BITSTREAM_READER 1
 #define INT_BIT (CHAR_BIT * sizeof(int))
 
 #include "libavutil/attributes.h"
-#include "libavutil/avassert.h"
 #include "libavutil/timer.h"
 #include "config.h"
 #include "cabac.h"
@@ -46,6 +44,8 @@
 #if ARCH_X86
 #include "x86/h264_i386.h"
 #endif
+
+#include <assert.h>
 
 /* Cabac pre state table */
 
@@ -1284,7 +1284,7 @@ void ff_h264_init_cabac_states(const H264Context *h, H264SliceContext *sl)
 
 static int decode_cabac_field_decoding_flag(const H264Context *h, H264SliceContext *sl)
 {
-    const int mbb_xy = sl->mb_xy - 2*h->mb_stride;
+    const long mbb_xy = sl->mb_xy - 2L*h->mb_stride;
 
     unsigned long ctx = 0;
 
@@ -1501,7 +1501,7 @@ static int decode_cabac_mb_mvd(H264SliceContext *sl, int ctxbase, int amvd, int 
     int mvd;
 
     if(!get_cabac(&sl->cabac, &sl->cabac_state[ctxbase+((amvd-3)>>(INT_BIT-1))+((amvd-33)>>(INT_BIT-1))+2])){
-//    if(!get_cabac(&sl->cabac, &sl->cabac_state[ctxbase+(amvd>2)+(amvd>32)])){
+//    if(!get_cabac(&h->cabac, &h->cabac_state[ctxbase+(amvd>2)+(amvd>32)])){
         *mvda= 0;
         return 0;
     }
@@ -1640,9 +1640,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
     cc.range     = sl->cabac.range;
     cc.low       = sl->cabac.low;
     cc.bytestream= sl->cabac.bytestream;
-#if !UNCHECKED_BITSTREAM_READER || ARCH_AARCH64
     cc.bytestream_end = sl->cabac.bytestream_end;
-#endif
 #else
 #define CC &sl->cabac
 #endif
@@ -1691,7 +1689,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
         }
 #endif
     }
-    av_assert2(coeff_count > 0);
+    assert(coeff_count > 0);
 
     if( is_dc ) {
         if( cat == 3 )
@@ -1703,7 +1701,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
         if( max_coeff == 64 )
             fill_rectangle(&sl->non_zero_count_cache[scan8[n]], 2, 2, 8, coeff_count, 1);
         else {
-            av_assert2( cat == 1 || cat ==  2 || cat ==  4 || cat == 7 || cat == 8 || cat == 11 || cat == 12 );
+            assert( cat == 1 || cat ==  2 || cat ==  4 || cat == 7 || cat == 8 || cat == 11 || cat == 12 );
             sl->non_zero_count_cache[scan8[n]] = coeff_count;
         }
     }
@@ -1957,7 +1955,7 @@ int ff_h264_decode_mb_cabac(const H264Context *h, H264SliceContext *sl)
 
     if (sl->slice_type_nos == AV_PICTURE_TYPE_B) {
         int ctx = 0;
-        av_assert2(sl->slice_type_nos == AV_PICTURE_TYPE_B);
+        assert(sl->slice_type_nos == AV_PICTURE_TYPE_B);
 
         if (!IS_DIRECT(sl->left_type[LTOP] - 1))
             ctx++;
@@ -2010,7 +2008,7 @@ int ff_h264_decode_mb_cabac(const H264Context *h, H264SliceContext *sl)
         mb_type = decode_cabac_intra_mb_type(sl, 3, 1);
         if (sl->slice_type == AV_PICTURE_TYPE_SI && mb_type)
             mb_type--;
-        av_assert2(sl->slice_type_nos == AV_PICTURE_TYPE_I);
+        assert(sl->slice_type_nos == AV_PICTURE_TYPE_I);
 decode_intra_mb:
         partition_count = 0;
         cbp= i_mb_type_info[mb_type].cbp;
@@ -2073,7 +2071,7 @@ decode_intra_mb:
                     int pred = pred_intra_mode(h, sl, i);
                     sl->intra4x4_pred_mode_cache[scan8[i]] = decode_cabac_mb_intra4x4_pred_mode(sl, pred);
 
-                    ff_tlog(h->avctx, "i4x4 pred=%d mode=%d\n", pred,
+                    ff_dlog(h->avctx, "i4x4 pred=%d mode=%d\n", pred,
                             sl->intra4x4_pred_mode_cache[scan8[i]]);
                 }
             }
@@ -2124,10 +2122,10 @@ decode_intra_mb:
                 for( i = 0; i < 4; i++ ) {
                     if(IS_DIRECT(sl->sub_mb_type[i])) continue;
                     if(IS_DIR(sl->sub_mb_type[i], 0, list)){
-                        unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
+                        int rc = sl->ref_count[list] << MB_MBAFF(sl);
                         if (rc > 1) {
                             ref[list][i] = decode_cabac_mb_ref(sl, list, 4 * i);
-                            if (ref[list][i] >= rc) {
+                            if (ref[list][i] >= (unsigned) rc) {
                                 av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref[list][i], rc);
                                 return -1;
                             }
@@ -2210,11 +2208,10 @@ decode_intra_mb:
         if(IS_16X16(mb_type)){
             for (list = 0; list < sl->list_count; list++) {
                 if(IS_DIR(mb_type, 0, list)){
-                    int ref;
-                    unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
+                    int ref, rc = sl->ref_count[list] << MB_MBAFF(sl);
                     if (rc > 1) {
                         ref= decode_cabac_mb_ref(sl, list, 0);
-                        if (ref >= rc) {
+                        if (ref >= (unsigned) rc) {
                             av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
                             return -1;
                         }
@@ -2239,11 +2236,10 @@ decode_intra_mb:
             for (list = 0; list < sl->list_count; list++) {
                     for(i=0; i<2; i++){
                         if(IS_DIR(mb_type, i, list)){
-                            int ref;
-                            unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
+                            int ref, rc = sl->ref_count[list] << MB_MBAFF(sl);
                             if (rc > 1) {
                                 ref= decode_cabac_mb_ref(sl, list, 8 * i);
-                                if (ref >= rc) {
+                                if (ref >= (unsigned) rc) {
                                     av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
                                     return -1;
                                 }
@@ -2271,15 +2267,14 @@ decode_intra_mb:
                 }
             }
         }else{
-            av_assert2(IS_8X16(mb_type));
+            assert(IS_8X16(mb_type));
             for (list = 0; list < sl->list_count; list++) {
                     for(i=0; i<2; i++){
                         if(IS_DIR(mb_type, i, list)){ //FIXME optimize
-                            int ref;
-                            unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
+                            int ref, rc = sl->ref_count[list] << MB_MBAFF(sl);
                             if (rc > 1) {
                                 ref = decode_cabac_mb_ref(sl, list, 4 * i);
-                                if (ref >= rc) {
+                                if (ref >= (unsigned) rc) {
                                     av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
                                     return -1;
                                 }
@@ -2318,11 +2313,6 @@ decode_intra_mb:
         cbp  = decode_cabac_mb_cbp_luma(sl);
         if(decode_chroma)
             cbp |= decode_cabac_mb_cbp_chroma(sl) << 4;
-    } else {
-        if (!decode_chroma && cbp>15) {
-            av_log(h->avctx, AV_LOG_ERROR, "gray chroma\n");
-            return AVERROR_INVALIDDATA;
-        }
     }
 
     h->cbp_table[mb_xy] = sl->cbp = cbp;
