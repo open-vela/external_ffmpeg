@@ -1,22 +1,20 @@
 /*
  * lossless JPEG shared bits
- * Copyright (c) 2000, 2001 Fabrice Bellard
- * Copyright (c) 2003 Alex Beregszaszi
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,43 +54,20 @@ static int put_huffman_table(PutBitContext *p, int table_class, int table_id,
     return n + 17;
 }
 
-static void jpeg_table_header(AVCodecContext *avctx, PutBitContext *p,
-                              ScanTable *intra_scantable,
-                              uint16_t luma_intra_matrix[64],
-                              uint16_t chroma_intra_matrix[64],
-                              int hsample[3])
+static void jpeg_table_header(PutBitContext *p, ScanTable *intra_scantable,
+                              uint16_t intra_matrix[64])
 {
     int i, j, size;
     uint8_t *ptr;
 
-    if (avctx->codec_id != AV_CODEC_ID_LJPEG) {
-        int matrix_count = 1 + !!memcmp(luma_intra_matrix,
-                                        chroma_intra_matrix,
-                                        sizeof(luma_intra_matrix[0]) * 64);
     /* quant matrixes */
     put_marker(p, DQT);
-    put_bits(p, 16, 2 + matrix_count * (1 + 64));
+    put_bits(p, 16, 2 + 1 * (1 + 64));
     put_bits(p, 4, 0); /* 8 bit precision */
     put_bits(p, 4, 0); /* table 0 */
     for(i=0;i<64;i++) {
         j = intra_scantable->permutated[i];
-        put_bits(p, 8, luma_intra_matrix[j]);
-    }
-
-        if (matrix_count > 1) {
-            put_bits(p, 4, 0); /* 8 bit precision */
-            put_bits(p, 4, 1); /* table 1 */
-            for(i=0;i<64;i++) {
-                j = intra_scantable->permutated[i];
-                put_bits(p, 8, chroma_intra_matrix[j]);
-            }
-        }
-    }
-
-    if(avctx->active_thread_type & FF_THREAD_SLICE){
-        put_marker(p, DRI);
-        put_bits(p, 16, 4);
-        put_bits(p, 16, (avctx->width-1)/(8*hsample[0]) + 1);
+        put_bits(p, 8, intra_matrix[j]);
     }
 
     /* huffman table */
@@ -145,10 +120,9 @@ static void jpeg_put_comments(AVCodecContext *avctx, PutBitContext *p)
         AV_WB16(ptr, size);
     }
 
-    if (((avctx->pix_fmt == AV_PIX_FMT_YUV420P ||
-          avctx->pix_fmt == AV_PIX_FMT_YUV422P ||
-          avctx->pix_fmt == AV_PIX_FMT_YUV444P) && avctx->color_range != AVCOL_RANGE_JPEG)
-        || avctx->color_range == AVCOL_RANGE_MPEG) {
+    if (avctx->pix_fmt == AV_PIX_FMT_YUV420P ||
+        avctx->pix_fmt == AV_PIX_FMT_YUV422P ||
+        avctx->pix_fmt == AV_PIX_FMT_YUV444P) {
         put_marker(p, COM);
         flush_put_bits(p);
         ptr = put_bits_ptr(p);
@@ -159,23 +133,22 @@ static void jpeg_put_comments(AVCodecContext *avctx, PutBitContext *p)
     }
 }
 
-void ff_mjpeg_init_hvsample(AVCodecContext *avctx, int hsample[4], int vsample[4])
+void ff_mjpeg_encode_picture_header(AVCodecContext *avctx, PutBitContext *pb,
+                                    ScanTable *intra_scantable,
+                                    uint16_t intra_matrix[64])
 {
     int chroma_h_shift, chroma_v_shift;
+    const int lossless = avctx->codec_id != AV_CODEC_ID_MJPEG;
+    int hsample[3], vsample[3];
 
     av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &chroma_h_shift,
                                      &chroma_v_shift);
+
     if (avctx->codec->id == AV_CODEC_ID_LJPEG &&
-        (   avctx->pix_fmt == AV_PIX_FMT_BGR0
-         || avctx->pix_fmt == AV_PIX_FMT_BGRA
-         || avctx->pix_fmt == AV_PIX_FMT_BGR24)) {
+        avctx->pix_fmt   == AV_PIX_FMT_BGR24) {
         vsample[0] = hsample[0] =
         vsample[1] = hsample[1] =
-        vsample[2] = hsample[2] =
-        vsample[3] = hsample[3] = 1;
-    } else if (avctx->pix_fmt == AV_PIX_FMT_YUV444P || avctx->pix_fmt == AV_PIX_FMT_YUVJ444P) {
-        vsample[0] = vsample[1] = vsample[2] = 2;
-        hsample[0] = hsample[1] = hsample[2] = 1;
+        vsample[2] = hsample[2] = 1;
     } else {
         vsample[0] = 2;
         vsample[1] = 2 >> chroma_v_shift;
@@ -184,48 +157,27 @@ void ff_mjpeg_init_hvsample(AVCodecContext *avctx, int hsample[4], int vsample[4
         hsample[1] = 2 >> chroma_h_shift;
         hsample[2] = 2 >> chroma_h_shift;
     }
-}
-
-void ff_mjpeg_encode_picture_header(AVCodecContext *avctx, PutBitContext *pb,
-                                    ScanTable *intra_scantable,
-                                    uint16_t luma_intra_matrix[64],
-                                    uint16_t chroma_intra_matrix[64])
-{
-    const int lossless = avctx->codec_id != AV_CODEC_ID_MJPEG && avctx->codec_id != AV_CODEC_ID_AMV;
-    int hsample[4], vsample[4];
-    int i;
-    int components = 3 + (avctx->pix_fmt == AV_PIX_FMT_BGRA);
-    int chroma_matrix = !!memcmp(luma_intra_matrix,
-                                 chroma_intra_matrix,
-                                 sizeof(luma_intra_matrix[0])*64);
-
-    ff_mjpeg_init_hvsample(avctx, hsample, vsample);
 
     put_marker(pb, SOI);
 
-    // hack for AMV mjpeg format
-    if(avctx->codec_id == AV_CODEC_ID_AMV) goto end;
-
     jpeg_put_comments(avctx, pb);
 
-    jpeg_table_header(avctx, pb, intra_scantable, luma_intra_matrix, chroma_intra_matrix, hsample);
+    jpeg_table_header(pb, intra_scantable, intra_matrix);
 
     switch (avctx->codec_id) {
     case AV_CODEC_ID_MJPEG:  put_marker(pb, SOF0 ); break;
     case AV_CODEC_ID_LJPEG:  put_marker(pb, SOF3 ); break;
-    default: av_assert0(0);
+    default: assert(0);
     }
 
     put_bits(pb, 16, 17);
-    if (lossless && (  avctx->pix_fmt == AV_PIX_FMT_BGR0
-                    || avctx->pix_fmt == AV_PIX_FMT_BGRA
-                    || avctx->pix_fmt == AV_PIX_FMT_BGR24))
+    if (lossless && avctx->pix_fmt == AV_PIX_FMT_BGR24)
         put_bits(pb, 8, 9); /* 9 bits/component RCT */
     else
         put_bits(pb, 8, 8); /* 8 bits/component */
     put_bits(pb, 16, avctx->height);
     put_bits(pb, 16, avctx->width);
-    put_bits(pb, 8, components); /* 3 or 4 components */
+    put_bits(pb, 8, 3); /* 3 components */
 
     /* Y component */
     put_bits(pb, 8, 1); /* component number */
@@ -237,25 +189,18 @@ void ff_mjpeg_encode_picture_header(AVCodecContext *avctx, PutBitContext *pb,
     put_bits(pb, 8, 2); /* component number */
     put_bits(pb, 4, hsample[1]); /* H factor */
     put_bits(pb, 4, vsample[1]); /* V factor */
-    put_bits(pb, 8, lossless ? 0 : chroma_matrix); /* select matrix */
+    put_bits(pb, 8, 0); /* select matrix */
 
     /* Cr component */
     put_bits(pb, 8, 3); /* component number */
     put_bits(pb, 4, hsample[2]); /* H factor */
     put_bits(pb, 4, vsample[2]); /* V factor */
-    put_bits(pb, 8, lossless ? 0 : chroma_matrix); /* select matrix */
-
-    if (components == 4) {
-        put_bits(pb, 8, 4); /* component number */
-        put_bits(pb, 4, hsample[3]); /* H factor */
-        put_bits(pb, 4, vsample[3]); /* V factor */
-        put_bits(pb, 8, 0); /* select matrix */
-    }
+    put_bits(pb, 8, 0); /* select matrix */
 
     /* scan header */
     put_marker(pb, SOS);
-    put_bits(pb, 16, 6 + 2*components); /* length */
-    put_bits(pb, 8, components); /* 3 components */
+    put_bits(pb, 16, 12); /* length */
+    put_bits(pb, 8, 3); /* 3 components */
 
     /* Y component */
     put_bits(pb, 8, 1); /* index */
@@ -272,49 +217,25 @@ void ff_mjpeg_encode_picture_header(AVCodecContext *avctx, PutBitContext *pb,
     put_bits(pb, 4, 1); /* DC huffman table index */
     put_bits(pb, 4, lossless ? 0 : 1); /* AC huffman table index */
 
-    if (components == 4) {
-        /* Alpha component */
-        put_bits(pb, 8, 4); /* index */
-        put_bits(pb, 4, 0); /* DC huffman table index */
-        put_bits(pb, 4, 0); /* AC huffman table index */
-    }
-
     put_bits(pb, 8, lossless ? avctx->prediction_method + 1 : 0); /* Ss (not used) */
 
     switch (avctx->codec_id) {
     case AV_CODEC_ID_MJPEG:  put_bits(pb, 8, 63); break; /* Se (not used) */
     case AV_CODEC_ID_LJPEG:  put_bits(pb, 8,  0); break; /* not used */
-    default: av_assert0(0);
+    default: assert(0);
     }
 
     put_bits(pb, 8, 0); /* Ah/Al (not used) */
-
-end:
-    if (!lossless) {
-        MpegEncContext *s = avctx->priv_data;
-        av_assert0(avctx->codec->priv_data_size == sizeof(MpegEncContext));
-
-        s->esc_pos = put_bits_count(pb) >> 3;
-        for(i=1; i<s->slice_context_count; i++)
-            s->thread_context[i]->esc_pos = 0;
-    }
 }
 
-void ff_mjpeg_escape_FF(PutBitContext *pb, int start)
+static void escape_FF(PutBitContext *pb, int start)
 {
-    int size;
+    int size = put_bits_count(pb) - start * 8;
     int i, ff_count;
     uint8_t *buf = pb->buf + start;
     int align= (-(size_t)(buf))&3;
-    int pad = (-put_bits_count(pb))&7;
 
-    if (pad)
-        put_bits(pb, pad, (1<<pad)-1);
-
-    flush_put_bits(pb);
-    size = put_bits_count(pb) - start * 8;
-
-    av_assert1((size&7) == 0);
+    assert((size&7) == 0);
     size >>= 3;
 
     ff_count=0;
@@ -359,35 +280,21 @@ void ff_mjpeg_escape_FF(PutBitContext *pb, int start)
     }
 }
 
-int ff_mjpeg_encode_stuffing(MpegEncContext *s)
+void ff_mjpeg_encode_stuffing(PutBitContext * pbc)
 {
-    int i;
-    PutBitContext *pbc = &s->pb;
-    int mb_y = s->mb_y - !s->mb_x;
-
-    int ret = ff_mpv_reallocate_putbitbuffer(s, put_bits_count(&s->pb) / 8 + 100,
-                                                put_bits_count(&s->pb) / 4 + 1000);
-    if (ret < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "Buffer reallocation failed\n");
-        goto fail;
-    }
-
-    ff_mjpeg_escape_FF(pbc, s->esc_pos);
-
-    if((s->avctx->active_thread_type & FF_THREAD_SLICE) && mb_y < s->mb_height)
-        put_marker(pbc, RST0 + (mb_y&7));
-    s->esc_pos = put_bits_count(pbc) >> 3;
-fail:
-
-    for(i=0; i<3; i++)
-        s->last_dc[i] = 128 << s->intra_dc_precision;
-
-    return ret;
+    int length;
+    length= (-put_bits_count(pbc))&7;
+    if(length) put_bits(pbc, length, (1<<length)-1);
 }
 
 void ff_mjpeg_encode_picture_trailer(PutBitContext *pb, int header_bits)
 {
-    av_assert1((header_bits & 7) == 0);
+    ff_mjpeg_encode_stuffing(pb);
+    flush_put_bits(pb);
+
+    assert((header_bits & 7) == 0);
+
+    escape_FF(pb, header_bits >> 3);
 
     put_marker(pb, EOI);
 }
