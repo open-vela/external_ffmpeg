@@ -1,20 +1,20 @@
 /*
- * Copyright (C) 2001-2011 Michael Niedermayer <michaelni@gmx.at>
+ * Copyright (C) 2001-2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,7 +24,8 @@
 /**
  * @file
  * @ingroup libsws
- * external API header
+ * @brief
+ *     external api for the swscale stuff
  */
 
 #include <stdint.h>
@@ -80,7 +81,6 @@ const char *swscale_license(void);
 #define SWS_DIRECT_BGR        0x8000
 #define SWS_ACCURATE_RND      0x40000
 #define SWS_BITEXACT          0x80000
-#define SWS_ERROR_DIFFUSION  0x800000
 
 #define SWS_MAX_REDUCE_CUTOFF 0.002
 
@@ -150,7 +150,6 @@ struct SwsContext *sws_alloc_context(void);
  * @return zero or positive value on success, a negative value on
  * error
  */
-av_warn_unused_result
 int sws_init_context(struct SwsContext *sws_context, SwsFilter *srcFilter, SwsFilter *dstFilter);
 
 /**
@@ -170,12 +169,6 @@ void sws_freeContext(struct SwsContext *swsContext);
  * @param dstH the height of the destination image
  * @param dstFormat the destination image format
  * @param flags specify which algorithm and options to use for rescaling
- * @param param extra parameters to tune the used scaler
- *              For SWS_BICUBIC param[0] and [1] tune the shape of the basis
- *              function, param[0] tunes f(1) and param[1] f´(1)
- *              For SWS_GAUSS param[0] tunes the exponent and thus cutoff
- *              frequency
- *              For SWS_LANCZOS param[0] tunes the width of the window function
  * @return a pointer to an allocated context, or NULL in case of error
  * @note this function is to be removed after a saner alternative is
  *       written
@@ -216,13 +209,7 @@ int sws_scale(struct SwsContext *c, const uint8_t *const srcSlice[],
               uint8_t *const dst[], const int dstStride[]);
 
 /**
- * @param dstRange flag indicating the while-black range of the output (1=jpeg / 0=mpeg)
- * @param srcRange flag indicating the while-black range of the input (1=jpeg / 0=mpeg)
- * @param table the yuv2rgb coefficients describing the output yuv space, normally ff_yuv2rgb_coeffs[x]
- * @param inv_table the yuv2rgb coefficients describing the input yuv space, normally ff_yuv2rgb_coeffs[x]
- * @param brightness 16.16 fixed point brightness correction
- * @param contrast 16.16 fixed point contrast correction
- * @param saturation 16.16 fixed point saturation correction
+ * @param inv_table the yuv2rgb coefficients, normally ff_yuv2rgb_coeffs[x]
  * @return -1 if not supported
  */
 int sws_setColorspaceDetails(struct SwsContext *c, const int inv_table[4],
