@@ -2,20 +2,20 @@
  * RTP Depacketization of MP4A-LATM, RFC 3016
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,7 @@ struct PayloadContext {
 static void latm_close_context(PayloadContext *data)
 {
     ffio_free_dyn_buf(&data->dyn_buf);
-    av_freep(&data->buf);
+    av_free(data->buf);
 }
 
 static int latm_parse_packet(AVFormatContext *ctx, PayloadContext *data,
@@ -58,7 +58,7 @@ static int latm_parse_packet(AVFormatContext *ctx, PayloadContext *data,
 
         if (!(flags & RTP_FLAG_MARKER))
             return AVERROR(EAGAIN);
-        av_freep(&data->buf);
+        av_free(data->buf);
         data->len = avio_close_dyn_buf(data->dyn_buf, &data->buf);
         data->dyn_buf = NULL;
         data->pos = 0;
@@ -116,7 +116,10 @@ static int parse_fmtp_config(AVStream *st, const char *value)
         goto end;
     }
     av_freep(&st->codec->extradata);
-    if (ff_alloc_extradata(st->codec, (get_bits_left(&gb) + 7)/8)) {
+    st->codec->extradata_size = (get_bits_left(&gb) + 7)/8;
+    st->codec->extradata = av_mallocz(st->codec->extradata_size +
+                                      AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!st->codec->extradata) {
         ret = AVERROR(ENOMEM);
         goto end;
     }
