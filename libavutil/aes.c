@@ -3,20 +3,20 @@
  *
  * some optimization ideas from aes128.c by Reimar Doeffinger
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,6 +40,8 @@ typedef struct AVAES {
     int rounds;
 } AVAES;
 
+const int av_aes_size= sizeof(AVAES);
+
 struct AVAES *av_aes_alloc(void)
 {
     return av_mallocz(sizeof(struct AVAES));
@@ -60,9 +62,9 @@ static uint32_t dec_multbl[4][256];
 #endif
 
 #if HAVE_BIGENDIAN
-#   define ROT(x, s) ((x >> s) | (x << (32-s)))
+#   define ROT(x, s) (((x) >> (s)) | ((x) << (32-(s))))
 #else
-#   define ROT(x, s) ((x << s) | (x >> (32-s)))
+#   define ROT(x, s) (((x) << (s)) | ((x) >> (32-(s))))
 #endif
 
 static inline void addkey(av_aes_block *dst, const av_aes_block *src,
@@ -125,7 +127,7 @@ static inline void mix(av_aes_block state[2], uint32_t multbl[][256], int s1, in
     state[0].u32[3] = mix_core(multbl, src[3][0], src[s1-1][1], src[1][2], src[s3-1][3]);
 }
 
-static inline void crypt(AVAES *a, int s, const uint8_t *sbox,
+static inline void aes_crypt(AVAES *a, int s, const uint8_t *sbox,
                          uint32_t multbl[][256])
 {
     int r;
@@ -144,7 +146,7 @@ void av_aes_crypt(AVAES *a, uint8_t *dst, const uint8_t *src,
     while (count--) {
         addkey_s(&a->state[1], src, &a->round_key[a->rounds]);
         if (decrypt) {
-            crypt(a, 0, inv_sbox, dec_multbl);
+            aes_crypt(a, 0, inv_sbox, dec_multbl);
             if (iv) {
                 addkey_s(&a->state[0], iv, &a->state[0]);
                 memcpy(iv, src, 16);
@@ -153,7 +155,7 @@ void av_aes_crypt(AVAES *a, uint8_t *dst, const uint8_t *src,
         } else {
             if (iv)
                 addkey_s(&a->state[1], iv, &a->state[1]);
-            crypt(a, 2, sbox, enc_multbl);
+            aes_crypt(a, 2, sbox, enc_multbl);
             addkey_d(dst, &a->state[0], &a->round_key[0]);
             if (iv)
                 memcpy(iv, dst, 16);
@@ -263,6 +265,7 @@ int av_aes_init(AVAES *a, const uint8_t *key, int key_bits, int decrypt)
 }
 
 #ifdef TEST
+// LCOV_EXCL_START
 #include <string.h>
 #include "lfg.h"
 #include "log.h"
@@ -308,8 +311,8 @@ int main(int argc, char **argv)
         AVAES ae, ad;
         AVLFG prng;
 
-        av_aes_init(&ae, "PI=3.141592654..", 128, 0);
-        av_aes_init(&ad, "PI=3.141592654..", 128, 1);
+        av_aes_init(&ae, (const uint8_t*)"PI=3.141592654..", 128, 0);
+        av_aes_init(&ad, (const uint8_t*)"PI=3.141592654..", 128, 1);
         av_lfg_init(&prng, 1);
 
         for (i = 0; i < 10000; i++) {
@@ -335,4 +338,5 @@ int main(int argc, char **argv)
     }
     return err;
 }
+// LCOV_EXCL_STOP
 #endif
