@@ -634,6 +634,7 @@ DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
     %else
         rep ret
     %endif
+    annotate_function_size
 %endmacro
 
 %define last_branch_adr $$
@@ -642,6 +643,7 @@ DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
         times ((last_branch_adr-$)>>31)+1 rep ; times 1 iff $ == last_branch_adr.
     %endif
     ret
+    annotate_function_size
 %endmacro
 
 %macro BRANCH_INSTR 0-*
@@ -666,6 +668,7 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
     %elif %2
         jmp %1
     %endif
+    annotate_function_size
 %endmacro
 
 ;=============================================================================
@@ -687,6 +690,7 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
     cglobal_internal 0, %1 %+ SUFFIX, %2
 %endmacro
 %macro cglobal_internal 2-3+
+    annotate_function_size
     %if %1
         %xdefine %%FUNCTION_PREFIX private_prefix
         %xdefine %%VISIBILITY hidden
@@ -700,6 +704,7 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
         CAT_XDEFINE cglobaled_, %2, 1
     %endif
     %xdefine current_function %2
+    %xdefine current_function_section __SECT__
     %if FORMAT_ELF
         global %2:function %%VISIBILITY
     %else
@@ -748,6 +753,24 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
     [SECTION .note.GNU-stack noalloc noexec nowrite progbits]
 %endif
 
+; Tell debuggers how large the function was.
+; This may be invoked multiple times per function; we rely on later instances overriding earlier ones.
+; This is invoked by RET and similar macros, and also cglobal does it for the previous function,
+; but if the last function in a source file doesn't use any of the standard macros for its epilogue,
+; then its size might be unspecified.
+%macro annotate_function_size 0
+    %ifdef __YASM_VER__
+        %ifdef current_function
+            %if FORMAT_ELF
+                current_function_section
+                %%ecf equ $
+                size current_function %%ecf - current_function
+                __SECT__
+            %endif
+        %endif
+    %endif
+%endmacro
+
 ; cpuflags
 
 %assign cpuflags_mmx      (1<<0)
@@ -775,9 +798,11 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
 %assign cpuflags_atom     (1<<21)
 %assign cpuflags_bmi1     (1<<22)|cpuflags_lzcnt
 %assign cpuflags_bmi2     (1<<23)|cpuflags_bmi1
+%assign cpuflags_aesni    (1<<24)|cpuflags_sse42
 
-%define    cpuflag(x) ((cpuflags & (cpuflags_ %+ x)) == (cpuflags_ %+ x))
-%define notcpuflag(x) ((cpuflags & (cpuflags_ %+ x)) != (cpuflags_ %+ x))
+; Returns a boolean value expressing whether or not the specified cpuflag is enabled.
+%define    cpuflag(x) (((((cpuflags & (cpuflags_ %+ x)) ^ (cpuflags_ %+ x)) - 1) >> 31) & 1)
+%define notcpuflag(x) (cpuflag(x) ^ 1)
 
 ; Takes an arbitrary number of cpuflags from the above list.
 ; All subsequent functions (up to the next INIT_CPUFLAGS) is built for the specified cpu.
@@ -1173,12 +1198,12 @@ AVX_INSTR addsd, sse2, 1, 0, 1
 AVX_INSTR addss, sse, 1, 0, 1
 AVX_INSTR addsubpd, sse3, 1, 0, 0
 AVX_INSTR addsubps, sse3, 1, 0, 0
-AVX_INSTR aesdec, fnord, 0, 0, 0
-AVX_INSTR aesdeclast, fnord, 0, 0, 0
-AVX_INSTR aesenc, fnord, 0, 0, 0
-AVX_INSTR aesenclast, fnord, 0, 0, 0
-AVX_INSTR aesimc
-AVX_INSTR aeskeygenassist
+AVX_INSTR aesdec, aesni, 0, 0, 0
+AVX_INSTR aesdeclast, aesni, 0, 0, 0
+AVX_INSTR aesenc, aesni, 0, 0, 0
+AVX_INSTR aesenclast, aesni, 0, 0, 0
+AVX_INSTR aesimc, aesni
+AVX_INSTR aeskeygenassist, aesni
 AVX_INSTR andnpd, sse2, 1, 0, 0
 AVX_INSTR andnps, sse, 1, 0, 0
 AVX_INSTR andpd, sse2, 1, 0, 1
