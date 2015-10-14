@@ -2,20 +2,20 @@
  * XSUB subtitle decoder
  * Copyright (c) 2007 Reimar Döffinger
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,10 +57,14 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     int64_t packet_time = 0;
     GetBitContext gb;
     int has_alpha = avctx->codec_tag == MKTAG('D','X','S','A');
+    AVSubtitleRect *rect;
+    int j;
+
+    memset(sub, 0, sizeof(*sub));
 
     // check that at least header fits
     if (buf_size < 27 + 7 * 2 + 4 * (3 + has_alpha)) {
-        av_log(avctx, AV_LOG_ERROR, "coded frame size %d too small\n", buf_size);
+        av_log(avctx, AV_LOG_ERROR, "coded frame too small\n");
         return -1;
     }
 
@@ -95,47 +99,56 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     sub->rects =  av_mallocz(sizeof(*sub->rects));
     if (!sub->rects)
         return AVERROR(ENOMEM);
-
     sub->rects[0] = av_mallocz(sizeof(*sub->rects[0]));
     if (!sub->rects[0]) {
         av_freep(&sub->rects);
         return AVERROR(ENOMEM);
     }
+    sub->num_rects = 1;
     sub->rects[0]->x = x; sub->rects[0]->y = y;
     sub->rects[0]->w = w; sub->rects[0]->h = h;
     sub->rects[0]->type = SUBTITLE_BITMAP;
-    sub->rects[0]->pict.linesize[0] = w;
-    sub->rects[0]->pict.data[0] = av_malloc(w * h);
+    sub->rects[0]->linesize[0] = w;
+    sub->rects[0]->data[0] = av_malloc(w * h);
     sub->rects[0]->nb_colors = 4;
-    sub->rects[0]->pict.data[1] = av_mallocz(AVPALETTE_SIZE);
-    if (!sub->rects[0]->pict.data[0] || !sub->rects[0]->pict.data[1]) {
-        av_freep(&sub->rects[0]->pict.data[1]);
-        av_freep(&sub->rects[0]->pict.data[0]);
+    sub->rects[0]->data[1] = av_mallocz(AVPALETTE_SIZE);
+    if (!sub->rects[0]->data[0] || !sub->rects[0]->data[1]) {
+        av_freep(&sub->rects[0]->data[1]);
+        av_freep(&sub->rects[0]->data[0]);
         av_freep(&sub->rects[0]);
         av_freep(&sub->rects);
         return AVERROR(ENOMEM);
     }
-    sub->num_rects = 1;
 
     // read palette
     for (i = 0; i < sub->rects[0]->nb_colors; i++)
-        ((uint32_t*)sub->rects[0]->pict.data[1])[i] = bytestream_get_be24(&buf);
+        ((uint32_t*)sub->rects[0]->data[1])[i] = bytestream_get_be24(&buf);
 
     if (!has_alpha) {
         // make all except background (first entry) non-transparent
         for (i = 1; i < sub->rects[0]->nb_colors; i++)
-            ((uint32_t *)sub->rects[0]->pict.data[1])[i] |= 0xff000000;
+            ((uint32_t *)sub->rects[0]->data[1])[i] |= 0xff000000;
     } else {
         for (i = 0; i < sub->rects[0]->nb_colors; i++)
-            ((uint32_t *)sub->rects[0]->pict.data[1])[i] |= *buf++ << 24;
+            ((uint32_t *)sub->rects[0]->data[1])[i] |= *buf++ << 24;
     }
+
+#if FF_API_AVPICTURE
+FF_DISABLE_DEPRECATION_WARNINGS
+    rect = sub->rects[0];
+    for (j = 0; j < 4; j++) {
+        rect->pict.data[j] = rect->data[j];
+        rect->pict.linesize[j] = rect->linesize[j];
+    }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     // process RLE-compressed data
     init_get_bits(&gb, buf, (buf_end - buf) * 8);
-    bitmap = sub->rects[0]->pict.data[0];
+    bitmap = sub->rects[0]->data[0];
     for (y = 0; y < h; y++) {
         // interlaced: do odd lines
-        if (y == (h + 1) / 2) bitmap = sub->rects[0]->pict.data[0] + w;
+        if (y == (h + 1) / 2) bitmap = sub->rects[0]->data[0] + w;
         for (x = 0; x < w; ) {
             int log2 = ff_log2_tab[show_bits(&gb, 8)];
             int run = get_bits(&gb, 14 - 4 * (log2 >> 1));
