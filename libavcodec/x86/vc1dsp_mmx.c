@@ -25,6 +25,7 @@
  */
 
 #include "libavutil/cpu.h"
+#include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
@@ -33,7 +34,7 @@
 #include "fpel.h"
 #include "vc1dsp.h"
 
-#if HAVE_6REGS && HAVE_INLINE_ASM
+#if HAVE_INLINE_ASM
 
 #define OP_PUT(S,D)
 #define OP_AVG(S,D) "pavgb " #S ", " #D " \n\t"
@@ -80,7 +81,7 @@
     "movq      %%mm"#R1", "#OFF"(%1)   \n\t"    \
     "add       %2, %0                  \n\t"
 
-/** Sacrificing mm6 makes it possible to pipeline loads from src */
+/** Sacrifying mm6 allows to pipeline loads from src */
 static void vc1_put_ver_16b_shift2_mmx(int16_t *dst,
                                        const uint8_t *src, x86_reg stride,
                                        int rnd, int64_t shift)
@@ -110,7 +111,6 @@ static void vc1_put_ver_16b_shift2_mmx(int16_t *dst,
         : "+r"(src), "+r"(dst)
         : "r"(stride), "r"(-2*stride),
           "m"(shift), "m"(rnd), "r"(9*stride-4)
-          NAMED_CONSTRAINTS_ADD(ff_pw_9)
         : "%"REG_c, "memory"
     );
 }
@@ -155,7 +155,6 @@ static void OPNAME ## vc1_hor_16b_shift2_mmx(uint8_t *dst, x86_reg stride,\
         "jnz 1b                            \n\t"\
         : "+r"(h), "+r" (src),  "+r" (dst)\
         : "r"(stride), "m"(rnd)\
-          NAMED_CONSTRAINTS_ADD(ff_pw_128,ff_pw_9)\
         : "memory"\
     );\
 }
@@ -214,7 +213,6 @@ static void OPNAME ## vc1_shift2_mmx(uint8_t *dst, const uint8_t *src,\
         : "+r"(src),  "+r"(dst)\
         : "r"(offset), "r"(-2*offset), "g"(stride), "m"(rnd),\
           "g"(stride-offset)\
-          NAMED_CONSTRAINTS_ADD(ff_pw_9)\
         : "%"REG_c, "memory"\
     );\
 }
@@ -317,7 +315,6 @@ vc1_put_ver_16b_ ## NAME ## _mmx(int16_t *dst, const uint8_t *src,      \
         : "+r"(h), "+r" (src),  "+r" (dst)                              \
         : "r"(src_stride), "r"(3*src_stride),                           \
           "m"(rnd), "m"(shift)                                          \
-          NAMED_CONSTRAINTS_ADD(ff_pw_3,ff_pw_53,ff_pw_18)              \
         : "memory"                                                      \
     );                                                                  \
 }
@@ -355,7 +352,6 @@ OPNAME ## vc1_hor_16b_ ## NAME ## _mmx(uint8_t *dst, x86_reg stride,    \
         "jnz 1b                    \n\t"                                \
         : "+r"(h), "+r" (src),  "+r" (dst)                              \
         : "r"(stride), "m"(rnd)                                         \
-          NAMED_CONSTRAINTS_ADD(ff_pw_3,ff_pw_18,ff_pw_53,ff_pw_128)    \
         : "memory"                                                      \
     );                                                                  \
 }
@@ -391,7 +387,6 @@ OPNAME ## vc1_## NAME ## _mmx(uint8_t *dst, const uint8_t *src,         \
         "jnz 1b                    \n\t"                                \
         : "+r"(h), "+r" (src),  "+r" (dst)                              \
         : "r"(offset), "r"(3*offset), "g"(stride), "m"(rnd)             \
-          NAMED_CONSTRAINTS_ADD(ff_pw_53,ff_pw_18,ff_pw_3)              \
         : "memory"                                                      \
     );                                                                  \
 }
@@ -446,7 +441,7 @@ static void OP ## vc1_mspel_mc(uint8_t *dst, const uint8_t *src, int stride,\
             static const int shift_value[] = { 0, 5, 1, 5 };\
             int              shift = (shift_value[hmode]+shift_value[vmode])>>1;\
             int              r;\
-            LOCAL_ALIGNED(16, int16_t, tmp, [12*8]);\
+            DECLARE_ALIGNED(16, int16_t, tmp)[12*8];\
 \
             r = (1<<(shift-1)) + rnd-1;\
             vc1_put_shift_ver_16bits[vmode](tmp, src-1, stride, r, shift);\
@@ -462,15 +457,6 @@ static void OP ## vc1_mspel_mc(uint8_t *dst, const uint8_t *src, int stride,\
 \
     /* Horizontal mode with no vertical mode */\
     vc1_put_shift_8bits[hmode](dst, src, stride, rnd, 1);\
-} \
-static void OP ## vc1_mspel_mc_16(uint8_t *dst, const uint8_t *src, \
-                                  int stride, int hmode, int vmode, int rnd)\
-{ \
-    OP ## vc1_mspel_mc(dst + 0, src + 0, stride, hmode, vmode, rnd); \
-    OP ## vc1_mspel_mc(dst + 8, src + 8, stride, hmode, vmode, rnd); \
-    dst += 8*stride; src += 8*stride; \
-    OP ## vc1_mspel_mc(dst + 0, src + 0, stride, hmode, vmode, rnd); \
-    OP ## vc1_mspel_mc(dst + 8, src + 8, stride, hmode, vmode, rnd); \
 }
 
 VC1_MSPEL_MC(put_)
@@ -491,20 +477,6 @@ static void avg_vc1_mspel_mc ## a ## b ## _mmxext(uint8_t *dst,         \
                                                   int rnd)              \
 {                                                                       \
      avg_vc1_mspel_mc(dst, src, stride, a, b, rnd);                     \
-}\
-static void put_vc1_mspel_mc ## a ## b ## _16_mmx(uint8_t *dst,         \
-                                                  const uint8_t *src,   \
-                                                  ptrdiff_t stride,     \
-                                                  int rnd)              \
-{                                                                       \
-     put_vc1_mspel_mc_16(dst, src, stride, a, b, rnd);                  \
-}\
-static void avg_vc1_mspel_mc ## a ## b ## _16_mmxext(uint8_t *dst,      \
-                                                     const uint8_t *src,\
-                                                     ptrdiff_t stride,  \
-                                                     int rnd)           \
-{                                                                       \
-     avg_vc1_mspel_mc_16(dst, src, stride, a, b, rnd);                  \
 }
 
 DECLARE_FUNCTION(0, 1)
@@ -728,56 +700,59 @@ static void vc1_inv_trans_8x8_dc_mmxext(uint8_t *dest, int linesize,
     );
 }
 
-#define FN_ASSIGN(OP, X, Y, INSN) \
-    dsp->OP##vc1_mspel_pixels_tab[1][X+4*Y] = OP##vc1_mspel_mc##X##Y##INSN; \
-    dsp->OP##vc1_mspel_pixels_tab[0][X+4*Y] = OP##vc1_mspel_mc##X##Y##_16##INSN
+static void put_vc1_mspel_mc00_mmx(uint8_t *dst, const uint8_t *src,
+                                   ptrdiff_t stride, int rnd)
+{
+    ff_put_pixels8_mmx(dst, src, stride, 8);
+}
 
 av_cold void ff_vc1dsp_init_mmx(VC1DSPContext *dsp)
 {
-    FN_ASSIGN(put_, 0, 1, _mmx);
-    FN_ASSIGN(put_, 0, 2, _mmx);
-    FN_ASSIGN(put_, 0, 3, _mmx);
+    dsp->put_vc1_mspel_pixels_tab[ 0] = put_vc1_mspel_mc00_mmx;
+    dsp->put_vc1_mspel_pixels_tab[ 4] = put_vc1_mspel_mc01_mmx;
+    dsp->put_vc1_mspel_pixels_tab[ 8] = put_vc1_mspel_mc02_mmx;
+    dsp->put_vc1_mspel_pixels_tab[12] = put_vc1_mspel_mc03_mmx;
 
-    FN_ASSIGN(put_, 1, 0, _mmx);
-    FN_ASSIGN(put_, 1, 1, _mmx);
-    FN_ASSIGN(put_, 1, 2, _mmx);
-    FN_ASSIGN(put_, 1, 3, _mmx);
+    dsp->put_vc1_mspel_pixels_tab[ 1] = put_vc1_mspel_mc10_mmx;
+    dsp->put_vc1_mspel_pixels_tab[ 5] = put_vc1_mspel_mc11_mmx;
+    dsp->put_vc1_mspel_pixels_tab[ 9] = put_vc1_mspel_mc12_mmx;
+    dsp->put_vc1_mspel_pixels_tab[13] = put_vc1_mspel_mc13_mmx;
 
-    FN_ASSIGN(put_, 2, 0, _mmx);
-    FN_ASSIGN(put_, 2, 1, _mmx);
-    FN_ASSIGN(put_, 2, 2, _mmx);
-    FN_ASSIGN(put_, 2, 3, _mmx);
+    dsp->put_vc1_mspel_pixels_tab[ 2] = put_vc1_mspel_mc20_mmx;
+    dsp->put_vc1_mspel_pixels_tab[ 6] = put_vc1_mspel_mc21_mmx;
+    dsp->put_vc1_mspel_pixels_tab[10] = put_vc1_mspel_mc22_mmx;
+    dsp->put_vc1_mspel_pixels_tab[14] = put_vc1_mspel_mc23_mmx;
 
-    FN_ASSIGN(put_, 3, 0, _mmx);
-    FN_ASSIGN(put_, 3, 1, _mmx);
-    FN_ASSIGN(put_, 3, 2, _mmx);
-    FN_ASSIGN(put_, 3, 3, _mmx);
+    dsp->put_vc1_mspel_pixels_tab[ 3] = put_vc1_mspel_mc30_mmx;
+    dsp->put_vc1_mspel_pixels_tab[ 7] = put_vc1_mspel_mc31_mmx;
+    dsp->put_vc1_mspel_pixels_tab[11] = put_vc1_mspel_mc32_mmx;
+    dsp->put_vc1_mspel_pixels_tab[15] = put_vc1_mspel_mc33_mmx;
 }
 
 av_cold void ff_vc1dsp_init_mmxext(VC1DSPContext *dsp)
 {
-    FN_ASSIGN(avg_, 0, 1, _mmxext);
-    FN_ASSIGN(avg_, 0, 2, _mmxext);
-    FN_ASSIGN(avg_, 0, 3, _mmxext);
+    dsp->avg_vc1_mspel_pixels_tab[ 4] = avg_vc1_mspel_mc01_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[ 8] = avg_vc1_mspel_mc02_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[12] = avg_vc1_mspel_mc03_mmxext;
 
-    FN_ASSIGN(avg_, 1, 0, _mmxext);
-    FN_ASSIGN(avg_, 1, 1, _mmxext);
-    FN_ASSIGN(avg_, 1, 2, _mmxext);
-    FN_ASSIGN(avg_, 1, 3, _mmxext);
+    dsp->avg_vc1_mspel_pixels_tab[ 1] = avg_vc1_mspel_mc10_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[ 5] = avg_vc1_mspel_mc11_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[ 9] = avg_vc1_mspel_mc12_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[13] = avg_vc1_mspel_mc13_mmxext;
 
-    FN_ASSIGN(avg_, 2, 0, _mmxext);
-    FN_ASSIGN(avg_, 2, 1, _mmxext);
-    FN_ASSIGN(avg_, 2, 2, _mmxext);
-    FN_ASSIGN(avg_, 2, 3, _mmxext);
+    dsp->avg_vc1_mspel_pixels_tab[ 2] = avg_vc1_mspel_mc20_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[ 6] = avg_vc1_mspel_mc21_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[10] = avg_vc1_mspel_mc22_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[14] = avg_vc1_mspel_mc23_mmxext;
 
-    FN_ASSIGN(avg_, 3, 0, _mmxext);
-    FN_ASSIGN(avg_, 3, 1, _mmxext);
-    FN_ASSIGN(avg_, 3, 2, _mmxext);
-    FN_ASSIGN(avg_, 3, 3, _mmxext);
+    dsp->avg_vc1_mspel_pixels_tab[ 3] = avg_vc1_mspel_mc30_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[ 7] = avg_vc1_mspel_mc31_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[11] = avg_vc1_mspel_mc32_mmxext;
+    dsp->avg_vc1_mspel_pixels_tab[15] = avg_vc1_mspel_mc33_mmxext;
 
     dsp->vc1_inv_trans_8x8_dc = vc1_inv_trans_8x8_dc_mmxext;
     dsp->vc1_inv_trans_4x8_dc = vc1_inv_trans_4x8_dc_mmxext;
     dsp->vc1_inv_trans_8x4_dc = vc1_inv_trans_8x4_dc_mmxext;
     dsp->vc1_inv_trans_4x4_dc = vc1_inv_trans_4x4_dc_mmxext;
 }
-#endif /* HAVE_6REGS && HAVE_INLINE_ASM */
+#endif /* HAVE_INLINE_ASM */
