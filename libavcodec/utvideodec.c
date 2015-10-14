@@ -2,20 +2,20 @@
  * Ut Video decoder
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,13 +56,12 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
         *fsym = he[0].sym;
         return 0;
     }
+    if (he[0].len > 32)
+        return -1;
 
     last = 255;
     while (he[last].len == 255 && last)
         last--;
-
-    if (he[last].len > 32)
-        return -1;
 
     code = 1;
     for (i = last; i >= 0; i--) {
@@ -72,7 +71,7 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
         code += 0x80000000u >> (he[i].len - 1);
     }
 
-    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 11), last + 1,
+    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 9), last + 1,
                               bits,  sizeof(*bits),  sizeof(*bits),
                               codes, sizeof(*codes), sizeof(*codes),
                               syms,  sizeof(*syms),  sizeof(*syms), 0);
@@ -157,7 +156,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
                            "Slice decoding ran out of bits\n");
                     goto fail;
                 }
-                pix = get_vlc2(&gb, vlc.table, vlc.bits, 3);
+                pix = get_vlc2(&gb, vlc.table, vlc.bits, 4);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
                     goto fail;
@@ -214,9 +213,9 @@ static void restore_median(uint8_t *src, int step, int stride,
         slice_start  = ((slice * height) / slices) & cmask;
         slice_height = ((((slice + 1) * height) / slices) & cmask) -
                        slice_start;
-
         if (!slice_height)
             continue;
+
         bsrc = src + slice_start * stride;
 
         // first line - left neighbour prediction
@@ -227,7 +226,7 @@ static void restore_median(uint8_t *src, int step, int stride,
             A        = bsrc[i];
         }
         bsrc += stride;
-        if (slice_height <= 1)
+        if (slice_height == 1)
             continue;
         // second line - first element has top prediction, the rest uses median
         C        = bsrc[-stride];
@@ -289,7 +288,7 @@ static void restore_median_il(uint8_t *src, int step, int stride,
             A                 = bsrc[stride + i];
         }
         bsrc += stride2;
-        if (slice_height <= 1)
+        if (slice_height == 1)
             continue;
         // second line - first element has top prediction, the rest uses median
         C        = bsrc[-stride2];
@@ -340,8 +339,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     GetByteContext gb;
     ThreadFrame frame = { .f = data };
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
+
+    ff_thread_finish_setup(avctx);
 
     /* parse plane structure to get frame flags and validate slice offsets */
     bytestream2_init(&gb, buf, buf_size);
