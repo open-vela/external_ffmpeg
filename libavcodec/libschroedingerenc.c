@@ -2,20 +2,20 @@
  * Dirac encoder support via Schroedinger libraries
  * Copyright (c) 2008 BBC, Anuradha Suraparaju <asuraparaju at gmail dot com >
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,7 @@
 #include <schroedinger/schrovideoformat.h>
 
 #include "libavutil/attributes.h"
-#include "libavutil/imgutils.h"
-
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "libschroedinger.h"
@@ -156,9 +155,9 @@ static av_cold int libschroedinger_encode_init(AVCodecContext *avctx)
     p_schro_params->format->frame_rate_numerator   = avctx->time_base.den;
     p_schro_params->format->frame_rate_denominator = avctx->time_base.num;
 
-    p_schro_params->frame_size = av_image_get_buffer_size(avctx->pix_fmt,
-                                                          avctx->width,
-                                                          avctx->height, 1);
+    p_schro_params->frame_size = avpicture_get_size(avctx->pix_fmt,
+                                                    avctx->width,
+                                                    avctx->height);
 
     if (!avctx->gop_size) {
         schro_encoder_setting_set_double(p_schro_params->encoder,
@@ -235,17 +234,17 @@ static SchroFrame *libschroedinger_frame_from_data(AVCodecContext *avctx,
                                                    const AVFrame *frame)
 {
     SchroEncoderParams *p_schro_params = avctx->priv_data;
-    SchroFrame *in_frame = ff_create_schro_frame(avctx,
-                                                 p_schro_params->frame_format);
+    SchroFrame *in_frame;
+    /* Input line size may differ from what the codec supports. Especially
+     * when transcoding from one format to another. So use avpicture_layout
+     * to copy the frame. */
+    in_frame = ff_create_schro_frame(avctx, p_schro_params->frame_format);
 
-    if (in_frame) {
-        /* Copy input data to SchroFrame buffers (they match the ones
-         * referenced by the AVFrame stored in priv) */
-        if (av_frame_copy(in_frame->priv, frame) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Failed to copy input data\n");
-            return NULL;
-        }
-    }
+    if (in_frame)
+        avpicture_layout((const AVPicture *)frame, avctx->pix_fmt,
+                          avctx->width, avctx->height,
+                          in_frame->components[0].data,
+                          p_schro_params->frame_size);
 
     return in_frame;
 }
@@ -380,10 +379,8 @@ static int libschroedinger_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     pkt_size = p_frame_output->size;
     if (last_frame_in_sequence && p_schro_params->enc_buf_size > 0)
         pkt_size += p_schro_params->enc_buf_size;
-    if ((ret = ff_alloc_packet(pkt, pkt_size)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", pkt_size);
+    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size, 0)) < 0)
         goto error;
-    }
 
     memcpy(pkt->data, p_frame_output->p_encbuf, p_frame_output->size);
 #if FF_API_CODED_FRAME
