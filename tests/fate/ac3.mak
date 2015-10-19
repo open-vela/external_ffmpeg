@@ -28,14 +28,6 @@ FATE_AC3 += fate-ac3-5.1-downmix-stereo
 fate-ac3-5.1-downmix-stereo: CMD = pcm -request_channel_layout 3 -i $(TARGET_SAMPLES)/ac3/monsters_inc_5.1_448_small.ac3
 fate-ac3-5.1-downmix-stereo: REF = $(SAMPLES)/ac3/monsters_inc_5.1_448_small_stereo_v2.pcm
 
-FATE_AC3 += fate-ac3-fixed-2.0
-fate-ac3-fixed-2.0: CMD = pcm -c ac3_fixed -i $(TARGET_SAMPLES)/ac3/monsters_inc_2.0_192_small.ac3
-fate-ac3-fixed-2.0: REF = $(SAMPLES)/ac3/monsters_inc_2.0_192_small_v2.pcm
-
-FATE_AC3 += fate-ac3-fixed-4.0-downmix-mono
-fate-ac3-fixed-4.0-downmix-mono: CMD = pcm -c ac3_fixed -request_channel_layout 4 -i $(TARGET_SAMPLES)/ac3/millers_crossing_4.0.ac3
-fate-ac3-fixed-4.0-downmix-mono: REF = $(SAMPLES)/ac3/millers_crossing_4.0_mono_v2.pcm
-
 FATE_EAC3 += fate-eac3-1
 fate-eac3-1: CMD = pcm -i $(TARGET_SAMPLES)/eac3/csi_miami_5.1_256_spx_small.eac3
 fate-eac3-1: REF = $(SAMPLES)/eac3/csi_miami_5.1_256_spx_small_v2.pcm
@@ -63,7 +55,6 @@ fate-ac3-encode: CMP_SHIFT = -1024
 fate-ac3-encode: CMP_TARGET = 404.53
 fate-ac3-encode: SIZE_TOLERANCE = 488
 
-
 FATE_EAC3-$(call ENCDEC, EAC3, EAC3) += fate-eac3-encode
 fate-eac3-encode: CMD = enc_dec_pcm eac3 wav s16le $(subst $(SAMPLES),$(TARGET_SAMPLES),$(REF)) -c:a eac3 -b:a 128k
 fate-eac3-encode: CMP_SHIFT = -1024
@@ -76,7 +67,7 @@ fate-ac3-encode fate-eac3-encode: REF = $(SAMPLES)/audio-reference/luckynight_2c
 FATE_AC3-$(call ENCMUX, AC3_FIXED, AC3) += fate-ac3-fixed-encode
 fate-ac3-fixed-encode: tests/data/asynth-44100-2.wav
 fate-ac3-fixed-encode: SRC = $(TARGET_PATH)/tests/data/asynth-44100-2.wav
-fate-ac3-fixed-encode: CMD = md5 -i $(SRC) -c ac3_fixed -ab 128k -f ac3 -flags +bitexact
+fate-ac3-fixed-encode: CMD = md5 -i $(SRC) -c ac3_fixed -b 128k -f ac3 -flags bitexact
 fate-ac3-fixed-encode: CMP = oneline
 fate-ac3-fixed-encode: REF = a1d1fc116463b771abf5aef7ed37d7b1
 
