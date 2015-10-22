@@ -2,20 +2,20 @@
  * TechSmith Camtasia decoder
  * Copyright (c) 2004 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,6 +47,7 @@
 typedef struct TsccContext {
 
     AVCodecContext *avctx;
+    AVFrame *frame;
 
     // Bits per pixel
     int bpp;
@@ -67,13 +68,11 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     CamtasiaContext * const c = avctx->priv_data;
-    AVFrame *frame = data;
+    AVFrame *frame = c->frame;
     int ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0){
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, frame)) < 0)
         return ret;
-    }
 
     ret = inflateReset(&c->zstream);
     if (ret != Z_OK) {
@@ -95,7 +94,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (ret != Z_DATA_ERROR) {
         bytestream2_init(&c->gb, c->decomp_buf,
                          c->decomp_size - c->zstream.avail_out);
-        ff_msrle_decode(avctx, frame, c->bpp, &c->gb);
+        ff_msrle_decode(avctx, (AVPicture*)frame, c->bpp, &c->gb);
     }
 
     /* make the palette available on the way out */
@@ -109,6 +108,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         memcpy(frame->data[1], c->pal, AVPALETTE_SIZE);
     }
 
+    if ((ret = av_frame_ref(data, frame)) < 0)
+        return ret;
     *got_frame      = 1;
 
     /* always report that the buffer was completely consumed */
@@ -132,9 +133,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
     case 24:
              avctx->pix_fmt = AV_PIX_FMT_BGR24;
              break;
-    case 32: avctx->pix_fmt = AV_PIX_FMT_RGB32; break;
+    case 32: avctx->pix_fmt = AV_PIX_FMT_0RGB32; break;
     default: av_log(avctx, AV_LOG_ERROR, "Camtasia error: unknown depth %i bpp\n", avctx->bits_per_coded_sample);
-             return AVERROR_INVALIDDATA;
+             return AVERROR_PATCHWELCOME;
     }
     c->bpp = avctx->bits_per_coded_sample;
     // buffer size for RLE 'best' case when 2-byte code precedes each pixel and there may be padding after it too
@@ -157,6 +158,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR_UNKNOWN;
     }
 
+    c->frame = av_frame_alloc();
+
     return 0;
 }
 
@@ -165,6 +168,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
     CamtasiaContext * const c = avctx->priv_data;
 
     av_freep(&c->decomp_buf);
+    av_frame_free(&c->frame);
 
     inflateEnd(&c->zstream);
 
