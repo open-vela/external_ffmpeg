@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -165,7 +165,7 @@ static void ffmmal_stop_decoder(AVCodecContext *avctx)
     }
     ctx->waiting_buffers_tail = NULL;
 
-    av_assert0(avpriv_atomic_int_get(&ctx->packets_buffered) == 0);
+    assert(avpriv_atomic_get(&ctx->packets_buffered) == 0);
 
     ctx->frames_output = ctx->eos_received = ctx->eos_sent = ctx->packets_sent = ctx->extradata_sent = 0;
 }
@@ -350,17 +350,7 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
 
     format_in = decoder->input[0]->format;
     format_in->type = MMAL_ES_TYPE_VIDEO;
-    switch (avctx->codec_id) {
-        case AV_CODEC_ID_MPEG2VIDEO:
-            format_in->encoding = MMAL_ENCODING_MP2V;
-            av_log(avctx, AV_LOG_DEBUG, "Use MMAL MP2V encoding\n");
-            break;
-        case AV_CODEC_ID_H264:
-        default:
-            format_in->encoding = MMAL_ENCODING_H264;
-            av_log(avctx, AV_LOG_DEBUG, "Use MMAL H264 encoding\n");
-            break;
-    }
+    format_in->encoding = MMAL_ENCODING_H264;
     format_in->es->video.width = FFALIGN(avctx->width, 32);
     format_in->es->video.height = FFALIGN(avctx->height, 16);
     format_in->es->video.crop.width = avctx->width;
@@ -776,44 +766,31 @@ AVHWAccel ff_h264_mmal_hwaccel = {
     .pix_fmt    = AV_PIX_FMT_MMAL,
 };
 
-AVHWAccel ff_mpeg2_mmal_hwaccel = {
-    .name       = "mpeg2_mmal",
-    .type       = AVMEDIA_TYPE_VIDEO,
-    .id         = AV_CODEC_ID_MPEG2VIDEO,
-    .pix_fmt    = AV_PIX_FMT_MMAL,
-};
-
 static const AVOption options[]={
     {"extra_buffers", "extra buffers", offsetof(MMALDecodeContext, extra_buffers), AV_OPT_TYPE_INT, {.i64 = 10}, 0, 256, 0},
     {NULL}
 };
 
-#define FFMMAL_DEC_CLASS(NAME) \
-    static const AVClass ffmmal_##NAME##_dec_class = { \
-        .class_name = "mmal_" #NAME "_dec", \
-        .option     = options, \
-        .version    = LIBAVUTIL_VERSION_INT, \
-    };
+static const AVClass ffmmaldec_class = {
+    .class_name = "mmaldec",
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
-#define FFMMAL_DEC(NAME, ID) \
-    FFMMAL_DEC_CLASS(NAME) \
-    AVCodec ff_##NAME##_mmal_decoder = { \
-        .name           = #NAME "_mmal", \
-        .long_name      = NULL_IF_CONFIG_SMALL(#NAME " (mmal)"), \
-        .type           = AVMEDIA_TYPE_VIDEO, \
-        .id             = ID, \
-        .priv_data_size = sizeof(MMALDecodeContext), \
-        .init           = ffmmal_init_decoder, \
-        .close          = ffmmal_close_decoder, \
-        .decode         = ffmmal_decode, \
-        .flush          = ffmmal_flush, \
-        .priv_class     = &ffmmal_##NAME##_dec_class, \
-        .capabilities   = AV_CODEC_CAP_DELAY, \
-        .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS, \
-        .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL, \
-                                                         AV_PIX_FMT_YUV420P, \
-                                                         AV_PIX_FMT_NONE}, \
-    };
-
-FFMMAL_DEC(h264, AV_CODEC_ID_H264)
-FFMMAL_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO)
+AVCodec ff_h264_mmal_decoder = {
+    .name           = "h264_mmal",
+    .long_name      = NULL_IF_CONFIG_SMALL("h264 (mmal)"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_H264,
+    .priv_data_size = sizeof(MMALDecodeContext),
+    .init           = ffmmal_init_decoder,
+    .close          = ffmmal_close_decoder,
+    .decode         = ffmmal_decode,
+    .flush          = ffmmal_flush,
+    .priv_class     = &ffmmaldec_class,
+    .capabilities   = AV_CODEC_CAP_DELAY,
+    .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL,
+                                                     AV_PIX_FMT_YUV420P,
+                                                     AV_PIX_FMT_NONE},
+};
