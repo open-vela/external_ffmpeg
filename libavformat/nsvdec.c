@@ -1,23 +1,23 @@
 /*
  * NSV demuxer
- * Copyright (c) 2004 The Libav Project
+ * Copyright (c) 2004 The FFmpeg Project
  *
  * first version by Francois Revol <revol@free.fr>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +26,7 @@
 #include "avformat.h"
 #include "internal.h"
 #include "libavutil/dict.h"
+#include "libavutil/intreadwrite.h"
 
 /* max bytes to crawl for trying to resync
  * stupid streaming servers don't start at chunk boundaries...
@@ -69,11 +70,7 @@
  * so the header seems to not be mandatory. (for streaming).
  *
  * index slice duration check (excepts nsvtrailer.nsv):
- * for f in [^n]*.nsv; do
- *     DUR="$(avconv -i "$f" 2> /dev/null | grep 'NSVf duration' | cut -d ' ' -f 4)"
- *     IC="$(avconv -i "$f" 2> /dev/null | grep 'INDEX ENTRIES' | cut -d ' ' -f 2)"
- *     echo "duration $DUR, slite time $(($DUR/$IC))"
- * done
+ * for f in [^n]*.nsv; do DUR="$(ffmpeg -i "$f" 2>/dev/null | grep 'NSVf duration' | cut -d ' ' -f 4)"; IC="$(ffmpeg -i "$f" 2>/dev/null | grep 'INDEX ENTRIES' | cut -d ' ' -f 2)"; echo "duration $DUR, slite time $(($DUR/$IC))"; done
  */
 
 /*
@@ -99,8 +96,8 @@ struct NSVs_header {
     uint32_t chunk_tag; /* 'NSVs' */
     uint32_t v4cc;      /* or 'NONE' */
     uint32_t a4cc;      /* or 'NONE' */
-    uint16_t vwidth;    /* assert(vwidth%16==0) */
-    uint16_t vheight;   /* assert(vheight%16==0) */
+    uint16_t vwidth;    /* av_assert0(vwidth%16==0) */
+    uint16_t vheight;   /* av_assert0(vheight%16==0) */
     uint8_t framerate;  /* value = (framerate&0x80)?frtable[frameratex0x7f]:framerate */
     uint16_t unknown;
 };
@@ -192,6 +189,7 @@ static const AVCodecTag nsv_codec_video_tags[] = {
     { AV_CODEC_ID_VP6, MKTAG('V', 'P', '6', '0') },
     { AV_CODEC_ID_VP6, MKTAG('V', 'P', '6', '1') },
     { AV_CODEC_ID_VP6, MKTAG('V', 'P', '6', '2') },
+    { AV_CODEC_ID_VP8, MKTAG('V', 'P', '8', '0') },
 /*
     { AV_CODEC_ID_VP4, MKTAG('V', 'P', '4', ' ') },
     { AV_CODEC_ID_VP4, MKTAG('V', 'P', '4', '0') },
@@ -205,6 +203,7 @@ static const AVCodecTag nsv_codec_audio_tags[] = {
     { AV_CODEC_ID_MP3,       MKTAG('M', 'P', '3', ' ') },
     { AV_CODEC_ID_AAC,       MKTAG('A', 'A', 'C', ' ') },
     { AV_CODEC_ID_AAC,       MKTAG('A', 'A', 'C', 'P') },
+    { AV_CODEC_ID_AAC,       MKTAG('V', 'L', 'B', ' ') },
     { AV_CODEC_ID_SPEEX,     MKTAG('S', 'P', 'X', ' ') },
     { AV_CODEC_ID_PCM_U16LE, MKTAG('P', 'C', 'M', ' ') },
     { AV_CODEC_ID_NONE,      0 },
@@ -233,7 +232,7 @@ static int nsv_resync(AVFormatContext *s)
     //nsv->state = NSV_UNSYNC;
 
     for (i = 0; i < NSV_MAX_RESYNC; i++) {
-        if (pb->eof_reached) {
+        if (avio_feof(pb)) {
             av_log(s, AV_LOG_TRACE, "NSV EOF\n");
             nsv->state = NSV_UNSYNC;
             return -1;
@@ -300,7 +299,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
     table_entries_used = avio_rl32(pb);
     av_log(s, AV_LOG_TRACE, "NSV NSVf info-strings size: %d, table entries: %d, bis %d\n",
             strings_size, table_entries, table_entries_used);
-    if (pb->eof_reached)
+    if (avio_feof(pb))
         return -1;
 
     av_log(s, AV_LOG_TRACE, "NSV got header; filepos %"PRId64"\n", avio_tell(pb));
@@ -337,7 +336,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
         }
         av_free(strings);
     }
-    if (pb->eof_reached)
+    if (avio_feof(pb))
         return -1;
 
     av_log(s, AV_LOG_TRACE, "NSV got infos; filepos %"PRId64"\n", avio_tell(pb));
@@ -347,7 +346,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
         nsv->index_entries = table_entries_used;
         if((unsigned)table_entries_used >= UINT_MAX / sizeof(uint32_t))
             return -1;
-        nsv->nsvs_file_offset = av_malloc((unsigned)table_entries_used * sizeof(uint32_t));
+        nsv->nsvs_file_offset = av_malloc_array((unsigned)table_entries_used, sizeof(uint32_t));
         if (!nsv->nsvs_file_offset)
             return AVERROR(ENOMEM);
 
@@ -356,7 +355,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
 
         if(table_entries > table_entries_used &&
            avio_rl32(pb) == MKTAG('T','O','C','2')) {
-            nsv->nsvs_timestamps = av_malloc((unsigned)table_entries_used*sizeof(uint32_t));
+            nsv->nsvs_timestamps = av_malloc_array((unsigned)table_entries_used, sizeof(uint32_t));
             if (!nsv->nsvs_timestamps)
                 return AVERROR(ENOMEM);
             for(i=0;i<table_entries_used;i++) {
@@ -369,7 +368,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
 
     avio_seek(pb, nsv->base_offset + size, SEEK_SET); /* required for dumbdriving-271.nsv (2 extra bytes) */
 
-    if (pb->eof_reached)
+    if (avio_feof(pb))
         return -1;
     nsv->state = NSV_HAS_READ_NSVF;
     return 0;
@@ -540,6 +539,7 @@ static int nsv_read_chunk(AVFormatContext *s, int fill_header)
     uint32_t vsize;
     uint16_t asize;
     uint16_t auxsize;
+    int ret;
 
     av_log(s, AV_LOG_TRACE, "%s(%d)\n", __FUNCTION__, fill_header);
 
@@ -547,7 +547,7 @@ static int nsv_read_chunk(AVFormatContext *s, int fill_header)
         return 0; //-1; /* hey! eat what you've in your plate first! */
 
 null_chunk_retry:
-    if (pb->eof_reached)
+    if (avio_feof(pb))
         return -1;
 
     for (i = 0; i < NSV_MAX_RESYNC_TRIES && nsv->state < NSV_FOUND_NSVS && !err; i++)
@@ -582,7 +582,7 @@ null_chunk_retry:
         vsize -= auxsize + sizeof(uint16_t) + sizeof(uint32_t); /* that's becoming braindead */
     }
 
-    if (pb->eof_reached)
+    if (avio_feof(pb))
         return -1;
     if (!vsize && !asize) {
         nsv->state = NSV_UNSYNC;
@@ -598,7 +598,8 @@ null_chunk_retry:
     if (vsize && st[NSV_ST_VIDEO]) {
         nst = st[NSV_ST_VIDEO]->priv_data;
         pkt = &nsv->ahead[NSV_ST_VIDEO];
-        av_get_packet(pb, pkt, vsize);
+        if ((ret = av_get_packet(pb, pkt, vsize)) < 0)
+            return ret;
         pkt->stream_index = st[NSV_ST_VIDEO]->index;//NSV_ST_VIDEO;
         pkt->dts = nst->frame_offset;
         pkt->flags |= nsv->state == NSV_HAS_READ_NSVS ? AV_PKT_FLAG_KEY : 0; /* keyframe only likely on a sync frame */
@@ -639,7 +640,8 @@ null_chunk_retry:
                 av_log(s, AV_LOG_TRACE, "NSV RAWAUDIO: bps %d, nchan %d, srate %d\n", bps, channels, samplerate);
             }
         }
-        av_get_packet(pb, pkt, asize);
+        if ((ret = av_get_packet(pb, pkt, asize)) < 0)
+            return ret;
         pkt->stream_index = st[NSV_ST_AUDIO]->index;//NSV_ST_AUDIO;
         pkt->flags |= nsv->state == NSV_HAS_READ_NSVS ? AV_PKT_FLAG_KEY : 0; /* keyframe only likely on a sync frame */
         if( nsv->state == NSV_HAS_READ_NSVS && st[NSV_ST_VIDEO] ) {
@@ -711,19 +713,16 @@ static int nsv_read_close(AVFormatContext *s)
     av_freep(&nsv->nsvs_file_offset);
     av_freep(&nsv->nsvs_timestamps);
     if (nsv->ahead[0].data)
-        av_packet_unref(&nsv->ahead[0]);
+        av_free_packet(&nsv->ahead[0]);
     if (nsv->ahead[1].data)
-        av_packet_unref(&nsv->ahead[1]);
+        av_free_packet(&nsv->ahead[1]);
     return 0;
 }
 
 static int nsv_probe(AVProbeData *p)
 {
-    int i;
-    int score;
-    int vsize, asize, auxcount;
-    score = 0;
-    av_log(NULL, AV_LOG_TRACE, "nsv_probe(), buf_size %d\n", p->buf_size);
+    int i, score = 0;
+
     /* check file header */
     /* streamed files might not have any header */
     if (p->buf[0] == 'N' && p->buf[1] == 'S' &&
@@ -734,19 +733,14 @@ static int nsv_probe(AVProbeData *p)
     /* seems the servers don't bother starting clean chunks... */
     /* sometimes even the first header is at 9KB or something :^) */
     for (i = 1; i < p->buf_size - 3; i++) {
-        if (p->buf[i+0] == 'N' && p->buf[i+1] == 'S' &&
-            p->buf[i+2] == 'V' && p->buf[i+3] == 's') {
-            score = AVPROBE_SCORE_MAX/5;
+        if (AV_RL32(p->buf + i) == AV_RL32("NSVs")) {
             /* Get the chunk size and check if at the end we are getting 0xBEEF */
-            auxcount = p->buf[i+19];
-            vsize = p->buf[i+20]  | p->buf[i+21] << 8;
-            asize = p->buf[i+22]  | p->buf[i+23] << 8;
-            vsize = (vsize << 4) | (auxcount >> 4);
-            if ((asize + vsize + i + 23) <  p->buf_size - 2) {
-                if (p->buf[i+23+asize+vsize+1] == 0xEF &&
-                    p->buf[i+23+asize+vsize+2] == 0xBE)
-                    return AVPROBE_SCORE_MAX-20;
-            }
+            int vsize = AV_RL24(p->buf+i+19) >> 4;
+            int asize = AV_RL16(p->buf+i+22);
+            int offset = i + 23 + asize + vsize + 1;
+            if (offset <= p->buf_size - 2 && AV_RL16(p->buf + offset) == 0xBEEF)
+                return 4*AVPROBE_SCORE_MAX/5;
+            score = AVPROBE_SCORE_MAX/5;
         }
     }
     /* so we'll have more luck on extension... */

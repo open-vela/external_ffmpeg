@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,6 +40,11 @@ static int adx_read_packet(AVFormatContext *s, AVPacket *pkt)
     AVCodecContext *avctx = s->streams[0]->codec;
     int ret, size;
 
+    if (avctx->channels <= 0) {
+        av_log(s, AV_LOG_ERROR, "invalid number of channels %d\n", avctx->channels);
+        return AVERROR_INVALIDDATA;
+    }
+
     size = BLOCK_SIZE * avctx->channels;
 
     pkt->pos = avio_tell(s->pb);
@@ -47,11 +52,11 @@ static int adx_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     ret = av_get_packet(s->pb, pkt, size);
     if (ret != size) {
-        av_packet_unref(pkt);
+        av_free_packet(pkt);
         return ret < 0 ? ret : AVERROR(EIO);
     }
     if (AV_RB16(pkt->data) & 0x8000) {
-        av_packet_unref(pkt);
+        av_free_packet(pkt);
         return AVERROR_EOF;
     }
     pkt->size     = size;
@@ -76,14 +81,8 @@ static int adx_read_header(AVFormatContext *s)
     c->header_size = avio_rb16(s->pb) + 4;
     avio_seek(s->pb, -4, SEEK_CUR);
 
-    avctx->extradata = av_mallocz(c->header_size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!avctx->extradata)
+    if (ff_get_extradata(avctx, s->pb, c->header_size) < 0)
         return AVERROR(ENOMEM);
-    if (avio_read(s->pb, avctx->extradata, c->header_size) < c->header_size) {
-        av_freep(&avctx->extradata);
-        return AVERROR(EIO);
-    }
-    avctx->extradata_size = c->header_size;
 
     if (avctx->extradata_size < 12) {
         av_log(s, AV_LOG_ERROR, "Invalid extradata size.\n");

@@ -2,20 +2,20 @@
  * LXF demuxer
  * Copyright (c) 2010 Tomas Härdin
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -83,7 +83,7 @@ static int check_checksum(const uint8_t *header, int size)
  * @param[out] header where to copy the ident to
  * @return 0 if an ident was found, < 0 on I/O error
  */
-static int sync(AVFormatContext *s, uint8_t *header)
+static int lxf_sync(AVFormatContext *s, uint8_t *header)
 {
     uint8_t buf[LXF_IDENT_LENGTH];
     int ret;
@@ -92,7 +92,7 @@ static int sync(AVFormatContext *s, uint8_t *header)
         return ret < 0 ? ret : AVERROR_EOF;
 
     while (memcmp(buf, LXF_IDENT, LXF_IDENT_LENGTH)) {
-        if (s->pb->eof_reached)
+        if (avio_feof(s->pb))
             return AVERROR_EOF;
 
         memmove(buf, &buf[1], LXF_IDENT_LENGTH-1);
@@ -120,7 +120,7 @@ static int get_packet_header(AVFormatContext *s)
     const uint8_t *p = header + LXF_IDENT_LENGTH;
 
     //find and read the ident
-    if ((ret = sync(s, header)) < 0)
+    if ((ret = lxf_sync(s, header)) < 0)
         return ret;
 
     ret = avio_read(pb, header + LXF_IDENT_LENGTH, 8);
@@ -140,8 +140,9 @@ static int get_packet_header(AVFormatContext *s)
     }
 
     //read the rest of the packet header
-    ret = avio_read(pb, header + (p - header), header_size - (p - header));
-    if (ret != header_size - (p - header))
+    if ((ret = avio_read(pb, header + (p - header),
+                          header_size - (p - header))) !=
+                          header_size - (p - header))
         return ret < 0 ? ret : AVERROR_EOF;
 
     if (check_checksum(header, header_size))
@@ -260,6 +261,7 @@ static int lxf_read_header(AVFormatContext *s)
     st->codec->bit_rate   = 1000000 * ((video_params >> 14) & 0xFF);
     st->codec->codec_tag  = video_params & 0xF;
     st->codec->codec_id   = ff_codec_get_id(lxf_tags, st->codec->codec_tag);
+    st->need_parsing      = AVSTREAM_PARSE_HEADERS;
 
     av_log(s, AV_LOG_DEBUG, "record: %x = %i-%02i-%02i\n",
            record_date, 1900 + (record_date & 0x7F), (record_date >> 7) & 0xF,
@@ -315,7 +317,7 @@ static int lxf_read_packet(AVFormatContext *s, AVPacket *pkt)
         return ret2;
 
     if ((ret2 = avio_read(pb, pkt->data, ret)) != ret) {
-        av_packet_unref(pkt);
+        av_free_packet(pkt);
         return ret2 < 0 ? ret2 : AVERROR_EOF;
     }
 
