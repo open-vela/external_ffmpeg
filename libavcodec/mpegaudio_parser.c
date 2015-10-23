@@ -3,27 +3,27 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "parser.h"
 #include "mpegaudiodecheader.h"
 #include "libavutil/common.h"
-#include "libavformat/id3v1.h" // for ID3v1_TAG_SIZE
+
 
 typedef struct MpegAudioParseContext {
     ParseContext pc;
@@ -35,7 +35,7 @@ typedef struct MpegAudioParseContext {
 
 #define MPA_HEADER_SIZE 4
 
-/* header + layer + freq + lsf/mpeg25 */
+/* header + layer + bitrate + freq + lsf/mpeg25 */
 #define SAME_HEADER_MASK \
    (0xffe00000 | (3 << 17) | (3 << 10) | (3 << 19))
 
@@ -49,14 +49,12 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
     uint32_t state= pc->state;
     int i;
     int next= END_NOT_FOUND;
-    int flush = !buf_size;
 
     for(i=0; i<buf_size; ){
         if(s->frame_size){
             int inc= FFMIN(buf_size - i, s->frame_size);
             i += inc;
             s->frame_size -= inc;
-            state = 0;
 
             if(!s->frame_size){
                 next= i;
@@ -69,26 +67,24 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
 
                 state= (state<<8) + buf[i++];
 
-                ret = avpriv_mpa_decode_header2(state, &sr, &channels, &frame_size, &bit_rate, &codec_id);
+                ret = avpriv_mpa_decode_header(avctx, state, &sr, &channels, &frame_size, &bit_rate);
                 if (ret < 4) {
                     if (i > 4)
                         s->header_count = -2;
                 } else {
-                    int header_threshold = avctx->codec_id != AV_CODEC_ID_NONE && avctx->codec_id != codec_id;
                     if((state&SAME_HEADER_MASK) != (s->header&SAME_HEADER_MASK) && s->header)
                         s->header_count= -3;
                     s->header= state;
                     s->header_count++;
                     s->frame_size = ret-4;
 
-                    if (s->header_count > header_threshold) {
+                    if (s->header_count > 0) {
                         avctx->sample_rate= sr;
                         avctx->channels   = channels;
                         s1->duration      = frame_size;
-                        avctx->codec_id   = codec_id;
                         if (s->no_bitrate || !avctx->bit_rate) {
                             s->no_bitrate = 1;
-                            avctx->bit_rate += (bit_rate - avctx->bit_rate) / (s->header_count - header_threshold);
+                            avctx->bit_rate += (bit_rate - avctx->bit_rate) / s->header_count;
                         }
                     }
 
@@ -112,12 +108,6 @@ static int mpegaudio_parse(AVCodecParserContext *s1,
         *poutbuf = NULL;
         *poutbuf_size = 0;
         return buf_size;
-    }
-
-    if (flush && buf_size >= ID3v1_TAG_SIZE && memcmp(buf, "TAG", 3) == 0) {
-        *poutbuf = NULL;
-        *poutbuf_size = 0;
-        return next;
     }
 
     *poutbuf = buf;
