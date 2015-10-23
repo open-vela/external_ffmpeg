@@ -3,20 +3,20 @@
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  * Copyright (C) 2015 Tom Butterworth <bangnoise@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -196,7 +196,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     int pktsize = FFMAX(ctx->tex_size, ctx->max_snappy * ctx->chunk_count) + header_length;
 
     /* Allocate maximum size packet, shrink later. */
-    ret = ff_alloc_packet2(avctx, pkt, pktsize, header_length);
+    ret = ff_alloc_packet(pkt, pktsize);
     if (ret < 0)
         return ret;
 
@@ -242,19 +242,16 @@ static av_cold int hap_init(AVCodecContext *avctx)
     case HAP_FMT_RGBDXT1:
         ratio = 8;
         avctx->codec_tag = MKTAG('H', 'a', 'p', '1');
-        avctx->bits_per_coded_sample = 24;
         ctx->tex_fun = ctx->dxtc.dxt1_block;
         break;
     case HAP_FMT_RGBADXT5:
         ratio = 4;
         avctx->codec_tag = MKTAG('H', 'a', 'p', '5');
-        avctx->bits_per_coded_sample = 32;
         ctx->tex_fun = ctx->dxtc.dxt5_block;
         break;
     case HAP_FMT_YCOCGDXT5:
         ratio = 4;
         avctx->codec_tag = MKTAG('H', 'a', 'p', 'Y');
-        avctx->bits_per_coded_sample = 24;
         ctx->tex_fun = ctx->dxtc.dxt5ys_block;
         break;
     default:
