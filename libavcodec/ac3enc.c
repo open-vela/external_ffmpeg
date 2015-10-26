@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2010 Justin Ruggles <justin.ruggles@gmail.com>
  * Copyright (c) 2006-2010 Prakash Punnoor <prakash@punnoor.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,6 +36,7 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
+#include "internal.h"
 #include "me_cmp.h"
 #include "put_bits.h"
 #include "audiodsp.h"
@@ -273,7 +274,7 @@ void ff_ac3_apply_rematrixing(AC3EncodeContext *s)
     int nb_coefs;
     int blk, bnd, i;
     int start, end;
-    uint8_t *flags;
+    uint8_t *flags = NULL;
 
     if (!s->rematrixing_enabled)
         return;
@@ -1182,7 +1183,7 @@ static inline int asym_quant(int c, int e, int qbits)
 {
     int m;
 
-    c = (((c << e) >> (24 - qbits)) + 1) >> 1;
+    c = (((c * (1<<e)) >> (24 - qbits)) + 1) >> 1;
     m = (1 << (qbits-1));
     if (c >= m)
         c = m - 1;
@@ -1210,14 +1211,11 @@ static void quantize_mantissas_blk_ch(AC3Mant *s, int32_t *fixed_coef,
     int i;
 
     for (i = start_freq; i < end_freq; i++) {
-        int v;
         int c = fixed_coef[i];
         int e = exp[i];
-        int b = bap[i];
-        switch (b) {
-        case 0:
-            v = 0;
-            break;
+        int v = bap[i];
+        if (v)
+        switch (v) {
         case 1:
             v = sym_quant(c, e, 3);
             switch (s->mant1_cnt) {
@@ -1286,7 +1284,7 @@ static void quantize_mantissas_blk_ch(AC3Mant *s, int32_t *fixed_coef,
             v = asym_quant(c, e, 16);
             break;
         default:
-            v = asym_quant(c, e, b - 1);
+            v = asym_quant(c, e, v - 1);
             break;
         }
         qmant[i] = v;
@@ -1386,7 +1384,7 @@ static void ac3_output_frame_header(AC3EncodeContext *s)
  */
 static void output_audio_block(AC3EncodeContext *s, int blk)
 {
-    int ch, i, baie, bnd, got_cpl, ch0;
+    int ch, i, baie, bnd, got_cpl, av_uninit(ch0);
     AC3Block *block = &s->blocks[blk];
 
     /* block switching */
@@ -2022,6 +2020,7 @@ av_cold int ff_ac3_encode_close(AVCodecContext *avctx)
     AC3EncodeContext *s = avctx->priv_data;
 
     av_freep(&s->windowed_samples);
+    if (s->planar_samples)
     for (ch = 0; ch < s->channels; ch++)
         av_freep(&s->planar_samples[ch]);
     av_freep(&s->planar_samples);
@@ -2037,6 +2036,7 @@ av_cold int ff_ac3_encode_close(AVCodecContext *avctx)
     av_freep(&s->qmant_buffer);
     av_freep(&s->cpl_coord_exp_buffer);
     av_freep(&s->cpl_coord_mant_buffer);
+    av_freep(&s->fdsp);
     for (blk = 0; blk < s->num_blocks; blk++) {
         AC3Block *block = &s->blocks[blk];
         av_freep(&block->mdct_coef);
@@ -2153,8 +2153,9 @@ static av_cold int validate_options(AC3EncodeContext *s)
 
     /* validate bit rate */
     if (s->eac3) {
-        int max_br, min_br, wpf, min_br_dist, min_br_code;
+        int max_br, min_br, wpf, min_br_code;
         int num_blks_code, num_blocks, frame_samples;
+        long long min_br_dist;
 
         /* calculate min/max bitrate */
         /* TODO: More testing with 3 and 2 blocks. All E-AC-3 samples I've
@@ -2184,9 +2185,9 @@ static av_cold int validate_options(AC3EncodeContext *s)
            this is needed for lookup tables for bandwidth and coupling
            parameter selection */
         min_br_code = -1;
-        min_br_dist = INT_MAX;
+        min_br_dist = INT64_MAX;
         for (i = 0; i < 19; i++) {
-            int br_dist = abs(ff_ac3_bitrate_tab[i] * 1000 - avctx->bit_rate);
+            long long br_dist = llabs(ff_ac3_bitrate_tab[i] * 1000 - avctx->bit_rate);
             if (br_dist < min_br_dist) {
                 min_br_dist = br_dist;
                 min_br_code = i;
@@ -2199,10 +2200,11 @@ static av_cold int validate_options(AC3EncodeContext *s)
             wpf--;
         s->frame_size_min = 2 * wpf;
     } else {
-        int best_br = 0, best_code = 0, best_diff = INT_MAX;
+        int best_br = 0, best_code = 0;
+        long long best_diff = INT64_MAX;
         for (i = 0; i < 19; i++) {
             int br   = (ff_ac3_bitrate_tab[i] >> s->bit_alloc.sr_shift) * 1000;
-            int diff = abs(br - avctx->bit_rate);
+            long long diff = llabs(br - avctx->bit_rate);
             if (diff < best_diff) {
                 best_br   = br;
                 best_code = i;
@@ -2250,7 +2252,7 @@ static av_cold int validate_options(AC3EncodeContext *s)
  */
 static av_cold void set_bandwidth(AC3EncodeContext *s)
 {
-    int blk, ch, cpl_start;
+    int blk, ch, av_uninit(cpl_start);
 
     if (s->cutoff) {
         /* calculate bandwidth based on user-specified cutoff frequency */
@@ -2329,50 +2331,50 @@ static av_cold int allocate_buffers(AC3EncodeContext *s)
     if (s->allocate_sample_buffers(s))
         goto alloc_fail;
 
-    FF_ALLOC_OR_GOTO(avctx, s->bap_buffer, total_coefs *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->bap_buffer, total_coefs,
                      sizeof(*s->bap_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->bap1_buffer, total_coefs *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->bap1_buffer, total_coefs,
                      sizeof(*s->bap1_buffer), alloc_fail);
-    FF_ALLOCZ_OR_GOTO(avctx, s->mdct_coef_buffer, total_coefs *
+    FF_ALLOCZ_ARRAY_OR_GOTO(avctx, s->mdct_coef_buffer, total_coefs,
                       sizeof(*s->mdct_coef_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->exp_buffer, total_coefs *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->exp_buffer, total_coefs,
                      sizeof(*s->exp_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->grouped_exp_buffer, channel_blocks * 128 *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->grouped_exp_buffer, channel_blocks, 128 *
                      sizeof(*s->grouped_exp_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->psd_buffer, total_coefs *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->psd_buffer, total_coefs,
                      sizeof(*s->psd_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->band_psd_buffer, channel_blocks * 64 *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->band_psd_buffer, channel_blocks, 64 *
                      sizeof(*s->band_psd_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->mask_buffer, channel_blocks * 64 *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->mask_buffer, channel_blocks, 64 *
                      sizeof(*s->mask_buffer), alloc_fail);
-    FF_ALLOC_OR_GOTO(avctx, s->qmant_buffer, total_coefs *
+    FF_ALLOC_ARRAY_OR_GOTO(avctx, s->qmant_buffer, total_coefs,
                      sizeof(*s->qmant_buffer), alloc_fail);
     if (s->cpl_enabled) {
-        FF_ALLOC_OR_GOTO(avctx, s->cpl_coord_exp_buffer, channel_blocks * 16 *
+        FF_ALLOC_ARRAY_OR_GOTO(avctx, s->cpl_coord_exp_buffer, channel_blocks, 16 *
                          sizeof(*s->cpl_coord_exp_buffer), alloc_fail);
-        FF_ALLOC_OR_GOTO(avctx, s->cpl_coord_mant_buffer, channel_blocks * 16 *
+        FF_ALLOC_ARRAY_OR_GOTO(avctx, s->cpl_coord_mant_buffer, channel_blocks, 16 *
                          sizeof(*s->cpl_coord_mant_buffer), alloc_fail);
     }
     for (blk = 0; blk < s->num_blocks; blk++) {
         AC3Block *block = &s->blocks[blk];
-        FF_ALLOCZ_OR_GOTO(avctx, block->mdct_coef, channels * sizeof(*block->mdct_coef),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->mdct_coef, channels, sizeof(*block->mdct_coef),
                           alloc_fail);
-        FF_ALLOCZ_OR_GOTO(avctx, block->exp, channels * sizeof(*block->exp),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->exp, channels, sizeof(*block->exp),
                           alloc_fail);
-        FF_ALLOCZ_OR_GOTO(avctx, block->grouped_exp, channels * sizeof(*block->grouped_exp),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->grouped_exp, channels, sizeof(*block->grouped_exp),
                           alloc_fail);
-        FF_ALLOCZ_OR_GOTO(avctx, block->psd, channels * sizeof(*block->psd),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->psd, channels, sizeof(*block->psd),
                           alloc_fail);
-        FF_ALLOCZ_OR_GOTO(avctx, block->band_psd, channels * sizeof(*block->band_psd),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->band_psd, channels, sizeof(*block->band_psd),
                           alloc_fail);
-        FF_ALLOCZ_OR_GOTO(avctx, block->mask, channels * sizeof(*block->mask),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->mask, channels, sizeof(*block->mask),
                           alloc_fail);
-        FF_ALLOCZ_OR_GOTO(avctx, block->qmant, channels * sizeof(*block->qmant),
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->qmant, channels, sizeof(*block->qmant),
                           alloc_fail);
         if (s->cpl_enabled) {
-            FF_ALLOCZ_OR_GOTO(avctx, block->cpl_coord_exp, channels * sizeof(*block->cpl_coord_exp),
+            FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->cpl_coord_exp, channels, sizeof(*block->cpl_coord_exp),
                               alloc_fail);
-            FF_ALLOCZ_OR_GOTO(avctx, block->cpl_coord_mant, channels * sizeof(*block->cpl_coord_mant),
+            FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->cpl_coord_mant, channels, sizeof(*block->cpl_coord_mant),
                               alloc_fail);
         }
 
@@ -2395,11 +2397,11 @@ static av_cold int allocate_buffers(AC3EncodeContext *s)
     }
 
     if (!s->fixed_point) {
-        FF_ALLOCZ_OR_GOTO(avctx, s->fixed_coef_buffer, total_coefs *
+        FF_ALLOCZ_ARRAY_OR_GOTO(avctx, s->fixed_coef_buffer, total_coefs,
                           sizeof(*s->fixed_coef_buffer), alloc_fail);
         for (blk = 0; blk < s->num_blocks; blk++) {
             AC3Block *block = &s->blocks[blk];
-            FF_ALLOCZ_OR_GOTO(avctx, block->fixed_coef, channels *
+            FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->fixed_coef, channels,
                               sizeof(*block->fixed_coef), alloc_fail);
             for (ch = 0; ch < channels; ch++)
                 block->fixed_coef[ch] = &s->fixed_coef_buffer[AC3_MAX_COEFS * (s->num_blocks * ch + blk)];
@@ -2407,7 +2409,7 @@ static av_cold int allocate_buffers(AC3EncodeContext *s)
     } else {
         for (blk = 0; blk < s->num_blocks; blk++) {
             AC3Block *block = &s->blocks[blk];
-            FF_ALLOCZ_OR_GOTO(avctx, block->fixed_coef, channels *
+            FF_ALLOCZ_ARRAY_OR_GOTO(avctx, block->fixed_coef, channels,
                               sizeof(*block->fixed_coef), alloc_fail);
             for (ch = 0; ch < channels; ch++)
                 block->fixed_coef[ch] = (int32_t *)block->mdct_coef[ch];
