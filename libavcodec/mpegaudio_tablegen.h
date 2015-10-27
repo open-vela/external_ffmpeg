@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
 
 #include <stdint.h>
 #include <math.h>
-#include "libavutil/attributes.h"
 
 #define TABLE_4_3_SIZE (8191 + 16)*4
 #if CONFIG_HARDCODED_TABLES
@@ -40,9 +39,8 @@ static float exp_table_float[512];
 static float expval_table_float[512][16];
 
 #define FRAC_BITS 23
-#define IMDCT_SCALAR 1.759
 
-static av_cold void mpegaudio_tableinit(void)
+static void mpegaudio_tableinit(void)
 {
     int i, value, exponent;
     for (i = 1; i < TABLE_4_3_SIZE; i++) {
@@ -50,7 +48,7 @@ static av_cold void mpegaudio_tableinit(void)
         double f, fm;
         int e, m;
         /* cbrtf() isn't available on all systems, so we use powf(). */
-        f  = value / IMDCT_SCALAR * pow(value, 1.0 / 3.0) * pow(2, (i & 3) * 0.25);
+        f  = value * powf(value, 1.0 / 3.0) * pow(2, (i & 3) * 0.25);
         fm = frexp(f, &e);
         m  = (uint32_t)(fm * (1LL << 31) + 0.5);
         e += FRAC_BITS - 31 + 5 - 100;
@@ -62,9 +60,9 @@ static av_cold void mpegaudio_tableinit(void)
     for (exponent = 0; exponent < 512; exponent++) {
         for (value = 0; value < 16; value++) {
             /* cbrtf() isn't available on all systems, so we use powf(). */
-            double f = (double)value * pow(value, 1.0 / 3.0) * pow(2, (exponent - 400) * 0.25 + FRAC_BITS + 5) / IMDCT_SCALAR;
+            double f = (double)value * powf(value, 1.0 / 3.0) * pow(2, (exponent - 400) * 0.25 + FRAC_BITS + 5);
             /* llrint() isn't always available, so round and cast manually. */
-            expval_table_fixed[exponent][value] = (long long int) (f < 0xFFFFFFFF ? floor(f + 0.5) : 0xFFFFFFFF);
+            expval_table_fixed[exponent][value] = (long long int) (f >= 0 ? floor(f + 0.5) : ceil(f - 0.5));
             expval_table_float[exponent][value] = f;
         }
         exp_table_fixed[exponent] = expval_table_fixed[exponent][1];
