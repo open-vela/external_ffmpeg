@@ -7,20 +7,20 @@
  * Copyright (c) 2007-2008 Bartlomiej Wolowiec <bartek.wolowiec@gmail.com>
  * Copyright (c) 2007 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,11 +63,8 @@ static const uint8_t quantization_tab[16] = {
     5, 6, 7, 8, 9, 10, 11, 12, 14, 16
 };
 
-#if (!USE_FIXED)
 /** dynamic range table. converts codes to scale factors. */
 static float dynamic_range_tab[256];
-float ff_ac3_heavy_dynamic_range_tab[256];
-#endif
 
 /** Adjustments in dB gain */
 static const float gain_levels[9] = {
@@ -114,7 +111,7 @@ static const uint8_t ac3_default_coeffs[8][5][2] = {
 static inline int
 symmetric_dequant(int code, int levels)
 {
-    return ((code - (levels >> 1)) * (1 << 24)) / levels;
+    return ((code - (levels >> 1)) << 24) / levels;
 }
 
 /*
@@ -161,21 +158,12 @@ static av_cold void ac3_tables_init(void)
         b5_mantissas[i] = symmetric_dequant(i, 15);
     }
 
-#if (!USE_FIXED)
     /* generate dynamic range table
        reference: Section 7.7.1 Dynamic Range Control */
     for (i = 0; i < 256; i++) {
         int v = (i >> 5) - ((i >> 7) << 3) - 5;
         dynamic_range_tab[i] = powf(2.0f, v) * ((i & 0x1F) | 0x20);
     }
-
-    /* generate compr dynamic range table
-       reference: Section 7.7.2 Heavy Compression */
-    for (i = 0; i < 256; i++) {
-        int v = (i >> 4) - ((i >> 7) << 4) - 4;
-        ff_ac3_heavy_dynamic_range_tab[i] = powf(2.0f, v) * ((i & 0xF) | 0x10);
-    }
-#endif
 }
 
 /**
@@ -188,26 +176,18 @@ static av_cold int ac3_decode_init(AVCodecContext *avctx)
 
     s->avctx = avctx;
 
+    ff_ac3_common_init();
     ac3_tables_init();
     ff_mdct_init(&s->imdct_256, 8, 1, 1.0);
     ff_mdct_init(&s->imdct_512, 9, 1, 1.0);
-    AC3_RENAME(ff_kbd_window_init)(s->window, 5.0, 256);
+    ff_kbd_window_init(s->window, 5.0, 256);
     ff_bswapdsp_init(&s->bdsp);
-
-#if (USE_FIXED)
-    s->fdsp = avpriv_alloc_fixed_dsp(avctx->flags & AV_CODEC_FLAG_BITEXACT);
-#else
-    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
-    ff_fmt_convert_init(&s->fmt_conv, avctx);
-#endif
-
+    avpriv_float_dsp_init(&s->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
     ff_ac3dsp_init(&s->ac3dsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    ff_fmt_convert_init(&s->fmt_conv, avctx);
     av_lfg_init(&s->dith_state, 0);
 
-    if (USE_FIXED)
-        avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
-    else
-        avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+    avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
 
     /* allow downmixing to stereo or mono */
     if (avctx->channels > 1 &&
@@ -239,19 +219,9 @@ static int ac3_parse_header(AC3DecodeContext *s)
     /* read the rest of the bsi. read twice for dual mono mode. */
     i = !s->channel_mode;
     do {
-        s->dialog_normalization[(!s->channel_mode)-i] = -get_bits(gbc, 5);
-        if (s->dialog_normalization[(!s->channel_mode)-i] == 0) {
-            s->dialog_normalization[(!s->channel_mode)-i] = -31;
-        }
-        if (s->target_level != 0) {
-            s->level_gain[(!s->channel_mode)-i] = powf(2.0f,
-                (float)(s->target_level -
-                s->dialog_normalization[(!s->channel_mode)-i])/6.0f);
-        }
-        if (s->compression_exists[(!s->channel_mode)-i] = get_bits1(gbc)) {
-            s->heavy_dynamic_range[(!s->channel_mode)-i] =
-                AC3_HEAVY_RANGE(get_bits(gbc, 8));
-        }
+        skip_bits(gbc, 5); // skip dialog normalization
+        if (get_bits1(gbc))
+            skip_bits(gbc, 8); //skip compression
         if (get_bits1(gbc))
             skip_bits(gbc, 8); //skip language code
         if (get_bits1(gbc))
@@ -297,10 +267,10 @@ static int ac3_parse_header(AC3DecodeContext *s)
  */
 static int parse_frame_header(AC3DecodeContext *s)
 {
-    AC3HeaderInfo hdr, *phdr=&hdr;
+    AC3HeaderInfo hdr;
     int err;
 
-    err = avpriv_ac3_parse_header(&s->gbc, &phdr);
+    err = avpriv_ac3_parse_header(&s->gbc, &hdr);
     if (err)
         return err;
 
@@ -362,60 +332,64 @@ static int parse_frame_header(AC3DecodeContext *s)
  * Set stereo downmixing coefficients based on frame header info.
  * reference: Section 7.8.2 Downmixing Into Two Channels
  */
-static void set_downmix_coeffs(AC3DecodeContext *s)
+static int set_downmix_coeffs(AC3DecodeContext *s)
 {
     int i;
     float cmix = gain_levels[s->  center_mix_level];
     float smix = gain_levels[s->surround_mix_level];
     float norm0, norm1;
-    float downmix_coeffs[AC3_MAX_CHANNELS][2];
+
+    if (!s->downmix_coeffs[0]) {
+        s->downmix_coeffs[0] = av_malloc(2 * AC3_MAX_CHANNELS *
+                                         sizeof(**s->downmix_coeffs));
+        if (!s->downmix_coeffs[0])
+            return AVERROR(ENOMEM);
+        s->downmix_coeffs[1] = s->downmix_coeffs[0] + AC3_MAX_CHANNELS;
+    }
 
     for (i = 0; i < s->fbw_channels; i++) {
-        downmix_coeffs[i][0] = gain_levels[ac3_default_coeffs[s->channel_mode][i][0]];
-        downmix_coeffs[i][1] = gain_levels[ac3_default_coeffs[s->channel_mode][i][1]];
+        s->downmix_coeffs[0][i] = gain_levels[ac3_default_coeffs[s->channel_mode][i][0]];
+        s->downmix_coeffs[1][i] = gain_levels[ac3_default_coeffs[s->channel_mode][i][1]];
     }
     if (s->channel_mode > 1 && s->channel_mode & 1) {
-        downmix_coeffs[1][0] = downmix_coeffs[1][1] = cmix;
+        s->downmix_coeffs[0][1] = s->downmix_coeffs[1][1] = cmix;
     }
     if (s->channel_mode == AC3_CHMODE_2F1R || s->channel_mode == AC3_CHMODE_3F1R) {
         int nf = s->channel_mode - 2;
-        downmix_coeffs[nf][0] = downmix_coeffs[nf][1] = smix * LEVEL_MINUS_3DB;
+        s->downmix_coeffs[0][nf] = s->downmix_coeffs[1][nf] = smix * LEVEL_MINUS_3DB;
     }
     if (s->channel_mode == AC3_CHMODE_2F2R || s->channel_mode == AC3_CHMODE_3F2R) {
         int nf = s->channel_mode - 4;
-        downmix_coeffs[nf][0] = downmix_coeffs[nf+1][1] = smix;
+        s->downmix_coeffs[0][nf] = s->downmix_coeffs[1][nf+1] = smix;
     }
 
     /* renormalize */
     norm0 = norm1 = 0.0;
     for (i = 0; i < s->fbw_channels; i++) {
-        norm0 += downmix_coeffs[i][0];
-        norm1 += downmix_coeffs[i][1];
+        norm0 += s->downmix_coeffs[0][i];
+        norm1 += s->downmix_coeffs[1][i];
     }
     norm0 = 1.0f / norm0;
     norm1 = 1.0f / norm1;
     for (i = 0; i < s->fbw_channels; i++) {
-        downmix_coeffs[i][0] *= norm0;
-        downmix_coeffs[i][1] *= norm1;
+        s->downmix_coeffs[0][i] *= norm0;
+        s->downmix_coeffs[1][i] *= norm1;
     }
 
     if (s->output_mode == AC3_CHMODE_MONO) {
         for (i = 0; i < s->fbw_channels; i++)
-            downmix_coeffs[i][0] = (downmix_coeffs[i][0] +
-                                    downmix_coeffs[i][1]) * LEVEL_MINUS_3DB;
+            s->downmix_coeffs[0][i] = (s->downmix_coeffs[0][i] +
+                                       s->downmix_coeffs[1][i]) * LEVEL_MINUS_3DB;
     }
-    for (i = 0; i < s->fbw_channels; i++) {
-        s->downmix_coeffs[i][0] = FIXR12(downmix_coeffs[i][0]);
-        s->downmix_coeffs[i][1] = FIXR12(downmix_coeffs[i][1]);
-    }
+
+    return 0;
 }
 
 /**
  * Decode the grouped exponents according to exponent strategy.
  * reference: Section 7.1.3 Exponent Decoding
  */
-static int decode_exponents(AC3DecodeContext *s,
-                            GetBitContext *gbc, int exp_strategy, int ngrps,
+static int decode_exponents(GetBitContext *gbc, int exp_strategy, int ngrps,
                             uint8_t absexp, int8_t *dexps)
 {
     int i, j, grp, group_size;
@@ -435,10 +409,8 @@ static int decode_exponents(AC3DecodeContext *s,
     prevexp = absexp;
     for (i = 0, j = 0; i < ngrps * 3; i++) {
         prevexp += dexp[i] - 2;
-        if (prevexp > 24U) {
-            av_log(s->avctx, AV_LOG_ERROR, "exponent %d is out-of-range\n", prevexp);
+        if (prevexp > 24U)
             return -1;
-        }
         switch (group_size) {
         case 4: dexps[j++] = prevexp;
                 dexps[j++] = prevexp;
@@ -467,7 +439,7 @@ static void calc_transform_coeffs_cpl(AC3DecodeContext *s)
                 int cpl_coord = s->cpl_coords[ch][band] << 5;
                 for (bin = band_start; bin < band_end; bin++) {
                     s->fixed_coeffs[ch][bin] =
-                        MULH(s->fixed_coeffs[CPL_CH][bin] * (1 << 4), cpl_coord);
+                        MULH(s->fixed_coeffs[CPL_CH][bin] << 4, cpl_coord);
                 }
                 if (ch == 2 && s->phase_flags[band]) {
                     for (bin = band_start; bin < band_end; bin++)
@@ -513,7 +485,7 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
         case 0:
             /* random noise with approximate range of -0.707 to 0.707 */
             if (dither)
-                mantissa = (((av_lfg_get(&s->dith_state)>>8)*181)>>8) - 5931008;
+                mantissa = (av_lfg_get(&s->dith_state) / 362) - 5932275;
             else
                 mantissa = 0;
             break;
@@ -560,11 +532,8 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
             break;
         default: /* 6 to 15 */
             /* Shift mantissa and sign-extend it. */
-            if (bap > 15) {
-                av_log(s->avctx, AV_LOG_ERROR, "bap %d is invalid in plain AC-3\n", bap);
-                bap = 15;
-            }
-            mantissa = (unsigned)get_sbits(gbc, quantization_tab[bap]) << (24 - quantization_tab[bap]);
+            mantissa = get_sbits(gbc, quantization_tab[bap]);
+            mantissa <<= 24 - quantization_tab[bap];
             break;
         }
         coeffs[freq] = mantissa >> exps[freq];
@@ -589,8 +558,8 @@ static void remove_dithering(AC3DecodeContext *s) {
     }
 }
 
-static void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk, int ch,
-                                       mant_groups *m)
+static inline void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk,
+                                              int ch, mant_groups *m)
 {
     if (!s->channel_uses_aht[ch]) {
         ac3_decode_transform_coeffs_ch(s, ch, m);
@@ -598,7 +567,7 @@ static void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk, int ch,
         /* if AHT is used, mantissas for all blocks are encoded in the first
            block of the frame. */
         int bin;
-        if (CONFIG_EAC3_DECODER && !blk)
+        if (!blk && CONFIG_EAC3_DECODER)
             ff_eac3_decode_transform_coeffs_aht_ch(s, ch);
         for (bin = s->start_freq[ch]; bin < s->end_freq[ch]; bin++) {
             s->fixed_coeffs[ch][bin] = s->pre_mantissa[ch][bin][blk] >> s->dexps[ch][bin];
@@ -609,7 +578,7 @@ static void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk, int ch,
 /**
  * Decode the transform coefficients.
  */
-static void decode_transform_coeffs(AC3DecodeContext *s, int blk)
+static inline void decode_transform_coeffs(AC3DecodeContext *s, int blk)
 {
     int ch, end;
     int got_cplchan = 0;
@@ -676,30 +645,20 @@ static inline void do_imdct(AC3DecodeContext *s, int channels)
     for (ch = 1; ch <= channels; ch++) {
         if (s->block_switch[ch]) {
             int i;
-            FFTSample *x = s->tmp_output + 128;
+            float *x = s->tmp_output + 128;
             for (i = 0; i < 128; i++)
                 x[i] = s->transform_coeffs[ch][2 * i];
             s->imdct_256.imdct_half(&s->imdct_256, s->tmp_output, x);
-#if USE_FIXED
-            s->fdsp->vector_fmul_window_scaled(s->outptr[ch - 1], s->delay[ch - 1],
-                                       s->tmp_output, s->window, 128, 8);
-#else
-            s->fdsp->vector_fmul_window(s->outptr[ch - 1], s->delay[ch - 1],
+            s->fdsp.vector_fmul_window(s->outptr[ch - 1], s->delay[ch - 1],
                                        s->tmp_output, s->window, 128);
-#endif
             for (i = 0; i < 128; i++)
                 x[i] = s->transform_coeffs[ch][2 * i + 1];
             s->imdct_256.imdct_half(&s->imdct_256, s->delay[ch - 1], x);
         } else {
             s->imdct_512.imdct_half(&s->imdct_512, s->tmp_output, s->transform_coeffs[ch]);
-#if USE_FIXED
-            s->fdsp->vector_fmul_window_scaled(s->outptr[ch - 1], s->delay[ch - 1],
-                                       s->tmp_output, s->window, 128, 8);
-#else
-            s->fdsp->vector_fmul_window(s->outptr[ch - 1], s->delay[ch - 1],
+            s->fdsp.vector_fmul_window(s->outptr[ch - 1], s->delay[ch - 1],
                                        s->tmp_output, s->window, 128);
-#endif
-            memcpy(s->delay[ch - 1], s->tmp_output + 128, 128 * sizeof(FFTSample));
+            memcpy(s->delay[ch - 1], s->tmp_output + 128, 128 * sizeof(float));
         }
     }
 }
@@ -797,6 +756,221 @@ static void decode_band_structure(GetBitContext *gbc, int blk, int eac3,
         memcpy(band_sizes, bnd_sz, n_bands);
 }
 
+static inline int spx_strategy(AC3DecodeContext *s, int blk)
+{
+    GetBitContext *bc = &s->gbc;
+    int fbw_channels = s->fbw_channels;
+    int dst_start_freq, dst_end_freq, src_start_freq,
+        start_subband, end_subband, ch;
+
+    /* determine which channels use spx */
+    if (s->channel_mode == AC3_CHMODE_MONO) {
+        s->channel_uses_spx[1] = 1;
+    } else {
+        for (ch = 1; ch <= fbw_channels; ch++)
+            s->channel_uses_spx[ch] = get_bits1(bc);
+    }
+
+    /* get the frequency bins of the spx copy region and the spx start
+       and end subbands */
+    dst_start_freq = get_bits(bc, 2);
+    start_subband  = get_bits(bc, 3) + 2;
+    if (start_subband > 7)
+        start_subband += start_subband - 7;
+    end_subband    = get_bits(bc, 3) + 5;
+    if (end_subband   > 7)
+        end_subband   += end_subband   - 7;
+    dst_start_freq = dst_start_freq * 12 + 25;
+    src_start_freq = start_subband  * 12 + 25;
+    dst_end_freq   = end_subband    * 12 + 25;
+
+    /* check validity of spx ranges */
+    if (start_subband >= end_subband) {
+        av_log(s->avctx, AV_LOG_ERROR, "invalid spectral extension "
+               "range (%d >= %d)\n", start_subband, end_subband);
+        return AVERROR_INVALIDDATA;
+    }
+    if (dst_start_freq >= src_start_freq) {
+        av_log(s->avctx, AV_LOG_ERROR, "invalid spectral extension "
+               "copy start bin (%d >= %d)\n", dst_start_freq, src_start_freq);
+        return AVERROR_INVALIDDATA;
+    }
+
+    s->spx_dst_start_freq = dst_start_freq;
+    s->spx_src_start_freq = src_start_freq;
+    s->spx_dst_end_freq   = dst_end_freq;
+
+    decode_band_structure(bc, blk, s->eac3, 0,
+                          start_subband, end_subband,
+                          ff_eac3_default_spx_band_struct,
+                          &s->num_spx_bands,
+                          s->spx_band_sizes);
+
+    return 0;
+}
+
+static inline void spx_coordinates(AC3DecodeContext *s)
+{
+    GetBitContext *bc = &s->gbc;
+    int fbw_channels = s->fbw_channels;
+    int ch, bnd;
+
+    for (ch = 1; ch <= fbw_channels; ch++) {
+        if (s->channel_uses_spx[ch]) {
+            if (s->first_spx_coords[ch] || get_bits1(bc)) {
+                float spx_blend;
+                int bin, master_spx_coord;
+
+                s->first_spx_coords[ch] = 0;
+                spx_blend        = get_bits(bc, 5) * (1.0f / 32);
+                master_spx_coord = get_bits(bc, 2) * 3;
+
+                bin = s->spx_src_start_freq;
+                for (bnd = 0; bnd < s->num_spx_bands; bnd++) {
+                    int bandsize;
+                    int spx_coord_exp, spx_coord_mant;
+                    float nratio, sblend, nblend, spx_coord;
+
+                    /* calculate blending factors */
+                    bandsize = s->spx_band_sizes[bnd];
+                    nratio = ((float)((bin + (bandsize >> 1))) / s->spx_dst_end_freq) - spx_blend;
+                    nratio = av_clipf(nratio, 0.0f, 1.0f);
+                    nblend = sqrtf(3.0f * nratio); // noise is scaled by sqrt(3)
+                                                   // to give unity variance
+                    sblend = sqrtf(1.0f - nratio);
+                    bin += bandsize;
+
+                    /* decode spx coordinates */
+                    spx_coord_exp  = get_bits(bc, 4);
+                    spx_coord_mant = get_bits(bc, 2);
+                    if (spx_coord_exp == 15) spx_coord_mant <<= 1;
+                    else                     spx_coord_mant += 4;
+                    spx_coord_mant <<= (25 - spx_coord_exp - master_spx_coord);
+                    spx_coord = spx_coord_mant * (1.0f / (1 << 23));
+
+                    /* multiply noise and signal blending factors by spx coordinate */
+                    s->spx_noise_blend [ch][bnd] = nblend * spx_coord;
+                    s->spx_signal_blend[ch][bnd] = sblend * spx_coord;
+                }
+            }
+        } else {
+            s->first_spx_coords[ch] = 1;
+        }
+    }
+}
+
+static inline int coupling_strategy(AC3DecodeContext *s, int blk,
+                                    uint8_t *bit_alloc_stages)
+{
+    GetBitContext *bc = &s->gbc;
+    int fbw_channels = s->fbw_channels;
+    int channel_mode = s->channel_mode;
+    int ch;
+
+    memset(bit_alloc_stages, 3, AC3_MAX_CHANNELS);
+    if (!s->eac3)
+        s->cpl_in_use[blk] = get_bits1(bc);
+    if (s->cpl_in_use[blk]) {
+        /* coupling in use */
+        int cpl_start_subband, cpl_end_subband;
+
+        if (channel_mode < AC3_CHMODE_STEREO) {
+            av_log(s->avctx, AV_LOG_ERROR, "coupling not allowed in mono or dual-mono\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        /* check for enhanced coupling */
+        if (s->eac3 && get_bits1(bc)) {
+            /* TODO: parse enhanced coupling strategy info */
+            avpriv_request_sample(s->avctx, "Enhanced coupling");
+            return AVERROR_PATCHWELCOME;
+        }
+
+        /* determine which channels are coupled */
+        if (s->eac3 && s->channel_mode == AC3_CHMODE_STEREO) {
+            s->channel_in_cpl[1] = 1;
+            s->channel_in_cpl[2] = 1;
+        } else {
+            for (ch = 1; ch <= fbw_channels; ch++)
+                s->channel_in_cpl[ch] = get_bits1(bc);
+        }
+
+        /* phase flags in use */
+        if (channel_mode == AC3_CHMODE_STEREO)
+            s->phase_flags_in_use = get_bits1(bc);
+
+        /* coupling frequency range */
+        cpl_start_subband = get_bits(bc, 4);
+        cpl_end_subband = s->spx_in_use ? (s->spx_src_start_freq - 37) / 12 :
+                                          get_bits(bc, 4) + 3;
+        if (cpl_start_subband >= cpl_end_subband) {
+            av_log(s->avctx, AV_LOG_ERROR, "invalid coupling range (%d >= %d)\n",
+                   cpl_start_subband, cpl_end_subband);
+            return AVERROR_INVALIDDATA;
+        }
+        s->start_freq[CPL_CH] = cpl_start_subband * 12 + 37;
+        s->end_freq[CPL_CH]   = cpl_end_subband   * 12 + 37;
+
+        decode_band_structure(bc, blk, s->eac3, 0, cpl_start_subband,
+                              cpl_end_subband,
+                              ff_eac3_default_cpl_band_struct,
+                              &s->num_cpl_bands, s->cpl_band_sizes);
+    } else {
+        /* coupling not in use */
+        for (ch = 1; ch <= fbw_channels; ch++) {
+            s->channel_in_cpl[ch] = 0;
+            s->first_cpl_coords[ch] = 1;
+        }
+        s->first_cpl_leak = s->eac3;
+        s->phase_flags_in_use = 0;
+    }
+
+    return 0;
+}
+
+static inline int coupling_coordinates(AC3DecodeContext *s, int blk)
+{
+    GetBitContext *bc = &s->gbc;
+    int fbw_channels = s->fbw_channels;
+    int ch, bnd;
+    int cpl_coords_exist = 0;
+
+    for (ch = 1; ch <= fbw_channels; ch++) {
+        if (s->channel_in_cpl[ch]) {
+            if ((s->eac3 && s->first_cpl_coords[ch]) || get_bits1(bc)) {
+                int master_cpl_coord, cpl_coord_exp, cpl_coord_mant;
+                s->first_cpl_coords[ch] = 0;
+                cpl_coords_exist = 1;
+                master_cpl_coord = 3 * get_bits(bc, 2);
+                for (bnd = 0; bnd < s->num_cpl_bands; bnd++) {
+                    cpl_coord_exp  = get_bits(bc, 4);
+                    cpl_coord_mant = get_bits(bc, 4);
+                    if (cpl_coord_exp == 15)
+                        s->cpl_coords[ch][bnd] = cpl_coord_mant << 22;
+                    else
+                        s->cpl_coords[ch][bnd] = (cpl_coord_mant + 16) << 21;
+                    s->cpl_coords[ch][bnd] >>= (cpl_coord_exp + master_cpl_coord);
+                }
+            } else if (!blk) {
+                av_log(s->avctx, AV_LOG_ERROR, "new coupling coordinates must "
+                       "be present in block 0\n");
+                return AVERROR_INVALIDDATA;
+            }
+        } else {
+            /* channel not in coupling */
+            s->first_cpl_coords[ch] = 1;
+        }
+    }
+    /* phase flags */
+    if (s->channel_mode == AC3_CHMODE_STEREO && cpl_coords_exist) {
+        for (bnd = 0; bnd < s->num_cpl_bands; bnd++) {
+            s->phase_flags[bnd] = s->phase_flags_in_use ? get_bits1(bc) : 0;
+        }
+    }
+
+    return 0;
+}
+
 /**
  * Decode a single audio block from the AC-3 bitstream.
  */
@@ -804,7 +978,7 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
 {
     int fbw_channels = s->fbw_channels;
     int channel_mode = s->channel_mode;
-    int i, bnd, seg, ch;
+    int i, bnd, seg, ch, ret;
     int different_transforms;
     int downmix_output;
     int cpl_in_use;
@@ -834,14 +1008,13 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
         if (get_bits1(gbc)) {
             /* Allow asymmetric application of DRC when drc_scale > 1.
                Amplification of quiet sounds is enhanced */
-            int range_bits = get_bits(gbc, 8);
-            INTFLOAT range = AC3_RANGE(range_bits);
-            if (range_bits <= 127 || s->drc_scale <= 1.0)
-                s->dynamic_range[i] = AC3_DYNAMIC_RANGE(range);
+            float range = dynamic_range_tab[get_bits(gbc, 8)];
+            if (range > 1.0 || s->drc_scale <= 1.0)
+                s->dynamic_range[i] = powf(range, s->drc_scale);
             else
                 s->dynamic_range[i] = range;
         } else if (blk == 0) {
-            s->dynamic_range[i] = AC3_DYNAMIC_RANGE1;
+            s->dynamic_range[i] = 1.0f;
         }
     } while (i--);
 
@@ -849,198 +1022,24 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
     if (s->eac3 && (!blk || get_bits1(gbc))) {
         s->spx_in_use = get_bits1(gbc);
         if (s->spx_in_use) {
-            int dst_start_freq, dst_end_freq, src_start_freq,
-                start_subband, end_subband;
-
-            /* determine which channels use spx */
-            if (s->channel_mode == AC3_CHMODE_MONO) {
-                s->channel_uses_spx[1] = 1;
-            } else {
-                for (ch = 1; ch <= fbw_channels; ch++)
-                    s->channel_uses_spx[ch] = get_bits1(gbc);
-            }
-
-            /* get the frequency bins of the spx copy region and the spx start
-               and end subbands */
-            dst_start_freq = get_bits(gbc, 2);
-            start_subband  = get_bits(gbc, 3) + 2;
-            if (start_subband > 7)
-                start_subband += start_subband - 7;
-            end_subband    = get_bits(gbc, 3) + 5;
-#if USE_FIXED
-            s->spx_dst_end_freq = end_freq_inv_tab[end_subband-5];
-#endif
-            if (end_subband   > 7)
-                end_subband   += end_subband   - 7;
-            dst_start_freq = dst_start_freq * 12 + 25;
-            src_start_freq = start_subband  * 12 + 25;
-            dst_end_freq   = end_subband    * 12 + 25;
-
-            /* check validity of spx ranges */
-            if (start_subband >= end_subband) {
-                av_log(s->avctx, AV_LOG_ERROR, "invalid spectral extension "
-                       "range (%d >= %d)\n", start_subband, end_subband);
-                return AVERROR_INVALIDDATA;
-            }
-            if (dst_start_freq >= src_start_freq) {
-                av_log(s->avctx, AV_LOG_ERROR, "invalid spectral extension "
-                       "copy start bin (%d >= %d)\n", dst_start_freq, src_start_freq);
-                return AVERROR_INVALIDDATA;
-            }
-
-            s->spx_dst_start_freq = dst_start_freq;
-            s->spx_src_start_freq = src_start_freq;
-            if (!USE_FIXED)
-                s->spx_dst_end_freq   = dst_end_freq;
-
-            decode_band_structure(gbc, blk, s->eac3, 0,
-                                  start_subband, end_subband,
-                                  ff_eac3_default_spx_band_struct,
-                                  &s->num_spx_bands,
-                                  s->spx_band_sizes);
-        }
-    }
-    if (!s->eac3 || !s->spx_in_use) {
-        s->spx_in_use = 0;
-        for (ch = 1; ch <= fbw_channels; ch++) {
-            s->channel_uses_spx[ch] = 0;
-            s->first_spx_coords[ch] = 1;
-        }
-    }
-
-    /* spectral extension coordinates */
-    if (s->spx_in_use) {
-        for (ch = 1; ch <= fbw_channels; ch++) {
-            if (s->channel_uses_spx[ch]) {
-                if (s->first_spx_coords[ch] || get_bits1(gbc)) {
-                    INTFLOAT spx_blend;
-                    int bin, master_spx_coord;
-
-                    s->first_spx_coords[ch] = 0;
-                    spx_blend = AC3_SPX_BLEND(get_bits(gbc, 5));
-                    master_spx_coord = get_bits(gbc, 2) * 3;
-
-                    bin = s->spx_src_start_freq;
-                    for (bnd = 0; bnd < s->num_spx_bands; bnd++) {
-                        int bandsize = s->spx_band_sizes[bnd];
-                        int spx_coord_exp, spx_coord_mant;
-                        INTFLOAT nratio, sblend, nblend;
-#if USE_FIXED
-                        /* calculate blending factors */
-                        int64_t accu = ((bin << 23) + (bandsize << 22))
-                                     * (int64_t)s->spx_dst_end_freq;
-                        nratio = (int)(accu >> 32);
-                        nratio -= spx_blend << 18;
-
-                        if (nratio < 0) {
-                            nblend = 0;
-                            sblend = 0x800000;
-                        } else if (nratio > 0x7fffff) {
-                            nblend = 14529495; // sqrt(3) in FP.23
-                            sblend = 0;
-                        } else {
-                            nblend = fixed_sqrt(nratio, 23);
-                            accu = (int64_t)nblend * 1859775393;
-                            nblend = (int)((accu + (1<<29)) >> 30);
-                            sblend = fixed_sqrt(0x800000 - nratio, 23);
-                        }
-#else
-                        float spx_coord;
-
-                        /* calculate blending factors */
-                        nratio = ((float)((bin + (bandsize >> 1))) / s->spx_dst_end_freq) - spx_blend;
-                        nratio = av_clipf(nratio, 0.0f, 1.0f);
-                        nblend = sqrtf(3.0f * nratio); // noise is scaled by sqrt(3)
-                                                       // to give unity variance
-                        sblend = sqrtf(1.0f - nratio);
-#endif
-                        bin += bandsize;
-
-                        /* decode spx coordinates */
-                        spx_coord_exp  = get_bits(gbc, 4);
-                        spx_coord_mant = get_bits(gbc, 2);
-                        if (spx_coord_exp == 15) spx_coord_mant <<= 1;
-                        else                     spx_coord_mant += 4;
-                        spx_coord_mant <<= (25 - spx_coord_exp - master_spx_coord);
-
-                        /* multiply noise and signal blending factors by spx coordinate */
-#if USE_FIXED
-                        accu = (int64_t)nblend * spx_coord_mant;
-                        s->spx_noise_blend[ch][bnd]  = (int)((accu + (1<<22)) >> 23);
-                        accu = (int64_t)sblend * spx_coord_mant;
-                        s->spx_signal_blend[ch][bnd] = (int)((accu + (1<<22)) >> 23);
-#else
-                        spx_coord = spx_coord_mant * (1.0f / (1 << 23));
-                        s->spx_noise_blend [ch][bnd] = nblend * spx_coord;
-                        s->spx_signal_blend[ch][bnd] = sblend * spx_coord;
-#endif
-                    }
-                }
-            } else {
+            if ((ret = spx_strategy(s, blk)) < 0)
+                return ret;
+        } else {
+            for (ch = 1; ch <= fbw_channels; ch++) {
+                s->channel_uses_spx[ch] = 0;
                 s->first_spx_coords[ch] = 1;
             }
         }
     }
 
+    /* spectral extension coordinates */
+    if (s->spx_in_use)
+        spx_coordinates(s);
+
     /* coupling strategy */
     if (s->eac3 ? s->cpl_strategy_exists[blk] : get_bits1(gbc)) {
-        memset(bit_alloc_stages, 3, AC3_MAX_CHANNELS);
-        if (!s->eac3)
-            s->cpl_in_use[blk] = get_bits1(gbc);
-        if (s->cpl_in_use[blk]) {
-            /* coupling in use */
-            int cpl_start_subband, cpl_end_subband;
-
-            if (channel_mode < AC3_CHMODE_STEREO) {
-                av_log(s->avctx, AV_LOG_ERROR, "coupling not allowed in mono or dual-mono\n");
-                return AVERROR_INVALIDDATA;
-            }
-
-            /* check for enhanced coupling */
-            if (s->eac3 && get_bits1(gbc)) {
-                /* TODO: parse enhanced coupling strategy info */
-                avpriv_request_sample(s->avctx, "Enhanced coupling");
-                return AVERROR_PATCHWELCOME;
-            }
-
-            /* determine which channels are coupled */
-            if (s->eac3 && s->channel_mode == AC3_CHMODE_STEREO) {
-                s->channel_in_cpl[1] = 1;
-                s->channel_in_cpl[2] = 1;
-            } else {
-                for (ch = 1; ch <= fbw_channels; ch++)
-                    s->channel_in_cpl[ch] = get_bits1(gbc);
-            }
-
-            /* phase flags in use */
-            if (channel_mode == AC3_CHMODE_STEREO)
-                s->phase_flags_in_use = get_bits1(gbc);
-
-            /* coupling frequency range */
-            cpl_start_subband = get_bits(gbc, 4);
-            cpl_end_subband = s->spx_in_use ? (s->spx_src_start_freq - 37) / 12 :
-                                              get_bits(gbc, 4) + 3;
-            if (cpl_start_subband >= cpl_end_subband) {
-                av_log(s->avctx, AV_LOG_ERROR, "invalid coupling range (%d >= %d)\n",
-                       cpl_start_subband, cpl_end_subband);
-                return AVERROR_INVALIDDATA;
-            }
-            s->start_freq[CPL_CH] = cpl_start_subband * 12 + 37;
-            s->end_freq[CPL_CH]   = cpl_end_subband   * 12 + 37;
-
-            decode_band_structure(gbc, blk, s->eac3, 0, cpl_start_subband,
-                                  cpl_end_subband,
-                                  ff_eac3_default_cpl_band_struct,
-                                  &s->num_cpl_bands, s->cpl_band_sizes);
-        } else {
-            /* coupling not in use */
-            for (ch = 1; ch <= fbw_channels; ch++) {
-                s->channel_in_cpl[ch] = 0;
-                s->first_cpl_coords[ch] = 1;
-            }
-            s->first_cpl_leak = s->eac3;
-            s->phase_flags_in_use = 0;
-        }
+        if ((ret = coupling_strategy(s, blk, bit_alloc_stages)) < 0)
+            return ret;
     } else if (!s->eac3) {
         if (!blk) {
             av_log(s->avctx, AV_LOG_ERROR, "new coupling strategy must "
@@ -1054,40 +1053,8 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
 
     /* coupling coordinates */
     if (cpl_in_use) {
-        int cpl_coords_exist = 0;
-
-        for (ch = 1; ch <= fbw_channels; ch++) {
-            if (s->channel_in_cpl[ch]) {
-                if ((s->eac3 && s->first_cpl_coords[ch]) || get_bits1(gbc)) {
-                    int master_cpl_coord, cpl_coord_exp, cpl_coord_mant;
-                    s->first_cpl_coords[ch] = 0;
-                    cpl_coords_exist = 1;
-                    master_cpl_coord = 3 * get_bits(gbc, 2);
-                    for (bnd = 0; bnd < s->num_cpl_bands; bnd++) {
-                        cpl_coord_exp = get_bits(gbc, 4);
-                        cpl_coord_mant = get_bits(gbc, 4);
-                        if (cpl_coord_exp == 15)
-                            s->cpl_coords[ch][bnd] = cpl_coord_mant << 22;
-                        else
-                            s->cpl_coords[ch][bnd] = (cpl_coord_mant + 16) << 21;
-                        s->cpl_coords[ch][bnd] >>= (cpl_coord_exp + master_cpl_coord);
-                    }
-                } else if (!blk) {
-                    av_log(s->avctx, AV_LOG_ERROR, "new coupling coordinates must "
-                           "be present in block 0\n");
-                    return AVERROR_INVALIDDATA;
-                }
-            } else {
-                /* channel not in coupling */
-                s->first_cpl_coords[ch] = 1;
-            }
-        }
-        /* phase flags */
-        if (channel_mode == AC3_CHMODE_STEREO && cpl_coords_exist) {
-            for (bnd = 0; bnd < s->num_cpl_bands; bnd++) {
-                s->phase_flags[bnd] = s->phase_flags_in_use? get_bits1(gbc) : 0;
-            }
-        }
+        if ((ret = coupling_coordinates(s, blk)) < 0)
+            return ret;
     }
 
     /* stereo rematrixing strategy and band structure */
@@ -1149,9 +1116,10 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
     for (ch = !cpl_in_use; ch <= s->channels; ch++) {
         if (s->exp_strategy[blk][ch] != EXP_REUSE) {
             s->dexps[ch][0] = get_bits(gbc, 4) << !ch;
-            if (decode_exponents(s, gbc, s->exp_strategy[blk][ch],
+            if (decode_exponents(gbc, s->exp_strategy[blk][ch],
                                  s->num_exp_groups[ch], s->dexps[ch][0],
                                  &s->dexps[ch][s->start_freq[ch]+!!ch])) {
+                av_log(s->avctx, AV_LOG_ERROR, "exponent out-of-range\n");
                 return AVERROR_INVALIDDATA;
             }
             if (ch != CPL_CH && ch != s->lfe_ch)
@@ -1313,8 +1281,7 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
     /* unused dummy data */
     if (s->skip_syntax && get_bits1(gbc)) {
         int skipl = get_bits(gbc, 9);
-        while (skipl--)
-            skip_bits(gbc, 8);
+        skip_bits_long(gbc, 8 * skipl);
     }
 
     /* unpack the transform coefficients
@@ -1329,28 +1296,18 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
 
     /* apply scaling to coefficients (headroom, dynrng) */
     for (ch = 1; ch <= s->channels; ch++) {
-        int audio_channel = 0;
-        INTFLOAT gain;
-        if (s->channel_mode == AC3_CHMODE_DUALMONO)
-            audio_channel = 2-ch;
-        if (s->heavy_compression && s->compression_exists[audio_channel])
-            gain = s->heavy_dynamic_range[audio_channel];
-        else
-            gain = s->dynamic_range[audio_channel];
-
-#if USE_FIXED
-        scale_coefs(s->transform_coeffs[ch], s->fixed_coeffs[ch], gain, 256);
-#else
-        if (s->target_level != 0)
-          gain = gain * s->level_gain[audio_channel];
-        gain *= 1.0 / 4194304.0f;
+        float gain = 1.0 / 4194304.0f;
+        if (s->channel_mode == AC3_CHMODE_DUALMONO) {
+            gain *= s->dynamic_range[2 - ch];
+        } else {
+            gain *= s->dynamic_range[0];
+        }
         s->fmt_conv.int32_to_float_fmul_scalar(s->transform_coeffs[ch],
                                                s->fixed_coeffs[ch], gain, 256);
-#endif
     }
 
     /* apply spectral extension to high frequency bins */
-    if (CONFIG_EAC3_DECODER && s->spx_in_use) {
+    if (s->spx_in_use && CONFIG_EAC3_DECODER) {
         ff_eac3_apply_spectral_extension(s);
     }
 
@@ -1371,24 +1328,19 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
         do_imdct(s, s->channels);
 
         if (downmix_output) {
-#if USE_FIXED
-            ac3_downmix_c_fixed16(s->outptr, s->downmix_coeffs,
-                              s->out_channels, s->fbw_channels, 256);
-#else
             s->ac3dsp.downmix(s->outptr, s->downmix_coeffs,
                               s->out_channels, s->fbw_channels, 256);
-#endif
         }
     } else {
         if (downmix_output) {
-            s->ac3dsp.AC3_RENAME(downmix)(s->xcfptr + 1, s->downmix_coeffs,
-                                          s->out_channels, s->fbw_channels, 256);
+            s->ac3dsp.downmix(s->xcfptr + 1, s->downmix_coeffs,
+                              s->out_channels, s->fbw_channels, 256);
         }
 
         if (downmix_output && !s->downmixed) {
             s->downmixed = 1;
-            s->ac3dsp.AC3_RENAME(downmix)(s->dlyptr, s->downmix_coeffs,
-                                          s->out_channels, s->fbw_channels, 128);
+            s->ac3dsp.downmix(s->dlyptr, s->downmix_coeffs, s->out_channels,
+                              s->fbw_channels, 128);
         }
 
         do_imdct(s, s->out_channels);
@@ -1409,7 +1361,7 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
     AC3DecodeContext *s = avctx->priv_data;
     int blk, ch, err, ret;
     const uint8_t *channel_map;
-    const SHORTFLOAT *output[AC3_MAX_CHANNELS];
+    const float *output[AC3_MAX_CHANNELS];
     enum AVMatrixEncoding matrix_encoding;
     AVDownmixInfo *downmix_info;
 
@@ -1424,8 +1376,7 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         memcpy(s->input_buffer, buf, FFMIN(buf_size, AC3_FRAME_BUFFER_SIZE));
     buf = s->input_buffer;
     /* initialize the GetBitContext with the start of valid AC-3 Frame */
-    if ((ret = init_get_bits8(&s->gbc, buf, buf_size)) < 0)
-        return ret;
+    init_get_bits(&s->gbc, buf, buf_size * 8);
 
     /* parse the syncinfo */
     err = parse_frame_header(s);
@@ -1469,7 +1420,7 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         if (s->frame_size > buf_size) {
             av_log(avctx, AV_LOG_ERROR, "incomplete frame\n");
             err = AAC_AC3_PARSE_ERROR_FRAME_SIZE;
-        } else if (avctx->err_recognition & (AV_EF_CRCCHECK|AV_EF_CAREFUL)) {
+        } else if (avctx->err_recognition & AV_EF_CRCCHECK) {
             /* check for crc mismatch */
             if (av_crc(av_crc_get_table(AV_CRC_16_ANSI), 0, &buf[2],
                        s->frame_size - 2)) {
@@ -1503,14 +1454,13 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
             s->output_mode  = AC3_CHMODE_STEREO;
         }
 
-        s->loro_center_mix_level   = gain_levels[s->  center_mix_level];
-        s->loro_surround_mix_level = gain_levels[s->surround_mix_level];
-        s->ltrt_center_mix_level   = LEVEL_MINUS_3DB;
-        s->ltrt_surround_mix_level = LEVEL_MINUS_3DB;
         /* set downmixing coefficients if needed */
         if (s->channels != s->out_channels && !((s->output_mode & AC3_OUTPUT_LFEON) &&
                 s->fbw_channels == s->out_channels)) {
-            set_downmix_coeffs(s);
+            if ((ret = set_downmix_coeffs(s)) < 0) {
+                av_log(avctx, AV_LOG_ERROR, "error setting downmix coeffs\n");
+                return ret;
+            }
         }
     } else if (!s->channels) {
         av_log(avctx, AV_LOG_ERROR, "unable to determine channel mode\n");
@@ -1528,18 +1478,19 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = s->num_blocks * AC3_BLOCK_SIZE;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     /* decode the audio blocks */
     channel_map = ff_ac3_dec_channel_map[s->output_mode & ~AC3_OUTPUT_LFEON][s->lfe_on];
-    for (ch = 0; ch < AC3_MAX_CHANNELS; ch++) {
-        output[ch] = s->output[ch];
-        s->outptr[ch] = s->output[ch];
-    }
     for (ch = 0; ch < s->channels; ch++) {
         if (ch < s->out_channels)
-            s->outptr[channel_map[ch]] = (SHORTFLOAT *)frame->data[ch];
+            s->outptr[channel_map[ch]] = (float *)frame->data[ch];
+        else
+            s->outptr[ch] = s->output[ch];
+        output[ch] = s->output[ch];
     }
     for (blk = 0; blk < s->num_blocks; blk++) {
         if (!err && decode_audio_block(s, blk)) {
@@ -1548,20 +1499,16 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         }
         if (err)
             for (ch = 0; ch < s->out_channels; ch++)
-                memcpy(((SHORTFLOAT*)frame->data[ch]) + AC3_BLOCK_SIZE*blk, output[ch], AC3_BLOCK_SIZE*sizeof(SHORTFLOAT));
+                memcpy(s->outptr[channel_map[ch]], output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
         for (ch = 0; ch < s->out_channels; ch++)
             output[ch] = s->outptr[channel_map[ch]];
-        for (ch = 0; ch < s->out_channels; ch++) {
-            if (!ch || channel_map[ch])
-                s->outptr[channel_map[ch]] += AC3_BLOCK_SIZE;
-        }
+        for (ch = 0; ch < s->out_channels; ch++)
+            s->outptr[ch] += AC3_BLOCK_SIZE;
     }
-
-    av_frame_set_decode_error_flags(frame, err ? FF_DECODE_ERROR_INVALID_BITSTREAM : 0);
 
     /* keep last block for error concealment in next frame */
     for (ch = 0; ch < s->out_channels; ch++)
-        memcpy(s->output[ch], output[ch], AC3_BLOCK_SIZE*sizeof(SHORTFLOAT));
+        memcpy(s->output[ch], output[ch], sizeof(**output) * AC3_BLOCK_SIZE);
 
     /*
      * AVMatrixEncoding
@@ -1632,10 +1579,60 @@ static av_cold int ac3_decode_end(AVCodecContext *avctx)
     AC3DecodeContext *s = avctx->priv_data;
     ff_mdct_end(&s->imdct_512);
     ff_mdct_end(&s->imdct_256);
-    av_freep(&s->fdsp);
+    av_freep(&s->downmix_coeffs[0]);
 
     return 0;
 }
 
 #define OFFSET(x) offsetof(AC3DecodeContext, x)
 #define PAR (AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_AUDIO_PARAM)
+static const AVOption options[] = {
+    { "drc_scale", "percentage of dynamic range compression to apply", OFFSET(drc_scale), AV_OPT_TYPE_FLOAT, {.dbl = 1.0}, 0.0, 6.0, PAR },
+    { NULL},
+};
+
+static const AVClass ac3_decoder_class = {
+    .class_name = "AC3 decoder",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
+AVCodec ff_ac3_decoder = {
+    .name           = "ac3",
+    .long_name      = NULL_IF_CONFIG_SMALL("ATSC A/52A (AC-3)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_AC3,
+    .priv_data_size = sizeof (AC3DecodeContext),
+    .init           = ac3_decode_init,
+    .close          = ac3_decode_end,
+    .decode         = ac3_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
+                                                      AV_SAMPLE_FMT_NONE },
+    .priv_class     = &ac3_decoder_class,
+};
+
+#if CONFIG_EAC3_DECODER
+static const AVClass eac3_decoder_class = {
+    .class_name = "E-AC3 decoder",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
+AVCodec ff_eac3_decoder = {
+    .name           = "eac3",
+    .long_name      = NULL_IF_CONFIG_SMALL("ATSC A/52B (AC-3, E-AC-3)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_EAC3,
+    .priv_data_size = sizeof (AC3DecodeContext),
+    .init           = ac3_decode_init,
+    .close          = ac3_decode_end,
+    .decode         = ac3_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
+                                                      AV_SAMPLE_FMT_NONE },
+    .priv_class     = &eac3_decoder_class,
+};
+#endif

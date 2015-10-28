@@ -2,20 +2,20 @@
  * x86-optimized AC-3 DSP functions
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,11 +63,6 @@ void ff_apply_window_int16_ssse3(int16_t *output, const int16_t *input,
 void ff_apply_window_int16_ssse3_atom(int16_t *output, const int16_t *input,
                                       const int16_t *window, unsigned int len);
 
-#if ARCH_X86_32 && defined(__INTEL_COMPILER)
-#       undef HAVE_7REGS
-#       define HAVE_7REGS 0
-#endif
-
 #if HAVE_SSE_INLINE && HAVE_7REGS
 
 #define IF1(x) x
@@ -76,8 +71,8 @@ void ff_apply_window_int16_ssse3_atom(int16_t *output, const int16_t *input,
 #define MIX5(mono, stereo)                                      \
     __asm__ volatile (                                          \
         "movss           0(%1), %%xmm5          \n"             \
-        "movss           8(%1), %%xmm6          \n"             \
-        "movss          24(%1), %%xmm7          \n"             \
+        "movss           4(%1), %%xmm6          \n"             \
+        "movss          12(%1), %%xmm7          \n"             \
         "shufps     $0, %%xmm5, %%xmm5          \n"             \
         "shufps     $0, %%xmm6, %%xmm6          \n"             \
         "shufps     $0, %%xmm7, %%xmm7          \n"             \
@@ -102,7 +97,7 @@ void ff_apply_window_int16_ssse3_atom(int16_t *output, const int16_t *input,
         "add               $16, %0              \n"             \
         "jl                 1b                  \n"             \
         : "+&r"(i)                                              \
-        : "r"(matrix),                                          \
+        : "r"(matrix[0]),                                          \
           "r"(samples[0] + len),                                \
           "r"(samples[1] + len),                                \
           "r"(samples[2] + len),                                \
@@ -146,43 +141,45 @@ void ff_apply_window_int16_ssse3_atom(int16_t *output, const int16_t *input,
         : "memory"                                              \
     );
 
-static void ac3_downmix_sse(float **samples, float (*matrix)[2],
+static void ac3_downmix_sse(float **samples, float **matrix,
                             int out_ch, int in_ch, int len)
 {
-    int (*matrix_cmp)[2] = (int(*)[2])matrix;
+    int **matrix_cmp = (int **)matrix;
     intptr_t i, j, k, m;
 
     i = -len * sizeof(float);
     if (in_ch == 5 && out_ch == 2 &&
-        !(matrix_cmp[0][1] | matrix_cmp[2][0]   |
-          matrix_cmp[3][1] | matrix_cmp[4][0]   |
-          (matrix_cmp[1][0] ^ matrix_cmp[1][1]) |
-          (matrix_cmp[0][0] ^ matrix_cmp[2][1]))) {
+        !(matrix_cmp[1][0] | matrix_cmp[0][2]   |
+          matrix_cmp[1][3] | matrix_cmp[0][4]   |
+          (matrix_cmp[0][1] ^ matrix_cmp[1][1]) |
+          (matrix_cmp[0][0] ^ matrix_cmp[1][2]))) {
         MIX5(IF0, IF1);
     } else if (in_ch == 5 && out_ch == 1 &&
-               matrix_cmp[0][0] == matrix_cmp[2][0] &&
-               matrix_cmp[3][0] == matrix_cmp[4][0]) {
+               matrix_cmp[0][0] == matrix_cmp[0][2] &&
+               matrix_cmp[0][3] == matrix_cmp[0][4]) {
         MIX5(IF1, IF0);
     } else {
-        LOCAL_ALIGNED(16, float, matrix_simd, [AC3_MAX_CHANNELS], [2][4]);
+        DECLARE_ALIGNED(16, float, matrix_simd)[AC3_MAX_CHANNELS][2][4];
         float *samp[AC3_MAX_CHANNELS];
 
         for (j = 0; j < in_ch; j++)
             samp[j] = samples[j] + len;
 
         j = 2 * in_ch * sizeof(float);
+        k =     in_ch * sizeof(float);
         __asm__ volatile (
             "1:                                 \n"
+            "sub             $4, %1             \n"
             "sub             $8, %0             \n"
-            "movss     (%2, %0), %%xmm4         \n"
-            "movss    4(%2, %0), %%xmm5         \n"
+            "movss     (%3, %1), %%xmm4         \n"
+            "movss     (%4, %1), %%xmm5         \n"
             "shufps          $0, %%xmm4, %%xmm4 \n"
             "shufps          $0, %%xmm5, %%xmm5 \n"
-            "movaps      %%xmm4,   (%1, %0, 4)  \n"
-            "movaps      %%xmm5, 16(%1, %0, 4)  \n"
+            "movaps      %%xmm4,   (%2, %0, 4)  \n"
+            "movaps      %%xmm5, 16(%2, %0, 4)  \n"
             "jg              1b                 \n"
-            : "+&r"(j)
-            : "r"(matrix_simd), "r"(matrix)
+            : "+&r"(j), "+&r"(k)
+            : "r"(matrix_simd), "r"(matrix[0]), "r"(matrix[1])
             : "memory"
         );
         if (out_ch == 2) {
@@ -228,16 +225,19 @@ av_cold void ff_ac3dsp_init_x86(AC3DSPContext *c, int bit_exact)
         c->float_to_fixed24 = ff_float_to_fixed24_sse2;
         c->compute_mantissa_size = ff_ac3_compute_mantissa_size_sse2;
         c->extract_exponents = ff_ac3_extract_exponents_sse2;
-        if (!(cpu_flags & AV_CPU_FLAG_SSE2SLOW)) {
-            c->ac3_lshift_int16 = ff_ac3_lshift_int16_sse2;
-            c->ac3_rshift_int32 = ff_ac3_rshift_int32_sse2;
-        }
         if (bit_exact) {
             c->apply_window_int16 = ff_apply_window_int16_sse2;
-        } else if (!(cpu_flags & AV_CPU_FLAG_SSE2SLOW)) {
+        }
+    }
+
+    if (EXTERNAL_SSE2_FAST(cpu_flags)) {
+        c->ac3_lshift_int16 = ff_ac3_lshift_int16_sse2;
+        c->ac3_rshift_int32 = ff_ac3_rshift_int32_sse2;
+        if (!bit_exact) {
             c->apply_window_int16 = ff_apply_window_int16_round_sse2;
         }
     }
+
     if (EXTERNAL_SSSE3(cpu_flags)) {
         c->ac3_max_msb_abs_int16 = ff_ac3_max_msb_abs_int16_ssse3;
         if (cpu_flags & AV_CPU_FLAG_ATOM) {
