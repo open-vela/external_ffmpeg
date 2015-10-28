@@ -2,20 +2,20 @@
  * Beam Software SIFF demuxer
  * Copyright (c) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,7 @@
 
 #include "avformat.h"
 #include "internal.h"
+#include "avio_internal.h"
 
 enum SIFFTags {
     TAG_SIFF = MKTAG('S', 'I', 'F', 'F'),
@@ -55,7 +56,7 @@ typedef struct SIFFContext {
     int curstrm;
     unsigned int pktsize;
     int gmcsize;
-    int sndsize;
+    unsigned int sndsize;
 
     unsigned int flags;
     uint8_t gmc[4];
@@ -128,6 +129,8 @@ static int siff_parse_vbv1(AVFormatContext *s, SIFFContext *c, AVIOContext *pb)
     st->codec->width      = width;
     st->codec->height     = height;
     st->codec->pix_fmt    = AV_PIX_FMT_PAL8;
+    st->nb_frames         =
+    st->duration          = c->frames;
     avpriv_set_pts_info(st, 16, 1, 12);
 
     c->cur_frame = 0;
@@ -193,7 +196,7 @@ static int siff_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (c->has_video) {
         unsigned int size;
         if (c->cur_frame >= c->frames)
-            return AVERROR(EIO);
+            return AVERROR_EOF;
         if (c->curstrm == -1) {
             c->pktsize = avio_rl32(s->pb) - 4;
             c->flags   = avio_rl16(s->pb);
@@ -205,13 +208,20 @@ static int siff_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
 
         if (!c->curstrm) {
-            size = c->pktsize - c->sndsize;
-            if (av_new_packet(pkt, size) < 0)
+            if (c->pktsize < 2LL + c->sndsize + c->gmcsize)
+                return AVERROR_INVALIDDATA;
+
+            size = c->pktsize - c->sndsize - c->gmcsize - 2;
+            size = ffio_limit(s->pb, size);
+            if (av_new_packet(pkt, size + c->gmcsize + 2) < 0)
                 return AVERROR(ENOMEM);
             AV_WL16(pkt->data, c->flags);
             if (c->gmcsize)
                 memcpy(pkt->data + 2, c->gmc, c->gmcsize);
-            avio_read(s->pb, pkt->data + 2 + c->gmcsize, size - c->gmcsize - 2);
+            if (avio_read(s->pb, pkt->data + 2 + c->gmcsize, size) != size) {
+                av_packet_unref(pkt);
+                return AVERROR_INVALIDDATA;
+            }
             pkt->stream_index = 0;
             c->curstrm        = -1;
         } else {
@@ -228,6 +238,8 @@ static int siff_read_packet(AVFormatContext *s, AVPacket *pkt)
             c->cur_frame++;
     } else {
         int pktsize = av_get_packet(s->pb, pkt, c->block_align);
+        if (!pktsize)
+            return AVERROR_EOF;
         if (pktsize <= 0)
             return AVERROR(EIO);
         pkt->duration = pktsize;
