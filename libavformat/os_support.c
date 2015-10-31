@@ -3,25 +3,24 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * copyright (c) 2002 Francois Revol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /* needed by inet_aton() */
-#define _DEFAULT_SOURCE
 #define _SVID_SOURCE
 
 #include "config.h"
@@ -159,9 +158,9 @@ void ff_freeaddrinfo(struct addrinfo *res)
     }
 #endif /* HAVE_WINSOCK2_H */
 
-    av_freep(&res->ai_canonname);
-    av_freep(&res->ai_addr);
-    av_freep(&res);
+    av_free(res->ai_canonname);
+    av_free(res->ai_addr);
+    av_free(res);
 }
 
 int ff_getnameinfo(const struct sockaddr *sa, int salen,
@@ -205,16 +204,9 @@ int ff_getnameinfo(const struct sockaddr *sa, int salen,
     }
 
     if (serv && servlen > 0) {
-        struct servent *ent = NULL;
-#if HAVE_GETSERVBYPORT
         if (!(flags & NI_NUMERICSERV))
-            ent = getservbyport(sin->sin_port, flags & NI_DGRAM ? "udp" : "tcp");
-#endif /* HAVE_GETSERVBYPORT */
-
-        if (ent)
-            snprintf(serv, servlen, "%s", ent->s_name);
-        else
-            snprintf(serv, servlen, "%d", ntohs(sin->sin_port));
+            return EAI_FAIL;
+        snprintf(serv, servlen, "%d", ntohs(sin->sin_port));
     }
 
     return 0;

@@ -4,20 +4,20 @@
  * Authors: Steven Walters <kemuri9@gmail.com>
  *          Pegasys Inc. <http://www.pegasys-inc.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,8 @@
  * w32threads to pthreads wrapper
  */
 
-#ifndef FFMPEG_COMPAT_W32PTHREADS_H
-#define FFMPEG_COMPAT_W32PTHREADS_H
+#ifndef LIBAV_COMPAT_W32PTHREADS_H
+#define LIBAV_COMPAT_W32PTHREADS_H
 
 /* Build up a pthread-like API using underlying Windows API. Have only static
  * methods so as to not conflict with a potentially linked in pthread-win32
@@ -39,13 +39,12 @@
 #include <windows.h>
 #include <process.h>
 
-/* MinGW requires the intrinsics header for the pthread_once fallback code */
 #if _WIN32_WINNT < 0x0600 && defined(__MINGW32__)
-#include <intrin.h>
+#undef MemoryBarrier
+#define MemoryBarrier __sync_synchronize
 #endif
 
 #include "libavutil/attributes.h"
-#include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
@@ -87,29 +86,19 @@ static av_unused int pthread_create(pthread_t *thread, const void *unused_attr,
 {
     thread->func   = start_routine;
     thread->arg    = arg;
-#if HAVE_WINRT
-    thread->handle = (void*)CreateThread(NULL, 0, win32thread_worker, thread,
-                                           0, NULL);
-#else
     thread->handle = (void*)_beginthreadex(NULL, 0, win32thread_worker, thread,
                                            0, NULL);
-#endif
     return !thread->handle;
 }
 
-static av_unused int pthread_join(pthread_t thread, void **value_ptr)
+static av_unused void pthread_join(pthread_t thread, void **value_ptr)
 {
     DWORD ret = WaitForSingleObject(thread.handle, INFINITE);
-    if (ret != WAIT_OBJECT_0) {
-        if (ret == WAIT_ABANDONED)
-            return EINVAL;
-        else
-            return EDEADLK;
-    }
+    if (ret != WAIT_OBJECT_0)
+        return;
     if (value_ptr)
         *value_ptr = thread.ret;
     CloseHandle(thread.handle);
-    return 0;
 }
 
 static inline int pthread_mutex_init(pthread_mutex_t *m, void* attr)
@@ -134,6 +123,7 @@ static inline int pthread_mutex_unlock(pthread_mutex_t *m)
 }
 
 #if _WIN32_WINNT >= 0x0600
+
 typedef INIT_ONCE pthread_once_t;
 #define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
 
@@ -147,22 +137,20 @@ static av_unused int pthread_once(pthread_once_t *once_control, void (*init_rout
     return 0;
 }
 
-static inline int pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
+static inline void pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
 {
     InitializeConditionVariable(cond);
-    return 0;
 }
 
 /* native condition variables do not destroy */
-static inline int pthread_cond_destroy(pthread_cond_t *cond)
+static inline void pthread_cond_destroy(pthread_cond_t *cond)
 {
-    return 0;
+    return;
 }
 
-static inline int pthread_cond_broadcast(pthread_cond_t *cond)
+static inline void pthread_cond_broadcast(pthread_cond_t *cond)
 {
     WakeAllConditionVariable(cond);
-    return 0;
 }
 
 static inline int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
@@ -171,10 +159,9 @@ static inline int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex
     return 0;
 }
 
-static inline int pthread_cond_signal(pthread_cond_t *cond)
+static inline void pthread_cond_signal(pthread_cond_t *cond)
 {
     WakeConditionVariable(cond);
-    return 0;
 }
 
 #else // _WIN32_WINNT < 0x0600
@@ -258,7 +245,7 @@ static void (WINAPI *cond_signal)(pthread_cond_t *cond);
 static BOOL (WINAPI *cond_wait)(pthread_cond_t *cond, pthread_mutex_t *mutex,
                                 DWORD milliseconds);
 
-static av_unused int pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
+static av_unused void pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
 {
     win32_cond_t *win32_cond = NULL;
 
@@ -266,32 +253,31 @@ static av_unused int pthread_cond_init(pthread_cond_t *cond, const void *unused_
 
     if (cond_init) {
         cond_init(cond);
-        return 0;
+        return;
     }
 
     /* non native condition variables */
     win32_cond = av_mallocz(sizeof(win32_cond_t));
     if (!win32_cond)
-        return ENOMEM;
+        return;
     cond->Ptr = win32_cond;
     win32_cond->semaphore = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
     if (!win32_cond->semaphore)
-        return ENOMEM;
+        return;
     win32_cond->waiters_done = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!win32_cond->waiters_done)
-        return ENOMEM;
+        return;
 
     pthread_mutex_init(&win32_cond->mtx_waiter_count, NULL);
     pthread_mutex_init(&win32_cond->mtx_broadcast, NULL);
-    return 0;
 }
 
-static av_unused int pthread_cond_destroy(pthread_cond_t *cond)
+static av_unused void pthread_cond_destroy(pthread_cond_t *cond)
 {
     win32_cond_t *win32_cond = cond->Ptr;
     /* native condition variables do not destroy */
     if (cond_init)
-        return 0;
+        return;
 
     /* non native condition variables */
     CloseHandle(win32_cond->semaphore);
@@ -300,17 +286,16 @@ static av_unused int pthread_cond_destroy(pthread_cond_t *cond)
     pthread_mutex_destroy(&win32_cond->mtx_broadcast);
     av_freep(&win32_cond);
     cond->Ptr = NULL;
-    return 0;
 }
 
-static av_unused int pthread_cond_broadcast(pthread_cond_t *cond)
+static av_unused void pthread_cond_broadcast(pthread_cond_t *cond)
 {
     win32_cond_t *win32_cond = cond->Ptr;
     int have_waiter;
 
     if (cond_broadcast) {
         cond_broadcast(cond);
-        return 0;
+        return;
     }
 
     /* non native condition variables */
@@ -332,7 +317,6 @@ static av_unused int pthread_cond_broadcast(pthread_cond_t *cond)
     } else
         pthread_mutex_unlock(&win32_cond->mtx_waiter_count);
     pthread_mutex_unlock(&win32_cond->mtx_broadcast);
-    return 0;
 }
 
 static av_unused int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
@@ -367,13 +351,13 @@ static av_unused int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mu
     return pthread_mutex_lock(mutex);
 }
 
-static av_unused int pthread_cond_signal(pthread_cond_t *cond)
+static av_unused void pthread_cond_signal(pthread_cond_t *cond)
 {
     win32_cond_t *win32_cond = cond->Ptr;
     int have_waiter;
     if (cond_signal) {
         cond_signal(cond);
-        return 0;
+        return;
     }
 
     pthread_mutex_lock(&win32_cond->mtx_broadcast);
@@ -390,7 +374,6 @@ static av_unused int pthread_cond_signal(pthread_cond_t *cond)
     }
 
     pthread_mutex_unlock(&win32_cond->mtx_broadcast);
-    return 0;
 }
 #endif
 
@@ -415,4 +398,4 @@ static av_unused void w32thread_init(void)
 
 }
 
-#endif /* FFMPEG_COMPAT_W32PTHREADS_H */
+#endif /* LIBAV_COMPAT_W32PTHREADS_H */
