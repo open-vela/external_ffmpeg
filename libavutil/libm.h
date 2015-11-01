@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,10 @@
 #include "attributes.h"
 #include "intfloat.h"
 
+#if HAVE_MIPSFPU && HAVE_INLINE_ASM
+#include "libavutil/mips/libm_mips.h"
+#endif /* HAVE_MIPSFPU && HAVE_INLINE_ASM*/
+
 #if !HAVE_ATANF
 #undef atanf
 #define atanf(x) ((float)atan(x))
@@ -42,6 +46,13 @@
 #if !HAVE_POWF
 #undef powf
 #define powf(x, y) ((float)pow(x, y))
+#endif
+
+#if !HAVE_CBRT
+static av_always_inline double cbrt(double x)
+{
+    return x < 0 ? -pow(-x, 1.0 / 3.0) : pow(x, 1.0 / 3.0);
+}
 #endif
 
 #if !HAVE_CBRTF
@@ -72,24 +83,77 @@ static av_always_inline float cbrtf(float x)
 #endif /* HAVE_EXP2F */
 
 #if !HAVE_ISINF
-static av_always_inline av_const int isinf(float x)
+#undef isinf
+/* Note: these do not follow the BSD/Apple/GNU convention of returning -1 for
+-Inf, +1 for Inf, 0 otherwise, but merely follow the POSIX/ISO mandated spec of
+returning a non-zero value for +/-Inf, 0 otherwise. */
+static av_always_inline av_const int avpriv_isinff(float x)
 {
     uint32_t v = av_float2int(x);
     if ((v & 0x7f800000) != 0x7f800000)
         return 0;
     return !(v & 0x007fffff);
 }
+
+static av_always_inline av_const int avpriv_isinf(double x)
+{
+    uint64_t v = av_double2int(x);
+    if ((v & 0x7ff0000000000000) != 0x7ff0000000000000)
+        return 0;
+    return !(v & 0x000fffffffffffff);
+}
+
+#define isinf(x)                  \
+    (sizeof(x) == sizeof(float)   \
+        ? avpriv_isinff(x)        \
+        : avpriv_isinf(x))
 #endif /* HAVE_ISINF */
 
 #if !HAVE_ISNAN
-static av_always_inline av_const int isnan(float x)
+static av_always_inline av_const int avpriv_isnanf(float x)
 {
     uint32_t v = av_float2int(x);
     if ((v & 0x7f800000) != 0x7f800000)
         return 0;
     return v & 0x007fffff;
 }
+
+static av_always_inline av_const int avpriv_isnan(double x)
+{
+    uint64_t v = av_double2int(x);
+    if ((v & 0x7ff0000000000000) != 0x7ff0000000000000)
+        return 0;
+    return (v & 0x000fffffffffffff) && 1;
+}
+
+#define isnan(x)                  \
+    (sizeof(x) == sizeof(float)   \
+        ? avpriv_isnanf(x)        \
+        : avpriv_isnan(x))
 #endif /* HAVE_ISNAN */
+
+#if !HAVE_HYPOT
+#undef hypot
+static inline av_const double hypot(double x, double y)
+{
+    double ret, temp;
+    x = fabs(x);
+    y = fabs(y);
+
+    if (isinf(x) || isinf(y))
+        return av_int2double(0x7ff0000000000000);
+    if (x == 0 || y == 0)
+        return x + y;
+    if (x < y) {
+        temp = x;
+        x = y;
+        y = temp;
+    }
+
+    y = y/x;
+    return x*sqrt(1 + y*y);
+}
+#endif /* HAVE_HYPOT */
 
 #if !HAVE_LDEXPF
 #undef ldexpf
