@@ -3,20 +3,20 @@
  * Copyright (c) 2010 Fabrice Bellard
  *                    Romain Degez
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -93,17 +93,19 @@ static const AttrNameMap attr_names[] = {
 
 static void close_context(PayloadContext *data)
 {
-    av_freep(&data->au_headers);
-    av_freep(&data->mode);
+    av_free(data->au_headers);
+    av_free(data->mode);
 }
 
 static int parse_fmtp_config(AVCodecContext *codec, const char *value)
 {
     /* decode the hexa encoded parameter */
     int len = ff_hex_to_data(NULL, value);
-    av_freep(&codec->extradata);
-    if (ff_alloc_extradata(codec, len))
+    av_free(codec->extradata);
+    codec->extradata = av_mallocz(len + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!codec->extradata)
         return AVERROR(ENOMEM);
+    codec->extradata_size = len;
     ff_hex_to_data(codec->extradata, value);
     return 0;
 }
@@ -134,7 +136,7 @@ static int rtp_parse_mp4_au(PayloadContext *data, const uint8_t *buf, int len)
 
     init_get_bits(&getbitcontext, buf, data->au_headers_length_bytes * 8);
 
-    /* XXX: Wrong if optional additional sections are present (cts, dts etc...) */
+    /* XXX: Wrong if optionnal additional sections are present (cts, dts etc...) */
     au_header_size = data->sizelength + data->indexlength;
     if (au_header_size <= 0 || (au_headers_length % au_header_size != 0))
         return -1;
@@ -164,7 +166,6 @@ static int aac_parse_packet(AVFormatContext *ctx, PayloadContext *data,
                             int flags)
 {
     int ret;
-
 
     if (!buf) {
         if (data->cur_au_index > data->nb_au_headers) {
