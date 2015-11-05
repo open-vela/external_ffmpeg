@@ -3,20 +3,20 @@
  * Copyright (C) 2004 Alex Beregszaszi
  * Copyright (C) 2006 Benjamin Larsson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -69,7 +69,7 @@ typedef struct FlashSVContext {
     int             diff_start, diff_height;
 } FlashSVContext;
 
-static int decode_hybrid(const uint8_t *sptr, const uint8_t *sptr_end, uint8_t *dptr, int dx, int dy,
+static int decode_hybrid(const uint8_t *sptr, uint8_t *dptr, int dx, int dy,
                          int h, int w, int stride, const uint32_t *pal)
 {
     int x, y;
@@ -78,8 +78,6 @@ static int decode_hybrid(const uint8_t *sptr, const uint8_t *sptr_end, uint8_t *
     for (y = dx + h; y > dx; y--) {
         uint8_t *dst = dptr + (y * stride) + dy * 3;
         for (x = 0; x < w; x++) {
-            if (sptr >= sptr_end)
-                return AVERROR_INVALIDDATA;
             if (*sptr & 0x80) {
                 /* 15-bit color */
                 unsigned c = AV_RB16(sptr) & ~0x8000;
@@ -109,7 +107,7 @@ static av_cold int flashsv_decode_end(AVCodecContext *avctx)
     av_frame_free(&s->frame);
 
     /* free the tmpblock */
-    av_freep(&s->tmpblock);
+    av_free(s->tmpblock);
 
     return 0;
 }
@@ -144,9 +142,6 @@ static int flashsv2_prime(FlashSVContext *s, uint8_t *src, int size)
     z_stream zs;
     int zret; // Zlib return code
 
-    if (!src)
-        return AVERROR_INVALIDDATA;
-
     zs.zalloc = NULL;
     zs.zfree  = NULL;
     zs.opaque = NULL;
@@ -157,8 +152,7 @@ static int flashsv2_prime(FlashSVContext *s, uint8_t *src, int size)
     s->zstream.avail_out = s->block_size * 3;
     inflate(&s->zstream, Z_SYNC_FLUSH);
 
-    if (deflateInit(&zs, 0) != Z_OK)
-        return -1;
+    deflateInit(&zs, 0);
     zs.next_in   = s->tmpblock;
     zs.avail_in  = s->block_size * 3 - s->zstream.avail_out;
     zs.next_out  = s->deflate_block;
@@ -234,15 +228,10 @@ static int flashsv_decode_block(AVCodecContext *avctx, AVPacket *avpkt,
         }
     } else {
         /* hybrid 15-bit/palette mode */
-        ret = decode_hybrid(s->tmpblock, s->zstream.next_out,
-                      s->frame->data[0],
+        decode_hybrid(s->tmpblock, s->frame->data[0],
                       s->image_height - (y_pos + 1 + s->diff_height),
                       x_pos, s->diff_height, width,
                       s->frame->linesize[0], s->pal);
-        if (ret < 0) {
-            av_log(avctx, AV_LOG_ERROR, "decode_hybrid failed\n");
-            return ret;
-        }
     }
     skip_bits_long(gb, 8 * block_size); /* skip the consumed bits */
     return 0;
@@ -271,8 +260,6 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     FlashSVContext *s = avctx->priv_data;
     int h_blocks, v_blocks, h_part, v_part, i, j, ret;
     GetBitContext gb;
-    int last_blockwidth = s->block_width;
-    int last_blockheight= s->block_height;
 
     /* no supplementary picture */
     if (buf_size == 0)
@@ -280,18 +267,13 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     if (buf_size < 4)
         return -1;
 
-    if ((ret = init_get_bits8(&gb, avpkt->data, buf_size)) < 0)
-        return ret;
+    init_get_bits(&gb, avpkt->data, buf_size * 8);
 
     /* start to parse the bitstream */
     s->block_width  = 16 * (get_bits(&gb, 4) + 1);
     s->image_width  = get_bits(&gb, 12);
     s->block_height = 16 * (get_bits(&gb, 4) + 1);
     s->image_height = get_bits(&gb, 12);
-
-    if (   last_blockwidth != s->block_width
-        || last_blockheight!= s->block_height)
-        av_freep(&s->blocks);
 
     if (s->ver == 2) {
         skip_bits(&gb, 6);
@@ -340,8 +322,8 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
 
     /* initialize the image size once */
     if (avctx->width == 0 && avctx->height == 0) {
-        if ((ret = ff_set_dimensions(avctx, s->image_width, s->image_height)) < 0)
-            return ret;
+        avctx->width  = s->image_width;
+        avctx->height = s->image_height;
     }
 
     /* check for changes of image width and image height */
@@ -357,20 +339,24 @@ static int flashsv_decode_frame(AVCodecContext *avctx, void *data,
     s->is_keyframe = (avpkt->flags & AV_PKT_FLAG_KEY) && (s->ver == 2);
     if (s->is_keyframe) {
         int err;
+        int nb_blocks = (v_blocks + !!v_part) *
+                        (h_blocks + !!h_part) * sizeof(s->blocks[0]);
         if ((err = av_reallocp(&s->keyframedata, avpkt->size)) < 0)
             return err;
         memcpy(s->keyframedata, avpkt->data, avpkt->size);
+        if ((err = av_reallocp(&s->blocks, nb_blocks)) < 0)
+            return err;
+        memset(s->blocks, 0, nb_blocks);
     }
-    if(s->ver == 2 && !s->blocks)
-        s->blocks = av_mallocz((v_blocks + !!v_part) * (h_blocks + !!h_part) *
-                               sizeof(s->blocks[0]));
 
     ff_dlog(avctx, "image: %dx%d block: %dx%d num: %dx%d part: %dx%d\n",
             s->image_width, s->image_height, s->block_width, s->block_height,
             h_blocks, v_blocks, h_part, v_part);
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     /* loop over all block columns */
     for (j = 0; j < v_blocks + (v_part ? 1 : 0); j++) {
