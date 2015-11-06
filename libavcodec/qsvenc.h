@@ -3,20 +3,20 @@
  *
  * copyright (c) 2013 Yukinori Yamazoe
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,25 +40,21 @@ typedef struct QSVEncContext {
     QSVFrame *work_frames;
 
     mfxSession session;
-    QSVSession internal_qs;
+    mfxSession internal_session;
 
     int packet_size;
     int width_align;
-    int height_align;
 
     mfxVideoParam param;
     mfxFrameAllocRequest req;
 
     mfxExtCodingOption  extco;
-#if QSV_VERSION_ATLEAST(1,6)
-    mfxExtCodingOption2 extco2;
-#endif
 
     mfxExtOpaqueSurfaceAlloc opaque_alloc;
     mfxFrameSurface1       **opaque_surfaces;
     AVBufferRef             *opaque_alloc_buf;
 
-    mfxExtBuffer  *extparam_internal[3];
+    mfxExtBuffer  *extparam_internal[2];
     int         nb_extparam_internal;
 
     mfxExtBuffer **extparam;
@@ -72,10 +68,6 @@ typedef struct QSVEncContext {
     int preset;
     int avbr_accuracy;
     int avbr_convergence;
-    int pic_timing_sei;
-    int look_ahead;
-    int look_ahead_depth;
-    int look_ahead_downsampling;
 
     char *load_plugins;
 } QSVEncContext;

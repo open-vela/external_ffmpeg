@@ -1,21 +1,21 @@
 /*
  * Sega FILM Format (CPK) Demuxer
- * Copyright (c) 2003 The FFmpeg Project
+ * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,7 +30,6 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
-#include "avio_internal.h"
 
 #define FILM_TAG MKBETAG('F', 'I', 'L', 'M')
 #define FDSC_TAG MKBETAG('F', 'D', 'S', 'C')
@@ -67,9 +66,6 @@ typedef struct FilmDemuxContext {
 static int film_probe(AVProbeData *p)
 {
     if (AV_RB32(&p->buf[0]) != FILM_TAG)
-        return 0;
-
-    if (AV_RB32(&p->buf[16]) != FDSC_TAG)
         return 0;
 
     return AVPROBE_SCORE_MAX;
@@ -119,8 +115,13 @@ static int film_read_header(AVFormatContext *s)
             return AVERROR(EIO);
         film->audio_samplerate = AV_RB16(&scratch[24]);
         film->audio_channels = scratch[21];
+        if (!film->audio_channels || film->audio_channels > 2) {
+            av_log(s, AV_LOG_ERROR,
+                   "Invalid number of channels: %d\n", film->audio_channels);
+            return AVERROR_INVALIDDATA;
+        }
         film->audio_bits = scratch[22];
-        if (scratch[23] == 2 && film->audio_channels > 0)
+        if (scratch[23] == 2)
             film->audio_type = AV_CODEC_ID_ADPCM_ADX;
         else if (film->audio_channels > 0) {
             if (film->audio_bits == 8)
@@ -200,7 +201,7 @@ static int film_read_header(AVFormatContext *s)
     film->sample_count = AV_RB32(&scratch[12]);
     if(film->sample_count >= UINT_MAX / sizeof(film_sample))
         return -1;
-    film->sample_table = av_malloc_array(film->sample_count, sizeof(film_sample));
+    film->sample_table = av_malloc(film->sample_count * sizeof(film_sample));
     if (!film->sample_table)
         return AVERROR(ENOMEM);
 
@@ -241,12 +242,11 @@ static int film_read_header(AVFormatContext *s)
             film->sample_table[i].pts = AV_RB32(&scratch[8]) & 0x7FFFFFFF;
             film->sample_table[i].keyframe = (scratch[8] & 0x80) ? 0 : 1;
             video_frame_counter++;
-            if (film->video_type)
-                av_add_index_entry(s->streams[film->video_stream_index],
-                                   film->sample_table[i].sample_offset,
-                                   film->sample_table[i].pts,
-                                   film->sample_table[i].sample_size, 0,
-                                   film->sample_table[i].keyframe);
+            av_add_index_entry(s->streams[film->video_stream_index],
+                               film->sample_table[i].sample_offset,
+                               film->sample_table[i].pts,
+                               film->sample_table[i].sample_size, 0,
+                               film->sample_table[i].keyframe);
         }
     }
 
@@ -273,7 +273,7 @@ static int film_read_packet(AVFormatContext *s,
     int ret = 0;
 
     if (film->current_sample >= film->sample_count)
-        return AVERROR_EOF;
+        return AVERROR(EIO);
 
     sample = &film->sample_table[film->current_sample];
 
@@ -281,8 +281,8 @@ static int film_read_packet(AVFormatContext *s,
     avio_seek(pb, sample->sample_offset, SEEK_SET);
 
     ret = av_get_packet(pb, pkt, sample->sample_size);
-    if (ret != sample->sample_size)
-        ret = AVERROR(EIO);
+    if (ret < 0)
+        return ret;
 
     pkt->stream_index = sample->stream;
     pkt->pts = sample->pts;
