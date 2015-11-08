@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -167,13 +167,9 @@ AVAudioResampleContext *avresample_alloc_context(void);
 /**
  * Initialize AVAudioResampleContext.
  * @note The context must be configured using the AVOption API.
- * @note The fields "in_channel_layout", "out_channel_layout",
- *       "in_sample_rate", "out_sample_rate", "in_sample_fmt",
- *       "out_sample_fmt" must be set.
  *
  * @see av_opt_set_int()
  * @see av_opt_set_dict()
- * @see av_get_default_channel_layout()
  *
  * @param avr  audio resample context
  * @return     0 on success, negative AVERROR code on failure
@@ -289,7 +285,7 @@ int avresample_set_matrix(AVAudioResampleContext *avr, const double *matrix,
  *
  * Examples:
  *
- * Reordering 5.1 AAC order (C,L,R,Ls,Rs,LFE) to Libav order (L,R,C,LFE,Ls,Rs):
+ * Reordering 5.1 AAC order (C,L,R,Ls,Rs,LFE) to FFmpeg order (L,R,C,LFE,Ls,Rs):
  * { 1, 2, 0, 5, 3, 4 }
  *
  * Muting the 3rd channel in 4-channel input:
