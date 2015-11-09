@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2013 Vittorio Giovara
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -61,8 +61,10 @@ static const enum AVPixelFormat formats_supported[] = {
 static int query_formats(AVFilterContext *ctx)
 {
     // this will ensure that formats are the same on all pads
-    ff_set_common_formats(ctx, ff_make_format_list(formats_supported));
-    return 0;
+    AVFilterFormats *fmts_list = ff_make_format_list(formats_supported);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static av_cold void framepack_uninit(AVFilterContext *ctx)
@@ -76,12 +78,12 @@ static av_cold void framepack_uninit(AVFilterContext *ctx)
 
 static int config_output(AVFilterLink *outlink)
 {
-    AVFilterContext *ctx  = outlink->src;
-    FramepackContext *s   = outlink->src->priv;
+    AVFilterContext *ctx = outlink->src;
+    FramepackContext *s  = outlink->src->priv;
 
-    int width             = ctx->inputs[LEFT]->w;
-    int height            = ctx->inputs[LEFT]->h;
-    AVRational time_base  = ctx->inputs[LEFT]->time_base;
+    int width            = ctx->inputs[LEFT]->w;
+    int height           = ctx->inputs[LEFT]->h;
+    AVRational time_base = ctx->inputs[LEFT]->time_base;
     AVRational frame_rate = ctx->inputs[LEFT]->frame_rate;
 
     // check size and fps match on the other input
@@ -115,7 +117,7 @@ static int config_output(AVFilterLink *outlink)
     // modify output properties as needed
     switch (s->format) {
     case AV_STEREO3D_FRAMESEQUENCE:
-        time_base.den  *= 2;
+        time_base.den *= 2;
         frame_rate.num *= 2;
 
         s->double_pts = AV_NOPTS_VALUE;
@@ -133,10 +135,10 @@ static int config_output(AVFilterLink *outlink)
         return AVERROR_INVALIDDATA;
     }
 
-    outlink->w          = width;
-    outlink->h          = height;
-    outlink->time_base  = time_base;
-    outlink->frame_rate = frame_rate;
+    outlink->w         = width;
+    outlink->h         = height;
+    outlink->time_base = time_base;
+    outlink->frame_rate= frame_rate;
 
     return 0;
 }
@@ -158,8 +160,8 @@ static void horizontal_frame_pack(AVFilterLink *outlink,
 
         for (plane = 0; plane < s->pix_desc->nb_components; plane++) {
             if (plane == 1 || plane == 2) {
-                length = -(-(out->width / 2) >> s->pix_desc->log2_chroma_w);
-                lines  = -(-(out->height)    >> s->pix_desc->log2_chroma_h);
+                length = FF_CEIL_RSHIFT(out->width / 2, s->pix_desc->log2_chroma_w);
+                lines  = FF_CEIL_RSHIFT(out->height,    s->pix_desc->log2_chroma_h);
             }
             for (i = 0; i < lines; i++) {
                 int j;
@@ -266,25 +268,26 @@ static av_always_inline void spatial_frame_pack(AVFilterLink *outlink,
     }
 }
 
+static int try_push_frame(AVFilterContext *ctx);
+
 static int filter_frame_left(AVFilterLink *inlink, AVFrame *frame)
 {
     FramepackContext *s = inlink->dst->priv;
     s->input_views[LEFT] = frame;
-    return 0;
+    return try_push_frame(inlink->dst);
 }
 
 static int filter_frame_right(AVFilterLink *inlink, AVFrame *frame)
 {
     FramepackContext *s = inlink->dst->priv;
     s->input_views[RIGHT] = frame;
-    return 0;
+    return try_push_frame(inlink->dst);
 }
 
 static int request_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
     FramepackContext *s = ctx->priv;
-    AVStereo3D *stereo;
     int ret, i;
 
     /* get a frame on the either input, stop as soon as a video ends */
@@ -295,7 +298,18 @@ static int request_frame(AVFilterLink *outlink)
                 return ret;
         }
     }
+    return 0;
+}
 
+static int try_push_frame(AVFilterContext *ctx)
+{
+    FramepackContext *s = ctx->priv;
+    AVFilterLink *outlink = ctx->outputs[0];
+    AVStereo3D *stereo;
+    int ret, i;
+
+    if (!(s->input_views[0] && s->input_views[1]))
+        return 0;
     if (s->format == AV_STEREO3D_FRAMESEQUENCE) {
         if (s->double_pts == AV_NOPTS_VALUE)
             s->double_pts = s->input_views[LEFT]->pts;
@@ -348,7 +362,7 @@ static int request_frame(AVFilterLink *outlink)
 
 #define OFFSET(x) offsetof(FramepackContext, x)
 #define V AV_OPT_FLAG_VIDEO_PARAM
-static const AVOption options[] = {
+static const AVOption framepack_options[] = {
     { "format", "Frame pack output format", OFFSET(format), AV_OPT_TYPE_INT,
         { .i64 = AV_STEREO3D_SIDEBYSIDE }, 0, INT_MAX, .flags = V, .unit = "format" },
     { "sbs", "Views are packed next to each other", 0, AV_OPT_TYPE_CONST,
@@ -364,12 +378,7 @@ static const AVOption options[] = {
     { NULL },
 };
 
-static const AVClass framepack_class = {
-    .class_name = "framepack",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(framepack);
 
 static const AVFilterPad framepack_inputs[] = {
     {

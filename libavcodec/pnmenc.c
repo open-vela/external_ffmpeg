@@ -2,43 +2,39 @@
  * PNM image format
  * Copyright (c) 2002, 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/imgutils.h"
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
-#include "bytestream.h"
 #include "internal.h"
 
 static int pnm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                            const AVFrame *pict, int *got_packet)
+                            const AVFrame *p, int *got_packet)
 {
     uint8_t *bytestream, *bytestream_start, *bytestream_end;
-    const AVFrame * const p = pict;
     int i, h, h1, c, n, linesize, ret;
     uint8_t *ptr, *ptr1, *ptr2;
     int size = av_image_get_buffer_size(avctx->pix_fmt,
                                         avctx->width, avctx->height, 1);
 
-    if ((ret = ff_alloc_packet(pkt, size + 200)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "encoded frame too large\n");
+    if ((ret = ff_alloc_packet2(avctx, pkt, size + 200, 0)) < 0)
         return ret;
-    }
 
     bytestream_start =
     bytestream       = pkt->data;
@@ -68,6 +64,10 @@ static int pnm_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         n  = avctx->width * 6;
         break;
     case AV_PIX_FMT_YUV420P:
+        if (avctx->width & 1 || avctx->height & 1) {
+            av_log(avctx, AV_LOG_ERROR, "pgmyuv needs even width and height\n");
+            return AVERROR(EINVAL);
+        }
         c  = '5';
         n  = avctx->width;
         h1 = (h * 3) / 2;
