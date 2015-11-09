@@ -3,20 +3,20 @@
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  * Copyright (C) 2015 Tom Butterworth <bangnoise@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -118,7 +118,7 @@ static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
         /* If there is no gain from snappy, just use the raw texture. */
         if (chunk->compressed_size >= chunk->uncompressed_size) {
             av_log(avctx, AV_LOG_VERBOSE,
-                   "Snappy buffer bigger than uncompressed (%"SIZE_SPECIFIER" >= %"SIZE_SPECIFIER" bytes).\n",
+                   "Snappy buffer bigger than uncompressed (%zu >= %zu bytes).\n",
                    chunk->compressed_size, chunk->uncompressed_size);
             memcpy(chunk_dst, chunk_src, chunk->uncompressed_size);
             chunk->compressor = HAP_COMP_NONE;
@@ -196,7 +196,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     int pktsize = FFMAX(ctx->tex_size, ctx->max_snappy * ctx->chunk_count) + header_length;
 
     /* Allocate maximum size packet, shrink later. */
-    ret = ff_alloc_packet2(avctx, pkt, pktsize, header_length);
+    ret = ff_alloc_packet(pkt, pktsize);
     if (ret < 0)
         return ret;
 
@@ -318,7 +318,7 @@ static const AVClass hapenc_class = {
 
 AVCodec ff_hap_encoder = {
     .name           = "hap",
-    .long_name      = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
+    .long_name      = NULL_IF_CONFIG_SMALL("Vidvox Hap encoder"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_HAP,
     .priv_data_size = sizeof(HapContext),
