@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2008  David Conrad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,19 +31,24 @@ static int dirac_header(AVFormatContext *s, int idx)
     AVStream *st = s->streams[idx];
     dirac_source_params source;
     GetBitContext gb;
+    int ret;
 
     // already parsed the header
     if (st->codec->codec_id == AV_CODEC_ID_DIRAC)
         return 0;
 
-    init_get_bits(&gb, os->buf + os->pstart + 13, (os->psize - 13) * 8);
-    if (avpriv_dirac_parse_sequence_header(st->codec, &gb, &source) < 0)
-        return -1;
+    ret = init_get_bits8(&gb, os->buf + os->pstart + 13, (os->psize - 13));
+    if (ret < 0)
+        return ret;
+
+    ret = avpriv_dirac_parse_sequence_header(st->codec, &gb, &source);
+    if (ret < 0)
+        return ret;
 
     st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     st->codec->codec_id = AV_CODEC_ID_DIRAC;
     // dirac in ogg always stores timestamps as though the video were interlaced
-    avpriv_set_pts_info(st, 64, st->codec->time_base.num, 2*st->codec->time_base.den);
+    avpriv_set_pts_info(st, 64, st->codec->framerate.den, 2*st->codec->framerate.num);
     return 1;
 }
 

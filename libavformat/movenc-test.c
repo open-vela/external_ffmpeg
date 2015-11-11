@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -280,23 +280,6 @@ static void skip_gops(int n)
     skip_write = 0;
 }
 
-static void signal_init_ts(void)
-{
-    AVPacket pkt;
-    av_init_packet(&pkt);
-    pkt.size = 0;
-    pkt.data = NULL;
-
-    pkt.stream_index = 0;
-    pkt.dts = video_dts;
-    pkt.pts = 0;
-    av_write_frame(ctx, &pkt);
-
-    pkt.stream_index = 1;
-    pkt.dts = pkt.pts = audio_dts;
-    av_write_frame(ctx, &pkt);
-}
-
 static void finish(void)
 {
     av_write_trailer(ctx);
@@ -386,6 +369,7 @@ int main(int argc, char **argv)
     // moof+mdat pairs.
     init_out("empty-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -422,6 +406,7 @@ int main(int argc, char **argv)
     // simple input
     init_out("delay-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -473,6 +458,7 @@ int main(int argc, char **argv)
     // is identical to the one by empty_moov.
     init_out("empty-moov-header");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     close_out();
     memcpy(header, hash, HASH_SIZE);
@@ -495,6 +481,7 @@ int main(int argc, char **argv)
 
     init_out("delay-moov-header");
     av_dict_set(&opts, "movflags", "frag_custom+delay_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     check(out_size == 0, "Output written during init with delay_moov");
     mux_gops(1); // Write 1 second of content
@@ -583,40 +570,6 @@ int main(int argc, char **argv)
     close_out();
     check(!memcmp(hash, header, HASH_SIZE), "discontinuously written header differs");
     init_out("delay-moov-elst-second-frag-discont");
-    av_write_frame(ctx, NULL); // Output the second fragment
-    close_out();
-    check(!memcmp(hash, content, HASH_SIZE), "discontinuously written fragment differs");
-    finish();
-
-
-    // Test discontinously written fragments with b-frames and audio preroll,
-    // properly signaled.
-    av_dict_set(&opts, "movflags", "frag_custom+delay_moov+dash", 0);
-    init(1, 1);
-    mux_gops(1);
-    init_out("delay-moov-elst-signal-init");
-    av_write_frame(ctx, NULL); // Output the moov
-    close_out();
-    memcpy(header, hash, HASH_SIZE);
-    av_write_frame(ctx, NULL); // Output the first fragment
-    init_out("delay-moov-elst-signal-second-frag");
-    mux_gops(1);
-    av_write_frame(ctx, NULL); // Output the second fragment
-    close_out();
-    memcpy(content, hash, HASH_SIZE);
-    finish();
-
-    av_dict_set(&opts, "movflags", "frag_custom+delay_moov+dash+frag_discont", 0);
-    av_dict_set(&opts, "fragment_index", "2", 0);
-    init(1, 1);
-    signal_init_ts();
-    skip_gops(1);
-    mux_gops(1); // Write the second fragment
-    init_out("delay-moov-elst-signal-init-discont");
-    av_write_frame(ctx, NULL); // Output the moov
-    close_out();
-    check(!memcmp(hash, header, HASH_SIZE), "discontinuously written header differs");
-    init_out("delay-moov-elst-signal-second-frag-discont");
     av_write_frame(ctx, NULL); // Output the second fragment
     close_out();
     check(!memcmp(hash, content, HASH_SIZE), "discontinuously written fragment differs");
