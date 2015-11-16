@@ -2,20 +2,20 @@
  * RTSP muxer
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,8 +51,7 @@ int ff_rtsp_setup_output_streams(AVFormatContext *s, const char *addr)
     char *sdp;
     AVFormatContext sdp_ctx, *ctx_array[1];
 
-    if (s->start_time_realtime == 0  ||  s->start_time_realtime == AV_NOPTS_VALUE)
-        s->start_time_realtime = av_gettime();
+    s->start_time_realtime = av_gettime();
 
     /* Announce the stream */
     sdp = av_mallocz(SDP_MAX_SIZE);
@@ -84,7 +83,7 @@ int ff_rtsp_setup_output_streams(AVFormatContext *s, const char *addr)
                                   reply, NULL, sdp, strlen(sdp));
     av_free(sdp);
     if (reply->status_code != RTSP_STATUS_OK)
-        return ff_rtsp_averror(reply->status_code, AVERROR_INVALIDDATA);
+        return AVERROR_INVALIDDATA;
 
     /* Set up the RTSPStreams for each AVStream */
     for (i = 0; i < s->nb_streams; i++) {
@@ -116,7 +115,7 @@ static int rtsp_write_record(AVFormatContext *s)
              "Range: npt=0.000-\r\n");
     ff_rtsp_send_cmd(s, "RECORD", rt->control_uri, cmd, reply, NULL);
     if (reply->status_code != RTSP_STATUS_OK)
-        return ff_rtsp_averror(reply->status_code, -1);
+        return -1;
     rt->state = RTSP_STATE_STREAMING;
     return 0;
 }
@@ -212,7 +211,7 @@ static int rtsp_write_packet(AVFormatContext *s, AVPacket *pkt)
     rtsp_st = rt->rtsp_streams[pkt->stream_index];
     rtpctx = rtsp_st->transport_priv;
 
-    ret = ff_write_chained(rtpctx, 0, pkt, s, 0);
+    ret = ff_write_chained(rtpctx, 0, pkt, s);
     /* ff_write_chained does all the RTP packetization. If using TCP as
      * transport, rtpctx->pb is only a dyn_packet_buf that queues up the
      * packets, so we need to send them out on the TCP connection separately.
