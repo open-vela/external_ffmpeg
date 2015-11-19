@@ -47,6 +47,8 @@ static int speex_header(AVFormatContext *s, int idx) {
 
     if (!spxp) {
         spxp = av_mallocz(sizeof(*spxp));
+        if (!spxp)
+            return AVERROR(ENOMEM);
         os->private = spxp;
     }
 
@@ -57,11 +59,6 @@ static int speex_header(AVFormatContext *s, int idx) {
         int frames_per_packet;
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codec->codec_id = AV_CODEC_ID_SPEEX;
-
-        if (os->psize < 68) {
-            av_log(s, AV_LOG_ERROR, "speex packet too small\n");
-            return AVERROR_INVALIDDATA;
-        }
 
         st->codec->sample_rate = AV_RL32(p + 36);
         st->codec->channels = AV_RL32(p + 48);
@@ -77,8 +74,9 @@ static int speex_header(AVFormatContext *s, int idx) {
         if (frames_per_packet)
             spxp->packet_size *= frames_per_packet;
 
-        if (ff_alloc_extradata(st->codec, os->psize) < 0)
-            return AVERROR(ENOMEM);
+        st->codec->extradata_size = os->psize;
+        st->codec->extradata = av_malloc(st->codec->extradata_size
+                                         + AV_INPUT_BUFFER_PADDING_SIZE);
         memcpy(st->codec->extradata, p, st->codec->extradata_size);
 
         avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
