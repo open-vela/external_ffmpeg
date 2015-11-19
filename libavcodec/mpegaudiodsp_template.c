@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@
 #include "mpegaudiodsp.h"
 #include "mpegaudio.h"
 
-#if USE_FLOATS
+#if CONFIG_FLOAT
 #define RENAME(n) n##_float
 
 static inline float round_sample(float *sum)
@@ -125,7 +125,7 @@ void RENAME(ff_mpadsp_apply_window)(MPA_INT *synth_buf, MPA_INT *window,
     register const MPA_INT *w, *w2, *p;
     int j;
     OUT_INT *samples2;
-#if USE_FLOATS
+#if CONFIG_FLOAT
     float sum, sum2;
 #else
     int64_t sum, sum2;
@@ -200,7 +200,7 @@ av_cold void RENAME(ff_mpa_synth_init)(MPA_INT *window)
     for(i=0;i<257;i++) {
         INTFLOAT v;
         v = ff_mpa_enwindow[i];
-#if USE_FLOATS
+#if CONFIG_FLOAT
         v *= 1.0 / (1LL<<(16 + FRAC_BITS));
 #endif
         window[i] = v;
@@ -243,7 +243,7 @@ av_cold void RENAME(ff_init_mpadsp_tabs)(void)
                 else if (i <  18) d = 1;
             }
             //merge last stage of imdct into the window coefficients
-            d *= 0.5 * IMDCT_SCALAR / cos(M_PI * (2 * i + 19) / 72);
+            d *= 0.5 / cos(M_PI * (2 * i + 19) / 72);
 
             if (j == 2)
                 RENAME(ff_mdct_win)[j][i/3] = FIXHR((d / (1<<5)));
@@ -398,4 +398,3 @@ void RENAME(ff_imdct36_blocks)(INTFLOAT *out, INTFLOAT *buf, INTFLOAT *in,
         out++;
     }
 }
-
