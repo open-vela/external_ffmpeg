@@ -1,39 +1,29 @@
 /*
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
  * Public dictionary API.
- * @deprecated
- *  AVDictionary is provided for compatibility with libav. It is both in
- *  implementation as well as API inefficient. It does not scale and is
- *  extremely slow with large dictionaries.
- *  It is recommended that new code uses our tree container from tree.c/h
- *  where applicable, which uses AVL trees to achieve O(log n) performance.
  */
 
 #ifndef AVUTIL_DICT_H
 #define AVUTIL_DICT_H
-
-#include <stdint.h>
-
-#include "version.h"
 
 /**
  * @addtogroup lavu_dict AVDictionary
@@ -68,13 +58,12 @@
  *
  */
 
-#define AV_DICT_MATCH_CASE      1   /**< Only get an entry with exact-case key match. Only relevant in av_dict_get(). */
-#define AV_DICT_IGNORE_SUFFIX   2   /**< Return first entry in a dictionary whose first part corresponds to the search key,
-                                         ignoring the suffix of the found key string. Only relevant in av_dict_get(). */
+#define AV_DICT_MATCH_CASE      1
+#define AV_DICT_IGNORE_SUFFIX   2
 #define AV_DICT_DONT_STRDUP_KEY 4   /**< Take ownership of a key that's been
-                                         allocated with av_malloc() or another memory allocation function. */
+                                         allocated with av_malloc() and children. */
 #define AV_DICT_DONT_STRDUP_VAL 8   /**< Take ownership of a value that's been
-                                         allocated with av_malloc() or another memory allocation function. */
+                                         allocated with av_malloc() and chilren. */
 #define AV_DICT_DONT_OVERWRITE 16   ///< Don't overwrite existing entries.
 #define AV_DICT_APPEND         32   /**< If the entry already exists, append to it.  Note that no
                                       delimiter is added, the strings are simply concatenated. */
@@ -89,17 +78,10 @@ typedef struct AVDictionary AVDictionary;
 /**
  * Get a dictionary entry with matching key.
  *
- * The returned entry key or value must not be changed, or it will
- * cause undefined behavior.
- *
- * To iterate through all the dictionary entries, you can set the matching key
- * to the null string "" and set the AV_DICT_IGNORE_SUFFIX flag.
- *
  * @param prev Set to the previous matching element to find the next.
  *             If set to NULL the first matching element is returned.
- * @param key matching key
- * @param flags a collection of AV_DICT_* flags controlling how the entry is retrieved
- * @return found entry or NULL in case no matching entry was found in the dictionary
+ * @param flags Allows case as well as suffix-insensitive comparisons.
+ * @return Found entry or NULL, changing key or value leads to undefined behavior.
  */
 AVDictionaryEntry *av_dict_get(const AVDictionary *m, const char *key,
                                const AVDictionaryEntry *prev, int flags);
@@ -115,9 +97,6 @@ int av_dict_count(const AVDictionary *m);
 /**
  * Set the given entry in *pm, overwriting an existing entry.
  *
- * Note: If AV_DICT_DONT_STRDUP_KEY or AV_DICT_DONT_STRDUP_VAL is set,
- * these arguments will be freed on error.
- *
  * @param pm pointer to a pointer to a dictionary struct. If *pm is NULL
  * a dictionary struct is allocated and put in *pm.
  * @param key entry key to add to *pm (will be av_strduped depending on flags)
@@ -128,18 +107,7 @@ int av_dict_count(const AVDictionary *m);
 int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags);
 
 /**
- * Convenience wrapper for av_dict_set that converts the value to a string
- * and stores it.
- *
- * Note: If AV_DICT_DONT_STRDUP_KEY is set, key will be freed on error.
- */
-int av_dict_set_int(AVDictionary **pm, const char *key, int64_t value, int flags);
-
-/**
- * Parse the key/value pairs list and add the parsed entries to a dictionary.
- *
- * In case of failure, all the successfully set entries are stored in
- * *pm. You may need to manually free the created dictionary.
+ * Parse the key/value pairs list and add to a dictionary.
  *
  * @param key_val_sep  a 0-terminated list of characters used to separate
  *                     key from value
@@ -172,24 +140,6 @@ int av_dict_copy(AVDictionary **dst, const AVDictionary *src, int flags);
  * and all keys and values.
  */
 void av_dict_free(AVDictionary **m);
-
-/**
- * Get dictionary entries as a string.
- *
- * Create a string containing dictionary's entries.
- * Such string may be passed back to av_dict_parse_string().
- * @note String is escaped with backslashes ('\').
- *
- * @param[in]  m             dictionary
- * @param[out] buffer        Pointer to buffer that will be allocated with string containg entries.
- *                           Buffer must be freed by the caller when is no longer needed.
- * @param[in]  key_val_sep   character used to separate key from value
- * @param[in]  pairs_sep     character used to separate two pairs from each other
- * @return                   >= 0 on success, negative on error
- * @warning Separators cannot be neither '\\' nor '\0'. They also cannot be the same.
- */
-int av_dict_get_string(const AVDictionary *m, char **buffer,
-                       const char key_val_sep, const char pairs_sep);
 
 /**
  * @}

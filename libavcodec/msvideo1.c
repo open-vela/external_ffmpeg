@@ -1,21 +1,21 @@
 /*
  * Microsoft Video-1 Decoder
- * Copyright (c) 2003 The FFmpeg Project
+ * Copyright (C) 2003 the ffmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,8 +67,6 @@ static av_cold int msvideo1_decode_init(AVCodecContext *avctx)
     if (s->avctx->bits_per_coded_sample == 8) {
         s->mode_8bit = 1;
         avctx->pix_fmt = AV_PIX_FMT_PAL8;
-        if (avctx->extradata_size >= AVPALETTE_SIZE)
-            memcpy(s->pal, avctx->extradata, AVPALETTE_SIZE);
     } else {
         s->mode_8bit = 0;
         avctx->pix_fmt = AV_PIX_FMT_RGB555;
@@ -302,8 +300,10 @@ static int msvideo1_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     if (s->mode_8bit) {
         const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
