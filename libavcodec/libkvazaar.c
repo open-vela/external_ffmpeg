@@ -3,27 +3,26 @@
  *
  * Copyright (c) 2015 Tampere University of Technology
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <kvazaar.h>
 #include <string.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/dict.h"
 #include "libavutil/error.h"
 #include "libavutil/imgutils.h"
@@ -50,6 +49,12 @@ static av_cold int libkvazaar_init(AVCodecContext *avctx)
     const kvz_api *const api = ctx->api = kvz_api_get(8);
     kvz_config *cfg = NULL;
     kvz_encoder *enc = NULL;
+
+    if (avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Set -strict experimental to use this encoder.\n");
+        return AVERROR_EXPERIMENTAL;
+    }
 
     /* Kvazaar requires width and height to be multiples of eight. */
     if (avctx->width % 8 || avctx->height % 8) {
@@ -157,8 +162,6 @@ static int libkvazaar_encode(AVCodecContext *avctx,
     uint32_t len_out = 0;
     int retval = 0;
 
-    *got_packet_ptr = 0;
-
     if (frame) {
         if (frame->width != ctx->config->width ||
                 frame->height != ctx->config->height) {
@@ -215,8 +218,6 @@ static int libkvazaar_encode(AVCodecContext *avctx,
         retval = AVERROR_INVALIDDATA;
         goto done;
     }
-    else
-        retval = 0; /* kvazaar returns 1 on success */
 
     if (data_out) {
         kvz_data_chunk *chunk = NULL;
@@ -229,7 +230,6 @@ static int libkvazaar_encode(AVCodecContext *avctx,
         }
 
         for (chunk = data_out; chunk != NULL; chunk = chunk->next) {
-            av_assert0(written + chunk->len <= len_out);
             memcpy(avpkt->data + written, chunk->data, chunk->len);
             written += chunk->len;
         }
@@ -264,6 +264,7 @@ static const enum AVPixelFormat pix_fmts[] = {
 static const AVOption options[] = {
     { "kvazaar-params", "Set kvazaar parameters as a comma-separated list of key=value pairs.",
         OFFSET(kvz_params), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
+
     { NULL },
 };
 
