@@ -1,19 +1,18 @@
 /*
+ * This file is part of FFmpeg.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,28 +65,26 @@ typedef struct JoinContext {
 
 #define OFFSET(x) offsetof(JoinContext, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
+#define F AV_OPT_FLAG_FILTERING_PARAM
 static const AVOption join_options[] = {
-    { "inputs",         "Number of input streams.", OFFSET(inputs),             AV_OPT_TYPE_INT,    { .i64 = 2 }, 1, INT_MAX,       A },
+    { "inputs",         "Number of input streams.", OFFSET(inputs),             AV_OPT_TYPE_INT,    { .i64 = 2 }, 1, INT_MAX,       A|F },
     { "channel_layout", "Channel layout of the "
-                        "output stream.",           OFFSET(channel_layout_str), AV_OPT_TYPE_STRING, {.str = "stereo"}, 0, 0, A },
+                        "output stream.",           OFFSET(channel_layout_str), AV_OPT_TYPE_STRING, {.str = "stereo"}, 0, 0, A|F },
     { "map",            "A comma-separated list of channels maps in the format "
                         "'input_stream.input_channel-output_channel.",
-                                                    OFFSET(map),                AV_OPT_TYPE_STRING,                 .flags = A },
-    { NULL },
+                                                    OFFSET(map),                AV_OPT_TYPE_STRING,                 .flags = A|F },
+    { NULL }
 };
 
-static const AVClass join_class = {
-    .class_name = "join filter",
-    .item_name  = av_default_item_name,
-    .option     = join_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(join);
+
+static int try_push_frame(AVFilterContext *ctx);
 
 static int filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     AVFilterContext *ctx = link->dst;
     JoinContext       *s = ctx->priv;
-    int i;
+    int i, j;
 
     for (i = 0; i < ctx->nb_inputs; i++)
         if (link == ctx->inputs[i])
@@ -96,7 +93,17 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
     av_assert0(!s->input_frames[i]);
     s->input_frames[i] = frame;
 
-    return 0;
+    /* request the same number of samples on all inputs */
+    /* FIXME that means a frame arriving asynchronously on a different input
+       will not have the requested number of samples */
+    if (i == 0) {
+        int nb_samples = s->input_frames[0]->nb_samples;
+
+        for (j = 1; !i && j < ctx->nb_inputs; j++)
+            ctx->inputs[j]->request_samples = nb_samples;
+    }
+
+    return try_push_frame(ctx);
 }
 
 static int parse_maps(AVFilterContext *ctx)
@@ -194,18 +201,15 @@ static av_cold int join_init(AVFilterContext *ctx)
     if (!(s->channel_layout = av_get_channel_layout(s->channel_layout_str))) {
         av_log(ctx, AV_LOG_ERROR, "Error parsing channel layout '%s'.\n",
                s->channel_layout_str);
-        ret = AVERROR(EINVAL);
-        goto fail;
+        return AVERROR(EINVAL);
     }
 
     s->nb_channels  = av_get_channel_layout_nb_channels(s->channel_layout);
-    s->channels     = av_mallocz(sizeof(*s->channels) * s->nb_channels);
-    s->buffers      = av_mallocz(sizeof(*s->buffers)  * s->nb_channels);
-    s->input_frames = av_mallocz(sizeof(*s->input_frames) * s->inputs);
-    if (!s->channels || !s->buffers|| !s->input_frames) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    s->channels     = av_mallocz_array(s->nb_channels, sizeof(*s->channels));
+    s->buffers      = av_mallocz_array(s->nb_channels, sizeof(*s->buffers));
+    s->input_frames = av_mallocz_array(s->inputs, sizeof(*s->input_frames));
+    if (!s->channels || !s->buffers|| !s->input_frames)
+        return AVERROR(ENOMEM);
 
     for (i = 0; i < s->nb_channels; i++) {
         s->channels[i].out_channel = av_channel_layout_extract_channel(s->channel_layout, i);
@@ -213,7 +217,7 @@ static av_cold int join_init(AVFilterContext *ctx)
     }
 
     if ((ret = parse_maps(ctx)) < 0)
-        goto fail;
+        return ret;
 
     for (i = 0; i < s->inputs; i++) {
         char name[32];
@@ -222,6 +226,8 @@ static av_cold int join_init(AVFilterContext *ctx)
         snprintf(name, sizeof(name), "input%d", i);
         pad.type           = AVMEDIA_TYPE_AUDIO;
         pad.name           = av_strdup(name);
+        if (!pad.name)
+            return AVERROR(ENOMEM);
         pad.filter_frame   = filter_frame;
 
         pad.needs_fifo = 1;
@@ -229,9 +235,7 @@ static av_cold int join_init(AVFilterContext *ctx)
         ff_insert_inpad(ctx, i, &pad);
     }
 
-fail:
-    av_opt_free(s);
-    return ret;
+    return 0;
 }
 
 static av_cold void join_uninit(AVFilterContext *ctx)
@@ -253,17 +257,21 @@ static int join_query_formats(AVFilterContext *ctx)
 {
     JoinContext *s = ctx->priv;
     AVFilterChannelLayouts *layouts = NULL;
-    int i;
+    int i, ret;
 
-    ff_add_channel_layout(&layouts, s->channel_layout);
-    ff_channel_layouts_ref(layouts, &ctx->outputs[0]->in_channel_layouts);
+    if ((ret = ff_add_channel_layout(&layouts, s->channel_layout)) < 0 ||
+        (ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->in_channel_layouts)) < 0)
+        return ret;
 
-    for (i = 0; i < ctx->nb_inputs; i++)
-        ff_channel_layouts_ref(ff_all_channel_layouts(),
-                               &ctx->inputs[i]->out_channel_layouts);
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        layouts = ff_all_channel_layouts();
+        if ((ret = ff_channel_layouts_ref(layouts, &ctx->inputs[i]->out_channel_layouts)) < 0)
+            return ret;
+    }
 
-    ff_set_common_formats    (ctx, ff_planar_sample_fmts());
-    ff_set_common_samplerates(ctx, ff_all_samplerates());
+    if ((ret = ff_set_common_formats(ctx, ff_planar_sample_fmts())) < 0 ||
+        (ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
+        return ret;
 
     return 0;
 }
@@ -313,7 +321,7 @@ static int join_config_output(AVFilterLink *outlink)
     int i, ret = 0;
 
     /* initialize inputs to user-specified mappings */
-    if (!(inputs = av_mallocz(sizeof(*inputs) * ctx->nb_inputs)))
+    if (!(inputs = av_mallocz_array(ctx->nb_inputs, sizeof(*inputs))))
         return AVERROR(ENOMEM);
     for (i = 0; i < s->nb_channels; i++) {
         ChannelMap *ch = &s->channels[i];
@@ -391,27 +399,31 @@ static int join_request_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
     JoinContext *s       = ctx->priv;
-    AVFrame *frame;
-    int linesize   = INT_MAX;
-    int nb_samples = 0;
-    int nb_buffers = 0;
-    int i, j, ret;
+    int i;
 
     /* get a frame on each input */
     for (i = 0; i < ctx->nb_inputs; i++) {
         AVFilterLink *inlink = ctx->inputs[i];
+        if (!s->input_frames[i])
+            return ff_request_frame(inlink);
+    }
+    return 0;
+}
 
-        if (!s->input_frames[i] &&
-            (ret = ff_request_frame(inlink)) < 0)
-            return ret;
+static int try_push_frame(AVFilterContext *ctx)
+{
+    AVFilterLink *outlink = ctx->outputs[0];
+    JoinContext *s       = ctx->priv;
+    AVFrame *frame;
+    int linesize   = INT_MAX;
+    int nb_samples = INT_MAX;
+    int nb_buffers = 0;
+    int i, j, ret;
 
-        /* request the same number of samples on all inputs */
-        if (i == 0) {
-            nb_samples = s->input_frames[0]->nb_samples;
-
-            for (j = 1; !i && j < ctx->nb_inputs; j++)
-                ctx->inputs[j]->request_samples = nb_samples;
-        }
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        if (!s->input_frames[i])
+            return 0;
+        nb_samples = FFMIN(nb_samples, s->input_frames[i]->nb_samples);
     }
 
     /* setup the output frame */
@@ -419,7 +431,7 @@ static int join_request_frame(AVFilterLink *outlink)
     if (!frame)
         return AVERROR(ENOMEM);
     if (s->nb_channels > FF_ARRAY_ELEMS(frame->data)) {
-        frame->extended_data = av_mallocz(s->nb_channels *
+        frame->extended_data = av_mallocz_array(s->nb_channels,
                                           sizeof(*frame->extended_data));
         if (!frame->extended_data) {
             ret = AVERROR(ENOMEM);
@@ -453,8 +465,8 @@ static int join_request_frame(AVFilterLink *outlink)
     /* create references to the buffers we copied to output */
     if (nb_buffers > FF_ARRAY_ELEMS(frame->buf)) {
         frame->nb_extended_buf = nb_buffers - FF_ARRAY_ELEMS(frame->buf);
-        frame->extended_buf = av_mallocz(sizeof(*frame->extended_buf) *
-                                         frame->nb_extended_buf);
+        frame->extended_buf = av_mallocz_array(frame->nb_extended_buf,
+                                               sizeof(*frame->extended_buf));
         if (!frame->extended_buf) {
             frame->nb_extended_buf = 0;
             ret = AVERROR(ENOMEM);
@@ -479,6 +491,7 @@ static int join_request_frame(AVFilterLink *outlink)
 
     frame->nb_samples     = nb_samples;
     frame->channel_layout = outlink->channel_layout;
+    av_frame_set_channels(frame, outlink->channels);
     frame->sample_rate    = outlink->sample_rate;
     frame->format         = outlink->format;
     frame->pts            = s->input_frames[0]->pts;
@@ -513,16 +526,13 @@ static const AVFilterPad avfilter_af_join_outputs[] = {
 AVFilter ff_af_join = {
     .name           = "join",
     .description    = NULL_IF_CONFIG_SMALL("Join multiple audio streams into "
-                                           "multi-channel output"),
+                                           "multi-channel output."),
     .priv_size      = sizeof(JoinContext),
     .priv_class     = &join_class,
-
     .init           = join_init,
     .uninit         = join_uninit,
     .query_formats  = join_query_formats,
-
-    .inputs  = NULL,
-    .outputs = avfilter_af_join_outputs,
-
-    .flags   = AVFILTER_FLAG_DYNAMIC_INPUTS,
+    .inputs         = NULL,
+    .outputs        = avfilter_af_join_outputs,
+    .flags          = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
