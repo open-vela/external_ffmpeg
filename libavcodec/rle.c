@@ -2,36 +2,27 @@
  * RLE encoder
  * Copyright (c) 2007 Bobby Bingham
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avcodec.h"
 #include "rle.h"
 #include "libavutil/common.h"
 
-/**
- * Count up to 127 consecutive pixels which are either all the same or
- * all differ from the previous and next pixels.
- * @param start Pointer to the first pixel
- * @param len Maximum number of pixels
- * @param bpp Bytes per pixel
- * @param same 1 if searching for identical pixel values.  0 for differing
- * @return Number of matching consecutive pixels found
- */
-static int count_pixels(const uint8_t *start, int len, int bpp, int same)
+int ff_rle_count_pixels(const uint8_t *start, int len, int bpp, int same)
 {
     const uint8_t *pos;
     int count = 1;
@@ -63,14 +54,14 @@ int ff_rle_encode(uint8_t *outbuf, int out_size, const uint8_t *ptr , int bpp, i
 
     for(x = 0; x < w; x += count) {
         /* see if we can encode the next set of pixels with RLE */
-        if((count = count_pixels(ptr, w-x, bpp, 1)) > 1) {
+        if ((count = ff_rle_count_pixels(ptr, w - x, bpp, 1)) > 1) {
             if(out + bpp + 1 > outbuf + out_size) return -1;
             *out++ = (count ^ xor_rep) + add_rep;
             memcpy(out, ptr, bpp);
             out += bpp;
         } else {
             /* fall back on uncompressed */
-            count = count_pixels(ptr, w-x, bpp, 0);
+            count = ff_rle_count_pixels(ptr, w - x, bpp, 0);
             if(out + bpp*count >= outbuf + out_size) return -1;
             *out++ = (count ^ xor_raw) + add_raw;
 
