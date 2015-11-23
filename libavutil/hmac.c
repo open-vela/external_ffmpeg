@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,11 +24,10 @@
 #include "hmac.h"
 #include "md5.h"
 #include "sha.h"
-#include "sha512.h"
 #include "mem.h"
 
-#define MAX_HASHLEN 64
-#define MAX_BLOCKLEN 128
+#define MAX_HASHLEN 32
+#define MAX_BLOCKLEN 64
 
 struct AVHMAC {
     void *hash;
@@ -46,17 +45,9 @@ static av_cold void sha ## bits ##_init(void *ctx) \
     av_sha_init(ctx, bits);                        \
 }
 
-#define DEFINE_SHA512(bits)                        \
-static av_cold void sha ## bits ##_init(void *ctx) \
-{                                                  \
-    av_sha512_init(ctx, bits);                     \
-}
-
 DEFINE_SHA(160)
 DEFINE_SHA(224)
 DEFINE_SHA(256)
-DEFINE_SHA512(384)
-DEFINE_SHA512(512)
 
 AVHMAC *av_hmac_alloc(enum AVHMACType type)
 {
@@ -67,50 +58,34 @@ AVHMAC *av_hmac_alloc(enum AVHMACType type)
     case AV_HMAC_MD5:
         c->blocklen = 64;
         c->hashlen  = 16;
-        c->init     = (void*)av_md5_init;
-        c->update   = (void*)av_md5_update;
-        c->final    = (void*)av_md5_final;
+        c->init     = av_md5_init;
+        c->update   = av_md5_update;
+        c->final    = av_md5_final;
         c->hash     = av_md5_alloc();
         break;
     case AV_HMAC_SHA1:
         c->blocklen = 64;
         c->hashlen  = 20;
         c->init     = sha160_init;
-        c->update   = (void*)av_sha_update;
-        c->final    = (void*)av_sha_final;
+        c->update   = av_sha_update;
+        c->final    = av_sha_final;
         c->hash     = av_sha_alloc();
         break;
     case AV_HMAC_SHA224:
         c->blocklen = 64;
         c->hashlen  = 28;
         c->init     = sha224_init;
-        c->update   = (void*)av_sha_update;
-        c->final    = (void*)av_sha_final;
+        c->update   = av_sha_update;
+        c->final    = av_sha_final;
         c->hash     = av_sha_alloc();
         break;
     case AV_HMAC_SHA256:
         c->blocklen = 64;
         c->hashlen  = 32;
         c->init     = sha256_init;
-        c->update   = (void*)av_sha_update;
-        c->final    = (void*)av_sha_final;
+        c->update   = av_sha_update;
+        c->final    = av_sha_final;
         c->hash     = av_sha_alloc();
-        break;
-    case AV_HMAC_SHA384:
-        c->blocklen = 128;
-        c->hashlen  = 48;
-        c->init     = sha384_init;
-        c->update   = (void*)av_sha512_update;
-        c->final    = (void*)av_sha512_final;
-        c->hash     = av_sha512_alloc();
-        break;
-    case AV_HMAC_SHA512:
-        c->blocklen = 128;
-        c->hashlen  = 64;
-        c->init     = sha512_init;
-        c->update   = (void*)av_sha512_update;
-        c->final    = (void*)av_sha512_final;
-        c->hash     = av_sha512_alloc();
         break;
     default:
         av_free(c);
@@ -127,7 +102,7 @@ void av_hmac_free(AVHMAC *c)
 {
     if (!c)
         return;
-    av_freep(&c->hash);
+    av_free(c->hash);
     av_free(c);
 }
 
@@ -207,52 +182,44 @@ static void test(AVHMAC *hmac, const uint8_t *key, int keylen,
 int main(void)
 {
     uint8_t key1[20], key3[131], data3[50];
-    AVHMAC *hmac;
-    enum AVHMACType i;
-    static const uint8_t key2[]  = "Jefe";
-    static const uint8_t data1[] = "Hi There";
-    static const uint8_t data2[] = "what do ya want for nothing?";
-    static const uint8_t data4[] = "Test Using Larger Than Block-Size Key - Hash Key First";
-    static const uint8_t data5[] = "Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data";
-    static const uint8_t data6[] = "This is a test using a larger than block-size key and a larger "
+    enum AVHMACType i = AV_HMAC_SHA224;
+    const uint8_t key2[]  = "Jefe";
+    const uint8_t data1[] = "Hi There";
+    const uint8_t data2[] = "what do ya want for nothing?";
+    const uint8_t data4[] = "Test Using Larger Than Block-Size Key - Hash Key First";
+    const uint8_t data5[] = "Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data";
+    const uint8_t data6[] = "This is a test using a larger than block-size key and a larger "
                             "than block-size data. The key needs to be hashed before being used"
                             " by the HMAC algorithm.";
+    AVHMAC *hmac = av_hmac_alloc(AV_HMAC_MD5);
+    if (!hmac)
+        return 1;
     memset(key1, 0x0b, sizeof(key1));
     memset(key3, 0xaa, sizeof(key3));
     memset(data3, 0xdd, sizeof(data3));
+    // RFC 2202 test vectors
+    test(hmac, key1, 16, data1, sizeof(data1));
+    test(hmac, key2, sizeof(key2), data2, sizeof(data2));
+    test(hmac, key3, 16, data3, sizeof(data3));
+    test(hmac, key3, 80, data4, sizeof(data4));
+    test(hmac, key3, 80, data5, sizeof(data5));
+    av_hmac_free(hmac);
 
-    /* MD5, SHA-1 */
-    for (i = AV_HMAC_MD5; i <= AV_HMAC_SHA1; i++) {
-        hmac = av_hmac_alloc(i);
-        if (!hmac)
-            return 1;
-        // RFC 2202 test vectors
-        test(hmac, key1, hmac->hashlen, data1, sizeof(data1));
-        test(hmac, key2, sizeof(key2),  data2, sizeof(data2));
-        test(hmac, key3, hmac->hashlen, data3, sizeof(data3));
-        test(hmac, key3, 80,            data4, sizeof(data4));
-        test(hmac, key3, 80,            data5, sizeof(data5));
-        av_hmac_free(hmac);
-    }
+    /* SHA-1 */
+    hmac = av_hmac_alloc(AV_HMAC_SHA1);
+    if (!hmac)
+        return 1;
+    // RFC 2202 test vectors
+    test(hmac, key1, sizeof(key1), data1, sizeof(data1));
+    test(hmac, key2, sizeof(key2), data2, sizeof(data2));
+    test(hmac, key3, 20, data3, sizeof(data3));
+    test(hmac, key3, 80, data4, sizeof(data4));
+    test(hmac, key3, 80, data5, sizeof(data5));
+    av_hmac_free(hmac);
 
     /* SHA-2 */
-    for (i = AV_HMAC_SHA224; i <= AV_HMAC_SHA256; i++) {
+    while (i <= AV_HMAC_SHA256) {
         hmac = av_hmac_alloc(i);
-        if (!hmac)
-            return 1;
-        // RFC 4231 test vectors
-        test(hmac, key1, sizeof(key1), data1, sizeof(data1));
-        test(hmac, key2, sizeof(key2), data2, sizeof(data2));
-        test(hmac, key3, 20,           data3, sizeof(data3));
-        test(hmac, key3, sizeof(key3), data4, sizeof(data4));
-        test(hmac, key3, sizeof(key3), data6, sizeof(data6));
-        av_hmac_free(hmac);
-    }
-
-    for (i = AV_HMAC_SHA384; i <= AV_HMAC_SHA512; i++) {
-        hmac = av_hmac_alloc(i);
-        if (!hmac)
-            return 1;
         // RFC 4231 test vectors
         test(hmac, key1, sizeof(key1), data1, sizeof(data1));
         test(hmac, key2, sizeof(key2), data2, sizeof(data2));
@@ -260,6 +227,7 @@ int main(void)
         test(hmac, key3, sizeof(key3), data4, sizeof(data4));
         test(hmac, key3, sizeof(key3), data6, sizeof(data6));
         av_hmac_free(hmac);
+        i++;
     }
     return 0;
 }

@@ -2,20 +2,20 @@
  * RAW video demuxer
  * Copyright (c) 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,16 +28,18 @@
 
 typedef struct RawVideoDemuxerContext {
     const AVClass *class;     /**< Class for private options. */
-    int width, height;        /**< Integers describing video size, set by a private option. */
+    char *video_size;         /**< String describing video size, set by a private option. */
     char *pixel_format;       /**< Set by a private option. */
-    AVRational framerate;     /**< AVRational describing framerate, set by a private option. */
+    char *framerate;          /**< String describing framerate, set by a private option. */
 } RawVideoDemuxerContext;
 
 
 static int rawvideo_read_header(AVFormatContext *ctx)
 {
     RawVideoDemuxerContext *s = ctx->priv_data;
+    int width = 0, height = 0, ret = 0;
     enum AVPixelFormat pix_fmt;
+    AVRational framerate;
     AVStream *st;
 
     st = avformat_new_stream(ctx, NULL);
@@ -48,19 +50,29 @@ static int rawvideo_read_header(AVFormatContext *ctx)
 
     st->codec->codec_id = ctx->iformat->raw_codec_id;
 
+    if (s->video_size &&
+        (ret = av_parse_video_size(&width, &height, s->video_size)) < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Couldn't parse video size.\n");
+        return ret;
+    }
+
     if ((pix_fmt = av_get_pix_fmt(s->pixel_format)) == AV_PIX_FMT_NONE) {
         av_log(ctx, AV_LOG_ERROR, "No such pixel format: %s.\n",
                s->pixel_format);
         return AVERROR(EINVAL);
     }
 
-    avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
+    if ((ret = av_parse_video_rate(&framerate, s->framerate)) < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Could not parse framerate: %s.\n",
+               s->framerate);
+        return ret;
+    }
 
-    st->codec->width  = s->width;
-    st->codec->height = s->height;
+    avpriv_set_pts_info(st, 64, framerate.den, framerate.num);
+
+    st->codec->width  = width;
+    st->codec->height = height;
     st->codec->pix_fmt = pix_fmt;
-    st->codec->bit_rate = av_rescale_q(avpicture_get_size(st->codec->pix_fmt, s->width, s->height),
-                                       (AVRational){8,1}, st->time_base);
 
     return 0;
 }
@@ -90,9 +102,9 @@ static int rawvideo_read_packet(AVFormatContext *s, AVPacket *pkt)
 #define OFFSET(x) offsetof(RawVideoDemuxerContext, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption rawvideo_options[] = {
-    { "video_size", "set frame size", OFFSET(width), AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, 0, DEC },
-    { "pixel_format", "set pixel format", OFFSET(pixel_format), AV_OPT_TYPE_STRING, {.str = "yuv420p"}, 0, 0, DEC },
-    { "framerate", "set frame rate", OFFSET(framerate), AV_OPT_TYPE_VIDEO_RATE, {.str = "25"}, 0, 0, DEC },
+    { "video_size", "A string describing frame size, such as 640x480 or hd720.", OFFSET(video_size), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC },
+    { "pixel_format", "", OFFSET(pixel_format), AV_OPT_TYPE_STRING, {.str = "yuv420p"}, 0, 0, DEC },
+    { "framerate", "", OFFSET(framerate), AV_OPT_TYPE_STRING, {.str = "25"}, 0, 0, DEC },
     { NULL },
 };
 
