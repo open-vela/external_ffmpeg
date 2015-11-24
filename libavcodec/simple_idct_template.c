@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2001 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,19 +64,40 @@
 #define MUL(a, b)    MUL16(a, b)
 #define MAC(a, b, c) MAC16(a, b, c)
 
-#elif BIT_DEPTH == 10
+#elif BIT_DEPTH == 10 || BIT_DEPTH == 12
 
-#define W1 90901
-#define W2 85627
-#define W3 77062
-#define W4 65535
-#define W5 51491
-#define W6 35468
-#define W7 18081
+# if BIT_DEPTH == 10
+#define W1 22725 // 90901
+#define W2 21407 //  85627
+#define W3 19265 //  77062
+#define W4 16384 //  65535
+#define W5 12873 //  51491
+#define W6  8867 //  35468
+#define W7  4520 //  18081
 
-#define ROW_SHIFT 15
-#define COL_SHIFT 20
-#define DC_SHIFT 1
+#   ifdef EXTRA_SHIFT
+#define ROW_SHIFT 13
+#define COL_SHIFT 18
+#define DC_SHIFT  1
+#   else
+#define ROW_SHIFT 12
+#define COL_SHIFT 19
+#define DC_SHIFT  2
+#   endif
+
+# else
+#define W1 45451
+#define W2 42813
+#define W3 38531
+#define W4 32767
+#define W5 25746
+#define W6 17734
+#define W7 9041
+
+#define ROW_SHIFT 16
+#define COL_SHIFT 17
+#define DC_SHIFT -1
+# endif
 
 #define MUL(a, b)    ((a) * (b))
 #define MAC(a, b, c) ((a) += (b) * (c))
@@ -87,7 +108,11 @@
 
 #endif
 
+#ifdef EXTRA_SHIFT
+static inline void FUNC(idctRowCondDC_extrashift)(int16_t *row, int extra_shift)
+#else
 static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
+#endif
 {
     int a0, a1, a2, a3, b0, b1, b2, b3;
 
@@ -95,13 +120,13 @@ static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
 #define ROW0_MASK (0xffffLL << 48 * HAVE_BIGENDIAN)
     if (((((uint64_t *)row)[0] & ~ROW0_MASK) | ((uint64_t *)row)[1]) == 0) {
         uint64_t temp;
-        if (DC_SHIFT - extra_shift > 0) {
-            temp = (row[0] << (DC_SHIFT - extra_shift)) & 0xffff;
+        if (DC_SHIFT - extra_shift >= 0) {
+            temp = (row[0] * (1 << (DC_SHIFT - extra_shift))) & 0xffff;
         } else {
-            temp = (row[0] >> (extra_shift - DC_SHIFT)) & 0xffff;
+            temp = ((row[0] + (1<<(extra_shift - DC_SHIFT-1))) >> (extra_shift - DC_SHIFT)) & 0xffff;
         }
-        temp += temp << 16;
-        temp += temp << 32;
+        temp += temp * (1 << 16);
+        temp += temp * ((uint64_t) 1 << 32);
         ((uint64_t *)row)[0] = temp;
         ((uint64_t *)row)[1] = temp;
         return;
@@ -112,19 +137,19 @@ static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
           ((uint32_t*)row)[3] |
           row[1])) {
         uint32_t temp;
-        if (DC_SHIFT - extra_shift > 0) {
-            temp = (row[0] << (DC_SHIFT - extra_shift)) & 0xffff;
+        if (DC_SHIFT - extra_shift >= 0) {
+            temp = (row[0] * (1 << (DC_SHIFT - extra_shift))) & 0xffff;
         } else {
-            temp = (row[0] >> (extra_shift - DC_SHIFT)) & 0xffff;
+            temp = ((row[0] + (1<<(extra_shift - DC_SHIFT-1))) >> (extra_shift - DC_SHIFT)) & 0xffff;
         }
-        temp += temp << 16;
+        temp += temp * (1 << 16);
         ((uint32_t*)row)[0]=((uint32_t*)row)[1] =
             ((uint32_t*)row)[2]=((uint32_t*)row)[3] = temp;
         return;
     }
 #endif
 
-    a0 = (W4 * row[0]) + (1 << (ROW_SHIFT - 1));
+    a0 = (W4 * row[0]) + (1 << (ROW_SHIFT + extra_shift - 1));
     a1 = a0;
     a2 = a0;
     a3 = a0;
@@ -222,6 +247,9 @@ static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
         }                                               \
     } while (0)
 
+#ifdef EXTRA_SHIFT
+static inline void FUNC(idctSparseCol_extrashift)(int16_t *col)
+#else
 static inline void FUNC(idctSparseColPut)(pixel *dest, int line_size,
                                           int16_t *col)
 {
@@ -271,6 +299,7 @@ static inline void FUNC(idctSparseColAdd)(pixel *dest, int line_size,
 }
 
 static inline void FUNC(idctSparseCol)(int16_t *col)
+#endif
 {
     int a0, a1, a2, a3, b0, b1, b2, b3;
 
@@ -286,6 +315,7 @@ static inline void FUNC(idctSparseCol)(int16_t *col)
     col[56] = ((a0 - b0) >> COL_SHIFT);
 }
 
+#ifndef EXTRA_SHIFT
 void FUNC(ff_simple_idct_put)(uint8_t *dest_, int line_size, int16_t *block)
 {
     pixel *dest = (pixel *)dest_;
@@ -324,3 +354,4 @@ void FUNC(ff_simple_idct)(int16_t *block)
     for (i = 0; i < 8; i++)
         FUNC(idctSparseCol)(block + i);
 }
+#endif
