@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2003  James Klicman <james@klicman.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@
 #include "libavcodec/fdctdsp.h"
 #include "fdct.h"
 
-#if HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_ALTIVEC
 
 #define vs16(v)   ((vector signed short) (v))
 #define vs32(v)     ((vector signed int) (v))
@@ -44,22 +44,21 @@
 #define C5     0.55557024478912353515625000 /* cos(5 * PI / 16) */
 #define C6     0.38268342614173889160156250 /* cos(6 * PI / 16) */
 #define C7     0.19509032368659973144531250 /* cos(7 * PI / 16) */
-#define SQRT_2 1.41421353816986083984375000 /* sqrt(2)          */
 
 #define W0 -(2 * C2)
 #define W1  (2 * C6)
-#define W2 (SQRT_2 * C6)
-#define W3 (SQRT_2 * C3)
-#define W4 (SQRT_2 * (-C1 + C3 + C5 - C7))
-#define W5 (SQRT_2 *  (C1 + C3 - C5 + C7))
-#define W6 (SQRT_2 *  (C1 + C3 + C5 - C7))
-#define W7 (SQRT_2 *  (C1 + C3 - C5 - C7))
-#define W8 (SQRT_2 *  (C7 - C3))
-#define W9 (SQRT_2 * (-C1 - C3))
-#define WA (SQRT_2 * (-C3 - C5))
-#define WB (SQRT_2 *  (C5 - C3))
+#define W2 (M_SQRT2 * C6)
+#define W3 (M_SQRT2 * C3)
+#define W4 (M_SQRT2 * (-C1 + C3 + C5 - C7))
+#define W5 (M_SQRT2 *  (C1 + C3 - C5 + C7))
+#define W6 (M_SQRT2 *  (C1 + C3 + C5 - C7))
+#define W7 (M_SQRT2 *  (C1 + C3 - C5 - C7))
+#define W8 (M_SQRT2 *  (C7 - C3))
+#define W9 (M_SQRT2 * (-C1 - C3))
+#define WA (M_SQRT2 * (-C3 - C5))
+#define WB (M_SQRT2 *  (C5 - C3))
 
-static vector float fdctconsts[3] = {
+static const vector float fdctconsts[3] = {
     { W0, W1, W2, W3 },
     { W4, W5, W6, W7 },
     { W8, W9, WA, WB }
@@ -196,7 +195,7 @@ static vector float fdctconsts[3] = {
 void ff_fdct_altivec(int16_t *block)
 {
     vector signed short *bp;
-    vector float *cp = fdctconsts;
+    const vector float *cp = fdctconsts;
     vector float b00, b10, b20, b30, b40, b50, b60, b70;
     vector float b01, b11, b21, b31, b41, b51, b61, b71;
     vector float mzero, cnst, cnsts0, cnsts1, cnsts2;
@@ -465,7 +464,7 @@ void ff_fdct_altivec(int16_t *block)
 av_cold void ff_fdctdsp_init_ppc(FDCTDSPContext *c, AVCodecContext *avctx,
                                  unsigned high_bit_depth)
 {
-#if HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_ALTIVEC
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 

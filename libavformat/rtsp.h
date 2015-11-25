@@ -2,20 +2,20 @@
  * RTSP definitions
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #ifndef AVFORMAT_RTSP_H
@@ -76,7 +76,7 @@ enum RTSPControlTransport {
 #define RTSP_DEFAULT_NB_AUDIO_CHANNELS 1
 #define RTSP_DEFAULT_AUDIO_SAMPLERATE 44100
 #define RTSP_RTP_PORT_MIN 5000
-#define RTSP_RTP_PORT_MAX 10000
+#define RTSP_RTP_PORT_MAX 65000
 
 /**
  * This describes a single item in the "Transport:" line of one stream as
@@ -392,9 +392,19 @@ typedef struct RTSPState {
     int initial_timeout;
 
     /**
+     * timeout of socket i/o operations.
+     */
+    int stimeout;
+
+    /**
      * Size of RTP packet reordering queue.
      */
     int reordering_queue_size;
+
+    /**
+     * User-Agent string
+     */
+    char *user_agent;
 
     char default_lang[4];
     int buffer_size;
@@ -407,6 +417,7 @@ typedef struct RTSPState {
 #define RTSP_FLAG_CUSTOM_IO   0x4    /**< Do all IO via the AVIOContext. */
 #define RTSP_FLAG_RTCP_TO_SOURCE 0x8 /**< Send RTCP packets to the source
                                           address of received packets. */
+#define RTSP_FLAG_PREFER_TCP  0x10   /**< Try RTP via TCP first if possible. */
 
 typedef struct RTSPSource {
     char addr[128]; /**< Source-specific multicast include source IP address (from SDP content) */
@@ -459,8 +470,7 @@ typedef struct RTSPStream {
     char crypto_params[100];
 } RTSPStream;
 
-void ff_rtsp_parse_line(AVFormatContext *s,
-                        RTSPMessageHeader *reply, const char *buf,
+void ff_rtsp_parse_line(RTSPMessageHeader *reply, const char *buf,
                         RTSPState *rt, const char *method);
 
 /**
