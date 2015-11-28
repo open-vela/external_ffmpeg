@@ -2,20 +2,20 @@
  * (I)RDFT transforms
  * Copyright (c) 2009 Alex Converse <alex dot converse at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include <stdlib.h>
@@ -99,17 +99,16 @@ static void rdft_calc_c(RDFTContext *s, FFTSample *data)
 av_cold int ff_rdft_init(RDFTContext *s, int nbits, enum RDFTransformType trans)
 {
     int n = 1 << nbits;
-    int ret;
 
     s->nbits           = nbits;
     s->inverse         = trans == IDFT_C2R || trans == DFT_C2R;
     s->sign_convention = trans == IDFT_R2C || trans == DFT_C2R ? 1 : -1;
 
     if (nbits < 4 || nbits > 16)
-        return AVERROR(EINVAL);
+        return -1;
 
-    if ((ret = ff_fft_init(&s->fft, nbits-1, trans == IDFT_C2R || trans == IDFT_R2C)) < 0)
-        return ret;
+    if (ff_fft_init(&s->fft, nbits-1, trans == IDFT_C2R || trans == IDFT_R2C) < 0)
+        return -1;
 
     ff_init_ff_cos_tabs(nbits);
     s->tcos = ff_cos_tabs[nbits];
