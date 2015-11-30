@@ -2,20 +2,20 @@
  * Interface to xvidcore for mpeg4 encoding
  * Copyright (c) 2004 Adam Thayer <krevnik@comcast.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,11 +27,10 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <xvid.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/cpu.h"
-#include "libavutil/file.h"
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mathematics.h"
@@ -42,14 +41,6 @@
 #include "internal.h"
 #include "libxvid.h"
 #include "mpegutils.h"
-
-#if HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-
-#if HAVE_IO_H
-#include <io.h>
-#endif
 
 /**
  * Buffer management macros.
@@ -63,7 +54,7 @@
  * This stores all the private context for the codec.
  */
 struct xvid_context {
-    AVClass *class;
+    AVClass *class;                /**< Handle for Xvid encoder */
     void *encoder_handle;          /**< Handle for Xvid encoder */
     int xsize;                     /**< Frame x size */
     int ysize;                     /**< Frame y size */
@@ -75,7 +66,6 @@ struct xvid_context {
     char *twopassbuffer;           /**< Character buffer for two-pass */
     char *old_twopassbuffer;       /**< Old character buffer (two-pass) */
     char *twopassfile;             /**< second pass temp file name */
-    int twopassfd;
     unsigned char *intra_matrix;   /**< P-Frame Quant Matrix */
     unsigned char *inter_matrix;   /**< I-Frame Quant Matrix */
     int lumi_aq;                   /**< Lumi masking as an aq method */
@@ -93,8 +83,6 @@ struct xvid_ff_pass1 {
     int version;                    /**< Xvid version */
     struct xvid_context *context;   /**< Pointer to private context */
 };
-
-static int xvid_encode_close(AVCodecContext *avctx);
 
 /*
  * Xvid 2-Pass Kludge Section
@@ -126,7 +114,7 @@ static int xvid_ff_2pass_create(xvid_plg_create_t *param, void **handle)
     /* This is because we can safely prevent a buffer overflow */
     log[0] = 0;
     snprintf(log, BUFFER_REMAINING(log),
-             "# ffmpeg 2-pass log file, using xvid codec\n");
+             "# avconv 2-pass log file, using xvid codec\n");
     snprintf(BUFFER_CAT(log), BUFFER_REMAINING(log),
              "# Do not modify. libxvidcore version: %d.%d.%d\n\n",
              XVID_VERSION_MAJOR(XVID_VERSION),
@@ -368,34 +356,32 @@ static void xvid_correct_framerate(AVCodecContext *avctx)
 
 static av_cold int xvid_encode_init(AVCodecContext *avctx)
 {
-    int xerr, i, ret = -1;
+    int xerr, i;
     int xvid_flags = avctx->flags;
     struct xvid_context *x = avctx->priv_data;
     uint16_t *intra, *inter;
     int fd;
 
-    xvid_plugin_single_t      single          = { 0 };
-    struct xvid_ff_pass1      rc2pass1        = { 0 };
-    xvid_plugin_2pass2_t      rc2pass2        = { 0 };
-    xvid_plugin_lumimasking_t masking_l       = { 0 }; /* For lumi masking */
-    xvid_plugin_lumimasking_t masking_v       = { 0 }; /* For variance AQ */
-    xvid_plugin_ssim_t        ssim            = { 0 };
-    xvid_gbl_init_t           xvid_gbl_init   = { 0 };
-    xvid_enc_create_t         xvid_enc_create = { 0 };
-    xvid_enc_plugin_t         plugins[4];
+    xvid_plugin_single_t single         = { 0 };
+    struct xvid_ff_pass1 rc2pass1       = { 0 };
+    xvid_plugin_2pass2_t rc2pass2       = { 0 };
+    xvid_plugin_lumimasking_t masking_l = { 0 }; /* For lumi masking */
+    xvid_plugin_lumimasking_t masking_v = { 0 }; /* For variance AQ */
+    xvid_plugin_ssim_t ssim             = { 0 };
+    xvid_gbl_init_t xvid_gbl_init       = { 0 };
+    xvid_enc_create_t xvid_enc_create   = { 0 };
+    xvid_enc_plugin_t plugins[7];
 
-    x->twopassfd = -1;
-
-    /* Bring in VOP flags from ffmpeg command-line */
-    x->vop_flags = XVID_VOP_HALFPEL;              /* Bare minimum quality */
+    /* Bring in VOP flags from avconv command-line */
+    x->vop_flags = XVID_VOP_HALFPEL; /* Bare minimum quality */
     if (xvid_flags & AV_CODEC_FLAG_4MV)
-        x->vop_flags    |= XVID_VOP_INTER4V;      /* Level 3 */
+        x->vop_flags |= XVID_VOP_INTER4V; /* Level 3 */
     if (avctx->trellis)
-        x->vop_flags    |= XVID_VOP_TRELLISQUANT; /* Level 5 */
+        x->vop_flags |= XVID_VOP_TRELLISQUANT; /* Level 5 */
     if (xvid_flags & AV_CODEC_FLAG_AC_PRED)
-        x->vop_flags    |= XVID_VOP_HQACPRED;     /* Level 6 */
+        x->vop_flags |= XVID_VOP_HQACPRED; /* Level 6 */
     if (xvid_flags & AV_CODEC_FLAG_GRAY)
-        x->vop_flags    |= XVID_VOP_GREYSCALE;
+        x->vop_flags |= XVID_VOP_GREYSCALE;
 
     /* Decide which ME quality setting to use */
     x->me_flags = 0;
@@ -457,7 +443,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         break;
     }
 
-    /* Bring in VOL flags from ffmpeg command-line */
+    /* Bring in VOL flags from avconv command-line */
 #if FF_API_GMC
     if (avctx->flags & CODEC_FLAG_GMC)
         x->gmc = 1;
@@ -499,18 +485,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
     xvid_enc_create.num_zones = 0;
 
     xvid_enc_create.num_threads = avctx->thread_count;
-#if (XVID_VERSION <= 0x010303) && (XVID_VERSION >= 0x010300)
-    /* workaround for a bug in libxvidcore */
-    if (avctx->height <= 16) {
-        if (avctx->thread_count < 2) {
-            xvid_enc_create.num_threads = 0;
-        } else {
-            av_log(avctx, AV_LOG_ERROR,
-                   "Too small height for threads > 1.");
-            return AVERROR(EINVAL);
-        }
-    }
-#endif
 
     xvid_enc_create.plugins     = plugins;
     xvid_enc_create.num_plugins = 0;
@@ -540,29 +514,26 @@ FF_ENABLE_DEPRECATION_WARNINGS
         rc2pass2.version = XVID_VERSION;
         rc2pass2.bitrate = avctx->bit_rate;
 
-        fd = av_tempfile("xvidff.", &x->twopassfile, 0, avctx);
+        fd = ff_tempfile("xvidff.", &x->twopassfile);
         if (fd < 0) {
             av_log(avctx, AV_LOG_ERROR, "Xvid: Cannot write 2-pass pipe\n");
             return fd;
         }
-        x->twopassfd = fd;
 
         if (!avctx->stats_in) {
             av_log(avctx, AV_LOG_ERROR,
                    "Xvid: No 2-pass information loaded for second pass\n");
-            return AVERROR(EINVAL);
+            return AVERROR_INVALIDDATA;
         }
 
-        ret = write(fd, avctx->stats_in, strlen(avctx->stats_in));
-        if (ret == -1)
-            ret = AVERROR(errno);
-        else if (strlen(avctx->stats_in) > ret) {
+        if (strlen(avctx->stats_in) >
+            write(fd, avctx->stats_in, strlen(avctx->stats_in))) {
+            close(fd);
             av_log(avctx, AV_LOG_ERROR, "Xvid: Cannot write to 2-pass pipe\n");
-            ret = AVERROR(EIO);
+            return AVERROR(EIO);
         }
-        if (ret < 0)
-            return ret;
 
+        close(fd);
         rc2pass2.filename                          = x->twopassfile;
         plugins[xvid_enc_create.num_plugins].func  = xvid_plugin_2pass2;
         plugins[xvid_enc_create.num_plugins].param = &rc2pass2;
@@ -579,6 +550,12 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     if (avctx->lumi_masking != 0.0)
         x->lumi_aq = 1;
+
+    if (x->lumi_aq && x->variance_aq) {
+        x->variance_aq = 0;
+        av_log(avctx, AV_LOG_WARNING,
+               "variance_aq is ignored when lumi_aq is set.\n");
+    }
 
     /* Luminance Masking */
     if (x->lumi_aq) {
@@ -599,11 +576,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
         plugins[xvid_enc_create.num_plugins].param = &masking_v;
         xvid_enc_create.num_plugins++;
     }
-
-    if (x->lumi_aq && x->variance_aq )
-        av_log(avctx, AV_LOG_INFO,
-               "Both lumi_aq and variance_aq are enabled. The resulting quality"
-               "will be the worse one of the two effects made by the AQ.\n");
 
     /* SSIM */
     if (x->ssim) {
@@ -696,13 +668,11 @@ FF_ENABLE_DEPRECATION_WARNINGS
     if (avctx->max_b_frames > 0 && !x->quicktime_format)
         xvid_enc_create.global |= XVID_GLOBAL_PACKED;
 
-    av_assert0(xvid_enc_create.num_plugins + (!!x->ssim) + (!!x->variance_aq) + (!!x->lumi_aq) <= FF_ARRAY_ELEMS(plugins));
-
     /* Create encoder context */
     xerr = xvid_encore(NULL, XVID_ENC_CREATE, &xvid_enc_create, NULL);
     if (xerr) {
         av_log(avctx, AV_LOG_ERROR, "Xvid: Could not create encoder reference\n");
-        return AVERROR_EXTERNAL;
+        return -1;
     }
 
     x->encoder_handle  = xvid_enc_create.handle;
@@ -722,8 +692,11 @@ static int xvid_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     xvid_enc_frame_t xvid_enc_frame = { 0 };
     xvid_enc_stats_t xvid_enc_stats = { 0 };
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, mb_width*(int64_t)mb_height*MAX_MB_BYTES + AV_INPUT_BUFFER_MIN_SIZE, 0)) < 0)
+    if (!user_packet &&
+        (ret = av_new_packet(pkt, mb_width * mb_height * MAX_MB_BYTES + AV_INPUT_BUFFER_MIN_SIZE)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
+    }
 
     /* Start setting up the frame */
     xvid_enc_frame.version = XVID_VERSION;
@@ -737,7 +710,7 @@ static int xvid_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if (avctx->pix_fmt != AV_PIX_FMT_YUV420P) {
         av_log(avctx, AV_LOG_ERROR,
                "Xvid: Color spaces other than 420P not supported\n");
-        return AVERROR(EINVAL);
+        return -1;
     }
 
     xvid_enc_frame.input.csp = XVID_CSP_PLANAR; /* YUV420P */
@@ -758,13 +731,11 @@ static int xvid_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                                                   XVID_TYPE_AUTO;
 
     /* Pixel aspect ratio setting */
-    if (avctx->sample_aspect_ratio.num < 0 || avctx->sample_aspect_ratio.num > 255 ||
-        avctx->sample_aspect_ratio.den < 0 || avctx->sample_aspect_ratio.den > 255) {
-        av_log(avctx, AV_LOG_WARNING,
-               "Invalid pixel aspect ratio %i/%i, limit is 255/255 reducing\n",
+    if (avctx->sample_aspect_ratio.num < 1 || avctx->sample_aspect_ratio.num > 255 ||
+        avctx->sample_aspect_ratio.den < 1 || avctx->sample_aspect_ratio.den > 255) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid pixel aspect ratio %i/%i\n",
                avctx->sample_aspect_ratio.num, avctx->sample_aspect_ratio.den);
-        av_reduce(&avctx->sample_aspect_ratio.num, &avctx->sample_aspect_ratio.den,
-                   avctx->sample_aspect_ratio.num,  avctx->sample_aspect_ratio.den, 255);
+        return -1;
     }
     xvid_enc_frame.par        = XVID_PAR_EXT;
     xvid_enc_frame.par_width  = avctx->sample_aspect_ratio.num;
@@ -797,28 +768,27 @@ static int xvid_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     if (xerr > 0) {
-        int pict_type;
+        uint8_t *sd = av_packet_new_side_data(pkt, AV_PKT_DATA_QUALITY_FACTOR,
+                                              sizeof(int));
+        if (!sd)
+            return AVERROR(ENOMEM);
+        *(int *)sd = xvid_enc_stats.quant * FF_QP2LAMBDA;
 
         *got_packet = 1;
 
-        if (xvid_enc_stats.type == XVID_TYPE_PVOP)
-            pict_type = AV_PICTURE_TYPE_P;
-        else if (xvid_enc_stats.type == XVID_TYPE_BVOP)
-            pict_type = AV_PICTURE_TYPE_B;
-        else if (xvid_enc_stats.type == XVID_TYPE_SVOP)
-            pict_type = AV_PICTURE_TYPE_S;
-        else
-            pict_type = AV_PICTURE_TYPE_I;
-
 #if FF_API_CODED_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
-        avctx->coded_frame->pict_type = pict_type;
         avctx->coded_frame->quality = xvid_enc_stats.quant * FF_QP2LAMBDA;
+        if (xvid_enc_stats.type == XVID_TYPE_PVOP)
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_P;
+        else if (xvid_enc_stats.type == XVID_TYPE_BVOP)
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_B;
+        else if (xvid_enc_stats.type == XVID_TYPE_SVOP)
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_S;
+        else
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
-
-        ff_side_data_set_encoder_stats(pkt, xvid_enc_stats.quant * FF_QP2LAMBDA, NULL, 0, pict_type);
-
         if (xvid_enc_frame.out_flags & XVID_KEYFRAME) {
 #if FF_API_CODED_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
@@ -847,7 +817,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             return 0;
         av_log(avctx, AV_LOG_ERROR,
                "Xvid: Encoding Error Occurred: %i\n", xerr);
-        return AVERROR_EXTERNAL;
+        return xerr;
     }
 }
 
@@ -862,18 +832,12 @@ static av_cold int xvid_encode_close(AVCodecContext *avctx)
 
     av_freep(&avctx->extradata);
     if (x->twopassbuffer) {
-        av_freep(&x->twopassbuffer);
-        av_freep(&x->old_twopassbuffer);
-        avctx->stats_out = NULL;
+        av_free(x->twopassbuffer);
+        av_free(x->old_twopassbuffer);
     }
-    if (x->twopassfd>=0) {
-        unlink(x->twopassfile);
-        close(x->twopassfd);
-        x->twopassfd = -1;
-    }
-    av_freep(&x->twopassfile);
-    av_freep(&x->intra_matrix);
-    av_freep(&x->inter_matrix);
+    av_free(x->twopassfile);
+    av_free(x->intra_matrix);
+    av_free(x->inter_matrix);
 
     return 0;
 }

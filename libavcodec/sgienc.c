@@ -2,22 +2,24 @@
  * SGI image encoder
  * Todd Kirby <doubleshot@pacbell.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include "libavutil/opt.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
@@ -28,12 +30,17 @@
 #define SGI_SINGLE_CHAN 2
 #define SGI_MULTI_CHAN 3
 
+typedef struct SgiContext {
+    AVClass *class;
+
+    int rle;
+} SgiContext;
+
 static av_cold int encode_init(AVCodecContext *avctx)
 {
     if (avctx->width > 65535 || avctx->height > 65535) {
         av_log(avctx, AV_LOG_ERROR,
                "Unsupported resolution %dx%d.\n", avctx->width, avctx->height);
-        av_log(avctx, AV_LOG_ERROR, "SGI does not support resolutions above 65535x65535\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -84,6 +91,7 @@ static int sgi_rle_encode(PutByteContext *pbc, const uint8_t *src,
 static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                         const AVFrame *frame, int *got_packet)
 {
+    SgiContext *s = avctx->priv_data;
     const AVFrame * const p = frame;
     PutByteContext pbc;
     uint8_t *in_buf, *encode_buf;
@@ -95,6 +103,13 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 FF_DISABLE_DEPRECATION_WARNINGS
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
     avctx->coded_frame->key_frame = 1;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
+#if FF_API_CODER_TYPE
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->coder_type == FF_CODER_TYPE_RAW)
+        s->rle = 0;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
@@ -147,19 +162,21 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     tablesize = depth * height * 4;
     length = SGI_HEADER_SIZE;
-    if (avctx->coder_type == FF_CODER_TYPE_RAW)
+    if (!s->rle)
         length += depth * height * width;
     else // assume sgi_rle_encode() produces at most 2x size of input
         length += tablesize * 2 + depth * height * (2 * width + 1);
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, bytes_per_channel * length, 0)) < 0)
+    if ((ret = ff_alloc_packet(pkt, bytes_per_channel * length)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", length);
         return ret;
+    }
 
     bytestream2_init_writer(&pbc, pkt->data, pkt->size);
 
     /* Encode header. */
     bytestream2_put_be16(&pbc, SGI_MAGIC);
-    bytestream2_put_byte(&pbc, avctx->coder_type != FF_CODER_TYPE_RAW); /* RLE 1 - VERBATIM 0 */
+    bytestream2_put_byte(&pbc, s->rle); /* RLE 1 - VERBATIM 0 */
     bytestream2_put_byte(&pbc, bytes_per_channel);
     bytestream2_put_be16(&pbc, dimension);
     bytestream2_put_be16(&pbc, width);
@@ -179,7 +196,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
     /* The rest of the 512 byte header is unused. */
     bytestream2_skip_p(&pbc, 404);
 
-    if (avctx->coder_type != FF_CODER_TYPE_RAW) {
+    if (s->rle) {
         PutByteContext taboff_pcb, tablen_pcb;
 
         /* Skip RLE offset table. */
@@ -243,11 +260,28 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return 0;
 }
 
+#define OFFSET(x) offsetof(SgiContext, x)
+#define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
+static const AVOption options[] = {
+    { "rle", "Use run-length compression", OFFSET(rle), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
+
+    { NULL },
+};
+
+static const AVClass sgi_class = {
+    .class_name = "sgi",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVCodec ff_sgi_encoder = {
     .name      = "sgi",
     .long_name = NULL_IF_CONFIG_SMALL("SGI image"),
     .type      = AVMEDIA_TYPE_VIDEO,
     .id        = AV_CODEC_ID_SGI,
+    .priv_data_size = sizeof(SgiContext),
+    .priv_class = &sgi_class,
     .init      = encode_init,
     .encode2   = encode_frame,
     .pix_fmts  = (const enum AVPixelFormat[]) {
