@@ -2,20 +2,20 @@
  * SGI image encoder
  * Todd Kirby <doubleshot@pacbell.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,6 @@ static av_cold int encode_init(AVCodecContext *avctx)
     if (avctx->width > 65535 || avctx->height > 65535) {
         av_log(avctx, AV_LOG_ERROR,
                "Unsupported resolution %dx%d.\n", avctx->width, avctx->height);
-        av_log(avctx, AV_LOG_ERROR, "SGI does not support resolutions above 65535x65535\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -152,8 +151,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
     else // assume sgi_rle_encode() produces at most 2x size of input
         length += tablesize * 2 + depth * height * (2 * width + 1);
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, bytes_per_channel * length, 0)) < 0)
+    if ((ret = ff_alloc_packet(pkt, bytes_per_channel * length)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", length);
         return ret;
+    }
 
     bytestream2_init_writer(&pbc, pkt->data, pkt->size);
 
