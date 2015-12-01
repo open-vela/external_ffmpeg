@@ -2,20 +2,20 @@
  * PNG parser
  * Copyright (c) 2009 Peter Holik
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,14 +24,20 @@
  * PNG parser
  */
 
+#include "libavutil/intreadwrite.h"
+#include "libavutil/common.h"
+
 #include "parser.h"
-#include "png.h"
+
+#define PNG_SIGNATURE UINT64_C(0x89504e470d0a1a0a)
+#define MNG_SIGNATURE UINT64_C(0x8a4d4e470d0a1a0a)
 
 typedef struct PNGParseContext {
     ParseContext pc;
-    uint32_t chunk_pos;           ///< position inside current chunk
-    uint32_t chunk_length;        ///< length of the current chunk
-    uint32_t remaining_size;      ///< remaining size of the current chunk
+
+    int chunk_pos;          ///< position inside current chunk
+    uint32_t chunk_length;  ///< length of the current chunk
+    int remaining_size;     ///< remaining size of the current chunk
 } PNGParseContext;
 
 static int png_parse(AVCodecParserContext *s, AVCodecContext *avctx,
@@ -42,15 +48,16 @@ static int png_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     int next = END_NOT_FOUND;
     int i = 0;
 
-    s->pict_type = AV_PICTURE_TYPE_NONE;
-
     *poutbuf_size = 0;
+    if (buf_size == 0)
+        return 0;
 
     if (!ppc->pc.frame_start_found) {
         uint64_t state64 = ppc->pc.state64;
         for (; i < buf_size; i++) {
             state64 = (state64 << 8) | buf[i];
-            if (state64 == PNGSIG || state64 == MNGSIG) {
+            if (state64 == PNG_SIGNATURE ||
+                state64 == MNG_SIGNATURE) {
                 i++;
                 ppc->pc.frame_start_found = 1;
                 break;
