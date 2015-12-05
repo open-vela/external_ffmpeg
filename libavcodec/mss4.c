@@ -2,20 +2,20 @@
  * Microsoft Screen 4 (aka Microsoft Expression Encoder Screen) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -125,7 +125,7 @@ static const uint8_t mss4_vec_entry_vlc_syms[2][9] = {
 #define MAX_ENTRIES  162
 
 typedef struct MSS4Context {
-    AVFrame    *pic;
+    AVFrame   *pic;
 
     VLC        dc_vlc[2], ac_vlc[2];
     VLC        vec_entry_vlc[2];
@@ -363,7 +363,7 @@ static int get_value_cached(GetBitContext *gb, int vec_pos, uint8_t *vec,
     return prev[component];
 }
 
-#define MKVAL(vals)  ((vals)[0] | ((vals)[1] << 3) | ((vals)[2] << 6))
+#define MKVAL(vals)  (vals[0] | (vals[1] << 3) | (vals[2] << 6))
 
 /* Image mode - the hardest to comprehend MSS4 coding mode.
  *
@@ -553,8 +553,10 @@ static int mss4_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
     c->pic->key_frame = (frame_type == INTRA_FRAME);
     c->pic->pict_type = (frame_type == INTRA_FRAME) ? AV_PICTURE_TYPE_I
                                                    : AV_PICTURE_TYPE_P;
@@ -572,8 +574,7 @@ static int mss4_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             ff_mss34_gen_quant_mat(c->quant_mat[i], quality, !i);
     }
 
-    if ((ret = init_get_bits8(&gb, buf + HEADER_SIZE, buf_size - HEADER_SIZE)) < 0)
-        return ret;
+    init_get_bits(&gb, buf + HEADER_SIZE, (buf_size - HEADER_SIZE) * 8);
 
     mb_width  = FFALIGN(width,  16) >> 4;
     mb_height = FFALIGN(height, 16) >> 4;
@@ -651,7 +652,7 @@ static av_cold int mss4_decode_init(AVCodecContext *avctx)
     }
     for (i = 0; i < 3; i++) {
         c->dc_stride[i] = FFALIGN(avctx->width, 16) >> (2 + !!i);
-        c->prev_dc[i]   = av_malloc_array(c->dc_stride[i], sizeof(**c->prev_dc));
+        c->prev_dc[i]   = av_malloc(sizeof(**c->prev_dc) * c->dc_stride[i]);
         if (!c->prev_dc[i]) {
             av_log(avctx, AV_LOG_ERROR, "Cannot allocate buffer\n");
             mss4_free_vlcs(c);
