@@ -292,7 +292,7 @@ do {                                        \
 do {                                                               \
     int idx = -1;                                                  \
                                                                    \
-    if (!*ref)                                                     \
+    if (!*ref || !(*ref)->refs)                                    \
         return;                                                    \
                                                                    \
     FIND_REF_INDEX(ref, idx);                                      \
