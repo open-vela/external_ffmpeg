@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@ typedef struct MPADSPContext {
                                int *dither_state, int16_t *samples, int incr);
     void (*dct32_float)(float *dst, const float *src);
     void (*dct32_fixed)(int *dst, const int *src);
-
     void (*imdct36_blocks_float)(float *out, float *buf, float *in,
                                  int count, int switch_point, int block_type);
     void (*imdct36_blocks_fixed)(int *out, int *buf, int *in,
@@ -59,8 +58,6 @@ void ff_mpadsp_init_aarch64(MPADSPContext *s);
 void ff_mpadsp_init_arm(MPADSPContext *s);
 void ff_mpadsp_init_ppc(MPADSPContext *s);
 void ff_mpadsp_init_x86(MPADSPContext *s);
-void ff_mpadsp_init_mipsfpu(MPADSPContext *s);
-void ff_mpadsp_init_mipsdsp(MPADSPContext *s);
 
 void ff_mpa_synth_init_float(float *window);
 void ff_mpa_synth_init_fixed(int32_t *window);
