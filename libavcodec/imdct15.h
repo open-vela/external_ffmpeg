@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,23 +21,18 @@
 
 #include <stddef.h>
 
-#include "fft.h"
+#include "avfft.h"
 
 typedef struct IMDCT15Context {
     int fft_n;
     int len2;
     int len4;
-    int *pfa_prereindex;
-    int *pfa_postreindex;
-
-    FFTContext ptwo_fft;
 
     FFTComplex *tmp;
 
     FFTComplex *twiddle_exptab;
 
-    /* 0 - 18: fft15 twiddles, 19 - 20: fft5 twiddles */
-    FFTComplex exptab[21];
+    FFTComplex *exptab[6];
 
     /**
      * Calculate the middle half of the iMDCT
@@ -55,5 +50,8 @@ int ff_imdct15_init(IMDCT15Context **s, int N);
  * Free an iMDCT.
  */
 void ff_imdct15_uninit(IMDCT15Context **s);
+
+
+void ff_imdct15_init_aarch64(IMDCT15Context *s);
 
 #endif /* AVCODEC_IMDCT15_H */

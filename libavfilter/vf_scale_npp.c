@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
 #include "libavutil/hwcontext.h"
-#include "libavutil/hwcontext_cuda_internal.h"
+#include "libavutil/hwcontext_cuda.h"
 #include "libavutil/internal.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
@@ -169,9 +169,11 @@ static int nppscale_query_formats(AVFilterContext *ctx)
     static const enum AVPixelFormat pixel_formats[] = {
         AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE,
     };
-    AVFilterFormats *pix_fmts = ff_make_format_list(pixel_formats);
+    AVFilterFormats *pix_fmts  = ff_make_format_list(pixel_formats);
 
-    return ff_set_common_formats(ctx, pix_fmts);
+    ff_set_common_formats(ctx, pix_fmts);
+
+    return 0;
 }
 
 static int init_stage(NPPScaleStageContext *stage, AVBufferRef *device_ctx)
@@ -292,20 +294,8 @@ static int init_processing_chain(AVFilterContext *ctx, int in_width, int in_heig
 
     /* figure out which stages need to be done */
     if (in_width != out_width || in_height != out_height ||
-        in_deinterleaved_format != out_deinterleaved_format) {
+        in_deinterleaved_format != out_deinterleaved_format)
         s->stages[STAGE_RESIZE].stage_needed = 1;
-
-        if (s->interp_algo == NPPI_INTER_SUPER &&
-            (out_width > in_width && out_height > in_height)) {
-            s->interp_algo = NPPI_INTER_LANCZOS;
-            av_log(ctx, AV_LOG_WARNING, "super-sampling not supported for output dimensions, using lanczos instead.\n");
-        }
-        if (s->interp_algo == NPPI_INTER_SUPER &&
-            !(out_width < in_width && out_height < in_height)) {
-            s->interp_algo = NPPI_INTER_CUBIC;
-            av_log(ctx, AV_LOG_WARNING, "super-sampling not supported for output dimensions, using cubic instead.\n");
-        }
-    }
 
     if (!s->stages[STAGE_RESIZE].stage_needed && in_format == out_format)
         s->passthrough = 1;
@@ -584,7 +574,12 @@ static int nppscale_filter_frame(AVFilterLink *link, AVFrame *in)
         goto fail;
     }
 
-    err = device_hwctx->internal->cuda_dl->cuCtxPushCurrent(device_hwctx->cuda_ctx);
+    av_reduce(&out->sample_aspect_ratio.num, &out->sample_aspect_ratio.den,
+              (int64_t)in->sample_aspect_ratio.num * outlink->h * link->w,
+              (int64_t)in->sample_aspect_ratio.den * outlink->w * link->h,
+              INT_MAX);
+
+    err = cuCtxPushCurrent(device_hwctx->cuda_ctx);
     if (err != CUDA_SUCCESS) {
         ret = AVERROR_UNKNOWN;
         goto fail;
@@ -592,14 +587,9 @@ static int nppscale_filter_frame(AVFilterLink *link, AVFrame *in)
 
     ret = nppscale_scale(ctx, out, in);
 
-    device_hwctx->internal->cuda_dl->cuCtxPopCurrent(&dummy);
+    cuCtxPopCurrent(&dummy);
     if (ret < 0)
         goto fail;
-
-    av_reduce(&out->sample_aspect_ratio.num, &out->sample_aspect_ratio.den,
-              (int64_t)in->sample_aspect_ratio.num * outlink->h * link->w,
-              (int64_t)in->sample_aspect_ratio.den * outlink->w * link->h,
-              INT_MAX);
 
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
@@ -610,7 +600,7 @@ fail:
 }
 
 #define OFFSET(x) offsetof(NPPScaleContext, x)
-#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM)
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
 static const AVOption options[] = {
     { "w",      "Output video width",  OFFSET(w_expr),     AV_OPT_TYPE_STRING, { .str = "iw"   }, .flags = FLAGS },
     { "h",      "Output video height", OFFSET(h_expr),     AV_OPT_TYPE_STRING, { .str = "ih"   }, .flags = FLAGS },
@@ -667,4 +657,6 @@ AVFilter ff_vf_scale_npp = {
 
     .inputs    = nppscale_inputs,
     .outputs   = nppscale_outputs,
+
+    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
