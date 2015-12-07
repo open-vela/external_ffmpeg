@@ -2,20 +2,20 @@
  * MPEG-4 Parametric Stereo data tables
  * Copyright (c) 2010 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -157,7 +157,7 @@ static const int8_t k_to_i_34[] = {
     33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33
 };
 
-static const float g1_Q2[] = {
-    0.0f,  0.01899487526049f, 0.0f, -0.07293139167538f,
-    0.0f,  0.30596630545168f, 0.5f
+static const INTFLOAT g1_Q2[] = {
+    Q31(0.0f),  Q31(0.01899487526049f), Q31(0.0f), Q31(-0.07293139167538f),
+    Q31(0.0f),  Q31(0.30596630545168f), Q31(0.5f)
 };
