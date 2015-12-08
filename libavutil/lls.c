@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,7 @@
 #include "version.h"
 #include "lls.h"
 
-static void update_lls(LLSModel *m, double *var)
+static void update_lls(LLSModel *m, const double *var)
 {
     int i, j;
 
@@ -55,7 +55,7 @@ void avpriv_solve_lls(LLSModel *m, double threshold, unsigned short min_order)
         for (j = i; j < count; j++) {
             double sum = covar[i][j];
 
-            for (k = i - 1; k >= 0; k--)
+            for (k = 0; k <= i-1; k++)
                 sum -= factor[i][k] * factor[j][k];
 
             if (i == j) {
@@ -71,7 +71,7 @@ void avpriv_solve_lls(LLSModel *m, double threshold, unsigned short min_order)
     for (i = 0; i < count; i++) {
         double sum = covar_y[i + 1];
 
-        for (k = i - 1; k >= 0; k--)
+        for (k = 0; k <= i-1; k++)
             sum -= factor[i][k] * m->coeff[0][k];
 
         m->coeff[0][i] = sum / factor[i][i];
@@ -100,7 +100,7 @@ void avpriv_solve_lls(LLSModel *m, double threshold, unsigned short min_order)
     }
 }
 
-static double evaluate_lls(LLSModel *m, double *param, int order)
+static double evaluate_lls(LLSModel *m, const double *param, int order)
 {
     int i;
     double out = 0;
