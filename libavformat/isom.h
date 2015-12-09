@@ -4,20 +4,20 @@
  * copyright (c) 2002 Francois Revol <revol@free.fr>
  * copyright (c) 2006 Baptiste Coudurier <baptiste.coudurier@free.fr>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -53,6 +53,12 @@ typedef struct MOVStsc {
     int id;
 } MOVStsc;
 
+typedef struct MOVElst {
+    int64_t duration;
+    int64_t time;
+    float rate;
+} MOVElst;
+
 typedef struct MOVDref {
     uint32_t type;
     char *path;
@@ -78,6 +84,7 @@ typedef struct MOVFragment {
     unsigned duration;
     unsigned size;
     unsigned flags;
+    int64_t time;
 } MOVFragment;
 
 typedef struct MOVTrackExt {
@@ -93,8 +100,22 @@ typedef struct MOVSbgp {
     unsigned int index;
 } MOVSbgp;
 
+typedef struct MOVFragmentIndexItem {
+    int64_t moof_offset;
+    int64_t time;
+    int headers_read;
+} MOVFragmentIndexItem;
+
+typedef struct MOVFragmentIndex {
+    unsigned track_id;
+    unsigned item_count;
+    unsigned current_item;
+    MOVFragmentIndexItem *items;
+} MOVFragmentIndex;
+
 typedef struct MOVStreamContext {
     AVIOContext *pb;
+    int pb_is_copied;
     int ffindex;          ///< AVStream index
     int next_chunk;
     unsigned int chunk_count;
@@ -107,16 +128,19 @@ typedef struct MOVStreamContext {
     MOVStsc *stsc_data;
     unsigned int stps_count;
     unsigned *stps_data;  ///< partial sync sample for mpeg-2 open gop
+    MOVElst *elst_data;
+    unsigned int elst_count;
     int ctts_index;
     int ctts_sample;
-    unsigned int sample_size;
+    unsigned int sample_size; ///< may contain value calculated from stsd or value from stsz atom
+    unsigned int stsz_sample_size; ///< always contains sample size from stsz atom
     unsigned int sample_count;
     int *sample_sizes;
     int keyframe_absent;
     unsigned int keyframe_count;
     int *keyframes;
     int time_scale;
-    int64_t time_offset;  ///< time offset of the first edit list entry
+    int64_t time_offset;  ///< time offset of the edit list entries
     int current_sample;
     unsigned int bytes_per_frame;
     unsigned int samples_per_frame;
@@ -126,6 +150,7 @@ typedef struct MOVStreamContext {
     unsigned drefs_count;
     MOVDref *drefs;
     int dref_id;
+    int timecode_track;
     int wrong_dts;        ///< dts are wrong due to huge ctts offset (iMovie files)
     int width;            ///< tkhd width
     int height;           ///< tkhd height
@@ -133,9 +158,14 @@ typedef struct MOVStreamContext {
     uint32_t palette[256];
     int has_palette;
     int64_t data_size;
+    uint32_t tmcd_flags;  ///< tmcd track flags
     int64_t track_end;    ///< used for dts generation in fragmented movie files
+    int start_pad;        ///< amount of samples to skip due to enc-dec delay
     unsigned int rap_group_count;
     MOVSbgp *rap_group;
+
+    int nb_frames_for_fps;
+    int64_t duration_for_fps;
 
     int32_t *display_matrix;
 } MOVStreamContext;
@@ -147,6 +177,10 @@ typedef struct MOVContext {
     int64_t duration;     ///< duration of the longest track
     int found_moov;       ///< 'moov' atom has been found
     int found_mdat;       ///< 'mdat' atom has been found
+    int found_hdlr_mdta;  ///< 'hdlr' atom with type 'mdta' has been found
+    int trak_index;       ///< Index of the current 'trak'
+    char **meta_keys;
+    unsigned meta_keys_count;
     DVDemuxContext *dv_demux;
     AVFormatContext *dv_fctx;
     int isom;             ///< 1 if file is ISO Media (mp4/3gp)
@@ -155,10 +189,30 @@ typedef struct MOVContext {
     unsigned trex_count;
     int itunes_metadata;  ///< metadata are itunes style
     int chapter_track;
+    int use_absolute_path;
+    int ignore_editlist;
+    int ignore_chapters;
     int seek_individually;
     int64_t next_root_atom; ///< offset of the next root atom
     int export_all;
     int export_xmp;
+    int *bitrates;          ///< bitrates read before streams creation
+    int bitrates_count;
+    int moov_retry;
+    int use_mfra_for;
+    int has_looked_for_mfra;
+    MOVFragmentIndex** fragment_index_data;
+    unsigned fragment_index_count;
+    int fragment_index_complete;
+    int atom_depth;
+    unsigned int aax_mode;  ///< 'aax' file has been detected
+    uint8_t file_key[20];
+    uint8_t file_iv[20];
+    void *activation_bytes;
+    int activation_bytes_size;
+    void *audible_fixed_key;
+    int audible_fixed_key_size;
+    struct AVAES *aes_decrypt;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);
@@ -216,6 +270,7 @@ void ff_mp4_parse_es_descr(AVIOContext *pb, int *es_id);
      (tag) == MKTAG('a', 'i', '1', '3') ||  \
      (tag) == MKTAG('a', 'i', '1', '5') ||  \
      (tag) == MKTAG('a', 'i', '1', '6') ||  \
+     (tag) == MKTAG('a', 'i', 'v', 'x') ||  \
      (tag) == MKTAG('A', 'V', 'i', 'n'))
 
 
@@ -223,5 +278,10 @@ int ff_mov_read_esds(AVFormatContext *fc, AVIOContext *pb);
 enum AVCodecID ff_mov_get_lpcm_codec_id(int bps, int flags);
 
 int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries);
+void ff_mov_write_chan(AVIOContext *pb, int64_t channel_layout);
+
+#define FF_MOV_FLAG_MFRA_AUTO -1
+#define FF_MOV_FLAG_MFRA_DTS 1
+#define FF_MOV_FLAG_MFRA_PTS 2
 
 #endif /* AVFORMAT_ISOM_H */
