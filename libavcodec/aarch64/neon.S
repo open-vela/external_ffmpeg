@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -107,8 +107,8 @@
 .macro  transpose_4x4H  r0, r1, r2, r3, r4, r5, r6, r7
         trn1            \r4\().4H,  \r0\().4H,  \r1\().4H
         trn2            \r5\().4H,  \r0\().4H,  \r1\().4H
-        trn1            \r7\().4H,  \r2\().4H,  \r3\().4H
-        trn2            \r6\().4H,  \r2\().4H,  \r3\().4H
+        trn1            \r7\().4H,  \r3\().4H,  \r2\().4H
+        trn2            \r6\().4H,  \r3\().4H,  \r2\().4H
         trn1            \r0\().2S,  \r4\().2S,  \r7\().2S
         trn2            \r3\().2S,  \r4\().2S,  \r7\().2S
         trn1            \r1\().2S,  \r5\().2S,  \r6\().2S
