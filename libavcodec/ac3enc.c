@@ -1673,9 +1673,9 @@ void ff_ac3_output_frame(AC3EncodeContext *s, unsigned char *frame)
 }
 
 
+#ifdef DEBUG
 static void dprint_options(AC3EncodeContext *s)
 {
-#ifdef DEBUG
     AVCodecContext *avctx = s->avctx;
     AC3EncOptions *opt = &s->options;
     char strbuf[32];
@@ -1784,8 +1784,10 @@ static void dprint_options(AC3EncodeContext *s)
             ff_dlog(avctx, "extended bitstream info 2: {not written}\n");
         }
     }
-#endif
 }
+#else
+#define dprint_options(x) do {} while(0)
+#endif
 
 
 #define FLT_OPTION_THRESHOLD 0.01
