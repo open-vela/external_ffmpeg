@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,9 +100,6 @@ int av_image_alloc(uint8_t *pointers[4], int linesizes[4],
  * The first byte of each successive line is separated by *_linesize
  * bytes.
  *
- * bytewidth must be contained by both absolute values of dst_linesize
- * and src_linesize, otherwise the function behavior is undefined.
- *
  * @param dst_linesize linesize for the image plane in dst
  * @param src_linesize linesize for the image plane in src
  */
@@ -119,6 +116,24 @@ void av_image_copy_plane(uint8_t       *dst, int dst_linesize,
 void av_image_copy(uint8_t *dst_data[4], int dst_linesizes[4],
                    const uint8_t *src_data[4], const int src_linesizes[4],
                    enum AVPixelFormat pix_fmt, int width, int height);
+
+/**
+ * Copy image data located in uncacheable (e.g. GPU mapped) memory. Where
+ * available, this function will use special functionality for reading from such
+ * memory, which may result in greatly improved performance compared to plain
+ * av_image_copy().
+ *
+ * The data pointers and the linesizes must be aligned to the maximum required
+ * by the CPU architecture.
+ *
+ * @note The linesize parameters have the type ptrdiff_t here, while they are
+ *       int for av_image_copy().
+ * @note On x86, the linesizes currently need to be aligned to the cacheline
+ *       size (i.e. 64) to get improved performance.
+ */
+void av_image_copy_uc_from(uint8_t *dst_data[4],       const ptrdiff_t dst_linesizes[4],
+                           const uint8_t *src_data[4], const ptrdiff_t src_linesizes[4],
+                           enum AVPixelFormat pix_fmt, int width, int height);
 
 /**
  * Setup the data pointers and linesizes based on the specified image
