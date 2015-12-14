@@ -2,20 +2,20 @@
  * Dirac encoder support via Schroedinger libraries
  * Copyright (c) 2008 BBC, Anuradha Suraparaju <asuraparaju at gmail dot com >
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,8 @@
 #include <schroedinger/schrovideoformat.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
-#include "libavutil/opt.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -72,9 +72,6 @@ typedef struct SchroEncoderParams {
 
     /* counter for frames submitted to encoder, used as dts */
     int64_t dts;
-
-    /** enable noarith */
-    int noarith;
 } SchroEncoderParams;
 
 /**
@@ -169,15 +166,9 @@ static av_cold int libschroedinger_encode_init(AVCodecContext *avctx)
                                          "gop_structure",
                                          SCHRO_ENCODER_GOP_INTRA_ONLY);
 
-#if FF_API_CODER_TYPE
-FF_DISABLE_DEPRECATION_WARNINGS
-        if (avctx->coder_type != FF_CODER_TYPE_VLC)
-            p_schro_params->noarith = 0;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-        schro_encoder_setting_set_double(p_schro_params->encoder,
-                                         "enable_noarith",
-                                         p_schro_params->noarith);
+        if (avctx->coder_type == FF_CODER_TYPE_VLC)
+            schro_encoder_setting_set_double(p_schro_params->encoder,
+                                             "enable_noarith", 1);
     } else {
         schro_encoder_setting_set_double(p_schro_params->encoder,
                                          "au_distance", avctx->gop_size);
@@ -390,10 +381,8 @@ static int libschroedinger_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     pkt_size = p_frame_output->size;
     if (last_frame_in_sequence && p_schro_params->enc_buf_size > 0)
         pkt_size += p_schro_params->enc_buf_size;
-    if ((ret = ff_alloc_packet(pkt, pkt_size)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", pkt_size);
+    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size, 0)) < 0)
         goto error;
-    }
 
     memcpy(pkt->data, p_frame_output->p_encbuf, p_frame_output->size);
 #if FF_API_CODED_FRAME
@@ -452,20 +441,6 @@ static int libschroedinger_encode_close(AVCodecContext *avctx)
     return 0;
 }
 
-#define OFFSET(x) offsetof(SchroEncoderParams, x)
-#define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
-static const AVOption options[] = {
-    { "noarith", "Enable noarith", OFFSET(noarith), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
-
-    { NULL },
-};
-
-static const AVClass libschroedinger_class = {
-    .class_name = "libschroedinger",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
 
 AVCodec ff_libschroedinger_encoder = {
     .name           = "libschroedinger",
@@ -473,7 +448,6 @@ AVCodec ff_libschroedinger_encoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_DIRAC,
     .priv_data_size = sizeof(SchroEncoderParams),
-    .priv_class     = &libschroedinger_class,
     .init           = libschroedinger_encode_init,
     .encode2        = libschroedinger_encode_frame,
     .close          = libschroedinger_encode_close,
