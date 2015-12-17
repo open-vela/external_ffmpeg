@@ -2,20 +2,20 @@
 ;* SSE-optimized functions for the DCA decoder
 ;* Copyright (C) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -25,92 +25,6 @@ SECTION_RODATA
 pf_inv16:  times 4 dd 0x3D800000 ; 1/16
 
 SECTION .text
-
-; void decode_hf(float dst[DCA_SUBBANDS][8], const int32_t vq_num[DCA_SUBBANDS],
-;                const int8_t hf_vq[1024][32], intptr_t vq_offset,
-;                int32_t scale[DCA_SUBBANDS][2], intptr_t start, intptr_t end)
-
-%macro DECODE_HF 0
-cglobal decode_hf, 6,6,5, dst, num, src, offset, scale, start, end
-    lea       srcq, [srcq + offsetq]
-    shl     startq, 2
-    mov    offsetd, endm
-%define DICT offsetq
-    shl    offsetq, 2
-    mov       endm, offsetq
-.loop:
-%if ARCH_X86_64
-    mov    offsetd, [scaleq + 2 * startq]
-    cvtsi2ss    m0, offsetd
-%else
-    cvtsi2ss    m0, [scaleq + 2 * startq]
-%endif
-    mov    offsetd, [numq + startq]
-    mulss       m0, [pf_inv16]
-    shl       DICT, 5
-    shufps      m0, m0, 0
-%if cpuflag(sse2)
-%if cpuflag(sse4)
-    pmovsxbd    m1, [srcq + DICT + 0]
-    pmovsxbd    m2, [srcq + DICT + 4]
-%else
-    movq        m1, [srcq + DICT]
-    punpcklbw   m1, m1
-    mova        m2, m1
-    punpcklwd   m1, m1
-    punpckhwd   m2, m2
-    psrad       m1, 24
-    psrad       m2, 24
-%endif
-    cvtdq2ps    m1, m1
-    cvtdq2ps    m2, m2
-%else
-    movd       mm0, [srcq + DICT + 0]
-    movd       mm1, [srcq + DICT + 4]
-    punpcklbw  mm0, mm0
-    punpcklbw  mm1, mm1
-    movq       mm2, mm0
-    movq       mm3, mm1
-    punpcklwd  mm0, mm0
-    punpcklwd  mm1, mm1
-    punpckhwd  mm2, mm2
-    punpckhwd  mm3, mm3
-    psrad      mm0, 24
-    psrad      mm1, 24
-    psrad      mm2, 24
-    psrad      mm3, 24
-    cvtpi2ps    m1, mm0
-    cvtpi2ps    m2, mm1
-    cvtpi2ps    m3, mm2
-    cvtpi2ps    m4, mm3
-    shufps      m0, m0, 0
-    shufps      m1, m3, q1010
-    shufps      m2, m4, q1010
-%endif
-    mulps       m1, m0
-    mulps       m2, m0
-    mova [dstq + 8 * startq +  0], m1
-    mova [dstq + 8 * startq + 16], m2
-    add     startq, 4
-    cmp     startq, endm
-    jl       .loop
-.end:
-%if notcpuflag(sse2)
-    emms
-%endif
-    REP_RET
-%endmacro
-
-%if ARCH_X86_32
-INIT_XMM sse
-DECODE_HF
-%endif
-
-INIT_XMM sse2
-DECODE_HF
-
-INIT_XMM sse4
-DECODE_HF
 
 ; %1=v0/v1  %2=in1  %3=in2
 %macro FIR_LOOP 2-3
@@ -132,15 +46,10 @@ DECODE_HF
     mulps       va, %2
     mulps       vb, %2
 %if %0 == 3
-%if cpuflag(fma3)
-    fmaddps     va, m4, %3, va
-    fmaddps     vb, m0, %3, vb
-%else
     mulps       m4, %3
     mulps       m0, %3
     addps       va, m4
     addps       vb, m0
-%endif
 %endif
     ; va = va1 va2 va3 va4
     ; vb = vb1 vb2 vb3 vb4
@@ -203,10 +112,6 @@ cglobal dca_lfe_fir%1, 3,3,6-%1, out, in, cf0
 INIT_XMM sse
 DCA_LFE_FIR 0
 DCA_LFE_FIR 1
-%if HAVE_FMA3_EXTERNAL
-INIT_XMM fma3
-DCA_LFE_FIR 0
-%endif
 
 %macro SETZERO 1
 %if cpuflag(sse2) && notcpuflag(avx)
@@ -333,7 +238,7 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
 %if ARCH_X86_32
     mov         buf2, synth_buf2mp
 %endif
-.mainloop:
+.mainloop
     ; m1 = a  m2 = b  m3 = c  m4 = d
     SETZERO       m3
     SETZERO       m4
