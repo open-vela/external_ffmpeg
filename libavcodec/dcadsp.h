@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,7 +22,7 @@
 #include "avfft.h"
 #include "synth_filter.h"
 
-#define DCA_SUBBANDS 64
+#define DCA_SUBBANDS 32
 
 typedef struct DCADSPContext {
     void (*lfe_fir[2])(float *out, const float *in, const float *coefs);
@@ -37,9 +37,16 @@ typedef struct DCADSPContext {
                       const int8_t hf_vq[1024][32], intptr_t vq_offset,
                       int32_t scale[DCA_SUBBANDS][2],
                       intptr_t start, intptr_t end);
+    void (*decode_hf_int)(int32_t dst[DCA_SUBBANDS][8],
+                          const int32_t vq_num[DCA_SUBBANDS],
+                          const int8_t hf_vq[1024][32], intptr_t vq_offset,
+                          int32_t scale[DCA_SUBBANDS][2],
+                          intptr_t start, intptr_t end);
+    void (*dequantize)(int32_t *samples, uint32_t step_size, uint64_t scale);
 } DCADSPContext;
 
 void ff_dcadsp_init(DCADSPContext *s);
+void ff_dcadsp_init_aarch64(DCADSPContext *s);
 void ff_dcadsp_init_arm(DCADSPContext *s);
 void ff_dcadsp_init_x86(DCADSPContext *s);
 
