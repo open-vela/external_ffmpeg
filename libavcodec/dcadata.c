@@ -3,29 +3,27 @@
  * Copyright (C) 2004 Gildas Bazin
  * Copyright (c) 2006 Benjamin Larsson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdint.h>
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/mem.h"
 
-#include "dca.h"
 #include "dcadata.h"
 
 /* Generic tables */
@@ -4189,27 +4187,12 @@ const uint32_t ff_dca_lossy_quant[32] = {
         84,      42,      21,       0,       0,       0,       0,       0
 };
 
-const float ff_dca_lossy_quant_d[32] = {
-          0,     1.6,      1.0,     0.8,    0.59,    0.50,    0.42,    0.34,
-       0.19,    0.11,     0.06,   0.035,   0.019,   0.011,  0.0065,  0.0040,
-     0.0025,  0.0014,   0.0008, 0.00045, 0.00030, 0.00017, 0.00008, 0.00004,
-    0.00002, 0.00001, 0.000005,       0,       0,       0,       0,       0
-};
-
 /* 20bits unsigned fractional binary codes */
 const uint32_t ff_dca_lossless_quant[32] = {
          0, 4194304, 2097152, 1384120, 1048576, 696254, 524288, 348127,
     262144,  131072,   65431,   33026,   16450,   8208,   4100,   2049,
       1024,     512,     256,     128,      64,     32,     16,      8,
          4,       2,       1,       0,       0,      0,      0,      0
-};
-
-const float ff_dca_lossless_quant_d[32] = {
-           0,      1.0,      0.5,     0.33,     0.25,    0.166,    0.125,
-       0.083,   0.0625,  0.03125,   0.0156, 7.874E-3, 3.922E-3, 1.957E-3,
-    9.775E-4, 4.885E-4, 2.442E-4, 1.221E-4, 6.104E-5, 3.052E-5, 1.526E-5,
-    7.629E-6, 3.815E-6, 1.907E-6, 9.537E-7, 4.768E-7, 2.384E-7,        0,
-           0,        0,        0,        0
 };
 
 /* Vector quantization tables */
@@ -8317,95 +8300,6 @@ const int32_t ff_dca_sampling_freqs[16] = {
  *
  * where Ch(n) represents the subband samples in the (n)th audio channel.
  */
-
-const uint32_t ff_dca_map_xxch_to_native[28] = {
-    AV_CH_FRONT_CENTER,
-    AV_CH_FRONT_LEFT,
-    AV_CH_FRONT_RIGHT,
-    AV_CH_SIDE_LEFT,
-    AV_CH_SIDE_RIGHT,
-    AV_CH_LOW_FREQUENCY,
-    AV_CH_BACK_CENTER,
-    AV_CH_BACK_LEFT,
-    AV_CH_BACK_RIGHT,
-    AV_CH_SIDE_LEFT,           /* side surround left -- dup sur side L */
-    AV_CH_SIDE_RIGHT,          /* side surround right -- dup sur side R */
-    AV_CH_FRONT_LEFT_OF_CENTER,
-    AV_CH_FRONT_RIGHT_OF_CENTER,
-    AV_CH_TOP_FRONT_LEFT,
-    AV_CH_TOP_FRONT_CENTER,
-    AV_CH_TOP_FRONT_RIGHT,
-    AV_CH_LOW_FREQUENCY,        /* lfe2 -- duplicate lfe1 position */
-    AV_CH_FRONT_LEFT_OF_CENTER, /* side front left -- dup front cntr L */
-    AV_CH_FRONT_RIGHT_OF_CENTER,/* side front right -- dup front cntr R */
-    AV_CH_TOP_CENTER,           /* overhead */
-    AV_CH_TOP_FRONT_LEFT,       /* side high left -- dup */
-    AV_CH_TOP_FRONT_RIGHT,      /* side high right -- dup */
-    AV_CH_TOP_BACK_CENTER,
-    AV_CH_TOP_BACK_LEFT,
-    AV_CH_TOP_BACK_RIGHT,
-    AV_CH_BACK_CENTER,          /* rear low center -- dup */
-    AV_CH_BACK_LEFT,            /* rear low left -- dup */
-    AV_CH_BACK_RIGHT            /* read low right -- dup  */
-};
-
-/* -1 are reserved or unknown */
-const int ff_dca_ext_audio_descr_mask[8] = {
-    DCA_EXT_XCH,
-    -1,
-    DCA_EXT_X96,
-    DCA_EXT_XCH | DCA_EXT_X96,
-    -1,
-    -1,
-    DCA_EXT_XXCH,
-    -1,
-};
-
-/* Tables for mapping dts channel configurations to libavcodec multichannel api.
- * Some compromises have been made for special configurations. Most configurations
- * are never used so complete accuracy is not needed.
- *
- * L = left, R = right, C = center, S = surround, F = front, R = rear, T = total, OV = overhead.
- * S  -> side, when both rear and back are configured move one of them to the side channel
- * OV -> center back
- * All 2 channel configurations -> AV_CH_LAYOUT_STEREO
- */
-const uint64_t ff_dca_core_channel_layout[16] = {
-    AV_CH_FRONT_CENTER,                                                     ///< 1, A
-    AV_CH_LAYOUT_STEREO,                                                    ///< 2, A + B (dual mono)
-    AV_CH_LAYOUT_STEREO,                                                    ///< 2, L + R (stereo)
-    AV_CH_LAYOUT_STEREO,                                                    ///< 2, (L + R) + (L - R) (sum-difference)
-    AV_CH_LAYOUT_STEREO,                                                    ///< 2, LT + RT (left and right total)
-    AV_CH_LAYOUT_STEREO | AV_CH_FRONT_CENTER,                               ///< 3, C + L + R
-    AV_CH_LAYOUT_STEREO | AV_CH_BACK_CENTER,                                ///< 3, L + R + S
-    AV_CH_LAYOUT_STEREO | AV_CH_FRONT_CENTER | AV_CH_BACK_CENTER,           ///< 4, C + L + R + S
-    AV_CH_LAYOUT_STEREO | AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT,               ///< 4, L + R + SL + SR
-
-    AV_CH_LAYOUT_STEREO | AV_CH_FRONT_CENTER | AV_CH_SIDE_LEFT |
-    AV_CH_SIDE_RIGHT,                                                       ///< 5, C + L + R + SL + SR
-
-    AV_CH_LAYOUT_STEREO | AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT |
-    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_RIGHT_OF_CENTER,               ///< 6, CL + CR + L + R + SL + SR
-
-    AV_CH_LAYOUT_STEREO | AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT |
-    AV_CH_FRONT_CENTER  | AV_CH_BACK_CENTER,                                ///< 6, C + L + R + LR + RR + OV
-
-    AV_CH_FRONT_CENTER | AV_CH_FRONT_RIGHT_OF_CENTER |
-    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_BACK_CENTER   |
-    AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT,                                     ///< 6, CF + CR + LF + RF + LR + RR
-
-    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_CENTER   |
-    AV_CH_FRONT_RIGHT_OF_CENTER | AV_CH_LAYOUT_STEREO |
-    AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT,                                     ///< 7, CL + C + CR + L + R + SL + SR
-
-    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_RIGHT_OF_CENTER |
-    AV_CH_LAYOUT_STEREO | AV_CH_SIDE_LEFT | AV_CH_SIDE_RIGHT |
-    AV_CH_BACK_LEFT | AV_CH_BACK_RIGHT,                                     ///< 8, CL + CR + L + R + SL1 + SL2 + SR1 + SR2
-
-    AV_CH_FRONT_LEFT_OF_CENTER | AV_CH_FRONT_CENTER   |
-    AV_CH_FRONT_RIGHT_OF_CENTER | AV_CH_LAYOUT_STEREO |
-    AV_CH_SIDE_LEFT | AV_CH_BACK_CENTER | AV_CH_SIDE_RIGHT,                 ///< 8, CL + C + CR + L + R + SL + S + SR
-};
 
 const int8_t ff_dca_lfe_index[16] = {
     1, 2, 2, 2, 2, 3, 2, 3, 2, 3, 2, 3, 1, 3, 2, 3
