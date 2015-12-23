@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -289,7 +289,7 @@ int avresample_set_matrix(AVAudioResampleContext *avr, const double *matrix,
  *
  * Examples:
  *
- * Reordering 5.1 AAC order (C,L,R,Ls,Rs,LFE) to Libav order (L,R,C,LFE,Ls,Rs):
+ * Reordering 5.1 AAC order (C,L,R,Ls,Rs,LFE) to FFmpeg order (L,R,C,LFE,Ls,Rs):
  * { 1, 2, 0, 5, 3, 4 }
  *
  * Muting the 3rd channel in 4-channel input:
@@ -377,9 +377,8 @@ int avresample_get_out_samples(AVAudioResampleContext *avr, int in_nb_samples);
  *                        output FIFO
  */
 int avresample_convert(AVAudioResampleContext *avr, uint8_t **output,
-                       int out_plane_size, int out_samples,
-                       uint8_t * const *input, int in_plane_size,
-                       int in_samples);
+                       int out_plane_size, int out_samples, uint8_t **input,
+                       int in_plane_size, int in_samples);
 
 /**
  * Return the number of samples currently in the resampling delay buffer.
