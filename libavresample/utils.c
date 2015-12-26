@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/common.h"
 #include "libavutil/dict.h"
-#include "libavutil/error.h"
+// #include "libavutil/error.h"
 #include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
@@ -329,8 +329,7 @@ static int handle_buffered_output(AVAudioResampleContext *avr,
 
 int attribute_align_arg avresample_convert(AVAudioResampleContext *avr,
                                            uint8_t **output, int out_plane_size,
-                                           int out_samples,
-                                           uint8_t * const *input,
+                                           int out_samples, uint8_t **input,
                                            int in_plane_size, int in_samples)
 {
     AudioData input_buffer;
@@ -784,10 +783,10 @@ unsigned avresample_version(void)
 const char *avresample_license(void)
 {
 #define LICENSE_PREFIX "libavresample license: "
-    return LICENSE_PREFIX LIBAV_LICENSE + sizeof(LICENSE_PREFIX) - 1;
+    return LICENSE_PREFIX FFMPEG_LICENSE + sizeof(LICENSE_PREFIX) - 1;
 }
 
 const char *avresample_configuration(void)
 {
-    return LIBAV_CONFIGURATION;
+    return FFMPEG_CONFIGURATION;
 }
