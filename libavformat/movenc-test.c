@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,7 +44,7 @@ static const uint8_t aac_extradata[] = {
 };
 
 
-const char *format = "mp4";
+static const char *format = "mp4";
 AVFormatContext *ctx;
 uint8_t iobuf[32768];
 AVDictionary *opts;
@@ -216,7 +216,7 @@ static void mux_frames(int n)
     int end_frames = frames + n;
     while (1) {
         AVPacket pkt;
-        uint8_t pktdata[4];
+        uint8_t pktdata[8] = { 0 };
         av_init_packet(&pkt);
 
         if (av_compare_ts(audio_dts, audio_st->time_base, video_dts, video_st->time_base) < 0) {
@@ -258,9 +258,9 @@ static void mux_frames(int n)
 
         if (clear_duration)
             pkt.duration = 0;
-        AV_WB32(pktdata, pkt.pts);
+        AV_WB32(pktdata + 4, pkt.pts);
         pkt.data = pktdata;
-        pkt.size = 4;
+        pkt.size = 8;
         if (skip_write)
             continue;
         if (skip_write_audio && pkt.stream_index == 1)
@@ -387,6 +387,7 @@ int main(int argc, char **argv)
     // moof+mdat pairs.
     init_out("empty-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -423,6 +424,7 @@ int main(int argc, char **argv)
     // simple input
     init_out("delay-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -474,6 +476,7 @@ int main(int argc, char **argv)
     // is identical to the one by empty_moov.
     init_out("empty-moov-header");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     close_out();
     memcpy(header, hash, HASH_SIZE);
@@ -496,6 +499,7 @@ int main(int argc, char **argv)
 
     init_out("delay-moov-header");
     av_dict_set(&opts, "movflags", "frag_custom+delay_moov", 0);
+    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     check(out_size == 0, "Output written during init with delay_moov");
     mux_gops(1); // Write 1 second of content
