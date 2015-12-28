@@ -3,20 +3,20 @@
  * Copyright (c) 2000,2001 Fabrice Bellard
  * Copyright (c) 2002-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,6 +59,9 @@
 #define VISUAL_OBJ_STARTCODE 0x1B5
 #define VOP_STARTCODE        0x1B6
 
+/* smaller packets likely don't contain a real frame */
+#define MAX_NVOP_SIZE 19
+
 typedef struct Mpeg4DecContext {
     MpegEncContext m;
 
@@ -84,6 +87,7 @@ typedef struct Mpeg4DecContext {
     int enhancement_type;
     int scalability;
     int use_intra_dc_vlc;
+
     /// QP above which the ac VLC should be used for intra dc
     int intra_dc_threshold;
 
@@ -92,6 +96,7 @@ typedef struct Mpeg4DecContext {
     int divx_build;
     int xvid_build;
     int lavc_build;
+
     /// flag for having shown the warning about invalid Divx B-frames
     int showed_packed_warning;
     /** does the stream contain the low_delay flag,
@@ -148,6 +153,8 @@ int ff_mpeg4_decode_partitions(Mpeg4DecContext *ctx);
 int ff_mpeg4_get_video_packet_prefix_length(MpegEncContext *s);
 int ff_mpeg4_decode_video_packet_header(Mpeg4DecContext *ctx);
 void ff_mpeg4_init_direct_mv(MpegEncContext *s);
+void ff_mpeg4videodec_static_init(void);
+int ff_mpeg4_workaround_bugs(AVCodecContext *avctx);
 int ff_mpeg4_frame_end(AVCodecContext *avctx, const uint8_t *buf, int buf_size);
 
 /**
@@ -223,21 +230,21 @@ static inline int ff_mpeg4_pred_dc(MpegEncContext *s, int n, int level,
     } else {
         level += pred;
         ret    = level;
-        if (s->avctx->err_recognition & AV_EF_BITSTREAM) {
+    }
+    level *= scale;
+    if (level & (~2047)) {
+        if (!s->encoding && (s->avctx->err_recognition & (AV_EF_BITSTREAM | AV_EF_AGGRESSIVE))) {
             if (level < 0) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "dc<0 at %dx%d\n", s->mb_x, s->mb_y);
                 return -1;
             }
-            if (level * scale > 2048 + scale) {
+            if (level > 2048 + scale) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "dc overflow at %dx%d\n", s->mb_x, s->mb_y);
                 return -1;
             }
         }
-    }
-    level *= scale;
-    if (level & (~2047)) {
         if (level < 0)
             level = 0;
         else if (!(s->workaround_bugs & FF_BUG_DC_CLIP))
