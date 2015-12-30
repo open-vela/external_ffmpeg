@@ -5,20 +5,20 @@
  * Copyright (C) 2006 Benjamin Larsson
  * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,8 +41,6 @@
 #define DCA_SUBFRAMES_MAX     (16)
 #define DCA_BLOCKS_MAX        (16)
 #define DCA_LFE_MAX            (3)
-#define DCA_CHSETS_MAX         (4)
-#define DCA_CHSET_CHANS_MAX    (8)
 
 #define DCA_PRIM_CHANNELS_MAX  (7)
 #define DCA_ABITS_MAX         (32)      /* Should be 28 */
@@ -140,8 +138,8 @@ typedef struct DCAAudioHeader {
     int transient_huffman[DCA_PRIM_CHANNELS_MAX];   ///< transient mode code book
     int scalefactor_huffman[DCA_PRIM_CHANNELS_MAX]; ///< scale factor code book
     int bitalloc_huffman[DCA_PRIM_CHANNELS_MAX];    ///< bit allocation quantizer select
-    int quant_index_huffman[DCA_PRIM_CHANNELS_MAX][DCA_ABITS_MAX]; ///< quantization index codebook select
-    float scalefactor_adj[DCA_PRIM_CHANNELS_MAX][DCA_ABITS_MAX];   ///< scale factor adjustment
+    int quant_index_huffman[DCA_PRIM_CHANNELS_MAX][DCA_ABITS_MAX];  ///< quantization index codebook select
+    uint32_t scalefactor_adj[DCA_PRIM_CHANNELS_MAX][DCA_ABITS_MAX]; ///< scale factor adjustment
 
     int subframes;              ///< number of subframes
     int total_channels;         ///< number of channels including extensions
@@ -149,10 +147,10 @@ typedef struct DCAAudioHeader {
 } DCAAudioHeader;
 
 typedef struct DCAChan {
-    DECLARE_ALIGNED(32, float, subband_samples)[DCA_BLOCKS_MAX][DCA_SUBBANDS][8];
+    DECLARE_ALIGNED(32, int32_t, subband_samples)[DCA_BLOCKS_MAX][DCA_SUBBANDS][SAMPLES_PER_SUBBAND];
 
     /* Subband samples history (for ADPCM) */
-    DECLARE_ALIGNED(16, float, subband_samples_hist)[DCA_SUBBANDS][4];
+    DECLARE_ALIGNED(32, int32_t, subband_samples_hist)[DCA_SUBBANDS][4];
     int hist_index;
 
     /* Half size is sufficient for core decoding, but for 96 kHz data
@@ -174,7 +172,7 @@ typedef struct DCAChan {
 
 
 typedef struct DCAContext {
-    const AVClass *class;       ///< class for AVOptions
+    AVClass *class;             ///< class for AVOptions
     AVCodecContext *avctx;
     /* Frame header */
     int frame_type;             ///< type of the current frame
@@ -254,20 +252,6 @@ typedef struct DCAContext {
     int xch_base_channel;       ///< index of first (only) channel containing XCH data
     int xch_disable;            ///< whether the XCh extension should be decoded or not
 
-    /* XXCH extension information */
-    int xxch_chset;
-    int xxch_nbits_spk_mask;
-    uint32_t xxch_core_spkmask;
-    uint32_t xxch_spk_masks[4]; /* speaker masks, last element is core mask */
-    int xxch_chset_nch[4];
-    float xxch_dmix_sf[DCA_CHSETS_MAX];
-
-    uint32_t xxch_dmix_embedded;  /* lower layer has mix pre-embedded, per chset */
-    float xxch_dmix_coeff[DCA_PRIM_CHANNELS_MAX][32]; /* worst case sizing */
-
-    int8_t xxch_order_tab[32];
-    int8_t lfe_index;
-
     /* XLL extension information */
     int xll_disable;
     int xll_nch_sets;           ///< number of channel sets per frame
@@ -296,7 +280,7 @@ typedef struct DCAContext {
     int one2one_map_chtospkr;
 
     int debug_flag;             ///< used for suppressing repeated error messages output
-    AVFloatDSPContext *fdsp;
+    AVFloatDSPContext fdsp;
     FFTContext imdct;
     SynthFilterContext synth;
     DCADSPContext dcadsp;
@@ -309,11 +293,8 @@ extern av_export const uint32_t avpriv_dca_sample_rates[16];
 /**
  * Convert bitstream to one representation based on sync marker
  */
-int avpriv_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
+int ff_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
                              int max_size);
-
-int ff_dca_xbr_parse_frame(DCAContext *s);
-int ff_dca_xxch_decode_frame(DCAContext *s);
 
 void ff_dca_exss_parse_header(DCAContext *s);
 

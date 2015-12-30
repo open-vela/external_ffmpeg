@@ -2,20 +2,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,7 +62,7 @@ struct CeltContext {
     // constant values that do not change during context lifetime
     AVCodecContext    *avctx;
     IMDCT15Context    *imdct[4];
-    AVFloatDSPContext  *dsp;
+    AVFloatDSPContext  dsp;
     int output_channels;
 
     // values that have inter-frame effect and must be reset on flush
@@ -991,7 +991,7 @@ static inline int celt_pulses2bits(const uint8_t *cache, int pulses)
    return (pulses == 0) ? 0 : cache[pulses] + 1;
 }
 
-static inline void celt_normalize_residual(const int * av_restrict iy, float * av_restrict X,
+static inline void celt_normalize_residual(const int * restrict iy, float * restrict X,
                                            int N, float g)
 {
     int i;
@@ -1295,7 +1295,7 @@ static inline float celt_decode_pulses(OpusRangeCoder *rc, int *y, unsigned int 
 {
     unsigned int idx;
 #define CELT_PVQ_U(n, k) (celt_pvq_u_row[FFMIN(n, k)][FFMAX(n, k)])
-#define CELT_PVQ_V(n, k) (CELT_PVQ_U(n, k) + CELT_PVQ_U(n, (k) + 1))
+#define CELT_PVQ_V(n, k) (CELT_PVQ_U(n, k) + CELT_PVQ_U(n, k + 1))
     idx = opus_rc_unimodel(rc, CELT_PVQ_V(N, K));
     return celt_cwrsi(N, K, idx, y);
 }
@@ -1454,7 +1454,7 @@ static unsigned int celt_decode_band(CeltContext *s, OpusRangeCoder *rc,
         if (itheta == 0) {
             imid = 32767;
             iside = 0;
-            fill = av_mod_uintp2(fill, blocks);
+            fill &= (1 << blocks) - 1;
             delta = -16384;
         } else if (itheta == 16384) {
             imid = 0;
@@ -1666,7 +1666,7 @@ static unsigned int celt_decode_band(CeltContext *s, OpusRangeCoder *rc,
             for (j = 0; j < N0; j++)
                 lowband_out[j] = n * X[j];
         }
-        cm = av_mod_uintp2(cm, blocks);
+        cm &= (1 << blocks) - 1;
     }
     return cm;
 }
@@ -1677,7 +1677,7 @@ static void celt_denormalize(CeltContext *s, CeltFrame *frame, float *data)
 
     for (i = s->startband; i < s->endband; i++) {
         float *dst = data + (celt_freq_bands[i] << s->duration);
-        float norm = exp2(frame->energy[i] + celt_mean_energy[i]);
+        float norm = pow(2, frame->energy[i] + celt_mean_energy[i]);
 
         for (j = 0; j < celt_freq_range[i] << s->duration; j++)
             dst[j] *= norm;
@@ -1857,7 +1857,7 @@ static void process_anticollapse(CeltContext *s, CeltFrame *frame, float *X)
 
         /* r needs to be multiplied by 2 or 2*sqrt(2) depending on LM because
         short blocks don't have the same energy as long */
-        r = exp2(1 - Ediff);
+        r = pow(2, 1 - Ediff);
         if (s->duration == 3)
             r *= M_SQRT2;
         r = FFMIN(thresh, r) * sqrt_1;
@@ -2072,7 +2072,7 @@ int ff_celt_decode_frame(CeltContext *s, OpusRangeCoder *rc,
 
     /* stereo -> mono downmix */
     if (s->output_channels < s->coded_channels) {
-        s->dsp->vector_fmac_scalar(s->coeffs[0], s->coeffs[1], 1.0, FFALIGN(frame_size, 16));
+        s->dsp.vector_fmac_scalar(s->coeffs[0], s->coeffs[1], 1.0, FFALIGN(frame_size, 16));
         imdct_scale = 0.5;
     } else if (s->output_channels > s->coded_channels)
         memcpy(s->coeffs[1], s->coeffs[0], frame_size * sizeof(float));
@@ -2098,7 +2098,7 @@ int ff_celt_decode_frame(CeltContext *s, OpusRangeCoder *rc,
 
             imdct->imdct_half(imdct, dst + CELT_OVERLAP / 2, s->coeffs[i] + j,
                               s->blocks, imdct_scale);
-            s->dsp->vector_fmul_window(dst, dst, dst + CELT_OVERLAP / 2,
+            s->dsp.vector_fmul_window(dst, dst, dst + CELT_OVERLAP / 2,
                                       celt_window, CELT_OVERLAP / 2);
         }
 
@@ -2181,7 +2181,6 @@ void ff_celt_free(CeltContext **ps)
     for (i = 0; i < FF_ARRAY_ELEMS(s->imdct); i++)
         ff_imdct15_uninit(&s->imdct[i]);
 
-    av_freep(&s->dsp);
     av_freep(ps);
 }
 
@@ -2209,11 +2208,7 @@ int ff_celt_init(AVCodecContext *avctx, CeltContext **ps, int output_channels)
             goto fail;
     }
 
-    s->dsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
-    if (!s->dsp) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    avpriv_float_dsp_init(&s->dsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
 
     ff_celt_flush(s);
 

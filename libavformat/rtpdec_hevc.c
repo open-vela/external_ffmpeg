@@ -2,39 +2,36 @@
  * RTP parser for HEVC/H.265 payload format (draft version 6)
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  *
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
-#include "libavcodec/get_bits.h"
 
 #include "avformat.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
 
-#define RTP_HEVC_PAYLOAD_HEADER_SIZE       2
-#define RTP_HEVC_FU_HEADER_SIZE            1
-#define RTP_HEVC_DONL_FIELD_SIZE           2
-#define RTP_HEVC_DOND_FIELD_SIZE           1
-#define RTP_HEVC_AP_NALU_LENGTH_FIELD_SIZE 2
-#define HEVC_SPECIFIED_NAL_UNIT_TYPES      48
+#define RTP_HEVC_PAYLOAD_HEADER_SIZE  2
+#define RTP_HEVC_FU_HEADER_SIZE       1
+#define RTP_HEVC_DONL_FIELD_SIZE      2
+#define RTP_HEVC_DOND_FIELD_SIZE      1
+#define HEVC_SPECIFIED_NAL_UNIT_TYPES 48
 
 /* SDP out-of-band signaling data */
 struct PayloadContext {
@@ -86,8 +83,7 @@ static av_cold int hevc_sdp_parse_fmtp_config(AVFormatContext *s,
         } else if (!strcmp(attr, "sprop-sei")) {
             data_ptr = &hevc_data->sei;
             size_ptr = &hevc_data->sei_size;
-        } else
-            av_assert0(0);
+        }
 
         ff_h264_parse_sprop_parameter_sets(s, data_ptr,
                                            size_ptr, value);
@@ -222,7 +218,7 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
     /* sanity check for correct layer ID */
     if (lid) {
         /* future scalable or 3D video coding extensions */
-        avpriv_report_missing_feature(ctx, "Multi-layer HEVC coding\n");
+        avpriv_report_missing_feature(ctx, "Multi-layer HEVC coding");
         return AVERROR_PATCHWELCOME;
     }
 
@@ -270,7 +266,7 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
             len -= RTP_HEVC_DONL_FIELD_SIZE;
         }
 
-        res = ff_h264_handle_aggregated_packet(ctx, rtp_hevc_ctx, pkt, buf, len,
+        res = ff_h264_handle_aggregated_packet(ctx, pkt, buf, len,
                                                rtp_hevc_ctx->using_donl_field ?
                                                RTP_HEVC_DOND_FIELD_SIZE : 0,
                                                NULL, 0);
@@ -311,16 +307,12 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
 
         av_log(ctx, AV_LOG_TRACE, " FU type %d with %d bytes\n", fu_type, len);
 
-        /* sanity check for size of input packet: 1 byte payload at least */
         if (len <= 0) {
-            if (len < 0) {
-                av_log(ctx, AV_LOG_ERROR,
-                       "Too short RTP/HEVC packet, got %d bytes of NAL unit type %d\n",
-                       len, nal_type);
-                return AVERROR_INVALIDDATA;
-            } else {
-                return AVERROR(EAGAIN);
-            }
+            /* sanity check for size of input packet: 1 byte payload at least */
+            av_log(ctx, AV_LOG_ERROR,
+                   "Too short RTP/HEVC packet, got %d bytes of NAL unit type %d\n",
+                   len, nal_type);
+            return AVERROR_INVALIDDATA;
         }
 
         if (first_fragment && last_fragment) {
@@ -338,7 +330,7 @@ static int hevc_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_hevc_ctx
     /* PACI packet */
     case 50:
         /* Temporal scalability control information (TSCI) */
-        avpriv_report_missing_feature(ctx, "PACI packets for RTP/HEVC\n");
+        avpriv_report_missing_feature(ctx, "PACI packets for RTP/HEVC");
         res = AVERROR_PATCHWELCOME;
         break;
     }
