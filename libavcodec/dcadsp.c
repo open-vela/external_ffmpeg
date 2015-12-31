@@ -2,20 +2,20 @@
  * Copyright (c) 2004 Gildas Bazin
  * Copyright (c) 2010 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,20 +25,22 @@
 #include "libavutil/intreadwrite.h"
 
 #include "dcadsp.h"
-#include "dcamath.h"
 
-static void decode_hf_c(int32_t dst[DCA_SUBBANDS][SAMPLES_PER_SUBBAND],
+static void decode_hf_c(float dst[DCA_SUBBANDS][8],
                         const int32_t vq_num[DCA_SUBBANDS],
                         const int8_t hf_vq[1024][32], intptr_t vq_offset,
                         int32_t scale[DCA_SUBBANDS][2],
                         intptr_t start, intptr_t end)
 {
-    int i, j;
+    int i, l;
 
-    for (j = start; j < end; j++) {
-        const int8_t *ptr = &hf_vq[vq_num[j]][vq_offset];
+    for (l = start; l < end; l++) {
+        /* 1 vector -> 32 samples but we only need the 8 samples
+         * for this subsubframe. */
+        const int8_t *ptr = &hf_vq[vq_num[l]][vq_offset];
+        float fscale = scale[l][0] * (1 / 16.0);
         for (i = 0; i < 8; i++)
-            dst[j][i] = ptr[i] * scale[j][0] + 8 >> 4;
+            dst[l][i] = ptr[i] * fscale;
     }
 }
 
@@ -62,7 +64,7 @@ static inline void dca_lfe_fir(float *out, const float *in, const float *coefs,
     }
 }
 
-static void dca_qmf_32_subbands(float samples_in[DCA_SUBBANDS][SAMPLES_PER_SUBBAND], int sb_act,
+static void dca_qmf_32_subbands(float samples_in[32][8], int sb_act,
                                 SynthFilterContext *synth, FFTContext *imdct,
                                 float synth_buf_ptr[512],
                                 int *synth_buf_offset, float synth_buf2[32],
@@ -91,22 +93,6 @@ static void dca_qmf_32_subbands(float samples_in[DCA_SUBBANDS][SAMPLES_PER_SUBBA
     }
 }
 
-static void dequantize_c(int32_t *samples, uint32_t step_size, uint32_t scale)
-{
-    int64_t step = (int64_t)step_size * scale;
-    int shift, i;
-    int32_t step_scale;
-
-    if (step > (1 << 23))
-        shift = av_log2(step >> 23) + 1;
-    else
-        shift = 0;
-    step_scale = (int32_t)(step >> shift);
-
-    for (i = 0; i < SAMPLES_PER_SUBBAND; i++)
-        samples[i] = dca_clip23(dca_norm((int64_t)samples[i] * step_scale, 22 - shift));
-}
-
 static void dca_lfe_fir0_c(float *out, const float *in, const float *coefs)
 {
     dca_lfe_fir(out, in, coefs, 32);
@@ -123,10 +109,7 @@ av_cold void ff_dcadsp_init(DCADSPContext *s)
     s->lfe_fir[1]      = dca_lfe_fir1_c;
     s->qmf_32_subbands = dca_qmf_32_subbands;
     s->decode_hf       = decode_hf_c;
-    s->dequantize      = dequantize_c;
 
-    if (ARCH_AARCH64)
-        ff_dcadsp_init_aarch64(s);
     if (ARCH_ARM)
         ff_dcadsp_init_arm(s);
     if (ARCH_X86)
