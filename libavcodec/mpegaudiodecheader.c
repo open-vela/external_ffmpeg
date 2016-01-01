@@ -2,20 +2,20 @@
  * MPEG Audio header decoder
  * Copyright (c) 2001, 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
 #include "libavutil/common.h"
 
 #include "avcodec.h"
+#include "internal.h"
 #include "mpegaudio.h"
 #include "mpegaudiodata.h"
 #include "mpegaudiodecheader.h"
@@ -36,12 +37,6 @@ int avpriv_mpegaudio_decode_header(MPADecodeHeader *s, uint32_t header)
 {
     int sample_rate, frame_size, mpeg25, padding;
     int sample_rate_index, bitrate_index;
-    int ret;
-
-    ret = ff_mpa_check_header(header);
-    if (ret < 0)
-        return ret;
-
     if (header & (1<<20)) {
         s->lsf = (header & (1<<19)) ? 0 : 1;
         mpeg25 = 0;
@@ -118,10 +113,12 @@ int avpriv_mpegaudio_decode_header(MPADecodeHeader *s, uint32_t header)
     return 0;
 }
 
-int ff_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_rate,
-                         int *channels, int *frame_size, int *bit_rate)
+int avpriv_mpa_decode_header2(uint32_t head, int *sample_rate, int *channels, int *frame_size, int *bit_rate, enum AVCodecID *codec_id)
 {
     MPADecodeHeader s1, *s = &s1;
+
+    if (ff_mpa_check_header(head) != 0)
+        return -1;
 
     if (avpriv_mpegaudio_decode_header(s, head) != 0) {
         return -1;
@@ -129,17 +126,17 @@ int ff_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_rate,
 
     switch(s->layer) {
     case 1:
-        avctx->codec_id = AV_CODEC_ID_MP1;
+        *codec_id = AV_CODEC_ID_MP1;
         *frame_size = 384;
         break;
     case 2:
-        avctx->codec_id = AV_CODEC_ID_MP2;
+        *codec_id = AV_CODEC_ID_MP2;
         *frame_size = 1152;
         break;
     default:
     case 3:
-        if (avctx->codec_id != AV_CODEC_ID_MP3ADU)
-            avctx->codec_id = AV_CODEC_ID_MP3;
+        if (*codec_id != AV_CODEC_ID_MP3ADU)
+            *codec_id = AV_CODEC_ID_MP3;
         if (s->lsf)
             *frame_size = 576;
         else
@@ -153,9 +150,7 @@ int ff_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_rate,
     return s->frame_size;
 }
 
-#if LIBAVCODEC_VERSION_MAJOR < 57
 int avpriv_mpa_decode_header(AVCodecContext *avctx, uint32_t head, int *sample_rate, int *channels, int *frame_size, int *bit_rate)
 {
-    return ff_mpa_decode_header(avctx, head, sample_rate, channels, frame_size, bit_rate);
+    return avpriv_mpa_decode_header2(head, sample_rate, channels, frame_size, bit_rate, &avctx->codec_id);
 }
-#endif
