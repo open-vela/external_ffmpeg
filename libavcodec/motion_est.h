@@ -1,20 +1,20 @@
 /*
  * Motion estimation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,12 +29,7 @@
 
 struct MpegEncContext;
 
-#if ARCH_IA64 // Limit static arrays to avoid gcc failing "short data segment overflowed"
-#define MAX_MV 1024
-#else
-#define MAX_MV 4096
-#endif
-#define MAX_DMV (2*MAX_MV)
+#define MAX_MV 2048
 #define ME_MAP_SIZE 64
 
 #define FF_ME_ZERO 0
@@ -82,15 +77,15 @@ typedef struct MotionEstContext {
     int stride;
     int uvstride;
     /* temp variables for picture complexity calculation */
-    int64_t mc_mb_var_sum_temp;
-    int64_t mb_var_sum_temp;
+    int mc_mb_var_sum_temp;
+    int mb_var_sum_temp;
     int scene_change_score;
 
     op_pixels_func(*hpel_put)[4];
     op_pixels_func(*hpel_avg)[4];
     qpel_mc_func(*qpel_put)[16];
     qpel_mc_func(*qpel_avg)[16];
-    uint8_t (*mv_penalty)[MAX_DMV * 2 + 1]; ///< bit amount needed to encode a MV
+    uint8_t (*mv_penalty)[MAX_MV * 2 + 1]; ///< bit amount needed to encode a MV
     uint8_t *current_mv_penalty;
     int (*sub_motion_search)(struct MpegEncContext *s,
                              int *mx_ptr, int *my_ptr, int dmin,
