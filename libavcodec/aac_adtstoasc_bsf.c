@@ -2,20 +2,20 @@
  * MPEG-2/4 AAC ADTS to MPEG-4 Audio Specific Configuration bitstream filter
  * Copyright (c) 2009 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -97,7 +97,8 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
             in->data += get_bits_count(&gb)/8;
         }
 
-        extradata = av_mallocz(2 + pce_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        extradata = av_packet_new_side_data(in, AV_PKT_DATA_NEW_EXTRADATA,
+                                            2 + pce_size);
         if (!extradata) {
             ret = AVERROR(ENOMEM);
             goto fail;
@@ -115,8 +116,6 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
             memcpy(extradata + 2, pce_data, pce_size);
         }
 
-        bsfc->par_out->extradata = extradata;
-        bsfc->par_out->extradata_size = 2 + pce_size;
         ctx->first_frame_done = 1;
     }
 
@@ -136,16 +135,8 @@ fail:
 
 static int aac_adtstoasc_init(AVBSFContext *ctx)
 {
-    /* Validate the extradata if the stream is already MPEG-4 AudioSpecificConfig */
-    if (ctx->par_in->extradata) {
-        MPEG4AudioConfig mp4ac;
-        int ret = avpriv_mpeg4audio_get_config(&mp4ac, ctx->par_in->extradata,
-                                               ctx->par_in->extradata_size * 8, 1);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Error parsing AudioSpecificConfig extradata!\n");
-            return ret;
-        }
-    }
+    av_freep(&ctx->par_out->extradata);
+    ctx->par_out->extradata_size = 0;
 
     return 0;
 }
