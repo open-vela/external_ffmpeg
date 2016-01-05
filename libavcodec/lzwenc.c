@@ -2,20 +2,20 @@
  * LZW encoder
  * Copyright (c) 2007 Bartlomiej Wolowiec
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -77,7 +77,7 @@ static inline int hash(int head, const int add)
     head ^= (add << LZW_HASH_SHIFT);
     if (head >= LZW_HASH_SIZE)
         head -= LZW_HASH_SIZE;
-    av_assert2(head >= 0 && head < LZW_HASH_SIZE);
+    assert(head >= 0 && head < LZW_HASH_SIZE);
     return head;
 }
 
@@ -112,7 +112,7 @@ static inline int hashOffset(const int head)
  */
 static inline void writeCode(LZWEncodeState * s, int c)
 {
-    av_assert2(0 <= c && c < 1 << s->bits);
+    assert(0 <= c && c < 1 << s->bits);
     s->put_bits(&s->pb, s->bits, c);
 }
 
@@ -208,7 +208,7 @@ void ff_lzw_encode_init(LZWEncodeState *s, uint8_t *outbuf, int outsize,
     s->maxbits = maxbits;
     init_put_bits(&s->pb, outbuf, outsize);
     s->bufsize = outsize;
-    av_assert0(s->maxbits >= 9 && s->maxbits <= LZW_MAXBITS);
+    assert(s->maxbits >= 9 && s->maxbits <= LZW_MAXBITS);
     s->maxcode = 1 << s->maxbits;
     s->output_bytes = 0;
     s->last_code = LZW_PREFIX_EMPTY;
@@ -263,9 +263,6 @@ int ff_lzw_encode_flush(LZWEncodeState *s,
     if (s->last_code != -1)
         writeCode(s, s->last_code);
     writeCode(s, s->end_code);
-    if (s->mode == FF_LZW_GIF)
-        s->put_bits(&s->pb, 1, 0);
-
     lzw_flush_put_bits(&s->pb);
     s->last_code = -1;
 

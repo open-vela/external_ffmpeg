@@ -2,20 +2,20 @@
  * Common code between the AC-3 encoder and decoder
  * Copyright (c) 2000 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,8 @@ const uint8_t ff_ac3_band_start_tab[AC3_CRITICAL_BANDS+1] = {
      34,  37, 40,  43,  46,  49,  55,  61,  67,  73,
      79,  85, 97, 109, 121, 133, 157, 181, 205, 229, 253
 };
+
+#if CONFIG_HARDCODED_TABLES
 
 /**
  * Map each frequency coefficient bin to the critical band that contains it.
@@ -66,6 +68,10 @@ const uint8_t ff_ac3_bin_to_band_tab[253] = {
     49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49,
     49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49
 };
+
+#else /* CONFIG_HARDCODED_TABLES */
+uint8_t ff_ac3_bin_to_band_tab[253];
+#endif
 
 static inline int calc_lowcomp1(int a, int b0, int b1, int c)
 {
@@ -124,9 +130,6 @@ int ff_ac3_bit_alloc_calc_mask(AC3BitAllocParameters *s, int16_t *band_psd,
     int band;
     int band_start, band_end, begin, end1;
     int lowcomp, fastleak, slowleak;
-
-    if (end <= 0)
-        return AVERROR_INVALIDDATA;
 
     /* excitation function */
     band_start = ff_ac3_bin_to_band_tab[start];
@@ -197,9 +200,9 @@ int ff_ac3_bit_alloc_calc_mask(AC3BitAllocParameters *s, int16_t *band_psd,
             if (band >= AC3_CRITICAL_BANDS || dba_lengths[seg] > AC3_CRITICAL_BANDS-band)
                 return -1;
             if (dba_values[seg] >= 4) {
-                delta = (dba_values[seg] - 3) * 128;
+                delta = (dba_values[seg] - 3) << 7;
             } else {
-                delta = (dba_values[seg] - 4) * 128;
+                delta = (dba_values[seg] - 4) << 7;
             }
             for (i = 0; i < dba_lengths[seg]; i++) {
                 mask[band++] += delta;
@@ -207,4 +210,22 @@ int ff_ac3_bit_alloc_calc_mask(AC3BitAllocParameters *s, int16_t *band_psd,
         }
     }
     return 0;
+}
+
+/**
+ * Initialize some tables.
+ * note: This function must remain thread safe because it is called by the
+ *       AVParser init code.
+ */
+av_cold void ff_ac3_common_init(void)
+{
+#if !CONFIG_HARDCODED_TABLES
+    /* compute ff_ac3_bin_to_band_tab from ff_ac3_band_start_tab */
+    int bin = 0, band;
+    for (band = 0; band < AC3_CRITICAL_BANDS; band++) {
+        int band_end = ff_ac3_band_start_tab[band+1];
+        while (bin < band_end)
+            ff_ac3_bin_to_band_tab[bin++] = band;
+    }
+#endif /* !CONFIG_HARDCODED_TABLES */
 }
