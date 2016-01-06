@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010 Stefano Sabatini
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,14 +23,8 @@
  * libopencv wrapper functions
  */
 
-#include "config.h"
-#if HAVE_OPENCV2_CORE_CORE_C_H
-#include <opencv2/core/core_c.h>
-#include <opencv2/imgproc/imgproc_c.h>
-#else
 #include <opencv/cv.h>
 #include <opencv/cxcore.h>
-#endif
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/file.h"
@@ -69,10 +63,9 @@ static int query_formats(AVFilterContext *ctx)
     static const enum AVPixelFormat pix_fmts[] = {
         AV_PIX_FMT_BGR24, AV_PIX_FMT_BGRA, AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return 0;
 }
 
 typedef struct OCVContext {
@@ -173,7 +166,7 @@ static int read_shape_from_file(int *cols, int *rows, int **values, const char *
                *rows, *cols);
         return AVERROR_INVALIDDATA;
     }
-    if (!(*values = av_mallocz_array(sizeof(int) * *rows, *cols)))
+    if (!(*values = av_mallocz(sizeof(int) * *rows * *cols)))
         return AVERROR(ENOMEM);
 
     /* fill *values */
@@ -272,9 +265,10 @@ static av_cold int dilate_init(AVFilterContext *ctx, const char *args)
     const char *buf = args;
     int ret;
 
+    dilate->nb_iterations = 1;
+
     if (args) {
         kernel_str = av_get_token(&buf, "|");
-
         if (!kernel_str)
             return AVERROR(ENOMEM);
     }
@@ -287,8 +281,7 @@ static av_cold int dilate_init(AVFilterContext *ctx, const char *args)
     if (ret < 0)
         return ret;
 
-    if (!buf || sscanf(buf, "|%d", &dilate->nb_iterations) != 1)
-        dilate->nb_iterations = 1;
+    sscanf(buf, "|%d", &dilate->nb_iterations);
     av_log(ctx, AV_LOG_VERBOSE, "iterations_nb:%d\n", dilate->nb_iterations);
     if (dilate->nb_iterations <= 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid non-positive value '%d' for nb_iterations\n",
@@ -328,7 +321,7 @@ typedef struct OCVFilterEntry {
     void (*end_frame_filter)(AVFilterContext *ctx, IplImage *inimg, IplImage *outimg);
 } OCVFilterEntry;
 
-static const OCVFilterEntry ocv_filter_entries[] = {
+static OCVFilterEntry ocv_filter_entries[] = {
     { "dilate", sizeof(DilateContext), dilate_init, dilate_uninit, dilate_end_frame_filter },
     { "erode",  sizeof(DilateContext), dilate_init, dilate_uninit, erode_end_frame_filter  },
     { "smooth", sizeof(SmoothContext), smooth_init, NULL, smooth_end_frame_filter },
@@ -339,12 +332,8 @@ static av_cold int init(AVFilterContext *ctx)
     OCVContext *s = ctx->priv;
     int i;
 
-    if (!s->name) {
-        av_log(ctx, AV_LOG_ERROR, "No libopencv filter name specified\n");
-        return AVERROR(EINVAL);
-    }
     for (i = 0; i < FF_ARRAY_ELEMS(ocv_filter_entries); i++) {
-        const OCVFilterEntry *entry = &ocv_filter_entries[i];
+        OCVFilterEntry *entry = &ocv_filter_entries[i];
         if (!strcmp(s->name, entry->name)) {
             s->init             = entry->init;
             s->uninit           = entry->uninit;
@@ -366,7 +355,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     if (s->uninit)
         s->uninit(ctx);
-    av_freep(&s->priv);
+    av_free(s->priv);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -395,19 +384,24 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 }
 
 #define OFFSET(x) offsetof(OCVContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
-static const AVOption ocv_options[] = {
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption options[] = {
     { "filter_name",   NULL, OFFSET(name),   AV_OPT_TYPE_STRING, .flags = FLAGS },
     { "filter_params", NULL, OFFSET(params), AV_OPT_TYPE_STRING, .flags = FLAGS },
-    { NULL }
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(ocv);
+static const AVClass ocv_class = {
+    .class_name = "ocv",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_ocv_inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_VIDEO,
+        .name       = "default",
+        .type       = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
     { NULL }
@@ -422,13 +416,17 @@ static const AVFilterPad avfilter_vf_ocv_outputs[] = {
 };
 
 AVFilter ff_vf_ocv = {
-    .name          = "ocv",
-    .description   = NULL_IF_CONFIG_SMALL("Apply transform using libopencv."),
-    .priv_size     = sizeof(OCVContext),
-    .priv_class    = &ocv_class,
+    .name        = "ocv",
+    .description = NULL_IF_CONFIG_SMALL("Apply transform using libopencv."),
+
+    .priv_size = sizeof(OCVContext),
+    .priv_class = &ocv_class,
+
     .query_formats = query_formats,
-    .init          = init,
-    .uninit        = uninit,
-    .inputs        = avfilter_vf_ocv_inputs,
-    .outputs       = avfilter_vf_ocv_outputs,
+    .init = init,
+    .uninit = uninit,
+
+    .inputs    = avfilter_vf_ocv_inputs,
+
+    .outputs   = avfilter_vf_ocv_outputs,
 };
