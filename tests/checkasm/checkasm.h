@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -30,14 +30,18 @@
 #include "libavutil/lfg.h"
 #include "libavutil/timer.h"
 
+void checkasm_check_alacdsp(void);
 void checkasm_check_bswapdsp(void);
 void checkasm_check_dcadsp(void);
+void checkasm_check_flacdsp(void);
 void checkasm_check_fmtconvert(void);
 void checkasm_check_h264pred(void);
 void checkasm_check_h264qpel(void);
-void checkasm_check_hevc_mc(void);
+void checkasm_check_jpeg2000dsp(void);
+void checkasm_check_pixblockdsp(void);
 void checkasm_check_synth_filter(void);
 void checkasm_check_v210enc(void);
+void checkasm_check_vp9dsp(void);
 
 void *checkasm_check_func(void *func, const char *name, ...) av_printf_format(2, 3);
 int checkasm_bench_func(void);
@@ -116,28 +120,11 @@ void checkasm_stack_clobber(uint64_t clobber, ...);
                                              (void *)checkasm_checked_call;
 #define call_new(...) checked_call(func_new, __VA_ARGS__)
 #endif
-#elif ARCH_ARM && HAVE_ARMV5TE_EXTERNAL
-/* Use a dummy argument, to offset the real parameters by 2, not only 1.
- * This makes sure that potential 8-byte-alignment of parameters is kept the same
- * even when the extra parameters have been removed. */
-void checkasm_checked_call_vfp(void *func, int dummy, ...);
-void checkasm_checked_call_novfp(void *func, int dummy, ...);
-extern void (*checkasm_checked_call)(void *func, int dummy, ...);
-#define declare_new(ret, ...) ret (*checked_call)(void *, int dummy, __VA_ARGS__) = (void *)checkasm_checked_call;
-#define call_new(...) checked_call(func_new, 0, __VA_ARGS__)
-#elif ARCH_AARCH64 && !defined(__APPLE__)
-void checkasm_checked_call(void *func, ...);
-#define declare_new(ret, ...) ret (*checked_call)(void *, __VA_ARGS__) = (void *)checkasm_checked_call;
-#define call_new(...) checked_call(func_new, __VA_ARGS__)
 #else
 #define declare_new(ret, ...)
 #define declare_new_emms(cpu_flags, ret, ...)
 /* Call the function */
 #define call_new(...) ((func_type *)func_new)(__VA_ARGS__)
-#endif
-
-#ifndef declare_new_emms
-#define declare_new_emms(cpu_flags, ret, ...) declare_new(ret, __VA_ARGS__)
 #endif
 
 /* Benchmark the function */
