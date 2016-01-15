@@ -2,20 +2,20 @@
  * Optimized for ia32 CPUs by Nick Kurshev <nickols_k@mail.ru>
  * h263, mpeg1, mpeg2 dequantizer & draw_edges by Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,8 +25,9 @@
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/mpegvideo.h"
+#include "libavcodec/mpegvideodata.h"
 
-#if HAVE_INLINE_ASM
+#if HAVE_MMX_INLINE
 
 static void dct_unquantize_h263_intra_mmx(MpegEncContext *s,
                                   int16_t *block, int n, int qscale)
@@ -35,7 +36,7 @@ static void dct_unquantize_h263_intra_mmx(MpegEncContext *s,
 
     qmul = qscale << 1;
 
-    assert(s->block_last_index[n]>=0 || s->h263_aic);
+    av_assert2(s->block_last_index[n]>=0 || s->h263_aic);
 
     if (!s->h263_aic) {
         if (n < 4)
@@ -111,7 +112,7 @@ static void dct_unquantize_h263_inter_mmx(MpegEncContext *s,
     qmul = qscale << 1;
     qadd = (qscale - 1) | 1;
 
-    assert(s->block_last_index[n]>=0 || s->h263_aic);
+    av_assert2(s->block_last_index[n]>=0 || s->h263_aic);
 
     nCoeffs= s->inter_scantable.raster_end[ s->block_last_index[n] ];
 
@@ -171,7 +172,7 @@ static void dct_unquantize_mpeg1_intra_mmx(MpegEncContext *s,
     const uint16_t *quant_matrix;
     int block0;
 
-    assert(s->block_last_index[n]>=0);
+    av_assert2(s->block_last_index[n]>=0);
 
     nCoeffs= s->intra_scantable.raster_end[ s->block_last_index[n] ]+1;
 
@@ -239,7 +240,7 @@ static void dct_unquantize_mpeg1_inter_mmx(MpegEncContext *s,
     x86_reg nCoeffs;
     const uint16_t *quant_matrix;
 
-    assert(s->block_last_index[n]>=0);
+    av_assert2(s->block_last_index[n]>=0);
 
     nCoeffs= s->intra_scantable.raster_end[ s->block_last_index[n] ]+1;
 
@@ -306,7 +307,10 @@ static void dct_unquantize_mpeg2_intra_mmx(MpegEncContext *s,
     const uint16_t *quant_matrix;
     int block0;
 
-    assert(s->block_last_index[n]>=0);
+    av_assert2(s->block_last_index[n]>=0);
+
+    if (s->q_scale_type) qscale = ff_mpeg2_non_linear_qscale[qscale];
+    else                 qscale <<= 1;
 
     if(s->alternate_scan) nCoeffs= 63; //FIXME
     else nCoeffs= s->intra_scantable.raster_end[ s->block_last_index[n] ];
@@ -345,8 +349,8 @@ __asm__ volatile(
                 "pxor %%mm5, %%mm5              \n\t" // FIXME slow
                 "pcmpeqw (%0, %%"REG_a"), %%mm4 \n\t" // block[i] == 0 ? -1 : 0
                 "pcmpeqw 8(%0, %%"REG_a"), %%mm5\n\t" // block[i] == 0 ? -1 : 0
-                "psraw $3, %%mm0                \n\t"
-                "psraw $3, %%mm1                \n\t"
+                "psraw $4, %%mm0                \n\t"
+                "psraw $4, %%mm1                \n\t"
                 "pxor %%mm2, %%mm0              \n\t"
                 "pxor %%mm3, %%mm1              \n\t"
                 "psubw %%mm2, %%mm0             \n\t"
@@ -371,7 +375,10 @@ static void dct_unquantize_mpeg2_inter_mmx(MpegEncContext *s,
     x86_reg nCoeffs;
     const uint16_t *quant_matrix;
 
-    assert(s->block_last_index[n]>=0);
+    av_assert2(s->block_last_index[n]>=0);
+
+    if (s->q_scale_type) qscale = ff_mpeg2_non_linear_qscale[qscale];
+    else                 qscale <<= 1;
 
     if(s->alternate_scan) nCoeffs= 63; //FIXME
     else nCoeffs= s->intra_scantable.raster_end[ s->block_last_index[n] ];
@@ -410,8 +417,8 @@ __asm__ volatile(
                 "pxor %%mm5, %%mm5              \n\t" // FIXME slow
                 "pcmpeqw (%0, %%"REG_a"), %%mm4 \n\t" // block[i] == 0 ? -1 : 0
                 "pcmpeqw 8(%0, %%"REG_a"), %%mm5\n\t" // block[i] == 0 ? -1 : 0
-                "psrlw $4, %%mm0                \n\t"
-                "psrlw $4, %%mm1                \n\t"
+                "psrlw $5, %%mm0                \n\t"
+                "psrlw $5, %%mm1                \n\t"
                 "pxor %%mm2, %%mm0              \n\t"
                 "pxor %%mm3, %%mm1              \n\t"
                 "psubw %%mm2, %%mm0             \n\t"
@@ -442,11 +449,11 @@ __asm__ volatile(
         );
 }
 
-#endif /* HAVE_INLINE_ASM */
+#endif /* HAVE_MMX_INLINE */
 
 av_cold void ff_mpv_common_init_x86(MpegEncContext *s)
 {
-#if HAVE_INLINE_ASM
+#if HAVE_MMX_INLINE
     int cpu_flags = av_get_cpu_flags();
 
     if (INLINE_MMX(cpu_flags)) {
@@ -458,5 +465,5 @@ av_cold void ff_mpv_common_init_x86(MpegEncContext *s)
             s->dct_unquantize_mpeg2_intra = dct_unquantize_mpeg2_intra_mmx;
         s->dct_unquantize_mpeg2_inter = dct_unquantize_mpeg2_inter_mmx;
     }
-#endif /* HAVE_INLINE_ASM */
+#endif /* HAVE_MMX_INLINE */
 }
