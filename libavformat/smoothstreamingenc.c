@@ -2,20 +2,20 @@
  * Live smooth streaming fragmenter
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -179,13 +179,13 @@ static void ism_free(AVFormatContext *s)
         if (os->ctx && os->ctx_inited)
             av_write_trailer(os->ctx);
         if (os->ctx && os->ctx->pb)
-            av_freep(&os->ctx->pb);
+            av_free(os->ctx->pb);
         if (os->ctx)
             avformat_free_context(os->ctx);
-        av_freep(&os->private_str);
+        av_free(os->private_str);
         for (j = 0; j < os->nb_fragments; j++)
-            av_freep(&os->fragments[j]);
-        av_freep(&os->fragments);
+            av_free(os->fragments[j]);
+        av_free(os->fragments);
     }
     av_freep(&c->streams);
 }
@@ -220,7 +220,7 @@ static int write_manifest(AVFormatContext *s, int final)
 
     snprintf(filename, sizeof(filename), "%s/Manifest", s->filename);
     snprintf(temp_filename, sizeof(temp_filename), "%s/Manifest.tmp", s->filename);
-    ret = avio_open2(&out, temp_filename, AVIO_FLAG_WRITE, &s->interrupt_callback, NULL);
+    ret = s->io_open(s, &out, temp_filename, AVIO_FLAG_WRITE, NULL);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", temp_filename);
         return ret;
@@ -260,7 +260,7 @@ static int write_manifest(AVFormatContext *s, int final)
             if (s->streams[i]->codec->codec_type != AVMEDIA_TYPE_VIDEO)
                 continue;
             last = i;
-            avio_printf(out, "<QualityLevel Index=\"%d\" Bitrate=\"%"PRId64"\" FourCC=\"%s\" MaxWidth=\"%d\" MaxHeight=\"%d\" CodecPrivateData=\"%s\" />\n", index, (int64_t)s->streams[i]->codec->bit_rate, os->fourcc, s->streams[i]->codec->width, s->streams[i]->codec->height, os->private_str);
+            avio_printf(out, "<QualityLevel Index=\"%d\" Bitrate=\"%d\" FourCC=\"%s\" MaxWidth=\"%d\" MaxHeight=\"%d\" CodecPrivateData=\"%s\" />\n", index, s->streams[i]->codec->bit_rate, os->fourcc, s->streams[i]->codec->width, s->streams[i]->codec->height, os->private_str);
             index++;
         }
         output_chunk_list(&c->streams[last], out, final, c->lookahead_count, c->window_size);
@@ -274,7 +274,7 @@ static int write_manifest(AVFormatContext *s, int final)
             if (s->streams[i]->codec->codec_type != AVMEDIA_TYPE_AUDIO)
                 continue;
             last = i;
-            avio_printf(out, "<QualityLevel Index=\"%d\" Bitrate=\"%"PRId64"\" FourCC=\"%s\" SamplingRate=\"%d\" Channels=\"%d\" BitsPerSample=\"16\" PacketSize=\"%d\" AudioTag=\"%d\" CodecPrivateData=\"%s\" />\n", index, (int64_t)s->streams[i]->codec->bit_rate, os->fourcc, s->streams[i]->codec->sample_rate, s->streams[i]->codec->channels, os->packet_size, os->audio_tag, os->private_str);
+            avio_printf(out, "<QualityLevel Index=\"%d\" Bitrate=\"%d\" FourCC=\"%s\" SamplingRate=\"%d\" Channels=\"%d\" BitsPerSample=\"16\" PacketSize=\"%d\" AudioTag=\"%d\" CodecPrivateData=\"%s\" />\n", index, s->streams[i]->codec->bit_rate, os->fourcc, s->streams[i]->codec->sample_rate, s->streams[i]->codec->channels, os->packet_size, os->audio_tag, os->private_str);
             index++;
         }
         output_chunk_list(&c->streams[last], out, final, c->lookahead_count, c->window_size);
@@ -282,8 +282,8 @@ static int write_manifest(AVFormatContext *s, int final)
     }
     avio_printf(out, "</SmoothStreamingMedia>\n");
     avio_flush(out);
-    avio_close(out);
-    return ff_rename(temp_filename, filename, s);
+    ff_format_io_close(s, &out);
+    return ff_rename(temp_filename, filename);
 }
 
 static int ism_write_header(AVFormatContext *s)
@@ -294,7 +294,6 @@ static int ism_write_header(AVFormatContext *s)
 
     if (mkdir(s->filename, 0777) == -1 && errno != EEXIST) {
         ret = AVERROR(errno);
-        av_log(s, AV_LOG_ERROR, "mkdir failed\n");
         goto fail;
     }
 
@@ -304,7 +303,7 @@ static int ism_write_header(AVFormatContext *s)
         goto fail;
     }
 
-    c->streams = av_mallocz_array(s->nb_streams, sizeof(*c->streams));
+    c->streams = av_mallocz(sizeof(*c->streams) * s->nb_streams);
     if (!c->streams) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -315,16 +314,16 @@ static int ism_write_header(AVFormatContext *s)
         AVFormatContext *ctx;
         AVStream *st;
         AVDictionary *opts = NULL;
+        char buf[10];
 
         if (!s->streams[i]->codec->bit_rate) {
             av_log(s, AV_LOG_ERROR, "No bit rate set for stream %d\n", i);
             ret = AVERROR(EINVAL);
             goto fail;
         }
-        snprintf(os->dirname, sizeof(os->dirname), "%s/QualityLevels(%"PRId64")", s->filename, (int64_t)s->streams[i]->codec->bit_rate);
+        snprintf(os->dirname, sizeof(os->dirname), "%s/QualityLevels(%d)", s->filename, s->streams[i]->codec->bit_rate);
         if (mkdir(os->dirname, 0777) == -1 && errno != EEXIST) {
             ret = AVERROR(errno);
-            av_log(s, AV_LOG_ERROR, "mkdir failed\n");
             goto fail;
         }
 
@@ -351,7 +350,8 @@ static int ism_write_header(AVFormatContext *s)
             goto fail;
         }
 
-        av_dict_set_int(&opts, "ism_lookahead", c->lookahead_count, 0);
+        snprintf(buf, sizeof(buf), "%d", c->lookahead_count);
+        av_dict_set(&opts, "ism_lookahead", buf, 0);
         av_dict_set(&opts, "movflags", "frag_custom", 0);
         if ((ret = avformat_write_header(ctx, &opts)) < 0) {
              goto fail;
@@ -409,7 +409,7 @@ static int parse_fragment(AVFormatContext *s, const char *filename, int64_t *sta
     AVIOContext *in;
     int ret;
     uint32_t len;
-    if ((ret = avio_open2(&in, filename, AVIO_FLAG_READ, &s->interrupt_callback, NULL)) < 0)
+    if ((ret = s->io_open(s, &in, filename, AVIO_FLAG_READ, NULL)) < 0)
         return ret;
     ret = AVERROR(EIO);
     *moof_size = avio_rb32(in);
@@ -433,7 +433,7 @@ static int parse_fragment(AVFormatContext *s, const char *filename, int64_t *sta
         if (len < 8 || len >= *moof_size)
             goto fail;
         if (tag == MKTAG('u','u','i','d')) {
-            static const uint8_t tfxd[] = {
+            const uint8_t tfxd[] = {
                 0x6d, 0x1d, 0x9b, 0x05, 0x42, 0xd5, 0x44, 0xe6,
                 0x80, 0xe2, 0x14, 0x1d, 0xaf, 0xf7, 0x57, 0xb2
             };
@@ -450,7 +450,7 @@ static int parse_fragment(AVFormatContext *s, const char *filename, int64_t *sta
         avio_seek(in, end, SEEK_SET);
     }
 fail:
-    avio_close(in);
+    ff_format_io_close(s, &in);
     return ret;
 }
 
@@ -486,10 +486,10 @@ static int copy_moof(AVFormatContext *s, const char* infile, const char *outfile
 {
     AVIOContext *in, *out;
     int ret = 0;
-    if ((ret = avio_open2(&in, infile, AVIO_FLAG_READ, &s->interrupt_callback, NULL)) < 0)
+    if ((ret = s->io_open(s, &in, infile, AVIO_FLAG_READ, NULL)) < 0)
         return ret;
-    if ((ret = avio_open2(&out, outfile, AVIO_FLAG_WRITE, &s->interrupt_callback, NULL)) < 0) {
-        avio_close(in);
+    if ((ret = s->io_open(s, &out, outfile, AVIO_FLAG_WRITE, NULL)) < 0) {
+        ff_format_io_close(s, &in);
         return ret;
     }
     while (size > 0) {
@@ -504,8 +504,8 @@ static int copy_moof(AVFormatContext *s, const char* infile, const char *outfile
         size -= n;
     }
     avio_flush(out);
-    avio_close(out);
-    avio_close(in);
+    ff_format_io_close(s, &out);
+    ff_format_io_close(s, &in);
     return ret;
 }
 
@@ -541,7 +541,7 @@ static int ism_flush(AVFormatContext *s, int final)
         snprintf(header_filename, sizeof(header_filename), "%s/FragmentInfo(%s=%"PRIu64")", os->dirname, os->stream_type_tag, start_ts);
         snprintf(target_filename, sizeof(target_filename), "%s/Fragments(%s=%"PRIu64")", os->dirname, os->stream_type_tag, start_ts);
         copy_moof(s, filename, header_filename, moof_size);
-        ret = ff_rename(filename, target_filename, s);
+        ret = ff_rename(filename, target_filename);
         if (ret < 0)
             break;
         add_fragment(os, target_filename, header_filename, start_ts, duration,
@@ -559,7 +559,7 @@ static int ism_flush(AVFormatContext *s, int final)
                 for (j = 0; j < remove; j++) {
                     unlink(os->fragments[j]->file);
                     unlink(os->fragments[j]->infofile);
-                    av_freep(&os->fragments[j]);
+                    av_free(os->fragments[j]);
                 }
                 os->nb_fragments -= remove;
                 memmove(os->fragments, os->fragments + remove, os->nb_fragments * sizeof(*os->fragments));
@@ -596,7 +596,7 @@ static int ism_write_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     os->packets_written++;
-    return ff_write_chained(os->ctx, 0, pkt, s, 0);
+    return ff_write_chained(os->ctx, 0, pkt, s);
 }
 
 static int ism_write_trailer(AVFormatContext *s)
@@ -622,7 +622,7 @@ static const AVOption options[] = {
     { "extra_window_size", "number of fragments kept outside of the manifest before removing from disk", OFFSET(extra_window_size), AV_OPT_TYPE_INT, { .i64 = 5 }, 0, INT_MAX, E },
     { "lookahead_count", "number of lookahead fragments", OFFSET(lookahead_count), AV_OPT_TYPE_INT, { .i64 = 2 }, 0, INT_MAX, E },
     { "min_frag_duration", "minimum fragment duration (in microseconds)", OFFSET(min_frag_duration), AV_OPT_TYPE_INT64, { .i64 = 5000000 }, 0, INT_MAX, E },
-    { "remove_at_exit", "remove all fragments when finished", OFFSET(remove_at_exit), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
+    { "remove_at_exit", "remove all fragments when finished", OFFSET(remove_at_exit), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, E },
     { NULL },
 };
 

@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,8 +28,7 @@ typedef struct V210EncContext {
                         const uint8_t *v, uint8_t *dst, ptrdiff_t width);
     void (*pack_line_10)(const uint16_t *y, const uint16_t *u,
                          const uint16_t *v, uint8_t *dst, ptrdiff_t width);
-    int sample_factor; /* This value must be the same for both 8-and 10-bit
-                          functions otherwise the output will be incorrect. */
+    int sample_factor;
 } V210EncContext;
 
 void ff_v210enc_init(V210EncContext *s);
