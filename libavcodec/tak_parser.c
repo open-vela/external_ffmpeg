@@ -2,20 +2,20 @@
  * TAK parser
  * Copyright (c) 2012 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,6 +33,12 @@ typedef struct TAKParseContext {
     int           index;
 } TAKParseContext;
 
+static av_cold int tak_init(AVCodecParserContext *s)
+{
+    ff_tak_init_crc();
+    return 0;
+}
+
 static int tak_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                      const uint8_t **poutbuf, int *poutbuf_size,
                      const uint8_t *buf, int buf_size)
@@ -43,12 +49,10 @@ static int tak_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     GetBitContext gb;
     int consumed = 0;
     int needed   = buf_size ? TAK_MAX_FRAME_HEADER_BYTES : 8;
-    int ret;
 
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES) {
         TAKStreamInfo ti;
-        if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
-            return ret;
+        init_get_bits(&gb, buf, buf_size);
         if (!ff_tak_decode_frame_header(avctx, &gb, &ti, 127))
             s->duration = t->ti.last_frame_samples ? t->ti.last_frame_samples
                                                    : t->ti.frame_samples;
@@ -63,23 +67,23 @@ static int tak_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                                            buf_size);
             const uint8_t *tmp_buf = buf;
 
-            if (ff_combine_frame(pc, END_NOT_FOUND, &tmp_buf, &tmp_buf_size) != -1)
-                return AVERROR(ENOMEM);
+            ff_combine_frame(pc, END_NOT_FOUND, &tmp_buf, &tmp_buf_size);
             consumed += tmp_buf_size;
             buf      += tmp_buf_size;
             buf_size -= tmp_buf_size;
         }
 
-        for (; t->index + needed <= pc->index; t->index++) {
-            if (pc->buffer[ t->index     ] == 0xFF &&
-                pc->buffer[ t->index + 1 ] == 0xA0) {
+        for (; t->index + needed <= pc->index; t->index++)
+            if (pc->buffer[t->index]     == 0xFF &&
+                pc->buffer[t->index + 1] == 0xA0) {
                 TAKStreamInfo ti;
 
-                if ((ret = init_get_bits8(&gb, pc->buffer + t->index,
-                                          pc->index - t->index)) < 0)
-                    return ret;
+                init_get_bits(&gb, pc->buffer + t->index,
+                              8 * (pc->index - t->index));
                 if (!ff_tak_decode_frame_header(avctx, &gb,
-                        pc->frame_start_found ? &ti : &t->ti, 127) &&
+                                                pc->frame_start_found ? &ti
+                                                                      : &t->ti,
+                                                127) &&
                     !ff_tak_check_crc(pc->buffer + t->index,
                                       get_bits_count(&gb) / 8)) {
                     if (!pc->frame_start_found) {
@@ -87,7 +91,6 @@ static int tak_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                         s->duration           = t->ti.last_frame_samples ?
                                                 t->ti.last_frame_samples :
                                                 t->ti.frame_samples;
-                        s->key_frame          = !!(t->ti.flags & TAK_FRAME_FLAG_HAS_INFO);
                     } else {
                         pc->frame_start_found = 0;
                         next                  = t->index - pc->index;
@@ -96,10 +99,9 @@ static int tak_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                     }
                 }
             }
-        }
     }
-found:
 
+found:
     if (consumed && !buf_size && next == END_NOT_FOUND ||
         ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
         *poutbuf      = NULL;
@@ -120,6 +122,7 @@ found:
 AVCodecParser ff_tak_parser = {
     .codec_ids      = { AV_CODEC_ID_TAK },
     .priv_data_size = sizeof(TAKParseContext),
+    .parser_init    = tak_init,
     .parser_parse   = tak_parse,
     .parser_close   = ff_parse_close,
 };
