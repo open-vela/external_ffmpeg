@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2006  Aurelien Jacobs <aurel@gnuage.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,8 +35,7 @@
 #include "vp5data.h"
 
 
-static int vp5_parse_header(VP56Context *s, const uint8_t *buf, int buf_size,
-                            int *golden_frame)
+static int vp5_parse_header(VP56Context *s, const uint8_t *buf, int buf_size)
 {
     VP56RangeCoder *c = &s->c;
     int rows, cols;
@@ -86,7 +85,7 @@ static void vp5_parse_vector_adjustment(VP56Context *s, VP56mv *vect)
 
     for (comp=0; comp<2; comp++) {
         int delta = 0;
-        if (vp56_rac_get_prob(c, model->vector_dct[comp])) {
+        if (vp56_rac_get_prob_branchy(c, model->vector_dct[comp])) {
             int sign = vp56_rac_get_prob(c, model->vector_sig[comp]);
             di  = vp56_rac_get_prob(c, model->vector_pdi[comp][0]);
             di |= vp56_rac_get_prob(c, model->vector_pdi[comp][1]) << 1;
@@ -109,19 +108,19 @@ static void vp5_parse_vector_models(VP56Context *s)
     int comp, node;
 
     for (comp=0; comp<2; comp++) {
-        if (vp56_rac_get_prob(c, vp5_vmc_pct[comp][0]))
+        if (vp56_rac_get_prob_branchy(c, vp5_vmc_pct[comp][0]))
             model->vector_dct[comp] = vp56_rac_gets_nn(c, 7);
-        if (vp56_rac_get_prob(c, vp5_vmc_pct[comp][1]))
+        if (vp56_rac_get_prob_branchy(c, vp5_vmc_pct[comp][1]))
             model->vector_sig[comp] = vp56_rac_gets_nn(c, 7);
-        if (vp56_rac_get_prob(c, vp5_vmc_pct[comp][2]))
+        if (vp56_rac_get_prob_branchy(c, vp5_vmc_pct[comp][2]))
             model->vector_pdi[comp][0] = vp56_rac_gets_nn(c, 7);
-        if (vp56_rac_get_prob(c, vp5_vmc_pct[comp][3]))
+        if (vp56_rac_get_prob_branchy(c, vp5_vmc_pct[comp][3]))
             model->vector_pdi[comp][1] = vp56_rac_gets_nn(c, 7);
     }
 
     for (comp=0; comp<2; comp++)
         for (node=0; node<7; node++)
-            if (vp56_rac_get_prob(c, vp5_vmc_pct[comp][4 + node]))
+            if (vp56_rac_get_prob_branchy(c, vp5_vmc_pct[comp][4 + node]))
                 model->vector_pdv[comp][node] = vp56_rac_gets_nn(c, 7);
 }
 
@@ -138,7 +137,7 @@ static int vp5_parse_coeff_models(VP56Context *s)
 
     for (pt=0; pt<2; pt++)
         for (node=0; node<11; node++)
-            if (vp56_rac_get_prob(c, vp5_dccv_pct[pt][node])) {
+            if (vp56_rac_get_prob_branchy(c, vp5_dccv_pct[pt][node])) {
                 def_prob[node] = vp56_rac_gets_nn(c, 7);
                 model->coeff_dccv[pt][node] = def_prob[node];
             } else if (s->frames[VP56_FRAME_CURRENT]->key_frame) {
@@ -149,7 +148,7 @@ static int vp5_parse_coeff_models(VP56Context *s)
         for (pt=0; pt<2; pt++)
             for (cg=0; cg<6; cg++)
                 for (node=0; node<11; node++)
-                    if (vp56_rac_get_prob(c, vp5_ract_pct[ct][pt][cg][node])) {
+                    if (vp56_rac_get_prob_branchy(c, vp5_ract_pct[ct][pt][cg][node])) {
                         def_prob[node] = vp56_rac_gets_nn(c, 7);
                         model->coeff_ract[pt][ct][cg][node] = def_prob[node];
                     } else if (s->frames[VP56_FRAME_CURRENT]->key_frame) {
@@ -194,9 +193,9 @@ static void vp5_parse_coeff(VP56Context *s)
 
         coeff_idx = 0;
         for (;;) {
-            if (vp56_rac_get_prob(c, model2[0])) {
-                if (vp56_rac_get_prob(c, model2[2])) {
-                    if (vp56_rac_get_prob(c, model2[3])) {
+            if (vp56_rac_get_prob_branchy(c, model2[0])) {
+                if (vp56_rac_get_prob_branchy(c, model2[2])) {
+                    if (vp56_rac_get_prob_branchy(c, model2[3])) {
                         s->coeff_ctx[ff_vp56_b6to4[b]][coeff_idx] = 4;
                         idx = vp56_rac_get_tree(c, ff_vp56_pc_tree, model1);
                         sign = vp56_rac_get(c);
@@ -204,7 +203,7 @@ static void vp5_parse_coeff(VP56Context *s)
                         for (i=ff_vp56_coeff_bit_length[idx]; i>=0; i--)
                             coeff += vp56_rac_get_prob(c, ff_vp56_coeff_parse_table[idx][i]) << i;
                     } else {
-                        if (vp56_rac_get_prob(c, model2[4])) {
+                        if (vp56_rac_get_prob_branchy(c, model2[4])) {
                             coeff = 3 + vp56_rac_get_prob(c, model1[5]);
                             s->coeff_ctx[ff_vp56_b6to4[b]][coeff_idx] = 3;
                         } else {
@@ -225,7 +224,7 @@ static void vp5_parse_coeff(VP56Context *s)
                     coeff *= s->dequant_ac;
                 s->block_coeff[b][permute[coeff_idx]] = coeff;
             } else {
-                if (ct && !vp56_rac_get_prob(c, model2[1]))
+                if (ct && !vp56_rac_get_prob_branchy(c, model2[1]))
                     break;
                 ct = 0;
                 s->coeff_ctx[ff_vp56_b6to4[b]][coeff_idx] = 0;
