@@ -2,20 +2,20 @@
  * OpenH264 video encoder
  * Copyright (C) 2014 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,15 +51,15 @@ typedef struct SVCContext {
 #define OFFSET(x) offsetof(SVCContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "slice_mode", "set slice mode", OFFSET(slice_mode), AV_OPT_TYPE_INT, { .i64 = SM_AUTO_SLICE }, SM_SINGLE_SLICE, SM_RESERVED, VE, "slice_mode" },
-        { "fixed", "a fixed number of slices", 0, AV_OPT_TYPE_CONST, { .i64 = SM_FIXEDSLCNUM_SLICE }, 0, 0, VE, "slice_mode" },
-        { "rowmb", "one slice per row of macroblocks", 0, AV_OPT_TYPE_CONST, { .i64 = SM_ROWMB_SLICE }, 0, 0, VE, "slice_mode" },
-        { "auto", "automatic number of slices according to number of threads", 0, AV_OPT_TYPE_CONST, { .i64 = SM_AUTO_SLICE }, 0, 0, VE, "slice_mode" },
-        { "dyn", "Dynamic slicing", 0, AV_OPT_TYPE_CONST, { .i64 = SM_DYN_SLICE }, 0, 0, VE, "slice_mode" },
-    { "loopfilter", "enable loop filter", OFFSET(loopfilter), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
-    { "profile", "set profile restrictions", OFFSET(profile), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
-    { "max_nal_size", "set maximum NAL size in bytes", OFFSET(max_nal_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
-    { "allow_skip_frames", "allow skipping frames to hit the target bitrate", OFFSET(skip_frames), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
+    { "slice_mode", "Slice mode", OFFSET(slice_mode), AV_OPT_TYPE_INT, { .i64 = SM_AUTO_SLICE }, SM_SINGLE_SLICE, SM_RESERVED, VE, "slice_mode" },
+    { "fixed", "A fixed number of slices", 0, AV_OPT_TYPE_CONST, { .i64 = SM_FIXEDSLCNUM_SLICE }, 0, 0, VE, "slice_mode" },
+    { "rowmb", "One slice per row of macroblocks", 0, AV_OPT_TYPE_CONST, { .i64 = SM_ROWMB_SLICE }, 0, 0, VE, "slice_mode" },
+    { "auto", "Automatic number of slices according to number of threads", 0, AV_OPT_TYPE_CONST, { .i64 = SM_AUTO_SLICE }, 0, 0, VE, "slice_mode" },
+    { "dyn", "Dynamic slicing", 0, AV_OPT_TYPE_CONST, { .i64 = SM_DYN_SLICE }, 0, 0, VE, "slice_mode" },
+    { "loopfilter", "Enable loop filter", OFFSET(loopfilter), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
+    { "profile", "Set profile restrictions", OFFSET(profile), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
+    { "max_nal_size", "Set maximum NAL size in bytes", OFFSET(max_nal_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "allow_skip_frames", "Allow skipping frames to hit the target bitrate", OFFSET(skip_frames), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "cabac", "Enable cabac", OFFSET(cabac), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
@@ -68,8 +68,8 @@ static const AVClass class = {
     "libopenh264enc", av_default_item_name, options, LIBAVUTIL_VERSION_INT
 };
 
-// Convert libopenh264 log level to equivalent ffmpeg log level.
-static int libopenh264_to_ffmpeg_log_level(int libopenh264_log_level)
+// Convert libopenh264 log level to equivalent libav log level.
+static int libopenh264_to_libav_log_level(int libopenh264_log_level)
 {
     if      (libopenh264_log_level >= WELS_LOG_DETAIL)  return AV_LOG_TRACE;
     else if (libopenh264_log_level >= WELS_LOG_DEBUG)   return AV_LOG_DEBUG;
@@ -87,10 +87,10 @@ static int libopenh264_to_ffmpeg_log_level(int libopenh264_log_level)
 
 static void libopenh264_trace_callback(void *ctx, int level, char const *msg)
 {
-    // The message will be logged only if the requested EQUIVALENT ffmpeg log level is
-    // less than or equal to the current ffmpeg log level.
-    int equiv_ffmpeg_log_level = libopenh264_to_ffmpeg_log_level(level);
-    av_log(ctx, equiv_ffmpeg_log_level, "%s\n", msg);
+    // The message will be logged only if the requested EQUIVALENT libav log level is
+    // less than or equal to the current libav log level.
+    int equiv_libav_log_level = libopenh264_to_libav_log_level(level);
+    av_log(ctx, equiv_libav_log_level, "%s\n", msg);
 }
 
 static av_cold int svc_encode_close(AVCodecContext *avctx)
@@ -149,7 +149,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    param.fMaxFrameRate              = 1/av_q2d(avctx->time_base);
+    param.fMaxFrameRate              = avctx->time_base.den / avctx->time_base.num;
     param.iPicWidth                  = avctx->width;
     param.iPicHeight                 = avctx->height;
     param.iTargetBitrate             = avctx->bit_rate;
@@ -293,7 +293,7 @@ static int svc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
     av_log(avctx, AV_LOG_DEBUG, "%d slices\n", fbi.sLayerInfo[fbi.iLayerNum - 1].iNalCount);
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, size, size))) {
+    if ((ret = ff_alloc_packet(avpkt, size))) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
     }
