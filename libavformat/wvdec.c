@@ -2,20 +2,20 @@
  * WavPack demuxer
  * Copyright (c) 2006,2011 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,8 +64,11 @@ static int wv_probe(AVProbeData *p)
     /* check file header */
     if (p->buf_size <= 32)
         return 0;
-    if (p->buf[0] == 'w' && p->buf[1] == 'v' &&
-        p->buf[2] == 'p' && p->buf[3] == 'k')
+    if (AV_RL32(&p->buf[0]) == MKTAG('w', 'v', 'p', 'k') &&
+        AV_RL32(&p->buf[4]) >= 24 &&
+        AV_RL32(&p->buf[4]) <= WV_BLOCK_LIMIT &&
+        AV_RL16(&p->buf[8]) >= 0x402 &&
+        AV_RL16(&p->buf[8]) <= 0x410)
         return AVPROBE_SCORE_MAX;
     else
         return 0;
@@ -121,7 +124,7 @@ static int wv_read_block_header(AVFormatContext *ctx, AVIOContext *pb)
                    "Cannot determine additional parameters\n");
             return AVERROR_INVALIDDATA;
         }
-        while (avio_tell(pb) < block_end) {
+        while (avio_tell(pb) < block_end && !avio_feof(pb)) {
             int id, size;
             id   = avio_r8(pb);
             size = (id & 0x80) ? avio_rl24(pb) : avio_r8(pb);
@@ -235,7 +238,8 @@ static int wv_read_header(AVFormatContext *s)
     st->codec->bits_per_coded_sample = wc->bpp;
     avpriv_set_pts_info(st, 64, 1, wc->rate);
     st->start_time = 0;
-    st->duration   = wc->header.total_samples;
+    if (wc->header.total_samples != 0xFFFFFFFFu)
+        st->duration = wc->header.total_samples;
 
     if (s->pb->seekable) {
         int64_t cur = avio_tell(s->pb);
@@ -256,7 +260,7 @@ static int wv_read_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t pos;
     uint32_t block_samples;
 
-    if (s->pb->eof_reached)
+    if (avio_feof(s->pb))
         return AVERROR_EOF;
     if (wc->block_parsed) {
         if ((ret = wv_read_block_header(s, s->pb)) < 0)
@@ -292,6 +296,7 @@ static int wv_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
     }
     pkt->stream_index = 0;
+    pkt->pos          = pos;
     wc->block_parsed  = 1;
     pkt->pts          = wc->header.block_idx;
     block_samples     = wc->header.samples;
@@ -301,41 +306,6 @@ static int wv_read_packet(AVFormatContext *s, AVPacket *pkt)
     else
         pkt->duration = block_samples;
 
-    av_add_index_entry(s->streams[0], pos, pkt->pts, 0, 0, AVINDEX_KEYFRAME);
-    return 0;
-}
-
-static int wv_read_seek(AVFormatContext *s, int stream_index,
-                        int64_t timestamp, int flags)
-{
-    AVStream  *st = s->streams[stream_index];
-    WVContext *wc = s->priv_data;
-    AVPacket pkt1, *pkt = &pkt1;
-    int ret;
-    int index = av_index_search_timestamp(st, timestamp, flags);
-    int64_t pos, pts;
-
-    /* if found, seek there */
-    if (index >= 0 &&
-        timestamp <= st->index_entries[st->nb_index_entries - 1].timestamp) {
-        wc->block_parsed = 1;
-        avio_seek(s->pb, st->index_entries[index].pos, SEEK_SET);
-        return 0;
-    }
-    /* if timestamp is out of bounds, return error */
-    if (timestamp < 0 || timestamp >= s->duration)
-        return AVERROR(EINVAL);
-
-    pos = avio_tell(s->pb);
-    do {
-        ret = av_read_frame(s, pkt);
-        if (ret < 0) {
-            avio_seek(s->pb, pos, SEEK_SET);
-            return ret;
-        }
-        pts = pkt->pts;
-        av_packet_unref(pkt);
-    } while(pts < timestamp);
     return 0;
 }
 
@@ -346,5 +316,5 @@ AVInputFormat ff_wv_demuxer = {
     .read_probe     = wv_probe,
     .read_header    = wv_read_header,
     .read_packet    = wv_read_packet,
-    .read_seek      = wv_read_seek,
+    .flags          = AVFMT_GENERIC_INDEX,
 };
