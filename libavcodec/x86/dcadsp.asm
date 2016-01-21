@@ -2,20 +2,20 @@
 ;* SSE-optimized functions for the DCA decoder
 ;* Copyright (C) 2012-2014 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -46,15 +46,10 @@ SECTION .text
     mulps       va, %2
     mulps       vb, %2
 %if %0 == 3
-%if cpuflag(fma3)
-    fmaddps     va, m4, %3, va
-    fmaddps     vb, m0, %3, vb
-%else
     mulps       m4, %3
     mulps       m0, %3
     addps       va, m4
     addps       vb, m0
-%endif
 %endif
     ; va = va1 va2 va3 va4
     ; vb = vb1 vb2 vb3 vb4
@@ -117,10 +112,6 @@ cglobal dca_lfe_fir%1, 3,3,6-%1, out, in, cf0
 INIT_XMM sse
 DCA_LFE_FIR 0
 DCA_LFE_FIR 1
-%if HAVE_FMA3_EXTERNAL
-INIT_XMM fma3
-DCA_LFE_FIR 0
-%endif
 
 %macro SETZERO 1
 %if cpuflag(sse2) && notcpuflag(avx)
@@ -247,7 +238,7 @@ cglobal synth_filter_inner, 0, 6 + 4 * ARCH_X86_64, 7 + 6 * ARCH_X86_64, \
 %if ARCH_X86_32
     mov         buf2, synth_buf2mp
 %endif
-.mainloop:
+.mainloop
     ; m1 = a  m2 = b  m3 = c  m4 = d
     SETZERO       m3
     SETZERO       m4
