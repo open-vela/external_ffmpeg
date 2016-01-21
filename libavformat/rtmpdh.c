@@ -4,20 +4,20 @@
  * Copyright (c) 2009-2010 Howard Chu
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -97,7 +97,16 @@
         mpz_fdiv_r_2exp(bn, bn, num_bits);            \
     } while (0)
 #elif CONFIG_GCRYPT
-#define bn_new(bn)                  bn = gcry_mpi_new(1)
+#define bn_new(bn)                                              \
+    do {                                                        \
+        if (!gcry_control(GCRYCTL_INITIALIZATION_FINISHED_P)) { \
+            if (!gcry_check_version("1.5.4"))                   \
+                return AVERROR(EINVAL);                         \
+            gcry_control(GCRYCTL_DISABLE_SECMEM, 0);            \
+            gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);   \
+        }                                                       \
+        bn = gcry_mpi_new(1);                                   \
+    } while (0)
 #define bn_free(bn)                 gcry_mpi_release(bn)
 #define bn_set_word(bn, w)          gcry_mpi_set_ui(bn, w)
 #define bn_cmp(a, b)                gcry_mpi_cmp(a, b)
