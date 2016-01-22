@@ -4,20 +4,20 @@
  * Copyright (c) 2002 Francois Revol <revol@free.fr>
  * Copyright (c) 2006 Baptiste Coudurier <baptiste.coudurier@free.fr>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,6 +57,7 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_VC1         , 0xA3 },
     { AV_CODEC_ID_DIRAC       , 0xA4 },
     { AV_CODEC_ID_AC3         , 0xA5 },
+    { AV_CODEC_ID_EAC3        , 0xA6 },
     { AV_CODEC_ID_DTS         , 0xA9 }, /* mp4ra.org */
     { AV_CODEC_ID_TSCC2       , 0xD0 }, /* non standard, camtasia uses it */
     { AV_CODEC_ID_VORBIS      , 0xDD }, /* non standard, gpac uses it */
@@ -72,7 +73,6 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 
     { AV_CODEC_ID_RAWVIDEO, MKTAG('r', 'a', 'w', ' ') }, /* Uncompressed RGB */
     { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', '2') }, /* Uncompressed YUV422 */
-    { AV_CODEC_ID_RAWVIDEO, MKTAG('A', 'V', 'U', 'I') }, /* YUV with alpha-channel (AVID Uncompressed) */
     { AV_CODEC_ID_RAWVIDEO, MKTAG('2', 'v', 'u', 'y') }, /* UNCOMPRESSED 8BIT 4:2:2 */
     { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', 's') }, /* same as 2vuy but byte swapped */
 
@@ -96,13 +96,21 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_R10K,   MKTAG('R', '1', '0', 'k') }, /* UNCOMPRESSED 10BIT RGB */
     { AV_CODEC_ID_R10K,   MKTAG('R', '1', '0', 'g') }, /* UNCOMPRESSED 10BIT RGB */
     { AV_CODEC_ID_R210,   MKTAG('r', '2', '1', '0') }, /* UNCOMPRESSED 10BIT RGB */
+    { AV_CODEC_ID_AVUI,   MKTAG('A', 'V', 'U', 'I') }, /* AVID Uncompressed deinterleaved UYVY422 */
+    { AV_CODEC_ID_AVRP,   MKTAG('A', 'V', 'r', 'p') }, /* Avid 1:1 10-bit RGB Packer */
+    { AV_CODEC_ID_AVRP,   MKTAG('S', 'U', 'D', 'S') }, /* Avid DS Uncompressed */
     { AV_CODEC_ID_V210,   MKTAG('v', '2', '1', '0') }, /* UNCOMPRESSED 10BIT 4:2:2 */
     { AV_CODEC_ID_V210,   MKTAG('b', 'x', 'y', '2') }, /* BOXX 10BIT 4:2:2 */
+    { AV_CODEC_ID_V308,   MKTAG('v', '3', '0', '8') }, /* UNCOMPRESSED  8BIT 4:4:4 */
+    { AV_CODEC_ID_V408,   MKTAG('v', '4', '0', '8') }, /* UNCOMPRESSED  8BIT 4:4:4:4 */
     { AV_CODEC_ID_V410,   MKTAG('v', '4', '1', '0') }, /* UNCOMPRESSED 10BIT 4:4:4 */
+    { AV_CODEC_ID_Y41P,   MKTAG('Y', '4', '1', 'P') }, /* UNCOMPRESSED 12BIT 4:1:1 */
+    { AV_CODEC_ID_YUV4,   MKTAG('y', 'u', 'v', '4') }, /* libquicktime packed yuv420p */
+    { AV_CODEC_ID_TARGA_Y216, MKTAG('Y', '2', '1', '6') },
 
     { AV_CODEC_ID_MJPEG,  MKTAG('j', 'p', 'e', 'g') }, /* PhotoJPEG */
     { AV_CODEC_ID_MJPEG,  MKTAG('m', 'j', 'p', 'a') }, /* Motion-JPEG (format A) */
-    { AV_CODEC_ID_MJPEG,  MKTAG('A', 'V', 'D', 'J') }, /* MJPEG with alpha-channel (AVID JFIF meridien compressed) */
+    { AV_CODEC_ID_AVRN ,  MKTAG('A', 'V', 'D', 'J') }, /* MJPEG with alpha-channel (AVID JFIF meridien compressed) */
 /*  { AV_CODEC_ID_MJPEG,  MKTAG('A', 'V', 'R', 'n') }, *//* MJPEG with alpha-channel (AVID ABVB/Truevision NuVista) */
     { AV_CODEC_ID_MJPEG,  MKTAG('d', 'm', 'b', '1') }, /* Motion JPEG OpenDML */
     { AV_CODEC_ID_MJPEGB, MKTAG('m', 'j', 'p', 'b') }, /* Motion-JPEG (format B) */
@@ -232,6 +240,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 
     { AV_CODEC_ID_DIRAC,     MKTAG('d', 'r', 'a', 'c') },
     { AV_CODEC_ID_DNXHD,     MKTAG('A', 'V', 'd', 'n') }, /* AVID DNxHD */
+    { AV_CODEC_ID_DNXHD,     MKTAG('A', 'V', 'd', 'h') }, /* AVID DNxHR */
     { AV_CODEC_ID_H263,      MKTAG('H', '2', '6', '3') },
     { AV_CODEC_ID_MSMPEG4V3, MKTAG('3', 'I', 'V', 'D') }, /* 3ivx DivX Doctor */
     { AV_CODEC_ID_RAWVIDEO,  MKTAG('A', 'V', '1', 'x') }, /* AVID 1:1x */
@@ -309,12 +318,15 @@ const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_SPEEX,           MKTAG('s', 'p', 'e', 'x') }, /* Flash Media Server */
     { AV_CODEC_ID_SPEEX,           MKTAG('S', 'P', 'X', 'N') }, /* ZygoAudio (quality 10 mode) */
     { AV_CODEC_ID_WMAV2,           MKTAG('W', 'M', 'A', '2') },
+    { AV_CODEC_ID_EVRC,            MKTAG('s', 'e', 'v', 'c') }, /* 3GPP2 */
+    { AV_CODEC_ID_SMV,             MKTAG('s', 's', 'm', 'v') }, /* 3GPP2 */
     { AV_CODEC_ID_NONE, 0 },
 };
 
 const AVCodecTag ff_codec_movsubtitle_tags[] = {
     { AV_CODEC_ID_MOV_TEXT, MKTAG('t', 'e', 'x', 't') },
     { AV_CODEC_ID_MOV_TEXT, MKTAG('t', 'x', '3', 'g') },
+    { AV_CODEC_ID_EIA_608,  MKTAG('c', '6', '0', '8') },
     { AV_CODEC_ID_NONE, 0 },
 };
 
@@ -442,14 +454,28 @@ static const AVCodecTag mp4_audio_types[] = {
 
 int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext *pb)
 {
+    enum AVCodecID codec_id;
+    unsigned v;
     int len, tag;
+    int ret;
     int object_type_id = avio_r8(pb);
     avio_r8(pb); /* stream type */
     avio_rb24(pb); /* buffer size db */
-    avio_rb32(pb); /* max bitrate */
-    avio_rb32(pb); /* avg bitrate */
 
-    st->codec->codec_id= ff_codec_get_id(ff_mp4_obj_type, object_type_id);
+    if(avcodec_is_open(st->codec)) {
+        av_log(fc, AV_LOG_DEBUG, "codec open in read_dec_config_descr\n");
+        return -1;
+    }
+
+    v = avio_rb32(pb);
+    if (v < INT32_MAX)
+        st->codec->rc_max_rate = v;
+
+    st->codec->bit_rate = avio_rb32(pb); /* avg bitrate */
+
+    codec_id= ff_codec_get_id(ff_mp4_obj_type, object_type_id);
+    if (codec_id)
+        st->codec->codec_id= codec_id;
     av_log(fc, AV_LOG_TRACE, "esds object type id 0x%02x\n", object_type_id);
     len = ff_mp4_read_descr(fc, pb, &tag);
     if (tag == MP4DecSpecificDescrTag) {
@@ -457,13 +483,10 @@ int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext 
         if (!len || (uint64_t)len > (1<<30))
             return -1;
         av_free(st->codec->extradata);
-        st->codec->extradata = av_mallocz(len + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!st->codec->extradata)
-            return AVERROR(ENOMEM);
-        avio_read(pb, st->codec->extradata, len);
-        st->codec->extradata_size = len;
+        if ((ret = ff_get_extradata(st->codec, pb, len)) < 0)
+            return ret;
         if (st->codec->codec_id == AV_CODEC_ID_AAC) {
-            MPEG4AudioConfig cfg;
+            MPEG4AudioConfig cfg = {0};
             avpriv_mpeg4audio_get_config(&cfg, st->codec->extradata,
                                          st->codec->extradata_size * 8, 1);
             st->codec->channels = cfg.channels;
@@ -483,4 +506,105 @@ int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext 
         }
     }
     return 0;
+}
+
+typedef struct MovChannelLayout {
+    int64_t  channel_layout;
+    uint32_t layout_tag;
+} MovChannelLayout;
+
+static const MovChannelLayout mov_channel_layout[] = {
+    { AV_CH_LAYOUT_MONO,                         (100<<16) | 1}, // kCAFChannelLayoutTag_Mono
+    { AV_CH_LAYOUT_STEREO,                       (101<<16) | 2}, // kCAFChannelLayoutTag_Stereo
+    { AV_CH_LAYOUT_STEREO,                       (102<<16) | 2}, // kCAFChannelLayoutTag_StereoHeadphones
+    { AV_CH_LAYOUT_2_1,                          (131<<16) | 3}, // kCAFChannelLayoutTag_ITU_2_1
+    { AV_CH_LAYOUT_QUAD,                         (132<<16) | 4}, // kCAFChannelLayoutTag_ITU_2_2
+    { AV_CH_LAYOUT_2_2,                          (132<<16) | 4}, // kCAFChannelLayoutTag_ITU_2_2
+    { AV_CH_LAYOUT_QUAD,                         (108<<16) | 4}, // kCAFChannelLayoutTag_Quadraphonic
+    { AV_CH_LAYOUT_SURROUND,                     (113<<16) | 3}, // kCAFChannelLayoutTag_MPEG_3_0_A
+    { AV_CH_LAYOUT_4POINT0,                      (115<<16) | 4}, // kCAFChannelLayoutTag_MPEG_4_0_A
+    { AV_CH_LAYOUT_5POINT0_BACK,                 (117<<16) | 5}, // kCAFChannelLayoutTag_MPEG_5_0_A
+    { AV_CH_LAYOUT_5POINT0,                      (117<<16) | 5}, // kCAFChannelLayoutTag_MPEG_5_0_A
+    { AV_CH_LAYOUT_5POINT1_BACK,                 (121<<16) | 6}, // kCAFChannelLayoutTag_MPEG_5_1_A
+    { AV_CH_LAYOUT_5POINT1,                      (121<<16) | 6}, // kCAFChannelLayoutTag_MPEG_5_1_A
+    { AV_CH_LAYOUT_7POINT1,                      (128<<16) | 8}, // kCAFChannelLayoutTag_MPEG_7_1_C
+    { AV_CH_LAYOUT_7POINT1_WIDE,                 (126<<16) | 8}, // kCAFChannelLayoutTag_MPEG_7_1_A
+    { AV_CH_LAYOUT_5POINT1_BACK|AV_CH_LAYOUT_STEREO_DOWNMIX, (130<<16) | 8}, // kCAFChannelLayoutTag_SMPTE_DTV
+    { AV_CH_LAYOUT_STEREO|AV_CH_LOW_FREQUENCY,   (133<<16) | 3}, // kCAFChannelLayoutTag_DVD_4
+    { AV_CH_LAYOUT_2_1|AV_CH_LOW_FREQUENCY,      (134<<16) | 4}, // kCAFChannelLayoutTag_DVD_5
+    { AV_CH_LAYOUT_QUAD|AV_CH_LOW_FREQUENCY,     (135<<16) | 4}, // kCAFChannelLayoutTag_DVD_6
+    { AV_CH_LAYOUT_2_2|AV_CH_LOW_FREQUENCY,      (135<<16) | 4}, // kCAFChannelLayoutTag_DVD_6
+    { AV_CH_LAYOUT_SURROUND|AV_CH_LOW_FREQUENCY, (136<<16) | 4}, // kCAFChannelLayoutTag_DVD_10
+    { AV_CH_LAYOUT_4POINT0|AV_CH_LOW_FREQUENCY,  (137<<16) | 5}, // kCAFChannelLayoutTag_DVD_11
+    { 0, 0},
+};
+#if 0
+int ff_mov_read_chan(AVFormatContext *s, AVStream *st, int64_t size)
+{
+    AVCodecContext *codec= st->codec;
+    uint32_t layout_tag;
+    AVIOContext *pb = s->pb;
+    const MovChannelLayout *layouts = mov_channel_layout;
+
+    if (size < 12)
+        return AVERROR_INVALIDDATA;
+
+    layout_tag = avio_rb32(pb);
+    size -= 4;
+    if (layout_tag == 0) { // kCAFChannelLayoutTag_UseChannelDescriptions
+        // Channel descriptions not implemented
+        av_log_ask_for_sample(s, "Unimplemented container channel layout.\n");
+        avio_skip(pb, size);
+        return 0;
+    }
+    if (layout_tag == 0x10000) { // kCAFChannelLayoutTag_UseChannelBitmap
+        codec->channel_layout = avio_rb32(pb);
+        size -= 4;
+        avio_skip(pb, size);
+        return 0;
+    }
+    while (layouts->channel_layout) {
+        if (layout_tag == layouts->layout_tag) {
+            codec->channel_layout = layouts->channel_layout;
+            break;
+        }
+        layouts++;
+    }
+    if (!codec->channel_layout)
+        av_log(s, AV_LOG_WARNING, "Unknown container channel layout.\n");
+    avio_skip(pb, size);
+
+    return 0;
+}
+#endif
+
+void ff_mov_write_chan(AVIOContext *pb, int64_t channel_layout)
+{
+    const MovChannelLayout *layouts;
+    uint32_t layout_tag = 0;
+
+    for (layouts = mov_channel_layout; layouts->channel_layout; layouts++)
+        if (channel_layout == layouts->channel_layout) {
+            layout_tag = layouts->layout_tag;
+            break;
+        }
+
+    if (layout_tag) {
+        avio_wb32(pb, layout_tag); // mChannelLayoutTag
+        avio_wb32(pb, 0);          // mChannelBitmap
+    } else {
+        avio_wb32(pb, 0x10000);    // kCAFChannelLayoutTag_UseChannelBitmap
+        avio_wb32(pb, channel_layout);
+    }
+    avio_wb32(pb, 0);              // mNumberChannelDescriptions
+}
+
+const struct AVCodecTag *avformat_get_mov_video_tags(void)
+{
+    return ff_codec_movvideo_tags;
+}
+
+const struct AVCodecTag *avformat_get_mov_audio_tags(void)
+{
+    return ff_codec_movaudio_tags;
 }
