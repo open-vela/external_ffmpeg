@@ -4,20 +4,20 @@
  * Copyright (C) 2009 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2009 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -86,7 +86,6 @@ av_cold void ff_v210enc_init(V210EncContext *s)
 {
     s->pack_line_8  = v210_planar_pack_8_c;
     s->pack_line_10 = v210_planar_pack_10_c;
-    s->sample_factor = 1;
 
     if (ARCH_X86)
         ff_v210enc_init_x86(s);
@@ -122,7 +121,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int h, w, ret;
     uint8_t *dst;
 
-    ret = ff_alloc_packet2(avctx, pkt, avctx->height * stride, avctx->height * stride);
+    ret = ff_alloc_packet(pkt, avctx->height * stride);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
@@ -135,20 +134,13 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         const uint16_t *v = (const uint16_t *)pic->data[2];
         for (h = 0; h < avctx->height; h++) {
             uint32_t val;
-            w = (avctx->width / (6 * s->sample_factor)) * 6 * s->sample_factor;
+            w = (avctx->width / 6) * 6;
             s->pack_line_10(y, u, v, dst, w);
 
             y += w;
             u += w >> 1;
             v += w >> 1;
-            dst += (w / (6 * s->sample_factor)) * 16 * s->sample_factor;
-
-            for (; w < avctx->width - 5; w += 6) {
-                WRITE_PIXELS(u, y, v);
-                WRITE_PIXELS(y, u, y);
-                WRITE_PIXELS(v, y, u);
-                WRITE_PIXELS(y, v, y);
-            }
+            dst += (w / 6) * 16;
             if (w < avctx->width - 1) {
                 WRITE_PIXELS(u, y, v);
 
@@ -180,13 +172,13 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         const uint8_t *v = pic->data[2];
         for (h = 0; h < avctx->height; h++) {
             uint32_t val;
-            w = (avctx->width / (12 * s->sample_factor)) * 12 * s->sample_factor;
+            w = (avctx->width / 12) * 12;
             s->pack_line_8(y, u, v, dst, w);
 
             y += w;
             u += w >> 1;
             v += w >> 1;
-            dst += (w / (12 * s->sample_factor)) * 32 * s->sample_factor;
+            dst += (w / 12) * 32;
 
             for (; w < avctx->width - 5; w += 6) {
                 WRITE_PIXELS8(u, y, v);
