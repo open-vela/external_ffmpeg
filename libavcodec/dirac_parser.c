@@ -4,20 +4,20 @@
  * Copyright (c) 2007-2008 Marco Gerards <marco@gnu.org>
  * Copyright (c) 2008 BBC, Anuradha Suraparaju <asuraparaju@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,17 +100,36 @@ typedef struct DiracParseUnit {
 static int unpack_parse_unit(DiracParseUnit *pu, DiracParseContext *pc,
                              int offset)
 {
-    uint8_t *start = pc->buffer + offset;
-    uint8_t *end   = pc->buffer + pc->index;
-    if (start < pc->buffer || (start + 13 > end))
+    int i;
+    int8_t *start;
+    static const uint8_t valid_pu_types[] = {
+        0x00, 0x10, 0x20, 0x30, 0x08, 0x48, 0xC8, 0xE8, 0x0A, 0x0C, 0x0D, 0x0E,
+        0x4C, 0x09, 0xCC, 0x88, 0xCB
+    };
+
+    if (offset < 0 || pc->index - 13 < offset)
         return 0;
+
+    start = pc->buffer + offset;
     pu->pu_type = start[4];
 
     pu->next_pu_offset = AV_RB32(start + 5);
     pu->prev_pu_offset = AV_RB32(start + 9);
 
-    if (pu->pu_type == 0x10 && pu->next_pu_offset == 0)
-        pu->next_pu_offset = 13;
+    /* Check for valid parse code */
+    for (i = 0; i < 17; i++)
+        if (valid_pu_types[i] == pu->pu_type)
+            break;
+    if (i == 17)
+        return 0;
+
+    if (pu->pu_type == 0x10 && pu->next_pu_offset == 0x00)
+        pu->next_pu_offset = 13; /* The length of a parse info header */
+
+    /* Check if the parse offsets are somewhat sane */
+    if ((pu->next_pu_offset && pu->next_pu_offset < 13) ||
+        (pu->prev_pu_offset && pu->prev_pu_offset < 13))
+        return 0;
 
     return 1;
 }
@@ -123,7 +142,7 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
     DiracParseContext *pc = s->priv_data;
 
     if (pc->overread_index) {
-        memcpy(pc->buffer, pc->buffer + pc->overread_index,
+        memmove(pc->buffer, pc->buffer + pc->overread_index,
                pc->index - pc->overread_index);
         pc->index         -= pc->overread_index;
         pc->overread_index = 0;
@@ -139,6 +158,8 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
         void *new_buffer =
             av_fast_realloc(pc->buffer, &pc->buffer_size,
                             pc->index + (*buf_size - pc->sync_offset));
+        if (!new_buffer)
+            return AVERROR(ENOMEM);
         pc->buffer = new_buffer;
         memcpy(pc->buffer + pc->index, (*buf + pc->sync_offset),
                *buf_size - pc->sync_offset);
@@ -149,6 +170,8 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
         DiracParseUnit pu1, pu;
         void *new_buffer = av_fast_realloc(pc->buffer, &pc->buffer_size,
                                            pc->index + next);
+        if (!new_buffer)
+            return AVERROR(ENOMEM);
         pc->buffer = new_buffer;
         memcpy(pc->buffer + pc->index, *buf, next);
         pc->index += next;
@@ -161,7 +184,9 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
          * we can be pretty sure that we have a valid parse unit */
         if (!unpack_parse_unit(&pu1, pc, pc->index - 13)                     ||
             !unpack_parse_unit(&pu, pc, pc->index - 13 - pu1.prev_pu_offset) ||
-            pu.next_pu_offset != pu1.prev_pu_offset) {
+            pu.next_pu_offset != pu1.prev_pu_offset                          ||
+            pc->index < pc->dirac_unit_size + 13LL + pu1.prev_pu_offset
+        ) {
             pc->index              -= 9;
             *buf_size               = next - 9;
             pc->header_bytes_needed = 9;
@@ -184,7 +209,7 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
         }
 
         /* Get the picture number to set the pts and dts*/
-        if (parse_timing_info) {
+        if (parse_timing_info && pu1.prev_pu_offset >= 13) {
             uint8_t *cur_pu = pc->buffer +
                               pc->index - 13 - pu1.prev_pu_offset;
             int pts = AV_RB32(cur_pu + 13);
@@ -245,7 +270,7 @@ static void dirac_parse_close(AVCodecParserContext *s)
     DiracParseContext *pc = s->priv_data;
 
     if (pc->buffer_size > 0)
-        av_free(pc->buffer);
+        av_freep(&pc->buffer);
 }
 
 AVCodecParser ff_dirac_parser = {
