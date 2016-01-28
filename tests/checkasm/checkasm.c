@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -64,43 +64,27 @@ static const struct {
     const char *name;
     void (*func)(void);
 } tests[] = {
-#if CONFIG_AVCODEC
-    #if CONFIG_ALAC_DECODER
-        { "alacdsp", checkasm_check_alacdsp },
-    #endif
-    #if CONFIG_BSWAPDSP
-        { "bswapdsp", checkasm_check_bswapdsp },
-    #endif
-    #if CONFIG_DCA_DECODER
-        { "synth_filter", checkasm_check_synth_filter },
-    #endif
-    #if CONFIG_FLACDSP
-        { "flacdsp", checkasm_check_flacdsp },
-    #endif
-    #if CONFIG_FMTCONVERT
-        { "fmtconvert", checkasm_check_fmtconvert },
-    #endif
-    #if CONFIG_H264PRED
-        { "h264pred", checkasm_check_h264pred },
-    #endif
-    #if CONFIG_H264QPEL
-        { "h264qpel", checkasm_check_h264qpel },
-    #endif
-    #if CONFIG_JPEG2000_DECODER
-        { "jpeg2000dsp", checkasm_check_jpeg2000dsp },
-    #endif
-    #if CONFIG_PIXBLOCKDSP
-        { "pixblockdsp", checkasm_check_pixblockdsp },
-    #endif
-    #if CONFIG_V210_ENCODER
-        { "v210enc", checkasm_check_v210enc },
-    #endif
-    #if CONFIG_VP9_DECODER
-        { "vp9dsp", checkasm_check_vp9dsp },
-    #endif
-    #if CONFIG_VIDEODSP
-        { "videodsp", checkasm_check_videodsp },
-    #endif
+#if CONFIG_BSWAPDSP
+    { "bswapdsp", checkasm_check_bswapdsp },
+#endif
+#if CONFIG_DCA_DECODER
+    { "dcadsp", checkasm_check_dcadsp },
+    { "synth_filter", checkasm_check_synth_filter },
+#endif
+#if CONFIG_FMTCONVERT
+    { "fmtconvert", checkasm_check_fmtconvert },
+#endif
+#if CONFIG_H264PRED
+    { "h264pred", checkasm_check_h264pred },
+#endif
+#if CONFIG_H264QPEL
+    { "h264qpel", checkasm_check_h264qpel },
+#endif
+#if CONFIG_HEVC_DECODER
+    { "hevc_mc", checkasm_check_hevc_mc },
+#endif
+#if CONFIG_V210_ENCODER
+    { "v210enc", checkasm_check_v210enc },
 #endif
     { NULL }
 };
@@ -137,7 +121,6 @@ static const struct {
     { "SSSE3",    "ssse3",    AV_CPU_FLAG_SSSE3|AV_CPU_FLAG_ATOM },
     { "SSE4.1",   "sse4",     AV_CPU_FLAG_SSE4 },
     { "SSE4.2",   "sse42",    AV_CPU_FLAG_SSE42 },
-    { "AES-NI",   "aesni",    AV_CPU_FLAG_AESNI },
     { "AVX",      "avx",      AV_CPU_FLAG_AVX },
     { "XOP",      "xop",      AV_CPU_FLAG_XOP },
     { "FMA3",     "fma3",     AV_CPU_FLAG_FMA3 },
@@ -459,9 +442,8 @@ static void check_cpu_flag(const char *name, int flag)
     int old_cpu_flag = state.cpu_flag;
 
     flag |= old_cpu_flag;
-    av_force_cpu_flags(-1);
-    state.cpu_flag = flag & av_get_cpu_flags();
-    av_force_cpu_flags(state.cpu_flag);
+    av_set_cpu_flags_mask(flag);
+    state.cpu_flag = av_get_cpu_flags();
 
     if (!flag || state.cpu_flag != old_cpu_flag) {
         int i;
