@@ -2,20 +2,20 @@
  * Sun Rasterfile (.sun/.ras/im{1,8,24}/.sunras) image encoder
  * Copyright (c) 2012 Aneesh Dogra (lionaneesh) <lionaneesh@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,7 +59,7 @@ static void sunrast_image_write_image(AVCodecContext *avctx,
 {
     SUNRASTContext *s = avctx->priv_data;
     const uint8_t *ptr;
-    int len, alen, x, y;
+    int len, alen, x;
 
     if (s->maplength) {     // palettized
         PutByteContext pb_r, pb_g;
@@ -86,29 +86,33 @@ static void sunrast_image_write_image(AVCodecContext *avctx,
      if (s->type == RT_BYTE_ENCODED) {
         uint8_t value, value2;
         int run;
+        const uint8_t *start = linesize < 0 ? pixels + (avctx->height - 1) * linesize
+                                            : pixels;
+        const uint8_t *end   = linesize < 0 ? pixels - linesize
+                                            : pixels + avctx->height * linesize;
 
         ptr = pixels;
 
-#define GET_VALUE y >= avctx->height ? 0 : x >= len ? ptr[len-1] : ptr[x]
+#define GET_VALUE ptr >= end || ptr < start ? 0 : x >= len ? ptr[len-1] : ptr[x]
 
-        x = 0, y = 0;
+        x = 0;
         value2 = GET_VALUE;
-        while (y < avctx->height) {
+        while (ptr < end && ptr >= start) {
             run = 1;
             value = value2;
             x++;
             if (x >= alen) {
                 x = 0;
-                ptr += linesize, y++;
+                ptr += linesize;
             }
 
             value2 = GET_VALUE;
-            while (value2 == value && run < 256 && y < avctx->height) {
+            while (value2 == value && run < 256 && ptr < end && ptr >= start) {
                 x++;
                 run++;
                 if (x >= alen) {
                     x = 0;
-                    ptr += linesize, y++;
+                    ptr += linesize;
                 }
                 value2 = GET_VALUE;
             }
@@ -127,6 +131,7 @@ static void sunrast_image_write_image(AVCodecContext *avctx,
         // update data length for header
         s->length = bytestream2_tell_p(&s->p) - 32 - s->maplength;
     } else {
+        int y;
         for (y = 0; y < avctx->height; y++) {
             bytestream2_put_buffer(&s->p, ptr, len);
             if (len < alen)
@@ -159,6 +164,12 @@ FF_ENABLE_DEPRECATION_WARNINGS
     // adjust boolean option to RT equivalent
     s->type++;
 
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->key_frame = 1;
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     s->maptype                    = RMT_NONE;
     s->maplength                  = 0;
 
@@ -191,7 +202,7 @@ static int sunrast_encode_frame(AVCodecContext *avctx,  AVPacket *avpkt,
     SUNRASTContext *s = avctx->priv_data;
     int ret;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, s->size, 0)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, s->size)) < 0)
         return ret;
 
     bytestream2_init_writer(&s->p, avpkt->data, avpkt->size);
@@ -237,12 +248,12 @@ AVCodec ff_sunrast_encoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_SUNRAST,
     .priv_data_size = sizeof(SUNRASTContext),
+    .priv_class     = &sunrast_class,
     .init           = sunrast_encode_init,
     .encode2        = sunrast_encode_frame,
 #if FF_API_CODER_TYPE
     .defaults       = sunrast_defaults,
 #endif
-    .priv_class     = &sunrast_class,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_BGR24,
                                                   AV_PIX_FMT_PAL8,
                                                   AV_PIX_FMT_GRAY8,

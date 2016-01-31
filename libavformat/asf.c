@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -143,10 +143,6 @@ const ff_asf_guid ff_asf_digital_signature = {
     0xfc, 0xb3, 0x11, 0x22, 0x23, 0xbd, 0xd2, 0x11, 0xb4, 0xb7, 0x00, 0xa0, 0xc9, 0x55, 0xfc, 0x6e
 };
 
-const ff_asf_guid ff_asf_extended_stream_properties_object = {
-    0xcb, 0xa5, 0xe6, 0x14, 0x72, 0xc6, 0x32, 0x43, 0x83, 0x99, 0xa9, 0x69, 0x52, 0x06, 0x5b, 0x5a
-};
-
 /* List of official tags at http://msdn.microsoft.com/en-us/library/dd743066(VS.85).aspx */
 const AVMetadataConv ff_asf_metadata_conv[] = {
     { "WM/AlbumArtist",          "album_artist"     },
@@ -163,6 +159,7 @@ const AVMetadataConv ff_asf_metadata_conv[] = {
     { "WM/Publisher",            "publisher"        },
     { "WM/Tool",                 "encoder"          },
     { "WM/TrackNumber",          "track"            },
+    { "WM/Track",                "track"            },
     { "WM/MediaStationCallSign", "service_provider" },
     { "WM/MediaStationName",     "service_name"     },
 //  { "Year"               , "date"        }, TODO: conversion year<->date
