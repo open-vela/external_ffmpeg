@@ -4,20 +4,20 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,14 +44,18 @@ static int vdpau_vc1_start_frame(AVCodecContext *avctx,
 
     switch (s->pict_type) {
     case AV_PICTURE_TYPE_B:
+        if (s->next_picture_ptr) {
         ref = ff_vdpau_get_surface_id(s->next_picture.f);
         assert(ref != VDP_INVALID_HANDLE);
         info->backward_reference = ref;
+        }
         /* fall-through */
     case AV_PICTURE_TYPE_P:
+        if (s->last_picture_ptr) {
         ref = ff_vdpau_get_surface_id(s->last_picture.f);
         assert(ref != VDP_INVALID_HANDLE);
         info->forward_reference  = ref;
+        }
     }
 
     info->slice_count       = 0;

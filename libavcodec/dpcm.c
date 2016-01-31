@@ -1,21 +1,21 @@
 /*
  * Assorted DPCM codecs
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,7 +44,7 @@
 #include "mathops.h"
 
 typedef struct DPCMContext {
-    int16_t roq_square_array[256];
+    int16_t square_array[256];
     int sample[2];                  ///< previous sample (for SOL_DPCM)
     const int8_t *sol_table;        ///< delta table for SOL_DPCM
 } DPCMContext;
@@ -118,7 +118,7 @@ static av_cold int dpcm_decode_init(AVCodecContext *avctx)
     int i;
 
     if (avctx->channels < 1 || avctx->channels > 2) {
-        av_log(avctx, AV_LOG_INFO, "invalid number of channels\n");
+        av_log(avctx, AV_LOG_ERROR, "invalid number of channels\n");
         return AVERROR(EINVAL);
     }
 
@@ -130,8 +130,8 @@ static av_cold int dpcm_decode_init(AVCodecContext *avctx)
         /* initialize square table */
         for (i = 0; i < 128; i++) {
             int16_t square = i * i;
-            s->roq_square_array[i      ] =  square;
-            s->roq_square_array[i + 128] = -square;
+            s->square_array[i      ] =  square;
+            s->square_array[i + 128] = -square;
         }
         break;
 
@@ -150,6 +150,13 @@ static av_cold int dpcm_decode_init(AVCodecContext *avctx)
         default:
             av_log(avctx, AV_LOG_ERROR, "Unknown SOL subcodec\n");
             return -1;
+        }
+        break;
+
+    case AV_CODEC_ID_SDX2_DPCM:
+        for (i = -128; i < 128; i++) {
+            int16_t square = i * i * 2;
+            s->square_array[i+128] = i < 0 ? -square: square;
         }
         break;
 
@@ -200,18 +207,22 @@ static int dpcm_decode_frame(AVCodecContext *avctx, void *data,
         else
             out = buf_size;
         break;
+    case AV_CODEC_ID_SDX2_DPCM:
+        out = buf_size;
+        break;
     }
     if (out <= 0) {
         av_log(avctx, AV_LOG_ERROR, "packet is too small\n");
         return AVERROR(EINVAL);
     }
+    if (out % avctx->channels) {
+        av_log(avctx, AV_LOG_WARNING, "channels have differing number of samples\n");
+    }
 
     /* get output buffer */
-    frame->nb_samples = out / avctx->channels;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = (out + avctx->channels - 1) / avctx->channels;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     output_samples = (int16_t *)frame->data[0];
     samples_end = output_samples + out;
 
@@ -229,7 +240,7 @@ static int dpcm_decode_frame(AVCodecContext *avctx, void *data,
 
         /* decode the samples */
         while (output_samples < samples_end) {
-            predictor[ch] += s->roq_square_array[bytestream2_get_byteu(&gb)];
+            predictor[ch] += s->square_array[bytestream2_get_byteu(&gb)];
             predictor[ch]  = av_clip_int16(predictor[ch]);
             *output_samples++ = predictor[ch];
 
@@ -317,6 +328,19 @@ static int dpcm_decode_frame(AVCodecContext *avctx, void *data,
             }
         }
         break;
+
+    case AV_CODEC_ID_SDX2_DPCM:
+        while (output_samples < samples_end) {
+            int8_t n = bytestream2_get_byteu(&gb);
+
+            if (!(n & 1))
+                s->sample[ch] = 0;
+            s->sample[ch] += s->square_array[n + 128];
+            s->sample[ch]  = av_clip_int16(s->sample[ch]);
+            *output_samples++ = s->sample[ch];
+            ch ^= stereo;
+        }
+        break;
     }
 
     *got_frame_ptr = 1;
@@ -338,5 +362,6 @@ AVCodec ff_ ## name_ ## _decoder = {                        \
 
 DPCM_DECODER(AV_CODEC_ID_INTERPLAY_DPCM, interplay_dpcm, "DPCM Interplay");
 DPCM_DECODER(AV_CODEC_ID_ROQ_DPCM,       roq_dpcm,       "DPCM id RoQ");
+DPCM_DECODER(AV_CODEC_ID_SDX2_DPCM,      sdx2_dpcm,      "DPCM Squareroot-Delta-Exact");
 DPCM_DECODER(AV_CODEC_ID_SOL_DPCM,       sol_dpcm,       "DPCM Sol");
 DPCM_DECODER(AV_CODEC_ID_XAN_DPCM,       xan_dpcm,       "DPCM Xan");
