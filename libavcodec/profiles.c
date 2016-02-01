@@ -1,19 +1,19 @@
 /*
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,12 +38,11 @@ const AVProfile ff_aac_profiles[] = {
 };
 
 const AVProfile ff_dca_profiles[] = {
-    { FF_PROFILE_DTS,         "DTS"         },
-    { FF_PROFILE_DTS_ES,      "DTS-ES"      },
-    { FF_PROFILE_DTS_96_24,   "DTS 96/24"   },
-    { FF_PROFILE_DTS_HD_HRA,  "DTS-HD HRA"  },
-    { FF_PROFILE_DTS_HD_MA,   "DTS-HD MA"   },
-    { FF_PROFILE_DTS_EXPRESS, "DTS Express" },
+    { FF_PROFILE_DTS,        "DTS"        },
+    { FF_PROFILE_DTS_ES,     "DTS-ES"     },
+    { FF_PROFILE_DTS_96_24,  "DTS 96/24"  },
+    { FF_PROFILE_DTS_HD_HRA, "DTS-HD HRA" },
+    { FF_PROFILE_DTS_HD_MA,  "DTS-HD MA"  },
     { FF_PROFILE_UNKNOWN },
 };
 
@@ -68,7 +67,6 @@ const AVProfile ff_hevc_profiles[] = {
     { FF_PROFILE_HEVC_MAIN,                 "Main"                },
     { FF_PROFILE_HEVC_MAIN_10,              "Main 10"             },
     { FF_PROFILE_HEVC_MAIN_STILL_PICTURE,   "Main Still Picture"  },
-    { FF_PROFILE_HEVC_REXT,                 "Rext"                },
     { FF_PROFILE_UNKNOWN },
 };
 
@@ -118,14 +116,6 @@ const AVProfile ff_vc1_profiles[] = {
     { FF_PROFILE_VC1_MAIN,     "Main"     },
     { FF_PROFILE_VC1_COMPLEX,  "Complex"  },
     { FF_PROFILE_VC1_ADVANCED, "Advanced" },
-    { FF_PROFILE_UNKNOWN },
-};
-
-const AVProfile ff_vp9_profiles[] = {
-    { FF_PROFILE_VP9_0, "Profile 0" },
-    { FF_PROFILE_VP9_1, "Profile 1" },
-    { FF_PROFILE_VP9_2, "Profile 2" },
-    { FF_PROFILE_VP9_3, "Profile 3" },
     { FF_PROFILE_UNKNOWN },
 };
 
