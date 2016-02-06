@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,17 +51,21 @@ typedef struct ASyncContext {
 
 #define OFFSET(x) offsetof(ASyncContext, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
-#define F AV_OPT_FLAG_FILTERING_PARAM
-static const AVOption asyncts_options[] = {
-    { "compensate", "Stretch/squeeze the data to make it match the timestamps", OFFSET(resample),      AV_OPT_TYPE_BOOL,  { .i64 = 0 },   0, 1,       A|F },
+static const AVOption options[] = {
+    { "compensate", "Stretch/squeeze the data to make it match the timestamps", OFFSET(resample),      AV_OPT_TYPE_INT,   { .i64 = 0 },   0, 1,       A },
     { "min_delta",  "Minimum difference between timestamps and audio data "
-                    "(in seconds) to trigger padding/trimmin the data.",        OFFSET(min_delta_sec), AV_OPT_TYPE_FLOAT, { .dbl = 0.1 }, 0, INT_MAX, A|F },
-    { "max_comp",   "Maximum compensation in samples per second.",              OFFSET(max_comp),      AV_OPT_TYPE_INT,   { .i64 = 500 }, 0, INT_MAX, A|F },
-    { "first_pts",  "Assume the first pts should be this value.",               OFFSET(first_pts),     AV_OPT_TYPE_INT64, { .i64 = AV_NOPTS_VALUE }, INT64_MIN, INT64_MAX, A|F },
-    { NULL }
+                    "(in seconds) to trigger padding/trimmin the data.",        OFFSET(min_delta_sec), AV_OPT_TYPE_FLOAT, { .dbl = 0.1 }, 0, INT_MAX, A },
+    { "max_comp",   "Maximum compensation in samples per second.",              OFFSET(max_comp),      AV_OPT_TYPE_INT,   { .i64 = 500 }, 0, INT_MAX, A },
+    { "first_pts",  "Assume the first pts should be this value.",               OFFSET(first_pts),     AV_OPT_TYPE_INT64, { .i64 = AV_NOPTS_VALUE }, INT64_MIN, INT64_MAX, A },
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(asyncts);
+static const AVClass async_class = {
+    .class_name = "asyncts filter",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static av_cold int init(AVFilterContext *ctx)
 {
@@ -139,7 +143,8 @@ static int request_frame(AVFilterLink *link)
     int nb_samples;
 
     s->got_output = 0;
-    ret = ff_request_frame(ctx->inputs[0]);
+    while (ret >= 0 && !s->got_output)
+        ret = ff_request_frame(ctx->inputs[0]);
 
     /* flush the fifo */
     if (ret == AVERROR_EOF) {
@@ -204,7 +209,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     delta    = pts - s->pts - get_delay(s);
     out_size = avresample_available(s->avr);
 
-    if (llabs(delta) > s->min_delta ||
+    if (labs(delta) > s->min_delta ||
         (s->first_frame && delta && s->first_pts != AV_NOPTS_VALUE)) {
         av_log(ctx, AV_LOG_VERBOSE, "Discontinuity - %"PRId64" samples.\n", delta);
         out_size = av_clipl_int32((int64_t)out_size + delta);
@@ -293,9 +298,9 @@ fail:
 
 static const AVFilterPad avfilter_af_asyncts_inputs[] = {
     {
-        .name          = "default",
-        .type          = AVMEDIA_TYPE_AUDIO,
-        .filter_frame  = filter_frame
+        .name           = "default",
+        .type           = AVMEDIA_TYPE_AUDIO,
+        .filter_frame   = filter_frame,
     },
     { NULL }
 };
@@ -312,11 +317,14 @@ static const AVFilterPad avfilter_af_asyncts_outputs[] = {
 
 AVFilter ff_af_asyncts = {
     .name        = "asyncts",
-    .description = NULL_IF_CONFIG_SMALL("Sync audio data to timestamps."),
+    .description = NULL_IF_CONFIG_SMALL("Sync audio data to timestamps"),
+
     .init        = init,
     .uninit      = uninit,
+
     .priv_size   = sizeof(ASyncContext),
-    .priv_class  = &asyncts_class,
+    .priv_class  = &async_class,
+
     .inputs      = avfilter_af_asyncts_inputs,
     .outputs     = avfilter_af_asyncts_outputs,
 };
