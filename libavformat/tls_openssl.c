@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,7 +63,7 @@ static unsigned long openssl_thread_id(void)
 #endif
 #endif
 
-void ff_openssl_init(void)
+int ff_openssl_init(void)
 {
     avpriv_lock_avformat();
     if (!openssl_init) {
@@ -72,7 +72,12 @@ void ff_openssl_init(void)
 #if HAVE_THREADS
         if (!CRYPTO_get_locking_callback()) {
             int i;
-            openssl_mutexes = av_malloc(sizeof(pthread_mutex_t) * CRYPTO_num_locks());
+            openssl_mutexes = av_malloc_array(sizeof(pthread_mutex_t), CRYPTO_num_locks());
+            if (!openssl_mutexes) {
+                avpriv_unlock_avformat();
+                return AVERROR(ENOMEM);
+            }
+
             for (i = 0; i < CRYPTO_num_locks(); i++)
                 pthread_mutex_init(&openssl_mutexes[i], NULL);
             CRYPTO_set_locking_callback(openssl_lock);
@@ -84,6 +89,8 @@ void ff_openssl_init(void)
     }
     openssl_init++;
     avpriv_unlock_avformat();
+
+    return 0;
 }
 
 void ff_openssl_deinit(void)
@@ -195,7 +202,8 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     BIO *bio;
     int ret;
 
-    ff_openssl_init();
+    if ((ret = ff_openssl_init()) < 0)
+        return ret;
 
     if ((ret = ff_tls_open_underlying(c, h, uri, options)) < 0)
         goto fail;
@@ -206,8 +214,10 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         ret = AVERROR(EIO);
         goto fail;
     }
-    if (c->ca_file)
-        SSL_CTX_load_verify_locations(p->ctx, c->ca_file, NULL);
+    if (c->ca_file) {
+        if (!SSL_CTX_load_verify_locations(p->ctx, c->ca_file, NULL))
+            av_log(h, AV_LOG_ERROR, "SSL_CTX_load_verify_locations %s\n", ERR_error_string(ERR_get_error(), NULL));
+    }
     if (c->cert_file && !SSL_CTX_use_certificate_chain_file(p->ctx, c->cert_file)) {
         av_log(h, AV_LOG_ERROR, "Unable to load cert file %s: %s\n",
                c->cert_file, ERR_error_string(ERR_get_error(), NULL));
@@ -223,7 +233,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     // Note, this doesn't check that the peer certificate actually matches
     // the requested hostname.
     if (c->verify)
-        SSL_CTX_set_verify(p->ctx, SSL_VERIFY_PEER, NULL);
+        SSL_CTX_set_verify(p->ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
     p->ssl = SSL_new(p->ctx);
     if (!p->ssl) {
         av_log(h, AV_LOG_ERROR, "%s\n", ERR_error_string(ERR_get_error(), NULL));

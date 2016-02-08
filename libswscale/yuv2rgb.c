@@ -6,27 +6,26 @@
  * 1,4,8bpp support and context / deglobalize stuff
  * by Michael Niedermayer (michaelni@gmx.at)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <assert.h>
 
 #include "libavutil/cpu.h"
 #include "libavutil/bswap.h"
@@ -34,6 +33,7 @@
 #include "rgb2rgb.h"
 #include "swscale.h"
 #include "swscale_internal.h"
+#include "libavutil/pixdesc.h"
 
 /* Color space conversion coefficients for YCbCr -> RGB mapping.
  *
@@ -67,9 +67,9 @@ const int *sws_getCoefficients(int colorspace)
 #define LOADCHROMA(i)                               \
     U = pu[i];                                      \
     V = pv[i];                                      \
-    r = (void *)c->table_rV[V];                     \
-    g = (void *)(c->table_gU[U] + c->table_gV[V]);  \
-    b = (void *)c->table_bU[U];
+    r = (void *)c->table_rV[V+YUVRGB_TABLE_HEADROOM];                     \
+    g = (void *)(c->table_gU[U+YUVRGB_TABLE_HEADROOM] + c->table_gV[V+YUVRGB_TABLE_HEADROOM]);  \
+    b = (void *)c->table_bU[U+YUVRGB_TABLE_HEADROOM];
 
 #define PUTRGB(dst, src, i)                         \
     Y              = src[2 * i];                    \
@@ -393,24 +393,65 @@ ENDYUV2RGBLINE(24, 1)
     PUTBGR24(dst_2, py_2, 0);
 ENDYUV2RGBFUNC()
 
-// This is exactly the same code as yuv2rgb_c_32 except for the types of
-// r, g, b, dst_1, dst_2
-YUV2RGBFUNC(yuv2rgb_c_16, uint16_t, 0)
+YUV2RGBFUNC(yuv2rgb_c_16_ordered_dither, uint16_t, 0)
+    const uint8_t *d16 = ff_dither_2x2_8[y & 1];
+    const uint8_t *e16 = ff_dither_2x2_4[y & 1];
+    const uint8_t *f16 = ff_dither_2x2_8[(y & 1)^1];
+
+#define PUTRGB16(dst, src, i, o)                    \
+    Y              = src[2 * i];                    \
+    dst[2 * i]     = r[Y + d16[0 + o]] +            \
+                     g[Y + e16[0 + o]] +            \
+                     b[Y + f16[0 + o]];             \
+    Y              = src[2 * i + 1];                \
+    dst[2 * i + 1] = r[Y + d16[1 + o]] +            \
+                     g[Y + e16[1 + o]] +            \
+                     b[Y + f16[1 + o]];
     LOADCHROMA(0);
-    PUTRGB(dst_1, py_1, 0);
-    PUTRGB(dst_2, py_2, 0);
+    PUTRGB16(dst_1, py_1, 0, 0);
+    PUTRGB16(dst_2, py_2, 0, 0 + 8);
 
     LOADCHROMA(1);
-    PUTRGB(dst_2, py_2, 1);
-    PUTRGB(dst_1, py_1, 1);
+    PUTRGB16(dst_2, py_2, 1, 2 + 8);
+    PUTRGB16(dst_1, py_1, 1, 2);
 
     LOADCHROMA(2);
-    PUTRGB(dst_1, py_1, 2);
-    PUTRGB(dst_2, py_2, 2);
+    PUTRGB16(dst_1, py_1, 2, 4);
+    PUTRGB16(dst_2, py_2, 2, 4 + 8);
 
     LOADCHROMA(3);
-    PUTRGB(dst_2, py_2, 3);
-    PUTRGB(dst_1, py_1, 3);
+    PUTRGB16(dst_2, py_2, 3, 6 + 8);
+    PUTRGB16(dst_1, py_1, 3, 6);
+CLOSEYUV2RGBFUNC(8)
+
+YUV2RGBFUNC(yuv2rgb_c_15_ordered_dither, uint16_t, 0)
+    const uint8_t *d16 = ff_dither_2x2_8[y & 1];
+    const uint8_t *e16 = ff_dither_2x2_8[(y & 1)^1];
+
+#define PUTRGB15(dst, src, i, o)                    \
+    Y              = src[2 * i];                    \
+    dst[2 * i]     = r[Y + d16[0 + o]] +            \
+                     g[Y + d16[1 + o]] +            \
+                     b[Y + e16[0 + o]];             \
+    Y              = src[2 * i + 1];                \
+    dst[2 * i + 1] = r[Y + d16[1 + o]] +            \
+                     g[Y + d16[0 + o]] +            \
+                     b[Y + e16[1 + o]];
+    LOADCHROMA(0);
+    PUTRGB15(dst_1, py_1, 0, 0);
+    PUTRGB15(dst_2, py_2, 0, 0 + 8);
+
+    LOADCHROMA(1);
+    PUTRGB15(dst_2, py_2, 1, 2 + 8);
+    PUTRGB15(dst_1, py_1, 1, 2);
+
+    LOADCHROMA(2);
+    PUTRGB15(dst_1, py_1, 2, 4);
+    PUTRGB15(dst_2, py_2, 2, 4 + 8);
+
+    LOADCHROMA(3);
+    PUTRGB15(dst_2, py_2, 3, 6 + 8);
+    PUTRGB15(dst_1, py_1, 3, 6);
 CLOSEYUV2RGBFUNC(8)
 
 // r, g, b, dst_1, dst_2
@@ -474,7 +515,27 @@ YUV2RGBFUNC(yuv2rgb_c_8_ordered_dither, uint8_t, 0)
     LOADCHROMA(3);
     PUTRGB8(dst_2, py_2, 3, 6 + 8);
     PUTRGB8(dst_1, py_1, 3, 6);
-CLOSEYUV2RGBFUNC(8)
+
+ENDYUV2RGBLINE(8, 0)
+    const uint8_t *d32 = ff_dither_8x8_32[y & 7];
+    const uint8_t *d64 = ff_dither_8x8_73[y & 7];
+    LOADCHROMA(0);
+    PUTRGB8(dst_1, py_1, 0, 0);
+    PUTRGB8(dst_2, py_2, 0, 0 + 8);
+
+    LOADCHROMA(1);
+    PUTRGB8(dst_2, py_2, 1, 2 + 8);
+    PUTRGB8(dst_1, py_1, 1, 2);
+
+ENDYUV2RGBLINE(8, 1)
+    const uint8_t *d32 = ff_dither_8x8_32[y & 7];
+    const uint8_t *d64 = ff_dither_8x8_73[y & 7];
+    LOADCHROMA(0);
+    PUTRGB8(dst_1, py_1, 0, 0);
+    PUTRGB8(dst_2, py_2, 0, 0 + 8);
+
+ENDYUV2RGBFUNC()
+
 
 YUV2RGBFUNC(yuv2rgb_c_4_ordered_dither, uint8_t, 0)
     const uint8_t * d64 = ff_dither_8x8_73[y & 7];
@@ -507,7 +568,27 @@ YUV2RGBFUNC(yuv2rgb_c_4_ordered_dither, uint8_t, 0)
     LOADCHROMA(3);
     PUTRGB4D(dst_2, py_2, 3, 6 + 8);
     PUTRGB4D(dst_1, py_1, 3, 6);
-CLOSEYUV2RGBFUNC(4)
+
+ENDYUV2RGBLINE(4, 0)
+    const uint8_t * d64 = ff_dither_8x8_73[y & 7];
+    const uint8_t *d128 = ff_dither_8x8_220[y & 7];
+    int acc;
+    LOADCHROMA(0);
+    PUTRGB4D(dst_1, py_1, 0, 0);
+    PUTRGB4D(dst_2, py_2, 0, 0 + 8);
+
+    LOADCHROMA(1);
+    PUTRGB4D(dst_2, py_2, 1, 2 + 8);
+    PUTRGB4D(dst_1, py_1, 1, 2);
+
+ENDYUV2RGBLINE(4, 1)
+    const uint8_t * d64 = ff_dither_8x8_73[y & 7];
+    const uint8_t *d128 = ff_dither_8x8_220[y & 7];
+    int acc;
+    LOADCHROMA(0);
+    PUTRGB4D(dst_1, py_1, 0, 0);
+    PUTRGB4D(dst_2, py_2, 0, 0 + 8);
+ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuv2rgb_c_4b_ordered_dither, uint8_t, 0)
     const uint8_t *d64  = ff_dither_8x8_73[y & 7];
@@ -538,12 +619,28 @@ YUV2RGBFUNC(yuv2rgb_c_4b_ordered_dither, uint8_t, 0)
     LOADCHROMA(3);
     PUTRGB4DB(dst_2, py_2, 3, 6 + 8);
     PUTRGB4DB(dst_1, py_1, 3, 6);
-CLOSEYUV2RGBFUNC(8)
+ENDYUV2RGBLINE(8, 0)
+    const uint8_t *d64  = ff_dither_8x8_73[y & 7];
+    const uint8_t *d128 = ff_dither_8x8_220[y & 7];
+    LOADCHROMA(0);
+    PUTRGB4DB(dst_1, py_1, 0, 0);
+    PUTRGB4DB(dst_2, py_2, 0, 0 + 8);
+
+    LOADCHROMA(1);
+    PUTRGB4DB(dst_2, py_2, 1, 2 + 8);
+    PUTRGB4DB(dst_1, py_1, 1, 2);
+ENDYUV2RGBLINE(8, 1)
+    const uint8_t *d64  = ff_dither_8x8_73[y & 7];
+    const uint8_t *d128 = ff_dither_8x8_220[y & 7];
+    LOADCHROMA(0);
+    PUTRGB4DB(dst_1, py_1, 0, 0);
+    PUTRGB4DB(dst_2, py_2, 0, 0 + 8);
+ENDYUV2RGBFUNC()
 
 YUV2RGBFUNC(yuv2rgb_c_1_ordered_dither, uint8_t, 0)
     const uint8_t *d128 = ff_dither_8x8_220[y & 7];
     char out_1 = 0, out_2 = 0;
-    g = c->table_gU[128] + c->table_gV[128];
+    g = c->table_gU[128 + YUVRGB_TABLE_HEADROOM] + c->table_gV[128 + YUVRGB_TABLE_HEADROOM];
 
 #define PUTRGB1(out, src, i, o)                     \
     Y    = src[2 * i];                              \
@@ -581,7 +678,7 @@ SwsFunc ff_yuv2rgb_get_func_ptr(SwsContext *c)
 
     av_log(c, AV_LOG_WARNING,
            "No accelerated colorspace conversion found from %s to %s.\n",
-           sws_format_name(c->srcFormat), sws_format_name(c->dstFormat));
+           av_get_pix_fmt_name(c->srcFormat), av_get_pix_fmt_name(c->dstFormat));
 
     switch (c->dstFormat) {
     case AV_PIX_FMT_BGR48BE:
@@ -592,23 +689,21 @@ SwsFunc ff_yuv2rgb_get_func_ptr(SwsContext *c)
         return yuv2rgb_c_48;
     case AV_PIX_FMT_ARGB:
     case AV_PIX_FMT_ABGR:
-        if (CONFIG_SWSCALE_ALPHA && c->srcFormat == AV_PIX_FMT_YUVA420P)
+        if (CONFIG_SWSCALE_ALPHA && isALPHA(c->srcFormat))
             return yuva2argb_c;
     case AV_PIX_FMT_RGBA:
     case AV_PIX_FMT_BGRA:
-        if (CONFIG_SWSCALE_ALPHA && c->srcFormat == AV_PIX_FMT_YUVA420P)
-            return yuva2rgba_c;
-        else
-            return yuv2rgb_c_32;
+        return (CONFIG_SWSCALE_ALPHA && isALPHA(c->srcFormat)) ? yuva2rgba_c : yuv2rgb_c_32;
     case AV_PIX_FMT_RGB24:
         return yuv2rgb_c_24_rgb;
     case AV_PIX_FMT_BGR24:
         return yuv2rgb_c_24_bgr;
     case AV_PIX_FMT_RGB565:
     case AV_PIX_FMT_BGR565:
+        return yuv2rgb_c_16_ordered_dither;
     case AV_PIX_FMT_RGB555:
     case AV_PIX_FMT_BGR555:
-        return yuv2rgb_c_16;
+        return yuv2rgb_c_15_ordered_dither;
     case AV_PIX_FMT_RGB444:
     case AV_PIX_FMT_BGR444:
         return yuv2rgb_c_12_ordered_dither;
@@ -623,36 +718,32 @@ SwsFunc ff_yuv2rgb_get_func_ptr(SwsContext *c)
         return yuv2rgb_c_4b_ordered_dither;
     case AV_PIX_FMT_MONOBLACK:
         return yuv2rgb_c_1_ordered_dither;
-    default:
-        assert(0);
     }
     return NULL;
 }
 
-static void fill_table(uint8_t *table[256], const int elemsize,
-                       const int inc, void *y_tab)
+static void fill_table(uint8_t* table[256 + 2*YUVRGB_TABLE_HEADROOM], const int elemsize,
+                       const int64_t inc, void *y_tab)
 {
     int i;
-    int64_t cb       = 0;
     uint8_t *y_table = y_tab;
 
     y_table -= elemsize * (inc >> 9);
 
-    for (i = 0; i < 256; i++) {
+    for (i = 0; i < 256 + 2*YUVRGB_TABLE_HEADROOM; i++) {
+        int64_t cb = av_clip_uint8(i-YUVRGB_TABLE_HEADROOM)*inc;
         table[i] = y_table + elemsize * (cb >> 16);
-        cb      += inc;
     }
 }
 
-static void fill_gv_table(int table[256], const int elemsize, const int inc)
+static void fill_gv_table(int table[256 + 2*YUVRGB_TABLE_HEADROOM], const int elemsize, const int64_t inc)
 {
     int i;
-    int64_t cb = 0;
     int off    = -(inc >> 9);
 
-    for (i = 0; i < 256; i++) {
+    for (i = 0; i < 256 + 2*YUVRGB_TABLE_HEADROOM; i++) {
+        int64_t cb = av_clip_uint8(i-YUVRGB_TABLE_HEADROOM)*inc;
         table[i] = elemsize * (off + (cb >> 16));
-        cb      += inc;
     }
 }
 
@@ -695,8 +786,9 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
     uint8_t *y_table;
     uint16_t *y_table16;
     uint32_t *y_table32;
-    int i, base, rbase, gbase, bbase, abase, needAlpha;
-    const int yoffs = fullRange ? 384 : 326;
+    int i, base, rbase, gbase, bbase, av_uninit(abase), needAlpha;
+    const int yoffs = (fullRange ? 384 : 326) + YUVRGB_TABLE_LUMA_HEADROOM;
+    const int table_plane_size = 1024 + 2*YUVRGB_TABLE_LUMA_HEADROOM;
 
     int64_t crv =  inv_table[0];
     int64_t cbu =  inv_table[1];
@@ -740,12 +832,12 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
     c->yuv2rgb_u2b_coeff = (int16_t)roundToInt16(cbu << 13);
 
     //scale coefficients by cy
-    crv = ((crv << 16) + 0x8000) / cy;
-    cbu = ((cbu << 16) + 0x8000) / cy;
-    cgu = ((cgu << 16) + 0x8000) / cy;
-    cgv = ((cgv << 16) + 0x8000) / cy;
+    crv = ((crv << 16) + 0x8000) / FFMAX(cy, 1);
+    cbu = ((cbu << 16) + 0x8000) / FFMAX(cy, 1);
+    cgu = ((cgu << 16) + 0x8000) / FFMAX(cy, 1);
+    cgv = ((cgv << 16) + 0x8000) / FFMAX(cy, 1);
 
-    av_free(c->yuvTable);
+    av_freep(&c->yuvTable);
 
 #define ALLOC_YUV_TABLE(x)          \
         c->yuvTable = av_malloc(x); \
@@ -753,10 +845,10 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
             return AVERROR(ENOMEM);
     switch (bpp) {
     case 1:
-        ALLOC_YUV_TABLE(1024);
+        ALLOC_YUV_TABLE(table_plane_size);
         y_table     = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024 - 110; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size - 110; i++) {
             y_table[i + 110]  = av_clip_uint8((yb + 0x8000) >> 16) >> 7;
             yb               += cy;
         }
@@ -768,60 +860,60 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         rbase       = isRgb ? 3 : 0;
         gbase       = 1;
         bbase       = isRgb ? 0 : 3;
-        ALLOC_YUV_TABLE(1024 * 3);
+        ALLOC_YUV_TABLE(table_plane_size * 3);
         y_table     = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024 - 110; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size - 110; i++) {
             int yval                = av_clip_uint8((yb + 0x8000) >> 16);
             y_table[i + 110]        = (yval >> 7)        << rbase;
-            y_table[i +  37 + 1024] = ((yval + 43) / 85) << gbase;
-            y_table[i + 110 + 2048] = (yval >> 7)        << bbase;
+            y_table[i +  37 +   table_plane_size] = ((yval + 43) / 85) << gbase;
+            y_table[i + 110 + 2*table_plane_size] = (yval >> 7)        << bbase;
             yb += cy;
         }
         fill_table(c->table_rV, 1, crv, y_table + yoffs);
-        fill_table(c->table_gU, 1, cgu, y_table + yoffs + 1024);
-        fill_table(c->table_bU, 1, cbu, y_table + yoffs + 2048);
+        fill_table(c->table_gU, 1, cgu, y_table + yoffs +   table_plane_size);
+        fill_table(c->table_bU, 1, cbu, y_table + yoffs + 2*table_plane_size);
         fill_gv_table(c->table_gV, 1, cgv);
         break;
     case 8:
         rbase       = isRgb ? 5 : 0;
         gbase       = isRgb ? 2 : 3;
         bbase       = isRgb ? 0 : 6;
-        ALLOC_YUV_TABLE(1024 * 3);
+        ALLOC_YUV_TABLE(table_plane_size * 3);
         y_table     = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024 - 38; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size - 38; i++) {
             int yval               = av_clip_uint8((yb + 0x8000) >> 16);
             y_table[i + 16]        = ((yval + 18) / 36) << rbase;
-            y_table[i + 16 + 1024] = ((yval + 18) / 36) << gbase;
-            y_table[i + 37 + 2048] = ((yval + 43) / 85) << bbase;
+            y_table[i + 16 +   table_plane_size] = ((yval + 18) / 36) << gbase;
+            y_table[i + 37 + 2*table_plane_size] = ((yval + 43) / 85) << bbase;
             yb += cy;
         }
         fill_table(c->table_rV, 1, crv, y_table + yoffs);
-        fill_table(c->table_gU, 1, cgu, y_table + yoffs + 1024);
-        fill_table(c->table_bU, 1, cbu, y_table + yoffs + 2048);
+        fill_table(c->table_gU, 1, cgu, y_table + yoffs +   table_plane_size);
+        fill_table(c->table_bU, 1, cbu, y_table + yoffs + 2*table_plane_size);
         fill_gv_table(c->table_gV, 1, cgv);
         break;
     case 12:
         rbase       = isRgb ? 8 : 0;
         gbase       = 4;
         bbase       = isRgb ? 0 : 8;
-        ALLOC_YUV_TABLE(1024 * 3 * 2);
+        ALLOC_YUV_TABLE(table_plane_size * 3 * 2);
         y_table16   = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size; i++) {
             uint8_t yval        = av_clip_uint8((yb + 0x8000) >> 16);
             y_table16[i]        = (yval >> 4) << rbase;
-            y_table16[i + 1024] = (yval >> 4) << gbase;
-            y_table16[i + 2048] = (yval >> 4) << bbase;
+            y_table16[i +   table_plane_size] = (yval >> 4) << gbase;
+            y_table16[i + 2*table_plane_size] = (yval >> 4) << bbase;
             yb += cy;
         }
         if (isNotNe)
-            for (i = 0; i < 1024 * 3; i++)
+            for (i = 0; i < table_plane_size * 3; i++)
                 y_table16[i] = av_bswap16(y_table16[i]);
         fill_table(c->table_rV, 2, crv, y_table16 + yoffs);
-        fill_table(c->table_gU, 2, cgu, y_table16 + yoffs + 1024);
-        fill_table(c->table_bU, 2, cbu, y_table16 + yoffs + 2048);
+        fill_table(c->table_gU, 2, cgu, y_table16 + yoffs +   table_plane_size);
+        fill_table(c->table_bU, 2, cbu, y_table16 + yoffs + 2*table_plane_size);
         fill_gv_table(c->table_gV, 2, cgv);
         break;
     case 15:
@@ -829,30 +921,30 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         rbase       = isRgb ? bpp - 5 : 0;
         gbase       = 5;
         bbase       = isRgb ? 0 : (bpp - 5);
-        ALLOC_YUV_TABLE(1024 * 3 * 2);
+        ALLOC_YUV_TABLE(table_plane_size * 3 * 2);
         y_table16   = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size; i++) {
             uint8_t yval        = av_clip_uint8((yb + 0x8000) >> 16);
             y_table16[i]        = (yval >> 3)          << rbase;
-            y_table16[i + 1024] = (yval >> (18 - bpp)) << gbase;
-            y_table16[i + 2048] = (yval >> 3)          << bbase;
+            y_table16[i +   table_plane_size] = (yval >> (18 - bpp)) << gbase;
+            y_table16[i + 2*table_plane_size] = (yval >> 3)          << bbase;
             yb += cy;
         }
         if (isNotNe)
-            for (i = 0; i < 1024 * 3; i++)
+            for (i = 0; i < table_plane_size * 3; i++)
                 y_table16[i] = av_bswap16(y_table16[i]);
         fill_table(c->table_rV, 2, crv, y_table16 + yoffs);
-        fill_table(c->table_gU, 2, cgu, y_table16 + yoffs + 1024);
-        fill_table(c->table_bU, 2, cbu, y_table16 + yoffs + 2048);
+        fill_table(c->table_gU, 2, cgu, y_table16 + yoffs +   table_plane_size);
+        fill_table(c->table_bU, 2, cbu, y_table16 + yoffs + 2*table_plane_size);
         fill_gv_table(c->table_gV, 2, cgv);
         break;
     case 24:
     case 48:
-        ALLOC_YUV_TABLE(1024);
+        ALLOC_YUV_TABLE(table_plane_size);
         y_table     = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size; i++) {
             y_table[i]  = av_clip_uint8((yb + 0x8000) >> 16);
             yb         += cy;
         }
@@ -862,6 +954,7 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         fill_gv_table(c->table_gV, 1, cgv);
         break;
     case 32:
+    case 64:
         base      = (c->dstFormat == AV_PIX_FMT_RGB32_1 ||
                      c->dstFormat == AV_PIX_FMT_BGR32_1) ? 8 : 0;
         rbase     = base + (isRgb ? 16 : 0);
@@ -870,24 +963,23 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         needAlpha = CONFIG_SWSCALE_ALPHA && isALPHA(c->srcFormat);
         if (!needAlpha)
             abase = (base + 24) & 31;
-        ALLOC_YUV_TABLE(1024 * 3 * 4);
+        ALLOC_YUV_TABLE(table_plane_size * 3 * 4);
         y_table32   = c->yuvTable;
-        yb = -(384 << 16) - oy;
-        for (i = 0; i < 1024; i++) {
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size; i++) {
             unsigned yval       = av_clip_uint8((yb + 0x8000) >> 16);
             y_table32[i]        = (yval << rbase) +
                                   (needAlpha ? 0 : (255u << abase));
-            y_table32[i + 1024] =  yval << gbase;
-            y_table32[i + 2048] =  yval << bbase;
+            y_table32[i +   table_plane_size] =  yval << gbase;
+            y_table32[i + 2*table_plane_size] =  yval << bbase;
             yb += cy;
         }
         fill_table(c->table_rV, 4, crv, y_table32 + yoffs);
-        fill_table(c->table_gU, 4, cgu, y_table32 + yoffs + 1024);
-        fill_table(c->table_bU, 4, cbu, y_table32 + yoffs + 2048);
+        fill_table(c->table_gU, 4, cgu, y_table32 + yoffs +   table_plane_size);
+        fill_table(c->table_bU, 4, cbu, y_table32 + yoffs + 2*table_plane_size);
         fill_gv_table(c->table_gV, 4, cgv);
         break;
     default:
-        c->yuvTable = NULL;
         if(!isPlanar(c->dstFormat) || bpp <= 24)
             av_log(c, AV_LOG_ERROR, "%ibpp not supported by yuv2rgb\n", bpp);
         return -1;
