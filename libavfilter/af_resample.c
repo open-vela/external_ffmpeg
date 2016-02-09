@@ -1,18 +1,19 @@
 /*
- * This file is part of FFmpeg.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * This file is part of Libav.
+ *
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -90,25 +91,22 @@ static int query_formats(AVFilterContext *ctx)
 {
     AVFilterLink *inlink  = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterFormats *in_formats, *out_formats, *in_samplerates, *out_samplerates;
-    AVFilterChannelLayouts *in_layouts, *out_layouts;
-    int ret;
 
-    if (!(in_formats      = ff_all_formats         (AVMEDIA_TYPE_AUDIO)) ||
-        !(out_formats     = ff_all_formats         (AVMEDIA_TYPE_AUDIO)) ||
-        !(in_samplerates  = ff_all_samplerates     (                  )) ||
-        !(out_samplerates = ff_all_samplerates     (                  )) ||
-        !(in_layouts      = ff_all_channel_layouts (                  )) ||
-        !(out_layouts     = ff_all_channel_layouts (                  )))
-        return AVERROR(ENOMEM);
+    AVFilterFormats        *in_formats      = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+    AVFilterFormats        *out_formats     = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+    AVFilterFormats        *in_samplerates  = ff_all_samplerates();
+    AVFilterFormats        *out_samplerates = ff_all_samplerates();
+    AVFilterChannelLayouts *in_layouts      = ff_all_channel_layouts();
+    AVFilterChannelLayouts *out_layouts     = ff_all_channel_layouts();
 
-    if ((ret = ff_formats_ref         (in_formats,      &inlink->out_formats        )) < 0 ||
-        (ret = ff_formats_ref         (out_formats,     &outlink->in_formats        )) < 0 ||
-        (ret = ff_formats_ref         (in_samplerates,  &inlink->out_samplerates    )) < 0 ||
-        (ret = ff_formats_ref         (out_samplerates, &outlink->in_samplerates    )) < 0 ||
-        (ret = ff_channel_layouts_ref (in_layouts,      &inlink->out_channel_layouts)) < 0 ||
-        (ret = ff_channel_layouts_ref (out_layouts,     &outlink->in_channel_layouts)) < 0)
-        return ret;
+    ff_formats_ref(in_formats,  &inlink->out_formats);
+    ff_formats_ref(out_formats, &outlink->in_formats);
+
+    ff_formats_ref(in_samplerates,  &inlink->out_samplerates);
+    ff_formats_ref(out_samplerates, &outlink->in_samplerates);
+
+    ff_channel_layouts_ref(in_layouts,  &inlink->out_channel_layouts);
+    ff_channel_layouts_ref(out_layouts, &outlink->in_channel_layouts);
 
     return 0;
 }
@@ -327,9 +325,9 @@ static const AVClass resample_class = {
 
 static const AVFilterPad avfilter_af_resample_inputs[] = {
     {
-        .name          = "default",
-        .type          = AVMEDIA_TYPE_AUDIO,
-        .filter_frame  = filter_frame,
+        .name           = "default",
+        .type           = AVMEDIA_TYPE_AUDIO,
+        .filter_frame   = filter_frame,
     },
     { NULL }
 };
@@ -349,9 +347,11 @@ AVFilter ff_af_resample = {
     .description   = NULL_IF_CONFIG_SMALL("Audio resampling and conversion."),
     .priv_size     = sizeof(ResampleContext),
     .priv_class    = &resample_class,
-    .init_dict     = init,
-    .uninit        = uninit,
-    .query_formats = query_formats,
-    .inputs        = avfilter_af_resample_inputs,
-    .outputs       = avfilter_af_resample_outputs,
+
+    .init_dict      = init,
+    .uninit         = uninit,
+    .query_formats  = query_formats,
+
+    .inputs    = avfilter_af_resample_inputs,
+    .outputs   = avfilter_af_resample_outputs,
 };
