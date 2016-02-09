@@ -2,20 +2,20 @@
  * MQ-coder decoder
  * Copyright (c) 2007 Kamil Nowosad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -68,9 +68,11 @@ static int exchange(MqcState *mqc, uint8_t *cxstate, int lps)
     return d;
 }
 
-void ff_mqc_initdec(MqcState *mqc, uint8_t *bp)
+void ff_mqc_initdec(MqcState *mqc, uint8_t *bp, int raw, int reset)
 {
-    ff_mqc_init_contexts(mqc);
+    mqc->raw = raw;
+    if (reset)
+        ff_mqc_init_contexts(mqc);
     mqc->bp = bp;
     mqc->c  = (*mqc->bp ^ 0xff) << 16;
     bytein(mqc);
@@ -78,8 +80,20 @@ void ff_mqc_initdec(MqcState *mqc, uint8_t *bp)
     mqc->a = 0x8000;
 }
 
+static int mqc_decode_bypass(MqcState *mqc) {
+    int bit = !(mqc->c & 0x40000000);
+    if (!(mqc->c & 0xff)) {
+        mqc->c -= 0x100;
+        bytein(mqc);
+    }
+    mqc->c += mqc->c;
+    return bit;
+}
+
 int ff_mqc_decode(MqcState *mqc, uint8_t *cxstate)
 {
+    if (mqc->raw)
+        return mqc_decode_bypass(mqc);
     mqc->a -= ff_mqc_qe[*cxstate];
     if ((mqc->c >> 16) < mqc->a) {
         if (mqc->a & 0x8000)
