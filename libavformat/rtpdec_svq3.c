@@ -2,20 +2,20 @@
  * Sorenson-3 (SVQ3/SV3V) payload for RTP
  * Copyright (c) 2010 Ronald S. Bultje
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,7 @@
 #include <string.h>
 #include "libavutil/intreadwrite.h"
 #include "avio_internal.h"
+#include "internal.h"
 #include "rtp.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
@@ -61,11 +62,9 @@ static int svq3_parse_packet (AVFormatContext *s, PayloadContext *sv,
         av_freep(&st->codec->extradata);
         st->codec->extradata_size = 0;
 
-        if (len < 2 || !(st->codec->extradata =
-                         av_malloc(len + 8 + AV_INPUT_BUFFER_PADDING_SIZE)))
+        if (len < 2 || ff_alloc_extradata(st->codec, len + 8))
             return AVERROR_INVALIDDATA;
 
-        st->codec->extradata_size = len + 8;
         memcpy(st->codec->extradata, "SEQH", 4);
         AV_WB32(st->codec->extradata + 4, len);
         memcpy(st->codec->extradata + 8, buf, len);
