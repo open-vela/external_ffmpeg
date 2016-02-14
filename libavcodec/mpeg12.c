@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,12 @@
  * MPEG-1/2 decoder
  */
 
+#define UNCHECKED_BITSTREAM_READER 1
+
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
+#include "libavutil/timecode.h"
+
 #include "internal.h"
 #include "avcodec.h"
 #include "mpegvideo.h"
@@ -34,6 +39,7 @@
 #include "mpeg12data.h"
 #include "mpegvideodata.h"
 #include "bytestream.h"
+#include "vdpau_internal.h"
 #include "thread.h"
 
 uint8_t ff_mpeg12_static_rl_table_store[2][2][2*MAX_RUN + MAX_LEVEL + 3];
@@ -65,21 +71,21 @@ static const uint8_t table_mb_btype[11][2] = {
 #define INIT_2D_VLC_RL(rl, static_size)\
 {\
     static RL_VLC_ELEM rl_vlc_table[static_size];\
-    INIT_VLC_STATIC(&rl.vlc, TEX_VLC_BITS, rl.n + 2,\
-                    &rl.table_vlc[0][1], 4, 2,\
-                    &rl.table_vlc[0][0], 4, 2, static_size);\
-\
     rl.rl_vlc[0] = rl_vlc_table;\
-    init_2d_vlc_rl(&rl);\
+    init_2d_vlc_rl(&rl, static_size);\
 }
 
-static av_cold void init_2d_vlc_rl(RLTable *rl)
+static av_cold void init_2d_vlc_rl(RLTable *rl, unsigned static_size)
 {
     int i;
+    VLC_TYPE table[680][2] = {{0}};
+    VLC vlc = { .table = table, .table_allocated = static_size };
+    av_assert0(static_size <= FF_ARRAY_ELEMS(table));
+    init_vlc(&vlc, TEX_VLC_BITS, rl->n + 2, &rl->table_vlc[0][1], 4, 2, &rl->table_vlc[0][0], 4, 2, INIT_VLC_USE_NEW_STATIC);
 
-    for (i = 0; i < rl->vlc.table_size; i++) {
-        int code = rl->vlc.table[i][0];
-        int len  = rl->vlc.table[i][1];
+    for (i = 0; i < vlc.table_size; i++) {
+        int code = vlc.table[i][0];
+        int len  = vlc.table[i][1];
         int level, run;
 
         if (len == 0) { // illegal code
@@ -195,7 +201,7 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
 */
 
     for (i = 0; i < buf_size; i++) {
-        assert(pc->frame_start_found >= 0 && pc->frame_start_found <= 4);
+        av_assert1(pc->frame_start_found >= 0 && pc->frame_start_found <= 4);
         if (pc->frame_start_found & 1) {
             if (state == EXT_START_CODE && (buf[i] & 0xF0) != 0x80)
                 pc->frame_start_found--;
@@ -229,7 +235,7 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
                 }
             }
             if (pc->frame_start_found == 0 && s && state == PICTURE_START_CODE) {
-                ff_fetch_timestamp(s, i - 3, 1);
+                ff_fetch_timestamp(s, i - 3, 1, i > 3);
             }
         }
     }
@@ -237,90 +243,3 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
     return END_NOT_FOUND;
 }
 
-#define MAX_INDEX (64 - 1)
-
-int ff_mpeg1_decode_block_intra(GetBitContext *gb,
-                                const uint16_t *quant_matrix,
-                                uint8_t *const scantable, int last_dc[3],
-                                int16_t *block, int index, int qscale)
-{
-    int dc, diff, i = 0, component;
-    RLTable *rl = &ff_rl_mpeg1;
-
-    /* DC coefficient */
-    component = index <= 3 ? 0 : index - 4 + 1;
-
-    diff = decode_dc(gb, component);
-    if (diff >= 0xffff)
-        return AVERROR_INVALIDDATA;
-
-    dc  = last_dc[component];
-    dc += diff;
-    last_dc[component] = dc;
-
-    block[0] = dc * quant_matrix[0];
-
-    {
-        OPEN_READER(re, gb);
-        /* now quantify & encode AC coefficients */
-        while (1) {
-            int level, run, j;
-
-            UPDATE_CACHE(re, gb);
-            GET_RL_VLC(level, run, re, gb, rl->rl_vlc[0], TEX_VLC_BITS, 2, 0);
-
-            if (level == 127) {
-                break;
-            } else if (level != 0) {
-                i += run;
-                if (i > MAX_INDEX)
-                    break;
-
-                j = scantable[i];
-                level = (level * qscale * quant_matrix[j]) >> 4;
-                level = (level - 1) | 1;
-                level = (level ^ SHOW_SBITS(re, gb, 1)) -
-                        SHOW_SBITS(re, gb, 1);
-                LAST_SKIP_BITS(re, gb, 1);
-            } else {
-                /* escape */
-                run = SHOW_UBITS(re, gb, 6) + 1;
-                LAST_SKIP_BITS(re, gb, 6);
-                UPDATE_CACHE(re, gb);
-                level = SHOW_SBITS(re, gb, 8);
-                SKIP_BITS(re, gb, 8);
-
-                if (level == -128) {
-                    level = SHOW_UBITS(re, gb, 8) - 256;
-                    LAST_SKIP_BITS(re, gb, 8);
-                } else if (level == 0) {
-                    level = SHOW_UBITS(re, gb, 8);
-                    LAST_SKIP_BITS(re, gb, 8);
-                }
-
-                i += run;
-                if (i > MAX_INDEX)
-                    break;
-
-                j = scantable[i];
-                if (level < 0) {
-                    level = -level;
-                    level = (level * qscale * quant_matrix[j]) >> 4;
-                    level = (level - 1) | 1;
-                    level = -level;
-                } else {
-                    level = (level * qscale * quant_matrix[j]) >> 4;
-                    level = (level - 1) | 1;
-                }
-            }
-
-            block[j] = level;
-        }
-        CLOSE_READER(re, gb);
-    }
-
-    if (i > MAX_INDEX)
-        i = AVERROR_INVALIDDATA;
-
-    return i;
-}

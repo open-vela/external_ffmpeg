@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,9 +46,8 @@ av_cold void ff_v210enc_init_x86(V210EncContext *s)
         s->pack_line_8 = ff_v210_planar_pack_8_avx;
 
     if (EXTERNAL_AVX2(cpu_flags)) {
-        s->sample_factor_8  = 2;
-        s->pack_line_8      = ff_v210_planar_pack_8_avx2;
-        s->sample_factor_10 = 2;
-        s->pack_line_10     = ff_v210_planar_pack_10_avx2;
+        s->pack_line_8 = ff_v210_planar_pack_8_avx2;
+        s->pack_line_10 = ff_v210_planar_pack_10_avx2;
+        s->sample_factor = 2;
     }
 }
