@@ -2,20 +2,20 @@
  * MQ-coder: structures, common and decoder functions
  * Copyright (c) 2007 Kamil Nowosad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,7 +43,23 @@ typedef struct MqcState {
     unsigned int c;
     unsigned int ct;
     uint8_t cx_states[19];
+    int raw;
 } MqcState;
+
+/* encoder */
+
+/** initialize the encoder */
+void ff_mqc_initenc(MqcState *mqc, uint8_t *bp);
+
+/** code bit d with context cx */
+void ff_mqc_encode(MqcState *mqc, uint8_t *cxstate, int d);
+
+/** number of encoded bytes */
+int ff_mqc_length(MqcState *mqc);
+
+/** flush the encoder [returns number of bytes encoded] */
+int ff_mqc_flush(MqcState *mqc);
+int ff_mqc_flush_to(MqcState *mqc, uint8_t *dst, int *dst_len);
 
 /* decoder */
 
@@ -51,8 +67,10 @@ typedef struct MqcState {
  * Initialize MQ-decoder.
  * @param mqc   MQ decoder state
  * @param bp    byte poiter
+ * @param raw   raw mode
+ * @param reset reset states
  */
-void ff_mqc_initdec(MqcState *mqc, uint8_t *bp);
+void ff_mqc_initdec(MqcState *mqc, uint8_t *bp, int raw, int reset);
 
 /**
  * MQ decoder.

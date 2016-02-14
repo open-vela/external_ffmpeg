@@ -2,20 +2,19 @@
  * AviSynth/AvxSynth support
  * Copyright (c) 2012 AvxSynth Team.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,12 +31,12 @@
 #ifdef _WIN32
   #include <windows.h>
   #undef EXTERN_C
-  #include <avisynth/avisynth_c.h>
+  #include "compat/avisynth/avisynth_c.h"
   #define AVISYNTH_LIB "avisynth"
   #define USING_AVISYNTH
 #else
   #include <dlfcn.h>
-  #include <avxsynth/avxsynth_c.h>
+  #include "compat/avisynth/avxsynth_c.h"
   #define AVISYNTH_NAME "libavxsynth"
   #define AVISYNTH_LIB AVISYNTH_NAME SLIBSUF
 
@@ -238,13 +237,12 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
     st->codec->width      = avs->vi->width;
     st->codec->height     = avs->vi->height;
 
-    st->time_base         = (AVRational) { avs->vi->fps_denominator,
-                                           avs->vi->fps_numerator };
     st->avg_frame_rate    = (AVRational) { avs->vi->fps_numerator,
                                            avs->vi->fps_denominator };
     st->start_time        = 0;
     st->duration          = avs->vi->num_frames;
     st->nb_frames         = avs->vi->num_frames;
+    avpriv_set_pts_info(st, 32, avs->vi->fps_denominator, avs->vi->fps_numerator);
 
     switch (avs->vi->pixel_type) {
 #ifdef USING_AVISYNTH
@@ -312,9 +310,8 @@ static int avisynth_create_stream_audio(AVFormatContext *s, AVStream *st)
     st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate = avs->vi->audio_samples_per_second;
     st->codec->channels    = avs->vi->nchannels;
-    st->time_base          = (AVRational) { 1,
-                                            avs->vi->audio_samples_per_second };
     st->duration           = avs->vi->num_audio_samples;
+    avpriv_set_pts_info(st, 64, 1, avs->vi->audio_samples_per_second);
 
     switch (avs->vi->sample_type) {
     case AVS_SAMPLE_INT8:
@@ -405,7 +402,7 @@ static int avisynth_open_file(AVFormatContext *s)
     avs->vi   = avs_library.avs_get_video_info(avs->clip);
 
 #ifdef USING_AVISYNTH
-    /* On Windows, libav supports AviSynth interface version 6 or higher.
+    /* On Windows, FFmpeg supports AviSynth interface version 6 or higher.
      * This includes AviSynth 2.6 RC1 or higher, and AviSynth+ r1718 or higher,
      * and excludes 2.5 and the 2.6 alphas. Since AvxSynth identifies itself
      * as interface version 3 like 2.5.8, this needs to be special-cased. */
