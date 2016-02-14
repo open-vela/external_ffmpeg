@@ -3,20 +3,20 @@
  *
  * copyright (C) 2004 Marc Hoffman <marc.hoffman@analog.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -97,7 +97,6 @@
 #include "libswscale/swscale_internal.h"
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
-#include "libavutil/pixdesc.h"
 #include "yuv2rgb_altivec.h"
 
 #if HAVE_ALTIVEC
@@ -222,7 +221,6 @@ static const vector unsigned char
  * optimized for JPEG decoding.
  */
 
-#if HAVE_BIGENDIAN
 #define vec_unh(x)                                                      \
     (vector signed short)                                               \
         vec_perm(x, (__typeof__(x)) { 0 },                              \
@@ -236,10 +234,6 @@ static const vector unsigned char
                  ((vector unsigned char) {                              \
                      0x10, 0x08, 0x10, 0x09, 0x10, 0x0A, 0x10, 0x0B,    \
                      0x10, 0x0C, 0x10, 0x0D, 0x10, 0x0E, 0x10, 0x0F }))
-#else
-#define vec_unh(x)(vector signed short) vec_mergeh(x,(__typeof__(x)) { 0 })
-#define vec_unl(x)(vector signed short) vec_mergel(x,(__typeof__(x)) { 0 })
-#endif
 
 #define vec_clip_s16(x)                                                 \
     vec_max(vec_min(x, ((vector signed short) {                         \
@@ -323,7 +317,12 @@ static int altivec_ ## name(SwsContext *c, const unsigned char **in,          \
     const ubyte *ui  = in[1];                                                 \
     const ubyte *vi  = in[2];                                                 \
                                                                               \
-    vector unsigned char *oute, *outo;                                        \
+    vector unsigned char *oute =                                              \
+        (vector unsigned char *)                                              \
+            (oplanes[0] + srcSliceY * outstrides[0]);                         \
+    vector unsigned char *outo =                                              \
+        (vector unsigned char *)                                              \
+            (oplanes[0] + srcSliceY * outstrides[0] + outstrides[0]);         \
                                                                               \
     /* loop moves y{1, 2}i by w */                                            \
     instrides_scl[0] = instrides[0] * 2 - w;                                  \
@@ -333,9 +332,6 @@ static int altivec_ ## name(SwsContext *c, const unsigned char **in,          \
     instrides_scl[2] = instrides[2] - w / 2;                                  \
                                                                               \
     for (i = 0; i < h / 2; i++) {                                             \
-        oute = (vector unsigned char *)(oplanes[0] + outstrides[0] *          \
-                                        (srcSliceY + i * 2));                 \
-        outo = oute + (outstrides[0] >> 4);                                   \
         vec_dstst(outo, (0x02000002 | (((w * 3 + 32) / 32) << 16)), 0);       \
         vec_dstst(oute, (0x02000002 | (((w * 3 + 32) / 32) << 16)), 1);       \
                                                                               \
@@ -432,6 +428,9 @@ static int altivec_ ## name(SwsContext *c, const unsigned char **in,          \
             ui  += 8;                                                         \
             vi  += 8;                                                         \
         }                                                                     \
+                                                                              \
+        outo += (outstrides[0]) >> 4;                                         \
+        oute += (outstrides[0]) >> 4;                                         \
                                                                               \
         ui  += instrides_scl[1];                                              \
         vi  += instrides_scl[2];                                              \
@@ -749,7 +748,7 @@ static av_always_inline void yuv2packedX_altivec(SwsContext *c,
             if (!printed_error_message) {
                 av_log(c, AV_LOG_ERROR,
                        "altivec_yuv2packedX doesn't support %s output\n",
-                       av_get_pix_fmt_name(c->dstFormat));
+                       sws_format_name(c->dstFormat));
                 printed_error_message = 1;
             }
             return;
@@ -837,7 +836,7 @@ static av_always_inline void yuv2packedX_altivec(SwsContext *c,
             /* Unreachable, I think. */
             av_log(c, AV_LOG_ERROR,
                    "altivec_yuv2packedX doesn't support %s output\n",
-                   av_get_pix_fmt_name(c->dstFormat));
+                   sws_format_name(c->dstFormat));
             return;
         }
 
