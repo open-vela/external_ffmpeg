@@ -2,20 +2,20 @@
  * Range coder
  * Copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@
 #include <string.h>
 
 #include "libavutil/attributes.h"
-#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
@@ -110,8 +109,8 @@ int ff_rac_terminate(RangeCoder *c)
     c->range = 0xFF;
     renorm_encoder(c);
 
-    av_assert1(c->low   == 0);
-    av_assert1(c->range >= 0x100);
+    assert(c->low == 0);
+    assert(c->range >= 0x100);
 
     return c->bytestream - c->bytestream_start;
 }
@@ -122,12 +121,11 @@ int ff_rac_terminate(RangeCoder *c)
 #include "libavutil/lfg.h"
 #include "libavutil/log.h"
 
-static uint8_t b[9 * SIZE];
-static uint8_t r[9 * SIZE];
-
 int main(void)
 {
     RangeCoder c;
+    uint8_t b[9 * SIZE];
+    uint8_t r[9 * SIZE];
     int i;
     uint8_t state[10];
     AVLFG prng;
@@ -135,7 +133,7 @@ int main(void)
     av_lfg_init(&prng, 1);
 
     ff_init_range_encoder(&c, b, SIZE);
-    ff_build_rac_states(&c, (1LL << 32) / 20, 128 + 64 + 32 + 16);
+    ff_build_rac_states(&c, 0.05 * (1LL << 32), 128 + 64 + 32 + 16);
 
     memset(state, 128, sizeof(state));
 
