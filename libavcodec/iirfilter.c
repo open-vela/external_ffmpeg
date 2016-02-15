@@ -2,20 +2,20 @@
  * IIR filter
  * Copyright (c) 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -196,7 +196,7 @@ av_cold struct FFIIRFilterCoeffs* ff_iir_filter_init_coeffs(void *avc,
         return c;
 
 init_fail:
-    ff_iir_filter_free_coeffsp(&c);
+    ff_iir_filter_free_coeffs(c);
     return NULL;
 }
 
@@ -299,26 +299,18 @@ void ff_iir_filter_flt(const struct FFIIRFilterCoeffs *c,
     }
 }
 
-av_cold void ff_iir_filter_free_statep(struct FFIIRFilterState **state)
+av_cold void ff_iir_filter_free_state(struct FFIIRFilterState *state)
 {
-    av_freep(state);
+    av_free(state);
 }
 
-av_cold void ff_iir_filter_free_coeffsp(struct FFIIRFilterCoeffs **coeffsp)
+av_cold void ff_iir_filter_free_coeffs(struct FFIIRFilterCoeffs *coeffs)
 {
-    struct FFIIRFilterCoeffs *coeffs = *coeffsp;
     if(coeffs){
-        av_freep(&coeffs->cx);
-        av_freep(&coeffs->cy);
+        av_free(coeffs->cx);
+        av_free(coeffs->cy);
     }
-    av_freep(coeffsp);
-}
-
-void ff_iir_filter_init(FFIIRFilterContext *f) {
-    f->filter_flt = ff_iir_filter_flt;
-
-    if (HAVE_MIPSFPU)
-        ff_iir_filter_init_mips(f);
+    av_free(coeffs);
 }
 
 #ifdef TEST
@@ -348,8 +340,8 @@ int main(void)
     for (i = 0; i < SIZE; i++)
         printf("%6d %6d\n", x[i], y[i]);
 
-    ff_iir_filter_free_coeffsp(&fcoeffs);
-    ff_iir_filter_free_statep(&fstate);
+    ff_iir_filter_free_coeffs(fcoeffs);
+    ff_iir_filter_free_state(fstate);
     return 0;
 }
 #endif /* TEST */
