@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -125,7 +125,7 @@ fail:
 }
 
 #define OFFSET(x) offsetof(ShufflePlanesContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption shuffleplanes_options[] = {
     { "map0", "Index of the input plane to be used as the first output plane ",  OFFSET(map[0]), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 4, FLAGS },
     { "map1", "Index of the input plane to be used as the second output plane ", OFFSET(map[1]), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 4, FLAGS },
@@ -134,12 +134,7 @@ static const AVOption shuffleplanes_options[] = {
     { NULL },
 };
 
-static const AVClass shuffleplanes_class = {
-    .class_name = "shuffleplanes",
-    .item_name  = av_default_item_name,
-    .option     = shuffleplanes_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(shuffleplanes);
 
 static const AVFilterPad shuffleplanes_inputs[] = {
     {
@@ -162,7 +157,7 @@ static const AVFilterPad shuffleplanes_outputs[] = {
 
 AVFilter ff_vf_shuffleplanes = {
     .name         = "shuffleplanes",
-    .description  = NULL_IF_CONFIG_SMALL("Shuffle video planes"),
+    .description  = NULL_IF_CONFIG_SMALL("Shuffle video planes."),
 
     .priv_size    = sizeof(ShufflePlanesContext),
     .priv_class   = &shuffleplanes_class,
