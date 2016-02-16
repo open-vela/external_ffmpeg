@@ -6,20 +6,20 @@
  * Copyright (C) 2010 Fiona Glaser
  * Copyright (C) 2012 Daniel Kang
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,12 +27,17 @@
 #define AVCODEC_VP8_H
 
 #include "libavutil/buffer.h"
-#include "libavutil/thread.h"
 
 #include "h264pred.h"
 #include "thread.h"
 #include "vp56.h"
 #include "vp8dsp.h"
+
+#if HAVE_PTHREADS
+#   include <pthread.h>
+#elif HAVE_W32THREADS
+#   include "compat/w32pthreads.h"
+#endif
 
 #define VP8_MAX_QUANT 127
 
@@ -127,11 +132,6 @@ typedef struct VP8Frame {
     AVBufferRef *seg_map;
 } VP8Frame;
 
-typedef struct VP8intmv {
-    int x;
-    int y;
-} VP8intmv;
-
 #define MAX_THREADS 8
 typedef struct VP8Context {
     VP8ThreadData *thread_data;
@@ -150,8 +150,8 @@ typedef struct VP8Context {
     uint8_t deblock_filter;
     uint8_t mbskip_enabled;
     uint8_t profile;
-    VP8intmv mv_min;
-    VP8intmv mv_max;
+    VP56mv mv_min;
+    VP56mv mv_max;
 
     int8_t sign_bias[4]; ///< one state [0, 1] per ref frame type
     int ref_count[3];
@@ -274,11 +274,6 @@ typedef struct VP8Context {
      * 1 -> Macroblocks for entire frame alloced (sliced thread).
      */
     int mb_layout;
-
-    void (*decode_mb_row_no_filter)(AVCodecContext *avctx, void *tdata, int jobnr, int threadnr);
-    void (*filter_mb_row)(AVCodecContext *avctx, void *tdata, int jobnr, int threadnr);
-
-    int vp7;
 
     /**
      * Fade bit present in bitstream (VP7)
