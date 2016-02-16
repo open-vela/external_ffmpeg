@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Luca Abeni ( lucabe72 email it )
  * Copyright (c) 2007 Benoit Fouet ( benoit fouet free fr )
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@
  */
 
 #include <alsa/asoundlib.h>
-#include "libavformat/avformat.h"
+#include "avdevice.h"
 #include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 
@@ -62,48 +62,45 @@ static av_cold snd_pcm_format_t codec_id_to_pcm_format(int codec_id)
     }
 }
 
-#define REORDER_OUT_50(NAME, TYPE) \
-static void alsa_reorder_ ## NAME ## _out_50(const void *in_v, void *out_v, int n) \
-{ \
-    const TYPE *in = in_v; \
-    TYPE      *out = out_v; \
-\
-    while (n-- > 0) { \
+#define MAKE_REORDER_FUNC(NAME, TYPE, CHANNELS, LAYOUT, MAP)                \
+static void alsa_reorder_ ## NAME ## _ ## LAYOUT(const void *in_v,          \
+                                                 void *out_v,               \
+                                                 int n)                     \
+{                                                                           \
+    const TYPE *in = in_v;                                                  \
+    TYPE      *out = out_v;                                                 \
+                                                                            \
+    while (n-- > 0) {                                                       \
+        MAP                                                                 \
+        in  += CHANNELS;                                                    \
+        out += CHANNELS;                                                    \
+    }                                                                       \
+}
+
+#define MAKE_REORDER_FUNCS(CHANNELS, LAYOUT, MAP) \
+    MAKE_REORDER_FUNC(int8,  int8_t,  CHANNELS, LAYOUT, MAP) \
+    MAKE_REORDER_FUNC(int16, int16_t, CHANNELS, LAYOUT, MAP) \
+    MAKE_REORDER_FUNC(int32, int32_t, CHANNELS, LAYOUT, MAP) \
+    MAKE_REORDER_FUNC(f32,   float,   CHANNELS, LAYOUT, MAP)
+
+MAKE_REORDER_FUNCS(5, out_50, \
         out[0] = in[0]; \
         out[1] = in[1]; \
         out[2] = in[3]; \
         out[3] = in[4]; \
         out[4] = in[2]; \
-        in  += 5; \
-        out += 5; \
-    } \
-}
+        )
 
-#define REORDER_OUT_51(NAME, TYPE) \
-static void alsa_reorder_ ## NAME ## _out_51(const void *in_v, void *out_v, int n) \
-{ \
-    const TYPE *in = in_v; \
-    TYPE      *out = out_v; \
-\
-    while (n-- > 0) { \
+MAKE_REORDER_FUNCS(6, out_51, \
         out[0] = in[0]; \
         out[1] = in[1]; \
         out[2] = in[4]; \
         out[3] = in[5]; \
         out[4] = in[2]; \
         out[5] = in[3]; \
-        in  += 6; \
-        out += 6; \
-    } \
-}
+        )
 
-#define REORDER_OUT_71(NAME, TYPE) \
-static void alsa_reorder_ ## NAME ## _out_71(const void *in_v, void *out_v, int n) \
-{ \
-    const TYPE *in = in_v; \
-    TYPE      *out = out_v; \
-\
-    while (n-- > 0) { \
+MAKE_REORDER_FUNCS(8, out_71, \
         out[0] = in[0]; \
         out[1] = in[1]; \
         out[2] = in[4]; \
@@ -112,23 +109,7 @@ static void alsa_reorder_ ## NAME ## _out_71(const void *in_v, void *out_v, int 
         out[5] = in[3]; \
         out[6] = in[6]; \
         out[7] = in[7]; \
-        in  += 8; \
-        out += 8; \
-    } \
-}
-
-REORDER_OUT_50(int8, int8_t)
-REORDER_OUT_51(int8, int8_t)
-REORDER_OUT_71(int8, int8_t)
-REORDER_OUT_50(int16, int16_t)
-REORDER_OUT_51(int16, int16_t)
-REORDER_OUT_71(int16, int16_t)
-REORDER_OUT_50(int32, int32_t)
-REORDER_OUT_51(int32, int32_t)
-REORDER_OUT_71(int32, int32_t)
-REORDER_OUT_50(f32, float)
-REORDER_OUT_51(f32, float)
-REORDER_OUT_71(f32, float)
+        )
 
 #define FORMAT_I8  0
 #define FORMAT_I16 1
@@ -299,7 +280,7 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
         }
         if (s->reorder_func) {
             s->reorder_buf_size = buffer_size;
-            s->reorder_buf = av_malloc(s->reorder_buf_size * s->frame_size);
+            s->reorder_buf = av_malloc_array(s->reorder_buf_size, s->frame_size);
             if (!s->reorder_buf)
                 goto fail1;
         }
@@ -320,6 +301,8 @@ av_cold int ff_alsa_close(AVFormatContext *s1)
     AlsaData *s = s1->priv_data;
 
     av_freep(&s->reorder_buf);
+    if (CONFIG_ALSA_INDEV)
+        ff_timefilter_destroy(s->timefilter);
     snd_pcm_close(s->h);
     return 0;
 }
@@ -353,10 +336,64 @@ int ff_alsa_extend_reorder_buf(AlsaData *s, int min_size)
     av_assert0(size != 0);
     while (size < min_size)
         size *= 2;
-    r = av_realloc(s->reorder_buf, size * s->frame_size);
+    r = av_realloc_array(s->reorder_buf, size, s->frame_size);
     if (!r)
         return AVERROR(ENOMEM);
     s->reorder_buf = r;
     s->reorder_buf_size = size;
     return 0;
+}
+
+/* ported from alsa-utils/aplay.c */
+int ff_alsa_get_device_list(AVDeviceInfoList *device_list, snd_pcm_stream_t stream_type)
+{
+    int ret = 0;
+    void **hints, **n;
+    char *name = NULL, *descr = NULL, *io = NULL, *tmp;
+    AVDeviceInfo *new_device = NULL;
+    const char *filter = stream_type == SND_PCM_STREAM_PLAYBACK ? "Output" : "Input";
+
+    if (snd_device_name_hint(-1, "pcm", &hints) < 0)
+        return AVERROR_EXTERNAL;
+    n = hints;
+    while (*n && !ret) {
+        name = snd_device_name_get_hint(*n, "NAME");
+        descr = snd_device_name_get_hint(*n, "DESC");
+        io = snd_device_name_get_hint(*n, "IOID");
+        if (!io || !strcmp(io, filter)) {
+            new_device = av_mallocz(sizeof(AVDeviceInfo));
+            if (!new_device) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+            new_device->device_name = av_strdup(name);
+            if ((tmp = strrchr(descr, '\n')) && tmp[1])
+                new_device->device_description = av_strdup(&tmp[1]);
+            else
+                new_device->device_description = av_strdup(descr);
+            if (!new_device->device_description || !new_device->device_name) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+            if ((ret = av_dynarray_add_nofree(&device_list->devices,
+                                              &device_list->nb_devices, new_device)) < 0) {
+                goto fail;
+            }
+            if (!strcmp(new_device->device_name, "default"))
+                device_list->default_device = device_list->nb_devices - 1;
+            new_device = NULL;
+        }
+      fail:
+        free(io);
+        free(name);
+        free(descr);
+        n++;
+    }
+    if (new_device) {
+        av_free(new_device->device_description);
+        av_free(new_device->device_name);
+        av_free(new_device);
+    }
+    snd_device_name_free_hint(hints);
+    return ret;
 }
