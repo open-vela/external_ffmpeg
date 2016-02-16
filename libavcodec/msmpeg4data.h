@@ -5,20 +5,20 @@
  *
  * msmpeg4v1 & v2 stuff by Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -83,8 +83,5 @@ extern const uint32_t ff_table1_dc_chroma[120][2];
 
 #define WMV2_INTER_CBP_TABLE_COUNT 4
 extern const uint32_t (* const ff_wmv2_inter_table[WMV2_INTER_CBP_TABLE_COUNT])[2];
-
-extern const uint8_t ff_wmv2_scantableA[64];
-extern const uint8_t ff_wmv2_scantableB[64];
 
 #endif /* AVCODEC_MSMPEG4DATA_H */
