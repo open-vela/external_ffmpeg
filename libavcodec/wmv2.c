@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -103,8 +103,8 @@ void ff_mspel_motion(MpegEncContext *s, uint8_t *dest_y,
 {
     Wmv2Context *const w = (Wmv2Context *) s;
     uint8_t *ptr;
-    int dxy, offset, mx, my, src_x, src_y, v_edge_pos;
-    ptrdiff_t linesize, uvlinesize;
+    int dxy, mx, my, src_x, src_y, v_edge_pos;
+    ptrdiff_t offset, linesize, uvlinesize;
     int emu = 0;
 
     dxy   = ((motion_y & 1) << 1) | (motion_x & 1);
@@ -144,21 +144,13 @@ void ff_mspel_motion(MpegEncContext *s, uint8_t *dest_y,
     if (s->avctx->flags & AV_CODEC_FLAG_GRAY)
         return;
 
-    if (s->out_format == FMT_H263) {
-        dxy = 0;
-        if ((motion_x & 3) != 0)
-            dxy |= 1;
-        if ((motion_y & 3) != 0)
-            dxy |= 2;
-        mx = motion_x >> 2;
-        my = motion_y >> 2;
-    } else {
-        mx   = motion_x / 2;
-        my   = motion_y / 2;
-        dxy  = ((my & 1) << 1) | (mx & 1);
-        mx >>= 1;
-        my >>= 1;
-    }
+    dxy = 0;
+    if ((motion_x & 3) != 0)
+        dxy |= 1;
+    if ((motion_y & 3) != 0)
+        dxy |= 2;
+    mx = motion_x >> 2;
+    my = motion_y >> 2;
 
     src_x = s->mb_x * 8 + mx;
     src_y = s->mb_y * 8 + my;
