@@ -2,20 +2,20 @@
  * amr file format
  * Copyright (c) 2001 ffmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,11 @@ Only mono files are supported.
 #include "libavutil/channel_layout.h"
 #include "avformat.h"
 #include "internal.h"
+
+typedef struct {
+    uint64_t cumulated_size;
+    uint64_t block_count;
+} AMRContext;
 
 static const char AMR_header[]   = "#!AMR\n";
 static const char AMRWB_header[] = "#!AMR-WB\n";
@@ -110,12 +115,13 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
     AVCodecContext *enc = s->streams[0]->codec;
     int read, size = 0, toc, mode;
     int64_t pos = avio_tell(s->pb);
+    AMRContext *amr = s->priv_data;
 
-    if (s->pb->eof_reached) {
+    if (avio_feof(s->pb)) {
         return AVERROR(EIO);
     }
 
-    // FIXME this is wrong, this should rather be in a AVParset
+    // FIXME this is wrong, this should rather be in a AVParser
     toc  = avio_r8(s->pb);
     mode = (toc >> 3) & 0x0F;
 
@@ -131,15 +137,16 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
         };
 
         size = packed_size[mode];
-    } else {
-        assert(0);
     }
 
     if (!size || av_new_packet(pkt, size))
         return AVERROR(EIO);
 
-    /* Both AMR formats have 50 frames per second */
-    s->streams[0]->codec->bit_rate = size*8*50;
+    if (amr->cumulated_size < UINT64_MAX - size) {
+        amr->cumulated_size += size;
+        /* Both AMR formats have 50 frames per second */
+        s->streams[0]->codec->bit_rate = amr->cumulated_size / ++amr->block_count * 8 * 50;
+    }
 
     pkt->stream_index = 0;
     pkt->pos          = pos;
@@ -159,6 +166,7 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
 AVInputFormat ff_amr_demuxer = {
     .name           = "amr",
     .long_name      = NULL_IF_CONFIG_SMALL("3GPP AMR"),
+    .priv_data_size = sizeof(AMRContext),
     .read_probe     = amr_probe,
     .read_header    = amr_read_header,
     .read_packet    = amr_read_packet,

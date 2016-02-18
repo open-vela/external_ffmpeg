@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2012 David Kment
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg .
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg  is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg  is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg ; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -92,7 +92,7 @@ static int hnm_read_header(AVFormatContext *s)
 
     hnm->currentframe = 0;
 
-    if (hnm->width  < 320 || hnm->width  > 640 ||
+    if (hnm->width  < 256 || hnm->width  > 640 ||
         hnm->height < 150 || hnm->height > 480) {
         av_log(s, AV_LOG_ERROR,
                "invalid resolution: %ux%u\n", hnm->width, hnm->height);
@@ -150,7 +150,7 @@ static int hnm_read_packet(AVFormatContext *s, AVPacket *pkt)
     chunk_id = avio_rl16(pb);
     avio_skip(pb, 2);
 
-    if (chunk_size > hnm->superchunk_remaining) {
+    if (chunk_size > hnm->superchunk_remaining || !chunk_size) {
         av_log(s, AV_LOG_ERROR,
                "invalid chunk size: %"PRIu32", offset: %"PRId64"\n",
                chunk_size, avio_tell(pb));
