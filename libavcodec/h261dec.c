@@ -3,20 +3,20 @@
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2004 Maarten Daniels
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
  * H.261 decoder.
  */
 
-#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "mpeg_er.h"
 #include "mpegutils.h"
@@ -76,11 +75,14 @@ static av_cold int h261_decode_init(AVCodecContext *avctx)
 
     // set defaults
     ff_mpv_decode_defaults(s);
-    ff_mpv_decode_init(s, avctx);
-
+    s->avctx       = avctx;
+    s->width       = s->avctx->coded_width;
+    s->height      = s->avctx->coded_height;
+    s->codec_id    = s->avctx->codec->id;
     s->out_format  = FMT_H261;
     s->low_delay   = 1;
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
+    s->codec_id    = avctx->codec->id;
 
     ff_h261_common_init();
     h261_decode_init_vlc(h);
@@ -125,12 +127,12 @@ static int h261_decode_gob_header(H261Context *h)
     }
 
     /* GEI */
-    if (skip_1stop_8data_bits(&s->gb) < 0)
-        return AVERROR_INVALIDDATA;
+    while (get_bits1(&s->gb) != 0)
+        skip_bits(&s->gb, 8);
 
     if (s->qscale == 0) {
         av_log(s->avctx, AV_LOG_ERROR, "qscale has forbidden 0 value\n");
-        if (s->avctx->err_recognition & (AV_EF_BITSTREAM | AV_EF_COMPLIANT))
+        if (s->avctx->err_recognition & AV_EF_BITSTREAM)
             return -1;
     }
 
@@ -216,13 +218,6 @@ static int h261_decode_mb_skipped(H261Context *h, int mba1, int mba2)
         s->mb_skipped                  = 1;
         h->mtype                      &= ~MB_TYPE_H261_FIL;
 
-        if (s->current_picture.motion_val[0]) {
-            int b_stride = 2*s->mb_width + 1;
-            int b_xy     = 2 * s->mb_x + (2 * s->mb_y) * b_stride;
-            s->current_picture.motion_val[0][b_xy][0] = s->mv[0][0][0];
-            s->current_picture.motion_val[0][b_xy][1] = s->mv[0][0][1];
-        }
-
         ff_mpv_decode_mb(s, s->block);
     }
 
@@ -262,7 +257,7 @@ static int decode_mv_component(GetBitContext *gb, int v)
 static int h261_decode_block(H261Context *h, int16_t *block, int n, int coded)
 {
     MpegEncContext *const s = &h->s;
-    int level, i, j, run;
+    int code, level, i, j, run;
     RLTable *rl = &ff_h261_rl_tcoeff;
     const uint8_t *scan_table;
 
@@ -307,47 +302,39 @@ static int h261_decode_block(H261Context *h, int16_t *block, int n, int coded)
         s->block_last_index[n] = i - 1;
         return 0;
     }
-    {
-    OPEN_READER(re, &s->gb);
-    i--; // offset by -1 to allow direct indexing of scan_table
     for (;;) {
-        UPDATE_CACHE(re, &s->gb);
-        GET_RL_VLC(level, run, re, &s->gb, rl->rl_vlc[0], TCOEFF_VLC_BITS, 2, 0);
-        if (run == 66) {
-            if (level) {
-                CLOSE_READER(re, &s->gb);
-                av_log(s->avctx, AV_LOG_ERROR, "illegal ac vlc code at %dx%d\n",
-                       s->mb_x, s->mb_y);
-                return -1;
-            }
+        code = get_vlc2(&s->gb, rl->vlc.table, TCOEFF_VLC_BITS, 2);
+        if (code < 0) {
+            av_log(s->avctx, AV_LOG_ERROR, "illegal ac vlc code at %dx%d\n",
+                   s->mb_x, s->mb_y);
+            return -1;
+        }
+        if (code == rl->n) {
             /* escape */
             /* The remaining combinations of (run, level) are encoded with a
              * 20-bit word consisting of 6 bits escape, 6 bits run and 8 bits
              * level. */
-            run   = SHOW_UBITS(re, &s->gb, 6) + 1;
-            SKIP_CACHE(re, &s->gb, 6);
-            level = SHOW_SBITS(re, &s->gb, 8);
-            SKIP_COUNTER(re, &s->gb, 6 + 8);
-        } else if (level == 0) {
+            run   = get_bits(&s->gb, 6);
+            level = get_sbits(&s->gb, 8);
+        } else if (code == 0) {
             break;
         } else {
-            if (SHOW_UBITS(re, &s->gb, 1))
+            run   = rl->table_run[code];
+            level = rl->table_level[code];
+            if (get_bits1(&s->gb))
                 level = -level;
-            SKIP_COUNTER(re, &s->gb, 1);
         }
         i += run;
         if (i >= 64) {
-            CLOSE_READER(re, &s->gb);
             av_log(s->avctx, AV_LOG_ERROR, "run overflow at %dx%d\n",
                    s->mb_x, s->mb_y);
             return -1;
         }
         j        = scan_table[i];
         block[j] = level;
+        i++;
     }
-    CLOSE_READER(re, &s->gb);
-    }
-    s->block_last_index[n] = i;
+    s->block_last_index[n] = i - 1;
     return 0;
 }
 
@@ -392,12 +379,11 @@ static int h261_decode_mb(H261Context *h)
 
     // Read mtype
     h->mtype = get_vlc2(&s->gb, h261_mtype_vlc.table, H261_MTYPE_VLC_BITS, 2);
-    if (h->mtype < 0) {
+    if (h->mtype < 0 || h->mtype >= FF_ARRAY_ELEMS(ff_h261_mtype_map)) {
         av_log(s->avctx, AV_LOG_ERROR, "Invalid mtype index %d\n",
                h->mtype);
         return SLICE_ERROR;
     }
-    av_assert0(h->mtype < FF_ARRAY_ELEMS(ff_h261_mtype_map));
     h->mtype = ff_h261_mtype_map[h->mtype];
 
     // Read mquant
@@ -444,13 +430,6 @@ static int h261_decode_mb(H261Context *h)
     s->current_picture.mb_type[xy] = MB_TYPE_16x16 | MB_TYPE_L0;
     s->mv[0][0][0]                 = h->current_mv_x * 2; // gets divided by 2 in motion compensation
     s->mv[0][0][1]                 = h->current_mv_y * 2;
-
-    if (s->current_picture.motion_val[0]) {
-        int b_stride = 2*s->mb_width + 1;
-        int b_xy     = 2 * s->mb_x + (2 * s->mb_y) * b_stride;
-        s->current_picture.motion_val[0][b_xy][0] = s->mv[0][0][0];
-        s->current_picture.motion_val[0][b_xy][1] = s->mv[0][0][1];
-    }
 
 intra:
     /* decode each block */
@@ -527,8 +506,8 @@ static int h261_decode_picture_header(H261Context *h)
     skip_bits1(&s->gb); /* Reserved */
 
     /* PEI */
-    if (skip_1stop_8data_bits(&s->gb) < 0)
-        return AVERROR_INVALIDDATA;
+    while (get_bits1(&s->gb) != 0)
+        skip_bits(&s->gb, 8);
 
     /* H.261 has no I-frames, but if we pass AV_PICTURE_TYPE_I for the first
      * frame, the codec crashes if it does not contain all I-blocks
@@ -655,12 +634,12 @@ retry:
     }
     ff_mpv_frame_end(s);
 
-    av_assert0(s->current_picture.f->pict_type == s->current_picture_ptr->f->pict_type);
-    av_assert0(s->current_picture.f->pict_type == s->pict_type);
+    assert(s->current_picture.f->pict_type == s->current_picture_ptr->f->pict_type);
+    assert(s->current_picture.f->pict_type == s->pict_type);
 
     if ((ret = av_frame_ref(pict, s->current_picture_ptr->f)) < 0)
         return ret;
-    ff_print_debug_info(s, s->current_picture_ptr, pict);
+    ff_print_debug_info(s, s->current_picture_ptr);
 
     *got_frame = 1;
 
@@ -686,5 +665,4 @@ AVCodec ff_h261_decoder = {
     .close          = h261_decode_end,
     .decode         = h261_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .max_lowres     = 3,
 };
