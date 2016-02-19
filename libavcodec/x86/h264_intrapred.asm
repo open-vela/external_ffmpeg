@@ -5,20 +5,20 @@
 ;* Copyright (c) 2010 Loren Merritt
 ;* Copyright (c) 2010 Ronald S. Bultje
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -2497,7 +2497,10 @@ cglobal pred4x4_tm_vp8_8, 3,3
     pshufb     mm3, mm6
     pshufb     mm4, mm6
     pshufb     mm5, mm6
-    psubw      mm0, mm7
+    psubw      mm2, mm7
+    psubw      mm3, mm7
+    psubw      mm4, mm7
+    psubw      mm5, mm7
     paddw      mm2, mm0
     paddw      mm3, mm0
     paddw      mm4, mm0

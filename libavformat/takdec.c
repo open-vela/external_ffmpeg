@@ -2,27 +2,25 @@
  * Raw TAK demuxer
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/crc.h"
 #include "libavcodec/tak.h"
 #include "avformat.h"
-#include "avio_internal.h"
 #include "internal.h"
 #include "rawdec.h"
 #include "apetag.h"
@@ -37,12 +35,6 @@ static int tak_probe(AVProbeData *p)
     if (!memcmp(p->buf, "tBaK", 4))
         return AVPROBE_SCORE_EXTENSION;
     return 0;
-}
-
-static unsigned long tak_check_crc(unsigned long checksum, const uint8_t *buf,
-                                   unsigned int len)
-{
-    return av_crc(av_crc_get_table(AV_CRC_24_IEEE), checksum, buf, len);
 }
 
 static int tak_read_header(AVFormatContext *s)
@@ -60,7 +52,7 @@ static int tak_read_header(AVFormatContext *s)
 
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codec->codec_id   = AV_CODEC_ID_TAK;
-    st->need_parsing      = AVSTREAM_PARSE_FULL_RAW;
+    st->need_parsing      = AVSTREAM_PARSE_FULL;
 
     tc->mlast_frame = 0;
     if (avio_rl32(pb) != MKTAG('t', 'B', 'a', 'K')) {
@@ -68,7 +60,7 @@ static int tak_read_header(AVFormatContext *s)
         return 0;
     }
 
-    while (!avio_feof(pb)) {
+    while (!pb->eof_reached) {
         enum TAKMetaDataType type;
         int size;
 
@@ -79,28 +71,16 @@ static int tak_read_header(AVFormatContext *s)
         case TAK_METADATA_STREAMINFO:
         case TAK_METADATA_LAST_FRAME:
         case TAK_METADATA_ENCODER:
-            if (size <= 3)
-                return AVERROR_INVALIDDATA;
-
-            buffer = av_malloc(size - 3 + AV_INPUT_BUFFER_PADDING_SIZE);
+            buffer = av_malloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
             if (!buffer)
                 return AVERROR(ENOMEM);
-            memset(buffer + size - 3, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
-            ffio_init_checksum(pb, tak_check_crc, 0xCE04B7U);
-            if (avio_read(pb, buffer, size - 3) != size - 3) {
+            if (avio_read(pb, buffer, size) != size) {
                 av_freep(&buffer);
                 return AVERROR(EIO);
             }
-            if (ffio_get_checksum(s->pb) != avio_rb24(pb)) {
-                av_log(s, AV_LOG_ERROR, "%d metadata block CRC error.\n", type);
-                if (s->error_recognition & AV_EF_EXPLODE) {
-                    av_freep(&buffer);
-                    return AVERROR_INVALIDDATA;
-                }
-            }
 
-            init_get_bits8(&gb, buffer, size - 3);
+            init_get_bits(&gb, buffer, size * 8);
             break;
         case TAK_METADATA_MD5: {
             uint8_t md5[16];
@@ -108,14 +88,8 @@ static int tak_read_header(AVFormatContext *s)
 
             if (size != 19)
                 return AVERROR_INVALIDDATA;
-            ffio_init_checksum(pb, tak_check_crc, 0xCE04B7U);
             avio_read(pb, md5, 16);
-            if (ffio_get_checksum(s->pb) != avio_rb24(pb)) {
-                av_log(s, AV_LOG_ERROR, "MD5 metadata block CRC error.\n");
-                if (s->error_recognition & AV_EF_EXPLODE)
-                    return AVERROR_INVALIDDATA;
-            }
-
+            avio_skip(pb, 3);
             av_log(s, AV_LOG_VERBOSE, "MD5=");
             for (i = 0; i < 16; i++)
                 av_log(s, AV_LOG_VERBOSE, "%02x", md5[i]);
@@ -153,7 +127,7 @@ static int tak_read_header(AVFormatContext *s)
             st->start_time                   = 0;
             avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
             st->codec->extradata             = buffer;
-            st->codec->extradata_size        = size - 3;
+            st->codec->extradata_size        = size;
             buffer                           = NULL;
         } else if (type == TAK_METADATA_LAST_FRAME) {
             if (size != 11)
@@ -181,7 +155,7 @@ static int raw_read_packet(AVFormatContext *s, AVPacket *pkt)
         AVIOContext *pb = s->pb;
         int64_t size, left;
 
-        left = tc->data_end - avio_tell(pb);
+        left = tc->data_end - avio_tell(s->pb);
         size = FFMIN(left, 1024);
         if (size <= 0)
             return AVERROR_EOF;
