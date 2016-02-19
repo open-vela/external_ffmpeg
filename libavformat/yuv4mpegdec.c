@@ -2,20 +2,20 @@
  * YUV4MPEG demuxer
  * Copyright (c) 2001, 2002, 2003 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,52 +81,20 @@ static int yuv4_read_header(AVFormatContext *s)
             } else if (strncmp("420paldv", tokstart, 8) == 0) {
                 pix_fmt = AV_PIX_FMT_YUV420P;
                 chroma_sample_location = AVCHROMA_LOC_TOPLEFT;
-            } else if (strncmp("420p16", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV420P16;
-            } else if (strncmp("422p16", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV422P16;
-            } else if (strncmp("444p16", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV444P16;
-            } else if (strncmp("420p14", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV420P14;
-            } else if (strncmp("422p14", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV422P14;
-            } else if (strncmp("444p14", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV444P14;
-            } else if (strncmp("420p12", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV420P12;
-            } else if (strncmp("422p12", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV422P12;
-            } else if (strncmp("444p12", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV444P12;
-            } else if (strncmp("420p10", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV420P10;
-            } else if (strncmp("422p10", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV422P10;
-            } else if (strncmp("444p10", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV444P10;
-            } else if (strncmp("420p9", tokstart, 5) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV420P9;
-            } else if (strncmp("422p9", tokstart, 5) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV422P9;
-            } else if (strncmp("444p9", tokstart, 5) == 0) {
-                pix_fmt = AV_PIX_FMT_YUV444P9;
             } else if (strncmp("420", tokstart, 3) == 0) {
                 pix_fmt = AV_PIX_FMT_YUV420P;
                 chroma_sample_location = AVCHROMA_LOC_CENTER;
-            } else if (strncmp("411", tokstart, 3) == 0) {
+            } else if (strncmp("411", tokstart, 3) == 0)
                 pix_fmt = AV_PIX_FMT_YUV411P;
-            } else if (strncmp("422", tokstart, 3) == 0) {
+            else if (strncmp("422", tokstart, 3) == 0)
                 pix_fmt = AV_PIX_FMT_YUV422P;
-            } else if (strncmp("444alpha", tokstart, 8) == 0 ) {
+            else if (strncmp("444alpha", tokstart, 8) == 0 ) {
                 av_log(s, AV_LOG_ERROR, "Cannot handle 4:4:4:4 "
                        "YUV4MPEG stream.\n");
                 return -1;
-            } else if (strncmp("444", tokstart, 3) == 0) {
+            } else if (strncmp("444", tokstart, 3) == 0)
                 pix_fmt = AV_PIX_FMT_YUV444P;
-            } else if (strncmp("mono16", tokstart, 6) == 0) {
-                pix_fmt = AV_PIX_FMT_GRAY16;
-            } else if (strncmp("mono", tokstart, 4) == 0) {
+            else if (strncmp("mono", tokstart, 4) == 0) {
                 pix_fmt = AV_PIX_FMT_GRAY8;
             } else {
                 av_log(s, AV_LOG_ERROR, "YUV4MPEG stream contains an unknown "
@@ -153,9 +121,10 @@ static int yuv4_read_header(AVFormatContext *s)
             case 'm':
                 av_log(s, AV_LOG_ERROR, "YUV4MPEG stream contains mixed "
                        "interlaced and non-interlaced frames.\n");
+                return -1;
             default:
                 av_log(s, AV_LOG_ERROR, "YUV4MPEG has invalid header.\n");
-                return AVERROR(EINVAL);
+                return -1;
             }
             break;
         case 'F': // Frame rate
@@ -178,36 +147,6 @@ static int yuv4_read_header(AVFormatContext *s)
                     alt_pix_fmt = AV_PIX_FMT_YUV420P;
                 else if (strncmp("420PALDV", tokstart, 8) == 0)
                     alt_pix_fmt = AV_PIX_FMT_YUV420P;
-                else if (strncmp("420P9", tokstart, 5) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV420P9;
-                else if (strncmp("422P9", tokstart, 5) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV422P9;
-                else if (strncmp("444P9", tokstart, 5) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV444P9;
-                else if (strncmp("420P10", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV420P10;
-                else if (strncmp("422P10", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV422P10;
-                else if (strncmp("444P10", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV444P10;
-                else if (strncmp("420P12", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV420P12;
-                else if (strncmp("422P12", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV422P12;
-                else if (strncmp("444P12", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV444P12;
-                else if (strncmp("420P14", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV420P14;
-                else if (strncmp("422P14", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV422P14;
-                else if (strncmp("444P14", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV444P14;
-                else if (strncmp("420P16", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV420P16;
-                else if (strncmp("422P16", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV422P16;
-                else if (strncmp("444P16", tokstart, 6) == 0)
-                    alt_pix_fmt = AV_PIX_FMT_YUV444P16;
                 else if (strncmp("411", tokstart, 3) == 0)
                     alt_pix_fmt = AV_PIX_FMT_YUV411P;
                 else if (strncmp("422", tokstart, 3) == 0)
@@ -258,12 +197,6 @@ static int yuv4_read_header(AVFormatContext *s)
     st->sample_aspect_ratio           = (AVRational){ aspectn, aspectd };
     st->codec->chroma_sample_location = chroma_sample_location;
     st->codec->field_order            = field_order;
-    s->packet_size = av_image_get_buffer_size(st->codec->pix_fmt, width, height, 1) + Y4M_FRAME_MAGIC_LEN;
-    if ((int) s->packet_size < 0)
-        return s->packet_size;
-    s->internal->data_offset = avio_tell(pb);
-
-    st->duration = (avio_size(pb) - avio_tell(pb)) / s->packet_size;
 
     return 0;
 }
@@ -272,8 +205,8 @@ static int yuv4_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     int i;
     char header[MAX_FRAME_HEADER+1];
-    int ret;
-    int64_t off = avio_tell(s->pb);
+    int packet_size, width, height, ret;
+    AVStream *st = s->streams[0];
 
     for (i = 0; i < MAX_FRAME_HEADER; i++) {
         header[i] = avio_r8(s->pb);
@@ -292,22 +225,21 @@ static int yuv4_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (strncmp(header, Y4M_FRAME_MAGIC, strlen(Y4M_FRAME_MAGIC)))
         return AVERROR_INVALIDDATA;
 
-    ret = av_get_packet(s->pb, pkt, s->packet_size - Y4M_FRAME_MAGIC_LEN);
+    width  = st->codec->width;
+    height = st->codec->height;
+
+    packet_size = av_image_get_buffer_size(st->codec->pix_fmt,
+                                           width, height, 1);
+    if (packet_size < 0)
+        return packet_size;
+
+    ret = av_get_packet(s->pb, pkt, packet_size);
     if (ret < 0)
         return ret;
-    else if (ret != s->packet_size - Y4M_FRAME_MAGIC_LEN)
+    else if (ret != packet_size)
         return s->pb->eof_reached ? AVERROR_EOF : AVERROR(EIO);
 
     pkt->stream_index = 0;
-    pkt->pts = (off - s->internal->data_offset) / s->packet_size;
-    pkt->duration = 1;
-    return 0;
-}
-
-static int yuv4_read_seek(AVFormatContext *s, int stream_index,
-                          int64_t pts, int flags)
-{
-    avio_seek(s->pb, pts * s->packet_size + s->internal->data_offset, SEEK_SET);
     return 0;
 }
 
@@ -326,6 +258,5 @@ AVInputFormat ff_yuv4mpegpipe_demuxer = {
     .read_probe     = yuv4_probe,
     .read_header    = yuv4_read_header,
     .read_packet    = yuv4_read_packet,
-    .read_seek      = yuv4_read_seek,
     .extensions     = "y4m",
 };
