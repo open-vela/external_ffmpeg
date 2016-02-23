@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2007 Bobby Bingham
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,6 @@
 
 #include "avfilter.h"
 #include "audio.h"
-#include "formats.h"
 #include "internal.h"
 #include "video.h"
 
@@ -53,8 +52,6 @@ static av_cold int split_init(AVFilterContext *ctx)
         snprintf(name, sizeof(name), "output%d", i);
         pad.type = ctx->filter->inputs[0].type;
         pad.name = av_strdup(name);
-        if (!pad.name)
-            return AVERROR(ENOMEM);
 
         ff_insert_outpad(ctx, i, &pad);
     }
@@ -73,14 +70,10 @@ static av_cold void split_uninit(AVFilterContext *ctx)
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
-    int i, ret = AVERROR_EOF;
+    int i, ret = 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFrame *buf_out;
-
-        if (ctx->outputs[i]->status)
-            continue;
-        buf_out = av_frame_clone(frame);
+        AVFrame *buf_out = av_frame_clone(frame);
         if (!buf_out) {
             ret = AVERROR(ENOMEM);
             break;
@@ -97,42 +90,56 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 #define OFFSET(x) offsetof(SplitContext, x)
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 static const AVOption options[] = {
-    { "outputs", "set number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT, { .i64 = 2 }, 1, INT_MAX, FLAGS },
-    { NULL }
+    { "outputs", "Number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT, { .i64 = 2 }, 1, INT_MAX, FLAGS },
+    { NULL },
 };
 
-#define split_options options
-AVFILTER_DEFINE_CLASS(split);
+static const AVClass split_class = {
+    .class_name = "split",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
-#define asplit_options options
-AVFILTER_DEFINE_CLASS(asplit);
+static const AVClass asplit_class = {
+    .class_name = "asplit",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_split_inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_VIDEO,
-        .filter_frame = filter_frame,
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
+        .filter_frame     = filter_frame,
     },
     { NULL }
 };
 
 AVFilter ff_vf_split = {
-    .name        = "split",
+    .name      = "split",
     .description = NULL_IF_CONFIG_SMALL("Pass on the input to N video outputs."),
-    .priv_size   = sizeof(SplitContext),
-    .priv_class  = &split_class,
-    .init        = split_init,
-    .uninit      = split_uninit,
-    .inputs      = avfilter_vf_split_inputs,
-    .outputs     = NULL,
-    .flags       = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+
+    .priv_size  = sizeof(SplitContext),
+    .priv_class = &split_class,
+
+    .init   = split_init,
+    .uninit = split_uninit,
+
+    .inputs    = avfilter_vf_split_inputs,
+    .outputs   = NULL,
+
+    .flags     = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
 
 static const AVFilterPad avfilter_af_asplit_inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_AUDIO,
-        .filter_frame = filter_frame,
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_AUDIO,
+        .get_audio_buffer = ff_null_get_audio_buffer,
+        .filter_frame     = filter_frame,
     },
     { NULL }
 };
@@ -140,12 +147,15 @@ static const AVFilterPad avfilter_af_asplit_inputs[] = {
 AVFilter ff_af_asplit = {
     .name        = "asplit",
     .description = NULL_IF_CONFIG_SMALL("Pass on the audio input to N audio outputs."),
-    .priv_size   = sizeof(SplitContext),
-    .priv_class  = &asplit_class,
-    .init        = split_init,
-    .uninit      = split_uninit,
-    .query_formats = ff_query_formats_all,
-    .inputs      = avfilter_af_asplit_inputs,
-    .outputs     = NULL,
-    .flags       = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+
+    .priv_size  = sizeof(SplitContext),
+    .priv_class = &asplit_class,
+
+    .init   = split_init,
+    .uninit = split_uninit,
+
+    .inputs  = avfilter_af_asplit_inputs,
+    .outputs = NULL,
+
+    .flags   = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
