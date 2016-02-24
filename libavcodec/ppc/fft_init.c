@@ -3,20 +3,20 @@
  * AltiVec-enabled
  * Copyright (c) 2009 Loren Merritt
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,10 +36,14 @@
  * It also assumes all FFTComplex are 8 bytes-aligned pairs of floats.
  */
 
+#if HAVE_VSX
+#include "fft_vsx.h"
+#else
 void ff_fft_calc_altivec(FFTContext *s, FFTComplex *z);
 void ff_fft_calc_interleave_altivec(FFTContext *s, FFTComplex *z);
+#endif
 
-#if HAVE_GNU_AS && HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_GNU_AS && HAVE_ALTIVEC
 static void imdct_half_altivec(FFTContext *s, FFTSample *output, const FFTSample *input)
 {
     int j, k;
@@ -94,7 +98,11 @@ static void imdct_half_altivec(FFTContext *s, FFTSample *output, const FFTSample
         k--;
     } while(k >= 0);
 
+#if HAVE_VSX
+    ff_fft_calc_vsx(s, (FFTComplex*)output);
+#else
     ff_fft_calc_altivec(s, (FFTComplex*)output);
+#endif
 
     /* post rotation + reordering */
     j = -n32;
@@ -143,11 +151,15 @@ static void imdct_calc_altivec(FFTContext *s, FFTSample *output, const FFTSample
 
 av_cold void ff_fft_init_ppc(FFTContext *s)
 {
-#if HAVE_GNU_AS && HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_GNU_AS && HAVE_ALTIVEC
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 
+#if HAVE_VSX
+    s->fft_calc = ff_fft_calc_interleave_vsx;
+#else
     s->fft_calc   = ff_fft_calc_interleave_altivec;
+#endif
     if (s->mdct_bits >= 5) {
         s->imdct_calc = imdct_calc_altivec;
         s->imdct_half = imdct_half_altivec;
