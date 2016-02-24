@@ -5,20 +5,20 @@
  *
  * based on libavformat/http.c, Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -93,8 +93,8 @@ static int gopher_open(URLContext *h, const char *uri, int flags)
     ff_url_join(buf, sizeof(buf), "tcp", NULL, hostname, port, NULL);
 
     s->hd = NULL;
-    err = ffurl_open_whitelist(&s->hd, buf, AVIO_FLAG_READ_WRITE,
-                               &h->interrupt_callback, NULL, h->protocol_whitelist);
+    err = ffurl_open(&s->hd, buf, AVIO_FLAG_READ_WRITE,
+                     &h->interrupt_callback, NULL, h->protocols);
     if (err < 0)
         goto fail;
 
@@ -114,7 +114,7 @@ static int gopher_read(URLContext *h, uint8_t *buf, int size)
 }
 
 
-URLProtocol ff_gopher_protocol = {
+const URLProtocol ff_gopher_protocol = {
     .name           = "gopher",
     .url_open       = gopher_open,
     .url_read       = gopher_read,
