@@ -2,20 +2,20 @@
  * Electronic Arts TGQ Video Decoder
  * Copyright (c) 2007-2008 Peter Ross <pross@xvid.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -148,7 +148,7 @@ static void tgq_idct_put_mb_dconly(TgqContext *s, AVFrame *frame,
     }
 }
 
-static void tgq_decode_mb(TgqContext *s, AVFrame *frame, int mb_y, int mb_x)
+static int tgq_decode_mb(TgqContext *s, AVFrame *frame, int mb_y, int mb_x)
 {
     int mode;
     int i;
@@ -157,7 +157,10 @@ static void tgq_decode_mb(TgqContext *s, AVFrame *frame, int mb_y, int mb_x)
     mode = bytestream2_get_byte(&s->gb);
     if (mode > 12) {
         GetBitContext gb;
-        init_get_bits(&gb, s->gb.buffer, FFMIN(s->gb.buffer_end - s->gb.buffer, mode) * 8);
+        int ret = init_get_bits8(&gb, s->gb.buffer, FFMIN(bytestream2_get_bytes_left(&s->gb), mode));
+        if (ret < 0)
+            return ret;
+
         for (i = 0; i < 6; i++)
             tgq_decode_block(s, s->block[i], &gb);
         tgq_idct_put_mb(s, s->block, frame, mb_x, mb_y);
@@ -176,9 +179,11 @@ static void tgq_decode_mb(TgqContext *s, AVFrame *frame, int mb_y, int mb_x)
             }
         } else {
             av_log(s->avctx, AV_LOG_ERROR, "unsupported mb mode %i\n", mode);
+            return -1;
         }
         tgq_idct_put_mb_dconly(s, frame, mb_x, mb_y, dc);
     }
+    return 0;
 }
 
 static void tgq_calculate_qtable(TgqContext *s, int quant)
@@ -201,12 +206,13 @@ static int tgq_decode_frame(AVCodecContext *avctx,
     TgqContext *s      = avctx->priv_data;
     AVFrame *frame     = data;
     int x, y, ret;
-    int big_endian = AV_RL32(&buf[4]) > 0x000FFFFF;
+    int big_endian;
 
     if (buf_size < 16) {
         av_log(avctx, AV_LOG_WARNING, "truncated header\n");
         return AVERROR_INVALIDDATA;
     }
+    big_endian = AV_RL32(&buf[4]) > 0x000FFFFF;
     bytestream2_init(&s->gb, buf + 8, buf_size - 8);
     if (big_endian) {
         s->width  = bytestream2_get_be16u(&s->gb);
@@ -223,16 +229,15 @@ static int tgq_decode_frame(AVCodecContext *avctx,
     tgq_calculate_qtable(s, bytestream2_get_byteu(&s->gb));
     bytestream2_skip(&s->gb, 3);
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     frame->key_frame = 1;
     frame->pict_type = AV_PICTURE_TYPE_I;
 
     for (y = 0; y < FFALIGN(avctx->height, 16) >> 4; y++)
         for (x = 0; x < FFALIGN(avctx->width, 16) >> 4; x++)
-            tgq_decode_mb(s, frame, y, x);
+            if (tgq_decode_mb(s, frame, y, x) < 0)
+                return AVERROR_INVALIDDATA;
 
     *got_frame = 1;
 
