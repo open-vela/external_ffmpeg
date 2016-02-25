@@ -3724,6 +3724,7 @@ case $target_os in
         enabled x86_64 && objformat="macho64"
         enabled_any pic shared ||
             { check_cflags -mdynamic-no-pic && add_asflags -mdynamic-no-pic; }
+        check_header dispatch/dispatch.h
         ;;
     msys*)
         die "Native MSYS builds are discouraged, please use the MINGW environment.";
