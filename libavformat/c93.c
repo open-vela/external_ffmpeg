@@ -2,20 +2,20 @@
  * Interplay C93 demuxer
  * Copyright (c) 2007 Anssi Hannula <anssi.hannula@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -83,10 +83,10 @@ static int read_header(AVFormatContext *s)
     if (!video)
         return AVERROR(ENOMEM);
 
-    video->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    video->codecpar->codec_id = AV_CODEC_ID_C93;
-    video->codecpar->width = 320;
-    video->codecpar->height = 192;
+    video->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    video->codec->codec_id = AV_CODEC_ID_C93;
+    video->codec->width = 320;
+    video->codec->height = 192;
     /* 4:3 320x200 with 8 empty lines */
     video->sample_aspect_ratio = (AVRational) { 5, 6 };
     avpriv_set_pts_info(video, 64, 2, 25);
@@ -120,7 +120,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
                 c93->audio = avformat_new_stream(s, NULL);
                 if (!c93->audio)
                     return AVERROR(ENOMEM);
-                c93->audio->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+                c93->audio->codec->codec_type = AVMEDIA_TYPE_AUDIO;
             }
             avio_skip(pb, 26); /* VOC header */
             ret = ff_voc_get_packet(s, pkt, c93->audio, datasize - 26);
@@ -133,7 +133,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     }
     if (c93->current_frame >= br->frames) {
         if (c93->current_block >= 511 || !br[1].length)
-            return AVERROR(EIO);
+            return AVERROR_EOF;
         br++;
         c93->current_block++;
         c93->current_frame = 0;
