@@ -4,20 +4,20 @@
  * Copyright (c) 2007 Björn Axelsson
  * Copyright (c) 2010 Zhentan Feng <spyfeng at gmail dot com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "mms.h"
@@ -97,7 +97,7 @@ int ff_mms_asf_header_parser(MMSContext *mms)
             flags     = AV_RL16(p + sizeof(ff_asf_guid)*3 + 24);
             stream_id = flags & 0x7F;
             //The second condition is for checking CS_PKT_STREAM_ID_REQUEST packet size,
-            //we can calculate the packet size by stream_num.
+            //we can calcuate the packet size by stream_num.
             //Please see function send_stream_selection_request().
             if (mms->stream_num < MMS_MAX_STREAMS &&
                     46 + mms->stream_num * 6 < sizeof(mms->out_buffer)) {
