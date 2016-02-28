@@ -1,21 +1,21 @@
 /*
  * Westwood Studios AUD Format Demuxer
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -69,8 +69,6 @@ static int wsaud_probe(AVProbeData *p)
     if (p->buf[10] & 0xFC)
         return 0;
 
-    /* note: only check for WS IMA (type 99) right now since there is no
-     * support for type 1 */
     if (p->buf[11] != 99 && p->buf[11] != 1)
         return 0;
 
@@ -107,23 +105,23 @@ static int wsaud_read_header(AVFormatContext *s)
             avpriv_request_sample(s, "Stereo WS-SND1");
             return AVERROR_PATCHWELCOME;
         }
-        st->codecpar->codec_id = AV_CODEC_ID_WESTWOOD_SND1;
+        st->codec->codec_id = AV_CODEC_ID_WESTWOOD_SND1;
         break;
     case 99:
-        st->codecpar->codec_id = AV_CODEC_ID_ADPCM_IMA_WS;
-        st->codecpar->bits_per_coded_sample = 4;
-        st->codecpar->bit_rate = channels * sample_rate * 4;
+        st->codec->codec_id = AV_CODEC_ID_ADPCM_IMA_WS;
+        st->codec->bits_per_coded_sample = 4;
+        st->codec->bit_rate = channels * sample_rate * 4;
         break;
     default:
         avpriv_request_sample(s, "Unknown codec: %d", codec);
         return AVERROR_PATCHWELCOME;
     }
     avpriv_set_pts_info(st, 64, 1, sample_rate);
-    st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
-    st->codecpar->channels    = channels;
-    st->codecpar->channel_layout = channels == 1 ? AV_CH_LAYOUT_MONO :
-                                                   AV_CH_LAYOUT_STEREO;
-    st->codecpar->sample_rate = sample_rate;
+    st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
+    st->codec->channels    = channels;
+    st->codec->channel_layout = channels == 1 ? AV_CH_LAYOUT_MONO :
+                                                AV_CH_LAYOUT_STEREO;
+    st->codec->sample_rate = sample_rate;
 
     return 0;
 }
@@ -147,13 +145,13 @@ static int wsaud_read_packet(AVFormatContext *s,
 
     chunk_size = AV_RL16(&preamble[0]);
 
-    if (st->codecpar->codec_id == AV_CODEC_ID_WESTWOOD_SND1) {
+    if (st->codec->codec_id == AV_CODEC_ID_WESTWOOD_SND1) {
         /* For Westwood SND1 audio we need to add the output size and input
            size to the start of the packet to match what is in VQA.
            Specifically, this is needed to signal when a packet should be
            decoding as raw 8-bit pcm or variable-size ADPCM. */
         int out_size = AV_RL16(&preamble[2]);
-        if ((ret = av_new_packet(pkt, chunk_size + 4)))
+        if ((ret = av_new_packet(pkt, chunk_size + 4)) < 0)
             return ret;
         if ((ret = avio_read(pb, &pkt->data[4], chunk_size)) != chunk_size)
             return ret < 0 ? ret : AVERROR(EIO);
@@ -167,7 +165,7 @@ static int wsaud_read_packet(AVFormatContext *s,
             return AVERROR(EIO);
 
         /* 2 samples/byte, 1 or 2 samples per frame depending on stereo */
-        pkt->duration = (chunk_size * 2) / st->codecpar->channels;
+        pkt->duration = (chunk_size * 2) / st->codec->channels;
     }
     pkt->stream_index = st->index;
 

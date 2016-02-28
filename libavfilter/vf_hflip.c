@@ -2,20 +2,20 @@
  * Copyright (c) 2007 Benoit Fouet
  * Copyright (c) 2010 Stefano Sabatini
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,80 +37,71 @@
 
 typedef struct FlipContext {
     int max_step[4];    ///< max pixel step for each plane, expressed as a number of bytes
-    int hsub, vsub;     ///< chroma subsampling
+    int planewidth[4];  ///< width of each plane
+    int planeheight[4]; ///< height of each plane
 } FlipContext;
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static const enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_RGB48BE,      AV_PIX_FMT_RGB48LE,
-        AV_PIX_FMT_BGR48BE,      AV_PIX_FMT_BGR48LE,
-        AV_PIX_FMT_ARGB,         AV_PIX_FMT_RGBA,
-        AV_PIX_FMT_ABGR,         AV_PIX_FMT_BGRA,
-        AV_PIX_FMT_RGB24,        AV_PIX_FMT_BGR24,
-        AV_PIX_FMT_RGB565BE,     AV_PIX_FMT_RGB565LE,
-        AV_PIX_FMT_RGB555BE,     AV_PIX_FMT_RGB555LE,
-        AV_PIX_FMT_BGR565BE,     AV_PIX_FMT_BGR565LE,
-        AV_PIX_FMT_BGR555BE,     AV_PIX_FMT_BGR555LE,
-        AV_PIX_FMT_GRAY16BE,     AV_PIX_FMT_GRAY16LE,
-        AV_PIX_FMT_YUV420P16LE,  AV_PIX_FMT_YUV420P16BE,
-        AV_PIX_FMT_YUV422P16LE,  AV_PIX_FMT_YUV422P16BE,
-        AV_PIX_FMT_YUV444P16LE,  AV_PIX_FMT_YUV444P16BE,
-        AV_PIX_FMT_YUV444P,      AV_PIX_FMT_YUV422P,
-        AV_PIX_FMT_YUV420P,      AV_PIX_FMT_YUV411P,
-        AV_PIX_FMT_YUV410P,      AV_PIX_FMT_YUV440P,
-        AV_PIX_FMT_YUVJ444P,     AV_PIX_FMT_YUVJ422P,
-        AV_PIX_FMT_YUVJ420P,     AV_PIX_FMT_YUVJ440P,
-        AV_PIX_FMT_YUVA420P,
-        AV_PIX_FMT_RGB8,         AV_PIX_FMT_BGR8,
-        AV_PIX_FMT_RGB4_BYTE,    AV_PIX_FMT_BGR4_BYTE,
-        AV_PIX_FMT_PAL8,         AV_PIX_FMT_GRAY8,
-        AV_PIX_FMT_NONE
-    };
+    AVFilterFormats *pix_fmts = NULL;
+    int fmt, ret;
 
-    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
-    return 0;
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+        if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
+              desc->flags & AV_PIX_FMT_FLAG_BITSTREAM ||
+              (desc->log2_chroma_w != desc->log2_chroma_h &&
+               desc->comp[0].plane == desc->comp[1].plane)) &&
+            (ret = ff_add_format(&pix_fmts, fmt)) < 0)
+            return ret;
+    }
+
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static int config_props(AVFilterLink *inlink)
 {
     FlipContext *s = inlink->dst->priv;
     const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(inlink->format);
+    const int hsub = pix_desc->log2_chroma_w;
+    const int vsub = pix_desc->log2_chroma_h;
 
     av_image_fill_max_pixsteps(s->max_step, NULL, pix_desc);
-    s->hsub = pix_desc->log2_chroma_w;
-    s->vsub = pix_desc->log2_chroma_h;
+    s->planewidth[0]  = s->planewidth[3]  = inlink->w;
+    s->planewidth[1]  = s->planewidth[2]  = AV_CEIL_RSHIFT(inlink->w, hsub);
+    s->planeheight[0] = s->planeheight[3] = inlink->h;
+    s->planeheight[1] = s->planeheight[2] = AV_CEIL_RSHIFT(inlink->h, vsub);
 
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFrame *in)
+typedef struct ThreadData {
+    AVFrame *in, *out;
+} ThreadData;
+
+static int filter_slice(AVFilterContext *ctx, void *arg, int job, int nb_jobs)
 {
-    AVFilterContext *ctx  = inlink->dst;
-    FlipContext *s     = ctx->priv;
-    AVFilterLink *outlink = ctx->outputs[0];
-    AVFrame *out;
+    FlipContext *s = ctx->priv;
+    ThreadData *td = arg;
+    AVFrame *in = td->in;
+    AVFrame *out = td->out;
     uint8_t *inrow, *outrow;
-    int i, j, plane, step, hsub, vsub;
+    int i, j, plane, step;
 
-    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
-    if (!out) {
-        av_frame_free(&in);
-        return AVERROR(ENOMEM);
-    }
-    av_frame_copy_props(out, in);
+    for (plane = 0; plane < 4 && in->data[plane] && in->linesize[plane]; plane++) {
+        const int width  = s->planewidth[plane];
+        const int height = s->planeheight[plane];
+        const int start = (height *  job   ) / nb_jobs;
+        const int end   = (height * (job+1)) / nb_jobs;
 
-    for (plane = 0; plane < 4 && in->data[plane]; plane++) {
         step = s->max_step[plane];
-        hsub = (plane == 1 || plane == 2) ? s->hsub : 0;
-        vsub = (plane == 1 || plane == 2) ? s->vsub : 0;
 
-        outrow = out->data[plane];
-        inrow  = in ->data[plane] + ((inlink->w >> hsub) - 1) * step;
-        for (i = 0; i < in->height >> vsub; i++) {
+        outrow = out->data[plane] + start * out->linesize[plane];
+        inrow  = in ->data[plane] + start * in->linesize[plane] + (width - 1) * step;
+        for (i = start; i < end; i++) {
             switch (step) {
             case 1:
-                for (j = 0; j < (inlink->w >> hsub); j++)
+                for (j = 0; j < width; j++)
                     outrow[j] = inrow[-j];
             break;
 
@@ -118,7 +109,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             {
                 uint16_t *outrow16 = (uint16_t *)outrow;
                 uint16_t * inrow16 = (uint16_t *) inrow;
-                for (j = 0; j < (inlink->w >> hsub); j++)
+                for (j = 0; j < width; j++)
                     outrow16[j] = inrow16[-j];
             }
             break;
@@ -127,7 +118,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             {
                 uint8_t *in  =  inrow;
                 uint8_t *out = outrow;
-                for (j = 0; j < (inlink->w >> hsub); j++, out += 3, in -= 3) {
+                for (j = 0; j < width; j++, out += 3, in -= 3) {
                     int32_t v = AV_RB24(in);
                     AV_WB24(out, v);
                 }
@@ -138,13 +129,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             {
                 uint32_t *outrow32 = (uint32_t *)outrow;
                 uint32_t * inrow32 = (uint32_t *) inrow;
-                for (j = 0; j < (inlink->w >> hsub); j++)
+                for (j = 0; j < width; j++)
                     outrow32[j] = inrow32[-j];
             }
             break;
 
             default:
-                for (j = 0; j < (inlink->w >> hsub); j++)
+                for (j = 0; j < width; j++)
                     memcpy(outrow + j*step, inrow - j*step, step);
             }
 
@@ -152,6 +143,30 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             outrow += out->linesize[plane];
         }
     }
+
+    return 0;
+}
+
+static int filter_frame(AVFilterLink *inlink, AVFrame *in)
+{
+    AVFilterContext *ctx  = inlink->dst;
+    AVFilterLink *outlink = ctx->outputs[0];
+    ThreadData td;
+    AVFrame *out;
+
+    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    if (!out) {
+        av_frame_free(&in);
+        return AVERROR(ENOMEM);
+    }
+    av_frame_copy_props(out, in);
+
+    /* copy palette if required */
+    if (av_pix_fmt_desc_get(inlink->format)->flags & AV_PIX_FMT_FLAG_PAL)
+        memcpy(out->data[1], in->data[1], AVPALETTE_SIZE);
+
+    td.in = in, td.out = out;
+    ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(outlink->h, ctx->graph->nb_threads));
 
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
@@ -176,11 +191,11 @@ static const AVFilterPad avfilter_vf_hflip_outputs[] = {
 };
 
 AVFilter ff_vf_hflip = {
-    .name      = "hflip",
-    .description = NULL_IF_CONFIG_SMALL("Horizontally flip the input video."),
-    .priv_size = sizeof(FlipContext),
+    .name          = "hflip",
+    .description   = NULL_IF_CONFIG_SMALL("Horizontally flip the input video."),
+    .priv_size     = sizeof(FlipContext),
     .query_formats = query_formats,
-
-    .inputs    = avfilter_vf_hflip_inputs,
-    .outputs   = avfilter_vf_hflip_outputs,
+    .inputs        = avfilter_vf_hflip_inputs,
+    .outputs       = avfilter_vf_hflip_outputs,
+    .flags         = AVFILTER_FLAG_SLICE_THREADS,
 };
