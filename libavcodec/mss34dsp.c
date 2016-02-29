@@ -2,20 +2,20 @@
  * Common stuff for some Microsoft Screen codecs
  * Copyright (C) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -84,8 +84,8 @@ void ff_mss34_gen_quant_mat(uint16_t *qmat, int quality, int luma)
     blk[6 * step] = (-(t3 + t7) + t8 + tA) >> shift;                \
     blk[7 * step] = (-(t1 + t6) + t9 + tB) >> shift;                \
 
-#define SOP_ROW(a) (((a) << 16) + 0x2000)
-#define SOP_COL(a) (((a) + 32) << 16)
+#define SOP_ROW(a) ((a) << 16) + 0x2000
+#define SOP_COL(a) ((a + 32) << 16)
 
 void ff_mss34_dct_put(uint8_t *dst, int stride, int *block)
 {
