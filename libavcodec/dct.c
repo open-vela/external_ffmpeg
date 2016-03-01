@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Alex Converse <alex.converse@gmail.com>
  * Copyright (c) 2010 Vitor Sessak
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
@@ -190,12 +190,12 @@ av_cold int ff_dct_init(DCTContext *s, int nbits, enum DCTTransformType inverse)
         ff_init_ff_cos_tabs(nbits + 2);
 
         s->costab = ff_cos_tabs[nbits + 2];
-        s->csc2   = av_malloc_array(n / 2, sizeof(FFTSample));
+        s->csc2   = av_malloc(n / 2 * sizeof(FFTSample));
         if (!s->csc2)
             return AVERROR(ENOMEM);
 
         if (ff_rdft_init(&s->rdft, nbits, inverse == DCT_III) < 0) {
-            av_freep(&s->csc2);
+            av_free(s->csc2);
             return -1;
         }
 
@@ -220,5 +220,5 @@ av_cold int ff_dct_init(DCTContext *s, int nbits, enum DCTTransformType inverse)
 av_cold void ff_dct_end(DCTContext *s)
 {
     ff_rdft_end(&s->rdft);
-    av_freep(&s->csc2);
+    av_free(s->csc2);
 }
