@@ -2,20 +2,20 @@
  * Bethsoft VID format Demuxer
  * Copyright (c) 2007 Nicholas Tung
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -60,6 +60,9 @@ static int vid_probe(AVProbeData *p)
     // little-endian VID tag, file starts with "VID\0"
     if (AV_RL32(p->buf) != MKTAG('V', 'I', 'D', 0))
         return 0;
+
+    if (p->buf[4] != 2)
+        return AVPROBE_SCORE_MAX / 4;
 
     return AVPROBE_SCORE_MAX;
 }
@@ -113,13 +116,13 @@ static int read_frame(BVID_DemuxContext *vid, AVIOContext *pb, AVPacket *pkt,
                                   "video packet");
         }
         avpriv_set_pts_info(st, 64, 185, vid->sample_rate);
-        st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-        st->codecpar->codec_id   = AV_CODEC_ID_BETHSOFTVID;
-        st->codecpar->width      = vid->width;
-        st->codecpar->height     = vid->height;
+        st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+        st->codec->codec_id   = AV_CODEC_ID_BETHSOFTVID;
+        st->codec->width      = vid->width;
+        st->codec->height     = vid->height;
     }
     st      = s->streams[vid->video_index];
-    npixels = st->codecpar->width * st->codecpar->height;
+    npixels = st->codec->width * st->codec->height;
 
     vidbuf_start = av_malloc(vidbuf_capacity = BUFFER_PADDING_SIZE);
     if(!vidbuf_start)
@@ -190,9 +193,11 @@ static int read_frame(BVID_DemuxContext *vid, AVIOContext *pb, AVPacket *pkt,
                                                  BVID_PALETTE_SIZE);
         if (!pdata) {
             ret = AVERROR(ENOMEM);
+            av_log(s, AV_LOG_ERROR, "Failed to allocate palette side data\n");
             goto fail;
         }
         memcpy(pdata, vid->palette, BVID_PALETTE_SIZE);
+
         av_freep(&vid->palette);
     }
 
@@ -211,8 +216,8 @@ static int vid_read_packet(AVFormatContext *s,
     int audio_length;
     int ret_value;
 
-    if(vid->is_finished || pb->eof_reached)
-        return AVERROR(EIO);
+    if(vid->is_finished || avio_feof(pb))
+        return AVERROR_EOF;
 
     block_type = avio_r8(pb);
     switch(block_type){
@@ -240,13 +245,13 @@ static int vid_read_packet(AVFormatContext *s,
                 if (!st)
                     return AVERROR(ENOMEM);
                 vid->audio_index                 = st->index;
-                st->codecpar->codec_type            = AVMEDIA_TYPE_AUDIO;
-                st->codecpar->codec_id              = AV_CODEC_ID_PCM_U8;
-                st->codecpar->channels              = 1;
-                st->codecpar->channel_layout        = AV_CH_LAYOUT_MONO;
-                st->codecpar->bits_per_coded_sample = 8;
-                st->codecpar->sample_rate           = vid->sample_rate;
-                st->codecpar->bit_rate              = 8 * st->codecpar->sample_rate;
+                st->codec->codec_type            = AVMEDIA_TYPE_AUDIO;
+                st->codec->codec_id              = AV_CODEC_ID_PCM_U8;
+                st->codec->channels              = 1;
+                st->codec->channel_layout        = AV_CH_LAYOUT_MONO;
+                st->codec->bits_per_coded_sample = 8;
+                st->codec->sample_rate           = vid->sample_rate;
+                st->codec->bit_rate              = 8 * st->codec->sample_rate;
                 st->start_time                   = 0;
                 avpriv_set_pts_info(st, 64, 1, vid->sample_rate);
             }
