@@ -2,20 +2,20 @@
  * Tiertex Limited SEQ File Demuxer
  * Copyright (c) 2006 Gregory Montoir (cyx@users.sourceforge.net)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -214,11 +214,11 @@ static int seq_read_header(AVFormatContext *s)
 
     avpriv_set_pts_info(st, 32, 1, SEQ_FRAME_RATE);
     seq->video_stream_index = st->index;
-    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->codec_id = AV_CODEC_ID_TIERTEXSEQVIDEO;
-    st->codecpar->codec_tag = 0;  /* no fourcc */
-    st->codecpar->width = SEQ_FRAME_W;
-    st->codecpar->height = SEQ_FRAME_H;
+    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codec->codec_id = AV_CODEC_ID_TIERTEXSEQVIDEO;
+    st->codec->codec_tag = 0;  /* no fourcc */
+    st->codec->width = SEQ_FRAME_W;
+    st->codec->height = SEQ_FRAME_H;
 
     /* initialize the audio decoder stream */
     st = avformat_new_stream(s, NULL);
@@ -228,15 +228,15 @@ static int seq_read_header(AVFormatContext *s)
     st->start_time = 0;
     avpriv_set_pts_info(st, 32, 1, SEQ_SAMPLE_RATE);
     seq->audio_stream_index = st->index;
-    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codecpar->codec_id = AV_CODEC_ID_PCM_S16BE;
-    st->codecpar->codec_tag = 0;  /* no tag */
-    st->codecpar->channels = 1;
-    st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
-    st->codecpar->sample_rate = SEQ_SAMPLE_RATE;
-    st->codecpar->bits_per_coded_sample = 16;
-    st->codecpar->bit_rate = st->codecpar->sample_rate * st->codecpar->bits_per_coded_sample * st->codecpar->channels;
-    st->codecpar->block_align = st->codecpar->channels * st->codecpar->bits_per_coded_sample / 8;
+    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codec->codec_id = AV_CODEC_ID_PCM_S16BE;
+    st->codec->codec_tag = 0;  /* no tag */
+    st->codec->channels = 1;
+    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
+    st->codec->sample_rate = SEQ_SAMPLE_RATE;
+    st->codec->bits_per_coded_sample = 16;
+    st->codec->bit_rate = st->codec->sample_rate * st->codec->bits_per_coded_sample * st->codec->channels;
+    st->codec->block_align = st->codec->channels * st->codec->bits_per_coded_sample / 8;
 
     return 0;
 }
@@ -301,7 +301,7 @@ static int seq_read_close(AVFormatContext *s)
     SeqDemuxContext *seq = s->priv_data;
 
     for (i = 0; i < SEQ_NUM_FRAME_BUFFERS; i++)
-        av_free(seq->frame_buffers[i].data);
+        av_freep(&seq->frame_buffers[i].data);
 
     return 0;
 }
