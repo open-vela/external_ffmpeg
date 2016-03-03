@@ -2,20 +2,20 @@
  * Musepack demuxer
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -89,16 +89,17 @@ static int mpc_read_header(AVFormatContext *s)
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
-    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->codec_id = AV_CODEC_ID_MUSEPACK7;
-    st->codec->channels = 2;
-    st->codec->channel_layout = AV_CH_LAYOUT_STEREO;
-    st->codec->bits_per_coded_sample = 16;
+    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id = AV_CODEC_ID_MUSEPACK7;
+    st->codecpar->channels = 2;
+    st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
+    st->codecpar->bits_per_coded_sample = 16;
 
-    if (ff_get_extradata(st->codec, s->pb, 16) < 0)
-        return AVERROR(ENOMEM);
-    st->codec->sample_rate = mpc_rate[st->codec->extradata[2] & 3];
-    avpriv_set_pts_info(st, 32, MPC_FRAMESIZE, st->codec->sample_rate);
+    st->codecpar->extradata_size = 16;
+    st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size+AV_INPUT_BUFFER_PADDING_SIZE);
+    avio_read(s->pb, st->codecpar->extradata, 16);
+    st->codecpar->sample_rate = mpc_rate[st->codecpar->extradata[2] & 3];
+    avpriv_set_pts_info(st, 32, MPC_FRAMESIZE, st->codecpar->sample_rate);
     /* scan for seekpoints */
     st->start_time = 0;
     st->duration = c->fcount;
@@ -152,7 +153,7 @@ static int mpc_read_packet(AVFormatContext *s, AVPacket *pkt)
     }
     c->curbits = (curbits + size2) & 0x1F;
 
-    if ((ret = av_new_packet(pkt, size + 4)) < 0)
+    if ((ret = av_new_packet(pkt, size)) < 0)
         return ret;
 
     pkt->data[0] = curbits;
@@ -195,11 +196,11 @@ static int mpc_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
     MPCContext *c = s->priv_data;
     AVPacket pkt1, *pkt = &pkt1;
     int ret;
-    int index = av_index_search_timestamp(st, FFMAX(timestamp - DELAY_FRAMES, 0), flags);
+    int index = av_index_search_timestamp(st, timestamp - DELAY_FRAMES, flags);
     uint32_t lastframe;
 
     /* if found, seek there */
-    if (index >= 0 && st->index_entries[st->nb_index_entries-1].timestamp >= timestamp - DELAY_FRAMES){
+    if (index >= 0){
         c->curframe = st->index_entries[index].pos;
         return 0;
     }
