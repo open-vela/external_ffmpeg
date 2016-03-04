@@ -1,21 +1,21 @@
 /*
  * id RoQ (.roq) File Demuxer
- * Copyright (c) 2003 The FFmpeg Project
+ * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
-#include "avio_internal.h"
 
 #define RoQ_MAGIC_NUMBER 0x1084
 #define RoQ_CHUNK_PREAMBLE_SIZE 8
@@ -106,7 +105,7 @@ static int roq_read_packet(AVFormatContext *s,
 
     while (!packet_read) {
 
-        if (avio_feof(s->pb))
+        if (s->pb->eof_reached)
             return AVERROR(EIO);
 
         /* get the next chunk preamble */
@@ -119,8 +118,6 @@ static int roq_read_packet(AVFormatContext *s,
         if(chunk_size > INT_MAX)
             return AVERROR_INVALIDDATA;
 
-        chunk_size = ffio_limit(pb, chunk_size);
-
         switch (chunk_type) {
 
         case RoQ_INFO:
@@ -130,14 +127,14 @@ static int roq_read_packet(AVFormatContext *s,
                     return AVERROR(ENOMEM);
                 avpriv_set_pts_info(st, 63, 1, roq->frame_rate);
                 roq->video_stream_index = st->index;
-                st->codec->codec_type   = AVMEDIA_TYPE_VIDEO;
-                st->codec->codec_id     = AV_CODEC_ID_ROQ;
-                st->codec->codec_tag    = 0;  /* no fourcc */
+                st->codecpar->codec_type   = AVMEDIA_TYPE_VIDEO;
+                st->codecpar->codec_id     = AV_CODEC_ID_ROQ;
+                st->codecpar->codec_tag    = 0;  /* no fourcc */
 
                 if (avio_read(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE) != RoQ_CHUNK_PREAMBLE_SIZE)
                     return AVERROR(EIO);
-                st->codec->width  = roq->width  = AV_RL16(preamble);
-                st->codec->height = roq->height = AV_RL16(preamble + 2);
+                st->codecpar->width  = roq->width  = AV_RL16(preamble);
+                st->codecpar->height = roq->height = AV_RL16(preamble + 2);
                 break;
             }
             /* don't care about this chunk anymore */
@@ -178,22 +175,22 @@ static int roq_read_packet(AVFormatContext *s,
                     return AVERROR(ENOMEM);
                 avpriv_set_pts_info(st, 32, 1, RoQ_AUDIO_SAMPLE_RATE);
                 roq->audio_stream_index = st->index;
-                st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-                st->codec->codec_id = AV_CODEC_ID_ROQ_DPCM;
-                st->codec->codec_tag = 0;  /* no tag */
+                st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+                st->codecpar->codec_id = AV_CODEC_ID_ROQ_DPCM;
+                st->codecpar->codec_tag = 0;  /* no tag */
                 if (chunk_type == RoQ_SOUND_STEREO) {
-                    st->codec->channels       = 2;
-                    st->codec->channel_layout = AV_CH_LAYOUT_STEREO;
+                    st->codecpar->channels       = 2;
+                    st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
                 } else {
-                    st->codec->channels       = 1;
-                    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
+                    st->codecpar->channels       = 1;
+                    st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
                 }
-                roq->audio_channels    = st->codec->channels;
-                st->codec->sample_rate = RoQ_AUDIO_SAMPLE_RATE;
-                st->codec->bits_per_coded_sample = 16;
-                st->codec->bit_rate = st->codec->channels * st->codec->sample_rate *
-                    st->codec->bits_per_coded_sample;
-                st->codec->block_align = st->codec->channels * st->codec->bits_per_coded_sample;
+                roq->audio_channels    = st->codecpar->channels;
+                st->codecpar->sample_rate = RoQ_AUDIO_SAMPLE_RATE;
+                st->codecpar->bits_per_coded_sample = 16;
+                st->codecpar->bit_rate = st->codecpar->channels * st->codecpar->sample_rate *
+                    st->codecpar->bits_per_coded_sample;
+                st->codecpar->block_align = st->codecpar->channels * st->codecpar->bits_per_coded_sample;
             }
         case RoQ_QUAD_VQ:
             if (chunk_type == RoQ_QUAD_VQ) {
