@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,6 +66,7 @@ typedef struct FFBufferRef {
 typedef struct MMALDecodeContext {
     AVClass *av_class;
     int extra_buffers;
+    int extra_decoder_buffers;
 
     MMAL_COMPONENT_T *decoder;
     MMAL_QUEUE_T *queue_decoded_frames;
@@ -160,12 +161,15 @@ static void ffmmal_stop_decoder(AVCodecContext *avctx)
 
         ctx->waiting_buffers = buffer->next;
 
+        if (buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)
+            avpriv_atomic_int_add_and_fetch(&ctx->packets_buffered, -1);
+
         av_buffer_unref(&buffer->ref);
         av_free(buffer);
     }
     ctx->waiting_buffers_tail = NULL;
 
-    assert(avpriv_atomic_get(&ctx->packets_buffered) == 0);
+    av_assert0(avpriv_atomic_int_get(&ctx->packets_buffered) == 0);
 
     ctx->frames_output = ctx->eos_received = ctx->eos_sent = ctx->packets_sent = ctx->extradata_sent = 0;
 }
@@ -329,6 +333,7 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     MMAL_STATUS_T status;
     MMAL_ES_FORMAT_T *format_in;
     MMAL_COMPONENT_T *decoder;
+    char tmp[32];
     int ret = 0;
 
     bcm_host_init();
@@ -350,7 +355,21 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
 
     format_in = decoder->input[0]->format;
     format_in->type = MMAL_ES_TYPE_VIDEO;
-    format_in->encoding = MMAL_ENCODING_H264;
+    switch (avctx->codec_id) {
+        case AV_CODEC_ID_MPEG2VIDEO:
+            format_in->encoding = MMAL_ENCODING_MP2V;
+            break;
+        case AV_CODEC_ID_MPEG4:
+            format_in->encoding = MMAL_ENCODING_MP4V;
+            break;
+        case AV_CODEC_ID_VC1:
+            format_in->encoding = MMAL_ENCODING_WVC1;
+            break;
+        case AV_CODEC_ID_H264:
+        default:
+            format_in->encoding = MMAL_ENCODING_H264;
+            break;
+    }
     format_in->es->video.width = FFALIGN(avctx->width, 32);
     format_in->es->video.height = FFALIGN(avctx->height, 16);
     format_in->es->video.crop.width = avctx->width;
@@ -360,6 +379,14 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     format_in->es->video.par.num = avctx->sample_aspect_ratio.num;
     format_in->es->video.par.den = avctx->sample_aspect_ratio.den;
     format_in->flags = MMAL_ES_FORMAT_FLAG_FRAMED;
+
+    av_get_codec_tag_string(tmp, sizeof(tmp), format_in->encoding);
+    av_log(avctx, AV_LOG_DEBUG, "Using MMAL %s encoding.\n", tmp);
+
+    if (mmal_port_parameter_set_uint32(decoder->input[0], MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS,
+                                       -1 - ctx->extra_decoder_buffers)) {
+        av_log(avctx, AV_LOG_WARNING, "Could not set input buffering limit.\n");
+    }
 
     if ((status = mmal_port_format_commit(decoder->input[0])))
         goto fail;
@@ -459,6 +486,8 @@ static int ffmmal_add_packet(AVCodecContext *avctx, AVPacket *avpkt,
         if (!is_extradata)
             ctx->packets_sent++;
     } else {
+        if (ctx->eos_sent)
+            goto done;
         if (!ctx->packets_sent) {
             // Short-cut the flush logic to avoid upsetting MMAL.
             ctx->eos_sent = 1;
@@ -766,31 +795,61 @@ AVHWAccel ff_h264_mmal_hwaccel = {
     .pix_fmt    = AV_PIX_FMT_MMAL,
 };
 
+AVHWAccel ff_mpeg2_mmal_hwaccel = {
+    .name       = "mpeg2_mmal",
+    .type       = AVMEDIA_TYPE_VIDEO,
+    .id         = AV_CODEC_ID_MPEG2VIDEO,
+    .pix_fmt    = AV_PIX_FMT_MMAL,
+};
+
+AVHWAccel ff_mpeg4_mmal_hwaccel = {
+    .name       = "mpeg4_mmal",
+    .type       = AVMEDIA_TYPE_VIDEO,
+    .id         = AV_CODEC_ID_MPEG4,
+    .pix_fmt    = AV_PIX_FMT_MMAL,
+};
+
+AVHWAccel ff_vc1_mmal_hwaccel = {
+    .name       = "vc1_mmal",
+    .type       = AVMEDIA_TYPE_VIDEO,
+    .id         = AV_CODEC_ID_VC1,
+    .pix_fmt    = AV_PIX_FMT_MMAL,
+};
+
 static const AVOption options[]={
     {"extra_buffers", "extra buffers", offsetof(MMALDecodeContext, extra_buffers), AV_OPT_TYPE_INT, {.i64 = 10}, 0, 256, 0},
+    {"extra_decoder_buffers", "extra MMAL internal buffered frames", offsetof(MMALDecodeContext, extra_decoder_buffers), AV_OPT_TYPE_INT, {.i64 = 10}, 0, 256, 0},
     {NULL}
 };
 
-static const AVClass ffmmaldec_class = {
-    .class_name = "mmaldec",
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+#define FFMMAL_DEC_CLASS(NAME) \
+    static const AVClass ffmmal_##NAME##_dec_class = { \
+        .class_name = "mmal_" #NAME "_dec", \
+        .option     = options, \
+        .version    = LIBAVUTIL_VERSION_INT, \
+    };
 
-AVCodec ff_h264_mmal_decoder = {
-    .name           = "h264_mmal",
-    .long_name      = NULL_IF_CONFIG_SMALL("h264 (mmal)"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_H264,
-    .priv_data_size = sizeof(MMALDecodeContext),
-    .init           = ffmmal_init_decoder,
-    .close          = ffmmal_close_decoder,
-    .decode         = ffmmal_decode,
-    .flush          = ffmmal_flush,
-    .priv_class     = &ffmmaldec_class,
-    .capabilities   = AV_CODEC_CAP_DELAY,
-    .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS,
-    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL,
-                                                     AV_PIX_FMT_YUV420P,
-                                                     AV_PIX_FMT_NONE},
-};
+#define FFMMAL_DEC(NAME, ID) \
+    FFMMAL_DEC_CLASS(NAME) \
+    AVCodec ff_##NAME##_mmal_decoder = { \
+        .name           = #NAME "_mmal", \
+        .long_name      = NULL_IF_CONFIG_SMALL(#NAME " (mmal)"), \
+        .type           = AVMEDIA_TYPE_VIDEO, \
+        .id             = ID, \
+        .priv_data_size = sizeof(MMALDecodeContext), \
+        .init           = ffmmal_init_decoder, \
+        .close          = ffmmal_close_decoder, \
+        .decode         = ffmmal_decode, \
+        .flush          = ffmmal_flush, \
+        .priv_class     = &ffmmal_##NAME##_dec_class, \
+        .capabilities   = AV_CODEC_CAP_DELAY, \
+        .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS, \
+        .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL, \
+                                                         AV_PIX_FMT_YUV420P, \
+                                                         AV_PIX_FMT_NONE}, \
+    };
+
+FFMMAL_DEC(h264, AV_CODEC_ID_H264)
+FFMMAL_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO)
+FFMMAL_DEC(mpeg4, AV_CODEC_ID_MPEG4)
+FFMMAL_DEC(vc1, AV_CODEC_ID_VC1)

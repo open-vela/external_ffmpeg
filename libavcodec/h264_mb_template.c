@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,8 +100,8 @@ static av_noinline void FUNC(hl_decode_mb)(const H264Context *h, H264SliceContex
     }
 
     if (!SIMPLE && IS_INTRA_PCM(mb_type)) {
+        const int bit_depth = h->sps.bit_depth_luma;
         if (PIXEL_SHIFT) {
-            const int bit_depth = h->sps.bit_depth_luma;
             int j;
             GetBitContext gb;
             init_get_bits(&gb, sl->intra_pcm_ptr,
@@ -116,13 +116,10 @@ static av_noinline void FUNC(hl_decode_mb)(const H264Context *h, H264SliceContex
                 if (!h->sps.chroma_format_idc) {
                     for (i = 0; i < block_h; i++) {
                         uint16_t *tmp_cb = (uint16_t *)(dest_cb + i * uvlinesize);
-                        for (j = 0; j < 8; j++)
-                            tmp_cb[j] = 1 << (bit_depth - 1);
-                    }
-                    for (i = 0; i < block_h; i++) {
                         uint16_t *tmp_cr = (uint16_t *)(dest_cr + i * uvlinesize);
-                        for (j = 0; j < 8; j++)
-                            tmp_cr[j] = 1 << (bit_depth - 1);
+                        for (j = 0; j < 8; j++) {
+                            tmp_cb[j] = tmp_cr[j] = 1 << (bit_depth - 1);
+                        }
                     }
                 } else {
                     for (i = 0; i < block_h; i++) {
@@ -142,9 +139,9 @@ static av_noinline void FUNC(hl_decode_mb)(const H264Context *h, H264SliceContex
                 memcpy(dest_y + i * linesize, sl->intra_pcm_ptr + i * 16, 16);
             if (SIMPLE || !CONFIG_GRAY || !(h->flags & AV_CODEC_FLAG_GRAY)) {
                 if (!h->sps.chroma_format_idc) {
-                    for (i = 0; i < block_h; i++) {
-                        memset(dest_cb + i * uvlinesize, 128, 8);
-                        memset(dest_cr + i * uvlinesize, 128, 8);
+                    for (i = 0; i < 8; i++) {
+                        memset(dest_cb + i * uvlinesize, 1 << (bit_depth - 1), 8);
+                        memset(dest_cr + i * uvlinesize, 1 << (bit_depth - 1), 8);
                     }
                 } else {
                     const uint8_t *src_cb = sl->intra_pcm_ptr + 256;
