@@ -4,20 +4,20 @@
  * Copyright (c) 2008 Luca Abeni
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,7 @@ static void flush_buffered(AVFormatContext *s1, int last)
         // If we're only sending one single NAL unit, send it as such, skip
         // the STAP-A/AP framing
         if (s->buffered_nals == 1) {
-            enum AVCodecID codec = s1->streams[0]->codec->codec_id;
+            enum AVCodecID codec = s1->streams[0]->codecpar->codec_id;
             if (codec == AV_CODEC_ID_H264)
                 ff_rtp_send_data(s1, s->buf + 3, s->buf_ptr - s->buf - 3, last);
             else
@@ -55,7 +55,7 @@ static void flush_buffered(AVFormatContext *s1, int last)
 static void nal_send(AVFormatContext *s1, const uint8_t *buf, int size, int last)
 {
     RTPMuxContext *s = s1->priv_data;
-    enum AVCodecID codec = s1->streams[0]->codec->codec_id;
+    enum AVCodecID codec = s1->streams[0]->codecpar->codec_id;
 
     av_log(s1, AV_LOG_DEBUG, "Sending NAL %x of len %d M=%d\n", buf[0] & 0x1F, size, last);
     if (size <= s->max_payload_size) {
