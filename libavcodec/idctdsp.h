@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,13 +52,13 @@ typedef struct IDCTDSPContext {
     /* pixel ops : interface with DCT */
     void (*put_pixels_clamped)(const int16_t *block /* align 16 */,
                                uint8_t *pixels /* align 8 */,
-                               ptrdiff_t line_size);
+                               int line_size);
     void (*put_signed_pixels_clamped)(const int16_t *block /* align 16 */,
                                       uint8_t *pixels /* align 8 */,
-                                      ptrdiff_t line_size);
+                                      int line_size);
     void (*add_pixels_clamped)(const int16_t *block /* align 16 */,
                                uint8_t *pixels /* align 8 */,
-                               ptrdiff_t line_size);
+                               int line_size);
 
     void (*idct)(int16_t *block /* align 16 */);
 
@@ -95,20 +95,16 @@ typedef struct IDCTDSPContext {
     enum idct_permutation_type perm_type;
 } IDCTDSPContext;
 
-extern void (*ff_put_pixels_clamped)(const int16_t *block, uint8_t *pixels, ptrdiff_t line_size);
-extern void (*ff_add_pixels_clamped)(const int16_t *block, uint8_t *pixels, ptrdiff_t line_size);
+extern void (*ff_put_pixels_clamped)(const int16_t *block, uint8_t *pixels, int line_size);
+extern void (*ff_add_pixels_clamped)(const int16_t *block, uint8_t *pixels, int line_size);
 
 void ff_idctdsp_init(IDCTDSPContext *c, AVCodecContext *avctx);
 
-void ff_idctdsp_init_alpha(IDCTDSPContext *c, AVCodecContext *avctx,
-                           unsigned high_bit_depth);
 void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_idctdsp_init_ppc(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
 void ff_idctdsp_init_x86(IDCTDSPContext *c, AVCodecContext *avctx,
                          unsigned high_bit_depth);
-void ff_idctdsp_init_mips(IDCTDSPContext *c, AVCodecContext *avctx,
-                          unsigned high_bit_depth);
 
 #endif /* AVCODEC_IDCTDSP_H */
