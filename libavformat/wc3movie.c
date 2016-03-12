@@ -1,21 +1,21 @@
 /*
  * Wing Commander III Movie (.mve) File Demuxer
- * Copyright (c) 2003 The FFmpeg Project
+ * Copyright (c) 2003 The ffmpeg Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,6 @@
  *   http://www.pcisys.net/~melanson/codecs/
  */
 
-#include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/dict.h"
@@ -159,7 +158,7 @@ static int wc3_read_header(AVFormatContext *s)
         fourcc_tag = avio_rl32(pb);
         /* chunk sizes are 16-bit aligned */
         size = (avio_rb32(pb) + 1) & (~1);
-        if (avio_feof(pb))
+        if (pb->eof_reached)
             return AVERROR(EIO);
 
     } while (fourcc_tag != BRCH_TAG);
@@ -170,27 +169,27 @@ static int wc3_read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
     avpriv_set_pts_info(st, 33, 1, WC3_FRAME_FPS);
     wc3->video_stream_index = st->index;
-    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codec->codec_id = AV_CODEC_ID_XAN_WC3;
-    st->codec->codec_tag = 0;  /* no fourcc */
-    st->codec->width = wc3->width;
-    st->codec->height = wc3->height;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_XAN_WC3;
+    st->codecpar->codec_tag = 0;  /* no fourcc */
+    st->codecpar->width = wc3->width;
+    st->codecpar->height = wc3->height;
 
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
     avpriv_set_pts_info(st, 33, 1, WC3_FRAME_FPS);
     wc3->audio_stream_index = st->index;
-    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->codec_id = AV_CODEC_ID_PCM_S16LE;
-    st->codec->codec_tag = 1;
-    st->codec->channels = WC3_AUDIO_CHANNELS;
-    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
-    st->codec->bits_per_coded_sample = WC3_AUDIO_BITS;
-    st->codec->sample_rate = WC3_SAMPLE_RATE;
-    st->codec->bit_rate = st->codec->channels * st->codec->sample_rate *
-        st->codec->bits_per_coded_sample;
-    st->codec->block_align = WC3_AUDIO_BITS * WC3_AUDIO_CHANNELS;
+    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id = AV_CODEC_ID_PCM_S16LE;
+    st->codecpar->codec_tag = 1;
+    st->codecpar->channels = WC3_AUDIO_CHANNELS;
+    st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
+    st->codecpar->bits_per_coded_sample = WC3_AUDIO_BITS;
+    st->codecpar->sample_rate = WC3_SAMPLE_RATE;
+    st->codecpar->bit_rate = st->codecpar->channels * st->codecpar->sample_rate *
+        st->codecpar->bits_per_coded_sample;
+    st->codecpar->block_align = WC3_AUDIO_BITS * WC3_AUDIO_CHANNELS;
 
     return 0;
 }
@@ -211,7 +210,7 @@ static int wc3_read_packet(AVFormatContext *s,
         fourcc_tag = avio_rl32(pb);
         /* chunk sizes are 16-bit aligned */
         size = (avio_rb32(pb) + 1) & (~1);
-        if (avio_feof(pb))
+        if (pb->eof_reached)
             return AVERROR(EIO);
 
         switch (fourcc_tag) {
@@ -250,16 +249,10 @@ static int wc3_read_packet(AVFormatContext *s,
             else {
                 int i = 0;
                 av_log (s, AV_LOG_DEBUG, "Subtitle time!\n");
-                if (i >= size || av_strnlen(&text[i + 1], size - i - 1) >= size - i - 1)
-                    return AVERROR_INVALIDDATA;
                 av_log (s, AV_LOG_DEBUG, "  inglish: %s\n", &text[i + 1]);
                 i += text[i] + 1;
-                if (i >= size || av_strnlen(&text[i + 1], size - i - 1) >= size - i - 1)
-                    return AVERROR_INVALIDDATA;
                 av_log (s, AV_LOG_DEBUG, "  doytsch: %s\n", &text[i + 1]);
                 i += text[i] + 1;
-                if (i >= size || av_strnlen(&text[i + 1], size - i - 1) >= size - i - 1)
-                    return AVERROR_INVALIDDATA;
                 av_log (s, AV_LOG_DEBUG, "  fronsay: %s\n", &text[i + 1]);
             }
 #endif
