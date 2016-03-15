@@ -1,20 +1,20 @@
 /*
  *    Copyright (C) 2005  Matthieu CASTET
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,16 +57,15 @@ flac_header (AVFormatContext * s, int idx)
         if (get_bits_long(&gb, 32) != FLAC_STREAMINFO_SIZE)
             return -1;
 
-        st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-        st->codecpar->codec_id = AV_CODEC_ID_FLAC;
+        st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+        st->codec->codec_id = AV_CODEC_ID_FLAC;
         st->need_parsing = AVSTREAM_PARSE_HEADERS;
 
-        st->codecpar->extradata =
-            av_malloc(FLAC_STREAMINFO_SIZE + AV_INPUT_BUFFER_PADDING_SIZE);
-        memcpy(st->codecpar->extradata, streaminfo_start, FLAC_STREAMINFO_SIZE);
-        st->codecpar->extradata_size = FLAC_STREAMINFO_SIZE;
+        if (ff_alloc_extradata(st->codec, FLAC_STREAMINFO_SIZE) < 0)
+            return AVERROR(ENOMEM);
+        memcpy(st->codec->extradata, streaminfo_start, st->codec->extradata_size);
 
-        samplerate = AV_RB24(st->codecpar->extradata + 10) >> 4;
+        samplerate = AV_RB24(st->codec->extradata + 10) >> 4;
         if (!samplerate)
             return AVERROR_INVALIDDATA;
 
@@ -81,11 +80,32 @@ flac_header (AVFormatContext * s, int idx)
 static int
 old_flac_header (AVFormatContext * s, int idx)
 {
+    struct ogg *ogg = s->priv_data;
     AVStream *st = s->streams[idx];
-    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codecpar->codec_id = AV_CODEC_ID_FLAC;
+    struct ogg_stream *os = ogg->streams + idx;
+    AVCodecParserContext *parser = av_parser_init(AV_CODEC_ID_FLAC);
+    int size;
+    uint8_t *data;
 
-    return 0;
+    if (!parser)
+        return -1;
+
+    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codec->codec_id = AV_CODEC_ID_FLAC;
+
+    parser->flags = PARSER_FLAG_COMPLETE_FRAMES;
+    av_parser_parse2(parser, st->codec,
+                     &data, &size, os->buf + os->pstart, os->psize,
+                     AV_NOPTS_VALUE, AV_NOPTS_VALUE, -1);
+
+    av_parser_close(parser);
+
+    if (st->codec->sample_rate) {
+        avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
+        return 0;
+    }
+
+    return 1;
 }
 
 const struct ogg_codec ff_flac_codec = {
