@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Maxim Poliakovski
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,7 +47,6 @@ enum {
 };
 
 #define IVI_VLC_BITS 13 ///< max number of bits of the ivi's huffman codes
-#define IVI4_STREAM_ANALYSER    0
 #define IVI5_IS_PROTECTED       0x20
 
 /**
@@ -165,7 +164,6 @@ typedef struct IVIBandDesc {
     int             quant_mat;      ///< dequant matrix index
     int             glob_quant;     ///< quant base for this band
     const uint8_t   *scan;          ///< ptr to the scan pattern
-    int             scan_size;      ///< size of the scantable
 
     IVIHuffTab      blk_vlc;        ///< vlc table for decoding block data
 
@@ -250,13 +248,12 @@ typedef struct IVI45DecContext {
     uint8_t         gop_flags;
     uint32_t        lock_word;
 
-#if IVI4_STREAM_ANALYSER
+    int             show_indeo4_info;
     uint8_t         has_b_frames;
     uint8_t         has_transp;
     uint8_t         uses_tiling;
     uint8_t         uses_haar;
     uint8_t         uses_fullpel;
-#endif
 
     int             (*decode_pic_hdr)  (struct IVI45DecContext *ctx, AVCodecContext *avctx);
     int             (*decode_band_hdr) (struct IVI45DecContext *ctx, IVIBandDesc *band, AVCodecContext *avctx);
@@ -265,7 +262,6 @@ typedef struct IVI45DecContext {
     int             (*is_nonnull_frame)(struct IVI45DecContext *ctx);
 
     int gop_invalid;
-    int buf_invalid[4];
 
     int is_indeo4;
 
