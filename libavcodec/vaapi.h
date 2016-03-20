@@ -1,23 +1,23 @@
 /*
- * Video Acceleration API (shared data between FFmpeg and the video player)
+ * Video Acceleration API (shared data between Libav and the video player)
  * HW decode acceleration for MPEG-2, MPEG-4, H.264 and VC-1
  *
  * Copyright (C) 2008-2009 Splitted-Desktop Systems
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,8 +31,6 @@
  */
 
 #include <stdint.h>
-#include "libavutil/attributes.h"
-#include "version.h"
 
 /**
  * @defgroup lavc_codec_hwaccel_vaapi VA API Decoding
@@ -41,7 +39,7 @@
  */
 
 /**
- * This structure is used to share data between the FFmpeg library and
+ * This structure is used to share data between the Libav library and
  * the client video application.
  * This shall be zero-allocated and available as
  * AVCodecContext.hwaccel_context. All user members can be set once
@@ -74,14 +72,12 @@ struct vaapi_context {
      */
     uint32_t context_id;
 
-#if FF_API_VAAPI_CONTEXT
     /**
      * VAPictureParameterBuffer ID
      *
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     uint32_t pic_param_buf_id;
 
     /**
@@ -90,7 +86,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     uint32_t iq_matrix_buf_id;
 
     /**
@@ -99,7 +94,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     uint32_t bitplane_buf_id;
 
     /**
@@ -108,7 +102,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     uint32_t *slice_buf_ids;
 
     /**
@@ -117,7 +110,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     unsigned int n_slice_buf_ids;
 
     /**
@@ -126,7 +118,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     unsigned int slice_buf_ids_alloc;
 
     /**
@@ -135,7 +126,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     void *slice_params;
 
     /**
@@ -144,7 +134,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     unsigned int slice_param_size;
 
     /**
@@ -153,7 +142,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     unsigned int slice_params_alloc;
 
     /**
@@ -162,7 +150,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     unsigned int slice_count;
 
     /**
@@ -170,7 +157,6 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     const uint8_t *slice_data;
 
     /**
@@ -179,9 +165,7 @@ struct vaapi_context {
      * - encoding: unused
      * - decoding: Set by libavcodec
      */
-    attribute_deprecated
     uint32_t slice_data_size;
-#endif
 };
 
 /* @} */
