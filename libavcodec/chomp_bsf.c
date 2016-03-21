@@ -2,37 +2,41 @@
  * Chomp bitstream filter
  * Copyright (c) 2010 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avcodec.h"
+#include "bsf.h"
 #include "internal.h"
 
-static int chomp_filter(AVBitStreamFilterContext *bsfc,
-                        AVCodecContext *avctx, const char *args,
-                        uint8_t  **poutbuf, int *poutbuf_size,
-                        const uint8_t *buf, int      buf_size,
-                        int keyframe)
+static int chomp_filter(AVBSFContext *ctx, AVPacket *out)
 {
-    while (buf_size > 0 && !buf[buf_size-1])
-        buf_size--;
+    AVPacket *in;
+    int ret;
 
-    *poutbuf = (uint8_t*) buf;
-    *poutbuf_size = buf_size;
+    ret = ff_bsf_get_packet(ctx, &in);
+    if (ret < 0)
+        return ret;
+
+    while (in->size > 0 && !in->data[in->size - 1])
+        in->size--;
+
+    av_packet_move_ref(out, in);
+    av_packet_free(&in);
 
     return 0;
 }
@@ -40,7 +44,7 @@ static int chomp_filter(AVBitStreamFilterContext *bsfc,
 /**
  * This filter removes a string of NULL bytes from the end of a packet.
  */
-AVBitStreamFilter ff_chomp_bsf = {
+const AVBitStreamFilter ff_chomp_bsf = {
     .name   = "chomp",
     .filter = chomp_filter,
 };
