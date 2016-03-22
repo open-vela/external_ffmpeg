@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2008  Ramiro Polla
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -74,26 +74,26 @@ static int msnwc_tcp_probe(AVProbeData *p)
 static int msnwc_tcp_read_header(AVFormatContext *ctx)
 {
     AVIOContext *pb = ctx->pb;
-    AVCodecContext *codec;
+    AVCodecParameters *par;
     AVStream *st;
 
     st = avformat_new_stream(ctx, NULL);
     if (!st)
         return AVERROR(ENOMEM);
 
-    codec             = st->codec;
-    codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    codec->codec_id   = AV_CODEC_ID_MIMIC;
-    codec->codec_tag  = MKTAG('M', 'L', '2', '0');
+    par             = st->codecpar;
+    par->codec_type = AVMEDIA_TYPE_VIDEO;
+    par->codec_id   = AV_CODEC_ID_MIMIC;
+    par->codec_tag  = MKTAG('M', 'L', '2', '0');
 
     avpriv_set_pts_info(st, 32, 1, 1000);
 
     /* Some files start with "connected\r\n\r\n".
      * So skip until we find the first byte of struct size */
-    while(avio_r8(pb) != HEADER_SIZE && !avio_feof(pb)) ;
+    while (avio_r8(pb) != HEADER_SIZE && !pb->eof_reached) ;
 
-    if(avio_feof(pb)) {
-        av_log(ctx, AV_LOG_ERROR, "Could not find valid start.\n");
+    if (pb->eof_reached) {
+        av_log(ctx, AV_LOG_ERROR, "Could not find valid start.");
         return AVERROR_INVALIDDATA;
     }
 
