@@ -2,20 +2,20 @@
  * 8088flex TMV file demuxer
  * Copyright (c) 2009 Daniel Verkamp <daniel at drv.nu>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -81,8 +81,8 @@ static int tmv_read_header(AVFormatContext *s)
     if (!(ast = avformat_new_stream(s, NULL)))
         return AVERROR(ENOMEM);
 
-    ast->codecpar->sample_rate = avio_rl16(pb);
-    if (!ast->codecpar->sample_rate) {
+    ast->codec->sample_rate = avio_rl16(pb);
+    if (!ast->codec->sample_rate) {
         av_log(s, AV_LOG_ERROR, "invalid sample rate\n");
         return -1;
     }
@@ -111,29 +111,29 @@ static int tmv_read_header(AVFormatContext *s)
         return -1;
     }
 
-    ast->codecpar->codec_type            = AVMEDIA_TYPE_AUDIO;
-    ast->codecpar->codec_id              = AV_CODEC_ID_PCM_U8;
+    ast->codec->codec_type            = AVMEDIA_TYPE_AUDIO;
+    ast->codec->codec_id              = AV_CODEC_ID_PCM_U8;
     if (features & TMV_STEREO) {
-        ast->codecpar->channels       = 2;
-        ast->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
+        ast->codec->channels       = 2;
+        ast->codec->channel_layout = AV_CH_LAYOUT_STEREO;
     } else {
-        ast->codecpar->channels       = 1;
-        ast->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
+        ast->codec->channels       = 1;
+        ast->codec->channel_layout = AV_CH_LAYOUT_MONO;
     }
-    ast->codecpar->bits_per_coded_sample = 8;
-    ast->codecpar->bit_rate              = ast->codecpar->sample_rate *
-                                           ast->codecpar->bits_per_coded_sample;
-    avpriv_set_pts_info(ast, 32, 1, ast->codecpar->sample_rate);
+    ast->codec->bits_per_coded_sample = 8;
+    ast->codec->bit_rate              = ast->codec->sample_rate *
+                                        ast->codec->bits_per_coded_sample;
+    avpriv_set_pts_info(ast, 32, 1, ast->codec->sample_rate);
 
-    fps.num = ast->codecpar->sample_rate * ast->codecpar->channels;
+    fps.num = ast->codec->sample_rate * ast->codec->channels;
     fps.den = tmv->audio_chunk_size;
     av_reduce(&fps.num, &fps.den, fps.num, fps.den, 0xFFFFFFFFLL);
 
-    vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    vst->codecpar->codec_id   = AV_CODEC_ID_TMV;
-    vst->codecpar->format     = AV_PIX_FMT_PAL8;
-    vst->codecpar->width      = char_cols * 8;
-    vst->codecpar->height     = char_rows * 8;
+    vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    vst->codec->codec_id   = AV_CODEC_ID_TMV;
+    vst->codec->pix_fmt    = AV_PIX_FMT_PAL8;
+    vst->codec->width      = char_cols * 8;
+    vst->codec->height     = char_rows * 8;
     avpriv_set_pts_info(vst, 32, fps.den, fps.num);
 
     if (features & TMV_PADDING)
@@ -141,8 +141,8 @@ static int tmv_read_header(AVFormatContext *s)
             ((tmv->video_chunk_size + tmv->audio_chunk_size + 511) & ~511) -
              (tmv->video_chunk_size + tmv->audio_chunk_size);
 
-    vst->codecpar->bit_rate = ((tmv->video_chunk_size + tmv->padding) *
-                               fps.num * 8) / fps.den;
+    vst->codec->bit_rate = ((tmv->video_chunk_size + tmv->padding) *
+                            fps.num * 8) / fps.den;
 
     return 0;
 }
@@ -154,7 +154,7 @@ static int tmv_read_packet(AVFormatContext *s, AVPacket *pkt)
     int ret, pkt_size = tmv->stream_index ?
                         tmv->audio_chunk_size : tmv->video_chunk_size;
 
-    if (pb->eof_reached)
+    if (avio_feof(pb))
         return AVERROR_EOF;
 
     ret = av_get_packet(pb, pkt, pkt_size);
