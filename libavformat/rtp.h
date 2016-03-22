@@ -2,20 +2,20 @@
  * RTP definitions
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #ifndef AVFORMAT_RTP_H
@@ -32,11 +32,11 @@
  * The format context private option payload_type overrides both.
  *
  * @param fmt   The context of the format
- * @param par   The codec parameters
+ * @param codec The context of the codec
  * @param idx   The stream index
  * @return The payload type (the 'PT' field in the RTP header).
  */
-int ff_rtp_get_payload_type(AVFormatContext *fmt, AVCodecParameters *par,
+int ff_rtp_get_payload_type(AVFormatContext *fmt, AVCodecContext *codec,
                             int idx);
 
 /**
@@ -46,12 +46,12 @@ int ff_rtp_get_payload_type(AVFormatContext *fmt, AVCodecParameters *par,
  * information depending on the payload type; for audio codecs, the
  * channels and sample_rate fields are also filled.
  *
- * @param par The codec parameters
+ * @param codec The context of the codec
  * @param payload_type The payload type (the 'PT' field in the RTP header)
  * @return In case of unknown payload type or dynamic payload type, a
  * negative value is returned; otherwise, 0 is returned
  */
-int ff_rtp_get_codec_info(AVCodecParameters *par, int payload_type);
+int ff_rtp_get_codec_info(AVCodecContext *codec, int payload_type);
 
 /**
  * Return the encoding name (as defined in
