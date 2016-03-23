@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,13 +34,31 @@ typedef struct ADXDemuxerContext {
     int header_size;
 } ADXDemuxerContext;
 
+static int adx_probe(AVProbeData *p)
+{
+    int offset;
+    if (AV_RB16(p->buf) != 0x8000)
+        return 0;
+    offset = AV_RB16(&p->buf[2]);
+    if (   offset < 8
+        || offset > p->buf_size - 4
+        || memcmp(p->buf + offset - 2, "(c)CRI", 6))
+        return 0;
+    return AVPROBE_SCORE_MAX * 3 / 4;
+}
+
 static int adx_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     ADXDemuxerContext *c = s->priv_data;
-    AVCodecParameters *par = s->streams[0]->codecpar;
+    AVCodecContext *avctx = s->streams[0]->codec;
     int ret, size;
 
-    size = BLOCK_SIZE * par->channels;
+    if (avctx->channels <= 0) {
+        av_log(s, AV_LOG_ERROR, "invalid number of channels %d\n", avctx->channels);
+        return AVERROR_INVALIDDATA;
+    }
+
+    size = BLOCK_SIZE * avctx->channels;
 
     pkt->pos = avio_tell(s->pb);
     pkt->stream_index = 0;
@@ -64,43 +82,37 @@ static int adx_read_packet(AVFormatContext *s, AVPacket *pkt)
 static int adx_read_header(AVFormatContext *s)
 {
     ADXDemuxerContext *c = s->priv_data;
-    AVCodecParameters *par;
+    AVCodecContext *avctx;
 
     AVStream *st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
-    par = s->streams[0]->codecpar;
+    avctx = s->streams[0]->codec;
 
     if (avio_rb16(s->pb) != 0x8000)
         return AVERROR_INVALIDDATA;
     c->header_size = avio_rb16(s->pb) + 4;
     avio_seek(s->pb, -4, SEEK_CUR);
 
-    par->extradata = av_mallocz(c->header_size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!par->extradata)
+    if (ff_get_extradata(avctx, s->pb, c->header_size) < 0)
         return AVERROR(ENOMEM);
-    if (avio_read(s->pb, par->extradata, c->header_size) < c->header_size) {
-        av_freep(&par->extradata);
-        return AVERROR(EIO);
-    }
-    par->extradata_size = c->header_size;
 
-    if (par->extradata_size < 12) {
+    if (avctx->extradata_size < 12) {
         av_log(s, AV_LOG_ERROR, "Invalid extradata size.\n");
         return AVERROR_INVALIDDATA;
     }
-    par->channels    = AV_RB8 (par->extradata + 7);
-    par->sample_rate = AV_RB32(par->extradata + 8);
+    avctx->channels    = AV_RB8(avctx->extradata + 7);
+    avctx->sample_rate = AV_RB32(avctx->extradata + 8);
 
-    if (par->channels <= 0) {
-        av_log(s, AV_LOG_ERROR, "invalid number of channels %d\n", par->channels);
+    if (avctx->channels <= 0) {
+        av_log(s, AV_LOG_ERROR, "invalid number of channels %d\n", avctx->channels);
         return AVERROR_INVALIDDATA;
     }
 
-    par->codec_type  = AVMEDIA_TYPE_AUDIO;
-    par->codec_id    = s->iformat->raw_codec_id;
+    st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
+    st->codec->codec_id    = s->iformat->raw_codec_id;
 
-    avpriv_set_pts_info(st, 64, BLOCK_SAMPLES, par->sample_rate);
+    avpriv_set_pts_info(st, 64, BLOCK_SAMPLES, avctx->sample_rate);
 
     return 0;
 }
@@ -108,6 +120,7 @@ static int adx_read_header(AVFormatContext *s)
 AVInputFormat ff_adx_demuxer = {
     .name           = "adx",
     .long_name      = NULL_IF_CONFIG_SMALL("CRI ADX"),
+    .read_probe     = adx_probe,
     .priv_data_size = sizeof(ADXDemuxerContext),
     .read_header    = adx_read_header,
     .read_packet    = adx_read_packet,
