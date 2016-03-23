@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,6 +48,12 @@ typedef struct HWContextType {
     size_t             device_priv_size;
 
     /**
+     * Size of the hardware-specific device configuration.
+     * (Used to query hwframe constraints.)
+     */
+    size_t             device_hwconfig_size;
+
+    /**
      * size of the public frame pool hardware-specific context,
      * i.e. AVHWFramesContext.hwctx
      */
@@ -60,6 +66,10 @@ typedef struct HWContextType {
 
     int              (*device_init)(AVHWDeviceContext *ctx);
     void             (*device_uninit)(AVHWDeviceContext *ctx);
+
+    int              (*frames_get_constraints)(AVHWDeviceContext *ctx,
+                                               const void *hwconfig,
+                                               AVHWFramesConstraints *constraints);
 
     int              (*frames_init)(AVHWFramesContext *ctx);
     void             (*frames_uninit)(AVHWFramesContext *ctx);
@@ -87,6 +97,7 @@ struct AVHWFramesInternal {
 };
 
 extern const HWContextType ff_hwcontext_type_cuda;
+extern const HWContextType ff_hwcontext_type_vaapi;
 extern const HWContextType ff_hwcontext_type_vdpau;
 
 #endif /* AVUTIL_HWCONTEXT_INTERNAL_H */
