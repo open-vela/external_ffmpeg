@@ -2,31 +2,29 @@
  * Packed Animation File demuxer
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/channel_layout.h"
-
+#include "libavcodec/paf.h"
 #include "avformat.h"
 #include "internal.h"
 
 #define MAGIC "Packed Animation File V1.0\n(c) 1992-96 Amazing Studio\x0a\x1a"
-#define PAF_SOUND_SAMPLES     2205
-#define PAF_SOUND_FRAME_SIZE  ((256 + PAF_SOUND_SAMPLES) * 2)
 
 typedef struct PAFDemuxContext {
     uint32_t buffer_size;
@@ -106,13 +104,13 @@ static int read_header(AVFormatContext *s)
     p->nb_frames    = avio_rl32(pb);
     avio_skip(pb, 4);
 
-    vst->codecpar->width  = avio_rl32(pb);
-    vst->codecpar->height = avio_rl32(pb);
+    vst->codec->width  = avio_rl32(pb);
+    vst->codec->height = avio_rl32(pb);
     avio_skip(pb, 4);
 
-    vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    vst->codecpar->codec_tag  = 0;
-    vst->codecpar->codec_id   = AV_CODEC_ID_PAF_VIDEO;
+    vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    vst->codec->codec_tag  = 0;
+    vst->codec->codec_id   = AV_CODEC_ID_PAF_VIDEO;
     avpriv_set_pts_info(vst, 64, 1, 10);
 
     ast = avformat_new_stream(s, 0);
@@ -120,12 +118,12 @@ static int read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
 
     ast->start_time            = 0;
-    ast->codecpar->codec_type     = AVMEDIA_TYPE_AUDIO;
-    ast->codecpar->codec_tag      = 0;
-    ast->codecpar->codec_id       = AV_CODEC_ID_PAF_AUDIO;
-    ast->codecpar->channels       = 2;
-    ast->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
-    ast->codecpar->sample_rate    = 22050;
+    ast->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
+    ast->codec->codec_tag      = 0;
+    ast->codec->codec_id       = AV_CODEC_ID_PAF_AUDIO;
+    ast->codec->channels       = 2;
+    ast->codec->channel_layout = AV_CH_LAYOUT_STEREO;
+    ast->codec->sample_rate    = 22050;
     avpriv_set_pts_info(ast, 64, 1, 22050);
 
     p->buffer_size    = avio_rl32(pb);
@@ -195,10 +193,13 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     PAFDemuxContext *p  = s->priv_data;
     AVIOContext     *pb = s->pb;
-    uint32_t count, offset;
-    int size, i;
+    uint32_t        count, offset;
+    int             size, i;
 
-    if (p->current_frame >= p->nb_frames || pb->eof_reached)
+    if (p->current_frame >= p->nb_frames)
+        return AVERROR_EOF;
+
+    if (avio_feof(pb))
         return AVERROR_EOF;
 
     if (p->got_audio) {
