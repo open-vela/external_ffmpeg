@@ -2,20 +2,20 @@
  * On2 VP8 parser for Ogg
  * Copyright (C) 2013 James Almer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -51,16 +51,16 @@ static int vp8_header(AVFormatContext *s, int idx)
             return AVERROR_INVALIDDATA;
         }
 
-        st->codec->width            = AV_RB16(p +  8);
-        st->codec->height           = AV_RB16(p + 10);
+        st->codecpar->width         = AV_RB16(p +  8);
+        st->codecpar->height        = AV_RB16(p + 10);
         st->sample_aspect_ratio.num = AV_RB24(p + 12);
         st->sample_aspect_ratio.den = AV_RB24(p + 15);
         framerate.num               = AV_RB32(p + 18);
         framerate.den               = AV_RB32(p + 22);
 
         avpriv_set_pts_info(st, 64, framerate.den, framerate.num);
-        st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-        st->codec->codec_id   = AV_CODEC_ID_VP8;
+        st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        st->codecpar->codec_id   = AV_CODEC_ID_VP8;
         st->need_parsing      = AVSTREAM_PARSE_HEADERS;
         break;
     case 0x02:
