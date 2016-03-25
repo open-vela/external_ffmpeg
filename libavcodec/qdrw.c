@@ -3,20 +3,20 @@
  * Copyright (c) 2004 Konstantin Shishkov
  * Copyright (c) 2015 Vittorio Giovara
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -95,6 +95,8 @@ static int decode_rle(AVCodecContext *avctx, AVFrame *p, GetByteContext *gbc,
                         pos -= offset;
                         pos++;
                     }
+                    if (pos >= offset)
+                        return AVERROR_INVALIDDATA;
                 }
                 left  -= 2;
             } else { /* copy */
@@ -105,6 +107,8 @@ static int decode_rle(AVCodecContext *avctx, AVFrame *p, GetByteContext *gbc,
                         pos -= offset;
                         pos++;
                     }
+                    if (pos >= offset)
+                        return AVERROR_INVALIDDATA;
                 }
                 left  -= 2 + code;
             }
@@ -114,6 +118,29 @@ static int decode_rle(AVCodecContext *avctx, AVFrame *p, GetByteContext *gbc,
     return 0;
 }
 
+static int check_header(const char *buf, int buf_size)
+{
+    unsigned w, h, v0, v1;
+
+    if (buf_size < 40)
+        return 0;
+
+    w = AV_RB16(buf+6);
+    h = AV_RB16(buf+8);
+    v0 = AV_RB16(buf+10);
+    v1 = AV_RB16(buf+12);
+
+    if (!w || !h)
+        return 0;
+
+    if (v0 == 0x1101)
+        return 1;
+    if (v0 == 0x0011 && v1 == 0x02FF)
+        return 2;
+    return 0;
+}
+
+
 static int decode_frame(AVCodecContext *avctx,
                         void *data, int *got_frame,
                         AVPacket *avpkt)
@@ -122,12 +149,15 @@ static int decode_frame(AVCodecContext *avctx,
     GetByteContext gbc;
     int colors;
     int w, h, ret;
+    int ver;
 
     bytestream2_init(&gbc, avpkt->data, avpkt->size);
-
-    /* PICT images start with a 512 bytes empty header */
-    if (bytestream2_peek_be32(&gbc) == 0)
+    if (   bytestream2_get_bytes_left(&gbc) >= 552
+           &&  check_header(gbc.buffer + 512, bytestream2_get_bytes_left(&gbc) - 512)
+       )
         bytestream2_skip(&gbc, 512);
+
+    ver = check_header(gbc.buffer, bytestream2_get_bytes_left(&gbc));
 
     /* smallest PICT header */
     if (bytestream2_get_bytes_left(&gbc) < 40) {
@@ -146,12 +176,15 @@ static int decode_frame(AVCodecContext *avctx,
 
     /* version 1 is identified by 0x1101
      * it uses byte-aligned opcodes rather than word-aligned */
-    if (bytestream2_get_be32(&gbc) != 0x001102FF) {
+    if (ver == 1) {
         avpriv_request_sample(avctx, "QuickDraw version 1");
+        return AVERROR_PATCHWELCOME;
+    } else if (ver != 2) {
+        avpriv_request_sample(avctx, "QuickDraw version unknown (%X)", bytestream2_get_be32(&gbc));
         return AVERROR_PATCHWELCOME;
     }
 
-    bytestream2_skip(&gbc, 26);
+    bytestream2_skip(&gbc, 4+26);
 
     while (bytestream2_get_bytes_left(&gbc) >= 4) {
         int bppcnt, bpp;
@@ -191,10 +224,8 @@ static int decode_frame(AVCodecContext *avctx,
                        bytestream2_get_bytes_left(&gbc));
                 return AVERROR_INVALIDDATA;
             }
-            if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-                av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+            if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
                 return ret;
-            }
 
             parse_palette(avctx, &gbc, (uint32_t *)p->data[1], colors);
             p->palette_has_changed = 1;
