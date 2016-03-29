@@ -2,20 +2,20 @@
  * LucasArts Smush demuxer
  * Copyright (c) 2006 Cyril Zorin
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -102,7 +102,7 @@ static int smush_read_header(AVFormatContext *ctx)
         while (!got_audio && ((read + 8) < size)) {
             uint32_t sig, chunk_size;
 
-            if (pb->eof_reached)
+            if (avio_feof(pb))
                 return AVERROR_EOF;
 
             sig        = avio_rb32(pb);
@@ -151,23 +151,19 @@ static int smush_read_header(AVFormatContext *ctx)
     vst->duration          =
     vst->nb_frames         = nframes;
     vst->avg_frame_rate    = av_inv_q(vst->time_base);
-    vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    vst->codecpar->codec_id   = AV_CODEC_ID_SANM;
-    vst->codecpar->codec_tag  = 0;
-    vst->codecpar->width      = width;
-    vst->codecpar->height     = height;
+    vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    vst->codec->codec_id   = AV_CODEC_ID_SANM;
+    vst->codec->codec_tag  = 0;
+    vst->codec->width      = width;
+    vst->codec->height     = height;
 
     if (!smush->version) {
-        av_free(vst->codecpar->extradata);
-        vst->codecpar->extradata_size = 1024 + 2;
-        vst->codecpar->extradata = av_malloc(vst->codecpar->extradata_size +
-                                             AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!vst->codecpar->extradata)
+        if (ff_alloc_extradata(vst->codec, 1024 + 2))
             return AVERROR(ENOMEM);
 
-        AV_WL16(vst->codecpar->extradata, subversion);
+        AV_WL16(vst->codec->extradata, subversion);
         for (i = 0; i < 256; i++)
-            AV_WL32(vst->codecpar->extradata + 2 + i * 4, palette[i]);
+            AV_WL32(vst->codec->extradata + 2 + i * 4, palette[i]);
     }
 
     if (got_audio) {
@@ -178,13 +174,13 @@ static int smush_read_header(AVFormatContext *ctx)
         smush->audio_stream_index = ast->index;
 
         ast->start_time         = 0;
-        ast->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
-        ast->codecpar->codec_id    = AV_CODEC_ID_ADPCM_VIMA;
-        ast->codecpar->codec_tag   = 0;
-        ast->codecpar->sample_rate = sample_rate;
-        ast->codecpar->channels    = channels;
+        ast->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
+        ast->codec->codec_id    = AV_CODEC_ID_ADPCM_VIMA;
+        ast->codec->codec_tag   = 0;
+        ast->codec->sample_rate = sample_rate;
+        ast->codec->channels    = channels;
 
-        avpriv_set_pts_info(ast, 64, 1, ast->codecpar->sample_rate);
+        avpriv_set_pts_info(ast, 64, 1, ast->codec->sample_rate);
     }
 
     return 0;
@@ -200,7 +196,7 @@ static int smush_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     while (!done) {
         uint32_t sig, size;
 
-        if (pb->eof_reached)
+        if (avio_feof(pb))
             return AVERROR_EOF;
 
         sig  = avio_rb32(pb);
