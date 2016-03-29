@@ -2,20 +2,20 @@
  * ISS (.iss) file demuxer
  * Copyright (c) 2008 Jaikrishnan Menon <realityman@gmx.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,54 +76,40 @@ static av_cold int iss_read_header(AVFormatContext *s)
 
     get_token(pb, token, sizeof(token)); //"IMA_ADPCM_Sound"
     get_token(pb, token, sizeof(token)); //packet size
-    if (sscanf(token, "%d", &iss->packet_size) != 1) {
-        av_log(s, AV_LOG_ERROR, "Failed parsing packet size\n");
-        return AVERROR_INVALIDDATA;
-    }
+    sscanf(token, "%d", &iss->packet_size);
     get_token(pb, token, sizeof(token)); //File ID
     get_token(pb, token, sizeof(token)); //out size
     get_token(pb, token, sizeof(token)); //stereo
-    if (sscanf(token, "%d", &stereo) != 1) {
-        av_log(s, AV_LOG_ERROR, "Failed parsing stereo flag\n");
-        return AVERROR_INVALIDDATA;
-    }
+    sscanf(token, "%d", &stereo);
     get_token(pb, token, sizeof(token)); //Unknown1
     get_token(pb, token, sizeof(token)); //RateDivisor
-    if (sscanf(token, "%d", &rate_divisor) != 1) {
-        av_log(s, AV_LOG_ERROR, "Failed parsing rate_divisor\n");
-        return AVERROR_INVALIDDATA;
-    }
+    sscanf(token, "%d", &rate_divisor);
     get_token(pb, token, sizeof(token)); //Unknown2
     get_token(pb, token, sizeof(token)); //Version ID
     get_token(pb, token, sizeof(token)); //Size
-
-    if (iss->packet_size <= 0) {
-        av_log(s, AV_LOG_ERROR, "packet_size %d is invalid\n", iss->packet_size);
-        return AVERROR_INVALIDDATA;
-    }
 
     iss->sample_start_pos = avio_tell(pb);
 
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
-    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->codec_id = AV_CODEC_ID_ADPCM_IMA_ISS;
+    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id = AV_CODEC_ID_ADPCM_IMA_ISS;
     if (stereo) {
-        st->codec->channels       = 2;
-        st->codec->channel_layout = AV_CH_LAYOUT_STEREO;
+        st->codecpar->channels       = 2;
+        st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
     } else {
-        st->codec->channels       = 1;
-        st->codec->channel_layout = AV_CH_LAYOUT_MONO;
+        st->codecpar->channels       = 1;
+        st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
     }
-    st->codec->sample_rate = 44100;
+    st->codecpar->sample_rate = 44100;
     if(rate_divisor > 0)
-         st->codec->sample_rate /= rate_divisor;
-    st->codec->bits_per_coded_sample = 4;
-    st->codec->bit_rate = st->codec->channels * st->codec->sample_rate
-                                      * st->codec->bits_per_coded_sample;
-    st->codec->block_align = iss->packet_size;
-    avpriv_set_pts_info(st, 32, 1, st->codec->sample_rate);
+         st->codecpar->sample_rate /= rate_divisor;
+    st->codecpar->bits_per_coded_sample = 4;
+    st->codecpar->bit_rate = st->codecpar->channels * st->codecpar->sample_rate
+                                      * st->codecpar->bits_per_coded_sample;
+    st->codecpar->block_align = iss->packet_size;
+    avpriv_set_pts_info(st, 32, 1, st->codecpar->sample_rate);
 
     return 0;
 }
@@ -138,8 +124,8 @@ static int iss_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->stream_index = 0;
     pkt->pts = avio_tell(s->pb) - iss->sample_start_pos;
-    if(s->streams[0]->codec->channels > 0)
-        pkt->pts /= s->streams[0]->codec->channels*2;
+    if(s->streams[0]->codecpar->channels > 0)
+        pkt->pts /= s->streams[0]->codecpar->channels*2;
     return 0;
 }
 
