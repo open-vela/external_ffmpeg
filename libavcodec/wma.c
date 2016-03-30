@@ -1,21 +1,21 @@
 /*
  * WMA compatible codec
- * Copyright (c) 2002-2007 The Libav Project
+ * Copyright (c) 2002-2007 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,9 +28,6 @@
 #include "wma_common.h"
 #include "wma_freqs.h"
 #include "wmadata.h"
-
-#undef NDEBUG
-#include <assert.h>
 
 /* XXX: use same run/length optimization as mpeg decoders */
 // FIXME maybe split decode / encode or pass flag
@@ -48,10 +45,10 @@ static av_cold int init_coef_vlc(VLC *vlc, uint16_t **prun_table,
 
     init_vlc(vlc, VLCBITS, n, table_bits, 1, 1, table_codes, 4, 4, 0);
 
-    run_table    = av_malloc(n * sizeof(uint16_t));
-    level_table  = av_malloc(n * sizeof(uint16_t));
-    flevel_table = av_malloc(n * sizeof(*flevel_table));
-    int_table    = av_malloc(n * sizeof(uint16_t));
+    run_table    = av_malloc_array(n, sizeof(uint16_t));
+    level_table  = av_malloc_array(n, sizeof(uint16_t));
+    flevel_table = av_malloc_array(n, sizeof(*flevel_table));
+    int_table    = av_malloc_array(n, sizeof(uint16_t));
     if (!run_table || !level_table || !flevel_table || !int_table) {
         av_freep(&run_table);
         av_freep(&level_table);
@@ -95,7 +92,6 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
         avctx->bit_rate    <= 0)
         return -1;
 
-    avpriv_float_dsp_init(&s->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
 
     if (avctx->codec->id == AV_CODEC_ID_WMAV1)
         s->version = 1;
@@ -144,6 +140,10 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
     bps                 = (float) avctx->bit_rate /
                           (float) (avctx->channels * avctx->sample_rate);
     s->byte_offset_bits = av_log2((int) (bps * s->frame_len / 8.0 + 0.5)) + 2;
+    if (s->byte_offset_bits + 3 > MIN_CACHE_BITS) {
+        av_log(avctx, AV_LOG_ERROR, "byte_offset_bits %d is too large\n", s->byte_offset_bits);
+        return AVERROR_PATCHWELCOME;
+    }
 
     /* compute high frequency value and choose if noise coding should
      * be activated */
@@ -185,8 +185,8 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
             high_freq = high_freq * 0.5;
     }
     ff_dlog(s->avctx, "flags2=0x%x\n", flags2);
-    ff_dlog(s->avctx, "version=%d channels=%d sample_rate=%d bitrate=%d block_align=%d\n",
-            s->version, avctx->channels, avctx->sample_rate, avctx->bit_rate,
+    ff_dlog(s->avctx, "version=%d channels=%d sample_rate=%d bitrate=%"PRId64" block_align=%d\n",
+            s->version, avctx->channels, avctx->sample_rate, (int64_t)avctx->bit_rate,
             avctx->block_align);
     ff_dlog(s->avctx, "bps=%f bps1=%f high_freq=%f bitoffset=%d\n",
             bps, bps1, high_freq, s->byte_offset_bits);
@@ -338,6 +338,10 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
 #endif /* TRACE */
     }
 
+    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!s->fdsp)
+        return AVERROR(ENOMEM);
+
     /* choose the VLC tables for the coefficients */
     coef_vlc_table = 2;
     if (avctx->sample_rate >= 32000) {
@@ -385,10 +389,11 @@ int ff_wma_end(AVCodecContext *avctx)
         ff_free_vlc(&s->hgain_vlc);
     for (i = 0; i < 2; i++) {
         ff_free_vlc(&s->coef_vlc[i]);
-        av_free(s->run_table[i]);
-        av_free(s->level_table[i]);
-        av_free(s->int_table[i]);
+        av_freep(&s->run_table[i]);
+        av_freep(&s->level_table[i]);
+        av_freep(&s->int_table[i]);
     }
+    av_freep(&s->fdsp);
 
     return 0;
 }
@@ -447,7 +452,7 @@ int ff_wma_run_level_decode(AVCodecContext *avctx, GetBitContext *gb,
             /** normal code */
             offset                  += run_table[code];
             sign                     = get_bits1(gb) - 1;
-            iptr[offset & coef_mask] = ilvl[code] ^ sign << 31;
+            iptr[offset & coef_mask] = ilvl[code] ^ (sign & 0x80000000);
         } else if (code == 1) {
             /** EOB */
             break;
@@ -479,7 +484,11 @@ int ff_wma_run_level_decode(AVCodecContext *avctx, GetBitContext *gb,
     }
     /** NOTE: EOB can be omitted */
     if (offset > num_coefs) {
-        av_log(avctx, AV_LOG_ERROR, "overflow in spectral RLE, ignoring\n");
+        av_log(avctx, AV_LOG_ERROR,
+               "overflow (%d > %d) in spectral RLE, ignoring\n",
+               offset,
+               num_coefs
+              );
         return -1;
     }
 

@@ -2,20 +2,20 @@
  * Deluxe Paint Animation demuxer
  * Copyright (c) 2009 Peter Ross
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,11 +100,11 @@ static int read_header(AVFormatContext *s)
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
-    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->codec_id   = AV_CODEC_ID_ANM;
-    st->codecpar->codec_tag  = 0; /* no fourcc */
-    st->codecpar->width      = avio_rl16(pb);
-    st->codecpar->height     = avio_rl16(pb);
+    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codec->codec_id   = AV_CODEC_ID_ANM;
+    st->codec->codec_tag  = 0; /* no fourcc */
+    st->codec->width      = avio_rl16(pb);
+    st->codec->height     = avio_rl16(pb);
     if (avio_r8(pb) != 0)
         goto invalid;
     avio_skip(pb, 1); /* frame rate multiplier info */
@@ -132,12 +132,12 @@ static int read_header(AVFormatContext *s)
     avio_skip(pb, 58);
 
     /* color cycling and palette data */
-    st->codecpar->extradata_size = 16*8 + 4*256;
-    st->codecpar->extradata      = av_mallocz(st->codecpar->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!st->codecpar->extradata) {
+    st->codec->extradata_size = 16*8 + 4*256;
+    st->codec->extradata      = av_mallocz(st->codec->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!st->codec->extradata) {
         return AVERROR(ENOMEM);
     }
-    ret = avio_read(pb, st->codecpar->extradata, st->codecpar->extradata_size);
+    ret = avio_read(pb, st->codec->extradata, st->codec->extradata_size);
     if (ret < 0)
         return ret;
 
@@ -175,7 +175,7 @@ static int read_packet(AVFormatContext *s,
     Page *p;
     int tmp, record_size;
 
-    if (s->pb->eof_reached)
+    if (avio_feof(s->pb))
         return AVERROR(EIO);
 
     if (anm->page < 0)
