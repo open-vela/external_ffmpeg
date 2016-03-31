@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,7 +44,7 @@ static const uint8_t aac_extradata[] = {
 };
 
 
-static const char *format = "mp4";
+const char *format = "mp4";
 AVFormatContext *ctx;
 uint8_t iobuf[32768];
 AVDictionary *opts;
@@ -159,33 +159,33 @@ static void init_fps(int bf, int audio_preroll, int fps)
     st = avformat_new_stream(ctx, NULL);
     if (!st)
         exit(1);
-    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codec->codec_id = AV_CODEC_ID_H264;
-    st->codec->width = 640;
-    st->codec->height = 480;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_H264;
+    st->codecpar->width = 640;
+    st->codecpar->height = 480;
     st->time_base.num = 1;
     st->time_base.den = 30;
-    st->codec->extradata_size = sizeof(h264_extradata);
-    st->codec->extradata = av_mallocz(st->codec->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!st->codec->extradata)
+    st->codecpar->extradata_size = sizeof(h264_extradata);
+    st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!st->codecpar->extradata)
         exit(1);
-    memcpy(st->codec->extradata, h264_extradata, sizeof(h264_extradata));
+    memcpy(st->codecpar->extradata, h264_extradata, sizeof(h264_extradata));
     video_st = st;
 
     st = avformat_new_stream(ctx, NULL);
     if (!st)
         exit(1);
-    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->codec_id = AV_CODEC_ID_AAC;
-    st->codec->sample_rate = 44100;
-    st->codec->channels = 2;
+    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id = AV_CODEC_ID_AAC;
+    st->codecpar->sample_rate = 44100;
+    st->codecpar->channels = 2;
     st->time_base.num = 1;
     st->time_base.den = 44100;
-    st->codec->extradata_size = sizeof(aac_extradata);
-    st->codec->extradata = av_mallocz(st->codec->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!st->codec->extradata)
+    st->codecpar->extradata_size = sizeof(aac_extradata);
+    st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!st->codecpar->extradata)
         exit(1);
-    memcpy(st->codec->extradata, aac_extradata, sizeof(aac_extradata));
+    memcpy(st->codecpar->extradata, aac_extradata, sizeof(aac_extradata));
     audio_st = st;
 
     if (avformat_write_header(ctx, &opts) < 0)
@@ -195,9 +195,9 @@ static void init_fps(int bf, int audio_preroll, int fps)
     frames = 0;
     gop_size = 30;
     duration = video_st->time_base.den / fps;
-    audio_duration = 1024LL * audio_st->time_base.den / audio_st->codec->sample_rate;
+    audio_duration = 1024LL * audio_st->time_base.den / audio_st->codecpar->sample_rate;
     if (audio_preroll)
-        audio_preroll = 2048LL * audio_st->time_base.den / audio_st->codec->sample_rate;
+        audio_preroll = 2048LL * audio_st->time_base.den / audio_st->codecpar->sample_rate;
 
     bframes = bf;
     video_dts = bframes ? -duration : 0;
@@ -214,7 +214,7 @@ static void mux_frames(int n)
     int end_frames = frames + n;
     while (1) {
         AVPacket pkt;
-        uint8_t pktdata[8] = { 0 };
+        uint8_t pktdata[4];
         av_init_packet(&pkt);
 
         if (av_compare_ts(audio_dts, audio_st->time_base, video_dts, video_st->time_base) < 0) {
@@ -256,9 +256,9 @@ static void mux_frames(int n)
 
         if (clear_duration)
             pkt.duration = 0;
-        AV_WB32(pktdata + 4, pkt.pts);
+        AV_WB32(pktdata, pkt.pts);
         pkt.data = pktdata;
-        pkt.size = 8;
+        pkt.size = 4;
         if (skip_write)
             continue;
         if (skip_write_audio && pkt.stream_index == 1)
@@ -385,7 +385,6 @@ int main(int argc, char **argv)
     // moof+mdat pairs.
     init_out("empty-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -422,7 +421,6 @@ int main(int argc, char **argv)
     // simple input
     init_out("delay-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -474,7 +472,6 @@ int main(int argc, char **argv)
     // is identical to the one by empty_moov.
     init_out("empty-moov-header");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     close_out();
     memcpy(header, hash, HASH_SIZE);
@@ -497,7 +494,6 @@ int main(int argc, char **argv)
 
     init_out("delay-moov-header");
     av_dict_set(&opts, "movflags", "frag_custom+delay_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     check(out_size == 0, "Output written during init with delay_moov");
     mux_gops(1); // Write 1 second of content
