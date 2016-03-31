@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Samalyse
  * Author: Olivier Guilyardi <olivier samalyse com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,17 +33,6 @@
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 #include "timefilter.h"
-#include "avdevice.h"
-
-#if HAVE_DISPATCH_DISPATCH_H
-#include <dispatch/dispatch.h>
-#define sem_t dispatch_semaphore_t
-#define sem_init(psem,x,val)  *psem = dispatch_semaphore_create(val)
-#define sem_post(psem)                dispatch_semaphore_signal(*psem)
-#define sem_wait(psem)                dispatch_semaphore_wait(*psem, DISPATCH_TIME_FOREVER)
-#define sem_timedwait(psem, val)      dispatch_semaphore_wait(*psem, dispatch_walltime(val, 0))
-#define sem_destroy(psem)             dispatch_release(*psem)
-#endif
 
 /**
  * Size of the internal FIFO buffers as a number of audio packets
@@ -163,6 +152,7 @@ static int start_jack(AVFormatContext *context)
     JackData *self = context->priv_data;
     jack_status_t status;
     int i, test;
+    double o, period;
 
     /* Register as a JACK client, using the context filename as client name. */
     self->client = jack_client_open(context->filename, JackNullOption, &status);
@@ -174,7 +164,7 @@ static int start_jack(AVFormatContext *context)
     sem_init(&self->packet_count, 0, 0);
 
     self->sample_rate = jack_get_sample_rate(self->client);
-    self->ports       = av_malloc_array(self->nports, sizeof(*self->ports));
+    self->ports       = av_malloc(self->nports * sizeof(*self->ports));
     if (!self->ports)
         return AVERROR(ENOMEM);
     self->buffer_size = jack_get_buffer_size(self->client);
@@ -200,16 +190,18 @@ static int start_jack(AVFormatContext *context)
     jack_set_xrun_callback(self->client, xrun_callback, self);
 
     /* Create time filter */
-    self->timefilter  = ff_timefilter_new (1.0 / self->sample_rate, self->buffer_size, 1.5);
+    period            = (double) self->buffer_size / self->sample_rate;
+    o                 = 2 * M_PI * 1.5 * period; /// bandwidth: 1.5Hz
+    self->timefilter  = ff_timefilter_new (1.0 / self->sample_rate, sqrt(2 * o), o * o);
     if (!self->timefilter) {
         jack_client_close(self->client);
         return AVERROR(ENOMEM);
     }
 
     /* Create FIFO buffers */
-    self->filled_pkts = av_fifo_alloc_array(FIFO_PACKETS_NUM, sizeof(AVPacket));
+    self->filled_pkts = av_fifo_alloc(FIFO_PACKETS_NUM * sizeof(AVPacket));
     /* New packets FIFO with one extra packet for safety against underruns */
-    self->new_pkts    = av_fifo_alloc_array((FIFO_PACKETS_NUM + 1), sizeof(AVPacket));
+    self->new_pkts    = av_fifo_alloc((FIFO_PACKETS_NUM + 1) * sizeof(AVPacket));
     if (!self->new_pkts) {
         jack_client_close(self->client);
         return AVERROR(ENOMEM);
@@ -223,14 +215,14 @@ static int start_jack(AVFormatContext *context)
 
 }
 
-static void free_pkt_fifo(AVFifoBuffer **fifo)
+static void free_pkt_fifo(AVFifoBuffer *fifo)
 {
     AVPacket pkt;
-    while (av_fifo_size(*fifo)) {
-        av_fifo_generic_read(*fifo, &pkt, sizeof(pkt), NULL);
+    while (av_fifo_size(fifo)) {
+        av_fifo_generic_read(fifo, &pkt, sizeof(pkt), NULL);
         av_packet_unref(&pkt);
     }
-    av_fifo_freep(fifo);
+    av_fifo_free(fifo);
 }
 
 static void stop_jack(JackData *self)
@@ -241,8 +233,8 @@ static void stop_jack(JackData *self)
         jack_client_close(self->client);
     }
     sem_destroy(&self->packet_count);
-    free_pkt_fifo(&self->new_pkts);
-    free_pkt_fifo(&self->filled_pkts);
+    free_pkt_fifo(self->new_pkts);
+    free_pkt_fifo(self->filled_pkts);
     av_freep(&self->ports);
     ff_timefilter_destroy(self->timefilter);
 }
@@ -262,14 +254,14 @@ static int audio_read_header(AVFormatContext *context)
         return AVERROR(ENOMEM);
     }
 
-    stream->codec->codec_type   = AVMEDIA_TYPE_AUDIO;
+    stream->codecpar->codec_type   = AVMEDIA_TYPE_AUDIO;
 #if HAVE_BIGENDIAN
-    stream->codec->codec_id     = AV_CODEC_ID_PCM_F32BE;
+    stream->codecpar->codec_id     = AV_CODEC_ID_PCM_F32BE;
 #else
-    stream->codec->codec_id     = AV_CODEC_ID_PCM_F32LE;
+    stream->codecpar->codec_id     = AV_CODEC_ID_PCM_F32LE;
 #endif
-    stream->codec->sample_rate  = self->sample_rate;
-    stream->codec->channels     = self->nports;
+    stream->codecpar->sample_rate  = self->sample_rate;
+    stream->codecpar->channels     = self->nports;
 
     avpriv_set_pts_info(stream, 64, 1, 1000000);  /* 64 bits pts in us */
     return 0;
@@ -353,7 +345,6 @@ static const AVClass jack_indev_class = {
     .item_name      = av_default_item_name,
     .option         = options,
     .version        = LIBAVUTIL_VERSION_INT,
-    .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
 };
 
 AVInputFormat ff_jack_demuxer = {

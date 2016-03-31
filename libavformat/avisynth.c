@@ -2,19 +2,20 @@
  * AviSynth/AvxSynth support
  * Copyright (c) 2012 AvxSynth Team.
  *
- * This file is part of FFmpeg
- * FFmpeg is free software; you can redistribute it and/or
+ * This file is part of Libav.
+ *
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,12 +32,12 @@
 #ifdef _WIN32
   #include <windows.h>
   #undef EXTERN_C
-  #include "compat/avisynth/avisynth_c.h"
+  #include <avisynth/avisynth_c.h>
   #define AVISYNTH_LIB "avisynth"
   #define USING_AVISYNTH
 #else
   #include <dlfcn.h>
-  #include "compat/avisynth/avxsynth_c.h"
+  #include <avxsynth/avxsynth_c.h>
   #define AVISYNTH_NAME "libavxsynth"
   #define AVISYNTH_LIB AVISYNTH_NAME SLIBSUF
 
@@ -232,53 +233,54 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
     AviSynthContext *avs = s->priv_data;
     int planar = 0; // 0: packed, 1: YUV, 2: Y8
 
-    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codec->codec_id   = AV_CODEC_ID_RAWVIDEO;
-    st->codec->width      = avs->vi->width;
-    st->codec->height     = avs->vi->height;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id   = AV_CODEC_ID_RAWVIDEO;
+    st->codecpar->width      = avs->vi->width;
+    st->codecpar->height     = avs->vi->height;
 
+    st->time_base         = (AVRational) { avs->vi->fps_denominator,
+                                           avs->vi->fps_numerator };
     st->avg_frame_rate    = (AVRational) { avs->vi->fps_numerator,
                                            avs->vi->fps_denominator };
     st->start_time        = 0;
     st->duration          = avs->vi->num_frames;
     st->nb_frames         = avs->vi->num_frames;
-    avpriv_set_pts_info(st, 32, avs->vi->fps_denominator, avs->vi->fps_numerator);
 
     switch (avs->vi->pixel_type) {
 #ifdef USING_AVISYNTH
     case AVS_CS_YV24:
-        st->codec->pix_fmt = AV_PIX_FMT_YUV444P;
-        planar             = 1;
+        st->codecpar->format = AV_PIX_FMT_YUV444P;
+        planar               = 1;
         break;
     case AVS_CS_YV16:
-        st->codec->pix_fmt = AV_PIX_FMT_YUV422P;
-        planar             = 1;
+        st->codecpar->format = AV_PIX_FMT_YUV422P;
+        planar               = 1;
         break;
     case AVS_CS_YV411:
-        st->codec->pix_fmt = AV_PIX_FMT_YUV411P;
-        planar             = 1;
+        st->codecpar->format = AV_PIX_FMT_YUV411P;
+        planar               = 1;
         break;
     case AVS_CS_Y8:
-        st->codec->pix_fmt = AV_PIX_FMT_GRAY8;
-        planar             = 2;
+        st->codecpar->format = AV_PIX_FMT_GRAY8;
+        planar               = 2;
         break;
 #endif
     case AVS_CS_BGR24:
-        st->codec->pix_fmt = AV_PIX_FMT_BGR24;
+        st->codecpar->format = AV_PIX_FMT_BGR24;
         break;
     case AVS_CS_BGR32:
-        st->codec->pix_fmt = AV_PIX_FMT_RGB32;
+        st->codecpar->format = AV_PIX_FMT_RGB32;
         break;
     case AVS_CS_YUY2:
-        st->codec->pix_fmt = AV_PIX_FMT_YUYV422;
+        st->codecpar->format = AV_PIX_FMT_YUYV422;
         break;
     case AVS_CS_YV12:
-        st->codec->pix_fmt = AV_PIX_FMT_YUV420P;
-        planar             = 1;
+        st->codecpar->format = AV_PIX_FMT_YUV420P;
+        planar               = 1;
         break;
     case AVS_CS_I420: // Is this even used anywhere?
-        st->codec->pix_fmt = AV_PIX_FMT_YUV420P;
-        planar             = 1;
+        st->codecpar->format = AV_PIX_FMT_YUV420P;
+        planar               = 1;
         break;
     default:
         av_log(s, AV_LOG_ERROR,
@@ -307,27 +309,28 @@ static int avisynth_create_stream_audio(AVFormatContext *s, AVStream *st)
 {
     AviSynthContext *avs = s->priv_data;
 
-    st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
-    st->codec->sample_rate = avs->vi->audio_samples_per_second;
-    st->codec->channels    = avs->vi->nchannels;
+    st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->sample_rate = avs->vi->audio_samples_per_second;
+    st->codecpar->channels    = avs->vi->nchannels;
+    st->time_base          = (AVRational) { 1,
+                                            avs->vi->audio_samples_per_second };
     st->duration           = avs->vi->num_audio_samples;
-    avpriv_set_pts_info(st, 64, 1, avs->vi->audio_samples_per_second);
 
     switch (avs->vi->sample_type) {
     case AVS_SAMPLE_INT8:
-        st->codec->codec_id = AV_CODEC_ID_PCM_U8;
+        st->codecpar->codec_id = AV_CODEC_ID_PCM_U8;
         break;
     case AVS_SAMPLE_INT16:
-        st->codec->codec_id = AV_CODEC_ID_PCM_S16LE;
+        st->codecpar->codec_id = AV_CODEC_ID_PCM_S16LE;
         break;
     case AVS_SAMPLE_INT24:
-        st->codec->codec_id = AV_CODEC_ID_PCM_S24LE;
+        st->codecpar->codec_id = AV_CODEC_ID_PCM_S24LE;
         break;
     case AVS_SAMPLE_INT32:
-        st->codec->codec_id = AV_CODEC_ID_PCM_S32LE;
+        st->codecpar->codec_id = AV_CODEC_ID_PCM_S32LE;
         break;
     case AVS_SAMPLE_FLOAT:
-        st->codec->codec_id = AV_CODEC_ID_PCM_F32LE;
+        st->codecpar->codec_id = AV_CODEC_ID_PCM_F32LE;
         break;
     default:
         av_log(s, AV_LOG_ERROR,
@@ -402,7 +405,7 @@ static int avisynth_open_file(AVFormatContext *s)
     avs->vi   = avs_library.avs_get_video_info(avs->clip);
 
 #ifdef USING_AVISYNTH
-    /* On Windows, FFmpeg supports AviSynth interface version 6 or higher.
+    /* On Windows, libav supports AviSynth interface version 6 or higher.
      * This includes AviSynth 2.6 RC1 or higher, and AviSynth+ r1718 or higher,
      * and excludes 2.5 and the 2.6 alphas. Since AvxSynth identifies itself
      * as interface version 3 like 2.5.8, this needs to be special-cased. */
@@ -636,7 +639,7 @@ static int avisynth_read_packet(AVFormatContext *s, AVPacket *pkt)
     /* If either stream reaches EOF, try to read the other one before
      * giving up. */
     avisynth_next_stream(s, &st, pkt, &discard);
-    if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
         ret = avisynth_read_packet_video(s, pkt, discard);
         if (ret == AVERROR_EOF && avs_has_audio(avs->vi)) {
             avisynth_next_stream(s, &st, pkt, &discard);
@@ -678,7 +681,7 @@ static int avisynth_read_seek(AVFormatContext *s, int stream_index,
     samplerate = (AVRational) { avs->vi->audio_samples_per_second, 1 };
 
     st = s->streams[stream_index];
-    if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
         /* AviSynth frame counts are signed int. */
         if ((timestamp >= avs->vi->num_frames) ||
             (timestamp > INT_MAX)              ||
