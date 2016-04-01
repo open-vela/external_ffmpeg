@@ -1,21 +1,22 @@
 /*
  * OpenEXR (.exr) image decoder
+ * Copyright (c) 2006 Industrial Light & Magic, a division of Lucas Digital Ltd. LLC
  * Copyright (c) 2009 Jimmy Christensen
  *
- * This file is part of Libav
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,9 +35,11 @@
 #include <float.h>
 #include <zlib.h>
 
+#include "libavutil/common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/opt.h"
+#include "libavutil/color_utils.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
@@ -110,6 +113,7 @@ typedef struct EXRContext {
 
     const char *layer;
 
+    enum AVColorTransferCharacteristic apply_trc_type;
     float gamma;
     uint16_t gamma_table[65536];
 } EXRContext;
@@ -722,8 +726,8 @@ static int piz_uncompress(EXRContext *s, const uint8_t *src, int ssize,
     if (!td->lut)
         td->lut = av_malloc(1 << 17);
     if (!td->bitmap || !td->lut) {
-        av_free(td->bitmap);
-        av_free(td->lut);
+        av_freep(&td->bitmap);
+        av_freep(&td->lut);
         return AVERROR(ENOMEM);
     }
 
@@ -824,6 +828,116 @@ static int pxr24_uncompress(EXRContext *s, const uint8_t *src,
     return 0;
 }
 
+static void unpack_14(const uint8_t b[14], uint16_t s[16])
+{
+    unsigned short shift = (b[ 2] >> 2);
+    unsigned short bias = (0x20 << shift);
+    int i;
+
+    s[ 0] = (b[0] << 8) | b[1];
+
+    s[ 4] = s[ 0] + ((((b[ 2] << 4) | (b[ 3] >> 4)) & 0x3f) << shift) - bias;
+    s[ 8] = s[ 4] + ((((b[ 3] << 2) | (b[ 4] >> 6)) & 0x3f) << shift) - bias;
+    s[12] = s[ 8] +   ((b[ 4]                       & 0x3f) << shift) - bias;
+
+    s[ 1] = s[ 0] +   ((b[ 5] >> 2)                         << shift) - bias;
+    s[ 5] = s[ 4] + ((((b[ 5] << 4) | (b[ 6] >> 4)) & 0x3f) << shift) - bias;
+    s[ 9] = s[ 8] + ((((b[ 6] << 2) | (b[ 7] >> 6)) & 0x3f) << shift) - bias;
+    s[13] = s[12] +   ((b[ 7]                       & 0x3f) << shift) - bias;
+
+    s[ 2] = s[ 1] +   ((b[ 8] >> 2)                         << shift) - bias;
+    s[ 6] = s[ 5] + ((((b[ 8] << 4) | (b[ 9] >> 4)) & 0x3f) << shift) - bias;
+    s[10] = s[ 9] + ((((b[ 9] << 2) | (b[10] >> 6)) & 0x3f) << shift) - bias;
+    s[14] = s[13] +   ((b[10]                       & 0x3f) << shift) - bias;
+
+    s[ 3] = s[ 2] +   ((b[11] >> 2)                         << shift) - bias;
+    s[ 7] = s[ 6] + ((((b[11] << 4) | (b[12] >> 4)) & 0x3f) << shift) - bias;
+    s[11] = s[10] + ((((b[12] << 2) | (b[13] >> 6)) & 0x3f) << shift) - bias;
+    s[15] = s[14] +   ((b[13]                       & 0x3f) << shift) - bias;
+
+    for (i = 0; i < 16; ++i) {
+        if (s[i] & 0x8000)
+            s[i] &= 0x7fff;
+        else
+            s[i] = ~s[i];
+    }
+}
+
+static void unpack_3(const uint8_t b[3], uint16_t s[16])
+{
+    int i;
+
+    s[0] = (b[0] << 8) | b[1];
+
+    if (s[0] & 0x8000)
+        s[0] &= 0x7fff;
+    else
+        s[0] = ~s[0];
+
+    for (i = 1; i < 16; i++)
+        s[i] = s[0];
+}
+
+
+static int b44_uncompress(EXRContext *s, const uint8_t *src, int compressed_size,
+                          int uncompressed_size, EXRThreadData *td){
+    const int8_t *sr = src;
+    int stayToUncompress = compressed_size;
+    int nbB44BlockW, nbB44BlockH;
+    int indexHgX, indexHgY, indexOut, indexTmp;
+    uint16_t tmpBuffer[16]; /* B44 use 4x4 half float pixel */
+    int c, iY, iX, y, x;
+
+    /* calc B44 block count */
+    nbB44BlockW = s->xdelta / 4;
+    if ((s->xdelta % 4) != 0)
+        nbB44BlockW++;
+
+    nbB44BlockH = s->ysize / 4;
+    if ((s->ysize % 4) != 0)
+        nbB44BlockH++;
+
+    for (c = 0; c < s->nb_channels; c++) {
+        for (iY = 0; iY < nbB44BlockH; iY++) {
+            for (iX = 0; iX < nbB44BlockW; iX++) {/* For each B44 block */
+                if (stayToUncompress < 3){
+                    av_log(s, AV_LOG_ERROR, "Not enough data for B44A block: %d", stayToUncompress);
+                    return AVERROR_INVALIDDATA;
+                }
+
+                if (src[compressed_size - stayToUncompress + 2] == 0xfc) { /* B44A block */
+                    unpack_3(sr, tmpBuffer);
+                    sr += 3;
+                    stayToUncompress -= 3;
+                }  else {/* B44 Block */
+                    if (stayToUncompress < 14) {
+                        av_log(s, AV_LOG_ERROR, "Not enough data for B44 block: %d", stayToUncompress);
+                        return AVERROR_INVALIDDATA;
+                    }
+                    unpack_14(sr, tmpBuffer);
+                    sr += 14;
+                    stayToUncompress -= 14;
+                }
+
+                /* copy data to uncompress buffer (B44 block can exceed target resolution)*/
+                indexHgX = iX * 4;
+                indexHgY = iY * 4;
+
+                for (y = indexHgY; y < FFMIN(indexHgY + 4, s->ysize); y++) {
+                    for (x = indexHgX; x < FFMIN(indexHgX + 4, s->xdelta); x++) {
+                        indexOut = (c * s->xdelta + y * s->xdelta * s->nb_channels + x) * 2;
+                        indexTmp = (y-indexHgY) * 4 + (x-indexHgX);
+                        td->uncompressed_data[indexOut] = tmpBuffer[indexTmp] & 0xff;
+                        td->uncompressed_data[indexOut + 1] = tmpBuffer[indexTmp] >> 8;
+                    }
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int decode_block(AVCodecContext *avctx, void *tdata,
                         int jobnr, int threadnr)
 {
@@ -842,6 +956,7 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
     int bxmin = s->xmin * 2 * s->desc->nb_components;
     int i, x, buf_size = s->buf_size;
     float one_gamma = 1.0f / s->gamma;
+    avpriv_trc_function trc_func = avpriv_get_trc_function_from_trc(s->apply_trc_type);
     int ret;
 
     line_offset = AV_RL64(s->gb.buffer + jobnr * 8);
@@ -888,6 +1003,11 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
             break;
         case EXR_RLE:
             ret = rle_uncompress(src, data_size, uncompressed_size, td);
+            break;
+        case EXR_B44:
+        case EXR_B44A:
+            ret = b44_uncompress(s, src, data_size, uncompressed_size, td);
+            break;
         }
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "decode_block() failed.\n");
@@ -921,24 +1041,43 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
         ptr_x += s->xmin * s->desc->nb_components;
         if (s->pixel_type == EXR_FLOAT) {
             // 32-bit
-            for (x = 0; x < xdelta; x++) {
-                union av_intfloat32 t;
-                t.i = bytestream_get_le32(&r);
-                if (t.f > 0.0f)  /* avoid negative values */
-                    t.f = powf(t.f, one_gamma);
-                *ptr_x++ = exr_flt2uint(t.i);
+            if (trc_func) {
+                for (x = 0; x < xdelta; x++) {
+                    union av_intfloat32 t;
+                    t.i = bytestream_get_le32(&r);
+                    t.f = trc_func(t.f);
+                    *ptr_x++ = exr_flt2uint(t.i);
 
-                t.i = bytestream_get_le32(&g);
-                if (t.f > 0.0f)
-                    t.f = powf(t.f, one_gamma);
-                *ptr_x++ = exr_flt2uint(t.i);
+                    t.i = bytestream_get_le32(&g);
+                    t.f = trc_func(t.f);
+                    *ptr_x++ = exr_flt2uint(t.i);
 
-                t.i = bytestream_get_le32(&b);
-                if (t.f > 0.0f)
-                    t.f = powf(t.f, one_gamma);
-                *ptr_x++ = exr_flt2uint(t.i);
-                if (channel_buffer[3])
-                    *ptr_x++ = exr_flt2uint(bytestream_get_le32(&a));
+                    t.i = bytestream_get_le32(&b);
+                    t.f = trc_func(t.f);
+                    *ptr_x++ = exr_flt2uint(t.i);
+                    if (channel_buffer[3])
+                        *ptr_x++ = exr_flt2uint(bytestream_get_le32(&a));
+                }
+            } else {
+                for (x = 0; x < xdelta; x++) {
+                    union av_intfloat32 t;
+                    t.i = bytestream_get_le32(&r);
+                    if (t.f > 0.0f)  /* avoid negative values */
+                        t.f = powf(t.f, one_gamma);
+                    *ptr_x++ = exr_flt2uint(t.i);
+
+                    t.i = bytestream_get_le32(&g);
+                    if (t.f > 0.0f)
+                        t.f = powf(t.f, one_gamma);
+                    *ptr_x++ = exr_flt2uint(t.i);
+
+                    t.i = bytestream_get_le32(&b);
+                    if (t.f > 0.0f)
+                        t.f = powf(t.f, one_gamma);
+                    *ptr_x++ = exr_flt2uint(t.i);
+                    if (channel_buffer[3])
+                        *ptr_x++ = exr_flt2uint(bytestream_get_le32(&a));
+                }
             }
         } else {
             // 16-bit
@@ -1008,7 +1147,23 @@ static int check_header_variable(EXRContext *s,
 static int decode_header(EXRContext *s)
 {
     int current_channel_offset = 0;
-    int magic_number, version, flags, i;
+    int magic_number, version, flags, i, sar = 0;
+
+    s->xmin               = ~0;
+    s->xmax               = ~0;
+    s->ymin               = ~0;
+    s->ymax               = ~0;
+    s->xdelta             = ~0;
+    s->ydelta             = ~0;
+    s->channel_offsets[0] = -1;
+    s->channel_offsets[1] = -1;
+    s->channel_offsets[2] = -1;
+    s->channel_offsets[3] = -1;
+    s->pixel_type         = EXR_UNKNOWN;
+    s->compression        = EXR_UNKN;
+    s->nb_channels        = 0;
+    s->w                  = 0;
+    s->h                  = 0;
 
     if (bytestream2_get_bytes_left(&s->gb) < 10) {
         av_log(s->avctx, AV_LOG_ERROR, "Header too short to parse.\n");
@@ -1189,8 +1344,7 @@ static int decode_header(EXRContext *s)
             if (!var_size)
                 return AVERROR_INVALIDDATA;
 
-            ff_set_sar(s->avctx,
-                       av_d2q(av_int2float(bytestream2_get_le32(&s->gb)), 255));
+            sar = bytestream2_get_le32(&s->gb);
 
             continue;
         } else if ((var_size = check_header_variable(s, "compression",
@@ -1220,6 +1374,8 @@ static int decode_header(EXRContext *s)
         // Skip variable length
         bytestream2_skip(&s->gb, bytestream2_get_le32(&s->gb));
     }
+
+    ff_set_sar(s->avctx, av_d2q(av_int2float(sar), 255));
 
     if (s->compression == EXR_UNKN) {
         av_log(s->avctx, AV_LOG_ERROR, "Missing compression attribute.\n");
@@ -1270,6 +1426,9 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
+    if (s->apply_trc_type != AVCOL_TRC_UNSPECIFIED)
+        avctx->color_trc = s->apply_trc_type;
+
     switch (s->compression) {
     case EXR_RAW:
     case EXR_RLE:
@@ -1281,6 +1440,8 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         s->scan_lines_per_block = 16;
         break;
     case EXR_PIZ:
+    case EXR_B44:
+    case EXR_B44A:
         s->scan_lines_per_block = 32;
         break;
     default:
@@ -1347,36 +1508,31 @@ static av_cold int decode_init(AVCodecContext *avctx)
     uint32_t i;
     union av_intfloat32 t;
     float one_gamma = 1.0f / s->gamma;
+    avpriv_trc_function trc_func = NULL;
 
     s->avctx              = avctx;
-    s->xmin               = ~0;
-    s->xmax               = ~0;
-    s->ymin               = ~0;
-    s->ymax               = ~0;
-    s->xdelta             = ~0;
-    s->ydelta             = ~0;
-    s->channel_offsets[0] = -1;
-    s->channel_offsets[1] = -1;
-    s->channel_offsets[2] = -1;
-    s->channel_offsets[3] = -1;
-    s->pixel_type         = EXR_UNKNOWN;
-    s->compression        = EXR_UNKN;
-    s->nb_channels        = 0;
-    s->w                  = 0;
-    s->h                  = 0;
 
-    if (one_gamma > 0.9999f && one_gamma < 1.0001f) {
-        for (i = 0; i < 65536; ++i)
-            s->gamma_table[i] = exr_halflt2uint(i);
-    } else {
+    trc_func = avpriv_get_trc_function_from_trc(s->apply_trc_type);
+    if (trc_func) {
         for (i = 0; i < 65536; ++i) {
             t = exr_half2float(i);
-            /* If negative value we reuse half value */
-            if (t.f <= 0.0f) {
+            t.f = trc_func(t.f);
+            s->gamma_table[i] = exr_flt2uint(t.i);
+        }
+    } else {
+        if (one_gamma > 0.9999f && one_gamma < 1.0001f) {
+            for (i = 0; i < 65536; ++i)
                 s->gamma_table[i] = exr_halflt2uint(i);
-            } else {
-                t.f = powf(t.f, one_gamma);
-                s->gamma_table[i] = exr_flt2uint(t.i);
+        } else {
+            for (i = 0; i < 65536; ++i) {
+                t = exr_half2float(i);
+                /* If negative value we reuse half value */
+                if (t.f <= 0.0f) {
+                    s->gamma_table[i] = exr_halflt2uint(i);
+                } else {
+                    t.f = powf(t.f, one_gamma);
+                    s->gamma_table[i] = exr_flt2uint(t.i);
+                }
             }
         }
     }
@@ -1389,6 +1545,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     return 0;
 }
 
+#if HAVE_THREADS
 static int decode_init_thread_copy(AVCodecContext *avctx)
 {    EXRContext *s = avctx->priv_data;
 
@@ -1399,6 +1556,7 @@ static int decode_init_thread_copy(AVCodecContext *avctx)
 
     return 0;
 }
+#endif
 
 static av_cold int decode_end(AVCodecContext *avctx)
 {
@@ -1425,6 +1583,43 @@ static const AVOption options[] = {
         AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VD },
     { "gamma", "Set the float gamma value when decoding", OFFSET(gamma),
         AV_OPT_TYPE_FLOAT, { .dbl = 1.0f }, 0.001, FLT_MAX, VD },
+
+    // XXX: Note the abuse of the enum using AVCOL_TRC_UNSPECIFIED to subsume the existing gamma option
+    { "apply_trc", "color transfer characteristics to apply to EXR linear input", OFFSET(apply_trc_type),
+        AV_OPT_TYPE_INT, {.i64 = AVCOL_TRC_UNSPECIFIED }, 1, AVCOL_TRC_NB-1, VD, "apply_trc_type"},
+    { "bt709",        "BT.709",           0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_BT709 },        INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "gamma",        "gamma",            0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_UNSPECIFIED },  INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "gamma22",      "BT.470 M",         0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_GAMMA22 },      INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "gamma28",      "BT.470 BG",        0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_GAMMA28 },      INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "smpte170m",    "SMPTE 170 M",      0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_SMPTE170M },    INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "smpte240m",    "SMPTE 240 M",      0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_SMPTE240M },    INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "linear",       "Linear",           0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_LINEAR },       INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "log",          "Log",              0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_LOG },          INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "log_sqrt",     "Log square root",  0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_LOG_SQRT },     INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "iec61966_2_4", "IEC 61966-2-4",    0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_IEC61966_2_4 }, INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "bt1361",       "BT.1361",          0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_BT1361_ECG },   INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "iec61966_2_1", "IEC 61966-2-1",    0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_IEC61966_2_1 }, INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "bt2020_10bit", "BT.2020 - 10 bit", 0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_BT2020_10 },    INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "bt2020_12bit", "BT.2020 - 12 bit", 0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_BT2020_12 },    INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "smpte2084",    "SMPTE ST 2084",    0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_SMPTEST2084 },  INT_MIN, INT_MAX, VD, "apply_trc_type"},
+    { "smpte428_1",   "SMPTE ST 428-1",   0,
+        AV_OPT_TYPE_CONST, {.i64 = AVCOL_TRC_SMPTEST428_1 }, INT_MIN, INT_MAX, VD, "apply_trc_type"},
+
     { NULL },
 };
 

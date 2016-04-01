@@ -2,20 +2,20 @@
  * RL2 Format Demuxer
  * Copyright (c) 2008 Sascha Sommer (saschasommer@freenet.de)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -109,55 +109,50 @@ static av_cold int rl2_read_header(AVFormatContext *s)
     rate = avio_rl16(pb);
     channels = avio_rl16(pb);
     def_sound_size = avio_rl16(pb);
-    if (!channels || channels > 42) {
-        av_log(s, AV_LOG_ERROR, "Invalid number of channels: %d\n", channels);
-        return AVERROR_INVALIDDATA;
-    }
 
     /** setup video stream */
     st = avformat_new_stream(s, NULL);
     if(!st)
          return AVERROR(ENOMEM);
 
-    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->codec_id = AV_CODEC_ID_RL2;
-    st->codecpar->codec_tag = 0;  /* no fourcc */
-    st->codecpar->width = 320;
-    st->codecpar->height = 200;
+    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codec->codec_id = AV_CODEC_ID_RL2;
+    st->codec->codec_tag = 0;  /* no fourcc */
+    st->codec->width = 320;
+    st->codec->height = 200;
 
     /** allocate and fill extradata */
-    st->codecpar->extradata_size = EXTRADATA1_SIZE;
+    st->codec->extradata_size = EXTRADATA1_SIZE;
 
     if(signature == RLV3_TAG && back_size > 0)
-        st->codecpar->extradata_size += back_size;
+        st->codec->extradata_size += back_size;
 
-    st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size +
-                                         AV_INPUT_BUFFER_PADDING_SIZE);
-    if(!st->codecpar->extradata)
+    if(ff_get_extradata(st->codec, pb, st->codec->extradata_size) < 0)
         return AVERROR(ENOMEM);
-
-    if(avio_read(pb,st->codecpar->extradata,st->codecpar->extradata_size) !=
-       st->codecpar->extradata_size)
-        return AVERROR(EIO);
 
     /** setup audio stream if present */
     if(sound_rate){
+        if (!channels || channels > 42) {
+            av_log(s, AV_LOG_ERROR, "Invalid number of channels: %d\n", channels);
+            return AVERROR_INVALIDDATA;
+        }
+
         pts_num = def_sound_size;
         pts_den = rate;
 
         st = avformat_new_stream(s, NULL);
         if (!st)
             return AVERROR(ENOMEM);
-        st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-        st->codecpar->codec_id = AV_CODEC_ID_PCM_U8;
-        st->codecpar->codec_tag = 1;
-        st->codecpar->channels = channels;
-        st->codecpar->bits_per_coded_sample = 8;
-        st->codecpar->sample_rate = rate;
-        st->codecpar->bit_rate = st->codecpar->channels * st->codecpar->sample_rate *
-            st->codecpar->bits_per_coded_sample;
-        st->codecpar->block_align = st->codecpar->channels *
-            st->codecpar->bits_per_coded_sample / 8;
+        st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+        st->codec->codec_id = AV_CODEC_ID_PCM_U8;
+        st->codec->codec_tag = 1;
+        st->codec->channels = channels;
+        st->codec->bits_per_coded_sample = 8;
+        st->codec->sample_rate = rate;
+        st->codec->bit_rate = st->codec->channels * st->codec->sample_rate *
+            st->codec->bits_per_coded_sample;
+        st->codec->block_align = st->codec->channels *
+            st->codec->bits_per_coded_sample / 8;
         avpriv_set_pts_info(st,32,1,rate);
     }
 
@@ -235,7 +230,7 @@ static int rl2_read_packet(AVFormatContext *s,
     }
 
     if(stream_id == -1)
-        return AVERROR(EIO);
+        return AVERROR_EOF;
 
     ++rl2->index_pos[stream_id];
 
