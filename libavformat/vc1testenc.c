@@ -2,20 +2,20 @@
  * VC-1 test bitstreams format muxer.
  * Copyright (c) 2008 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avformat.h"
@@ -27,19 +27,19 @@ typedef struct RCVContext {
 
 static int vc1test_write_header(AVFormatContext *s)
 {
-    AVCodecParameters *par = s->streams[0]->codecpar;
+    AVCodecContext *avc = s->streams[0]->codec;
     AVIOContext *pb = s->pb;
 
-    if (par->codec_id != AV_CODEC_ID_WMV3) {
+    if (avc->codec_id != AV_CODEC_ID_WMV3) {
         av_log(s, AV_LOG_ERROR, "Only WMV3 is accepted!\n");
         return -1;
     }
     avio_wl24(pb, 0); //frames count will be here
     avio_w8(pb, 0xC5);
     avio_wl32(pb, 4);
-    avio_write(pb, par->extradata, 4);
-    avio_wl32(pb, par->height);
-    avio_wl32(pb, par->width);
+    avio_write(pb, avc->extradata, 4);
+    avio_wl32(pb, avc->height);
+    avio_wl32(pb, avc->width);
     avio_wl32(pb, 0xC);
     avio_wl24(pb, 0); // hrd_buffer
     avio_w8(pb, 0x80); // level|cbr|res1
@@ -82,9 +82,8 @@ static int vc1test_write_trailer(AVFormatContext *s)
 }
 
 AVOutputFormat ff_vc1t_muxer = {
-    .name              = "rcv",
+    .name              = "vc1test",
     .long_name         = NULL_IF_CONFIG_SMALL("VC-1 test bitstream"),
-    .mime_type         = "",
     .extensions        = "rcv",
     .priv_data_size    = sizeof(RCVContext),
     .audio_codec       = AV_CODEC_ID_NONE,
