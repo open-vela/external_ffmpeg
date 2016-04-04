@@ -2,20 +2,20 @@
  * Maxis XA (.xa) File Demuxer
  * Copyright (c) 2008 Robert Marston
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -73,21 +73,24 @@ static int xa_read_header(AVFormatContext *s)
     if (!st)
         return AVERROR(ENOMEM);
 
-    st->codecpar->codec_type   = AVMEDIA_TYPE_AUDIO;
-    st->codecpar->codec_id     = AV_CODEC_ID_ADPCM_EA_MAXIS_XA;
+    st->codec->codec_type   = AVMEDIA_TYPE_AUDIO;
+    st->codec->codec_id     = AV_CODEC_ID_ADPCM_EA_MAXIS_XA;
     avio_skip(pb, 4);       /* Skip the XA ID */
     xa->out_size            =  avio_rl32(pb);
     avio_skip(pb, 2);       /* Skip the tag */
-    st->codecpar->channels     = avio_rl16(pb);
-    st->codecpar->sample_rate  = avio_rl32(pb);
+    st->codec->channels     = avio_rl16(pb);
+    st->codec->sample_rate  = avio_rl32(pb);
     avio_skip(pb, 4);       /* Skip average byte rate */
     avio_skip(pb, 2);       /* Skip block align */
     avio_skip(pb, 2);       /* Skip bits-per-sample */
 
-    st->codecpar->bit_rate = av_clip(15LL * st->codecpar->channels * 8 *
-                                     st->codecpar->sample_rate / 28, 0, INT_MAX);
+    if (!st->codec->channels || !st->codec->sample_rate)
+        return AVERROR_INVALIDDATA;
 
-    avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
+    st->codec->bit_rate = av_clip(15LL * st->codec->channels * 8 *
+                                  st->codec->sample_rate / 28, 0, INT_MAX);
+
+    avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
     st->start_time = 0;
 
     return 0;
@@ -105,7 +108,7 @@ static int xa_read_packet(AVFormatContext *s,
     if (xa->sent_bytes >= xa->out_size)
         return AVERROR_EOF;
     /* 1 byte header and 14 bytes worth of samples * number channels per block */
-    packet_size = 15*st->codecpar->channels;
+    packet_size = 15*st->codec->channels;
 
     ret = av_get_packet(pb, pkt, packet_size);
     if(ret < 0)
