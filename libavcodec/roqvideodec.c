@@ -1,20 +1,20 @@
 /*
- * Copyright (C) 2003 the ffmpeg project
+ * Copyright (c) 2003 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,10 +25,7 @@
  *   http://www.csse.monash.edu.au/~timf/
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 
 #include "avcodec.h"
@@ -74,9 +71,19 @@ static void roqvideo_decode_frame(RoqContext *ri)
 
     chunk_start = bytestream2_tell(&ri->gb);
     xpos = ypos = 0;
+
+    if (chunk_size > bytestream2_get_bytes_left(&ri->gb)) {
+        av_log(ri->avctx, AV_LOG_ERROR, "Chunk does not fit in input buffer\n");
+        chunk_size = bytestream2_get_bytes_left(&ri->gb);
+    }
+
     while (bytestream2_tell(&ri->gb) < chunk_start + chunk_size) {
         for (yp = ypos; yp < ypos + 16; yp += 8)
             for (xp = xpos; xp < xpos + 16; xp += 8) {
+                if (bytestream2_tell(&ri->gb) >= chunk_start + chunk_size) {
+                    av_log(ri->avctx, AV_LOG_VERBOSE, "Chunk is too short\n");
+                    return;
+                }
                 if (vqflg_pos < 0) {
                     vqflg = bytestream2_get_le16(&ri->gb);
                     vqflg_pos = 7;
@@ -108,6 +115,10 @@ static void roqvideo_decode_frame(RoqContext *ri)
                         if(k & 0x01) x += 4;
                         if(k & 0x02) y += 4;
 
+                        if (bytestream2_tell(&ri->gb) >= chunk_start + chunk_size) {
+                            av_log(ri->avctx, AV_LOG_VERBOSE, "Chunk is too short\n");
+                            return;
+                        }
                         if (vqflg_pos < 0) {
                             vqflg = bytestream2_get_le16(&ri->gb);
                             vqflg_pos = 7;
@@ -142,7 +153,7 @@ static void roqvideo_decode_frame(RoqContext *ri)
                     }
                     break;
                 default:
-                    av_log(ri->avctx, AV_LOG_ERROR, "Unknown vq code: %d\n", vqid);
+                    av_assert2(0);
             }
         }
 
@@ -180,7 +191,8 @@ static av_cold int roq_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
-    avctx->pix_fmt = AV_PIX_FMT_YUV444P;
+    avctx->pix_fmt = AV_PIX_FMT_YUVJ444P;
+    avctx->color_range = AVCOL_RANGE_JPEG;
 
     return 0;
 }
@@ -195,10 +207,8 @@ static int roq_decode_frame(AVCodecContext *avctx,
     int copy = !s->current_frame->data[0] && s->last_frame->data[0];
     int ret;
 
-    if ((ret = ff_reget_buffer(avctx, s->current_frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "  RoQ: get_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, s->current_frame)) < 0)
         return ret;
-    }
 
     if (copy) {
         ret = av_frame_copy(s->current_frame, s->last_frame);
