@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -204,7 +204,7 @@ function ff_vp9_\txfm1\()_\txfm2\()_4x4_add_neon, export=1
 
         movi            v31.8h, #0
 .ifc \txfm1\()_\txfm2,idct_idct
-        cmp             x3,  #1
+        cmp             w3,  #1
         b.ne            1f
         // DC-only for idct/idct
         ld1r            {v2.4h},  [x2]
@@ -344,7 +344,7 @@ function ff_vp9_\txfm1\()_\txfm2\()_8x8_add_neon, export=1
         movi            v5.16b, #0
 
 .ifc \txfm1\()_\txfm2,idct_idct
-        cmp             x3,  #1
+        cmp             w3,  #1
         b.ne            1f
         // DC-only for idct/idct
         ld1r            {v2.4h},  [x2]
@@ -722,7 +722,7 @@ itxfm16_1d_funcs iadst
 .macro itxfm_func16x16 txfm1, txfm2
 function ff_vp9_\txfm1\()_\txfm2\()_16x16_add_neon, export=1
 .ifc \txfm1\()_\txfm2,idct_idct
-        cmp             x3,  #1
+        cmp             w3,  #1
         b.eq            idct16x16_dc_add_neon
 .endif
         mov             x15, x30
@@ -969,14 +969,14 @@ function idct32_1d_8x32_pass1_neon
         st1             {v7.8h},  [x0], #16
 .endm
 
-        store_rev 31, 23
-        store_rev 30, 22
-        store_rev 29, 21
-        store_rev 28, 20
-        store_rev 27, 19
-        store_rev 26, 18
-        store_rev 25, 17
-        store_rev 24, 16
+        store_rev       31, 23
+        store_rev       30, 22
+        store_rev       29, 21
+        store_rev       28, 20
+        store_rev       27, 19
+        store_rev       26, 18
+        store_rev       25, 17
+        store_rev       24, 16
 .purgem store_rev
         ret
 endfunc
@@ -1074,7 +1074,7 @@ function idct32_1d_8x32_pass2_neon
 endfunc
 
 function ff_vp9_idct_idct_32x32_add_neon, export=1
-        cmp             x3,  #1
+        cmp             w3,  #1
         b.eq            idct32x32_dc_add_neon
 
         movrel          x10, idct_coeffs
