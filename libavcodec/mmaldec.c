@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -357,19 +357,16 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     format_in = decoder->input[0]->format;
     format_in->type = MMAL_ES_TYPE_VIDEO;
     switch (avctx->codec_id) {
-        case AV_CODEC_ID_MPEG2VIDEO:
-            format_in->encoding = MMAL_ENCODING_MP2V;
-            break;
-        case AV_CODEC_ID_MPEG4:
-            format_in->encoding = MMAL_ENCODING_MP4V;
-            break;
-        case AV_CODEC_ID_VC1:
-            format_in->encoding = MMAL_ENCODING_WVC1;
-            break;
-        case AV_CODEC_ID_H264:
-        default:
-            format_in->encoding = MMAL_ENCODING_H264;
-            break;
+    case AV_CODEC_ID_MPEG2VIDEO:
+        format_in->encoding = MMAL_ENCODING_MP2V;
+        break;
+    case AV_CODEC_ID_VC1:
+        format_in->encoding = MMAL_ENCODING_WVC1;
+        break;
+    case AV_CODEC_ID_H264:
+    default:
+        format_in->encoding = MMAL_ENCODING_H264;
+        break;
     }
     format_in->es->video.width = FFALIGN(avctx->width, 32);
     format_in->es->video.height = FFALIGN(avctx->height, 16);
@@ -384,10 +381,12 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     av_get_codec_tag_string(tmp, sizeof(tmp), format_in->encoding);
     av_log(avctx, AV_LOG_DEBUG, "Using MMAL %s encoding.\n", tmp);
 
+#if HAVE_MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS
     if (mmal_port_parameter_set_uint32(decoder->input[0], MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS,
                                        -1 - ctx->extra_decoder_buffers)) {
         av_log(avctx, AV_LOG_WARNING, "Could not set input buffering limit.\n");
     }
+#endif
 
     if ((status = mmal_port_format_commit(decoder->input[0])))
         goto fail;
@@ -658,7 +657,7 @@ static int ffmmal_read_frame(AVCodecContext *avctx, AVFrame *frame, int *got_fra
         // being busy from decoder waiting for input. So just poll at the start and
         // keep feeding new data to the buffer.
         // We are pretty sure the decoder will produce output if we sent more input
-        // frames than what a h264 decoder could logically delay. This avoids too
+        // frames than what a H.264 decoder could logically delay. This avoids too
         // excessive buffering.
         // We also wait if we sent eos, but didn't receive it yet (think of decoding
         // stream with a very low number of frames).
@@ -796,13 +795,6 @@ AVHWAccel ff_mpeg2_mmal_hwaccel = {
     .pix_fmt    = AV_PIX_FMT_MMAL,
 };
 
-AVHWAccel ff_mpeg4_mmal_hwaccel = {
-    .name       = "mpeg4_mmal",
-    .type       = AVMEDIA_TYPE_VIDEO,
-    .id         = AV_CODEC_ID_MPEG4,
-    .pix_fmt    = AV_PIX_FMT_MMAL,
-};
-
 AVHWAccel ff_vc1_mmal_hwaccel = {
     .name       = "vc1_mmal",
     .type       = AVMEDIA_TYPE_VIDEO,
@@ -845,5 +837,4 @@ static const AVOption options[]={
 
 FFMMAL_DEC(h264, AV_CODEC_ID_H264)
 FFMMAL_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO)
-FFMMAL_DEC(mpeg4, AV_CODEC_ID_MPEG4)
 FFMMAL_DEC(vc1, AV_CODEC_ID_VC1)
