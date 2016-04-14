@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/buffer.h"
 #include "libavutil/common.h"
+#include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/log.h"
 
@@ -356,19 +357,16 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     format_in = decoder->input[0]->format;
     format_in->type = MMAL_ES_TYPE_VIDEO;
     switch (avctx->codec_id) {
-        case AV_CODEC_ID_MPEG2VIDEO:
-            format_in->encoding = MMAL_ENCODING_MP2V;
-            break;
-        case AV_CODEC_ID_MPEG4:
-            format_in->encoding = MMAL_ENCODING_MP4V;
-            break;
-        case AV_CODEC_ID_VC1:
-            format_in->encoding = MMAL_ENCODING_WVC1;
-            break;
-        case AV_CODEC_ID_H264:
-        default:
-            format_in->encoding = MMAL_ENCODING_H264;
-            break;
+    case AV_CODEC_ID_MPEG2VIDEO:
+        format_in->encoding = MMAL_ENCODING_MP2V;
+        break;
+    case AV_CODEC_ID_VC1:
+        format_in->encoding = MMAL_ENCODING_WVC1;
+        break;
+    case AV_CODEC_ID_H264:
+    default:
+        format_in->encoding = MMAL_ENCODING_H264;
+        break;
     }
     format_in->es->video.width = FFALIGN(avctx->width, 32);
     format_in->es->video.height = FFALIGN(avctx->height, 16);
@@ -383,10 +381,12 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     av_get_codec_tag_string(tmp, sizeof(tmp), format_in->encoding);
     av_log(avctx, AV_LOG_DEBUG, "Using MMAL %s encoding.\n", tmp);
 
+#if HAVE_MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS
     if (mmal_port_parameter_set_uint32(decoder->input[0], MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS,
                                        -1 - ctx->extra_decoder_buffers)) {
         av_log(avctx, AV_LOG_WARNING, "Could not set input buffering limit.\n");
     }
+#endif
 
     if ((status = mmal_port_format_commit(decoder->input[0])))
         goto fail;
@@ -618,24 +618,17 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
     } else {
         int w = FFALIGN(avctx->width, 32);
         int h = FFALIGN(avctx->height, 16);
-        char *ptr;
-        int plane;
-        int i;
+        uint8_t *src[4];
+        int linesize[4];
 
         if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
             goto done;
 
-        ptr = buffer->data + buffer->type->video.offset[0];
-        for (i = 0; i < avctx->height; i++)
-            memcpy(frame->data[0] + frame->linesize[0] * i, ptr + w * i, avctx->width);
-
-        ptr += w * h;
-
-        for (plane = 1; plane < 3; plane++) {
-            for (i = 0; i < avctx->height / 2; i++)
-                memcpy(frame->data[plane] + frame->linesize[plane] * i, ptr + w / 2 * i, (avctx->width + 1) / 2);
-            ptr += w / 2 * h / 2;
-        }
+        av_image_fill_arrays(src, linesize,
+                             buffer->data + buffer->type->video.offset[0],
+                             avctx->pix_fmt, w, h, 1);
+        av_image_copy(frame->data, frame->linesize, src, linesize,
+                      avctx->pix_fmt, avctx->width, avctx->height);
     }
 
     frame->pkt_pts = buffer->pts == MMAL_TIME_UNKNOWN ? AV_NOPTS_VALUE : buffer->pts;
@@ -802,13 +795,6 @@ AVHWAccel ff_mpeg2_mmal_hwaccel = {
     .pix_fmt    = AV_PIX_FMT_MMAL,
 };
 
-AVHWAccel ff_mpeg4_mmal_hwaccel = {
-    .name       = "mpeg4_mmal",
-    .type       = AVMEDIA_TYPE_VIDEO,
-    .id         = AV_CODEC_ID_MPEG4,
-    .pix_fmt    = AV_PIX_FMT_MMAL,
-};
-
 AVHWAccel ff_vc1_mmal_hwaccel = {
     .name       = "vc1_mmal",
     .type       = AVMEDIA_TYPE_VIDEO,
@@ -851,5 +837,4 @@ static const AVOption options[]={
 
 FFMMAL_DEC(h264, AV_CODEC_ID_H264)
 FFMMAL_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO)
-FFMMAL_DEC(mpeg4, AV_CODEC_ID_MPEG4)
 FFMMAL_DEC(vc1, AV_CODEC_ID_VC1)
