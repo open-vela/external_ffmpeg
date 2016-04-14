@@ -4,20 +4,20 @@
  * dct_unquantize_h263_altivec:
  * Copyright (c) 2003 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,7 @@
 #include "libavutil/ppc/util_altivec.h"
 #include "libavcodec/mpegvideo.h"
 
-#if HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_ALTIVEC
 
 /* AltiVec version of dct_unquantize_h263
    this code assumes `block' is 16 bytes-aligned */
@@ -41,8 +41,6 @@ static void dct_unquantize_h263_altivec(MpegEncContext *s,
 {
     int i, level, qmul, qadd;
     int nCoeffs;
-
-    assert(s->block_last_index[n]>=0);
 
     qadd = (qscale - 1) | 1;
     qmul = qscale << 1;
@@ -59,6 +57,7 @@ static void dct_unquantize_h263_altivec(MpegEncContext *s,
         nCoeffs= 63; //does not always use zigzag table
     } else {
         i = 0;
+        av_assert2(s->block_last_index[n]>=0);
         nCoeffs= s->intra_scantable.raster_end[ s->block_last_index[n] ];
     }
 
@@ -117,7 +116,7 @@ static void dct_unquantize_h263_altivec(MpegEncContext *s,
 
 av_cold void ff_mpv_common_init_ppc(MpegEncContext *s)
 {
-#if HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_ALTIVEC
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 

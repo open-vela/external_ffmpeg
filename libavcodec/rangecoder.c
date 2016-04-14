@@ -2,20 +2,20 @@
  * Range coder
  * Copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
@@ -55,7 +56,7 @@ av_cold void ff_init_range_decoder(RangeCoder *c, const uint8_t *buf,
     /* cast to avoid compiler warning */
     ff_init_range_encoder(c, (uint8_t *)buf, buf_size);
 
-    c->low         = AV_RB16(c->bytestream);
+    c->low = AV_RB16(c->bytestream);
     c->bytestream += 2;
 }
 
@@ -108,8 +109,53 @@ int ff_rac_terminate(RangeCoder *c)
     c->range = 0xFF;
     renorm_encoder(c);
 
-    assert(c->low == 0);
-    assert(c->range >= 0x100);
+    av_assert1(c->low   == 0);
+    av_assert1(c->range >= 0x100);
 
     return c->bytestream - c->bytestream_start;
 }
+
+#ifdef TEST
+#define SIZE 10240
+
+#include "libavutil/lfg.h"
+#include "libavutil/log.h"
+
+static uint8_t b[9 * SIZE];
+static uint8_t r[9 * SIZE];
+
+int main(void)
+{
+    RangeCoder c;
+    int i;
+    uint8_t state[10];
+    AVLFG prng;
+
+    av_lfg_init(&prng, 1);
+
+    ff_init_range_encoder(&c, b, SIZE);
+    ff_build_rac_states(&c, (1LL << 32) / 20, 128 + 64 + 32 + 16);
+
+    memset(state, 128, sizeof(state));
+
+    for (i = 0; i < SIZE; i++)
+        r[i] = av_lfg_get(&prng) % 7;
+
+    for (i = 0; i < SIZE; i++)
+        put_rac(&c, state, r[i] & 1);
+
+    ff_rac_terminate(&c);
+
+    ff_init_range_decoder(&c, b, SIZE);
+
+    memset(state, 128, sizeof(state));
+
+    for (i = 0; i < SIZE; i++)
+        if ((r[i] & 1) != get_rac(&c, state)) {
+            av_log(NULL, AV_LOG_ERROR, "rac failure at %d\n", i);
+            return 1;
+        }
+
+    return 0;
+}
+#endif /* TEST */
