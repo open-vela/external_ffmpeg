@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -91,7 +91,7 @@ static void x8_setup_spatial_compensation(uint8_t *src, uint8_t *dst,
         for (i = 7; i >= 0; i--) {
             c              = *(ptr - 1); // area1, same mb as area2, no need to check
             dst[area1 + i] = c;
-            c              = *(ptr);
+            c              = *ptr;
 
             sum           += c;
             min_pix        = FFMIN(min_pix, c);
@@ -136,9 +136,9 @@ static void x8_setup_spatial_compensation(uint8_t *src, uint8_t *dst,
         sum       += c;
         // edge pixel is not part of min/max
     }
-    (*range) = max_pix - min_pix;
-    sum     += *(dst + area5) + *(dst + area5 + 1);
-    *psum    = sum;
+    *range = max_pix - min_pix;
+    sum   += *(dst + area5) + *(dst + area5 + 1);
+    *psum  = sum;
 }
 
 static const uint16_t zero_prediction_weights[64 * 2] = {
@@ -419,7 +419,7 @@ static void x8_loop_filter(uint8_t *ptr, const int a_stride, const int b_stride,
                     m    = (m ^ sign) - sign; // abs(m)
                     m  >>= 1;
 
-                    x = (5 * x) >> 3;
+                    x = 5 * x >> 3;
 
                     if (x > m)
                         x = m;
