@@ -4720,10 +4720,7 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
                 // duration, but only helps for this particular track, not
                 // for the other ones that are flushed at the same time.
                 trk->track_duration = pkt->dts - trk->start_dts;
-                if (pkt->pts != AV_NOPTS_VALUE)
-                    trk->end_pts = pkt->pts;
-                else
-                    trk->end_pts = pkt->dts;
+                trk->end_pts = pkt->pts;
                 mov_auto_flush_fragment(s, 0);
             }
         }
