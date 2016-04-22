@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -173,7 +173,7 @@ AVBufferRef *av_hwframe_ctx_alloc(AVBufferRef *device_ref_in)
     AVHWDeviceContext *device_ctx = (AVHWDeviceContext*)device_ref_in->data;
     const HWContextType  *hw_type = device_ctx->internal->hw_type;
     AVHWFramesContext *ctx;
-    AVBufferRef *buf, *device_ref = NULL;
+    AVBufferRef *buf, *device_ref = NULL;;
 
     ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
@@ -209,6 +209,7 @@ AVBufferRef *av_hwframe_ctx_alloc(AVBufferRef *device_ref_in)
     ctx->device_ref = device_ref;
     ctx->device_ctx = device_ctx;
     ctx->format     = AV_PIX_FMT_NONE;
+    ctx->sw_format  = AV_PIX_FMT_NONE;
 
     ctx->internal->hw_type = hw_type;
 
