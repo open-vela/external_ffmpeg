@@ -3,20 +3,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,7 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/frame.h"
 
-#include "libavresample/avresample.h"
+#include "libswresample/swresample.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -57,7 +57,7 @@
 #define SILK_HISTORY                 322
 #define SILK_MAX_LPC                 16
 
-#define ROUND_MULL(a,b,s) (((MUL64(a, b) >> (s - 1)) + 1) >> 1)
+#define ROUND_MULL(a,b,s) (((MUL64(a, b) >> ((s) - 1)) + 1) >> 1)
 #define ROUND_MUL16(a,b)  ((MUL16(a, b) + 16384) >> 15)
 #define opus_ilog(i) (av_log2(i) + !!(i))
 
@@ -104,19 +104,19 @@ typedef struct SilkContext SilkContext;
 typedef struct CeltContext CeltContext;
 
 typedef struct OpusPacket {
-    int packet_size;                /** packet size */
-    int data_size;                  /** size of the useful data -- packet size - padding */
-    int code;                       /** packet code: specifies the frame layout */
-    int stereo;                     /** whether this packet is mono or stereo */
-    int vbr;                        /** vbr flag */
-    int config;                     /** configuration: tells the audio mode,
+    int packet_size;                /**< packet size */
+    int data_size;                  /**< size of the useful data -- packet size - padding */
+    int code;                       /**< packet code: specifies the frame layout */
+    int stereo;                     /**< whether this packet is mono or stereo */
+    int vbr;                        /**< vbr flag */
+    int config;                     /**< configuration: tells the audio mode,
                                      **                bandwidth, and frame duration */
-    int frame_count;                /** frame count */
-    int frame_offset[MAX_FRAMES];   /** frame offsets */
-    int frame_size[MAX_FRAMES];     /** frame sizes */
-    int frame_duration;             /** frame duration, in samples @ 48kHz */
-    enum OpusMode mode;             /** mode */
-    enum OpusBandwidth bandwidth;   /** bandwidth */
+    int frame_count;                /**< frame count */
+    int frame_offset[MAX_FRAMES];   /**< frame offsets */
+    int frame_size[MAX_FRAMES];     /**< frame sizes */
+    int frame_duration;             /**< frame duration, in samples @ 48kHz */
+    enum OpusMode mode;             /**< mode */
+    enum OpusBandwidth bandwidth;   /**< bandwidth */
 } OpusPacket;
 
 typedef struct OpusStreamContext {
@@ -144,7 +144,7 @@ typedef struct OpusStreamContext {
     float *out_dummy;
     int    out_dummy_allocated_size;
 
-    AVAudioResampleContext *avr;
+    SwrContext *swr;
     AVAudioFifo *celt_delay;
     int silk_samplerate;
     /* number of samples we still want to get from the resampler */
@@ -186,7 +186,7 @@ typedef struct OpusContext {
     int             nb_streams;
     int      nb_stereo_streams;
 
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
     int16_t gain_i;
     float   gain;
 
@@ -289,7 +289,7 @@ static av_always_inline unsigned int opus_getrawbits(OpusRangeCoder *rc, unsigne
         rc->rb.bytes--;
     }
 
-    value = rc->rb.cacheval & ((1<<count)-1);
+    value = av_mod_uintp2(rc->rb.cacheval, count);
     rc->rb.cacheval    >>= count;
     rc->rb.cachelen     -= count;
     rc->total_read_bits += count;
