@@ -844,9 +844,6 @@ static int read_var_block_data(ALSDecContext *ctx, ALSBlockData *bd)
                 *current_res++ = decode_rice(gb, s[sb]);
      }
 
-    if (!sconf->mc_coding || ctx->js_switch)
-        align_get_bits(gb);
-
     return 0;
 }
 
@@ -966,6 +963,7 @@ static int read_block(ALSDecContext *ctx, ALSBlockData *bd)
 {
     int ret = 0;
     GetBitContext *gb        = &ctx->gb;
+    ALSSpecificConfig *sconf = &ctx->sconf;
 
     *bd->shift_lsbs = 0;
     // read block type flag and read the samples accordingly
@@ -974,6 +972,9 @@ static int read_block(ALSDecContext *ctx, ALSBlockData *bd)
     } else {
         read_const_block_data(ctx, bd);
     }
+
+    if (!sconf->mc_coding || ctx->js_switch)
+        align_get_bits(gb);
 
     return ret;
 }
