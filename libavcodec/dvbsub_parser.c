@@ -1,21 +1,21 @@
 /*
- * DVB subtitle parser for Libav
+ * DVB subtitle parser for FFmpeg
  * Copyright (c) 2005 Ian Caulfield
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avcodec.h"
@@ -123,11 +123,11 @@ static int dvbsub_parse(AVCodecParserContext *s,
     {
         if (*p == 0x0f)
         {
-            if (p + 6 <= p_end)
+            if (6 <= p_end - p)
             {
                 len = AV_RB16(p + 4);
 
-                if (p + len + 6 <= p_end)
+                if (len + 6 <= p_end - p)
                 {
                     *poutbuf_size += len + 6;
 
@@ -137,7 +137,7 @@ static int dvbsub_parse(AVCodecParserContext *s,
             } else
                 break;
         } else if (*p == 0xff) {
-            if (p + 1 < p_end)
+            if (1 < p_end - p)
             {
                 ff_dlog(avctx, "Junk at end of packet\n");
             }
