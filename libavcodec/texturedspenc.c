@@ -3,7 +3,7 @@
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  * Based on public domain code by Fabian Giesen, Sean Barrett and Yann Collet.
  *
- * This file is part of FFmpeg
+ * This file is part of Libav
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -140,14 +140,14 @@ static const uint8_t match6[256][2] = {
 };
 
 /* Multiplication over 8 bit emulation */
-#define mul8(a, b) (((a) * (b) + 128 + (((a) * (b) + 128) >> 8)) >> 8)
+#define mul8(a, b) (a * b + 128 + ((a * b + 128) >> 8)) >> 8
 
 /* Conversion from rgb24 to rgb565 */
 #define rgb2rgb565(r, g, b) \
-    ((mul8(r, 31) << 11) | (mul8(g, 63) << 5) | (mul8(b, 31) << 0))
+    (mul8(r, 31) << 11) | (mul8(g, 63) << 5) | (mul8(b, 31) << 0)
 
 /* Linear interpolation at 1/3 point between a and b */
-#define lerp13(a, b) ((2 * (a) + (b)) / 3)
+#define lerp13(a, b) (2 * a + b) / 3
 
 /* Linear interpolation on an RGB pixel */
 static inline void lerp13rgb(uint8_t *out, uint8_t *p1, uint8_t *p2)
@@ -213,7 +213,7 @@ static unsigned int match_colors(const uint8_t *block, ptrdiff_t stride,
      * the same inside that subinterval.
      *
      * Relying on this 1d approximation isn't always optimal in terms of
-     * euclidean distance, but it's very close and a lot faster.
+     * Euclidean distance, but it's very close and a lot faster.
      *
      * http://cbloomrants.blogspot.com/2008/12/12-08-08-dxtc-summary.html */
     c0_point   = (stops[1] + stops[3]) >> 1;
@@ -309,7 +309,7 @@ static void optimize_colors(const uint8_t *block, ptrdiff_t stride,
     if (fabs(vfb) > magn)
         magn = fabs(vfb);
 
-    /* if magnitudo is too small, default to luminance */
+    /* if magnitude is too small, default to luminance */
     if (magn < 4.0f) {
         /* JPEG YCbCr luma coefs, scaled by 1000 */
         v_r = 299;

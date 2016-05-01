@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,13 +100,9 @@ fail:
     return AVERROR(ENOMEM);
 }
 
-av_cold void ff_rl_init_vlc(RLTable *rl, unsigned static_size)
+av_cold void ff_rl_init_vlc(RLTable *rl)
 {
     int i, q;
-    VLC_TYPE table[1500][2] = {{0}};
-    VLC vlc = { .table = table, .table_allocated = static_size };
-    av_assert0(static_size <= FF_ARRAY_ELEMS(table));
-    init_vlc(&vlc, 9, rl->n + 1, &rl->table_vlc[0][1], 4, 2, &rl->table_vlc[0][0], 4, 2, INIT_VLC_USE_NEW_STATIC);
 
     for (q = 0; q < 32; q++) {
         int qmul = q * 2;
@@ -116,9 +112,9 @@ av_cold void ff_rl_init_vlc(RLTable *rl, unsigned static_size)
             qmul = 1;
             qadd = 0;
         }
-        for (i = 0; i < vlc.table_size; i++) {
-            int code = vlc.table[i][0];
-            int len  = vlc.table[i][1];
+        for (i = 0; i < rl->vlc.table_size; i++) {
+            int code = rl->vlc.table[i][0];
+            int len  = rl->vlc.table[i][1];
             int level, run;
 
             if (len == 0) { // illegal code
