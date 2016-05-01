@@ -2,20 +2,20 @@
  * DirectDraw Surface image decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,7 @@
 
 #include <stdint.h>
 
+#include "libavutil/libm.h"
 #include "libavutil/imgutils.h"
 
 #include "avcodec.h"
@@ -45,6 +46,7 @@ enum DDSPostProc {
     DDS_ALPHA_EXP,
     DDS_NORMAL_MAP,
     DDS_RAW_YCOCG,
+    DDS_SWAP_ALPHA,
     DDS_SWIZZLE_A2XY,
     DDS_SWIZZLE_RBXG,
     DDS_SWIZZLE_RGXB,
@@ -240,10 +242,6 @@ static int parse_pixel_format(AVCodecContext *avctx)
             ctx->paletted   = 1;
             avctx->pix_fmt  = AV_PIX_FMT_PAL8;
             break;
-        case MKTAG('G', '1', ' ', ' '):
-            ctx->compressed = 0;
-            avctx->pix_fmt  = AV_PIX_FMT_MONOBLACK;
-            break;
         case MKTAG('D', 'X', '1', '0'):
             /* DirectX 10 extra header */
             dxgi = bytestream2_get_le32(gbc);
@@ -355,17 +353,15 @@ static int parse_pixel_format(AVCodecContext *avctx)
         /*  8 bpp */
         if (bpp == 8 && r == 0xff && g == 0 && b == 0 && a == 0)
             avctx->pix_fmt = AV_PIX_FMT_GRAY8;
-        else if (bpp == 8 && r == 0 && g == 0 && b == 0 && a == 0xff)
-            avctx->pix_fmt = AV_PIX_FMT_GRAY8;
         /* 16 bpp */
         else if (bpp == 16 && r == 0xff && g == 0 && b == 0 && a == 0xff00)
             avctx->pix_fmt = AV_PIX_FMT_YA8;
+        else if (bpp == 16 && r == 0xff00 && g == 0 && b == 0 && a == 0xff) {
+            avctx->pix_fmt = AV_PIX_FMT_YA8;
+            ctx->postproc = DDS_SWAP_ALPHA;
+        }
         else if (bpp == 16 && r == 0xffff && g == 0 && b == 0 && a == 0)
             avctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
-        else if (bpp == 16 && r == 0x7c00 && g == 0x3e0 && b == 0x1f && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_RGB555LE;
-        else if (bpp == 16 && r == 0x7c00 && g == 0x3e0 && b == 0x1f && a == 0x8000)
-            avctx->pix_fmt = AV_PIX_FMT_RGB555LE; // alpha ignored
         else if (bpp == 16 && r == 0xf800 && g == 0x7e0 && b == 0x1f && a == 0)
             avctx->pix_fmt = AV_PIX_FMT_RGB565LE;
         /* 24 bpp */
@@ -373,9 +369,9 @@ static int parse_pixel_format(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_BGR24;
         /* 32 bpp */
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_BGRA; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_BGR0; // opaque
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_RGBA; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_RGB0; // opaque
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0xff000000)
             avctx->pix_fmt = AV_PIX_FMT_BGRA;
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0xff000000)
@@ -515,7 +511,7 @@ static void run_postproc(AVCodecContext *avctx, AVFrame *frame)
 
             int d = (255 * 255 - x * x - y * y) / 2;
             if (d > 0)
-                z = rint(sqrtf(d));
+                z = lrint(sqrtf(d));
 
             src[0] = x;
             src[1] = y;
@@ -539,6 +535,15 @@ static void run_postproc(AVCodecContext *avctx, AVFrame *frame)
             src[1] = av_clip_uint8(y + cg);
             src[2] = av_clip_uint8(y - co - cg);
             src[3] = a;
+        }
+        break;
+    case DDS_SWAP_ALPHA:
+        /* Alpha and Luma are stored swapped. */
+        av_log(avctx, AV_LOG_DEBUG, "Post-processing swapped Luma/Alpha.\n");
+
+        for (i = 0; i < frame->linesize[0] * frame->height; i += 2) {
+            uint8_t *src = frame->data[0] + i;
+            FFSWAP(uint8_t, src[0], src[1]);
         }
         break;
     case DDS_SWIZZLE_A2XY:
@@ -666,17 +671,15 @@ static int dds_decode(AVCodecContext *avctx, void *data,
 
         if (ctx->paletted) {
             int i;
-            uint32_t *p = (uint32_t*) frame->data[1];
-
             /* Use the first 1024 bytes as palette, then copy the rest. */
-            for (i = 0; i < 256; i++) {
-                uint32_t rgba = 0;
-                rgba |= bytestream2_get_byte(gbc) << 16;
-                rgba |= bytestream2_get_byte(gbc) << 8;
-                rgba |= bytestream2_get_byte(gbc) << 0;
-                rgba |= bytestream2_get_byte(gbc) << 24;
-                p[i] = rgba;
-            }
+            bytestream2_get_buffer(gbc, frame->data[1], 256 * 4);
+            for (i = 0; i < 256; i++)
+                AV_WN32(frame->data[1] + i*4,
+                        (frame->data[1][2+i*4]<<0)+
+                        (frame->data[1][1+i*4]<<8)+
+                        (frame->data[1][0+i*4]<<16)+
+                        (frame->data[1][3+i*4]<<24)
+                );
 
             frame->palette_has_changed = 1;
         }
@@ -693,7 +696,11 @@ static int dds_decode(AVCodecContext *avctx, void *data,
     }
 
     /* Run any post processing here if needed. */
-    if (ctx->postproc != DDS_NONE)
+    if (avctx->pix_fmt == AV_PIX_FMT_BGRA ||
+        avctx->pix_fmt == AV_PIX_FMT_RGBA ||
+        avctx->pix_fmt == AV_PIX_FMT_RGB0 ||
+        avctx->pix_fmt == AV_PIX_FMT_BGR0 ||
+        avctx->pix_fmt == AV_PIX_FMT_YA8)
         run_postproc(avctx, frame);
 
     /* Frame is ready to be output. */
