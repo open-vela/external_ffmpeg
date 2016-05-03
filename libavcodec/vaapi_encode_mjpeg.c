@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -333,18 +333,17 @@ static int vaapi_encode_mjpeg_init_slice_params(AVCodecContext *avctx,
     return 0;
 }
 
+static VAConfigAttrib vaapi_encode_mjpeg_config_attributes[] = {
+    { .type  = VAConfigAttribRTFormat,
+      .value = VA_RT_FORMAT_YUV420 },
+    { .type  = VAConfigAttribEncPackedHeaders,
+      .value = VA_ENC_PACKED_HEADER_SEQUENCE },
+};
+
 static av_cold int vaapi_encode_mjpeg_init_internal(AVCodecContext *avctx)
 {
-    static const VAConfigAttrib default_config_attributes[] = {
-        { .type  = VAConfigAttribRTFormat,
-          .value = VA_RT_FORMAT_YUV420 },
-        { .type  = VAConfigAttribEncPackedHeaders,
-          .value = VA_ENC_PACKED_HEADER_SEQUENCE },
-    };
-
     VAAPIEncodeContext       *ctx = avctx->priv_data;
     VAAPIEncodeMJPEGContext *priv = ctx->priv_data;
-    int i;
 
     ctx->va_profile    = VAProfileJPEGBaseline;
     ctx->va_entrypoint = VAEntrypointEncPicture;
@@ -354,10 +353,9 @@ static av_cold int vaapi_encode_mjpeg_init_internal(AVCodecContext *avctx)
     ctx->aligned_width  = FFALIGN(ctx->input_width,  8);
     ctx->aligned_height = FFALIGN(ctx->input_height, 8);
 
-    for (i = 0; i < FF_ARRAY_ELEMS(default_config_attributes); i++) {
-        ctx->config_attributes[ctx->nb_config_attributes++] =
-            default_config_attributes[i];
-    }
+    ctx->config_attributes    = vaapi_encode_mjpeg_config_attributes;
+    ctx->nb_config_attributes =
+        FF_ARRAY_ELEMS(vaapi_encode_mjpeg_config_attributes);
 
     priv->quality = avctx->global_quality;
     if (priv->quality < 1 || priv->quality > 100) {

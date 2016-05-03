@@ -1,22 +1,22 @@
 /*
- * MPEG-4 decoder / encoder common code
+ * MPEG4 decoder / encoder common code.
  * Copyright (c) 2000,2001 Fabrice Bellard
  * Copyright (c) 2002-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,7 +57,7 @@ void ff_mpeg4_clean_buffers(MpegEncContext *s)
     memset(s->ac_val[2] + c_xy, 0, (c_wrap     + 1) * 16 * sizeof(int16_t));
 
     /* clean MV */
-    // we can't clear the MVs as they might be needed by a B-frame
+    // we can't clear the MVs as they might be needed by a b frame
     s->last_mv[0][0][0] =
     s->last_mv[0][0][1] =
     s->last_mv[1][0][0] =
@@ -67,7 +67,7 @@ void ff_mpeg4_clean_buffers(MpegEncContext *s)
 #define tab_size ((signed)FF_ARRAY_ELEMS(s->direct_scale_mv[0]))
 #define tab_bias (tab_size / 2)
 
-// used by MPEG-4 and rv10 decoder
+// used by mpeg4 and rv10 decoder
 void ff_mpeg4_init_direct_mv(MpegEncContext *s)
 {
     int i;

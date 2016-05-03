@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,6 @@ struct VAAPIEncodeType;
 struct VAAPIEncodePicture;
 
 enum {
-    MAX_CONFIG_ATTRIBUTES  = 4,
-    MAX_GLOBAL_PARAMS      = 4,
     MAX_PICTURE_REFERENCES = 2,
     MAX_PICTURE_SLICES     = 1,
     MAX_PARAM_BUFFERS      = 16,
@@ -130,19 +128,15 @@ typedef struct VAAPIEncodeContext {
     AVBufferRef    *recon_frames_ref;
     AVHWFramesContext *recon_frames;
 
-    VAConfigAttrib  config_attributes[MAX_CONFIG_ATTRIBUTES];
+    VAConfigAttrib *config_attributes;
     int          nb_config_attributes;
-
-    VAEncMiscParameterBuffer *global_params[MAX_GLOBAL_PARAMS];
-    size_t          global_params_size[MAX_GLOBAL_PARAMS];
-    int          nb_global_params;
 
     // Per-sequence parameter structure (VAEncSequenceParameterBuffer*).
     void           *codec_sequence_params;
 
     // Per-sequence parameters found in the per-picture parameter
     // structure (VAEncPictureParameterBuffer*).
-    void           *codec_picture_params;
+    void *codec_picture_params;
 
     // Current encoding window, in display (input) order.
     VAAPIEncodePicture *pic_start, *pic_end;
@@ -172,11 +166,6 @@ typedef struct VAAPIEncodeContext {
     int p_counter;
     int end_of_stream;
 
-    // Codec-local options are allocated to follow this structure in
-    // memory (in the AVCodec definition, set priv_data_size to
-    // sizeof(VAAPIEncodeContext) + sizeof(VAAPIEncodeFooOptions)).
-    void *codec_options;
-    char codec_options_data[0];
 } VAAPIEncodeContext;
 
 
