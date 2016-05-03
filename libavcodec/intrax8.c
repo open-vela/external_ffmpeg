@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,15 +21,14 @@
  * @brief IntraX8 (J-Frame) subdecoder, used by WMV2 and VC-1
  */
 
-#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "get_bits.h"
 #include "idctdsp.h"
-#include "mpegvideo.h"
 #include "msmpeg4data.h"
 #include "intrax8huf.h"
 #include "intrax8.h"
 #include "intrax8dsp.h"
+#include "mpegutils.h"
 
 #define MAX_TABLE_DEPTH(table_bits, max_bits) \
     ((max_bits + table_bits - 1) / table_bits)
@@ -135,7 +134,7 @@ static inline void x8_select_ac_table(IntraX8Context *const w, int mode)
 {
     int table_index;
 
-    av_assert2(mode < 4);
+    assert(mode < 4);
 
     if (w->j_ac_vlc[mode])
         return;
@@ -143,7 +142,8 @@ static inline void x8_select_ac_table(IntraX8Context *const w, int mode)
     table_index       = get_bits(w->gb, 3);
     // 2 modes use same tables
     w->j_ac_vlc[mode] = &j_ac_vlc[w->quant < 13][mode >> 1][table_index];
-    av_assert2(w->j_ac_vlc[mode]);
+
+    assert(w->j_ac_vlc[mode]);
 }
 
 static inline int x8_get_orient_vlc(IntraX8Context *w)
@@ -152,6 +152,8 @@ static inline int x8_get_orient_vlc(IntraX8Context *w)
         int table_index = get_bits(w->gb, 1 + (w->quant < 13));
         w->j_orient_vlc = &j_orient_vlc[w->quant < 13][table_index];
     }
+    assert(w->j_orient_vlc);
+    assert(w->j_orient_vlc->table);
 
     return get_vlc2(w->gb, w->j_orient_vlc->table, OR_VLC_BITS, OR_VLC_MTD);
 }
@@ -214,9 +216,9 @@ static void x8_get_ac_rlf(IntraX8Context *const w, const int mode,
     if (i < 46) { // [0-45]
         int t, l;
         if (i < 0) {
-            (*level) =
-            (*final) =      // prevent 'may be used unilitialized'
-            (*run)   = 64;  // this would cause error exit in the ac loop
+            *level =
+            *final =      // prevent 'may be used uninitialized'
+            *run   = 64;  // this would cause error exit in the ac loop
             return;
         }
 
@@ -227,20 +229,20 @@ static void x8_get_ac_rlf(IntraX8Context *const w, const int mode,
          * i == 22    r = 0    l = 3; r = i & %00000
          */
 
-        (*final) =
-        t        = (i > 22);
-        i       -= 23 * t;
+        *final =
+        t      = i > 22;
+        i     -= 23 * t;
 
         /* l = lut_l[i / 2] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3 }[i >> 1];
          *     11 10'01 01'00 00'00 00'00 00'00 00 => 0xE50000 */
-        l = (0xE50000 >> (i & (0x1E))) & 3; // 0x1E or (~1) or ((i >> 1) << 1)
+        l = (0xE50000 >> (i & 0x1E)) & 3; // 0x1E or ~1 or (i >> 1 << 1)
 
         /* t = lut_mask[l] = { 0x0f, 0x03, 0x01, 0x00 }[l];
          *     as i < 256 the higher bits do not matter */
-        t = (0x01030F >> (l << 3));
+        t = 0x01030F >> (l << 3);
 
-        (*run)   = i & t;
-        (*level) = l;
+        *run   = i & t;
+        *level = l;
     } else if (i < 73) { // [46-72]
         uint32_t sm;
         uint32_t mask;
@@ -249,13 +251,13 @@ static void x8_get_ac_rlf(IntraX8Context *const w, const int mode,
         sm = ac_decode_table[i];
 
         e    = get_bits(w->gb, sm & 0xF);
-        sm >>= 8;                               // 3bits
+        sm >>= 8;                               // 3 bits
         mask = sm & 0xff;
-        sm >>= 8;                               // 1bit
+        sm >>= 8;                               // 1 bit
 
-        (*run)   = (sm & 0xff) + (e & (mask));  // 6bits
-        (*level) = (sm >> 8)   + (e & (~mask)); // 5bits
-        (*final) = i > (58 - 46);
+        *run   = (sm &  0xff) + (e &  mask);    // 6 bits
+        *level = (sm >>    8) + (e & ~mask);    // 5 bits
+        *final = i > (58 - 46);
     } else if (i < 75) { // [73-74]
         static const uint8_t crazy_mix_runlevel[32] = {
             0x22, 0x32, 0x33, 0x53, 0x23, 0x42, 0x43, 0x63,
@@ -264,14 +266,14 @@ static void x8_get_ac_rlf(IntraX8Context *const w, const int mode,
             0x28, 0x92, 0x36, 0x74, 0x29, 0xa2, 0x46, 0x84,
         };
 
-        (*final) = !(i & 1);
-        e        = get_bits(w->gb, 5); // get the extra bits
-        (*run)   = crazy_mix_runlevel[e] >> 4;
-        (*level) = crazy_mix_runlevel[e] & 0x0F;
+        *final = !(i & 1);
+        e      = get_bits(w->gb, 5); // get the extra bits
+        *run   = crazy_mix_runlevel[e] >> 4;
+        *level = crazy_mix_runlevel[e] & 0x0F;
     } else {
-        (*level) = get_bits(w->gb, 7 - 3 * (i & 1));
-        (*run)   = get_bits(w->gb, 6);
-        (*final) = get_bits1(w->gb);
+        *level = get_bits(w->gb, 7 - 3 * (i & 1));
+        *run   = get_bits(w->gb, 6);
+        *final = get_bits1(w->gb);
     }
     return;
 }
@@ -288,22 +290,24 @@ static int x8_get_dc_rlf(IntraX8Context *const w, const int mode,
 {
     int i, e, c;
 
-    av_assert2(mode < 3);
+    assert(mode < 3);
     if (!w->j_dc_vlc[mode]) {
         int table_index = get_bits(w->gb, 3);
         // 4 modes, same table
         w->j_dc_vlc[mode] = &j_dc_vlc[w->quant < 13][table_index];
     }
+    assert(w->j_dc_vlc);
+    assert(w->j_dc_vlc[mode]->table);
 
     i = get_vlc2(w->gb, w->j_dc_vlc[mode]->table, DC_VLC_BITS, DC_VLC_MTD);
 
     /* (i >= 17) { i -= 17; final =1; } */
-    c        = i > 16;
-    (*final) = c;
-    i       -= 17 * c;
+    c      = i > 16;
+    *final = c;
+    i      -= 17 * c;
 
     if (i <= 0) {
-        (*level) = 0;
+        *level = 0;
         return -i;
     }
     c  = (i + 1) >> 1; // hackish way to calculate dc_extra_sbits[]
@@ -312,8 +316,8 @@ static int x8_get_dc_rlf(IntraX8Context *const w, const int mode,
     e = get_bits(w->gb, c); // get the extra bits
     i = dc_index_offset[i] + (e >> 1);
 
-    e        = -(e & 1); // 0, 0xffffff
-    (*level) = (i ^ e) - e; // (i ^ 0) -0  , (i ^ 0xff) - (-1)
+    e      = -(e & 1);     // 0, 0xffffff
+    *level =  (i ^ e) - e; // (i ^ 0) - 0, (i ^ 0xff) - (-1)
     return 0;
 }
 
@@ -344,13 +348,13 @@ static int x8_setup_spatial_predictor(IntraX8Context *const w, const int chroma)
             w->flat_dc      = 1;
             sum            += 9;
             // ((1 << 17) + 9) / (8 + 8 + 1 + 2) = 6899
-            w->predicted_dc = (sum * 6899) >> 17;
+            w->predicted_dc = sum * 6899 >> 17;
         }
     }
     if (chroma)
         return 0;
 
-    av_assert2(w->orient < 3);
+    assert(w->orient < 3);
     if (range < 2 * w->quant) {
         if ((w->edges & 3) == 0) {
             if (w->orient == 1)
@@ -370,9 +374,9 @@ static int x8_setup_spatial_predictor(IntraX8Context *const w, const int chroma)
         w->raw_orient = x8_get_orient_vlc(w);
         if (w->raw_orient < 0)
             return -1;
-        av_assert2(w->raw_orient < 12);
-        av_assert2(w->orient < 3);
-        w->orient=prediction_table[w->orient][w->raw_orient];
+        assert(w->raw_orient < 12);
+        assert(w->orient < 3);
+        w->orient = prediction_table[w->orient][w->raw_orient];
     }
     return 0;
 }
@@ -380,9 +384,7 @@ static int x8_setup_spatial_predictor(IntraX8Context *const w, const int chroma)
 static void x8_update_predictions(IntraX8Context *const w, const int orient,
                                   const int est_run)
 {
-    MpegEncContext *const s = w->s;
-
-    w->prediction_table[s->mb_x * 2 + (s->mb_y & 1)] = (est_run << 2) + 1 * (orient == 4) + 2 * (orient == 8);
+    w->prediction_table[w->mb_x * 2 + (w->mb_y & 1)] = (est_run << 2) + 1 * (orient == 4) + 2 * (orient == 8);
 /*
  * y = 2n + 0 -> // 0 2 4
  * y = 2n + 1 -> // 1 3 5
@@ -391,11 +393,9 @@ static void x8_update_predictions(IntraX8Context *const w, const int orient,
 
 static void x8_get_prediction_chroma(IntraX8Context *const w)
 {
-    MpegEncContext *const s = w->s;
-
-    w->edges  = 1 * (!(s->mb_x >> 1));
-    w->edges |= 2 * (!(s->mb_y >> 1));
-    w->edges |= 4 * (s->mb_x >= (2 * s->mb_width - 1)); // mb_x for chroma would always be odd
+    w->edges  = 1 * !(w->mb_x >> 1);
+    w->edges |= 2 * !(w->mb_y >> 1);
+    w->edges |= 4 * (w->mb_x >= (2 * w->mb_width - 1)); // mb_x for chroma would always be odd
 
     w->raw_orient = 0;
     // lut_co[8] = {inv,4,8,8, inv,4,8,8} <- => {1,1,0,0;1,1,0,0} => 0xCC
@@ -404,29 +404,28 @@ static void x8_get_prediction_chroma(IntraX8Context *const w)
         return;
     }
     // block[x - 1][y | 1 - 1)]
-    w->chroma_orient = (w->prediction_table[2 * s->mb_x - 2] & 0x03) << 2;
+    w->chroma_orient = (w->prediction_table[2 * w->mb_x - 2] & 0x03) << 2;
 }
 
 static void x8_get_prediction(IntraX8Context *const w)
 {
-    MpegEncContext *const s = w->s;
     int a, b, c, i;
 
-    w->edges  = 1 * (!s->mb_x);
-    w->edges |= 2 * (!s->mb_y);
-    w->edges |= 4 * (s->mb_x >= (2 * s->mb_width - 1));
+    w->edges  = 1 * !w->mb_x;
+    w->edges |= 2 * !w->mb_y;
+    w->edges |= 4 * (w->mb_x >= (2 * w->mb_width - 1));
 
     switch (w->edges & 3) {
     case 0:
         break;
     case 1:
         // take the one from the above block[0][y - 1]
-        w->est_run = w->prediction_table[!(s->mb_y & 1)] >> 2;
+        w->est_run = w->prediction_table[!(w->mb_y & 1)] >> 2;
         w->orient  = 1;
         return;
     case 2:
         // take the one from the previous block[x - 1][0]
-        w->est_run = w->prediction_table[2 * s->mb_x - 2] >> 2;
+        w->est_run = w->prediction_table[2 * w->mb_x - 2] >> 2;
         w->orient  = 2;
         return;
     case 3:
@@ -435,15 +434,15 @@ static void x8_get_prediction(IntraX8Context *const w)
         return;
     }
     // no edge cases
-    b = w->prediction_table[2 * s->mb_x     + !(s->mb_y & 1)]; // block[x    ][y - 1]
-    a = w->prediction_table[2 * s->mb_x - 2 +  (s->mb_y & 1)]; // block[x - 1][y    ]
-    c = w->prediction_table[2 * s->mb_x - 2 + !(s->mb_y & 1)]; // block[x - 1][y - 1]
+    b = w->prediction_table[2 * w->mb_x     + !(w->mb_y & 1)]; // block[x    ][y - 1]
+    a = w->prediction_table[2 * w->mb_x - 2 +  (w->mb_y & 1)]; // block[x - 1][y    ]
+    c = w->prediction_table[2 * w->mb_x - 2 + !(w->mb_y & 1)]; // block[x - 1][y - 1]
 
     w->est_run = FFMIN(b, a);
     /* This condition has nothing to do with w->edges, even if it looks
      * similar it would trigger if e.g. x = 3; y = 2;
      * I guess somebody wrote something wrong and it became standard. */
-    if ((s->mb_x & s->mb_y) != 0)
+    if ((w->mb_x & w->mb_y) != 0)
         w->est_run = FFMIN(c, w->est_run);
     w->est_run >>= 2;
 
@@ -480,9 +479,8 @@ static void x8_get_prediction(IntraX8Context *const w)
 static void x8_ac_compensation(IntraX8Context *const w, const int direction,
                                const int dc_level)
 {
-    MpegEncContext *const s = w->s;
     int t;
-#define B(x,y)  s->block[0][w->idct_permutation[(x) + (y) * 8]]
+#define B(x, y) w->block[0][w->idsp.idct_permutation[(x) + (y) * 8]]
 #define T(x)  ((x) * dc_level + 0x8000) >> 16;
     switch (direction) {
     case 0:
@@ -526,7 +524,7 @@ static void x8_ac_compensation(IntraX8Context *const w, const int direction,
         t        = T(1084); // g
         B(1, 1) += t;
 
-        s->block_last_index[0] = FFMAX(s->block_last_index[0], 7 * 8);
+        w->block_last_index[0] = FFMAX(w->block_last_index[0], 7 * 8);
         break;
     case 1:
         B(0, 1) -= T(6269);
@@ -534,7 +532,7 @@ static void x8_ac_compensation(IntraX8Context *const w, const int direction,
         B(0, 5) -= T(172);
         B(0, 7) -= T(73);
 
-        s->block_last_index[0] = FFMAX(s->block_last_index[0], 7 * 8);
+        w->block_last_index[0] = FFMAX(w->block_last_index[0], 7 * 8);
         break;
     case 2:
         B(1, 0) -= T(6269);
@@ -542,7 +540,7 @@ static void x8_ac_compensation(IntraX8Context *const w, const int direction,
         B(5, 0) -= T(172);
         B(7, 0) -= T(73);
 
-        s->block_last_index[0] = FFMAX(s->block_last_index[0], 7);
+        w->block_last_index[0] = FFMAX(w->block_last_index[0], 7);
         break;
     }
 #undef B
@@ -572,8 +570,6 @@ static const int16_t quant_table[64] = {
 
 static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
 {
-    MpegEncContext *const s = w->s;
-
     uint8_t *scantable;
     int final, run, level;
     int ac_mode, dc_mode, est_run, dc_level;
@@ -582,8 +578,8 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
     int use_quant_matrix;
     int sign;
 
-    av_assert2(w->orient < 12);
-    w->bdsp.clear_block(s->block[0]);
+    assert(w->orient < 12);
+    w->bdsp.clear_block(w->block[0]);
 
     if (chroma)
         dc_mode = 2;
@@ -644,12 +640,12 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
             if (use_quant_matrix)
                 level = (level * quant_table[pos]) >> 8;
 
-            s->block[0][scantable[pos]] = level;
+            w->block[0][scantable[pos]] = level;
         } while (!final);
 
-        s->block_last_index[0] = pos;
+        w->block_last_index[0] = pos;
     } else { // DC only
-        s->block_last_index[0] = 0;
+        w->block_last_index[0] = 0;
         if (w->flat_dc && ((unsigned) (dc_level + 1)) < 3) { // [-1; 1]
             int32_t divide_quant = !chroma ? w->divide_quant_dc_luma
                                            : w->divide_quant_dc_chroma;
@@ -666,12 +662,12 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
 
             goto block_placed;
         }
-        zeros_only = (dc_level == 0);
+        zeros_only = dc_level == 0;
     }
     if (!chroma)
-        s->block[0][0] = dc_level * w->quant;
+        w->block[0][0] = dc_level * w->quant;
     else
-        s->block[0][0] = dc_level * w->quant_dc_chroma;
+        w->block[0][0] = dc_level * w->quant_dc_chroma;
 
     // there is !zero_only check in the original, but dc_level check is enough
     if ((unsigned int) (dc_level + 1) >= 3 && (w->edges & 3) != 3) {
@@ -681,7 +677,7 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
         direction = (0x6A017C >> (w->orient * 2)) & 3;
         if (direction != 3) {
             // modify block_last[]
-            x8_ac_compensation(w, direction, s->block[0][0]);
+            x8_ac_compensation(w, direction, w->block[0][0]);
         }
     }
 
@@ -694,9 +690,9 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
                                                w->frame->linesize[!!chroma]);
     }
     if (!zeros_only)
-        w->wdsp.idct_add(w->dest[chroma],
+        w->idsp.idct_add(w->dest[chroma],
                          w->frame->linesize[!!chroma],
-                         s->block[0]);
+                         w->block[0]);
 
 block_placed:
     if (!chroma)
@@ -716,7 +712,7 @@ block_placed:
 }
 
 // FIXME maybe merge with ff_*
-static void x8_init_block_index(IntraX8Context *w, AVFrame *frame, int mb_y)
+static void x8_init_block_index(IntraX8Context *w, AVFrame *frame)
 {
     // not parent codec linesize as this would be wrong for field pics
     // not that IntraX8 has interlacing support ;)
@@ -727,15 +723,17 @@ static void x8_init_block_index(IntraX8Context *w, AVFrame *frame, int mb_y)
     w->dest[1] = frame->data[1];
     w->dest[2] = frame->data[2];
 
-    w->dest[0] +=  mb_y         * linesize   << 3;
+    w->dest[0] +=  w->mb_y       * linesize   << 3;
     // chroma blocks are on add rows
-    w->dest[1] += (mb_y & (~1)) * uvlinesize << 2;
-    w->dest[2] += (mb_y & (~1)) * uvlinesize << 2;
+    w->dest[1] += (w->mb_y & ~1) * uvlinesize << 2;
+    w->dest[2] += (w->mb_y & ~1) * uvlinesize << 2;
 }
 
 av_cold int ff_intrax8_common_init(AVCodecContext *avctx,
                                    IntraX8Context *w, IDCTDSPContext *idsp,
-                                   MpegEncContext *const s)
+                                   int16_t (*block)[64],
+                                   int block_last_index[12],
+                                   int mb_width, int mb_height)
 {
     int ret = x8_vlc_init();
     if (ret < 0)
@@ -743,23 +741,21 @@ av_cold int ff_intrax8_common_init(AVCodecContext *avctx,
 
     w->avctx = avctx;
     w->idsp = *idsp;
-    w->s = s;
+    w->mb_width  = mb_width;
+    w->mb_height = mb_height;
+    w->block = block;
+    w->block_last_index = block_last_index;
 
-    //two rows, 2 blocks per cannon mb
-    w->prediction_table = av_mallocz(s->mb_width * 2 * 2);
+    // two rows, 2 blocks per cannon mb
+    w->prediction_table = av_mallocz(w->mb_width * 2 * 2);
     if (!w->prediction_table)
         return AVERROR(ENOMEM);
 
-    ff_wmv2dsp_init(&w->wdsp);
-
-    ff_init_scantable_permutation(w->idct_permutation,
-                                  w->wdsp.idct_perm);
-
-    ff_init_scantable(w->idct_permutation, &w->scantable[0],
+    ff_init_scantable(w->idsp.idct_permutation, &w->scantable[0],
                       ff_wmv1_scantable[0]);
-    ff_init_scantable(w->idct_permutation, &w->scantable[1],
+    ff_init_scantable(w->idsp.idct_permutation, &w->scantable[1],
                       ff_wmv1_scantable[2]);
-    ff_init_scantable(w->idct_permutation, &w->scantable[2],
+    ff_init_scantable(w->idsp.idct_permutation, &w->scantable[2],
                       ff_wmv1_scantable[3]);
 
     ff_intrax8dsp_init(&w->dsp);
@@ -774,10 +770,10 @@ av_cold void ff_intrax8_common_end(IntraX8Context *w)
 }
 
 int ff_intrax8_decode_picture(IntraX8Context *const w, Picture *pict,
-                              GetBitContext *gb,
-                              int dquant, int quant_offset, int loopfilter)
+                              GetBitContext *gb, int *mb_x, int *mb_y,
+                              int dquant, int quant_offset,
+                              int loopfilter, int lowdelay)
 {
-    MpegEncContext *const s = w->s;
     int mb_xy;
 
     w->gb     = gb;
@@ -787,6 +783,9 @@ int ff_intrax8_decode_picture(IntraX8Context *const w, Picture *pict,
     w->frame  = pict->f;
     w->loopfilter = loopfilter;
     w->use_quant_matrix = get_bits1(w->gb);
+
+    w->mb_x = *mb_x;
+    w->mb_y = *mb_y;
 
     w->divide_quant_dc_luma = ((1 << 16) + (w->quant >> 1)) / w->quant;
     if (w->quant < 5) {
@@ -798,18 +797,17 @@ int ff_intrax8_decode_picture(IntraX8Context *const w, Picture *pict,
     }
     x8_reset_vlc_tables(w);
 
-    for (s->mb_y = 0; s->mb_y < s->mb_height * 2; s->mb_y++) {
-        x8_init_block_index(w, w->frame, s->mb_y);
-        mb_xy = (s->mb_y >> 1) * s->mb_stride;
-
-        for (s->mb_x = 0; s->mb_x < s->mb_width * 2; s->mb_x++) {
+    for (w->mb_y = 0; w->mb_y < w->mb_height * 2; w->mb_y++) {
+        x8_init_block_index(w, w->frame);
+        mb_xy = (w->mb_y >> 1) * (w->mb_width + 1);
+        for (w->mb_x = 0; w->mb_x < w->mb_width * 2; w->mb_x++) {
             x8_get_prediction(w);
             if (x8_setup_spatial_predictor(w, 0))
                 goto error;
             if (x8_decode_intra_mb(w, 0))
                 goto error;
 
-            if (s->mb_x & s->mb_y & 1) {
+            if (w->mb_x & w->mb_y & 1) {
                 x8_get_prediction_chroma(w);
 
                 /* when setting up chroma, no vlc is read,
@@ -825,18 +823,20 @@ int ff_intrax8_decode_picture(IntraX8Context *const w, Picture *pict,
                 w->dest[1] += 8;
                 w->dest[2] += 8;
 
-                /* emulate MB info in the relevant tables */
-                s->mbskip_table[mb_xy]                 = 0;
-                s->mbintra_table[mb_xy]                = 1;
                 pict->qscale_table[mb_xy] = w->quant;
                 mb_xy++;
             }
             w->dest[0] += 8;
         }
-        if (s->mb_y & 1)
-            ff_mpeg_draw_horiz_band(s, (s->mb_y - 1) * 8, 16);
+        if (w->mb_y & 1)
+            ff_draw_horiz_band(w->avctx, w->frame, w->frame,
+                               (w->mb_y - 1) * 8, 16,
+                               PICT_FRAME, 0, lowdelay);
     }
 
 error:
+    *mb_x = w->mb_x;
+    *mb_y = w->mb_y;
+
     return 0;
 }
