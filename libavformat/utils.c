@@ -167,6 +167,9 @@ static int set_codec_from_probe_data(AVFormatContext *s, AVStream *st,
                fmt->name, score);
         for (i = 0; fmt_id_type[i].name; i++) {
             if (!strcmp(fmt->name, fmt_id_type[i].name)) {
+                if (fmt_id_type[i].type != AVMEDIA_TYPE_AUDIO &&
+                    st->codecpar->sample_rate)
+                    continue;
                 st->codecpar->codec_id   = fmt_id_type[i].id;
                 st->codecpar->codec_type = fmt_id_type[i].type;
 #if FF_API_LAVF_AVCTX
