@@ -2,20 +2,20 @@
  * FLAC common code
  * Copyright (c) 2009 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -230,24 +230,8 @@ void ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
         av_get_channel_layout_nb_channels(avctx->channel_layout) != avctx->channels)
         ff_flac_set_channel_layout(avctx);
 
-    s->samples  = get_bits_long(&gb, 32) << 4;
-    s->samples |= get_bits(&gb, 4);
+    s->samples = get_bits64(&gb, 36);
 
     skip_bits_long(&gb, 64); /* md5 sum */
     skip_bits_long(&gb, 64); /* md5 sum */
 }
-
-#if LIBAVCODEC_VERSION_MAJOR < 57
-void avpriv_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
-                              const uint8_t *buffer)
-{
-    ff_flac_parse_streaminfo(avctx, s, buffer);
-}
-
-int avpriv_flac_is_extradata_valid(AVCodecContext *avctx,
-                               enum FLACExtradataFormat *format,
-                               uint8_t **streaminfo_start)
-{
-    return ff_flac_is_extradata_valid(avctx, format, streaminfo_start);
-}
-#endif
