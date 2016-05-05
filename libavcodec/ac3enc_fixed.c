@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2010 Justin Ruggles <justin.ruggles@gmail.com>
  * Copyright (c) 2006-2010 Prakash Punnoor <prakash@punnoor.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,8 +35,41 @@
 
 #define AC3ENC_TYPE AC3ENC_TYPE_AC3_FIXED
 #include "ac3enc_opts_template.c"
-static const AVClass ac3enc_class = { "Fixed-Point AC-3 Encoder", av_default_item_name,
-                                      ac3_options, LIBAVUTIL_VERSION_INT };
+
+static const AVClass ac3enc_class = {
+    .class_name = "Fixed-Point AC-3 Encoder",
+    .item_name  = av_default_item_name,
+    .option     = ac3_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
+#include "ac3enc_template.c"
+
+
+/**
+ * Finalize MDCT and free allocated memory.
+ *
+ * @param s  AC-3 encoder private context
+ */
+av_cold void AC3_NAME(mdct_end)(AC3EncodeContext *s)
+{
+    ff_mdct_end(&s->mdct);
+}
+
+
+/**
+ * Initialize MDCT tables.
+ *
+ * @param s  AC-3 encoder private context
+ * @return   0 on success, negative error code on failure
+ */
+av_cold int AC3_NAME(mdct_init)(AC3EncodeContext *s)
+{
+    int ret = ff_mdct_init(&s->mdct, 9, 0, -1.0);
+    s->mdct_window = ff_ac3_window;
+    return ret;
+}
+
 
 /*
  * Normalize the input samples to use the maximum available precision.
@@ -69,6 +102,12 @@ static void scale_coefficients(AC3EncodeContext *s)
     }
 }
 
+static void sum_square_butterfly(AC3EncodeContext *s, int64_t sum[4],
+                                 const int32_t *coef0, const int32_t *coef1,
+                                 int len)
+{
+    s->ac3dsp.sum_square_butterfly_int32(sum, coef0, coef1, len);
+}
 
 /*
  * Clip MDCT coefficients to allowable range.
@@ -93,34 +132,6 @@ static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl)
         coord32          = ff_sqrt(coord32) << 9;
         return FFMIN(coord32, COEF_MAX);
     }
-}
-
-
-#include "ac3enc_template.c"
-
-
-/**
- * Finalize MDCT and free allocated memory.
- *
- * @param s  AC-3 encoder private context
- */
-av_cold void ff_ac3_fixed_mdct_end(AC3EncodeContext *s)
-{
-    ff_mdct_end(&s->mdct);
-}
-
-
-/**
- * Initialize MDCT tables.
- *
- * @param s  AC-3 encoder private context
- * @return   0 on success, negative error code on failure
- */
-av_cold int ff_ac3_fixed_mdct_init(AC3EncodeContext *s)
-{
-    int ret = ff_mdct_init(&s->mdct, 9, 0, -1.0);
-    s->mdct_window = ff_ac3_window;
-    return ret;
 }
 
 
