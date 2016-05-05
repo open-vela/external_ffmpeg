@@ -2,20 +2,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -1323,7 +1323,7 @@ static void silk_decode_frame(SilkContext *s, OpusRangeCoder *rc,
         if (lag_absolute) {
             /* primary lag is coded absolute */
             int highbits, lowbits;
-            static const uint16_t *model[] = {
+            const uint16_t *model[] = {
                 silk_model_pitch_lowbits_nb, silk_model_pitch_lowbits_mb,
                 silk_model_pitch_lowbits_wb
             };
@@ -1357,11 +1357,11 @@ static void silk_decode_frame(SilkContext *s, OpusRangeCoder *rc,
         ltpfilter = opus_rc_getsymbol(rc, silk_model_ltp_filter);
         for (i = 0; i < s->subframes; i++) {
             int index, j;
-            static const uint16_t *filter_sel[] = {
+            const uint16_t *filter_sel[] = {
                 silk_model_ltp_filter0_sel, silk_model_ltp_filter1_sel,
                 silk_model_ltp_filter2_sel
             };
-            static const int8_t (*filter_taps[])[5] = {
+            const int8_t (*filter_taps[])[5] = {
                 silk_ltp_filter0_taps, silk_ltp_filter1_taps, silk_ltp_filter2_taps
             };
             index = opus_rc_getsymbol(rc, filter_sel[ltpfilter]);

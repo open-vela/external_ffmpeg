@@ -2,20 +2,20 @@
  * RTP packetization for H.261 video (RFC 4587)
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,8 +24,8 @@
 
 #define RTP_H261_HEADER_SIZE 4
 
-static const uint8_t *find_resync_marker_reverse(const uint8_t *restrict start,
-                                                 const uint8_t *restrict end)
+static const uint8_t *find_resync_marker_reverse(const uint8_t *av_restrict start,
+                                                 const uint8_t *av_restrict end)
 {
     const uint8_t *p = end - 1;
     start += 1; /* Make sure we never return the original start. */
@@ -72,12 +72,12 @@ void ff_rtp_send_h261(AVFormatContext *ctx, const uint8_t *frame_buf, int frame_
         rtp_ctx->buf[2] = 0; /* quant=0, hmvd=5 */
         rtp_ctx->buf[3] = 0; /* vmvd=0 */
         if (frame_size < 2 || frame_buf[0] != 0 || frame_buf[1] != 1) {
-            /* A full, correct fix for this would be to make the H.261 encoder
+            /* A full, correct fix for this would be to make the H261 encoder
              * support inserting extra GOB headers (triggered by setting e.g.
              * "-ps 1"), and including information about macroblock boundaries
              * (such as for h263_rfc2190). */
             av_log(ctx, AV_LOG_WARNING,
-                   "RTP/H.261 packet not cut at a GOB boundary, not signaled correctly\n");
+                   "RTP/H261 packet not cut at a GOB boundary, not signaled correctly\n");
         }
 
         cur_frame_size = FFMIN(rtp_ctx->max_payload_size - RTP_H261_HEADER_SIZE, frame_size);
