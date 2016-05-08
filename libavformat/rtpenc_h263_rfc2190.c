@@ -2,20 +2,20 @@
  * RTP packetization for H.263 video
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -114,7 +114,7 @@ void ff_rtp_send_h263_rfc2190(AVFormatContext *s1, const uint8_t *buf, int size,
     init_get_bits(&gb, buf, size*8);
     if (get_bits(&gb, 22) == 0x20) { /* Picture Start Code */
         info.tr  = get_bits(&gb, 8);
-        skip_bits(&gb, 2); /* PTYPE start, H.261 disambiguation */
+        skip_bits(&gb, 2); /* PTYPE start, H261 disambiguation */
         skip_bits(&gb, 3); /* Split screen, document camera, freeze picture release */
         info.src = get_bits(&gb, 3);
         info.i   = get_bits(&gb, 1);
@@ -150,9 +150,12 @@ void ff_rtp_send_h263_rfc2190(AVFormatContext *s1, const uint8_t *buf, int size,
                 }
                 if (mb_info_pos < mb_info_count) {
                     const uint8_t *ptr = &mb_info[12*mb_info_pos];
+                    /* get position in bits in the input packet at which the next info block should be used */
                     uint32_t bit_pos = AV_RL32(ptr);
-                    uint32_t pos = (bit_pos + 7)/8;
-                    if (pos <= end - buf_base) {
+                    /* get position in bytes */
+                    uint32_t pos_next_mb_info = (bit_pos + 7)/8;
+                    /* check if data from the next MB info block should be used */
+                    if (pos_next_mb_info <= end - buf_base) {
                         state.quant = ptr[4];
                         state.gobn  = ptr[5];
                         state.mba   = AV_RL16(&ptr[6]);
@@ -160,16 +163,12 @@ void ff_rtp_send_h263_rfc2190(AVFormatContext *s1, const uint8_t *buf, int size,
                         state.vmv1  = (int8_t) ptr[9];
                         state.hmv2  = (int8_t) ptr[10];
                         state.vmv2  = (int8_t) ptr[11];
-                        ebits = 8 * pos - bit_pos;
-                        len   = pos - (buf - buf_base);
+                        ebits = 8 * pos_next_mb_info - bit_pos;
+                        len   = pos_next_mb_info - (buf - buf_base);
                         mb_info_pos++;
-                    } else {
-                        av_log(s1, AV_LOG_ERROR,
-                               "Unable to split H.263 packet, use -mb_info %d "
-                               "or lower.\n", s->max_payload_size - 8);
                     }
                 } else {
-                    av_log(s1, AV_LOG_ERROR, "Unable to split H.263 packet, "
+                    av_log(s1, AV_LOG_ERROR, "Unable to split H263 packet, "
                            "use -mb_info %d or -ps 1.\n",
                            s->max_payload_size - 8);
                 }
