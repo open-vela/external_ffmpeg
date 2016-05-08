@@ -2,20 +2,20 @@
  * innoHeim/Rsupport Screen Capture Codec
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -106,9 +106,8 @@ static av_cold int rscc_init(AVCodecContext *avctx)
             return AVERROR_INVALIDDATA;
         }
     } else {
-        avctx->pix_fmt = AV_PIX_FMT_BGR0;
-        ctx->component_size = 4;
-        av_log(avctx, AV_LOG_WARNING, "Invalid codec tag\n");
+        av_log(avctx, AV_LOG_ERROR, "Invalid codec tag\n");
+        return AVERROR_INVALIDDATA;
     }
 
     /* Store the value to check for keyframes */
@@ -250,11 +249,6 @@ static int rscc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Get pixels buffer, it may be deflated or just raw */
     if (pixel_size == packed_size) {
-        if (bytestream2_get_bytes_left(gbc) < pixel_size) {
-            av_log(avctx, AV_LOG_ERROR, "Insufficient input for %d\n", pixel_size);
-            ret = AVERROR_INVALIDDATA;
-            goto end;
-        }
         pixels = gbc->buffer;
     } else {
         uLongf len = ctx->inflated_size;

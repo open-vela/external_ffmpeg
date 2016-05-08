@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -169,7 +169,7 @@ typedef struct AVHWFramesContext {
      * A pool from which the frames are allocated by av_hwframe_get_buffer().
      * This field may be set by the caller before calling av_hwframe_ctx_init().
      * The buffers returned by calling av_buffer_pool_get() on this pool must
-     * have the properties described in the documentation in the correponding hw
+     * have the properties described in the documentation in the corresponding hw
      * type's header (hwcontext_*.h). The pool will be freed strictly before
      * this struct's free() callback is invoked.
      *
@@ -377,7 +377,7 @@ void *av_hwdevice_hwconfig_alloc(AVBufferRef *device_ctx);
 /**
  * Get the constraints on HW frames given a device and the HW-specific
  * configuration to be used with that device.  If no HW-specific
- * confgiuration is provided, returns the maximum possible capabilities
+ * configuration is provided, returns the maximum possible capabilities
  * of the device.
  *
  * @param device_ctx a reference to the associated AVHWDeviceContext.
