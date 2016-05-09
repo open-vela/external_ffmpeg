@@ -3,20 +3,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -73,7 +73,7 @@ enum DQDoubleEdge {
 };
 //@}
 
-/** MV modes for P frames */
+/** MV modes for P-frames */
 //@{
 enum MVModes {
     MV_PMODE_1MV_HPEL_BILIN,
@@ -96,7 +96,7 @@ enum MBModesIntfr {
 };
 //@}
 
-/** @name MV types for B frames */
+/** @name MV types for B-frames */
 //@{
 enum BMVTypes {
     BMV_TYPE_BACKWARD,
@@ -106,7 +106,7 @@ enum BMVTypes {
 };
 //@}
 
-/** @name Block types for P/B frames */
+/** @name Block types for P/B-frames */
 //@{
 enum TransformTypes {
     TT_8X8,
@@ -151,21 +151,6 @@ enum FrameCodingMode {
     ILACE_FIELD         ///<  in the bitstream is reported as 11b
 };
 
-/**
- * Imode types
- * @{
- */
-enum Imode {
-    IMODE_RAW,
-    IMODE_NORM2,
-    IMODE_DIFF2,
-    IMODE_NORM6,
-    IMODE_DIFF6,
-    IMODE_ROWSKIP,
-    IMODE_COLSKIP
-};
-/** @} */ //imode defines
-
 /** The VC1 Context
  * @todo Change size wherever another size is more efficient
  * Many members are only used for Advanced Profile
@@ -194,18 +179,18 @@ typedef struct VC1Context{
 
     /** Advanced Profile */
     //@{
-    int level;            ///< 3bits, for Advanced/Simple Profile, provided by TS layer
-    int chromaformat;     ///< 2bits, 2=4:2:0, only defined
+    int level;            ///< 3 bits, for Advanced/Simple Profile, provided by TS layer
+    int chromaformat;     ///< 2 bits, 2=4:2:0, only defined
     int postprocflag;     ///< Per-frame processing suggestion flag present
     int broadcast;        ///< TFF/RFF present
     int interlace;        ///< Progressive/interlaced (RPTFTM syntax element)
     int tfcntrflag;       ///< TFCNTR present
     int panscanflag;      ///< NUMPANSCANWIN, TOPLEFT{X,Y}, BOTRIGHT{X,Y} present
     int refdist_flag;     ///< REFDIST syntax element present in II, IP, PI or PP field picture headers
-    int extended_dmv;     ///< Additional extended dmv range at P/B frame-level
-    int color_prim;       ///< 8bits, chroma coordinates of the color primaries
-    int transfer_char;    ///< 8bits, Opto-electronic transfer characteristics
-    int matrix_coef;      ///< 8bits, Color primaries->YCbCr transform matrix
+    int extended_dmv;     ///< Additional extended dmv range at P/B-frame-level
+    int color_prim;       ///< 8 bits, chroma coordinates of the color primaries
+    int transfer_char;    ///< 8 bits, Opto-electronic transfer characteristics
+    int matrix_coef;      ///< 8 bits, Color primaries->YCbCr transform matrix
     int hrd_param_flag;   ///< Presence of Hypothetical Reference
                           ///< Decoder parameters
     int psf;              ///< Progressive Segmented Frame
@@ -215,23 +200,22 @@ typedef struct VC1Context{
      * TODO: choose between ints, uint8_ts and monobit flags
      */
     //@{
-    int profile;          ///< 2bits, Profile
-    int frmrtq_postproc;  ///< 3bits,
-    int bitrtq_postproc;  ///< 5bits, quantized framerate-based postprocessing strength
-    int max_coded_width, max_coded_height;
+    int profile;          ///< 2 bits, Profile
+    int frmrtq_postproc;  ///< 3 bits
+    int bitrtq_postproc;  ///< 5 bits, quantized framerate-based postprocessing strength
     int fastuvmc;         ///< Rounding of qpel vector to hpel ? (not in Simple)
     int extended_mv;      ///< Ext MV in P/B (not in Simple)
-    int dquant;           ///< How qscale varies with MBs, 2bits (not in Simple)
+    int dquant;           ///< How qscale varies with MBs, 2 bits (not in Simple)
     int vstransform;      ///< variable-size [48]x[48] transform type + info
     int overlap;          ///< overlapped transforms in use
-    int quantizer_mode;   ///< 2bits, quantizer mode used for sequence, see QUANT_*
+    int quantizer_mode;   ///< 2 bits, quantizer mode used for sequence, see QUANT_*
     int finterpflag;      ///< INTERPFRM present
     //@}
 
     /** Frame decoding info for all profiles */
     //@{
-    uint8_t mv_mode;             ///< MV coding monde
-    uint8_t mv_mode2;            ///< Secondary MV coding mode (B frames)
+    uint8_t mv_mode;             ///< MV coding mode
+    uint8_t mv_mode2;            ///< Secondary MV coding mode (B-frames)
     int k_x;                     ///< Number of bits for MVs (depends on MV range)
     int k_y;                     ///< Number of bits for MVs (depends on MV range)
     int range_x, range_y;        ///< MV range
@@ -294,7 +278,7 @@ typedef struct VC1Context{
     uint8_t  aux_luty[2][256],  aux_lutuv[2][256];  ///< lookup tables used for intensity compensation
     uint8_t next_luty[2][256], next_lutuv[2][256];  ///< lookup tables used for intensity compensation
     uint8_t (*curr_luty)[256]  ,(*curr_lutuv)[256];
-    int last_use_ic, *curr_use_ic, next_use_ic, aux_use_ic;
+    int last_use_ic, curr_use_ic, next_use_ic, aux_use_ic;
     int rnd;                        ///< rounding control
 
     /** Frame decoding info for S/M profiles only */
@@ -345,7 +329,7 @@ typedef struct VC1Context{
     uint8_t fourmvbp;
     uint8_t* fieldtx_plane;
     int fieldtx_is_raw;
-    uint8_t zzi_8x8[64];
+    int8_t zzi_8x8[64];
     uint8_t *blk_mv_type_base, *blk_mv_type;    ///< 0: frame MV, 1: field MV (interlaced frame)
     uint8_t *mv_f_base, *mv_f[2];               ///< 0: MV obtained from same field, 1: opposite field
     uint8_t *mv_f_next_base, *mv_f_next[2];
