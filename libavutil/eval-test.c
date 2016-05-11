@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -108,35 +108,6 @@ int main(int argc, char **argv)
         "not(0)",
         "6.0206dB",
         "-3.0103dB",
-        "pow(0,1.23)",
-        "pow(PI,1.23)",
-        "PI^1.23",
-        "pow(-1,1.23)",
-        "if(1, 2)",
-        "if(1, 1, 2)",
-        "if(0, 1, 2)",
-        "ifnot(0, 23)",
-        "ifnot(1, NaN) + if(0, 1)",
-        "ifnot(1, 1, 2)",
-        "ifnot(0, 1, 2)",
-        "taylor(1, 1)",
-        "taylor(eq(mod(ld(1),4),1)-eq(mod(ld(1),4),3), PI/2, 1)",
-        "root(sin(ld(0))-1, 2)",
-        "root(sin(ld(0))+6+sin(ld(0)/12)-log(ld(0)), 100)",
-        "7000000B*random(0)",
-        "squish(2)",
-        "gauss(0.1)",
-        "hypot(4,3)",
-        "gcd(30,55)*print(min(9,1))",
-        "bitor(42, 12)",
-        "bitand(42, 12)",
-        "bitand(NAN, 1)",
-        "between(10, -3, 10)",
-        "between(-4, -2, -1)",
-        "between(1,2)",
-        "clip(0, 2, 1)",
-        "clip(0/0, 1, 2)",
-        "clip(0, 0/0, 1)",
         NULL
     };
 
