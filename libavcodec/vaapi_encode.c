@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -636,7 +636,7 @@ static int vaapi_encode_get_next(AVCodecContext *avctx,
     start = end = pic;
 
     if (pic->type != PICTURE_TYPE_IDR) {
-        // If that was not an IDR frame, add B-frames display-before and
+        // If that was not an IDR frame, add B frames display-before and
         // encode-after it.
 
         for (i = 0; i < ctx->b_per_p; i++) {
@@ -708,7 +708,7 @@ static int vaapi_encode_mangle_end(AVCodecContext *avctx)
 
         if (last_pic->type == PICTURE_TYPE_B) {
             // Some fixing up is required.  Change the type of this
-            // picture to P, then modify preceding B references which
+            // picture to P, then modify preceeding B references which
             // point beyond it to point at it instead.
 
             last_pic->type = PICTURE_TYPE_P;
