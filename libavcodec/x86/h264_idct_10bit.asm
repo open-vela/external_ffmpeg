@@ -5,30 +5,31 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
 %include "libavutil/x86/x86util.asm"
 
-SECTION .text
+SECTION_RODATA
 
-cextern pw_1023
-%define pw_pixel_max pw_1023
-cextern pd_32
+pw_pixel_max: times 8 dw ((1 << 10)-1)
+pd_32:        times 4 dd 32
+
+SECTION .text
 
 ;-----------------------------------------------------------------------------
 ; void ff_h264_idct_add_10(pixel *dst, int16_t *block, int stride)
@@ -76,16 +77,15 @@ cextern pd_32
 
 %macro IDCT_ADD_10 0
 cglobal h264_idct_add_10, 3,3
+    movsxdifnidn r2, r2d
     IDCT4_ADD_10 r0, r1, r2
     RET
 %endmacro
 
 INIT_XMM sse2
 IDCT_ADD_10
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD_10
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_h264_idct_add16_10(pixel *dst, const int *block_offset,
@@ -118,11 +118,9 @@ add4x4_idct %+ SUFFIX:
 INIT_XMM sse2
 ALIGN 16
 ADD4x4IDCT
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 ALIGN 16
 ADD4x4IDCT
-%endif
 
 %macro ADD16_OP 2
     cmp          byte [r4+%2], 0
@@ -137,6 +135,7 @@ ADD4x4IDCT
 
 %macro IDCT_ADD16_10 0
 cglobal h264_idct_add16_10, 5,6
+    movsxdifnidn r3, r3d
     ADD16_OP 0, 4+1*8
     ADD16_OP 1, 5+1*8
     ADD16_OP 2, 4+2*8
@@ -158,10 +157,8 @@ cglobal h264_idct_add16_10, 5,6
 
 INIT_XMM sse2
 IDCT_ADD16_10
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD16_10
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_h264_idct_dc_add_10(pixel *dst, int16_t *block, int stride)
@@ -195,6 +192,7 @@ IDCT_ADD16_10
 
 INIT_MMX mmxext
 cglobal h264_idct_dc_add_10,3,3
+    movsxdifnidn r2, r2d
     movd      m0, [r1]
     mov dword [r1], 0
     paddd     m0, [pd_32]
@@ -210,6 +208,7 @@ cglobal h264_idct_dc_add_10,3,3
 ;-----------------------------------------------------------------------------
 %macro IDCT8_DC_ADD 0
 cglobal h264_idct8_dc_add_10,3,4,7
+    movsxdifnidn r2, r2d
     movd      m0, [r1]
     mov dword[r1], 0
     paddd     m0, [pd_32]
@@ -225,10 +224,8 @@ cglobal h264_idct8_dc_add_10,3,4,7
 
 INIT_XMM sse2
 IDCT8_DC_ADD
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT8_DC_ADD
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_h264_idct_add16intra_10(pixel *dst, const int *block_offset,
@@ -279,6 +276,7 @@ idct_dc_add %+ SUFFIX:
     ret
 
 cglobal h264_idct_add16intra_10,5,7,8
+    movsxdifnidn r3, r3d
     ADD16_OP_INTRA 0, 4+1*8
     ADD16_OP_INTRA 2, 4+2*8
     ADD16_OP_INTRA 4, 6+1*8
@@ -300,10 +298,8 @@ cglobal h264_idct_add16intra_10,5,7,8
 
 INIT_XMM sse2
 IDCT_ADD16INTRA_10
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD16INTRA_10
-%endif
 
 %assign last_block 36
 ;-----------------------------------------------------------------------------
@@ -313,6 +309,7 @@ IDCT_ADD16INTRA_10
 ;-----------------------------------------------------------------------------
 %macro IDCT_ADD8 0
 cglobal h264_idct_add8_10,5,8,7
+    movsxdifnidn r3, r3d
 %if ARCH_X86_64
     mov      r7, r0
 %endif
@@ -339,10 +336,8 @@ cglobal h264_idct_add8_10,5,8,7
 
 INIT_XMM sse2
 IDCT_ADD8
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT_ADD8
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_h264_idct8_add_10(pixel *dst, int16_t *block, int stride)
@@ -449,6 +444,7 @@ IDCT_ADD8
 
 %macro IDCT8_ADD 0
 cglobal h264_idct8_add_10, 3,4,16
+    movsxdifnidn r2, r2d
 %if UNIX64 == 0
     %assign pad 16-gprsize-(stack_offset&15)
     sub  rsp, pad
@@ -548,10 +544,8 @@ h264_idct8_add1_10 %+ SUFFIX:
 
 INIT_XMM sse2
 IDCT8_ADD
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT8_ADD
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_h264_idct8_add4_10(pixel **dst, const int *block_offset,
@@ -573,6 +567,7 @@ IDCT8_ADD
 
 %macro IDCT8_ADD4 0
 cglobal h264_idct8_add4_10, 0,7,16
+    movsxdifnidn r3, r3d
     %assign pad 16-gprsize-(stack_offset&15)
     SUB      rsp, pad
     mov       r5, r0mp
@@ -590,7 +585,5 @@ cglobal h264_idct8_add4_10, 0,7,16
 
 INIT_XMM sse2
 IDCT8_ADD4
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 IDCT8_ADD4
-%endif

@@ -5,20 +5,20 @@
  *
  * msmpeg4v1 & v2 stuff by Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,24 +37,20 @@
 #include "msmpeg4data.h"
 #include "mpegvideodata.h"
 #include "vc1data.h"
-#include "libavutil/imgutils.h"
 
 /*
- * You can also call this codec : MPEG4 with a twist !
+ * You can also call this codec: MPEG-4 with a twist!
  *
  * TODO:
  *        - (encoding) select best mv table (two choices)
  *        - (encoding) select best vlc/dc table
  */
 
-/* This table is practically identical to the one from h263
+/* This table is practically identical to the one from H.263
  * except that it is inverted. */
 static av_cold void init_h263_dc_for_msmpeg4(void)
 {
         int level, uni_code, uni_len;
-
-        if(ff_v2_dc_chroma_table[255 + 256][1])
-            return;
 
         for(level=-256; level<256; level++){
             int size, v, l;
@@ -71,7 +67,7 @@ static av_cold void init_h263_dc_for_msmpeg4(void)
             else
                 l= level;
 
-            /* luminance h263 */
+            /* luminance H.263 */
             uni_code= ff_mpeg4_DCtab_lum[size][0];
             uni_len = ff_mpeg4_DCtab_lum[size][1];
             uni_code ^= (1<<uni_len)-1; //M$ does not like compatibility
@@ -87,7 +83,7 @@ static av_cold void init_h263_dc_for_msmpeg4(void)
             ff_v2_dc_lum_table[level + 256][0] = uni_code;
             ff_v2_dc_lum_table[level + 256][1] = uni_len;
 
-            /* chrominance h263 */
+            /* chrominance H.263 */
             uni_code= ff_mpeg4_DCtab_chrom[size][0];
             uni_len = ff_mpeg4_DCtab_chrom[size][1];
             uni_code ^= (1<<uni_len)-1; //M$ does not like compatibility
@@ -108,6 +104,8 @@ static av_cold void init_h263_dc_for_msmpeg4(void)
 
 av_cold void ff_msmpeg4_common_init(MpegEncContext *s)
 {
+    static int initialized=0;
+
     switch(s->msmpeg4_version){
     case 1:
     case 2:
@@ -146,7 +144,11 @@ av_cold void ff_msmpeg4_common_init(MpegEncContext *s)
     }
     //Note the default tables are set in common_init in mpegvideo.c
 
-    init_h263_dc_for_msmpeg4();
+    if(!initialized){
+        initialized=1;
+
+        init_h263_dc_for_msmpeg4();
+    }
 }
 
 /* predict coded block */
@@ -176,13 +178,13 @@ int ff_msmpeg4_coded_block_pred(MpegEncContext * s, int n, uint8_t **coded_block
     return pred;
 }
 
-static int get_dc(uint8_t *src, int stride, int scale, int block_size)
+static int get_dc(uint8_t *src, int stride, int scale)
 {
     int y;
     int sum=0;
-    for(y=0; y<block_size; y++){
+    for(y=0; y<8; y++){
         int x;
-        for(x=0; x<block_size; x++){
+        for(x=0; x<8; x++){
             sum+=src[x + y*stride];
         }
     }
@@ -228,13 +230,13 @@ int ff_msmpeg4_pred_dc(MpegEncContext *s, int n,
         "addl %%eax, %2         \n\t"
         "addl %%eax, %1         \n\t"
         "addl %0, %%eax         \n\t"
-        "imull %4               \n\t"
+        "mull %4                \n\t"
         "movl %%edx, %0         \n\t"
         "movl %1, %%eax         \n\t"
-        "imull %4               \n\t"
+        "mull %4                \n\t"
         "movl %%edx, %1         \n\t"
         "movl %2, %%eax         \n\t"
-        "imull %4               \n\t"
+        "mull %4                \n\t"
         "movl %%edx, %2         \n\t"
         : "+b" (a), "+c" (b), "+D" (c)
         : "g" (scale), "S" (ff_inverse[scale])
@@ -252,7 +254,7 @@ int ff_msmpeg4_pred_dc(MpegEncContext *s, int n,
         c = FASTDIV((c + (scale >> 1)), scale);
     }
 #endif
-    /* XXX: WARNING: they did not choose the same test as MPEG4. This
+    /* XXX: WARNING: they did not choose the same test as MPEG-4. This
        is very important ! */
     if(s->msmpeg4_version>3){
         if(s->inter_intra_pred){
@@ -274,18 +276,17 @@ int ff_msmpeg4_pred_dc(MpegEncContext *s, int n,
                     *dir_ptr = 0;
                 }
             }else{
-                int bs = 8 >> s->avctx->lowres;
                 if(n<4){
                     wrap= s->linesize;
-                    dest= s->current_picture.f->data[0] + (((n >> 1) + 2*s->mb_y) * bs*  wrap ) + ((n & 1) + 2*s->mb_x) * bs;
+                    dest= s->current_picture.f->data[0] + (((n >> 1) + 2*s->mb_y) * 8*  wrap ) + ((n & 1) + 2*s->mb_x) * 8;
                 }else{
                     wrap= s->uvlinesize;
-                    dest= s->current_picture.f->data[n - 3] + (s->mb_y * bs * wrap) + s->mb_x * bs;
+                    dest= s->current_picture.f->data[n - 3] + (s->mb_y * 8 * wrap) + s->mb_x * 8;
                 }
                 if(s->mb_x==0) a= (1024 + (scale>>1))/scale;
-                else           a= get_dc(dest-bs, wrap, scale*8>>(2*s->avctx->lowres), bs);
+                else           a= get_dc(dest-8, wrap, scale*8);
                 if(s->mb_y==0) c= (1024 + (scale>>1))/scale;
-                else           c= get_dc(dest-bs*wrap, wrap, scale*8>>(2*s->avctx->lowres), bs);
+                else           c= get_dc(dest-8*wrap, wrap, scale*8);
 
                 if (s->h263_aic_dir==0) {
                     pred= a;
