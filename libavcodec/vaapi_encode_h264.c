@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +26,7 @@
 
 #include "avcodec.h"
 #include "h264.h"
+#include "h264_sei.h"
 #include "internal.h"
 #include "vaapi_encode.h"
 #include "vaapi_encode_h26x.h"
@@ -84,6 +85,22 @@ typedef struct VAAPIEncodeH264MiscSequenceParams {
     char low_delay_hrd_flag;
     char pic_struct_present_flag;
     char bitstream_restriction_flag;
+
+    unsigned int cpb_cnt_minus1;
+    unsigned int bit_rate_scale;
+    unsigned int cpb_size_scale;
+    unsigned int bit_rate_value_minus1[32];
+    unsigned int cpb_size_value_minus1[32];
+    char cbr_flag[32];
+    unsigned int initial_cpb_removal_delay_length_minus1;
+    unsigned int cpb_removal_delay_length_minus1;
+    unsigned int dpb_output_delay_length_minus1;
+    unsigned int time_offset_length;
+
+    unsigned int initial_cpb_removal_delay;
+    unsigned int initial_cpb_removal_delay_offset;
+
+    unsigned int pic_struct;
 } VAAPIEncodeH264MiscSequenceParams;
 
 // This structure contains all possibly-useful per-slice syntax elements
@@ -123,10 +140,14 @@ typedef struct VAAPIEncodeH264Context {
     int fixed_qp_p;
     int fixed_qp_b;
 
+    int next_frame_num;
     int64_t idr_pic_count;
-    int64_t last_idr_frame;
+
+    int cpb_delay;
+    int dpb_delay;
 
     // Rate control configuration.
+    int send_timing_sei;
     struct {
         VAEncMiscParameterBuffer misc;
         VAEncMiscParameterRateControl rc;
@@ -148,6 +169,7 @@ typedef struct VAAPIEncodeH264Context {
 typedef struct VAAPIEncodeH264Options {
     int qp;
     int quality;
+    int low_power;
 } VAAPIEncodeH264Options;
 
 
@@ -182,6 +204,7 @@ static void vaapi_encode_h264_write_vui(PutBitContext *pbc,
     VAEncSequenceParameterBufferH264  *vseq = ctx->codec_sequence_params;
     VAAPIEncodeH264Context            *priv = ctx->priv_data;
     VAAPIEncodeH264MiscSequenceParams *mseq = &priv->misc_sequence_params;
+    int i;
 
     u(1, vvui_field(aspect_ratio_info_present_flag));
     if (vseq->vui_fields.bits.aspect_ratio_info_present_flag) {
@@ -223,7 +246,18 @@ static void vaapi_encode_h264_write_vui(PutBitContext *pbc,
 
     u(1, mseq_var(nal_hrd_parameters_present_flag));
     if (mseq->nal_hrd_parameters_present_flag) {
-        av_assert0(0 && "nal hrd parameters not supported");
+        ue(mseq_var(cpb_cnt_minus1));
+        u(4, mseq_var(bit_rate_scale));
+        u(4, mseq_var(cpb_size_scale));
+        for (i = 0; i <= mseq->cpb_cnt_minus1; i++) {
+            ue(mseq_var(bit_rate_value_minus1[i]));
+            ue(mseq_var(cpb_size_value_minus1[i]));
+            u(1, mseq_var(cbr_flag[i]));
+        }
+        u(5, mseq_var(initial_cpb_removal_delay_length_minus1));
+        u(5, mseq_var(cpb_removal_delay_length_minus1));
+        u(5, mseq_var(dpb_output_delay_length_minus1));
+        u(5, mseq_var(time_offset_length));
     }
     u(1, mseq_var(vcl_hrd_parameters_present_flag));
     if (mseq->vcl_hrd_parameters_present_flag) {
@@ -518,6 +552,110 @@ static void vaapi_encode_h264_write_slice_header2(PutBitContext *pbc,
     // No alignment - this need not be a byte boundary.
 }
 
+static void vaapi_encode_h264_write_buffering_period(PutBitContext *pbc,
+                                                     VAAPIEncodeContext *ctx,
+                                                     VAAPIEncodePicture *pic)
+{
+    VAAPIEncodeH264Context            *priv = ctx->priv_data;
+    VAAPIEncodeH264MiscSequenceParams *mseq = &priv->misc_sequence_params;
+    VAEncPictureParameterBufferH264   *vpic = pic->codec_picture_params;
+    int i;
+
+    ue(vpic_var(seq_parameter_set_id));
+
+    if (mseq->nal_hrd_parameters_present_flag) {
+        for (i = 0; i <= mseq->cpb_cnt_minus1; i++) {
+            u(mseq->initial_cpb_removal_delay_length_minus1 + 1,
+              mseq_var(initial_cpb_removal_delay));
+            u(mseq->initial_cpb_removal_delay_length_minus1 + 1,
+              mseq_var(initial_cpb_removal_delay_offset));
+        }
+    }
+    if (mseq->vcl_hrd_parameters_present_flag) {
+        av_assert0(0 && "vcl hrd parameters not supported");
+    }
+}
+
+static void vaapi_encode_h264_write_pic_timing(PutBitContext *pbc,
+                                               VAAPIEncodeContext *ctx,
+                                               VAAPIEncodePicture *pic)
+{
+    VAEncSequenceParameterBufferH264  *vseq = ctx->codec_sequence_params;
+    VAAPIEncodeH264Context            *priv = ctx->priv_data;
+    VAAPIEncodeH264MiscSequenceParams *mseq = &priv->misc_sequence_params;
+    int i, num_clock_ts;
+
+    if (mseq->nal_hrd_parameters_present_flag ||
+        mseq->vcl_hrd_parameters_present_flag) {
+        u(mseq->cpb_removal_delay_length_minus1 + 1,
+          2 * vseq->num_units_in_tick * priv->cpb_delay,
+          cpb_removal_delay);
+        u(mseq->dpb_output_delay_length_minus1 + 1,
+          2 * vseq->num_units_in_tick * priv->dpb_delay,
+          dpb_output_delay);
+    }
+    if (mseq->pic_struct_present_flag) {
+        u(4, mseq_var(pic_struct));
+        num_clock_ts = (mseq->pic_struct <= 2 ? 1 :
+                        mseq->pic_struct <= 4 ? 2 :
+                        mseq->pic_struct <= 8 ? 3 : 0);
+        for (i = 0; i < num_clock_ts; i++) {
+            u(1, 0, clock_timestamp_flag[i]);
+            // No full timestamp information.
+        }
+    }
+}
+
+static void vaapi_encode_h264_write_sei(PutBitContext *pbc,
+                                        VAAPIEncodeContext *ctx,
+                                        VAAPIEncodePicture *pic)
+{
+    VAAPIEncodeH264Context *priv = ctx->priv_data;
+    PutBitContext payload_bits;
+    char payload[256];
+    int payload_type, payload_size, i;
+    void (*write_payload)(PutBitContext *pbc,
+                          VAAPIEncodeContext *ctx,
+                          VAAPIEncodePicture *pic) = NULL;
+
+    vaapi_encode_h264_write_nal_header(pbc, NAL_SEI, 0);
+
+    for (payload_type = 0; payload_type < 64; payload_type++) {
+        switch (payload_type) {
+        case SEI_TYPE_BUFFERING_PERIOD:
+            if (!priv->send_timing_sei ||
+                pic->type != PICTURE_TYPE_IDR)
+                continue;
+            write_payload = &vaapi_encode_h264_write_buffering_period;
+            break;
+        case SEI_TYPE_PIC_TIMING:
+            if (!priv->send_timing_sei)
+                continue;
+            write_payload = &vaapi_encode_h264_write_pic_timing;
+            break;
+        default:
+            continue;
+        }
+
+        init_put_bits(&payload_bits, payload, sizeof(payload));
+        write_payload(&payload_bits, ctx, pic);
+        if (put_bits_count(&payload_bits) & 7) {
+            write_u(&payload_bits, 1, 1, bit_equal_to_one);
+            while (put_bits_count(&payload_bits) & 7)
+                write_u(&payload_bits, 1, 0, bit_equal_to_zero);
+        }
+        payload_size = put_bits_count(&payload_bits) / 8;
+        flush_put_bits(&payload_bits);
+
+        u(8, payload_type, last_payload_type_byte);
+        u(8, payload_size, last_payload_size_byte);
+        for (i = 0; i < payload_size; i++)
+            u(8, payload[i] & 0xff, sei_payload);
+    }
+
+    vaapi_encode_h264_write_trailing_rbsp(pbc);
+}
+
 static int vaapi_encode_h264_write_sequence_header(AVCodecContext *avctx,
                                                    char *data, size_t *data_len)
 {
@@ -577,6 +715,32 @@ static int vaapi_encode_h264_write_slice_header(AVCodecContext *avctx,
 
     return ff_vaapi_encode_h26x_nal_unit_to_byte_stream(data, data_len,
                                                         tmp, header_len);
+}
+
+static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
+                                                VAAPIEncodePicture *pic,
+                                                int index, int *type,
+                                                char *data, size_t *data_len)
+{
+    VAAPIEncodeContext *ctx = avctx->priv_data;
+    PutBitContext pbc;
+    char tmp[256];
+    size_t header_len;
+
+    if (index == 0 && ctx->va_rc_mode == VA_RC_CBR) {
+        *type = VAEncPackedHeaderH264_SEI;
+
+        init_put_bits(&pbc, tmp, sizeof(tmp));
+        vaapi_encode_h264_write_sei(&pbc, ctx, pic);
+        header_len = put_bits_count(&pbc);
+        flush_put_bits(&pbc);
+
+        return ff_vaapi_encode_h26x_nal_unit_to_byte_stream(data, data_len,
+                                                            tmp, header_len);
+
+    } else {
+        return AVERROR_EOF;
+    }
 }
 
 static int vaapi_encode_h264_init_sequence_params(AVCodecContext *avctx)
@@ -659,6 +823,43 @@ static int vaapi_encode_h264_init_sequence_params(AVCodecContext *avctx)
             mseq->fixed_frame_rate_flag = 0;
         }
 
+        if (ctx->va_rc_mode == VA_RC_CBR) {
+            priv->send_timing_sei = 1;
+            mseq->nal_hrd_parameters_present_flag = 1;
+
+            mseq->cpb_cnt_minus1 = 0;
+
+            // Try to scale these to a sensible range so that the
+            // golomb encode of the value is not overlong.
+            mseq->bit_rate_scale =
+                av_clip(av_log2(avctx->bit_rate) - 15, 0, 15);
+            mseq->bit_rate_value_minus1[0] =
+                (avctx->bit_rate >> mseq->bit_rate_scale) - 1;
+
+            mseq->cpb_size_scale =
+                av_clip(av_log2(priv->hrd_params.hrd.buffer_size) - 15, 0, 15);
+            mseq->cpb_size_value_minus1[0] =
+                (priv->hrd_params.hrd.buffer_size >> mseq->cpb_size_scale) - 1;
+
+            // CBR mode isn't actually available here, despite naming.
+            mseq->cbr_flag[0] = 0;
+
+            mseq->initial_cpb_removal_delay_length_minus1 = 23;
+            mseq->cpb_removal_delay_length_minus1         = 23;
+            mseq->dpb_output_delay_length_minus1          = 7;
+            mseq->time_offset_length = 0;
+
+            // This calculation can easily overflow 32 bits.
+            mseq->initial_cpb_removal_delay = 90000 *
+                (uint64_t)priv->hrd_params.hrd.initial_buffer_fullness /
+                priv->hrd_params.hrd.buffer_size;
+
+            mseq->initial_cpb_removal_delay_offset = 0;
+        } else {
+            priv->send_timing_sei = 0;
+            mseq->nal_hrd_parameters_present_flag = 0;
+        }
+
         vseq->intra_period     = ctx->p_per_i * (ctx->b_per_p + 1);
         vseq->intra_idr_period = vseq->intra_period;
         vseq->ip_period        = ctx->b_per_p + 1;
@@ -714,12 +915,20 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
 
     if (pic->type == PICTURE_TYPE_IDR) {
         av_assert0(pic->display_order == pic->encode_order);
-        priv->last_idr_frame = pic->display_order;
+        vpic->frame_num = 0;
+        priv->next_frame_num = 1;
+        priv->cpb_delay = 0;
     } else {
-        av_assert0(pic->display_order > priv->last_idr_frame);
+        vpic->frame_num = priv->next_frame_num;
+        if (pic->type != PICTURE_TYPE_B) {
+            // nal_ref_idc != 0
+            ++priv->next_frame_num;
+        }
+        ++priv->cpb_delay;
     }
+    priv->dpb_delay = pic->display_order - pic->encode_order + 1;
 
-    vpic->frame_num = (pic->encode_order - priv->last_idr_frame) &
+    vpic->frame_num = vpic->frame_num &
         ((1 << (4 + vseq->seq_fields.bits.log2_max_frame_num_minus4)) - 1);
 
     vpic->CurrPic.picture_id          = pic->recon_surface;
@@ -730,10 +939,9 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
 
     for (i = 0; i < pic->nb_refs; i++) {
         VAAPIEncodePicture *ref = pic->refs[i];
-        av_assert0(ref && ref->encode_order >= priv->last_idr_frame);
+        av_assert0(ref && ref->encode_order < pic->encode_order);
         vpic->ReferenceFrames[i].picture_id = ref->recon_surface;
-        vpic->ReferenceFrames[i].frame_idx =
-            ref->encode_order - priv->last_idr_frame;
+        vpic->ReferenceFrames[i].frame_idx  = ref->encode_order;
         vpic->ReferenceFrames[i].flags = VA_PICTURE_H264_SHORT_TERM_REFERENCE;
         vpic->ReferenceFrames[i].TopFieldOrderCnt    = ref->display_order;
         vpic->ReferenceFrames[i].BottomFieldOrderCnt = ref->display_order;
@@ -819,7 +1027,7 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
 
     av_assert0(pic->nb_refs <= 2);
     if (pic->nb_refs >= 1) {
-        // Backward reference for P or B frame.
+        // Backward reference for P- or B-frame.
         av_assert0(pic->type == PICTURE_TYPE_P ||
                    pic->type == PICTURE_TYPE_B);
 
@@ -827,7 +1035,7 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
         vslice->RefPicList0[0] = vpic->ReferenceFrames[0];
     }
     if (pic->nb_refs >= 2) {
-        // Forward reference for B frame.
+        // Forward reference for B-frame.
         av_assert0(pic->type == PICTURE_TYPE_B);
 
         vslice->num_ref_idx_l1_active_minus1 = 0;
@@ -891,7 +1099,7 @@ static av_cold int vaapi_encode_h264_init_constant_bitrate(AVCodecContext *avctx
     priv->fixed_qp_p   = 26;
     priv->fixed_qp_b   = 26;
 
-    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
+    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %d bps.\n",
            avctx->bit_rate);
     return 0;
 }
@@ -915,7 +1123,7 @@ static av_cold int vaapi_encode_h264_init_fixed_qp(AVCodecContext *avctx)
         priv->fixed_qp_b = priv->fixed_qp_p;
 
     av_log(avctx, AV_LOG_DEBUG, "Using fixed QP = "
-           "%d / %d / %d for IDR / P / B frames.\n",
+           "%d / %d / %d for IDR- / P- / B-frames.\n",
            priv->fixed_qp_idr, priv->fixed_qp_p, priv->fixed_qp_b);
     return 0;
 }
@@ -972,7 +1180,17 @@ static av_cold int vaapi_encode_h264_init_internal(AVCodecContext *avctx)
                avctx->profile);
         return AVERROR(EINVAL);
     }
-    ctx->va_entrypoint = VAEntrypointEncSlice;
+    if (opt->low_power) {
+#if VA_CHECK_VERSION(0, 39, 1)
+        ctx->va_entrypoint = VAEntrypointEncSliceLP;
+#else
+        av_log(avctx, AV_LOG_ERROR, "Low-power encoding is not "
+               "supported with this VAAPI version.\n");
+        return AVERROR(EINVAL);
+#endif
+    } else {
+        ctx->va_entrypoint = VAEntrypointEncSlice;
+    }
 
     ctx->input_width    = avctx->width;
     ctx->input_height   = avctx->height;
@@ -1041,6 +1259,8 @@ static VAAPIEncodeType vaapi_encode_type_h264 = {
 
     .slice_header_type     = VAEncPackedHeaderH264_Slice,
     .write_slice_header    = &vaapi_encode_h264_write_slice_header,
+
+    .write_extra_header    = &vaapi_encode_h264_write_extra_header,
 };
 
 static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
@@ -1052,10 +1272,13 @@ static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
                    offsetof(VAAPIEncodeH264Options, x))
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
 static const AVOption vaapi_encode_h264_options[] = {
-    { "qp", "Constant QP (for P frames; scaled by qfactor/qoffset for I/B)",
+    { "qp", "Constant QP (for P-frames; scaled by qfactor/qoffset for I/B)",
       OFFSET(qp), AV_OPT_TYPE_INT, { .i64 = 20 }, 0, 52, FLAGS },
     { "quality", "Set encode quality (trades off against speed, higher is faster)",
-      OFFSET(quality), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 2, FLAGS },
+      OFFSET(quality), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 8, FLAGS },
+    { "low_power", "Use low-power encoding mode (experimental: only supported "
+      "on some platforms, does not support all features)",
+      OFFSET(low_power), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
 

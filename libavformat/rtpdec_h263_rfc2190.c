@@ -8,20 +8,20 @@
  * Copyright 2007 Collabora Ltd, Philippe Kalaf
  * Copyright 2010 Mark Nauwelaerts
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -107,7 +107,7 @@ static int h263_handle_packet(AVFormatContext *ctx, PayloadContext *data,
             /* Invalid src for this format, and bits that should be zero
              * according to RFC 2190 aren't zero. */
             av_log(ctx, AV_LOG_WARNING,
-                   "Interpreting H263 RTP data as RFC 2429/4629 even though "
+                   "Interpreting H.263 RTP data as RFC 2429/4629 even though "
                    "signalled with a static payload type.\n");
             data->newformat = 1;
             return ff_h263_handle_packet(ctx, data, st, pkt, timestamp, buf,

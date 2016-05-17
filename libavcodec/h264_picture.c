@@ -2,26 +2,26 @@
  * H.26L/H.264/AVC/JVT/14496-10/... decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
- * H.264 / AVC / MPEG4 part10 codec.
+ * H.264 / AVC / MPEG-4 part10 codec.
  * @author Michael Niedermayer <michaelni@gmx.at>
  */
 
@@ -37,12 +37,10 @@
 #include "h264data.h"
 #include "h264chroma.h"
 #include "h264_mvpred.h"
-#include "golomb.h"
 #include "mathops.h"
 #include "mpegutils.h"
 #include "rectangle.h"
 #include "thread.h"
-#include "vdpau_compat.h"
 
 void ff_h264_unref_picture(H264Context *h, H264Picture *pic)
 {
@@ -115,12 +113,7 @@ int ff_h264_ref_picture(H264Context *h, H264Picture *dst, H264Picture *src)
     dst->mbaff         = src->mbaff;
     dst->field_picture = src->field_picture;
     dst->reference     = src->reference;
-    dst->crop          = src->crop;
-    dst->crop_left     = src->crop_left;
-    dst->crop_top      = src->crop_top;
     dst->recovered     = src->recovered;
-    dst->invalid_gap   = src->invalid_gap;
-    dst->sei_recovery_frame_cnt = src->sei_recovery_frame_cnt;
 
     return 0;
 fail:
@@ -128,12 +121,10 @@ fail:
     return ret;
 }
 
-void ff_h264_set_erpic(ERPicture *dst, H264Picture *src)
-{
 #if CONFIG_ERROR_RESILIENCE
+static void h264_set_erpic(ERPicture *dst, H264Picture *src)
+{
     int i;
-
-    memset(dst, 0, sizeof(*dst));
 
     if (!src)
         return;
@@ -148,8 +139,8 @@ void ff_h264_set_erpic(ERPicture *dst, H264Picture *src)
 
     dst->mb_type = src->mb_type;
     dst->field_picture = src->field_picture;
-#endif /* CONFIG_ERROR_RESILIENCE */
 }
+#endif /* CONFIG_ERROR_RESILIENCE */
 
 int ff_h264_field_end(H264Context *h, H264SliceContext *sl, int in_setup)
 {
@@ -157,38 +148,49 @@ int ff_h264_field_end(H264Context *h, H264SliceContext *sl, int in_setup)
     int err = 0;
     h->mb_y = 0;
 
-#if FF_API_CAP_VDPAU
-    if (CONFIG_H264_VDPAU_DECODER &&
-        h->avctx->codec->capabilities & AV_CODEC_CAP_HWACCEL_VDPAU)
-        ff_vdpau_h264_set_reference_frames(h);
-#endif
+    if (!in_setup && !h->droppable)
+        ff_thread_report_progress(&h->cur_pic_ptr->tf, INT_MAX,
+                                  h->picture_structure == PICT_BOTTOM_FIELD);
 
     if (in_setup || !(avctx->active_thread_type & FF_THREAD_FRAME)) {
         if (!h->droppable) {
             err = ff_h264_execute_ref_pic_marking(h, h->mmco, h->mmco_index);
-            h->prev_poc_msb = h->poc_msb;
-            h->prev_poc_lsb = h->poc_lsb;
+            h->poc.prev_poc_msb = h->poc.poc_msb;
+            h->poc.prev_poc_lsb = h->poc.poc_lsb;
         }
-        h->prev_frame_num_offset = h->frame_num_offset;
-        h->prev_frame_num        = h->frame_num;
+        h->poc.prev_frame_num_offset = h->poc.frame_num_offset;
+        h->poc.prev_frame_num        = h->poc.frame_num;
     }
 
     if (avctx->hwaccel) {
-        err = avctx->hwaccel->end_frame(avctx);
-        if (err < 0)
+        if (avctx->hwaccel->end_frame(avctx) < 0)
             av_log(avctx, AV_LOG_ERROR,
                    "hardware accelerator failed to decode picture\n");
     }
 
-#if FF_API_CAP_VDPAU
-    if (CONFIG_H264_VDPAU_DECODER &&
-        h->avctx->codec->capabilities & AV_CODEC_CAP_HWACCEL_VDPAU)
-        ff_vdpau_h264_picture_complete(h);
-#endif
+#if CONFIG_ERROR_RESILIENCE
+    /*
+     * FIXME: Error handling code does not seem to support interlaced
+     * when slices span multiple rows
+     * The ff_er_add_slice calls don't work right for bottom
+     * fields; they cause massive erroneous error concealing
+     * Error marking covers both fields (top and bottom).
+     * This causes a mismatched s->error_count
+     * and a bad error table. Further, the error count goes to
+     * INT_MAX when called for bottom field, because mb_y is
+     * past end by one (callers fault) and resync_mb_y != 0
+     * causes problems for the first MB line, too.
+     */
+    if (!FIELD_PICTURE(h) && h->enable_er) {
+        h264_set_erpic(&sl->er.cur_pic, h->cur_pic_ptr);
+        h264_set_erpic(&sl->er.last_pic,
+                       sl->ref_count[0] ? sl->ref_list[0][0].parent : NULL);
+        h264_set_erpic(&sl->er.next_pic,
+                       sl->ref_count[1] ? sl->ref_list[1][0].parent : NULL);
+        ff_er_frame_end(&sl->er);
+    }
+#endif /* CONFIG_ERROR_RESILIENCE */
 
-    if (!in_setup && !h->droppable)
-        ff_thread_report_progress(&h->cur_pic_ptr->tf, INT_MAX,
-                                  h->picture_structure == PICT_BOTTOM_FIELD);
     emms_c();
 
     h->current_slice = 0;
