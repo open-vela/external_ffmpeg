@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,6 @@
 enum RemoveFreq {
     REMOVE_FREQ_KEYFRAME,
     REMOVE_FREQ_ALL,
-    REMOVE_FREQ_NONKEYFRAME,
 };
 
 typedef struct RemoveExtradataContext {
@@ -51,7 +50,6 @@ static int remove_extradata(AVBSFContext *ctx, AVPacket *out)
 
     if (s->parser && s->parser->parser->split) {
         if (s->freq == REMOVE_FREQ_ALL ||
-            (s->freq == REMOVE_FREQ_NONKEYFRAME && !(in->flags & AV_PKT_FLAG_KEY)) ||
             (s->freq == REMOVE_FREQ_KEYFRAME && in->flags & AV_PKT_FLAG_KEY)) {
             int i = s->parser->parser->split(s->avctx, in->data, in->size);
             in->data += i;
@@ -96,9 +94,7 @@ static void remove_extradata_close(AVBSFContext *ctx)
 #define OFFSET(x) offsetof(RemoveExtradataContext, x)
 static const AVOption options[] = {
     { "freq", NULL, OFFSET(freq), AV_OPT_TYPE_INT, { .i64 = REMOVE_FREQ_KEYFRAME }, REMOVE_FREQ_KEYFRAME, REMOVE_FREQ_ALL, 0, "freq" },
-        { "k",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = REMOVE_FREQ_NONKEYFRAME }, .unit = "freq" },
         { "keyframe", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = REMOVE_FREQ_KEYFRAME }, .unit = "freq" },
-        { "e",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = REMOVE_FREQ_ALL      }, .unit = "freq" },
         { "all",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = REMOVE_FREQ_ALL      }, .unit = "freq" },
     { NULL },
 };
