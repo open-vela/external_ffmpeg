@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Rob Clark <rob@ti.com>
  * Copyright (c) 2011 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -322,7 +322,7 @@ endfunc
 
         vmov.i16        q12, #3
         vsubl.s8        q10, d8,  d6            @ QS0 - PS0
-        vsubl.s8        q11, d9,  d7            @   (widened to 16bit)
+        vsubl.s8        q11, d9,  d7            @   (widened to 16 bits)
         veor            q2,  q2,  q13           @ PS1 = P1 ^ 0x80
         veor            q5,  q5,  q13           @ QS1 = Q1 ^ 0x80
         vmul.i16        q10, q10, q12           @ w = 3 * (QS0 - PS0)
