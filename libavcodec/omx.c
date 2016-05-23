@@ -2,20 +2,20 @@
  * OMX Video encoder
  * Copyright (C) 2011 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -703,7 +703,7 @@ static av_cold int omx_encode_init(AVCodecContext *avctx)
                          nals[avctx->extradata[i + 4] & 0x1f]++;
                      }
                 }
-                if (nals[NAL_SPS] && nals[NAL_PPS])
+                if (nals[H264_NAL_SPS] && nals[H264_NAL_PPS])
                     break;
             } else {
                 if (avctx->extradata_size > 0)
@@ -845,7 +845,6 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 s->output_buf_size = 0;
             }
             if (buffer->nFlags & OMX_BUFFERFLAG_ENDOFFRAME) {
-                ret = pkt->size;
                 pkt->pts = av_rescale_q(from_omx_ticks(buffer->nTimeStamp), AV_TIME_BASE_Q, avctx->time_base);
                 // We don't currently enable B-frames for the encoders, so set
                 // pkt->dts = pkt->pts. (The calling code behaves worse if the encoder
