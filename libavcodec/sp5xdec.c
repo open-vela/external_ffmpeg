@@ -2,20 +2,20 @@
  * Sunplus JPEG decoder (SP5X)
  * Copyright (c) 2003 Alex Beregszaszi
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -73,7 +73,7 @@ static int sp5x_decode_frame(AVCodecContext *avctx,
         for (i = 2; i < buf_size-2 && j < buf_size+1024-2; i++)
             recoded[j++] = buf[i];
     else
-    for (i = 14; i < buf_size && j < buf_size+1024-3; i++)
+    for (i = 14; i < buf_size && j < buf_size+1024-2; i++)
     {
         recoded[j++] = buf[i];
         if (buf[i] == 0xff)
@@ -91,10 +91,9 @@ static int sp5x_decode_frame(AVCodecContext *avctx,
 
     av_free(recoded);
 
-    return i < 0 ? i : avpkt->size;
+    return i;
 }
 
-#if CONFIG_SP5X_DECODER
 AVCodec ff_sp5x_decoder = {
     .name           = "sp5x",
     .long_name      = NULL_IF_CONFIG_SMALL("Sunplus JPEG (SP5X)"),
@@ -105,11 +104,9 @@ AVCodec ff_sp5x_decoder = {
     .close          = ff_mjpeg_decode_end,
     .decode         = sp5x_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .max_lowres     = 3,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
-#endif
-#if CONFIG_AMV_DECODER
+
 AVCodec ff_amv_decoder = {
     .name           = "amv",
     .long_name      = NULL_IF_CONFIG_SMALL("AMV Video"),
@@ -119,8 +116,6 @@ AVCodec ff_amv_decoder = {
     .init           = ff_mjpeg_decode_init,
     .close          = ff_mjpeg_decode_end,
     .decode         = sp5x_decode_frame,
-    .max_lowres     = 3,
     .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
-#endif
