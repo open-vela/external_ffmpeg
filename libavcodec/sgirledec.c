@@ -2,20 +2,20 @@
  * Silicon Graphics RLE 8-bit video decoder
  * Copyright (c) 2012 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,9 +31,17 @@
 #include "avcodec.h"
 #include "internal.h"
 
+typedef struct SGIRLEContext {
+    AVFrame *frame;
+} SGIRLEContext;
+
 static av_cold int sgirle_decode_init(AVCodecContext *avctx)
 {
+    SGIRLEContext *s = avctx->priv_data;
     avctx->pix_fmt = AV_PIX_FMT_BGR8;
+    s->frame = av_frame_alloc();
+    if (!s->frame)
+        return AVERROR(ENOMEM);
     return 0;
 }
 
@@ -41,9 +49,9 @@ static av_cold int sgirle_decode_init(AVCodecContext *avctx)
  * Convert SGI RBG323 pixel into AV_PIX_FMT_BGR8
  * SGI RGB data is packed as 8bpp, (msb)3R 2B 3G(lsb)
  */
-#define RBG323_TO_BGR8(x) ((((x) << 3) & 0xC0) |                                \
-                           (((x) << 3) & 0x38) |                                \
-                           (((x) >> 5) & 7))
+#define RBG323_TO_BGR8(x) (((x << 3) & 0xC0) |                                \
+                           ((x << 3) & 0x38) |                                \
+                           ((x >> 5) & 7))
 static av_always_inline
 void rbg323_to_bgr8(uint8_t *dst, const uint8_t *src, int size)
 {
@@ -102,8 +110,8 @@ static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst,
                 v   -= length;
             } while (v > 0);
         } else {
-            avpriv_request_sample(avctx, "opcode %d", v);
-            return AVERROR_PATCHWELCOME;
+            av_log(avctx, AV_LOG_ERROR, "Invalid opcode %d.\n", v);
+            return AVERROR_INVALIDDATA;
         }
     }
     return 0;
@@ -112,23 +120,31 @@ static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst,
 static int sgirle_decode_frame(AVCodecContext *avctx, void *data,
                                int *got_frame, AVPacket *avpkt)
 {
-    AVFrame *frame = data;
+    SGIRLEContext *s = avctx->priv_data;
     int ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
 
-    ret = decode_sgirle8(avctx, frame->data[0], avpkt->data, avpkt->size,
-                         avctx->width, avctx->height, frame->linesize[0]);
+    ret = decode_sgirle8(avctx, s->frame->data[0], avpkt->data, avpkt->size,
+                         avctx->width, avctx->height, s->frame->linesize[0]);
     if (ret < 0)
         return ret;
 
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->key_frame = 1;
-
     *got_frame = 1;
+    if ((ret = av_frame_ref(data, s->frame)) < 0)
+        return ret;
 
     return avpkt->size;
+}
+
+static av_cold int sgirle_decode_end(AVCodecContext *avctx)
+{
+    SGIRLEContext *s = avctx->priv_data;
+
+    av_frame_free(&s->frame);
+
+    return 0;
 }
 
 AVCodec ff_sgirle_decoder = {
@@ -136,7 +152,9 @@ AVCodec ff_sgirle_decoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("Silicon Graphics RLE 8-bit video"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_SGIRLE,
+    .priv_data_size = sizeof(SGIRLEContext),
     .init           = sgirle_decode_init,
+    .close          = sgirle_decode_end,
     .decode         = sgirle_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
