@@ -3,26 +3,25 @@
  *
  * Copyright (c) 2008 Vladimir Voroshilov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <inttypes.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/float_dsp.h"
 #include "avcodec.h"
@@ -49,26 +48,6 @@ const uint8_t ff_fc_2pulses_9bits_track1_gray[16] =
   31, 33,
   21, 23,
   28, 26,
-};
-
-const uint8_t ff_fc_2pulses_9bits_track2_gray[32] =
-{
-  0,  2,
-  5,  4,
-  12, 10,
-  7,  9,
-  25, 24,
-  20, 22,
-  14, 15,
-  19, 17,
-  36, 31,
-  21, 26,
-  1,  6,
-  16, 11,
-  27, 29,
-  32, 30,
-  39, 37,
-  34, 35,
 };
 
 const uint8_t ff_fc_4pulses_8bits_tracks_13[16] =
@@ -240,13 +219,11 @@ void ff_set_fixed_vector(float *out, const AMRFixed *in, float scale, int size)
         int x   = in->x[i], repeats = !((in->no_repeat_mask >> i) & 1);
         float y = in->y[i] * scale;
 
-        if (in->pitch_lag > 0)
-            av_assert0(x < size);
-            do {
-                out[x] += y;
-                y *= in->pitch_fac;
-                x += in->pitch_lag;
-            } while (x < size && repeats);
+        do {
+            out[x] += y;
+            y *= in->pitch_fac;
+            x += in->pitch_lag;
+        } while (x < size && repeats);
     }
 }
 
@@ -257,18 +234,9 @@ void ff_clear_fixed_vector(float *out, const AMRFixed *in, int size)
     for (i=0; i < in->n; i++) {
         int x  = in->x[i], repeats = !((in->no_repeat_mask >> i) & 1);
 
-        if (in->pitch_lag > 0)
-            do {
-                out[x] = 0.0;
-                x += in->pitch_lag;
-            } while (x < size && repeats);
+        do {
+            out[x] = 0.0;
+            x += in->pitch_lag;
+        } while (x < size && repeats);
     }
-}
-
-void ff_acelp_vectors_init(ACELPVContext *c)
-{
-    c->weighted_vector_sumf   = ff_weighted_vector_sumf;
-
-    if(HAVE_MIPSFPU)
-        ff_acelp_vectors_init_mips(c);
 }
