@@ -1,24 +1,20 @@
 /*
  * DCA compatible decoder data
- * Copyright (C) 2004 Gildas Bazin
- * Copyright (C) 2004 Benjamin Zores
- * Copyright (C) 2006 Benjamin Larsson
- * Copyright (C) 2007 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,16 +32,7 @@ const uint32_t avpriv_dca_sample_rates[16] = {
     12000, 24000, 48000, 96000, 192000
 };
 
-const uint32_t ff_dca_sampling_freqs[16] = {
-      8000,  16000, 32000, 64000, 128000, 22050,  44100,  88200,
-    176400, 352800, 12000, 24000,  48000, 96000, 192000, 384000,
-};
-
-const uint8_t ff_dca_freq_ranges[16] = {
-    0, 1, 2, 3, 4, 1, 2, 3, 4, 4, 0, 1, 2, 3, 4, 4
-};
-
-int avpriv_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
+int ff_dca_convert_bitstream(const uint8_t *src, int src_size, uint8_t *dst,
                              int max_size)
 {
     uint32_t mrk;
