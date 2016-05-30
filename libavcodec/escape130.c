@@ -2,28 +2,27 @@
  * Escape 130 video decoder
  * Copyright (C) 2008 Eli Friedman (eli.friedman <at> gmail.com)
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
 #include "libavutil/mem.h"
-
-#define BITSTREAM_READER_LE
 #include "avcodec.h"
+#define BITSTREAM_READER_LE
 #include "get_bits.h"
 #include "internal.h"
 
@@ -167,6 +166,9 @@ static int decode_skip_count(GetBitContext* gb)
 {
     int value;
 
+    if (get_bits_left(gb) < 1+3)
+        return -1;
+
     value = get_bits1(gb);
     if (value)
         return 0;
@@ -189,7 +191,6 @@ static int decode_skip_count(GetBitContext* gb)
 static int escape130_decode_frame(AVCodecContext *avctx, void *data,
                                   int *got_frame, AVPacket *avpkt)
 {
-    const uint8_t *buf  = avpkt->data;
     int buf_size        = avpkt->size;
     Escape130Context *s = avctx->priv_data;
     AVFrame *pic        = data;
@@ -216,7 +217,9 @@ static int escape130_decode_frame(AVCodecContext *avctx, void *data,
     if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
         return ret;
 
-    init_get_bits(&gb, buf + 16, (buf_size - 16) * 8);
+    if ((ret = init_get_bits8(&gb, avpkt->data, avpkt->size)) < 0)
+        return ret;
+    skip_bits_long(&gb, 16 * 8);
 
     new_y  = s->new_y;
     new_cb = s->new_u;
