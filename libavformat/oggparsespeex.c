@@ -23,11 +23,13 @@
 **/
 
 #include <stdlib.h>
+
 #include "libavutil/bswap.h"
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
-#include "libavcodec/get_bits.h"
+
 #include "libavcodec/bytestream.h"
+
 #include "avformat.h"
 #include "internal.h"
 #include "oggdec.h"
@@ -60,11 +62,6 @@ static int speex_header(AVFormatContext *s, int idx) {
         st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codecpar->codec_id = AV_CODEC_ID_SPEEX;
 
-        if (os->psize < 68) {
-            av_log(s, AV_LOG_ERROR, "speex packet too small\n");
-            return AVERROR_INVALIDDATA;
-        }
-
         st->codecpar->sample_rate = AV_RL32(p + 36);
         st->codecpar->channels = AV_RL32(p + 48);
         if (st->codecpar->channels < 1 || st->codecpar->channels > 2) {
@@ -79,8 +76,9 @@ static int speex_header(AVFormatContext *s, int idx) {
         if (frames_per_packet)
             spxp->packet_size *= frames_per_packet;
 
-        if (ff_alloc_extradata(st->codecpar, os->psize) < 0)
-            return AVERROR(ENOMEM);
+        st->codecpar->extradata_size = os->psize;
+        st->codecpar->extradata = av_malloc(st->codecpar->extradata_size
+                                            + AV_INPUT_BUFFER_PADDING_SIZE);
         memcpy(st->codecpar->extradata, p, st->codecpar->extradata_size);
 
         avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
