@@ -3,26 +3,26 @@
  * Copyright (c) 2010 Fabrice Bellard
  *                    Romain Degez
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
- * @brief MPEG-4 / RTP Code
+ * @brief MPEG4 / RTP Code
  * @author Fabrice Bellard
  * @author Romain Degez
  */
@@ -93,19 +93,17 @@ static const AttrNameMap attr_names[] = {
 
 static void close_context(PayloadContext *data)
 {
-    av_free(data->au_headers);
-    av_free(data->mode);
+    av_freep(&data->au_headers);
+    av_freep(&data->mode);
 }
 
 static int parse_fmtp_config(AVCodecParameters *par, char *value)
 {
     /* decode the hexa encoded parameter */
     int len = ff_hex_to_data(NULL, value);
-    av_free(par->extradata);
-    par->extradata = av_mallocz(len + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!par->extradata)
+    av_freep(&par->extradata);
+    if (ff_alloc_extradata(par, len))
         return AVERROR(ENOMEM);
-    par->extradata_size = len;
     ff_hex_to_data(par->extradata, value);
     return 0;
 }
@@ -166,6 +164,7 @@ static int aac_parse_packet(AVFormatContext *ctx, PayloadContext *data,
                             int flags)
 {
     int ret;
+
 
     if (!buf) {
         if (data->cur_au_index > data->nb_au_headers) {
