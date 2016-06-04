@@ -2,20 +2,20 @@
  * AVC helper functions for muxers
  * Copyright (c) 2006 Baptiste Coudurier <baptiste.coudurier@smartjog.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -106,7 +106,7 @@ int ff_avc_parse_nal_units_buf(const uint8_t *buf_in, uint8_t **buf, int *size)
 int ff_isom_write_avcc(AVIOContext *pb, const uint8_t *data, int len)
 {
     if (len > 6) {
-        /* check for h264 start code */
+        /* check for H.264 start code */
         if (AV_RB32(data) == 0x00000001 ||
             AV_RB24(data) == 0x000001) {
             uint8_t *buf=NULL, *end, *start;
@@ -180,7 +180,7 @@ int ff_avc_write_annexb_extradata(const uint8_t *in, uint8_t **buf, int *size)
     if (11 + sps_size + pps_size > *size)
         return AVERROR_INVALIDDATA;
     out_size = 8 + sps_size + pps_size;
-    out = av_mallocz(out_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    out = av_mallocz(out_size);
     if (!out)
         return AVERROR(ENOMEM);
     AV_WB32(&out[0], 0x00000001);
