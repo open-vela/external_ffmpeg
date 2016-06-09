@@ -4,20 +4,20 @@
  * Copyright (c) 2002 Francois Revol <revol@free.fr>
  * Copyright (c) 2006 Baptiste Coudurier <baptiste.coudurier@free.fr>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,15 +38,15 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_HEVC        , 0x23 },
     { AV_CODEC_ID_AAC         , 0x40 },
     { AV_CODEC_ID_MP4ALS      , 0x40 }, /* 14496-3 ALS */
-    { AV_CODEC_ID_MPEG2VIDEO  , 0x61 }, /* MPEG-2 Main */
-    { AV_CODEC_ID_MPEG2VIDEO  , 0x60 }, /* MPEG-2 Simple */
-    { AV_CODEC_ID_MPEG2VIDEO  , 0x62 }, /* MPEG-2 SNR */
-    { AV_CODEC_ID_MPEG2VIDEO  , 0x63 }, /* MPEG-2 Spatial */
-    { AV_CODEC_ID_MPEG2VIDEO  , 0x64 }, /* MPEG-2 High */
-    { AV_CODEC_ID_MPEG2VIDEO  , 0x65 }, /* MPEG-2 422 */
-    { AV_CODEC_ID_AAC         , 0x66 }, /* MPEG-2 AAC Main */
-    { AV_CODEC_ID_AAC         , 0x67 }, /* MPEG-2 AAC Low */
-    { AV_CODEC_ID_AAC         , 0x68 }, /* MPEG-2 AAC SSR */
+    { AV_CODEC_ID_MPEG2VIDEO  , 0x61 }, /* MPEG2 Main */
+    { AV_CODEC_ID_MPEG2VIDEO  , 0x60 }, /* MPEG2 Simple */
+    { AV_CODEC_ID_MPEG2VIDEO  , 0x62 }, /* MPEG2 SNR */
+    { AV_CODEC_ID_MPEG2VIDEO  , 0x63 }, /* MPEG2 Spatial */
+    { AV_CODEC_ID_MPEG2VIDEO  , 0x64 }, /* MPEG2 High */
+    { AV_CODEC_ID_MPEG2VIDEO  , 0x65 }, /* MPEG2 422 */
+    { AV_CODEC_ID_AAC         , 0x66 }, /* MPEG2 AAC Main */
+    { AV_CODEC_ID_AAC         , 0x67 }, /* MPEG2 AAC Low */
+    { AV_CODEC_ID_AAC         , 0x68 }, /* MPEG2 AAC SSR */
     { AV_CODEC_ID_MP3         , 0x69 }, /* 13818-3 */
     { AV_CODEC_ID_MP2         , 0x69 }, /* 11172-3 */
     { AV_CODEC_ID_MPEG1VIDEO  , 0x6A }, /* 11172-2 */
@@ -57,10 +57,11 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_VC1         , 0xA3 },
     { AV_CODEC_ID_DIRAC       , 0xA4 },
     { AV_CODEC_ID_AC3         , 0xA5 },
+    { AV_CODEC_ID_EAC3        , 0xA6 },
     { AV_CODEC_ID_DTS         , 0xA9 }, /* mp4ra.org */
-    { AV_CODEC_ID_TSCC2       , 0xD0 }, /* nonstandard, camtasia uses it */
-    { AV_CODEC_ID_VORBIS      , 0xDD }, /* nonstandard, gpac uses it */
-    { AV_CODEC_ID_DVD_SUBTITLE, 0xE0 }, /* nonstandard, see unsupported-embedded-subs-2.mp4 */
+    { AV_CODEC_ID_TSCC2       , 0xD0 }, /* non standard, camtasia uses it */
+    { AV_CODEC_ID_VORBIS      , 0xDD }, /* non standard, gpac uses it */
+    { AV_CODEC_ID_DVD_SUBTITLE, 0xE0 }, /* non standard, see unsupported-embedded-subs-2.mp4 */
     { AV_CODEC_ID_QCELP       , 0xE1 },
     { AV_CODEC_ID_MPEG4SYSTEMS, 0x01 },
     { AV_CODEC_ID_MPEG4SYSTEMS, 0x02 },
@@ -70,11 +71,10 @@ const AVCodecTag ff_mp4_obj_type[] = {
 const AVCodecTag ff_codec_movvideo_tags[] = {
 /*  { AV_CODEC_ID_, MKTAG('I', 'V', '5', '0') }, *//* Indeo 5.0 */
 
-    { AV_CODEC_ID_RAWVIDEO, MKTAG('r', 'a', 'w', ' ') }, /* uncompressed RGB */
-    { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', '2') }, /* uncompressed YUV422 */
-    { AV_CODEC_ID_RAWVIDEO, MKTAG('A', 'V', 'U', 'I') }, /* YUV with alpha-channel (AVID uncompressed) */
-    { AV_CODEC_ID_RAWVIDEO, MKTAG('2', 'v', 'u', 'y') }, /* uncompressed 8-bit 4:2:2 */
-    { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', 's') }, /* same as 2VUY but byte-swapped */
+    { AV_CODEC_ID_RAWVIDEO, MKTAG('r', 'a', 'w', ' ') }, /* Uncompressed RGB */
+    { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', '2') }, /* Uncompressed YUV422 */
+    { AV_CODEC_ID_RAWVIDEO, MKTAG('2', 'v', 'u', 'y') }, /* UNCOMPRESSED 8BIT 4:2:2 */
+    { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', 's') }, /* same as 2vuy but byte swapped */
 
     { AV_CODEC_ID_RAWVIDEO, MKTAG('L', '5', '5', '5') },
     { AV_CODEC_ID_RAWVIDEO, MKTAG('L', '5', '6', '5') },
@@ -93,16 +93,24 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_RAWVIDEO, MKTAG('R', '4', '2', '0') }, /* Radius DV YUV PAL */
     { AV_CODEC_ID_RAWVIDEO, MKTAG('R', '4', '1', '1') }, /* Radius DV YUV NTSC */
 
-    { AV_CODEC_ID_R10K,   MKTAG('R', '1', '0', 'k') }, /* uncompressed 10-bit RGB */
-    { AV_CODEC_ID_R10K,   MKTAG('R', '1', '0', 'g') }, /* uncompressed 10-bit RGB */
-    { AV_CODEC_ID_R210,   MKTAG('r', '2', '1', '0') }, /* uncompressed 10-bit RGB */
-    { AV_CODEC_ID_V210,   MKTAG('v', '2', '1', '0') }, /* uncompressed 10-bit 4:2:2 */
-    { AV_CODEC_ID_V210,   MKTAG('b', 'x', 'y', '2') }, /* BOXX 10-bit 4:2:2 */
-    { AV_CODEC_ID_V410,   MKTAG('v', '4', '1', '0') }, /* uncompressed 10-bit 4:4:4 */
+    { AV_CODEC_ID_R10K,   MKTAG('R', '1', '0', 'k') }, /* UNCOMPRESSED 10BIT RGB */
+    { AV_CODEC_ID_R10K,   MKTAG('R', '1', '0', 'g') }, /* UNCOMPRESSED 10BIT RGB */
+    { AV_CODEC_ID_R210,   MKTAG('r', '2', '1', '0') }, /* UNCOMPRESSED 10BIT RGB */
+    { AV_CODEC_ID_AVUI,   MKTAG('A', 'V', 'U', 'I') }, /* AVID Uncompressed deinterleaved UYVY422 */
+    { AV_CODEC_ID_AVRP,   MKTAG('A', 'V', 'r', 'p') }, /* Avid 1:1 10-bit RGB Packer */
+    { AV_CODEC_ID_AVRP,   MKTAG('S', 'U', 'D', 'S') }, /* Avid DS Uncompressed */
+    { AV_CODEC_ID_V210,   MKTAG('v', '2', '1', '0') }, /* UNCOMPRESSED 10BIT 4:2:2 */
+    { AV_CODEC_ID_V210,   MKTAG('b', 'x', 'y', '2') }, /* BOXX 10BIT 4:2:2 */
+    { AV_CODEC_ID_V308,   MKTAG('v', '3', '0', '8') }, /* UNCOMPRESSED  8BIT 4:4:4 */
+    { AV_CODEC_ID_V408,   MKTAG('v', '4', '0', '8') }, /* UNCOMPRESSED  8BIT 4:4:4:4 */
+    { AV_CODEC_ID_V410,   MKTAG('v', '4', '1', '0') }, /* UNCOMPRESSED 10BIT 4:4:4 */
+    { AV_CODEC_ID_Y41P,   MKTAG('Y', '4', '1', 'P') }, /* UNCOMPRESSED 12BIT 4:1:1 */
+    { AV_CODEC_ID_YUV4,   MKTAG('y', 'u', 'v', '4') }, /* libquicktime packed yuv420p */
+    { AV_CODEC_ID_TARGA_Y216, MKTAG('Y', '2', '1', '6') },
 
     { AV_CODEC_ID_MJPEG,  MKTAG('j', 'p', 'e', 'g') }, /* PhotoJPEG */
     { AV_CODEC_ID_MJPEG,  MKTAG('m', 'j', 'p', 'a') }, /* Motion-JPEG (format A) */
-    { AV_CODEC_ID_MJPEG,  MKTAG('A', 'V', 'D', 'J') }, /* MJPEG with alpha-channel (AVID JFIF meridien compressed) */
+    { AV_CODEC_ID_AVRN ,  MKTAG('A', 'V', 'D', 'J') }, /* MJPEG with alpha-channel (AVID JFIF meridien compressed) */
 /*  { AV_CODEC_ID_MJPEG,  MKTAG('A', 'V', 'R', 'n') }, *//* MJPEG with alpha-channel (AVID ABVB/Truevision NuVista) */
     { AV_CODEC_ID_MJPEG,  MKTAG('d', 'm', 'b', '1') }, /* Motion JPEG OpenDML */
     { AV_CODEC_ID_MJPEGB, MKTAG('m', 'j', 'p', 'b') }, /* Motion-JPEG (format B) */
@@ -117,8 +125,8 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_MPEG4, MKTAG('X', 'V', 'I', 'D') },
     { AV_CODEC_ID_MPEG4, MKTAG('3', 'I', 'V', '2') }, /* experimental: 3IVX files before ivx D4 4.5.1 */
 
-    { AV_CODEC_ID_H263, MKTAG('h', '2', '6', '3') }, /* H.263 */
-    { AV_CODEC_ID_H263, MKTAG('s', '2', '6', '3') }, /* H.263 ?? works */
+    { AV_CODEC_ID_H263, MKTAG('h', '2', '6', '3') }, /* H263 */
+    { AV_CODEC_ID_H263, MKTAG('s', '2', '6', '3') }, /* H263 ?? works */
 
     { AV_CODEC_ID_DVVIDEO, MKTAG('d', 'v', 'c', 'p') }, /* DV PAL */
     { AV_CODEC_ID_DVVIDEO, MKTAG('d', 'v', 'c', ' ') }, /* DV NTSC */
@@ -152,6 +160,9 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_HEVC, MKTAG('h', 'v', 'c', '1') }, /* HEVC/H.265 which indicates parameter sets shall not be in ES */
 
     { AV_CODEC_ID_H264, MKTAG('a', 'v', 'c', '1') }, /* AVC-1/H.264 */
+    { AV_CODEC_ID_H264, MKTAG('a', 'v', 'c', '2') },
+    { AV_CODEC_ID_H264, MKTAG('a', 'v', 'c', '3') },
+    { AV_CODEC_ID_H264, MKTAG('a', 'v', 'c', '4') },
     { AV_CODEC_ID_H264, MKTAG('a', 'i', '5', 'p') }, /* AVC-Intra  50M 720p24/30/60 */
     { AV_CODEC_ID_H264, MKTAG('a', 'i', '5', 'q') }, /* AVC-Intra  50M 720p25/50 */
     { AV_CODEC_ID_H264, MKTAG('a', 'i', '5', '2') }, /* AVC-Intra  50M 1080p25/50 */
@@ -165,7 +176,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_H264, MKTAG('a', 'i', '1', '5') }, /* AVC-Intra 100M 1080i50 */
     { AV_CODEC_ID_H264, MKTAG('a', 'i', '1', '6') }, /* AVC-Intra 100M 1080i60 */
     { AV_CODEC_ID_H264, MKTAG('A', 'V', 'i', 'n') }, /* AVC-Intra with implicit SPS/PPS */
-    { AV_CODEC_ID_H264, MKTAG('a', 'i', 'v', 'x') }, /* XAVC 10-bit 4:2:2 */
+    { AV_CODEC_ID_H264, MKTAG('a', 'i', 'v', 'x') }, /* XAVC 4:2:2 10bit */
     { AV_CODEC_ID_H264, MKTAG('r', 'v', '6', '4') }, /* X-Com Radvision */
 
     { AV_CODEC_ID_MPEG1VIDEO, MKTAG('m', '1', 'v', ' ') },
@@ -173,22 +184,22 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_MPEG1VIDEO, MKTAG('m', 'p', 'e', 'g') }, /* MPEG */
     { AV_CODEC_ID_MPEG1VIDEO, MKTAG('m', 'p', '1', 'v') }, /* CoreMedia CMVideoCodecType */
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', '2', 'v', '1') }, /* Apple MPEG-2 Camcorder */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '1') }, /* MPEG-2 HDV 720p30 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '2') }, /* MPEG-2 HDV 1080i60 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '3') }, /* MPEG-2 HDV 1080i50 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '4') }, /* MPEG-2 HDV 720p24 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '5') }, /* MPEG-2 HDV 720p25 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '6') }, /* MPEG-2 HDV 1080p24 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '7') }, /* MPEG-2 HDV 1080p25 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '8') }, /* MPEG-2 HDV 1080p30 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '9') }, /* MPEG-2 HDV 720p60 JVC */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', 'a') }, /* MPEG-2 HDV 720p50 */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '5', 'n') }, /* MPEG-2 IMX NTSC 525/60 50mb/s produced by FCP */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '5', 'p') }, /* MPEG-2 IMX PAL 625/50 50mb/s produced by FCP */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '4', 'n') }, /* MPEG-2 IMX NTSC 525/60 40mb/s produced by FCP */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '4', 'p') }, /* MPEG-2 IMX PAL 625/50 40mb/s produced by FCP */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '3', 'n') }, /* MPEG-2 IMX NTSC 525/60 30mb/s produced by FCP */
-    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '3', 'p') }, /* MPEG-2 IMX PAL 625/50 30mb/s produced by FCP */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '1') }, /* MPEG2 HDV 720p30 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '2') }, /* MPEG2 HDV 1080i60 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '3') }, /* MPEG2 HDV 1080i50 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '4') }, /* MPEG2 HDV 720p24 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '5') }, /* MPEG2 HDV 720p25 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '6') }, /* MPEG2 HDV 1080p24 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '7') }, /* MPEG2 HDV 1080p25 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '8') }, /* MPEG2 HDV 1080p30 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', '9') }, /* MPEG2 HDV 720p60 JVC */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('h', 'd', 'v', 'a') }, /* MPEG2 HDV 720p50 */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '5', 'n') }, /* MPEG2 IMX NTSC 525/60 50mb/s produced by FCP */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '5', 'p') }, /* MPEG2 IMX PAL 625/50 50mb/s produced by FCP */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '4', 'n') }, /* MPEG2 IMX NTSC 525/60 40mb/s produced by FCP */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '4', 'p') }, /* MPEG2 IMX PAL 625/50 40mb/s produced by FCP */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '3', 'n') }, /* MPEG2 IMX NTSC 525/60 30mb/s produced by FCP */
+    { AV_CODEC_ID_MPEG2VIDEO, MKTAG('m', 'x', '3', 'p') }, /* MPEG2 IMX PAL 625/50 30mb/s produced by FCP */
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('x', 'd', '5', '1') }, /* XDCAM HD422 720p30 CBR */
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('x', 'd', '5', '4') }, /* XDCAM HD422 720p24 CBR */
     { AV_CODEC_ID_MPEG2VIDEO, MKTAG('x', 'd', '5', '5') }, /* XDCAM HD422 720p25 CBR */
@@ -232,6 +243,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 
     { AV_CODEC_ID_DIRAC,     MKTAG('d', 'r', 'a', 'c') },
     { AV_CODEC_ID_DNXHD,     MKTAG('A', 'V', 'd', 'n') }, /* AVID DNxHD */
+    { AV_CODEC_ID_DNXHD,     MKTAG('A', 'V', 'd', 'h') }, /* AVID DNxHR */
     { AV_CODEC_ID_H263,      MKTAG('H', '2', '6', '3') },
     { AV_CODEC_ID_MSMPEG4V3, MKTAG('3', 'I', 'V', 'D') }, /* 3ivx DivX Doctor */
     { AV_CODEC_ID_RAWVIDEO,  MKTAG('A', 'V', '1', 'x') }, /* AVID 1:1x */
@@ -256,6 +268,23 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 
     { AV_CODEC_ID_DXV, MKTAG('D', 'X', 'D', '3') },
     { AV_CODEC_ID_DXV, MKTAG('D', 'X', 'D', 'I') },
+
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'R', 'G') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'R', 'A') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'G', '0') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'Y', '0') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'Y', '2') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'Y', '4') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'Y', 'A') },
+
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '0') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '1') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '2') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '3') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '4') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '5') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '6') },
+    { AV_CODEC_ID_SHEERVIDEO, MKTAG('S', 'h', 'r', '7') },
 
     { AV_CODEC_ID_NONE, 0 },
 };
@@ -284,6 +313,7 @@ const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_MP3,             MKTAG('.', 'm', 'p', '3') },
     { AV_CODEC_ID_MP3,             0x6D730055                },
     { AV_CODEC_ID_NELLYMOSER,      MKTAG('n', 'm', 'o', 's') }, /* Flash Media Server */
+    { AV_CODEC_ID_NELLYMOSER,      MKTAG('N', 'E', 'L', 'L') }, /* Perian */
     { AV_CODEC_ID_PCM_ALAW,        MKTAG('a', 'l', 'a', 'w') },
     { AV_CODEC_ID_PCM_F32BE,       MKTAG('f', 'l', '3', '2') },
     { AV_CODEC_ID_PCM_F32LE,       MKTAG('f', 'l', '3', '2') },
@@ -309,19 +339,22 @@ const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_SPEEX,           MKTAG('s', 'p', 'e', 'x') }, /* Flash Media Server */
     { AV_CODEC_ID_SPEEX,           MKTAG('S', 'P', 'X', 'N') }, /* ZygoAudio (quality 10 mode) */
     { AV_CODEC_ID_WMAV2,           MKTAG('W', 'M', 'A', '2') },
+    { AV_CODEC_ID_EVRC,            MKTAG('s', 'e', 'v', 'c') }, /* 3GPP2 */
+    { AV_CODEC_ID_SMV,             MKTAG('s', 's', 'm', 'v') }, /* 3GPP2 */
     { AV_CODEC_ID_NONE, 0 },
 };
 
 const AVCodecTag ff_codec_movsubtitle_tags[] = {
     { AV_CODEC_ID_MOV_TEXT, MKTAG('t', 'e', 'x', 't') },
     { AV_CODEC_ID_MOV_TEXT, MKTAG('t', 'x', '3', 'g') },
+    { AV_CODEC_ID_EIA_608,  MKTAG('c', '6', '0', '8') },
     { AV_CODEC_ID_NONE, 0 },
 };
 
 /* map numeric codes from mdhd atom to ISO 639 */
 /* cf. QTFileFormat.pdf p253, qtff.pdf p205 */
 /* http://developer.apple.com/documentation/mac/Text/Text-368.html */
-/* deprecated by putting the code as 3*5 bits ASCII */
+/* deprecated by putting the code as 3*5bit ascii */
 static const char mov_mdhd_language_map[][4] = {
     /* 0-9 */
     "eng", "fra", "ger", "ita", "dut", "sve", "spa", "dan", "por", "nor",
@@ -359,7 +392,7 @@ int ff_mov_iso639_to_lang(const char lang[4], int mp4)
     /* handle undefined as such */
     if (lang[0] == '\0')
         lang = "und";
-    /* 5 bits ASCII */
+    /* 5bit ascii */
     for (i = 0; i < 3; i++) {
         uint8_t c = lang[i];
         c -= 0x60;
@@ -411,7 +444,7 @@ int ff_mp4_read_descr(AVFormatContext *fc, AVIOContext *pb, int *tag)
     int len;
     *tag = avio_r8(pb);
     len = ff_mp4_read_descr_len(pb);
-    av_log(fc, AV_LOG_TRACE, "MPEG-4 description: tag=0x%02x len=%d\n", *tag, len);
+    av_log(fc, AV_LOG_TRACE, "MPEG4 description: tag=0x%02x len=%d\n", *tag, len);
     return len;
 }
 
@@ -442,28 +475,35 @@ static const AVCodecTag mp4_audio_types[] = {
 
 int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext *pb)
 {
+    enum AVCodecID codec_id;
+    unsigned v;
     int len, tag;
+    int ret;
     int object_type_id = avio_r8(pb);
     avio_r8(pb); /* stream type */
     avio_rb24(pb); /* buffer size db */
-    avio_rb32(pb); /* max bitrate */
-    avio_rb32(pb); /* avg bitrate */
 
-    st->codecpar->codec_id = ff_codec_get_id(ff_mp4_obj_type, object_type_id);
+    v = avio_rb32(pb);
+    // TODO: fix this
+    //if (v < INT32_MAX)
+    //    st->codecpar->rc_max_rate = v;
+
+    st->codecpar->bit_rate = avio_rb32(pb); /* avg bitrate */
+
+    codec_id= ff_codec_get_id(ff_mp4_obj_type, object_type_id);
+    if (codec_id)
+        st->codecpar->codec_id = codec_id;
     av_log(fc, AV_LOG_TRACE, "esds object type id 0x%02x\n", object_type_id);
     len = ff_mp4_read_descr(fc, pb, &tag);
     if (tag == MP4DecSpecificDescrTag) {
-        av_log(fc, AV_LOG_TRACE, "Specific MPEG-4 header len=%d\n", len);
+        av_log(fc, AV_LOG_TRACE, "Specific MPEG4 header len=%d\n", len);
         if (!len || (uint64_t)len > (1<<30))
             return -1;
         av_free(st->codecpar->extradata);
-        st->codecpar->extradata = av_mallocz(len + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!st->codecpar->extradata)
-            return AVERROR(ENOMEM);
-        avio_read(pb, st->codecpar->extradata, len);
-        st->codecpar->extradata_size = len;
+        if ((ret = ff_get_extradata(fc, st->codecpar, pb, len)) < 0)
+            return ret;
         if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
-            MPEG4AudioConfig cfg;
+            MPEG4AudioConfig cfg = {0};
             avpriv_mpeg4audio_get_config(&cfg, st->codecpar->extradata,
                                          st->codecpar->extradata_size * 8, 1);
             st->codecpar->channels = cfg.channels;
@@ -483,4 +523,105 @@ int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext 
         }
     }
     return 0;
+}
+
+typedef struct MovChannelLayout {
+    int64_t  channel_layout;
+    uint32_t layout_tag;
+} MovChannelLayout;
+
+static const MovChannelLayout mov_channel_layout[] = {
+    { AV_CH_LAYOUT_MONO,                         (100<<16) | 1}, // kCAFChannelLayoutTag_Mono
+    { AV_CH_LAYOUT_STEREO,                       (101<<16) | 2}, // kCAFChannelLayoutTag_Stereo
+    { AV_CH_LAYOUT_STEREO,                       (102<<16) | 2}, // kCAFChannelLayoutTag_StereoHeadphones
+    { AV_CH_LAYOUT_2_1,                          (131<<16) | 3}, // kCAFChannelLayoutTag_ITU_2_1
+    { AV_CH_LAYOUT_QUAD,                         (132<<16) | 4}, // kCAFChannelLayoutTag_ITU_2_2
+    { AV_CH_LAYOUT_2_2,                          (132<<16) | 4}, // kCAFChannelLayoutTag_ITU_2_2
+    { AV_CH_LAYOUT_QUAD,                         (108<<16) | 4}, // kCAFChannelLayoutTag_Quadraphonic
+    { AV_CH_LAYOUT_SURROUND,                     (113<<16) | 3}, // kCAFChannelLayoutTag_MPEG_3_0_A
+    { AV_CH_LAYOUT_4POINT0,                      (115<<16) | 4}, // kCAFChannelLayoutTag_MPEG_4_0_A
+    { AV_CH_LAYOUT_5POINT0_BACK,                 (117<<16) | 5}, // kCAFChannelLayoutTag_MPEG_5_0_A
+    { AV_CH_LAYOUT_5POINT0,                      (117<<16) | 5}, // kCAFChannelLayoutTag_MPEG_5_0_A
+    { AV_CH_LAYOUT_5POINT1_BACK,                 (121<<16) | 6}, // kCAFChannelLayoutTag_MPEG_5_1_A
+    { AV_CH_LAYOUT_5POINT1,                      (121<<16) | 6}, // kCAFChannelLayoutTag_MPEG_5_1_A
+    { AV_CH_LAYOUT_7POINT1,                      (128<<16) | 8}, // kCAFChannelLayoutTag_MPEG_7_1_C
+    { AV_CH_LAYOUT_7POINT1_WIDE,                 (126<<16) | 8}, // kCAFChannelLayoutTag_MPEG_7_1_A
+    { AV_CH_LAYOUT_5POINT1_BACK|AV_CH_LAYOUT_STEREO_DOWNMIX, (130<<16) | 8}, // kCAFChannelLayoutTag_SMPTE_DTV
+    { AV_CH_LAYOUT_STEREO|AV_CH_LOW_FREQUENCY,   (133<<16) | 3}, // kCAFChannelLayoutTag_DVD_4
+    { AV_CH_LAYOUT_2_1|AV_CH_LOW_FREQUENCY,      (134<<16) | 4}, // kCAFChannelLayoutTag_DVD_5
+    { AV_CH_LAYOUT_QUAD|AV_CH_LOW_FREQUENCY,     (135<<16) | 4}, // kCAFChannelLayoutTag_DVD_6
+    { AV_CH_LAYOUT_2_2|AV_CH_LOW_FREQUENCY,      (135<<16) | 4}, // kCAFChannelLayoutTag_DVD_6
+    { AV_CH_LAYOUT_SURROUND|AV_CH_LOW_FREQUENCY, (136<<16) | 4}, // kCAFChannelLayoutTag_DVD_10
+    { AV_CH_LAYOUT_4POINT0|AV_CH_LOW_FREQUENCY,  (137<<16) | 5}, // kCAFChannelLayoutTag_DVD_11
+    { 0, 0},
+};
+#if 0
+int ff_mov_read_chan(AVFormatContext *s, AVStream *st, int64_t size)
+{
+    AVCodecContext *codec= st->codec;
+    uint32_t layout_tag;
+    AVIOContext *pb = s->pb;
+    const MovChannelLayout *layouts = mov_channel_layout;
+
+    if (size < 12)
+        return AVERROR_INVALIDDATA;
+
+    layout_tag = avio_rb32(pb);
+    size -= 4;
+    if (layout_tag == 0) { // kCAFChannelLayoutTag_UseChannelDescriptions
+        // Channel descriptions not implemented
+        av_log_ask_for_sample(s, "Unimplemented container channel layout.\n");
+        avio_skip(pb, size);
+        return 0;
+    }
+    if (layout_tag == 0x10000) { // kCAFChannelLayoutTag_UseChannelBitmap
+        codec->channel_layout = avio_rb32(pb);
+        size -= 4;
+        avio_skip(pb, size);
+        return 0;
+    }
+    while (layouts->channel_layout) {
+        if (layout_tag == layouts->layout_tag) {
+            codec->channel_layout = layouts->channel_layout;
+            break;
+        }
+        layouts++;
+    }
+    if (!codec->channel_layout)
+        av_log(s, AV_LOG_WARNING, "Unknown container channel layout.\n");
+    avio_skip(pb, size);
+
+    return 0;
+}
+#endif
+
+void ff_mov_write_chan(AVIOContext *pb, int64_t channel_layout)
+{
+    const MovChannelLayout *layouts;
+    uint32_t layout_tag = 0;
+
+    for (layouts = mov_channel_layout; layouts->channel_layout; layouts++)
+        if (channel_layout == layouts->channel_layout) {
+            layout_tag = layouts->layout_tag;
+            break;
+        }
+
+    if (layout_tag) {
+        avio_wb32(pb, layout_tag); // mChannelLayoutTag
+        avio_wb32(pb, 0);          // mChannelBitmap
+    } else {
+        avio_wb32(pb, 0x10000);    // kCAFChannelLayoutTag_UseChannelBitmap
+        avio_wb32(pb, channel_layout);
+    }
+    avio_wb32(pb, 0);              // mNumberChannelDescriptions
+}
+
+const struct AVCodecTag *avformat_get_mov_video_tags(void)
+{
+    return ff_codec_movvideo_tags;
+}
+
+const struct AVCodecTag *avformat_get_mov_audio_tags(void)
+{
+    return ff_codec_movaudio_tags;
 }

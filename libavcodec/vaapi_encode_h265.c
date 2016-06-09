@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -868,10 +868,7 @@ static int vaapi_encode_h265_init_sequence_params(AVCodecContext *avctx)
 
         vpic->pic_fields.bits.screen_content_flag = 0;
         vpic->pic_fields.bits.enable_gpu_weighted_prediction = 0;
-
-        // Per-CU QP changes are required for non-constant-QP modes.
-        vpic->pic_fields.bits.cu_qp_delta_enabled_flag =
-            ctx->va_rc_mode != VA_RC_CQP;
+        vpic->pic_fields.bits.cu_qp_delta_enabled_flag = 1;
     }
 
     {
@@ -1078,7 +1075,7 @@ static int vaapi_encode_h265_init_slice_params(AVCodecContext *avctx,
 
     av_assert0(pic->nb_refs <= 2);
     if (pic->nb_refs >= 1) {
-        // Backward reference for P- or B-frame.
+        // Backward reference for P or B frame.
         av_assert0(pic->type == PICTURE_TYPE_P ||
                    pic->type == PICTURE_TYPE_B);
 
@@ -1086,7 +1083,7 @@ static int vaapi_encode_h265_init_slice_params(AVCodecContext *avctx,
         vslice->ref_pic_list0[0] = vpic->reference_frames[0];
     }
     if (pic->nb_refs >= 2) {
-        // Forward reference for B-frame.
+        // Forward reference for B frame.
         av_assert0(pic->type == PICTURE_TYPE_B);
 
         vslice->num_ref_idx_l1_active_minus1 = 0;
@@ -1199,7 +1196,7 @@ static av_cold int vaapi_encode_h265_init_constant_bitrate(AVCodecContext *avctx
     priv->fixed_qp_p   = 30;
     priv->fixed_qp_b   = 30;
 
-    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %d bps.\n",
+    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
            avctx->bit_rate);
     return 0;
 }
@@ -1223,7 +1220,7 @@ static av_cold int vaapi_encode_h265_init_fixed_qp(AVCodecContext *avctx)
         priv->fixed_qp_b = priv->fixed_qp_p;
 
     av_log(avctx, AV_LOG_DEBUG, "Using fixed QP = "
-           "%d / %d / %d for IDR- / P- / B-frames.\n",
+           "%d / %d / %d for IDR / P / B frames.\n",
            priv->fixed_qp_idr, priv->fixed_qp_p, priv->fixed_qp_b);
     return 0;
 }
@@ -1324,7 +1321,7 @@ static av_cold int vaapi_encode_h265_init(AVCodecContext *avctx)
                    offsetof(VAAPIEncodeH265Options, x))
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
 static const AVOption vaapi_encode_h265_options[] = {
-    { "qp", "Constant QP (for P-frames; scaled by qfactor/qoffset for I/B)",
+    { "qp", "Constant QP (for P frames; scaled by qfactor/qoffset for I/B)",
       OFFSET(qp), AV_OPT_TYPE_INT, { .i64 = 25 }, 0, 52, FLAGS },
     { NULL },
 };
