@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /*
  * To create a simple file for smooth streaming:
- * ffmpeg <normal input/transcoding options> -movflags frag_keyframe foo.ismv
+ * avconv <normal input/transcoding options> -movflags frag_keyframe foo.ismv
  * ismindex -n foo foo.ismv
  * This step creates foo.ism and foo.ismc that is required by IIS for
  * serving it.
@@ -46,8 +46,6 @@
 
 #include <stdio.h>
 #include <string.h>
-
-#include "cmdutils.h"
 
 #include "libavformat/avformat.h"
 #include "libavformat/isom.h"
@@ -344,9 +342,8 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
     }
     fieldlength = avio_rb32(f);
     track->chunks  = avio_rb32(f);
-    track->offsets = av_mallocz_array(track->chunks, sizeof(*track->offsets));
+    track->offsets = av_mallocz(sizeof(*track->offsets) * track->chunks);
     if (!track->offsets) {
-        track->chunks = 0;
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -453,41 +450,40 @@ fail:
     return err;
 }
 
-static int get_private_data(struct Track *track, AVCodecContext *codec)
+static int get_private_data(struct Track *track, AVCodecParameters *codecpar)
 {
-    track->codec_private_size = 0;
-    track->codec_private      = av_mallocz(codec->extradata_size);
+    track->codec_private_size = codecpar->extradata_size;
+    track->codec_private      = av_mallocz(codecpar->extradata_size);
     if (!track->codec_private)
         return AVERROR(ENOMEM);
-    track->codec_private_size = codec->extradata_size;
-    memcpy(track->codec_private, codec->extradata, codec->extradata_size);
+    memcpy(track->codec_private, codecpar->extradata, codecpar->extradata_size);
     return 0;
 }
 
-static int get_video_private_data(struct Track *track, AVCodecContext *codec)
+static int get_video_private_data(struct Track *track, AVCodecParameters *codecpar)
 {
     AVIOContext *io = NULL;
     uint16_t sps_size, pps_size;
     int err;
 
-    if (codec->codec_id == AV_CODEC_ID_VC1)
-        return get_private_data(track, codec);
+    if (codecpar->codec_id == AV_CODEC_ID_VC1)
+        return get_private_data(track, codecpar);
 
     if ((err = avio_open_dyn_buf(&io)) < 0)
         goto fail;
     err = AVERROR(EINVAL);
-    if (codec->extradata_size < 11 || codec->extradata[0] != 1)
+    if (codecpar->extradata_size < 11 || codecpar->extradata[0] != 1)
         goto fail;
-    sps_size = AV_RB16(&codec->extradata[6]);
-    if (11 + sps_size > codec->extradata_size)
-        goto fail;
-    avio_wb32(io, 0x00000001);
-    avio_write(io, &codec->extradata[8], sps_size);
-    pps_size = AV_RB16(&codec->extradata[9 + sps_size]);
-    if (11 + sps_size + pps_size > codec->extradata_size)
+    sps_size = AV_RB16(&codecpar->extradata[6]);
+    if (11 + sps_size > codecpar->extradata_size)
         goto fail;
     avio_wb32(io, 0x00000001);
-    avio_write(io, &codec->extradata[11 + sps_size], pps_size);
+    avio_write(io, &codecpar->extradata[8], sps_size);
+    pps_size = AV_RB16(&codecpar->extradata[9 + sps_size]);
+    if (11 + sps_size + pps_size > codecpar->extradata_size)
+        goto fail;
+    avio_wb32(io, 0x00000001);
+    avio_write(io, &codecpar->extradata[11 + sps_size], pps_size);
     err = 0;
 
 fail:
@@ -527,7 +523,7 @@ static int handle_file(struct Tracks *tracks, const char *file, int split,
         struct Track **temp;
         AVStream *st = ctx->streams[i];
 
-        if (st->codec->bit_rate == 0) {
+        if (st->codecpar->bit_rate == 0) {
             fprintf(stderr, "Skipping track %d in %s as it has zero bitrate\n",
                     st->id, file);
             continue;
@@ -538,9 +534,8 @@ static int handle_file(struct Tracks *tracks, const char *file, int split,
             err = AVERROR(ENOMEM);
             goto fail;
         }
-        temp = av_realloc_array(tracks->tracks,
-                                tracks->nb_tracks + 1,
-                                sizeof(*tracks->tracks));
+        temp = av_realloc(tracks->tracks,
+                          sizeof(*tracks->tracks) * (tracks->nb_tracks + 1));
         if (!temp) {
             av_free(track);
             err = AVERROR(ENOMEM);
@@ -553,12 +548,12 @@ static int handle_file(struct Tracks *tracks, const char *file, int split,
         if ((ptr = strrchr(file, '/')))
             track->name = ptr + 1;
 
-        track->bitrate   = st->codec->bit_rate;
+        track->bitrate   = st->codecpar->bit_rate;
         track->track_id  = st->id;
         track->timescale = st->time_base.den;
         track->duration  = st->duration;
-        track->is_audio  = st->codec->codec_type == AVMEDIA_TYPE_AUDIO;
-        track->is_video  = st->codec->codec_type == AVMEDIA_TYPE_VIDEO;
+        track->is_audio  = st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
+        track->is_video  = st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
 
         if (!track->is_audio && !track->is_video) {
             fprintf(stderr,
@@ -576,30 +571,30 @@ static int handle_file(struct Tracks *tracks, const char *file, int split,
             if (tracks->audio_track < 0)
                 tracks->audio_track = tracks->nb_tracks;
             tracks->nb_audio_tracks++;
-            track->channels    = st->codec->channels;
-            track->sample_rate = st->codec->sample_rate;
-            if (st->codec->codec_id == AV_CODEC_ID_AAC) {
+            track->channels    = st->codecpar->channels;
+            track->sample_rate = st->codecpar->sample_rate;
+            if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
                 track->fourcc    = "AACL";
                 track->tag       = 255;
                 track->blocksize = 4;
-            } else if (st->codec->codec_id == AV_CODEC_ID_WMAPRO) {
+            } else if (st->codecpar->codec_id == AV_CODEC_ID_WMAPRO) {
                 track->fourcc    = "WMAP";
-                track->tag       = st->codec->codec_tag;
-                track->blocksize = st->codec->block_align;
+                track->tag       = st->codecpar->codec_tag;
+                track->blocksize = st->codecpar->block_align;
             }
-            get_private_data(track, st->codec);
+            get_private_data(track, st->codecpar);
         }
         if (track->is_video) {
             if (tracks->video_track < 0)
                 tracks->video_track = tracks->nb_tracks;
             tracks->nb_video_tracks++;
-            track->width  = st->codec->width;
-            track->height = st->codec->height;
-            if (st->codec->codec_id == AV_CODEC_ID_H264)
+            track->width  = st->codecpar->width;
+            track->height = st->codecpar->height;
+            if (st->codecpar->codec_id == AV_CODEC_ID_H264)
                 track->fourcc = "H264";
-            else if (st->codec->codec_id == AV_CODEC_ID_VC1)
+            else if (st->codecpar->codec_id == AV_CODEC_ID_VC1)
                 track->fourcc = "WVC1";
-            get_video_private_data(track, st->codec);
+            get_video_private_data(track, st->codecpar);
         }
 
         tracks->nb_tracks++;
