@@ -3,20 +3,20 @@
  * Copyright (c) 2001 Fabrice Bellard (original AU code)
  * Copyright (c) 2010 Rafael Carre
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -65,9 +65,26 @@ static int rso_read_header(AVFormatContext *s)
     st->codecpar->channels     = 1;
     st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
     st->codecpar->sample_rate  = rate;
-    st->codecpar->block_align  = 1;
 
     avpriv_set_pts_info(st, 64, 1, rate);
+
+    return 0;
+}
+
+#define BLOCK_SIZE 1024 /* in samples */
+
+static int rso_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    int bps = av_get_bits_per_sample(s->streams[0]->codecpar->codec_id);
+    int ret = av_get_packet(s->pb, pkt, BLOCK_SIZE * bps >> 3);
+
+    if (ret < 0)
+        return ret;
+
+    pkt->stream_index = 0;
+
+    /* note: we need to modify the packet size here to handle the last packet */
+    pkt->size = ret;
 
     return 0;
 }
@@ -77,7 +94,7 @@ AVInputFormat ff_rso_demuxer = {
     .long_name      =   NULL_IF_CONFIG_SMALL("Lego Mindstorms RSO"),
     .extensions     =   "rso",
     .read_header    =   rso_read_header,
-    .read_packet    =   ff_pcm_read_packet,
+    .read_packet    =   rso_read_packet,
     .read_seek      =   ff_pcm_read_seek,
     .codec_tag      =   (const AVCodecTag* const []){ff_codec_rso_tags, 0},
 };

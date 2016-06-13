@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,9 @@
 static const HWContextType *hw_table[] = {
 #if CONFIG_CUDA
     &ff_hwcontext_type_cuda,
+#endif
+#if CONFIG_DXVA2
+    &ff_hwcontext_type_dxva2,
 #endif
 #if CONFIG_VAAPI
     &ff_hwcontext_type_vaapi,
@@ -173,7 +176,7 @@ AVBufferRef *av_hwframe_ctx_alloc(AVBufferRef *device_ref_in)
     AVHWDeviceContext *device_ctx = (AVHWDeviceContext*)device_ref_in->data;
     const HWContextType  *hw_type = device_ctx->internal->hw_type;
     AVHWFramesContext *ctx;
-    AVBufferRef *buf, *device_ref = NULL;
+    AVBufferRef *buf, *device_ref = NULL;;
 
     ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
@@ -448,4 +451,40 @@ void av_hwframe_constraints_free(AVHWFramesConstraints **constraints)
         av_freep(&(*constraints)->valid_sw_formats);
     }
     av_freep(constraints);
+}
+
+int av_hwdevice_ctx_create(AVBufferRef **pdevice_ref, enum AVHWDeviceType type,
+                           const char *device, AVDictionary *opts, int flags)
+{
+    AVBufferRef *device_ref = NULL;
+    AVHWDeviceContext *device_ctx;
+    int ret = 0;
+
+    device_ref = av_hwdevice_ctx_alloc(type);
+    if (!device_ref) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    device_ctx = (AVHWDeviceContext*)device_ref->data;
+
+    if (!device_ctx->internal->hw_type->device_create) {
+        ret = AVERROR(ENOSYS);
+        goto fail;
+    }
+
+    ret = device_ctx->internal->hw_type->device_create(device_ctx, device,
+                                                       opts, flags);
+    if (ret < 0)
+        goto fail;
+
+    ret = av_hwdevice_ctx_init(device_ref);
+    if (ret < 0)
+        goto fail;
+
+    *pdevice_ref = device_ref;
+    return 0;
+fail:
+    av_buffer_unref(&device_ref);
+    *pdevice_ref = NULL;
+    return ret;
 }
