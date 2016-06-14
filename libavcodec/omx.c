@@ -2,20 +2,20 @@
  * OMX Video encoder
  * Copyright (C) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -690,7 +690,7 @@ static av_cold int omx_encode_init(AVCodecContext *avctx)
                 goto fail;
             }
             if (avctx->codec->id == AV_CODEC_ID_H264) {
-                // For H.264, the extradata can be returned in two separate buffers
+                // For H264, the extradata can be returned in two separate buffers
                 // (the videocore encoder on raspberry pi does this);
                 // therefore check that we have got both SPS and PPS before continuing.
                 int nals[32] = { 0 };
@@ -703,7 +703,7 @@ static av_cold int omx_encode_init(AVCodecContext *avctx)
                          nals[avctx->extradata[i + 4] & 0x1f]++;
                      }
                 }
-                if (nals[H264_NAL_SPS] && nals[H264_NAL_PPS])
+                if (nals[NAL_SPS] && nals[NAL_PPS])
                     break;
             } else {
                 if (avctx->extradata_size > 0)
@@ -847,7 +847,7 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             if (buffer->nFlags & OMX_BUFFERFLAG_ENDOFFRAME) {
                 ret = pkt->size;
                 pkt->pts = av_rescale_q(from_omx_ticks(buffer->nTimeStamp), AV_TIME_BASE_Q, avctx->time_base);
-                // We don't currently enable B-frames for the encoders, so set
+                // We don't currently enable b-frames for the encoders, so set
                 // pkt->dts = pkt->pts. (The calling code behaves worse if the encoder
                 // doesn't set the dts).
                 pkt->dts = pkt->pts;
@@ -897,7 +897,7 @@ static const AVClass omx_mpeg4enc_class = {
 };
 AVCodec ff_mpeg4_omx_encoder = {
     .name             = "mpeg4_omx",
-    .long_name        = NULL_IF_CONFIG_SMALL("OpenMAX IL MPEG-4 video encoder"),
+    .long_name        = NULL_IF_CONFIG_SMALL("OpenMAX IL MPEG4 video encoder"),
     .type             = AVMEDIA_TYPE_VIDEO,
     .id               = AV_CODEC_ID_MPEG4,
     .priv_data_size   = sizeof(OMXCodecContext),
@@ -918,7 +918,7 @@ static const AVClass omx_h264enc_class = {
 };
 AVCodec ff_h264_omx_encoder = {
     .name             = "h264_omx",
-    .long_name        = NULL_IF_CONFIG_SMALL("OpenMAX IL H.264 video encoder"),
+    .long_name        = NULL_IF_CONFIG_SMALL("OpenMAX IL H264 video encoder"),
     .type             = AVMEDIA_TYPE_VIDEO,
     .id               = AV_CODEC_ID_H264,
     .priv_data_size   = sizeof(OMXCodecContext),
