@@ -1,30 +1,30 @@
 /*
- * H263/MPEG4 backend for encoder and decoder
+ * H.263/MPEG-4 backend for encoder and decoder
  * Copyright (c) 2000,2001 Fabrice Bellard
- * H263+ support.
+ * H.263+ support.
  * Copyright (c) 2001 Juan J. Sierralta P
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
- * h263/mpeg4 codec.
+ * H.263/MPEG-4 codec.
  */
 
 #include <limits.h>
@@ -35,7 +35,6 @@
 #include "h263data.h"
 #include "mathops.h"
 #include "mpegutils.h"
-#include "unary.h"
 #include "flv.h"
 #include "mpeg4video.h"
 
@@ -320,7 +319,7 @@ int16_t *ff_h263_pred_motion(MpegEncContext * s, int block, int dir,
     A = mot_val[ - 1];
     /* special case for first (slice) line */
     if (s->first_slice_line && block<3) {
-        // we can't just change some MVs to simulate that as we need them for the B frames (and ME)
+        // we can't just change some MVs to simulate that as we need them for the B-frames (and ME)
         // and if we ever support non rectangular objects than we need to do a few ifs here anyway :(
         if(block==0){ //most common case
             if(s->mb_x  == s->resync_mb_x){ //rare
