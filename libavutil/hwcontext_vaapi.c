@@ -1,35 +1,20 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#include "config.h"
-
-#if HAVE_VAAPI_X11
-#   include <va/va_x11.h>
-#endif
-#if HAVE_VAAPI_DRM
-#   include <va/va_drm.h>
-#endif
-
-#include <fcntl.h>
-#if HAVE_UNISTD_H
-#   include <unistd.h>
-#endif
-
 
 #include "avassert.h"
 #include "buffer.h"
@@ -40,14 +25,6 @@
 #include "mem.h"
 #include "pixdesc.h"
 #include "pixfmt.h"
-
-typedef struct VAAPIDevicePriv {
-#if HAVE_VAAPI_X11
-    Display *x11_display;
-#endif
-
-    int drm_fd;
-} VAAPIDevicePriv;
 
 typedef struct VAAPISurfaceFormat {
     enum AVPixelFormat pix_fmt;
@@ -109,16 +86,16 @@ static struct {
     MAP(YUY2, YUV422,  YUYV422),
     MAP(Y800, YUV400,  GRAY8),
 #ifdef VA_FOURCC_P010
-  //MAP(P010, YUV420_10BPP, P010),
+    MAP(P010, YUV420_10BPP, P010),
 #endif
     MAP(BGRA, RGB32,   BGRA),
-  //MAP(BGRX, RGB32,   BGR0),
+    MAP(BGRX, RGB32,   BGR0),
     MAP(RGBA, RGB32,   RGBA),
-  //MAP(RGBX, RGB32,   RGB0),
+    MAP(RGBX, RGB32,   RGB0),
     MAP(ABGR, RGB32,   ABGR),
-  //MAP(XBGR, RGB32,   0BGR),
+    MAP(XBGR, RGB32,   0BGR),
     MAP(ARGB, RGB32,   ARGB),
-  //MAP(XRGB, RGB32,   0RGB),
+    MAP(XRGB, RGB32,   0RGB),
 };
 #undef MAP
 
@@ -846,105 +823,6 @@ fail:
     return err;
 }
 
-static void vaapi_device_free(AVHWDeviceContext *ctx)
-{
-    AVVAAPIDeviceContext *hwctx = ctx->hwctx;
-    VAAPIDevicePriv      *priv  = ctx->user_opaque;
-
-    if (hwctx->display)
-        vaTerminate(hwctx->display);
-
-#if HAVE_VAAPI_X11
-    if (priv->x11_display)
-        XCloseDisplay(priv->x11_display);
-#endif
-
-    if (priv->drm_fd >= 0)
-        close(priv->drm_fd);
-
-    av_freep(&priv);
-}
-
-static int vaapi_device_create(AVHWDeviceContext *ctx, const char *device,
-                               AVDictionary *opts, int flags)
-{
-    AVVAAPIDeviceContext *hwctx = ctx->hwctx;
-    VAAPIDevicePriv *priv;
-    VADisplay display = 0;
-    VAStatus vas;
-    int major, minor;
-
-    priv = av_mallocz(sizeof(*priv));
-    if (!priv)
-        return AVERROR(ENOMEM);
-
-    priv->drm_fd = -1;
-
-    ctx->user_opaque = priv;
-    ctx->free        = vaapi_device_free;
-
-#if HAVE_VAAPI_X11
-    if (!display && !(device && device[0] == '/')) {
-        // Try to open the device as an X11 display.
-        priv->x11_display = XOpenDisplay(device);
-        if (!priv->x11_display) {
-            av_log(ctx, AV_LOG_VERBOSE, "Cannot open X11 display "
-                   "%s.\n", XDisplayName(device));
-        } else {
-            display = vaGetDisplay(priv->x11_display);
-            if (!display) {
-                av_log(ctx, AV_LOG_ERROR, "Cannot open a VA display "
-                       "from X11 display %s.\n", XDisplayName(device));
-                return AVERROR_UNKNOWN;
-            }
-
-            av_log(ctx, AV_LOG_VERBOSE, "Opened VA display via "
-                   "X11 display %s.\n", XDisplayName(device));
-        }
-    }
-#endif
-
-#if HAVE_VAAPI_DRM
-    if (!display && device) {
-        // Try to open the device as a DRM path.
-        priv->drm_fd = open(device, O_RDWR);
-        if (priv->drm_fd < 0) {
-            av_log(ctx, AV_LOG_VERBOSE, "Cannot open DRM device %s.\n",
-                   device);
-        } else {
-            display = vaGetDisplayDRM(priv->drm_fd);
-            if (!display) {
-                av_log(ctx, AV_LOG_ERROR, "Cannot open a VA display "
-                       "from DRM device %s.\n", device);
-                return AVERROR_UNKNOWN;
-            }
-
-            av_log(ctx, AV_LOG_VERBOSE, "Opened VA display via "
-                   "DRM device %s.\n", device);
-        }
-    }
-#endif
-
-    if (!display) {
-        av_log(ctx, AV_LOG_ERROR, "No VA display found for "
-               "device: %s.\n", device ? device : "");
-        return AVERROR(EINVAL);
-    }
-
-    hwctx->display = display;
-
-    vas = vaInitialize(display, &major, &minor);
-    if (vas != VA_STATUS_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to initialise VAAPI "
-               "connection: %d (%s).\n", vas, vaErrorStr(vas));
-        return AVERROR(EIO);
-    }
-    av_log(ctx, AV_LOG_VERBOSE, "Initialised VAAPI connection: "
-           "version %d.%d\n", major, minor);
-
-    return 0;
-}
-
 const HWContextType ff_hwcontext_type_vaapi = {
     .type                   = AV_HWDEVICE_TYPE_VAAPI,
     .name                   = "VAAPI",
@@ -955,7 +833,6 @@ const HWContextType ff_hwcontext_type_vaapi = {
     .frames_hwctx_size      = sizeof(AVVAAPIFramesContext),
     .frames_priv_size       = sizeof(VAAPIFramesContext),
 
-    .device_create          = &vaapi_device_create,
     .device_init            = &vaapi_device_init,
     .device_uninit          = &vaapi_device_uninit,
     .frames_get_constraints = &vaapi_frames_get_constraints,
