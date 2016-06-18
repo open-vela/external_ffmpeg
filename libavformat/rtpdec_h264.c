@@ -1,21 +1,21 @@
 /*
- * RTP H264 Protocol (RFC3984)
+ * RTP H.264 Protocol (RFC3984)
  * Copyright (c) 2006 Ryan Martell
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -166,10 +166,6 @@ static int sdp_parse_fmtp_config_h264(AVFormatContext *s,
             parse_profile_level_id(s, h264_data, value);
     } else if (!strcmp(attr, "sprop-parameter-sets")) {
         int ret;
-        if (value[strlen(value) - 1] == ',') {
-            av_log(s, AV_LOG_WARNING, "Missing PPS in sprop-parameter-sets, ignoring\n");
-            return 0;
-        }
         par->extradata_size = 0;
         av_freep(&par->extradata);
         ret = ff_h264_parse_sprop_parameter_sets(s, &par->extradata,
@@ -203,7 +199,7 @@ void ff_h264_parse_framesize(AVCodecParameters *par, const char *p)
     par->height  = atoi(p + 1); // skip the -
 }
 
-int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
+int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, AVPacket *pkt,
                                      const uint8_t *buf, int len,
                                      int skip_between, int *nal_counters,
                                      int nal_mask)
@@ -282,14 +278,14 @@ int ff_h264_handle_frag_packet(AVPacket *pkt, const uint8_t *buf, int len,
     return 0;
 }
 
-static int h264_handle_packet_fu_a(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
+static int h264_handle_packet_fu_a(AVFormatContext *ctx, AVPacket *pkt,
                                    const uint8_t *buf, int len,
                                    int *nal_counters, int nal_mask)
 {
     uint8_t fu_indicator, fu_header, start_bit, nal_type, nal;
 
     if (len < 3) {
-        av_log(ctx, AV_LOG_ERROR, "Too short data for FU-A H264 RTP packet\n");
+        av_log(ctx, AV_LOG_ERROR, "Too short data for FU-A H.264 RTP packet\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -319,14 +315,14 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
     int result = 0;
 
     if (!len) {
-        av_log(ctx, AV_LOG_ERROR, "Empty H264 RTP packet\n");
+        av_log(ctx, AV_LOG_ERROR, "Empty H.264 RTP packet\n");
         return AVERROR_INVALIDDATA;
     }
     nal  = buf[0];
     type = nal & 0x1f;
 
-    /* Simplify the case (these are all the nal types used internally by
-     * the h264 codec). */
+    /* Simplify the case (these are all the NAL types used internally by
+     * the H.264 codec). */
     if (type >= 1 && type <= 23)
         type = 1;
     switch (type) {
@@ -343,7 +339,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         // consume the STAP-A NAL
         buf++;
         len--;
-        result = ff_h264_handle_aggregated_packet(ctx, data, pkt, buf, len, 0,
+        result = ff_h264_handle_aggregated_packet(ctx, pkt, buf, len, 0,
                                                   NAL_COUNTERS, NAL_MASK);
         break;
 
@@ -356,7 +352,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         break;
 
     case 28:                   // FU-A (fragmented nal)
-        result = h264_handle_packet_fu_a(ctx, data, pkt, buf, len,
+        result = h264_handle_packet_fu_a(ctx, pkt, buf, len,
                                          NAL_COUNTERS, NAL_MASK);
         break;
 

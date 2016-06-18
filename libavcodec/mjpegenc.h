@@ -8,20 +8,20 @@
  * aspecting, new decode_frame mechanism and apple mjpeg-b support
  *                                  by Alex Beregszaszi
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,7 @@
 #include "put_bits.h"
 
 typedef struct MJpegContext {
-    uint8_t huff_size_dc_luminance[12]; //FIXME use array [3] instead of lumi / chrom, for easier addressing
+    uint8_t huff_size_dc_luminance[12]; //FIXME use array [3] instead of lumi / chroma, for easier addressing
     uint16_t huff_code_dc_luminance[12];
     uint8_t huff_size_dc_chrominance[12];
     uint16_t huff_code_dc_chrominance[12];
@@ -59,6 +59,6 @@ static inline void put_marker(PutBitContext *p, enum JpegMarker code)
 
 int  ff_mjpeg_encode_init(MpegEncContext *s);
 void ff_mjpeg_encode_close(MpegEncContext *s);
-void ff_mjpeg_encode_mb(MpegEncContext *s, int16_t block[12][64]);
+void ff_mjpeg_encode_mb(MpegEncContext *s, int16_t block[8][64]);
 
 #endif /* AVCODEC_MJPEGENC_H */

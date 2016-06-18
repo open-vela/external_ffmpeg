@@ -1,20 +1,20 @@
 /*
  * H.264/HEVC common parsing code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 
-#include "hevc.h"
 #include "h2645_parse.h"
 
 int ff_h2645_extract_rbsp(const uint8_t *src, int length,
@@ -35,10 +34,9 @@ int ff_h2645_extract_rbsp(const uint8_t *src, int length,
     int i, si, di;
     uint8_t *dst;
 
-    nal->skipped_bytes = 0;
 #define STARTCODE_TEST                                                  \
         if (i + 2 < length && src[i + 1] == 0 && src[i + 2] <= 3) {     \
-            if (src[i + 2] != 3 && src[i + 2] != 0) {                   \
+            if (src[i + 2] != 3) {                                      \
                 /* startcode, so we must be past the end */             \
                 length = i;                                             \
             }                                                           \
@@ -103,28 +101,12 @@ int ff_h2645_extract_rbsp(const uint8_t *src, int length,
         if (src[si + 2] > 3) {
             dst[di++] = src[si++];
             dst[di++] = src[si++];
-        } else if (src[si] == 0 && src[si + 1] == 0 && src[si + 2] != 0) {
+        } else if (src[si] == 0 && src[si + 1] == 0) {
             if (src[si + 2] == 3) { // escape
                 dst[di++] = 0;
                 dst[di++] = 0;
                 si       += 3;
 
-                if (nal->skipped_bytes_pos) {
-                    nal->skipped_bytes++;
-                    if (nal->skipped_bytes_pos_size < nal->skipped_bytes) {
-                        nal->skipped_bytes_pos_size *= 2;
-                        av_assert0(nal->skipped_bytes_pos_size >= nal->skipped_bytes);
-                        av_reallocp_array(&nal->skipped_bytes_pos,
-                                nal->skipped_bytes_pos_size,
-                                sizeof(*nal->skipped_bytes_pos));
-                        if (!nal->skipped_bytes_pos) {
-                            nal->skipped_bytes_pos_size = 0;
-                            return AVERROR(ENOMEM);
-                        }
-                    }
-                    if (nal->skipped_bytes_pos)
-                        nal->skipped_bytes_pos[nal->skipped_bytes-1] = di - 1;
-                }
                 continue;
             } else // next start code
                 goto nsc;
@@ -143,38 +125,6 @@ nsc:
     nal->raw_data = src;
     nal->raw_size = si;
     return si;
-}
-
-static const char *nal_unit_name(int nal_type)
-{
-    switch(nal_type) {
-    case NAL_TRAIL_N    : return "TRAIL_N";
-    case NAL_TRAIL_R    : return "TRAIL_R";
-    case NAL_TSA_N      : return "TSA_N";
-    case NAL_TSA_R      : return "TSA_R";
-    case NAL_STSA_N     : return "STSA_N";
-    case NAL_STSA_R     : return "STSA_R";
-    case NAL_RADL_N     : return "RADL_N";
-    case NAL_RADL_R     : return "RADL_R";
-    case NAL_RASL_N     : return "RASL_N";
-    case NAL_RASL_R     : return "RASL_R";
-    case NAL_BLA_W_LP   : return "BLA_W_LP";
-    case NAL_BLA_W_RADL : return "BLA_W_RADL";
-    case NAL_BLA_N_LP   : return "BLA_N_LP";
-    case NAL_IDR_W_RADL : return "IDR_W_RADL";
-    case NAL_IDR_N_LP   : return "IDR_N_LP";
-    case NAL_CRA_NUT    : return "CRA_NUT";
-    case NAL_VPS        : return "VPS";
-    case NAL_SPS        : return "SPS";
-    case NAL_PPS        : return "PPS";
-    case NAL_AUD        : return "AUD";
-    case NAL_EOS_NUT    : return "EOS_NUT";
-    case NAL_EOB_NUT    : return "EOB_NUT";
-    case NAL_FD_NUT     : return "FD_NUT";
-    case NAL_SEI_PREFIX : return "SEI_PREFIX";
-    case NAL_SEI_SUFFIX : return "SEI_SUFFIX";
-    default : return "?";
-    }
 }
 
 static int get_bit_length(H2645NAL *nal, int skip_trailing_zeros)
@@ -197,7 +147,7 @@ static int get_bit_length(H2645NAL *nal, int skip_trailing_zeros)
     /* remove the stop bit and following trailing zeros,
      * or nothing for damaged bitstreams */
     if (v)
-        size -= ff_ctz(v) + 1;
+        size -= av_ctz(v) + 1;
 
     return size;
 }
@@ -222,8 +172,8 @@ static int hevc_parse_nal_header(H2645NAL *nal, void *logctx)
         return AVERROR_INVALIDDATA;
 
     av_log(logctx, AV_LOG_DEBUG,
-           "nal_unit_type: %d(%s), nuh_layer_id: %d, temporal_id: %d\n",
-           nal->type, nal_unit_name(nal->type), nuh_layer_id, nal->temporal_id);
+           "nal_unit_type: %d, nuh_layer_id: %dtemporal_id: %d\n",
+           nal->type, nuh_layer_id, nal->temporal_id);
 
     return nuh_layer_id == 0;
 }
@@ -250,7 +200,6 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
                           enum AVCodecID codec_id)
 {
     int consumed, ret = 0;
-    const uint8_t *next_avc = is_nalff ? buf : buf + length;
 
     pkt->nb_nals = 0;
     while (length >= 4) {
@@ -258,7 +207,7 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
         int extract_length = 0;
         int skip_trailing_zeros = 1;
 
-        if (buf >= next_avc) {
+        if (is_nalff) {
             int i;
             for (i = 0; i < nal_length_size; i++)
                 extract_length = (extract_length << 8) | buf[i];
@@ -269,69 +218,36 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
                 av_log(logctx, AV_LOG_ERROR, "Invalid NAL unit size.\n");
                 return AVERROR_INVALIDDATA;
             }
-            next_avc = buf + extract_length;
         } else {
-            /* search start code */
-            while (buf[0] != 0 || buf[1] != 0 || buf[2] != 1) {
-                ++buf;
-                --length;
-                if (length < 4) {
-                    if (pkt->nb_nals > 0) {
-                        // No more start codes: we discarded some irrelevant
-                        // bytes at the end of the packet.
-                        return 0;
-                    } else {
-                        av_log(logctx, AV_LOG_ERROR, "No start code is found.\n");
-                        return AVERROR_INVALIDDATA;
-                    }
-                } else if (buf >= (next_avc - 3))
-                    break;
+            if (buf[2] == 0) {
+                length--;
+                buf++;
+                continue;
             }
+            if (buf[0] != 0 || buf[1] != 0 || buf[2] != 1)
+                return AVERROR_INVALIDDATA;
 
             buf           += 3;
             length        -= 3;
             extract_length = length;
-
-            if (buf >= next_avc) {
-                /* skip to the start of the next NAL */
-                int offset = next_avc - buf;
-                buf    += offset;
-                length -= offset;
-                continue;
-            }
         }
 
         if (pkt->nals_allocated < pkt->nb_nals + 1) {
             int new_size = pkt->nals_allocated + 1;
-            void *tmp = av_realloc_array(pkt->nals, new_size, sizeof(*pkt->nals));
-
+            H2645NAL *tmp = av_realloc_array(pkt->nals, new_size, sizeof(*tmp));
             if (!tmp)
                 return AVERROR(ENOMEM);
 
             pkt->nals = tmp;
             memset(pkt->nals + pkt->nals_allocated, 0,
-                   (new_size - pkt->nals_allocated) * sizeof(*pkt->nals));
-
-            nal = &pkt->nals[pkt->nb_nals];
-            nal->skipped_bytes_pos_size = 1024; // initial buffer size
-            nal->skipped_bytes_pos = av_malloc_array(nal->skipped_bytes_pos_size, sizeof(*nal->skipped_bytes_pos));
-            if (!nal->skipped_bytes_pos)
-                return AVERROR(ENOMEM);
-
+                   (new_size - pkt->nals_allocated) * sizeof(*tmp));
             pkt->nals_allocated = new_size;
         }
-        nal = &pkt->nals[pkt->nb_nals];
+        nal = &pkt->nals[pkt->nb_nals++];
 
         consumed = ff_h2645_extract_rbsp(buf, extract_length, nal);
         if (consumed < 0)
             return consumed;
-
-        if (is_nalff && (extract_length != consumed) && extract_length)
-            av_log(logctx, AV_LOG_DEBUG,
-                   "NALFF: Consumed only %d bytes instead of %d\n",
-                   consumed, extract_length);
-
-        pkt->nb_nals++;
 
         /* see commit 3566042a0 */
         if (consumed < length - 3 &&
@@ -349,7 +265,7 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
             ret = hevc_parse_nal_header(nal, logctx);
         else
             ret = h264_parse_nal_header(nal, logctx);
-        if (ret <= 0 || nal->size <= 0) {
+        if (ret <= 0) {
             if (ret < 0) {
                 av_log(logctx, AV_LOG_ERROR, "Invalid NAL unit %d, skipping.\n",
                        nal->type);
@@ -367,10 +283,8 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
 void ff_h2645_packet_uninit(H2645Packet *pkt)
 {
     int i;
-    for (i = 0; i < pkt->nals_allocated; i++) {
+    for (i = 0; i < pkt->nals_allocated; i++)
         av_freep(&pkt->nals[i].rbsp_buffer);
-        av_freep(&pkt->nals[i].skipped_bytes_pos);
-    }
     av_freep(&pkt->nals);
     pkt->nals_allocated = 0;
 }
