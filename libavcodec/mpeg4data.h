@@ -1,28 +1,28 @@
 /*
  * copyright (c) 2000,2001 Fabrice Bellard
- * H.263+ support
+ * H263+ support
  * copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
- * MPEG-4 tables.
+ * mpeg4 tables.
  */
 
 #ifndef AVCODEC_MPEG4DATA_H
@@ -31,7 +31,7 @@
 #include <stdint.h>
 #include "mpegvideo.h"
 
-/* dc encoding for MPEG-4 */
+/* dc encoding for mpeg4 */
 const uint8_t ff_mpeg4_DCtab_lum[13][2] =
 {
     {3,3}, {3,2}, {2,2}, {2,3}, {1,3}, {1,4}, {1,5}, {1,6}, {1,7},
