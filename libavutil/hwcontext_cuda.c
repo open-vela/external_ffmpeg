@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -253,49 +253,6 @@ static int cuda_transfer_data_to(AVHWFramesContext *ctx, AVFrame *dst,
     return 0;
 }
 
-static void cuda_device_free(AVHWDeviceContext *ctx)
-{
-    AVCUDADeviceContext *hwctx = ctx->hwctx;
-    cuCtxDestroy(hwctx->cuda_ctx);
-}
-
-static int cuda_device_create(AVHWDeviceContext *ctx, const char *device,
-                              AVDictionary *opts, int flags)
-{
-    AVCUDADeviceContext *hwctx = ctx->hwctx;
-    CUdevice cu_device;
-    CUcontext dummy;
-    CUresult err;
-    int device_idx = 0;
-
-    if (device)
-        device_idx = strtol(device, NULL, 0);
-
-    err = cuInit(0);
-    if (err != CUDA_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Could not initialize the CUDA driver API\n");
-        return AVERROR_UNKNOWN;
-    }
-
-    err = cuDeviceGet(&cu_device, device_idx);
-    if (err != CUDA_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Could not get the device number %d\n", device_idx);
-        return AVERROR_UNKNOWN;
-    }
-
-    err = cuCtxCreate(&hwctx->cuda_ctx, 0, cu_device);
-    if (err != CUDA_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Error creating a CUDA context\n");
-        return AVERROR_UNKNOWN;
-    }
-
-    cuCtxPopCurrent(&dummy);
-
-    ctx->free = cuda_device_free;
-
-    return 0;
-}
-
 const HWContextType ff_hwcontext_type_cuda = {
     .type                 = AV_HWDEVICE_TYPE_CUDA,
     .name                 = "CUDA",
@@ -303,7 +260,6 @@ const HWContextType ff_hwcontext_type_cuda = {
     .device_hwctx_size    = sizeof(AVCUDADeviceContext),
     .frames_priv_size     = sizeof(CUDAFramesContext),
 
-    .device_create        = cuda_device_create,
     .frames_init          = cuda_frames_init,
     .frames_get_buffer    = cuda_get_buffer,
     .transfer_get_formats = cuda_transfer_get_formats,
