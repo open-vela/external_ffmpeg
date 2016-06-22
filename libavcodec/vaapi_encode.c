@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -288,6 +288,27 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
 
             err = vaapi_encode_make_param_buffer(avctx, pic, type,
                                                  data, len);
+            if (err < 0)
+                goto fail;
+        }
+    }
+
+    if (ctx->codec->write_extra_header) {
+        for (i = 0;; i++) {
+            int type;
+            bit_len = 8 * sizeof(data);
+            err = ctx->codec->write_extra_header(avctx, pic, i, &type,
+                                                 data, &bit_len);
+            if (err == AVERROR_EOF)
+                break;
+            if (err < 0) {
+                av_log(avctx, AV_LOG_ERROR, "Failed to write extra "
+                       "header %d: %d.\n", i, err);
+                goto fail;
+            }
+
+            err = vaapi_encode_make_packed_header(avctx, pic, type,
+                                                  data, bit_len);
             if (err < 0)
                 goto fail;
         }
@@ -1093,8 +1114,11 @@ av_cold int ff_vaapi_encode_init(AVCodecContext *avctx,
                 break;
             }
         }
-        if (recon_format == AV_PIX_FMT_NONE)
-            recon_format = constraints->valid_sw_formats[i];
+        if (recon_format == AV_PIX_FMT_NONE) {
+            // No match.  Just use the first in the supported list and
+            // hope for the best.
+            recon_format = constraints->valid_sw_formats[0];
+        }
     } else {
         // No idea what to use; copy input format.
         recon_format = ctx->input_frames->sw_format;
