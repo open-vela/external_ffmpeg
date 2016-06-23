@@ -1,6 +1,4 @@
-LIBAVRESAMPLE_MAJOR {
-    global:
-        av*;
-    local:
-        *;
+LIBAVRESAMPLE_$MAJOR {
+        global: av*;
+        local:  *;
 };

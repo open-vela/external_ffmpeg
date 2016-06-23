@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -868,10 +868,7 @@ static int vaapi_encode_h265_init_sequence_params(AVCodecContext *avctx)
 
         vpic->pic_fields.bits.screen_content_flag = 0;
         vpic->pic_fields.bits.enable_gpu_weighted_prediction = 0;
-
-        // Per-CU QP changes are required for non-constant-QP modes.
-        vpic->pic_fields.bits.cu_qp_delta_enabled_flag =
-            ctx->va_rc_mode != VA_RC_CQP;
+        vpic->pic_fields.bits.cu_qp_delta_enabled_flag = 1;
     }
 
     {
@@ -1161,6 +1158,12 @@ static av_cold int vaapi_encode_h265_init_constant_bitrate(AVCodecContext *avctx
     int hrd_buffer_size;
     int hrd_initial_buffer_fullness;
 
+    if (avctx->bit_rate > INT32_MAX) {
+        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
+               "higher is not supported.\n");
+        return AVERROR(EINVAL);
+    }
+
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;
     else
@@ -1199,7 +1202,7 @@ static av_cold int vaapi_encode_h265_init_constant_bitrate(AVCodecContext *avctx
     priv->fixed_qp_p   = 30;
     priv->fixed_qp_b   = 30;
 
-    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %d bps.\n",
+    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
            avctx->bit_rate);
     return 0;
 }
