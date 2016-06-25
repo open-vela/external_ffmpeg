@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,6 +39,7 @@ enum {
     MAX_PARAM_BUFFERS      = 16,
     MAX_REORDER_DELAY      = 16,
     MAX_PARAM_BUFFER_SIZE  = 1024,
+    MAX_OUTPUT_BUFFER_SIZE = 1024 * 1024,
 };
 
 enum {
@@ -83,7 +84,6 @@ typedef struct VAAPIEncodePicture {
     int          nb_param_buffers;
     VABufferID      param_buffers[MAX_PARAM_BUFFERS];
 
-    AVBufferRef    *output_buffer_ref;
     VABufferID      output_buffer;
 
     void           *priv_data;
@@ -129,8 +129,6 @@ typedef struct VAAPIEncodeContext {
     int          nb_recon_frames;
     AVBufferRef    *recon_frames_ref;
     AVHWFramesContext *recon_frames;
-
-    AVBufferPool   *output_buffer_pool;
 
     VAConfigAttrib  config_attributes[MAX_CONFIG_ATTRIBUTES];
     int          nb_config_attributes;
@@ -214,10 +212,6 @@ typedef struct VAAPIEncodeType {
                                  char *data, size_t *data_len);
 
     int    (*write_extra_buffer)(AVCodecContext *avctx,
-                                 VAAPIEncodePicture *pic,
-                                 int index, int *type,
-                                 char *data, size_t *data_len);
-    int    (*write_extra_header)(AVCodecContext *avctx,
                                  VAAPIEncodePicture *pic,
                                  int index, int *type,
                                  char *data, size_t *data_len);

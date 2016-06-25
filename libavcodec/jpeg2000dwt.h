@@ -2,20 +2,20 @@
  * Discrete wavelet transform
  * Copyright (c) 2007 Kamil Nowosad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +30,8 @@
 #include <stdint.h>
 
 #define FF_DWT_MAX_DECLVLS 32 ///< max number of decomposition levels
+#define F_LFTG_K      1.230174104914001f
+#define F_LFTG_X      0.812893066115961f
 
 enum DWTType {
     FF_DWT97,
@@ -40,7 +42,7 @@ enum DWTType {
 
 typedef struct DWTContext {
     /// line lengths { horizontal, vertical } in consecutive decomposition levels
-    uint16_t linelen[FF_DWT_MAX_DECLVLS][2];
+    int linelen[FF_DWT_MAX_DECLVLS][2];
     uint8_t mod[FF_DWT_MAX_DECLVLS][2];  ///< coordinates (x0, y0) of decomp. levels mod 2
     uint8_t ndeclevels;                  ///< number of decomposition levels
     uint8_t type;                        ///< 0 for 9/7; 1 for 5/3
@@ -55,9 +57,10 @@ typedef struct DWTContext {
  * @param decomp_levels     number of decomposition levels
  * @param type              0 for DWT 9/7; 1 for DWT 5/3
  */
-int ff_jpeg2000_dwt_init(DWTContext *s, uint16_t border[2][2],
+int ff_jpeg2000_dwt_init(DWTContext *s, int border[2][2],
                          int decomp_levels, int type);
 
+int ff_dwt_encode(DWTContext *s, void *t);
 int ff_dwt_decode(DWTContext *s, void *t);
 
 void ff_dwt_destroy(DWTContext *s);
