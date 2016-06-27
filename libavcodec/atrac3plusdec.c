@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,7 +47,7 @@
 
 typedef struct ATRAC3PContext {
     GetBitContext gb;
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
 
     DECLARE_ALIGNED(32, float, samples)[2][ATRAC3P_FRAME_SAMPLES];  ///< quantized MDCT spectrum
     DECLARE_ALIGNED(32, float, mdct_buf)[2][ATRAC3P_FRAME_SAMPLES]; ///< output of the IMDCT
@@ -67,7 +67,13 @@ typedef struct ATRAC3PContext {
 
 static av_cold int atrac3p_decode_close(AVCodecContext *avctx)
 {
-    av_free(((ATRAC3PContext *)(avctx->priv_data))->ch_units);
+    ATRAC3PContext *ctx = avctx->priv_data;
+
+    av_freep(&ctx->ch_units);
+    av_freep(&ctx->fdsp);
+
+    ff_mdct_end(&ctx->mdct_ctx);
+    ff_mdct_end(&ctx->ipqf_dct_ctx);
 
     return 0;
 }
@@ -148,7 +154,7 @@ static av_cold int atrac3p_decode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    avpriv_float_dsp_init(&ctx->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    ff_atrac3p_init_vlcs();
 
     /* initialize IPQF */
     ff_mdct_init(&ctx->ipqf_dct_ctx, 5, 1, 32.0 / 32768.0);
@@ -164,9 +170,10 @@ static av_cold int atrac3p_decode_init(AVCodecContext *avctx)
 
     ctx->my_channel_layout = avctx->channel_layout;
 
-    ctx->ch_units = av_mallocz(sizeof(*ctx->ch_units) *
-                               ctx->num_channel_blocks);
-    if (!ctx->ch_units) {
+    ctx->ch_units = av_mallocz_array(ctx->num_channel_blocks, sizeof(*ctx->ch_units));
+    ctx->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+
+    if (!ctx->ch_units || !ctx->fdsp) {
         atrac3p_decode_close(avctx);
         return AVERROR(ENOMEM);
     }
@@ -263,7 +270,7 @@ static void reconstruct_frame(ATRAC3PContext *ctx, Atrac3pChanUnitCtx *ch_unit,
     for (ch = 0; ch < num_channels; ch++) {
         for (sb = 0; sb < ch_unit->num_subbands; sb++) {
             /* inverse transform and windowing */
-            ff_atrac3p_imdct(&ctx->fdsp, &ctx->mdct_ctx,
+            ff_atrac3p_imdct(ctx->fdsp, &ctx->mdct_ctx,
                              &ctx->samples[ch][sb * ATRAC3P_SUBBAND_SAMPLES],
                              &ctx->mdct_buf[ch][sb * ATRAC3P_SUBBAND_SAMPLES],
                              (ch_unit->channels[ch].wnd_shape_prev[sb] << 1) +
@@ -297,7 +304,7 @@ static void reconstruct_frame(ATRAC3PContext *ctx, Atrac3pChanUnitCtx *ch_unit,
             for (sb = 0; sb < ch_unit->num_subbands; sb++)
                 if (ch_unit->channels[ch].tones_info[sb].num_wavs ||
                     ch_unit->channels[ch].tones_info_prev[sb].num_wavs) {
-                    ff_atrac3p_generate_tones(ch_unit, &ctx->fdsp, ch, sb,
+                    ff_atrac3p_generate_tones(ch_unit, ctx->fdsp, ch, sb,
                                               &ctx->time_buf[ch][sb * 128]);
                 }
         }
@@ -329,10 +336,8 @@ static int atrac3p_decode_frame(AVCodecContext *avctx, void *data,
     float **samples_p = (float **)frame->extended_data;
 
     frame->nb_samples = ATRAC3P_FRAME_SAMPLES;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     if ((ret = init_get_bits8(&ctx->gb, avpkt->data, avpkt->size)) < 0)
         return ret;
@@ -379,18 +384,17 @@ static int atrac3p_decode_frame(AVCodecContext *avctx, void *data,
 
     *got_frame_ptr = 1;
 
-    return avctx->block_align;
+    return FFMIN(avctx->block_align, avpkt->size);
 }
 
 AVCodec ff_atrac3p_decoder = {
-    .name             = "atrac3plus",
-    .long_name        = NULL_IF_CONFIG_SMALL("ATRAC3+ (Adaptive TRansform Acoustic Coding 3+)"),
-    .type             = AVMEDIA_TYPE_AUDIO,
-    .id               = AV_CODEC_ID_ATRAC3P,
-    .capabilities     = AV_CODEC_CAP_DR1,
-    .priv_data_size   = sizeof(ATRAC3PContext),
-    .init             = atrac3p_decode_init,
-    .init_static_data = ff_atrac3p_init_vlcs,
-    .close            = atrac3p_decode_close,
-    .decode           = atrac3p_decode_frame,
+    .name           = "atrac3plus",
+    .long_name      = NULL_IF_CONFIG_SMALL("ATRAC3+ (Adaptive TRansform Acoustic Coding 3+)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_ATRAC3P,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .priv_data_size = sizeof(ATRAC3PContext),
+    .init           = atrac3p_decode_init,
+    .close          = atrac3p_decode_close,
+    .decode         = atrac3p_decode_frame,
 };
