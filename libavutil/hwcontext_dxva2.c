@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include <dxva2api.h>
 #include <initguid.h>
 
-#include "avassert.h"
 #include "common.h"
 #include "hwcontext.h"
 #include "hwcontext_dxva2.h"
@@ -66,7 +65,6 @@ static const struct {
     enum AVPixelFormat pix_fmt;
 } supported_formats[] = {
     { MKTAG('N', 'V', '1', '2'), AV_PIX_FMT_NV12 },
-    { MKTAG('P', '0', '1', '0'), AV_PIX_FMT_P010 },
 };
 
 DEFINE_GUID(video_decoder_service,   0xfc51a551, 0xd5e7, 0x11d9, 0xaf, 0x55, 0x00, 0x05, 0x4e, 0x43, 0xff, 0x02);
@@ -251,18 +249,6 @@ static int dxva2_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
     HRESULT            hr;
 
     int download = !!src->hw_frames_ctx;
-    int bytes_per_component;
-
-    switch (ctx->sw_format) {
-        case AV_PIX_FMT_NV12:
-            bytes_per_component = 1;
-            break;
-        case AV_PIX_FMT_P010:
-            bytes_per_component = 2;
-            break;
-        default:
-            av_assert0(0);
-    }
 
     surface = (IDirect3DSurface9*)(download ? src->data[3] : dst->data[3]);
 
@@ -282,17 +268,17 @@ static int dxva2_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
     if (download) {
         av_image_copy_plane(dst->data[0], dst->linesize[0],
                             (uint8_t*)LockedRect.pBits, LockedRect.Pitch,
-                            src->width * bytes_per_component, src->height);
+                            src->width, src->height);
         av_image_copy_plane(dst->data[1], dst->linesize[1],
                             (uint8_t*)LockedRect.pBits + LockedRect.Pitch * surfaceDesc.Height,
-                            LockedRect.Pitch, src->width * bytes_per_component, src->height / 2);
+                            LockedRect.Pitch, src->width, src->height / 2);
     } else {
         av_image_copy_plane((uint8_t*)LockedRect.pBits, LockedRect.Pitch,
                             dst->data[0], dst->linesize[0],
-                            src->width * bytes_per_component, src->height);
+                            src->width, src->height);
         av_image_copy_plane((uint8_t*)LockedRect.pBits + LockedRect.Pitch * surfaceDesc.Height,
                             LockedRect.Pitch, dst->data[1], dst->linesize[1],
-                            src->width * bytes_per_component, src->height / 2);
+                            src->width, src->height / 2);
     }
 
     IDirect3DSurface9_UnlockRect(surface);
@@ -390,7 +376,7 @@ static int dxva2_device_create(AVHWDeviceContext *ctx, const char *device,
     d3dpp.SwapEffect       = D3DSWAPEFFECT_DISCARD;
     d3dpp.Flags            = D3DPRESENTFLAG_VIDEO;
 
-    hr = IDirect3D9_CreateDevice(priv->d3d9, adapter, D3DDEVTYPE_HAL, GetDesktopWindow(),
+    hr = IDirect3D9_CreateDevice(priv->d3d9, adapter, D3DDEVTYPE_HAL, GetShellWindow(),
                                  D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                                  &d3dpp, &priv->d3d9device);
     if (FAILED(hr)) {
