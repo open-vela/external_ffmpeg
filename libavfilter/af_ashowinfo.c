@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Stefano Sabatini
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "libavutil/replaygain.h"
-#include "libavutil/timestamp.h"
 #include "libavutil/samplefmt.h"
 
 #include "libavcodec/avcodec.h"
@@ -48,7 +47,23 @@ typedef struct AShowInfoContext {
      * Scratch space for individual plane checksums for planar audio
      */
     uint32_t *plane_checksums;
+
+    /**
+     * Frame counter
+     */
+    uint64_t frame;
 } AShowInfoContext;
+
+static int config_input(AVFilterLink *inlink)
+{
+    AShowInfoContext *s = inlink->dst->priv;
+    int channels = av_get_channel_layout_nb_channels(inlink->channel_layout);
+    s->plane_checksums = av_malloc(channels * sizeof(*s->plane_checksums));
+    if (!s->plane_checksums)
+        return AVERROR(ENOMEM);
+
+    return 0;
+}
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
@@ -179,17 +194,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     AShowInfoContext *s  = ctx->priv;
     char chlayout_str[128];
     uint32_t checksum = 0;
-    int channels    = inlink->channels;
+    int channels    = av_get_channel_layout_nb_channels(buf->channel_layout);
     int planar      = av_sample_fmt_is_planar(buf->format);
     int block_align = av_get_bytes_per_sample(buf->format) * (planar ? 1 : channels);
     int data_size   = buf->nb_samples * block_align;
     int planes      = planar ? channels : 1;
     int i;
-    void *tmp_ptr = av_realloc_array(s->plane_checksums, channels, sizeof(*s->plane_checksums));
-
-    if (!tmp_ptr)
-        return AVERROR(ENOMEM);
-    s->plane_checksums = tmp_ptr;
 
     for (i = 0; i < planes; i++) {
         uint8_t *data = buf->extended_data[i];
@@ -203,13 +213,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
                                  buf->channel_layout);
 
     av_log(ctx, AV_LOG_INFO,
-           "n:%"PRId64" pts:%s pts_time:%s pos:%"PRId64" "
-           "fmt:%s channels:%d chlayout:%s rate:%d nb_samples:%d "
+           "n:%"PRIu64" pts:%"PRId64" pts_time:%f "
+           "fmt:%s chlayout:%s rate:%d nb_samples:%d "
            "checksum:%08"PRIX32" ",
-           inlink->frame_count,
-           av_ts2str(buf->pts), av_ts2timestr(buf->pts, &inlink->time_base),
-           av_frame_get_pkt_pos(buf),
-           av_get_sample_fmt_name(buf->format), av_frame_get_channels(buf), chlayout_str,
+           s->frame, buf->pts, buf->pts * av_q2d(inlink->time_base),
+           av_get_sample_fmt_name(buf->format), chlayout_str,
            buf->sample_rate, buf->nb_samples,
            checksum);
 
@@ -233,16 +241,19 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         av_log(ctx, AV_LOG_INFO, "\n");
     }
 
+    s->frame++;
     return ff_filter_frame(inlink->dst->outputs[0], buf);
 }
 
 static const AVFilterPad inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_AUDIO,
-        .filter_frame = filter_frame,
+        .name       = "default",
+        .type             = AVMEDIA_TYPE_AUDIO,
+        .get_audio_buffer = ff_null_get_audio_buffer,
+        .config_props     = config_input,
+        .filter_frame     = filter_frame,
     },
-    { NULL }
+    { NULL },
 };
 
 static const AVFilterPad outputs[] = {
@@ -250,7 +261,7 @@ static const AVFilterPad outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
+    { NULL },
 };
 
 AVFilter ff_af_ashowinfo = {
