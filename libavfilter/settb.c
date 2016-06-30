@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010 Stefano Sabatini
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,9 @@
 #include "video.h"
 
 static const char *const var_names[] = {
+    "E",
+    "PHI",
+    "PI",
     "AVTB",   /* default timebase 1/AV_TIME_BASE */
     "intb",   /* input timebase */
     "sr",     /* sample rate */
@@ -45,6 +48,9 @@ static const char *const var_names[] = {
 };
 
 enum var_name {
+    VAR_E,
+    VAR_PHI,
+    VAR_PI,
     VAR_AVTB,
     VAR_INTB,
     VAR_SR,
@@ -57,16 +63,6 @@ typedef struct SetTBContext {
     double var_values[VAR_VARS_NB];
 } SetTBContext;
 
-#define OFFSET(x) offsetof(SetTBContext, x)
-#define DEFINE_OPTIONS(filt_name, filt_type)                                               \
-static const AVOption filt_name##_options[] = {                                            \
-    { "expr", "set expression determining the output timebase", OFFSET(tb_expr), AV_OPT_TYPE_STRING, {.str="intb"}, \
-           .flags=AV_OPT_FLAG_##filt_type##_PARAM|AV_OPT_FLAG_FILTERING_PARAM },           \
-    { "tb",   "set expression determining the output timebase", OFFSET(tb_expr), AV_OPT_TYPE_STRING, {.str="intb"}, \
-           .flags=AV_OPT_FLAG_##filt_type##_PARAM|AV_OPT_FLAG_FILTERING_PARAM },           \
-    { NULL }                                                                               \
-}
-
 static int config_output_props(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
@@ -76,6 +72,9 @@ static int config_output_props(AVFilterLink *outlink)
     int ret;
     double res;
 
+    settb->var_values[VAR_E]    = M_E;
+    settb->var_values[VAR_PHI]  = M_PHI;
+    settb->var_values[VAR_PI]   = M_PI;
     settb->var_values[VAR_AVTB] = av_q2d(AV_TIME_BASE_Q);
     settb->var_values[VAR_INTB] = av_q2d(inlink->time_base);
     settb->var_values[VAR_SR]   = inlink->sample_rate;
@@ -120,16 +119,27 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     return ff_filter_frame(outlink, frame);
 }
 
-#if CONFIG_SETTB_FILTER
+#define OFFSET(x) offsetof(SetTBContext, x)
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_AUDIO_PARAM
+static const AVOption options[] = {
+    { "expr", "Expression determining the output timebase", OFFSET(tb_expr), AV_OPT_TYPE_STRING, { .str = "intb" }, .flags = FLAGS },
+    { NULL },
+};
 
-DEFINE_OPTIONS(settb, VIDEO);
-AVFILTER_DEFINE_CLASS(settb);
+#if CONFIG_SETTB_FILTER
+static const AVClass settb_class = {
+    .class_name = "settb",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_settb_inputs[] = {
     {
-        .name         = "default",
-        .type         = AVMEDIA_TYPE_VIDEO,
-        .filter_frame = filter_frame,
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
+        .filter_frame     = filter_frame,
     },
     { NULL }
 };
@@ -144,24 +154,31 @@ static const AVFilterPad avfilter_vf_settb_outputs[] = {
 };
 
 AVFilter ff_vf_settb = {
-    .name        = "settb",
+    .name      = "settb",
     .description = NULL_IF_CONFIG_SMALL("Set timebase for the video output link."),
-    .priv_size   = sizeof(SetTBContext),
-    .priv_class  = &settb_class,
-    .inputs      = avfilter_vf_settb_inputs,
-    .outputs     = avfilter_vf_settb_outputs,
+
+    .priv_size = sizeof(SetTBContext),
+    .priv_class = &settb_class,
+
+    .inputs    = avfilter_vf_settb_inputs,
+
+    .outputs   = avfilter_vf_settb_outputs,
 };
 #endif /* CONFIG_SETTB_FILTER */
 
 #if CONFIG_ASETTB_FILTER
-
-DEFINE_OPTIONS(asettb, AUDIO);
-AVFILTER_DEFINE_CLASS(asettb);
+static const AVClass asettb_class = {
+    .class_name = "asettb",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_af_asettb_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
+        .get_audio_buffer = ff_null_get_audio_buffer,
         .filter_frame = filter_frame,
     },
     { NULL }

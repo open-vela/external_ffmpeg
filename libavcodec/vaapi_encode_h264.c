@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -283,7 +283,7 @@ static void vaapi_encode_h264_write_sps(PutBitContext *pbc,
     VAAPIEncodeH264MiscSequenceParams *mseq = &priv->misc_sequence_params;
     int i;
 
-    vaapi_encode_h264_write_nal_header(pbc, NAL_SPS, 3);
+    vaapi_encode_h264_write_nal_header(pbc, H264_NAL_SPS, 3);
 
     u(8, mseq_var(profile_idc));
     u(1, mseq_var(constraint_set0_flag));
@@ -368,7 +368,7 @@ static void vaapi_encode_h264_write_pps(PutBitContext *pbc,
     VAAPIEncodeH264Context            *priv = ctx->priv_data;
     VAAPIEncodeH264MiscSequenceParams *mseq = &priv->misc_sequence_params;
 
-    vaapi_encode_h264_write_nal_header(pbc, NAL_PPS, 3);
+    vaapi_encode_h264_write_nal_header(pbc, H264_NAL_PPS, 3);
 
     ue(vpic_var(pic_parameter_set_id));
     ue(vpic_var(seq_parameter_set_id));
@@ -642,7 +642,7 @@ static void vaapi_encode_h264_write_sei(PutBitContext *pbc,
                           VAAPIEncodeContext *ctx,
                           VAAPIEncodePicture *pic) = NULL;
 
-    vaapi_encode_h264_write_nal_header(pbc, NAL_SEI, 0);
+    vaapi_encode_h264_write_nal_header(pbc, H264_NAL_SEI, 0);
 
     for (payload_type = 0; payload_type < 64; payload_type++) {
         switch (payload_type) {
@@ -1010,9 +1010,9 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
     mslice = &pslice->misc_slice_params;
 
     if (pic->type == PICTURE_TYPE_IDR)
-        mslice->nal_unit_type = NAL_IDR_SLICE;
+        mslice->nal_unit_type = H264_NAL_IDR_SLICE;
     else
-        mslice->nal_unit_type = NAL_SLICE;
+        mslice->nal_unit_type = H264_NAL_SLICE;
 
     switch (pic->type) {
     case PICTURE_TYPE_IDR:
@@ -1090,12 +1090,6 @@ static av_cold int vaapi_encode_h264_init_constant_bitrate(AVCodecContext *avctx
     int hrd_buffer_size;
     int hrd_initial_buffer_fullness;
 
-    if (avctx->bit_rate > INT32_MAX) {
-        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
-               "higher is not supported.\n");
-        return AVERROR(EINVAL);
-    }
-
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;
     else
@@ -1134,7 +1128,7 @@ static av_cold int vaapi_encode_h264_init_constant_bitrate(AVCodecContext *avctx
     priv->fixed_qp_p   = 26;
     priv->fixed_qp_b   = 26;
 
-    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
+    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %d bps.\n",
            avctx->bit_rate);
     return 0;
 }
