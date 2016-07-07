@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -34,9 +34,10 @@ static const uint32_t pixel_mask[3] = { 0xffffffff, 0x01ff01ff, 0x03ff03ff };
 
 #define randomize_buffers()                                                  \
     do {                                                                     \
+        int x, y;                                                            \
         uint32_t mask = pixel_mask[bit_depth - 8];                           \
         for (y = 0; y < sz; y++) {                                           \
-            for (x = 0; x < sz * SIZEOF_PIXEL; x += 4) {                     \
+            for (x = 0; x < PIXEL_STRIDE; x += 4) {                          \
                 AV_WN32A(src + y * PIXEL_STRIDE + x, rnd() & mask);          \
                 AV_WN32A(dst + y * PIXEL_STRIDE + x, rnd() & mask);          \
             }                                                                \
@@ -178,8 +179,7 @@ static void check_idct(void)
     LOCAL_ALIGNED_16(int16_t, subcoef0, [8 * 8 * 2]);
     LOCAL_ALIGNED_16(int16_t, subcoef1, [8 * 8 * 2]);
     H264DSPContext h;
-    int bit_depth, sz, align;
-    int x, y, dc;
+    int bit_depth, sz, align, dc;
     declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *dst, int16_t *block, int stride);
 
     for (bit_depth = 8; bit_depth <= 10; bit_depth++) {
