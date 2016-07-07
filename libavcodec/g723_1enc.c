@@ -2,20 +2,20 @@
  * G.723.1 compatible encoder
  * Copyright (c) Mohamed Naufal <naufal22@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -82,7 +82,7 @@ static void highpass_filter(int16_t *buf, int16_t *fir, int *iir)
     for (i = 0; i < FRAME_LEN; i++) {
         *iir   = (buf[i] << 15) + ((-*fir) << 15) + MULL2(*iir, 0x7f00);
         *fir   = buf[i];
-        buf[i] = av_clipl_int32((int64_t) *iir + (1 << 15)) >> 16;
+        buf[i] = av_clipl_int32((int64_t)*iir + (1 << 15)) >> 16;
     }
 }
 
@@ -1148,7 +1148,7 @@ static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         acb_search(p, residual, impulse_resp, in, i);
         ff_g723_1_gen_acb_excitation(residual, p->prev_excitation,
                                      p->pitch_lag[i >> 1], &p->subframe[i],
-                                     RATE_6300);
+                                     p->cur_rate);
         sub_acb_contrib(residual, impulse_resp, in);
 
         fcb_search(p, impulse_resp, in, i);
@@ -1180,12 +1180,12 @@ static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     av_free(start);
 
-    ret = ff_alloc_packet(avpkt, 24);
-    if (ret < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, 24, 0)) < 0)
         return ret;
 
     *got_packet_ptr = 1;
-    return pack_bitstream(p, avpkt);
+    avpkt->size = pack_bitstream(p, avpkt);
+    return 0;
 }
 
 AVCodec ff_g723_1_encoder = {

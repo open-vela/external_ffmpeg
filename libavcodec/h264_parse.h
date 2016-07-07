@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
 #define AVCODEC_H264_PARSE_H
 
 #include "get_bits.h"
-#include "h264_ps.h"
 
 typedef struct H264PredWeightTable {
     int use_weight;
@@ -53,9 +52,13 @@ typedef struct H264POCContext {
     int prev_frame_num;         ///< frame_num of the last pic for POC type 1/2
 } H264POCContext;
 
-int ff_h264_pred_weight_table(GetBitContext *gb, const SPS *sps,
+struct SPS;
+struct PPS;
+struct H264ParamSets;
+
+int ff_h264_pred_weight_table(GetBitContext *gb, const struct SPS *sps,
                               const int *ref_count, int slice_type_nos,
-                              H264PredWeightTable *pwt);
+                              H264PredWeightTable *pwt, void *logctx);
 
 /**
  * Check if the top & left blocks are available if needed & change the
@@ -73,20 +76,20 @@ int ff_h264_check_intra_pred_mode(void *logctx, int top_samples_available,
                                   int mode, int is_chroma);
 
 int ff_h264_parse_ref_count(int *plist_count, int ref_count[2],
-                            GetBitContext *gb, const PPS *pps,
-                            int slice_type_nos, int picture_structure);
+                            GetBitContext *gb, const struct PPS *pps,
+                            int slice_type_nos, int picture_structure, void *logctx);
 
 int ff_h264_init_poc(int pic_field_poc[2], int *pic_poc,
-                     const SPS *sps, H264POCContext *poc,
+                     const struct SPS *sps, H264POCContext *poc,
                      int picture_structure, int nal_ref_idc);
 
-int ff_h264_decode_extradata(const uint8_t *data, int size, H264ParamSets *ps,
+int ff_h264_decode_extradata(const uint8_t *data, int size, struct H264ParamSets *ps,
                              int *is_avc, int *nal_length_size,
                              int err_recognition, void *logctx);
 
 /**
  * compute profile from sps
  */
-int ff_h264_get_profile(const SPS *sps);
+int ff_h264_get_profile(const struct SPS *sps);
 
 #endif /* AVCODEC_H264_PARSE_H */
