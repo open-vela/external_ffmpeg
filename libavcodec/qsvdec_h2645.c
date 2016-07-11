@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,14 +33,11 @@
 
 #include "avcodec.h"
 #include "internal.h"
-#include "qsv_internal.h"
 #include "qsvdec.h"
-#include "qsv.h"
 
 enum LoadPlugin {
     LOAD_PLUGIN_NONE,
     LOAD_PLUGIN_HEVC_SW,
-    LOAD_PLUGIN_HEVC_HW,
 };
 
 typedef struct QSVH2645Context {
@@ -50,25 +47,9 @@ typedef struct QSVH2645Context {
     int load_plugin;
 
     // the filter for converting to Annex B
-    AVBSFContext *bsf;
+    AVBitStreamFilterContext *bsf;
 
-    AVFifoBuffer *packet_fifo;
-
-    AVPacket pkt_filtered;
 } QSVH2645Context;
-
-static void qsv_clear_buffers(QSVH2645Context *s)
-{
-    AVPacket pkt;
-    while (av_fifo_size(s->packet_fifo) >= sizeof(pkt)) {
-        av_fifo_generic_read(s->packet_fifo, &pkt, sizeof(pkt), NULL);
-        av_packet_unref(&pkt);
-    }
-
-    av_bsf_free(&s->bsf);
-
-    av_packet_unref(&s->pkt_filtered);
-}
 
 static av_cold int qsv_decode_close(AVCodecContext *avctx)
 {
@@ -76,9 +57,7 @@ static av_cold int qsv_decode_close(AVCodecContext *avctx)
 
     ff_qsv_decode_close(&s->qsv);
 
-    qsv_clear_buffers(s);
-
-    av_fifo_free(s->packet_fifo);
+    av_bitstream_filter_close(s->bsf);
 
     return 0;
 }
@@ -89,8 +68,7 @@ static av_cold int qsv_decode_init(AVCodecContext *avctx)
     int ret;
 
     if (avctx->codec_id == AV_CODEC_ID_HEVC && s->load_plugin != LOAD_PLUGIN_NONE) {
-        static const char *uid_hevcdec_sw = "15dd936825ad475ea34e35f3f54217a6";
-        static const char *uid_hevcdec_hw = "33a61c0b4c27454ca8d85dde757c6f8e";
+        static const char *uid_hevcenc_sw = "15dd936825ad475ea34e35f3f54217a6";
 
         if (s->qsv.load_plugins[0]) {
             av_log(avctx, AV_LOG_WARNING,
@@ -98,18 +76,19 @@ static av_cold int qsv_decode_init(AVCodecContext *avctx)
                    "The load_plugin value will be ignored.\n");
         } else {
             av_freep(&s->qsv.load_plugins);
-
-            if (s->load_plugin == LOAD_PLUGIN_HEVC_SW)
-                s->qsv.load_plugins = av_strdup(uid_hevcdec_sw);
-            else
-                s->qsv.load_plugins = av_strdup(uid_hevcdec_hw);
+            s->qsv.load_plugins = av_strdup(uid_hevcenc_sw);
             if (!s->qsv.load_plugins)
                 return AVERROR(ENOMEM);
         }
     }
 
-    s->packet_fifo = av_fifo_alloc(sizeof(AVPacket));
-    if (!s->packet_fifo) {
+    if (avctx->codec_id == AV_CODEC_ID_H264) {
+        s->bsf = av_bitstream_filter_init("h264_mp4toannexb");
+        //regarding ticks_per_frame description, should be 2 for h.264:
+        avctx->ticks_per_frame = 2;
+    } else
+        s->bsf = av_bitstream_filter_init("hevc_mp4toannexb");
+    if (!s->bsf) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -120,109 +99,48 @@ fail:
     return ret;
 }
 
-static int qsv_init_bsf(AVCodecContext *avctx, QSVH2645Context *s)
-{
-    const char *filter_name = avctx->codec_id == AV_CODEC_ID_HEVC ?
-                              "hevc_mp4toannexb" : "h264_mp4toannexb";
-    const AVBitStreamFilter *filter;
-    int ret;
-
-    if (s->bsf)
-        return 0;
-
-    filter = av_bsf_get_by_name(filter_name);
-    if (!filter)
-        return AVERROR_BUG;
-
-    ret = av_bsf_alloc(filter, &s->bsf);
-    if (ret < 0)
-        return ret;
-
-    ret = avcodec_parameters_from_context(s->bsf->par_in, avctx);
-    if (ret < 0)
-        return ret;
-
-    s->bsf->time_base_in = avctx->time_base;
-
-    ret = av_bsf_init(s->bsf);
-    if (ret < 0)
-        return ret;
-
-    return ret;
-}
-
 static int qsv_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame, AVPacket *avpkt)
 {
     QSVH2645Context *s = avctx->priv_data;
     AVFrame *frame    = data;
     int ret;
+    uint8_t *p_filtered = NULL;
+    int      n_filtered = NULL;
+    AVPacket pkt_filtered = { 0 };
 
-    /* make sure the bitstream filter is initialized */
-    ret = qsv_init_bsf(avctx, s);
-    if (ret < 0)
-        return ret;
-
-    /* buffer the input packet */
     if (avpkt->size) {
-        AVPacket input_ref = { 0 };
+        if (avpkt->size > 3 && !avpkt->data[0] &&
+            !avpkt->data[1] && !avpkt->data[2] && 1==avpkt->data[3]) {
+            /* we already have annex-b prefix */
+            return ff_qsv_decode(avctx, &s->qsv, frame, got_frame, avpkt);
 
-        if (av_fifo_space(s->packet_fifo) < sizeof(input_ref)) {
-            ret = av_fifo_realloc2(s->packet_fifo,
-                                   av_fifo_size(s->packet_fifo) + sizeof(input_ref));
-            if (ret < 0)
-                return ret;
-        }
+        } else {
+            /* no annex-b prefix. try to restore: */
+            ret = av_bitstream_filter_filter(s->bsf, avctx, "private_spspps_buf",
+                                         &p_filtered, &n_filtered,
+                                         avpkt->data, avpkt->size, 0);
+            if (ret>=0) {
+                pkt_filtered.pts  = avpkt->pts;
+                pkt_filtered.data = p_filtered;
+                pkt_filtered.size = n_filtered;
 
-        ret = av_packet_ref(&input_ref, avpkt);
-        if (ret < 0)
-            return ret;
-        av_fifo_generic_write(s->packet_fifo, &input_ref, sizeof(input_ref), NULL);
-    }
+                ret = ff_qsv_decode(avctx, &s->qsv, frame, got_frame, &pkt_filtered);
 
-    /* process buffered data */
-    while (!*got_frame) {
-        /* prepare the input data -- convert to Annex B if needed */
-        if (s->pkt_filtered.size <= 0) {
-            AVPacket input_ref;
-
-            /* no more data */
-            if (av_fifo_size(s->packet_fifo) < sizeof(AVPacket))
-                return avpkt->size ? avpkt->size : ff_qsv_process_data(avctx, &s->qsv, frame, got_frame, avpkt);
-
-            av_packet_unref(&s->pkt_filtered);
-
-            av_fifo_generic_read(s->packet_fifo, &input_ref, sizeof(input_ref), NULL);
-            ret = av_bsf_send_packet(s->bsf, &input_ref);
-            if (ret < 0) {
-                av_packet_unref(&input_ref);
-                return ret;
+                if (p_filtered != avpkt->data)
+                    av_free(p_filtered);
+                return ret > 0 ? avpkt->size : ret;
             }
-
-            ret = av_bsf_receive_packet(s->bsf, &s->pkt_filtered);
-            if (ret < 0)
-                av_packet_move_ref(&s->pkt_filtered, &input_ref);
-            else
-                av_packet_unref(&input_ref);
         }
-
-        ret = ff_qsv_process_data(avctx, &s->qsv, frame, got_frame, &s->pkt_filtered);
-        if (ret < 0)
-            return ret;
-
-        s->pkt_filtered.size -= ret;
-        s->pkt_filtered.data += ret;
     }
 
-    return avpkt->size;
+    return ff_qsv_decode(avctx, &s->qsv, frame, got_frame, avpkt);
 }
 
 static void qsv_decode_flush(AVCodecContext *avctx)
 {
     QSVH2645Context *s = avctx->priv_data;
-
-    qsv_clear_buffers(s);
-    ff_qsv_decode_flush(avctx, &s->qsv);
+    ff_qsv_decode_reset(avctx, &s->qsv);
 }
 
 #define OFFSET(x) offsetof(QSVH2645Context, x)
@@ -239,10 +157,9 @@ AVHWAccel ff_hevc_qsv_hwaccel = {
 static const AVOption hevc_options[] = {
     { "async_depth", "Internal parallelization depth, the higher the value the higher the latency.", OFFSET(qsv.async_depth), AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 0, INT_MAX, VD },
 
-    { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_HEVC_SW }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_HEVC_HW, VD, "load_plugin" },
+    { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_HEVC_SW }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_HEVC_SW, VD, "load_plugin" },
     { "none",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_NONE },    0, 0, VD, "load_plugin" },
     { "hevc_sw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_SW }, 0, 0, VD, "load_plugin" },
-    { "hevc_hw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_HW }, 0, 0, VD, "load_plugin" },
 
     { "load_plugins", "A :-separate list of hexadecimal plugin UIDs to load in an internal session",
         OFFSET(qsv.load_plugins), AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VD },
@@ -269,7 +186,6 @@ AVCodec ff_hevc_qsv_decoder = {
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
     .priv_class     = &hevc_class,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
-                                                    AV_PIX_FMT_P010,
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_NONE },
 };
@@ -308,7 +224,6 @@ AVCodec ff_h264_qsv_decoder = {
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
     .priv_class     = &class,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
-                                                    AV_PIX_FMT_P010,
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_NONE },
 };

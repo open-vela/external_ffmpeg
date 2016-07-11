@@ -3,14 +3,14 @@
  * Copyright (c) 2015 Martin Storsjo
  * Copyright (c) 2015 Janne Grunau
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -22,7 +22,7 @@
 
 #include "libavutil/arm/asm.S"
 
-const register_init, align=3
+const register_init
     .quad 0x21f86d66c8ca00ce
     .quad 0x75b6ba21077c48ad
     .quad 0xed56bb2dcb3c7736
