@@ -2,20 +2,20 @@
  * gsm 06.10 decoder
  * Copyright (c) 2010 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -79,10 +79,8 @@ static int gsm_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = avctx->frame_size;
-    if ((res = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((res = ff_get_buffer(avctx, frame, 0)) < 0)
         return res;
-    }
     samples = (int16_t *)frame->data[0];
 
     switch (avctx->codec_id) {
@@ -112,6 +110,7 @@ static void gsm_flush(AVCodecContext *avctx)
     memset(s, 0, sizeof(*s));
 }
 
+#if CONFIG_GSM_DECODER
 AVCodec ff_gsm_decoder = {
     .name           = "gsm",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM"),
@@ -123,7 +122,8 @@ AVCodec ff_gsm_decoder = {
     .flush          = gsm_flush,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
-
+#endif
+#if CONFIG_GSM_MS_DECODER
 AVCodec ff_gsm_ms_decoder = {
     .name           = "gsm_ms",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM Microsoft variant"),
@@ -135,3 +135,4 @@ AVCodec ff_gsm_ms_decoder = {
     .flush          = gsm_flush,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
+#endif
