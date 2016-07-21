@@ -4,20 +4,20 @@
  *
  * VC-3 encoder funded by the British Broadcasting Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,7 +45,6 @@ typedef struct DNXHDEncContext {
     MpegEncContext m; ///< Used for quantization dsp functions
 
     int cid;
-    int profile;
     const CIDEntry *cid_table;
     uint8_t *msip; ///< Macroblock Scan Indexes Payload
     uint32_t *slice_size;
@@ -59,10 +58,6 @@ typedef struct DNXHDEncContext {
     unsigned dct_uv_offset;
     unsigned block_width_l2;
 
-    int frame_size;
-    int coding_unit_size;
-    int data_offset;
-
     int interlaced;
     int cur_field;
 
@@ -71,8 +66,6 @@ typedef struct DNXHDEncContext {
     int intra_quant_bias;
 
     DECLARE_ALIGNED(16, int16_t, blocks)[8][64];
-    uint8_t edge_buf_y[256];
-    uint8_t edge_buf_uv[2][128];
 
     int      (*qmatrix_c)     [64];
     int      (*qmatrix_l)     [64];
@@ -92,11 +85,13 @@ typedef struct DNXHDEncContext {
     unsigned qscale;
     unsigned lambda;
 
+    unsigned thread_size;
+
     uint16_t *mb_bits;
     uint8_t  *mb_qscale;
 
     RCCMPEntry *mb_cmp;
-    RCEntry    *mb_rc;
+    RCEntry   (*mb_rc)[8160];
 
     void (*get_pixels_8x4_sym)(int16_t * /* align 16 */,
                                const uint8_t *, ptrdiff_t);
