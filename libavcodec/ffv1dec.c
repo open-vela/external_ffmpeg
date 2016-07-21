@@ -833,7 +833,7 @@ static av_cold int ffv1_decode_init(AVCodecContext *avctx)
     if (!f->last_picture)
         return AVERROR(ENOMEM);
 
-    if (avctx->extradata && (ret = read_extra_header(f)) < 0)
+    if (avctx->extradata_size > 0 && (ret = read_extra_header(f)) < 0)
         return ret;
 
     if ((ret = ffv1_init_slice_contexts(f)) < 0)
