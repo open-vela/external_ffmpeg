@@ -1,21 +1,21 @@
 /*
- * DVB subtitle parser for FFmpeg
+ * DVB subtitle parser for Libav
  * Copyright (c) 2005 Ian Caulfield
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -57,7 +57,6 @@ static int dvbsub_parse(AVCodecParserContext *s,
     DVBSubParseContext *pc = s->priv_data;
     uint8_t *p, *p_end;
     int i, len, buf_pos = 0;
-    int out_size = 0;
 
     ff_dlog(avctx, "DVB parse packet pts=%"PRIx64", lpts=%"PRIx64", cpts=%"PRIx64":\n",
             s->pts, s->last_pts, s->cur_frame_pts[s->cur_frame_start_index]);
@@ -72,8 +71,8 @@ static int dvbsub_parse(AVCodecParserContext *s,
     if (i % 16 != 0)
         ff_dlog(avctx, "\n");
 
-    *poutbuf      = buf;
-    *poutbuf_size = buf_size;
+    *poutbuf = NULL;
+    *poutbuf_size = 0;
 
     s->fetch_timestamp = 1;
 
@@ -90,7 +89,7 @@ static int dvbsub_parse(AVCodecParserContext *s,
 
         if (buf_size < 2 || buf[0] != 0x20 || buf[1] != 0x00) {
             ff_dlog(avctx, "Bad packet header\n");
-            return buf_size;
+            return -1;
         }
 
         buf_pos = 2;
@@ -114,9 +113,9 @@ static int dvbsub_parse(AVCodecParserContext *s,
     }
 
     if (buf_size - buf_pos + pc->packet_index > PARSE_BUF_SIZE)
-        return buf_size;
+        return -1;
 
-/* if not currently in a packet, pass data */
+/* if not currently in a packet, discard data */
     if (pc->in_packet == 0)
         return buf_size;
 
@@ -130,13 +129,13 @@ static int dvbsub_parse(AVCodecParserContext *s,
     {
         if (*p == 0x0f)
         {
-            if (6 <= p_end - p)
+            if (p + 6 <= p_end)
             {
                 len = AV_RB16(p + 4);
 
-                if (len + 6 <= p_end - p)
+                if (p + len + 6 <= p_end)
                 {
-                    out_size += len + 6;
+                    *poutbuf_size += len + 6;
 
                     p += len + 6;
                 } else
@@ -144,7 +143,7 @@ static int dvbsub_parse(AVCodecParserContext *s,
             } else
                 break;
         } else if (*p == 0xff) {
-            if (1 < p_end - p)
+            if (p + 1 < p_end)
             {
                 ff_dlog(avctx, "Junk at end of packet\n");
             }
@@ -160,10 +159,9 @@ static int dvbsub_parse(AVCodecParserContext *s,
         }
     }
 
-    if (out_size > 0)
+    if (*poutbuf_size > 0)
     {
         *poutbuf = pc->packet_buf;
-        *poutbuf_size = out_size;
         pc->packet_start = *poutbuf_size;
     }
 

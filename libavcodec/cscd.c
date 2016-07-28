@@ -2,20 +2,20 @@
  * CamStudio decoder
  * Copyright (c) 2006 Reimar Doeffinger
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include <stdio.h>
@@ -31,16 +31,14 @@
 #include "libavutil/lzo.h"
 
 typedef struct CamStudioContext {
-    AVFrame *pic;
     int linelen, height, bpp;
     unsigned int decomp_size;
     unsigned char* decomp_buf;
 } CamStudioContext;
 
-static void copy_frame_default(AVFrame *f, const uint8_t *src,
-                               int linelen, int height)
-{
-    int i, src_stride = FFALIGN(linelen, 4);
+static void copy_frame_default(AVFrame *f, const uint8_t *src, int src_stride,
+                               int linelen, int height) {
+    int i;
     uint8_t *dst = f->data[0];
     dst += (height - 1) * f->linesize[0];
     for (i = height; i; i--) {
@@ -50,10 +48,9 @@ static void copy_frame_default(AVFrame *f, const uint8_t *src,
     }
 }
 
-static void add_frame_default(AVFrame *f, const uint8_t *src,
-                              int linelen, int height)
-{
-    int i, j, src_stride = FFALIGN(linelen, 4);
+static void add_frame_default(AVFrame *f, const uint8_t *src, int src_stride,
+                              int linelen, int height) {
+    int i, j;
     uint8_t *dst = f->data[0];
     dst += (height - 1) * f->linesize[0];
     for (i = height; i; i--) {
@@ -64,12 +61,87 @@ static void add_frame_default(AVFrame *f, const uint8_t *src,
     }
 }
 
+#if !HAVE_BIGENDIAN
+#define copy_frame_16(f, s, l, h) copy_frame_default(f, s, l, l, h)
+#define copy_frame_32(f, s, l, h) copy_frame_default(f, s, l, l, h)
+#define add_frame_16(f, s, l, h) add_frame_default(f, s, l, l, h)
+#define add_frame_32(f, s, l, h) add_frame_default(f, s, l, l, h)
+#else
+static void copy_frame_16(AVFrame *f, const uint8_t *src,
+                          int linelen, int height) {
+    int i, j;
+    uint8_t *dst = f->data[0];
+    dst += (height - 1) * f->linesize[0];
+    for (i = height; i; i--) {
+        for (j = linelen / 2; j; j--) {
+          dst[0] = src[1];
+          dst[1] = src[0];
+          src += 2;
+          dst += 2;
+        }
+        dst -= f->linesize[0] + linelen;
+    }
+}
+
+static void copy_frame_32(AVFrame *f, const uint8_t *src,
+                          int linelen, int height) {
+    int i, j;
+    uint8_t *dst = f->data[0];
+    dst += (height - 1) * f->linesize[0];
+    for (i = height; i; i--) {
+        for (j = linelen / 4; j; j--) {
+          dst[0] = src[3];
+          dst[1] = src[2];
+          dst[2] = src[1];
+          dst[3] = src[0];
+          src += 4;
+          dst += 4;
+        }
+        dst -= f->linesize[0] + linelen;
+    }
+}
+
+static void add_frame_16(AVFrame *f, const uint8_t *src,
+                         int linelen, int height) {
+    int i, j;
+    uint8_t *dst = f->data[0];
+    dst += (height - 1) * f->linesize[0];
+    for (i = height; i; i--) {
+        for (j = linelen / 2; j; j--) {
+          dst[0] += src[1];
+          dst[1] += src[0];
+          src += 2;
+          dst += 2;
+        }
+        dst -= f->linesize[0] + linelen;
+    }
+}
+
+static void add_frame_32(AVFrame *f, const uint8_t *src,
+                         int linelen, int height) {
+    int i, j;
+    uint8_t *dst = f->data[0];
+    dst += (height - 1) * f->linesize[0];
+    for (i = height; i; i--) {
+        for (j = linelen / 4; j; j--) {
+          dst[0] += src[3];
+          dst[1] += src[2];
+          dst[2] += src[1];
+          dst[3] += src[0];
+          src += 4;
+          dst += 4;
+        }
+        dst -= f->linesize[0] + linelen;
+    }
+}
+#endif
+
 static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
-                        AVPacket *avpkt)
-{
+                        AVPacket *avpkt) {
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     CamStudioContext *c = avctx->priv_data;
+    AVFrame *picture = data;
     int ret;
 
     if (buf_size < 2) {
@@ -77,92 +149,101 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
+    if ((ret = ff_get_buffer(avctx, picture, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     // decompress data
     switch ((buf[0] >> 1) & 7) {
-    case 0: { // lzo compression
-        int outlen = c->decomp_size, inlen = buf_size - 2;
-        if (av_lzo1x_decode(c->decomp_buf, &outlen, &buf[2], &inlen) || outlen) {
-            av_log(avctx, AV_LOG_ERROR, "error during lzo decompression\n");
-            return AVERROR_INVALIDDATA;
+        case 0: { // lzo compression
+            int outlen = c->decomp_size, inlen = buf_size - 2;
+            if (av_lzo1x_decode(c->decomp_buf, &outlen, &buf[2], &inlen))
+                av_log(avctx, AV_LOG_ERROR, "error during lzo decompression\n");
+            break;
         }
-        break;
-    }
-    case 1: { // zlib compression
+        case 1: { // zlib compression
 #if CONFIG_ZLIB
-        unsigned long dlen = c->decomp_size;
-        if (uncompress(c->decomp_buf, &dlen, &buf[2], buf_size - 2) != Z_OK) {
-            av_log(avctx, AV_LOG_ERROR, "error during zlib decompression\n");
-            return AVERROR_INVALIDDATA;
-        }
-        break;
+            unsigned long dlen = c->decomp_size;
+            if (uncompress(c->decomp_buf, &dlen, &buf[2], buf_size - 2) != Z_OK)
+                av_log(avctx, AV_LOG_ERROR, "error during zlib decompression\n");
+            break;
 #else
-        av_log(avctx, AV_LOG_ERROR, "compiled without zlib support\n");
-        return AVERROR(ENOSYS);
+            av_log(avctx, AV_LOG_ERROR, "compiled without zlib support\n");
+            return AVERROR(ENOSYS);
 #endif
-    }
-    default:
-        av_log(avctx, AV_LOG_ERROR, "unknown compression\n");
-        return AVERROR_INVALIDDATA;
+        }
+        default:
+            av_log(avctx, AV_LOG_ERROR, "unknown compression\n");
+            return AVERROR_INVALIDDATA;
     }
 
     // flip upside down, add difference frame
     if (buf[0] & 1) { // keyframe
-        c->pic->pict_type = AV_PICTURE_TYPE_I;
-        c->pic->key_frame = 1;
-              copy_frame_default(c->pic, c->decomp_buf,
+        picture->pict_type = AV_PICTURE_TYPE_I;
+        picture->key_frame = 1;
+        switch (c->bpp) {
+          case 16:
+              copy_frame_16(picture, c->decomp_buf, c->linelen, c->height);
+              break;
+          case 32:
+              copy_frame_32(picture, c->decomp_buf, c->linelen, c->height);
+              break;
+          default:
+              copy_frame_default(picture, c->decomp_buf, FFALIGN(c->linelen, 4),
                                  c->linelen, c->height);
+        }
     } else {
-        c->pic->pict_type = AV_PICTURE_TYPE_P;
-        c->pic->key_frame = 0;
-              add_frame_default(c->pic, c->decomp_buf,
+        picture->pict_type = AV_PICTURE_TYPE_P;
+        picture->key_frame = 0;
+        switch (c->bpp) {
+          case 16:
+              add_frame_16(picture, c->decomp_buf, c->linelen, c->height);
+              break;
+          case 32:
+              add_frame_32(picture, c->decomp_buf, c->linelen, c->height);
+              break;
+          default:
+              add_frame_default(picture, c->decomp_buf, FFALIGN(c->linelen, 4),
                                 c->linelen, c->height);
+        }
     }
 
     *got_frame = 1;
-    if ((ret = av_frame_ref(data, c->pic)) < 0)
-        return ret;
-
     return buf_size;
 }
 
-static av_cold int decode_init(AVCodecContext *avctx)
-{
+static av_cold int decode_init(AVCodecContext *avctx) {
     CamStudioContext *c = avctx->priv_data;
     int stride;
     switch (avctx->bits_per_coded_sample) {
-    case 16: avctx->pix_fmt = AV_PIX_FMT_RGB555LE; break;
-    case 24: avctx->pix_fmt = AV_PIX_FMT_BGR24; break;
-    case 32: avctx->pix_fmt = AV_PIX_FMT_BGR0; break;
-    default:
-        av_log(avctx, AV_LOG_ERROR,
-               "CamStudio codec error: invalid depth %i bpp\n",
-               avctx->bits_per_coded_sample);
-        return AVERROR_INVALIDDATA;
+        case 16: avctx->pix_fmt = AV_PIX_FMT_RGB555; break;
+        case 24: avctx->pix_fmt = AV_PIX_FMT_BGR24; break;
+        case 32: avctx->pix_fmt = AV_PIX_FMT_RGB32; break;
+        default:
+            av_log(avctx, AV_LOG_ERROR,
+                   "CamStudio codec error: invalid depth %i bpp\n",
+                   avctx->bits_per_coded_sample);
+            return AVERROR_INVALIDDATA;
     }
     c->bpp = avctx->bits_per_coded_sample;
     c->linelen = avctx->width * avctx->bits_per_coded_sample / 8;
     c->height = avctx->height;
-    stride = FFALIGN(c->linelen, 4);
+    stride = c->linelen;
+    if (avctx->bits_per_coded_sample == 24)
+        stride = FFALIGN(stride, 4);
     c->decomp_size = c->height * stride;
     c->decomp_buf = av_malloc(c->decomp_size + AV_LZO_OUTPUT_PADDING);
     if (!c->decomp_buf) {
         av_log(avctx, AV_LOG_ERROR, "Can't allocate decompression buffer.\n");
         return AVERROR(ENOMEM);
     }
-    c->pic = av_frame_alloc();
-    if (!c->pic)
-        return AVERROR(ENOMEM);
     return 0;
 }
 
-static av_cold int decode_end(AVCodecContext *avctx)
-{
+static av_cold int decode_end(AVCodecContext *avctx) {
     CamStudioContext *c = avctx->priv_data;
     av_freep(&c->decomp_buf);
-    av_frame_free(&c->pic);
     return 0;
 }
 
@@ -175,6 +256,5 @@ AVCodec ff_cscd_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
