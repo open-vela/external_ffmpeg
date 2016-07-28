@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -104,30 +104,19 @@ AVBufferRef *av_buffer_ref(AVBufferRef *buf)
     return ret;
 }
 
-static void buffer_replace(AVBufferRef **dst, AVBufferRef **src)
+void av_buffer_unref(AVBufferRef **buf)
 {
     AVBuffer *b;
 
-    b = (*dst)->buffer;
-
-    if (src) {
-        **dst = **src;
-        av_freep(src);
-    } else
-        av_freep(dst);
+    if (!buf || !*buf)
+        return;
+    b = (*buf)->buffer;
+    av_freep(buf);
 
     if (atomic_fetch_add_explicit(&b->refcount, -1, memory_order_acq_rel) == 1) {
         b->free(b->opaque, b->data);
         av_freep(&b);
     }
-}
-
-void av_buffer_unref(AVBufferRef **buf)
-{
-    if (!buf || !*buf)
-        return;
-
-    buffer_replace(buf, NULL);
 }
 
 int av_buffer_is_writable(const AVBufferRef *buf)
@@ -136,16 +125,6 @@ int av_buffer_is_writable(const AVBufferRef *buf)
         return 0;
 
     return atomic_load(&buf->buffer->refcount) == 1;
-}
-
-void *av_buffer_get_opaque(const AVBufferRef *buf)
-{
-    return buf->buffer->opaque;
-}
-
-int av_buffer_get_ref_count(const AVBufferRef *buf)
-{
-    return atomic_load(&buf->buffer->refcount);
 }
 
 int av_buffer_make_writable(AVBufferRef **pbuf)
@@ -160,8 +139,8 @@ int av_buffer_make_writable(AVBufferRef **pbuf)
         return AVERROR(ENOMEM);
 
     memcpy(newbuf->data, buf->data, buf->size);
-
-    buffer_replace(pbuf, &newbuf);
+    av_buffer_unref(pbuf);
+    *pbuf = newbuf;
 
     return 0;
 }
@@ -202,7 +181,8 @@ int av_buffer_realloc(AVBufferRef **pbuf, int size)
 
         memcpy(new->data, buf->data, FFMIN(size, buf->size));
 
-        buffer_replace(pbuf, &new);
+        av_buffer_unref(pbuf);
+        *pbuf = new;
         return 0;
     }
 
@@ -289,9 +269,6 @@ static void pool_release_buffer(void *opaque, uint8_t *data)
 {
     BufferPoolEntry *buf = opaque;
     AVBufferPool *pool = buf->pool;
-
-    if(CONFIG_MEMORY_POISONING)
-        memset(buf->data, FF_MEMORY_POISON, pool->size);
 
     ff_mutex_lock(&pool->mutex);
     buf->next = pool->pool;

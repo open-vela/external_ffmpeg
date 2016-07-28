@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV based MJPEG encoder
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,7 +64,6 @@ static av_cold int qsv_enc_close(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(QSVMJPEGEncContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "async_depth", "Maximum processing parallelism", OFFSET(qsv.async_depth), AV_OPT_TYPE_INT, { .i64 = ASYNC_DEPTH_DEFAULT }, 1, INT_MAX, VE },
     { NULL },
 };
 
@@ -73,11 +72,6 @@ static const AVClass class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
-};
-
-static const AVCodecDefault qsv_enc_defaults[] = {
-    { "global_quality",  "80" },
-    { NULL },
 };
 
 AVCodec ff_mjpeg_qsv_encoder = {
@@ -94,6 +88,5 @@ AVCodec ff_mjpeg_qsv_encoder = {
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_NONE },
     .priv_class     = &class,
-    .defaults       = qsv_enc_defaults,
     .wrapper_name   = "qsv",
 };

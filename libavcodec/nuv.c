@@ -2,26 +2,25 @@
  * NuppelVideo decoder
  * Copyright (c) 2006 Reimar Doeffinger
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
 
 #include "libavutil/bswap.h"
 #include "libavutil/common.h"
@@ -79,7 +78,7 @@ static void copy_frame(AVFrame *f, const uint8_t *src, int width, int height)
     int src_linesize[4];
     av_image_fill_arrays(src_data, src_linesize, src,
                          f->format, width, height, 1);
-    av_image_copy(f->data, f->linesize, (const uint8_t **)src_data, src_linesize,
+    av_image_copy(f->data, f->linesize, src_data, src_linesize,
                   f->format, width, height);
 }
 
@@ -125,26 +124,23 @@ static int codec_reinit(AVCodecContext *avctx, int width, int height,
     if (quality >= 0)
         get_quant_quality(c, quality);
     if (width != c->width || height != c->height) {
-        // also reserve space for a possible additional header
-        int buf_size = height * width * 3 / 2
-                     + FFMAX(AV_LZO_OUTPUT_PADDING, AV_INPUT_BUFFER_PADDING_SIZE)
-                     + RTJPEG_HEADER_SIZE;
-        if (buf_size > INT_MAX/8)
-            return -1;
+        void *ptr;
         if ((ret = av_image_check_size(height, width, 0, avctx)) < 0)
             return ret;
         avctx->width  = c->width  = width;
         avctx->height = c->height = height;
-        av_fast_malloc(&c->decomp_buf, &c->decomp_size,
-                       buf_size);
-        if (!c->decomp_buf) {
+        ptr = av_fast_realloc(c->decomp_buf, &c->decomp_size,
+                              c->height * c->width * 3 / 2 +
+                              AV_INPUT_BUFFER_PADDING_SIZE +
+                              RTJPEG_HEADER_SIZE);
+        if (!ptr) {
             av_log(avctx, AV_LOG_ERROR,
                    "Can't allocate decompression buffer.\n");
             return AVERROR(ENOMEM);
-        }
+        } else
+            c->decomp_buf = ptr;
         ff_rtjpeg_decode_init(&c->rtj, c->width, c->height, c->lq, c->cq);
         av_frame_unref(c->pic);
-        return 1;
     } else if (quality != c->quality)
         ff_rtjpeg_decode_init(&c->rtj, c->width, c->height, c->lq, c->cq);
 
@@ -160,8 +156,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     AVFrame *picture   = data;
     int orig_size      = buf_size;
     int keyframe, ret;
-    int size_change = 0;
-    int minsize = 0;
     int result, init_frame = !avctx->frame_number;
     enum {
         NUV_UNCOMPRESSED  = '0',
@@ -190,7 +184,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return orig_size;
     }
 
-    if (buf_size < 12 || buf[0] != 'V') {
+    if (buf[0] != 'V' || buf_size < 12) {
         av_log(avctx, AV_LOG_ERROR, "not a nuv video frame\n");
         return AVERROR_INVALIDDATA;
     }
@@ -199,9 +193,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     case NUV_RTJPEG_IN_LZO:
     case NUV_RTJPEG:
         keyframe = !buf[2];
-        if (c->width < 16 || c->height < 16) {
-            return AVERROR_INVALIDDATA;
-        }
         break;
     case NUV_COPY_LAST:
         keyframe = 0;
@@ -210,42 +201,24 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         keyframe = 1;
         break;
     }
-    switch (comptype) {
-    case NUV_UNCOMPRESSED:
-        minsize = c->width * c->height * 3 / 2;
-        break;
-    case NUV_RTJPEG:
-        minsize = c->width/16 * (c->height/16) * 6;
-        break;
-    }
-    if (buf_size < minsize / 4)
-        return AVERROR_INVALIDDATA;
-retry:
     // Skip the rest of the frame header.
     buf       = &buf[12];
     buf_size -= 12;
     if (comptype == NUV_RTJPEG_IN_LZO || comptype == NUV_LZO) {
-        int outlen = c->decomp_size - FFMAX(AV_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING);
+        int outlen = c->decomp_size - AV_INPUT_BUFFER_PADDING_SIZE;
         int inlen  = buf_size;
         if (av_lzo1x_decode(c->decomp_buf, &outlen, buf, &inlen)) {
             av_log(avctx, AV_LOG_ERROR, "error during lzo decompression\n");
             return AVERROR_INVALIDDATA;
         }
         buf      = c->decomp_buf;
-        buf_size = c->decomp_size - FFMAX(AV_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING) - outlen;
-        memset(c->decomp_buf + buf_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+        buf_size = outlen;
     }
     if (c->codec_frameheader) {
         int w, h, q;
-        if (buf_size < RTJPEG_HEADER_SIZE) {
-            av_log(avctx, AV_LOG_ERROR, "Too small NUV video frame\n");
-            return AVERROR_INVALIDDATA;
-        }
-        // There seem to exist two variants of this header: one starts with 'V'
-        // and 5 bytes unknown, the other matches current MythTV and is 4 bytes size,
-        // 1 byte header size (== 12), 1 byte version (== 0)
-        if (buf[0] != 'V' && AV_RL16(&buf[4]) != 0x000c) {
-            av_log(avctx, AV_LOG_ERROR, "Unknown secondary frame header (wrong codec_tag?)\n");
+        if (buf_size < RTJPEG_HEADER_SIZE || buf[4] != RTJPEG_HEADER_SIZE ||
+            buf[5] != RTJPEG_FILE_VERSION) {
+            av_log(avctx, AV_LOG_ERROR, "invalid nuv video frame\n");
             return AVERROR_INVALIDDATA;
         }
         w = AV_RL16(&buf[6]);
@@ -253,23 +226,22 @@ retry:
         q = buf[10];
         if ((result = codec_reinit(avctx, w, h, q)) < 0)
             return result;
-        if (result) {
-            buf = avpkt->data;
-            buf_size = avpkt->size;
-            size_change = 1;
-            goto retry;
-        }
+        if (comptype == NUV_RTJPEG_IN_LZO || comptype == NUV_LZO)
+            buf = c->decomp_buf;
         buf       = &buf[RTJPEG_HEADER_SIZE];
         buf_size -= RTJPEG_HEADER_SIZE;
     }
 
-    if (size_change || keyframe) {
+    if (keyframe) {
         av_frame_unref(c->pic);
         init_frame = 1;
     }
 
-    if ((result = ff_reget_buffer(avctx, c->pic)) < 0)
+    result = ff_reget_buffer(avctx, c->pic);
+    if (result < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return result;
+    }
     if (init_frame) {
         memset(c->pic->data[0], 0,    avctx->height * c->pic->linesize[0]);
         memset(c->pic->data[1], 0x80, avctx->height * c->pic->linesize[1] / 2);
@@ -287,8 +259,7 @@ retry:
             av_log(avctx, AV_LOG_ERROR, "uncompressed frame too short\n");
             height = buf_size / c->width / 3 * 2;
         }
-        if(height > 0)
-            copy_frame(c->pic, buf, c->width, height);
+        copy_frame(c->pic, buf, c->width, height);
         break;
     }
     case NUV_RTJPEG_IN_LZO:

@@ -2,20 +2,20 @@
  * Silicon Graphics RLE 8-bit video decoder
  * Copyright (c) 2012 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,9 +41,9 @@ static av_cold int sgirle_decode_init(AVCodecContext *avctx)
  * Convert SGI RBG323 pixel into AV_PIX_FMT_BGR8
  * SGI RGB data is packed as 8bpp, (msb)3R 2B 3G(lsb)
  */
-#define RBG323_TO_BGR8(x) ((((x) << 3) & 0xC0) |                                \
-                           (((x) << 3) & 0x38) |                                \
-                           (((x) >> 5) & 7))
+#define RBG323_TO_BGR8(x) (((x << 3) & 0xC0) |                                \
+                           ((x << 3) & 0x38) |                                \
+                           ((x >> 5) & 7))
 static av_always_inline
 void rbg323_to_bgr8(uint8_t *dst, const uint8_t *src, int size)
 {
@@ -102,8 +102,8 @@ static int decode_sgirle8(AVCodecContext *avctx, uint8_t *dst,
                 v   -= length;
             } while (v > 0);
         } else {
-            avpriv_request_sample(avctx, "opcode %d", v);
-            return AVERROR_PATCHWELCOME;
+            av_log(avctx, AV_LOG_ERROR, "Invalid opcode %d.\n", v);
+            return AVERROR_INVALIDDATA;
         }
     }
     return 0;

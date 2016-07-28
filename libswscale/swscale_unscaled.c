@@ -1,20 +1,20 @@
 /*
- * Copyright (C) 2001-2011 Michael Niedermayer <michaelni@gmx.at>
+ * Copyright (C) 2001-2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "config.h"
+#include <assert.h>
 #include "swscale.h"
 #include "swscale_internal.h"
 #include "rgb2rgb.h"
@@ -32,84 +33,58 @@
 #include "libavutil/mathematics.h"
 #include "libavutil/bswap.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/avassert.h"
-#include "libavutil/avconfig.h"
 
-DECLARE_ALIGNED(8, static const uint8_t, dithers)[8][8][8]={
-{
-  {   0,  1,  0,  1,  0,  1,  0,  1,},
-  {   1,  0,  1,  0,  1,  0,  1,  0,},
-  {   0,  1,  0,  1,  0,  1,  0,  1,},
-  {   1,  0,  1,  0,  1,  0,  1,  0,},
-  {   0,  1,  0,  1,  0,  1,  0,  1,},
-  {   1,  0,  1,  0,  1,  0,  1,  0,},
-  {   0,  1,  0,  1,  0,  1,  0,  1,},
-  {   1,  0,  1,  0,  1,  0,  1,  0,},
-},{
-  {   1,  2,  1,  2,  1,  2,  1,  2,},
-  {   3,  0,  3,  0,  3,  0,  3,  0,},
-  {   1,  2,  1,  2,  1,  2,  1,  2,},
-  {   3,  0,  3,  0,  3,  0,  3,  0,},
-  {   1,  2,  1,  2,  1,  2,  1,  2,},
-  {   3,  0,  3,  0,  3,  0,  3,  0,},
-  {   1,  2,  1,  2,  1,  2,  1,  2,},
-  {   3,  0,  3,  0,  3,  0,  3,  0,},
-},{
-  {   2,  4,  3,  5,  2,  4,  3,  5,},
-  {   6,  0,  7,  1,  6,  0,  7,  1,},
-  {   3,  5,  2,  4,  3,  5,  2,  4,},
-  {   7,  1,  6,  0,  7,  1,  6,  0,},
-  {   2,  4,  3,  5,  2,  4,  3,  5,},
-  {   6,  0,  7,  1,  6,  0,  7,  1,},
-  {   3,  5,  2,  4,  3,  5,  2,  4,},
-  {   7,  1,  6,  0,  7,  1,  6,  0,},
-},{
-  {   4,  8,  7, 11,  4,  8,  7, 11,},
-  {  12,  0, 15,  3, 12,  0, 15,  3,},
-  {   6, 10,  5,  9,  6, 10,  5,  9,},
-  {  14,  2, 13,  1, 14,  2, 13,  1,},
-  {   4,  8,  7, 11,  4,  8,  7, 11,},
-  {  12,  0, 15,  3, 12,  0, 15,  3,},
-  {   6, 10,  5,  9,  6, 10,  5,  9,},
-  {  14,  2, 13,  1, 14,  2, 13,  1,},
-},{
-  {   9, 17, 15, 23,  8, 16, 14, 22,},
-  {  25,  1, 31,  7, 24,  0, 30,  6,},
-  {  13, 21, 11, 19, 12, 20, 10, 18,},
-  {  29,  5, 27,  3, 28,  4, 26,  2,},
-  {   8, 16, 14, 22,  9, 17, 15, 23,},
-  {  24,  0, 30,  6, 25,  1, 31,  7,},
-  {  12, 20, 10, 18, 13, 21, 11, 19,},
-  {  28,  4, 26,  2, 29,  5, 27,  3,},
-},{
-  {  18, 34, 30, 46, 17, 33, 29, 45,},
-  {  50,  2, 62, 14, 49,  1, 61, 13,},
-  {  26, 42, 22, 38, 25, 41, 21, 37,},
-  {  58, 10, 54,  6, 57,  9, 53,  5,},
-  {  16, 32, 28, 44, 19, 35, 31, 47,},
-  {  48,  0, 60, 12, 51,  3, 63, 15,},
-  {  24, 40, 20, 36, 27, 43, 23, 39,},
-  {  56,  8, 52,  4, 59, 11, 55,  7,},
-},{
-  {  18, 34, 30, 46, 17, 33, 29, 45,},
-  {  50,  2, 62, 14, 49,  1, 61, 13,},
-  {  26, 42, 22, 38, 25, 41, 21, 37,},
-  {  58, 10, 54,  6, 57,  9, 53,  5,},
-  {  16, 32, 28, 44, 19, 35, 31, 47,},
-  {  48,  0, 60, 12, 51,  3, 63, 15,},
-  {  24, 40, 20, 36, 27, 43, 23, 39,},
-  {  56,  8, 52,  4, 59, 11, 55,  7,},
-},{
-  {  36, 68, 60, 92, 34, 66, 58, 90,},
-  { 100,  4,124, 28, 98,  2,122, 26,},
-  {  52, 84, 44, 76, 50, 82, 42, 74,},
-  { 116, 20,108, 12,114, 18,106, 10,},
-  {  32, 64, 56, 88, 38, 70, 62, 94,},
-  {  96,  0,120, 24,102,  6,126, 30,},
-  {  48, 80, 40, 72, 54, 86, 46, 78,},
-  { 112, 16,104,  8,118, 22,110, 14,},
-}};
+DECLARE_ALIGNED(8, static const uint8_t, dither_8x8_1)[8][8] = {
+    {   0,  1,  0,  1,  0,  1,  0,  1,},
+    {   1,  0,  1,  0,  1,  0,  1,  0,},
+    {   0,  1,  0,  1,  0,  1,  0,  1,},
+    {   1,  0,  1,  0,  1,  0,  1,  0,},
+    {   0,  1,  0,  1,  0,  1,  0,  1,},
+    {   1,  0,  1,  0,  1,  0,  1,  0,},
+    {   0,  1,  0,  1,  0,  1,  0,  1,},
+    {   1,  0,  1,  0,  1,  0,  1,  0,},
+};
+DECLARE_ALIGNED(8, static const uint8_t, dither_8x8_3)[8][8] = {
+    {   1,  2,  1,  2,  1,  2,  1,  2,},
+    {   3,  0,  3,  0,  3,  0,  3,  0,},
+    {   1,  2,  1,  2,  1,  2,  1,  2,},
+    {   3,  0,  3,  0,  3,  0,  3,  0,},
+    {   1,  2,  1,  2,  1,  2,  1,  2,},
+    {   3,  0,  3,  0,  3,  0,  3,  0,},
+    {   1,  2,  1,  2,  1,  2,  1,  2,},
+    {   3,  0,  3,  0,  3,  0,  3,  0,},
+};
+DECLARE_ALIGNED(8, static const uint8_t, dither_8x8_64)[8][8] = {
+    {  18, 34, 30, 46, 17, 33, 29, 45,},
+    {  50,  2, 62, 14, 49,  1, 61, 13,},
+    {  26, 42, 22, 38, 25, 41, 21, 37,},
+    {  58, 10, 54,  6, 57,  9, 53,  5,},
+    {  16, 32, 28, 44, 19, 35, 31, 47,},
+    {  48,  0, 60, 12, 51,  3, 63, 15,},
+    {  24, 40, 20, 36, 27, 43, 23, 39,},
+    {  56,  8, 52,  4, 59, 11, 55,  7,},
+};
+DECLARE_ALIGNED(8, static const uint8_t, dither_8x8_256)[8][8] = {
+    {  72, 136, 120, 184,  68, 132, 116, 180,},
+    { 200,   8, 248,  56, 196,   4, 244,  52,},
+    { 104, 168,  88, 152, 100, 164,  84, 148,},
+    { 232,  40, 216,  24, 228,  36, 212,  20,},
+    {  64, 128, 102, 176,  76, 140, 124, 188,},
+    { 192,   0, 240,  48, 204,  12, 252,  60,},
+    {  96, 160,  80, 144, 108, 172,  92, 156,},
+    { 224,  32, 208,  16, 236,  44, 220,  28,},
+};
 
+#define RGB2YUV_SHIFT 15
+#define BY ( (int) (0.114 * 219 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define BV (-(int) (0.081 * 224 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define BU ( (int) (0.500 * 224 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define GY ( (int) (0.587 * 219 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define GV (-(int) (0.419 * 224 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define GU (-(int) (0.331 * 224 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define RY ( (int) (0.299 * 219 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define RV ( (int) (0.500 * 224 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
+#define RU (-(int) (0.169 * 224 / 255 * (1 << RGB2YUV_SHIFT) + 0.5))
 
 static void fillPlane(uint8_t *plane, int stride, int width, int height, int y,
                       uint8_t val)
@@ -119,6 +94,27 @@ static void fillPlane(uint8_t *plane, int stride, int width, int height, int y,
     for (i = 0; i < height; i++) {
         memset(ptr, val, width);
         ptr += stride;
+    }
+}
+
+static void fill_plane9or10(uint8_t *plane, int stride, int width,
+                            int height, int y, uint8_t val,
+                            const int dst_depth, const int big_endian)
+{
+    int i, j;
+    uint16_t *dst = (uint16_t *) (plane + stride * y);
+#define FILL8TO9_OR_10(wfunc) \
+    for (i = 0; i < height; i++) { \
+        for (j = 0; j < width; j++) { \
+            wfunc(&dst[j], (val << (dst_depth - 8)) |  \
+                               (val >> (16 - dst_depth))); \
+        } \
+        dst += stride / 2; \
+    }
+    if (big_endian) {
+        FILL8TO9_OR_10(AV_WB16);
+    } else {
+        FILL8TO9_OR_10(AV_WL16);
     }
 }
 
@@ -179,108 +175,6 @@ static int nv12ToPlanarWrapper(SwsContext *c, const uint8_t *src[],
 
     return srcSliceH;
 }
-
-static int planarToP01xWrapper(SwsContext *c, const uint8_t *src8[],
-                               int srcStride[], int srcSliceY,
-                               int srcSliceH, uint8_t *dstParam8[],
-                               int dstStride[])
-{
-    const AVPixFmtDescriptor *src_format = av_pix_fmt_desc_get(c->srcFormat);
-    const AVPixFmtDescriptor *dst_format = av_pix_fmt_desc_get(c->dstFormat);
-    const uint16_t **src = (const uint16_t**)src8;
-    uint16_t *dstY = (uint16_t*)(dstParam8[0] + dstStride[0] * srcSliceY);
-    uint16_t *dstUV = (uint16_t*)(dstParam8[1] + dstStride[1] * srcSliceY / 2);
-    int x, y;
-
-    /* Calculate net shift required for values. */
-    const int shift[3] = {
-        dst_format->comp[0].depth + dst_format->comp[0].shift -
-        src_format->comp[0].depth - src_format->comp[0].shift,
-        dst_format->comp[1].depth + dst_format->comp[1].shift -
-        src_format->comp[1].depth - src_format->comp[1].shift,
-        dst_format->comp[2].depth + dst_format->comp[2].shift -
-        src_format->comp[2].depth - src_format->comp[2].shift,
-    };
-
-    av_assert0(!(srcStride[0] % 2 || srcStride[1] % 2 || srcStride[2] % 2 ||
-                 dstStride[0] % 2 || dstStride[1] % 2));
-
-    for (y = 0; y < srcSliceH; y++) {
-        uint16_t *tdstY = dstY;
-        const uint16_t *tsrc0 = src[0];
-        for (x = c->srcW; x > 0; x--) {
-            *tdstY++ = *tsrc0++ << shift[0];
-        }
-        src[0] += srcStride[0] / 2;
-        dstY += dstStride[0] / 2;
-
-        if (!(y & 1)) {
-            uint16_t *tdstUV = dstUV;
-            const uint16_t *tsrc1 = src[1];
-            const uint16_t *tsrc2 = src[2];
-            for (x = c->srcW / 2; x > 0; x--) {
-                *tdstUV++ = *tsrc1++ << shift[1];
-                *tdstUV++ = *tsrc2++ << shift[2];
-            }
-            src[1] += srcStride[1] / 2;
-            src[2] += srcStride[2] / 2;
-            dstUV += dstStride[1] / 2;
-        }
-    }
-
-    return srcSliceH;
-}
-
-#if AV_HAVE_BIGENDIAN
-#define output_pixel(p, v) do { \
-        uint16_t *pp = (p); \
-        AV_WL16(pp, (v)); \
-    } while(0)
-#else
-#define output_pixel(p, v) (*p) = (v)
-#endif
-
-static int planar8ToP01xleWrapper(SwsContext *c, const uint8_t *src[],
-                                  int srcStride[], int srcSliceY,
-                                  int srcSliceH, uint8_t *dstParam8[],
-                                  int dstStride[])
-{
-    uint16_t *dstY = (uint16_t*)(dstParam8[0] + dstStride[0] * srcSliceY);
-    uint16_t *dstUV = (uint16_t*)(dstParam8[1] + dstStride[1] * srcSliceY / 2);
-    int x, y, t;
-
-    av_assert0(!(dstStride[0] % 2 || dstStride[1] % 2));
-
-    for (y = 0; y < srcSliceH; y++) {
-        uint16_t *tdstY = dstY;
-        const uint8_t *tsrc0 = src[0];
-        for (x = c->srcW; x > 0; x--) {
-            t = *tsrc0++;
-            output_pixel(tdstY++, t | (t << 8));
-        }
-        src[0] += srcStride[0];
-        dstY += dstStride[0] / 2;
-
-        if (!(y & 1)) {
-            uint16_t *tdstUV = dstUV;
-            const uint8_t *tsrc1 = src[1];
-            const uint8_t *tsrc2 = src[2];
-            for (x = c->srcW / 2; x > 0; x--) {
-                t = *tsrc1++;
-                output_pixel(tdstUV++, t | (t << 8));
-                t = *tsrc2++;
-                output_pixel(tdstUV++, t | (t << 8));
-            }
-            src[1] += srcStride[1];
-            src[2] += srcStride[2];
-            dstUV += dstStride[1] / 2;
-        }
-    }
-
-    return srcSliceH;
-}
-
-#undef output_pixel
 
 static int planarToYuy2Wrapper(SwsContext *c, const uint8_t *src[],
                                int srcStride[], int srcSliceY, int srcSliceH,
@@ -423,28 +317,23 @@ static void gray8aToPacked24(const uint8_t *src, uint8_t *dst, int num_pixels,
     }
 }
 
-static int bswap_16bpc(SwsContext *c, const uint8_t *src[],
+static int packed_16bpc_bswap(SwsContext *c, const uint8_t *src[],
                               int srcStride[], int srcSliceY, int srcSliceH,
                               uint8_t *dst[], int dstStride[])
 {
-    int i, j, p;
+    int i, j;
+    int srcstr = srcStride[0] >> 1;
+    int dststr = dstStride[0] >> 1;
+    uint16_t       *dstPtr =       (uint16_t *) dst[0];
+    const uint16_t *srcPtr = (const uint16_t *) src[0];
+    int min_stride         = FFMIN(srcstr, dststr);
 
-    for (p = 0; p < 4; p++) {
-        int srcstr = srcStride[p] / 2;
-        int dststr = dstStride[p] / 2;
-        uint16_t       *dstPtr =       (uint16_t *) dst[p];
-        const uint16_t *srcPtr = (const uint16_t *) src[p];
-        int min_stride         = FFMIN(FFABS(srcstr), FFABS(dststr));
-        if(!dstPtr || !srcPtr)
-            continue;
-        dstPtr += (srcSliceY >> c->chrDstVSubSample) * dststr;
-        for (i = 0; i < (srcSliceH >> c->chrDstVSubSample); i++) {
-            for (j = 0; j < min_stride; j++) {
-                dstPtr[j] = av_bswap16(srcPtr[j]);
-            }
-            srcPtr += srcstr;
-            dstPtr += dststr;
+    for (i = 0; i < srcSliceH; i++) {
+        for (j = 0; j < min_stride; j++) {
+            dstPtr[j] = av_bswap16(srcPtr[j]);
         }
+        srcPtr += srcstr;
+        dstPtr += dststr;
     }
 
     return srcSliceH;
@@ -484,386 +373,13 @@ static int palToRgbWrapper(SwsContext *c, const uint8_t *src[], int srcStride[],
 
     if (!conv)
         av_log(c, AV_LOG_ERROR, "internal error %s -> %s converter\n",
-               av_get_pix_fmt_name(srcFormat), av_get_pix_fmt_name(dstFormat));
+               sws_format_name(srcFormat), sws_format_name(dstFormat));
     else {
         for (i = 0; i < srcSliceH; i++) {
             conv(srcPtr, dstPtr, c->srcW, (uint8_t *) c->pal_rgb);
             srcPtr += srcStride[0];
             dstPtr += dstStride[0];
         }
-    }
-
-    return srcSliceH;
-}
-
-static void packed16togbra16(const uint8_t *src, int srcStride,
-                             uint16_t *dst[], int dstStride[], int srcSliceH,
-                             int src_alpha, int swap, int shift, int width)
-{
-    int x, h, i;
-    int dst_alpha = dst[3] != NULL;
-    for (h = 0; h < srcSliceH; h++) {
-        uint16_t *src_line = (uint16_t *)(src + srcStride * h);
-        switch (swap) {
-        case 3:
-            if (src_alpha && dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[1][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[2][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[3][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                }
-            } else if (dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[1][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[2][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[3][x] = 0xFFFF;
-                }
-            } else if (src_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[1][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[2][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    src_line++;
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[1][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                    dst[2][x] = av_bswap16(av_bswap16(*src_line++) >> shift);
-                }
-            }
-            break;
-        case 2:
-            if (src_alpha && dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++ >> shift);
-                    dst[1][x] = av_bswap16(*src_line++ >> shift);
-                    dst[2][x] = av_bswap16(*src_line++ >> shift);
-                    dst[3][x] = av_bswap16(*src_line++ >> shift);
-                }
-            } else if (dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++ >> shift);
-                    dst[1][x] = av_bswap16(*src_line++ >> shift);
-                    dst[2][x] = av_bswap16(*src_line++ >> shift);
-                    dst[3][x] = 0xFFFF;
-                }
-            } else if (src_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++ >> shift);
-                    dst[1][x] = av_bswap16(*src_line++ >> shift);
-                    dst[2][x] = av_bswap16(*src_line++ >> shift);
-                    src_line++;
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++ >> shift);
-                    dst[1][x] = av_bswap16(*src_line++ >> shift);
-                    dst[2][x] = av_bswap16(*src_line++ >> shift);
-                }
-            }
-            break;
-        case 1:
-            if (src_alpha && dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++) >> shift;
-                    dst[1][x] = av_bswap16(*src_line++) >> shift;
-                    dst[2][x] = av_bswap16(*src_line++) >> shift;
-                    dst[3][x] = av_bswap16(*src_line++) >> shift;
-                }
-            } else if (dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++) >> shift;
-                    dst[1][x] = av_bswap16(*src_line++) >> shift;
-                    dst[2][x] = av_bswap16(*src_line++) >> shift;
-                    dst[3][x] = 0xFFFF;
-                }
-            } else if (src_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++) >> shift;
-                    dst[1][x] = av_bswap16(*src_line++) >> shift;
-                    dst[2][x] = av_bswap16(*src_line++) >> shift;
-                    src_line++;
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = av_bswap16(*src_line++) >> shift;
-                    dst[1][x] = av_bswap16(*src_line++) >> shift;
-                    dst[2][x] = av_bswap16(*src_line++) >> shift;
-                }
-            }
-            break;
-        default:
-            if (src_alpha && dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = *src_line++ >> shift;
-                    dst[1][x] = *src_line++ >> shift;
-                    dst[2][x] = *src_line++ >> shift;
-                    dst[3][x] = *src_line++ >> shift;
-                }
-            } else if (dst_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = *src_line++ >> shift;
-                    dst[1][x] = *src_line++ >> shift;
-                    dst[2][x] = *src_line++ >> shift;
-                    dst[3][x] = 0xFFFF;
-                }
-            } else if (src_alpha) {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = *src_line++ >> shift;
-                    dst[1][x] = *src_line++ >> shift;
-                    dst[2][x] = *src_line++ >> shift;
-                    src_line++;
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    dst[0][x] = *src_line++ >> shift;
-                    dst[1][x] = *src_line++ >> shift;
-                    dst[2][x] = *src_line++ >> shift;
-                }
-            }
-        }
-        for (i = 0; i < 4; i++)
-            dst[i] += dstStride[i] >> 1;
-    }
-}
-
-static int Rgb16ToPlanarRgb16Wrapper(SwsContext *c, const uint8_t *src[],
-                                     int srcStride[], int srcSliceY, int srcSliceH,
-                                     uint8_t *dst[], int dstStride[])
-{
-    uint16_t *dst2013[] = { (uint16_t *)dst[2], (uint16_t *)dst[0], (uint16_t *)dst[1], (uint16_t *)dst[3] };
-    uint16_t *dst1023[] = { (uint16_t *)dst[1], (uint16_t *)dst[0], (uint16_t *)dst[2], (uint16_t *)dst[3] };
-    int stride2013[] = { dstStride[2], dstStride[0], dstStride[1], dstStride[3] };
-    int stride1023[] = { dstStride[1], dstStride[0], dstStride[2], dstStride[3] };
-    const AVPixFmtDescriptor *src_format = av_pix_fmt_desc_get(c->srcFormat);
-    const AVPixFmtDescriptor *dst_format = av_pix_fmt_desc_get(c->dstFormat);
-    int bpc = dst_format->comp[0].depth;
-    int alpha = src_format->flags & AV_PIX_FMT_FLAG_ALPHA;
-    int swap = 0;
-    int i;
-
-    if ( HAVE_BIGENDIAN && !(src_format->flags & AV_PIX_FMT_FLAG_BE) ||
-        !HAVE_BIGENDIAN &&   src_format->flags & AV_PIX_FMT_FLAG_BE)
-        swap++;
-    if ( HAVE_BIGENDIAN && !(dst_format->flags & AV_PIX_FMT_FLAG_BE) ||
-        !HAVE_BIGENDIAN &&   dst_format->flags & AV_PIX_FMT_FLAG_BE)
-        swap += 2;
-
-    if ((dst_format->flags & (AV_PIX_FMT_FLAG_PLANAR | AV_PIX_FMT_FLAG_RGB)) !=
-        (AV_PIX_FMT_FLAG_PLANAR | AV_PIX_FMT_FLAG_RGB) || bpc < 9) {
-        av_log(c, AV_LOG_ERROR, "unsupported conversion to planar RGB %s -> %s\n",
-               src_format->name, dst_format->name);
-        return srcSliceH;
-    }
-
-    for(i=0; i<4; i++) {
-        dst2013[i] += stride2013[i] * srcSliceY / 2;
-        dst1023[i] += stride1023[i] * srcSliceY / 2;
-    }
-
-    switch (c->srcFormat) {
-    case AV_PIX_FMT_RGB48LE:
-    case AV_PIX_FMT_RGB48BE:
-    case AV_PIX_FMT_RGBA64LE:
-    case AV_PIX_FMT_RGBA64BE:
-        packed16togbra16(src[0], srcStride[0],
-                         dst2013, stride2013, srcSliceH, alpha, swap,
-                         16 - bpc, c->srcW);
-        break;
-    case AV_PIX_FMT_BGR48LE:
-    case AV_PIX_FMT_BGR48BE:
-    case AV_PIX_FMT_BGRA64LE:
-    case AV_PIX_FMT_BGRA64BE:
-        packed16togbra16(src[0], srcStride[0],
-                         dst1023, stride1023, srcSliceH, alpha, swap,
-                         16 - bpc, c->srcW);
-        break;
-    default:
-        av_log(c, AV_LOG_ERROR,
-               "unsupported conversion to planar RGB %s -> %s\n",
-               src_format->name, dst_format->name);
-    }
-
-    return srcSliceH;
-}
-
-static void gbr16ptopacked16(const uint16_t *src[], int srcStride[],
-                             uint8_t *dst, int dstStride, int srcSliceH,
-                             int alpha, int swap, int bpp, int width)
-{
-    int x, h, i;
-    int src_alpha = src[3] != NULL;
-    int scale_high = 16 - bpp, scale_low = (bpp - 8) * 2;
-    for (h = 0; h < srcSliceH; h++) {
-        uint16_t *dest = (uint16_t *)(dst + dstStride * h);
-        uint16_t component;
-
-        switch(swap) {
-        case 3:
-            if (alpha && !src_alpha) {
-                for (x = 0; x < width; x++) {
-                    component = av_bswap16(src[0][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[1][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[2][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    *dest++ = 0xffff;
-                }
-            } else if (alpha && src_alpha) {
-                for (x = 0; x < width; x++) {
-                    component = av_bswap16(src[0][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[1][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[2][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[3][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    component = av_bswap16(src[0][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[1][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                    component = av_bswap16(src[2][x]);
-                    *dest++ = av_bswap16(component << scale_high | component >> scale_low);
-                }
-            }
-            break;
-        case 2:
-            if (alpha && !src_alpha) {
-                for (x = 0; x < width; x++) {
-                    *dest++ = av_bswap16(src[0][x] << scale_high | src[0][x] >> scale_low);
-                    *dest++ = av_bswap16(src[1][x] << scale_high | src[1][x] >> scale_low);
-                    *dest++ = av_bswap16(src[2][x] << scale_high | src[2][x] >> scale_low);
-                    *dest++ = 0xffff;
-                }
-            } else if (alpha && src_alpha) {
-                for (x = 0; x < width; x++) {
-                    *dest++ = av_bswap16(src[0][x] << scale_high | src[0][x] >> scale_low);
-                    *dest++ = av_bswap16(src[1][x] << scale_high | src[1][x] >> scale_low);
-                    *dest++ = av_bswap16(src[2][x] << scale_high | src[2][x] >> scale_low);
-                    *dest++ = av_bswap16(src[3][x] << scale_high | src[3][x] >> scale_low);
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    *dest++ = av_bswap16(src[0][x] << scale_high | src[0][x] >> scale_low);
-                    *dest++ = av_bswap16(src[1][x] << scale_high | src[1][x] >> scale_low);
-                    *dest++ = av_bswap16(src[2][x] << scale_high | src[2][x] >> scale_low);
-                }
-            }
-            break;
-        case 1:
-            if (alpha && !src_alpha) {
-                for (x = 0; x < width; x++) {
-                    *dest++ = av_bswap16(src[0][x]) << scale_high | av_bswap16(src[0][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[1][x]) << scale_high | av_bswap16(src[1][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[2][x]) << scale_high | av_bswap16(src[2][x]) >> scale_low;
-                    *dest++ = 0xffff;
-                }
-            } else if (alpha && src_alpha) {
-                for (x = 0; x < width; x++) {
-                    *dest++ = av_bswap16(src[0][x]) << scale_high | av_bswap16(src[0][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[1][x]) << scale_high | av_bswap16(src[1][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[2][x]) << scale_high | av_bswap16(src[2][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[3][x]) << scale_high | av_bswap16(src[3][x]) >> scale_low;
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    *dest++ = av_bswap16(src[0][x]) << scale_high | av_bswap16(src[0][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[1][x]) << scale_high | av_bswap16(src[1][x]) >> scale_low;
-                    *dest++ = av_bswap16(src[2][x]) << scale_high | av_bswap16(src[2][x]) >> scale_low;
-                }
-            }
-            break;
-        default:
-            if (alpha && !src_alpha) {
-                for (x = 0; x < width; x++) {
-                    *dest++ = src[0][x] << scale_high | src[0][x] >> scale_low;
-                    *dest++ = src[1][x] << scale_high | src[1][x] >> scale_low;
-                    *dest++ = src[2][x] << scale_high | src[2][x] >> scale_low;
-                    *dest++ = 0xffff;
-                }
-            } else if (alpha && src_alpha) {
-                for (x = 0; x < width; x++) {
-                    *dest++ = src[0][x] << scale_high | src[0][x] >> scale_low;
-                    *dest++ = src[1][x] << scale_high | src[1][x] >> scale_low;
-                    *dest++ = src[2][x] << scale_high | src[2][x] >> scale_low;
-                    *dest++ = src[3][x] << scale_high | src[3][x] >> scale_low;
-                }
-            } else {
-                for (x = 0; x < width; x++) {
-                    *dest++ = src[0][x] << scale_high | src[0][x] >> scale_low;
-                    *dest++ = src[1][x] << scale_high | src[1][x] >> scale_low;
-                    *dest++ = src[2][x] << scale_high | src[2][x] >> scale_low;
-                }
-            }
-        }
-        for (i = 0; i < 3 + src_alpha; i++)
-            src[i] += srcStride[i] >> 1;
-    }
-}
-
-static int planarRgb16ToRgb16Wrapper(SwsContext *c, const uint8_t *src[],
-                                     int srcStride[], int srcSliceY, int srcSliceH,
-                                     uint8_t *dst[], int dstStride[])
-{
-    const uint16_t *src102[] = { (uint16_t *)src[1], (uint16_t *)src[0], (uint16_t *)src[2], (uint16_t *)src[3] };
-    const uint16_t *src201[] = { (uint16_t *)src[2], (uint16_t *)src[0], (uint16_t *)src[1], (uint16_t *)src[3] };
-    int stride102[] = { srcStride[1], srcStride[0], srcStride[2], srcStride[3] };
-    int stride201[] = { srcStride[2], srcStride[0], srcStride[1], srcStride[3] };
-    const AVPixFmtDescriptor *src_format = av_pix_fmt_desc_get(c->srcFormat);
-    const AVPixFmtDescriptor *dst_format = av_pix_fmt_desc_get(c->dstFormat);
-    int bits_per_sample = src_format->comp[0].depth;
-    int swap = 0;
-    if ( HAVE_BIGENDIAN && !(src_format->flags & AV_PIX_FMT_FLAG_BE) ||
-        !HAVE_BIGENDIAN &&   src_format->flags & AV_PIX_FMT_FLAG_BE)
-        swap++;
-    if ( HAVE_BIGENDIAN && !(dst_format->flags & AV_PIX_FMT_FLAG_BE) ||
-        !HAVE_BIGENDIAN &&   dst_format->flags & AV_PIX_FMT_FLAG_BE)
-        swap += 2;
-
-    if ((src_format->flags & (AV_PIX_FMT_FLAG_PLANAR | AV_PIX_FMT_FLAG_RGB)) !=
-        (AV_PIX_FMT_FLAG_PLANAR | AV_PIX_FMT_FLAG_RGB) ||
-        bits_per_sample <= 8) {
-        av_log(c, AV_LOG_ERROR, "unsupported planar RGB conversion %s -> %s\n",
-               src_format->name, dst_format->name);
-        return srcSliceH;
-    }
-    switch (c->dstFormat) {
-    case AV_PIX_FMT_BGR48LE:
-    case AV_PIX_FMT_BGR48BE:
-        gbr16ptopacked16(src102, stride102,
-                         dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                         srcSliceH, 0, swap, bits_per_sample, c->srcW);
-        break;
-    case AV_PIX_FMT_RGB48LE:
-    case AV_PIX_FMT_RGB48BE:
-        gbr16ptopacked16(src201, stride201,
-                         dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                         srcSliceH, 0, swap, bits_per_sample, c->srcW);
-        break;
-    case AV_PIX_FMT_RGBA64LE:
-    case AV_PIX_FMT_RGBA64BE:
-         gbr16ptopacked16(src201, stride201,
-                          dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                          srcSliceH, 1, swap, bits_per_sample, c->srcW);
-        break;
-    case AV_PIX_FMT_BGRA64LE:
-    case AV_PIX_FMT_BGRA64BE:
-        gbr16ptopacked16(src102, stride102,
-                         dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                         srcSliceH, 1, swap, bits_per_sample, c->srcW);
-        break;
-    default:
-        av_log(c, AV_LOG_ERROR,
-               "unsupported planar RGB conversion %s -> %s\n",
-               src_format->name, dst_format->name);
     }
 
     return srcSliceH;
@@ -914,91 +430,6 @@ static void gbr24ptopacked32(const uint8_t *src[], int srcStride[],
         for (i = 0; i < 3; i++)
             src[i] += srcStride[i];
     }
-}
-
-static void gbraptopacked32(const uint8_t *src[], int srcStride[],
-                            uint8_t *dst, int dstStride, int srcSliceH,
-                            int alpha_first, int width)
-{
-    int x, h, i;
-    for (h = 0; h < srcSliceH; h++) {
-        uint8_t *dest = dst + dstStride * h;
-
-        if (alpha_first) {
-            for (x = 0; x < width; x++) {
-                *dest++ = src[3][x];
-                *dest++ = src[0][x];
-                *dest++ = src[1][x];
-                *dest++ = src[2][x];
-            }
-        } else {
-            for (x = 0; x < width; x++) {
-                *dest++ = src[0][x];
-                *dest++ = src[1][x];
-                *dest++ = src[2][x];
-                *dest++ = src[3][x];
-            }
-        }
-
-        for (i = 0; i < 4; i++)
-            src[i] += srcStride[i];
-    }
-}
-
-static int planarRgbaToRgbWrapper(SwsContext *c, const uint8_t *src[],
-                                  int srcStride[], int srcSliceY, int srcSliceH,
-                                  uint8_t *dst[], int dstStride[])
-{
-    int alpha_first = 0;
-    const uint8_t *src102[] = { src[1], src[0], src[2], src[3] };
-    const uint8_t *src201[] = { src[2], src[0], src[1], src[3] };
-    int stride102[] = { srcStride[1], srcStride[0], srcStride[2], srcStride[3] };
-    int stride201[] = { srcStride[2], srcStride[0], srcStride[1], srcStride[3] };
-
-    if (c->srcFormat != AV_PIX_FMT_GBRAP) {
-        av_log(c, AV_LOG_ERROR, "unsupported planar RGB conversion %s -> %s\n",
-               av_get_pix_fmt_name(c->srcFormat),
-               av_get_pix_fmt_name(c->dstFormat));
-        return srcSliceH;
-    }
-
-    switch (c->dstFormat) {
-    case AV_PIX_FMT_BGR24:
-        gbr24ptopacked24(src102, stride102,
-                         dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                         srcSliceH, c->srcW);
-        break;
-
-    case AV_PIX_FMT_RGB24:
-        gbr24ptopacked24(src201, stride201,
-                         dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                         srcSliceH, c->srcW);
-        break;
-
-    case AV_PIX_FMT_ARGB:
-        alpha_first = 1;
-    case AV_PIX_FMT_RGBA:
-        gbraptopacked32(src201, stride201,
-                        dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                        srcSliceH, alpha_first, c->srcW);
-        break;
-
-    case AV_PIX_FMT_ABGR:
-        alpha_first = 1;
-    case AV_PIX_FMT_BGRA:
-        gbraptopacked32(src102, stride102,
-                        dst[0] + srcSliceY * dstStride[0], dstStride[0],
-                        srcSliceH, alpha_first, c->srcW);
-        break;
-
-    default:
-        av_log(c, AV_LOG_ERROR,
-               "unsupported planar RGB conversion %s -> %s\n",
-               av_get_pix_fmt_name(c->srcFormat),
-               av_get_pix_fmt_name(c->dstFormat));
-    }
-
-    return srcSliceH;
 }
 
 static int planarRgbToRgbWrapper(SwsContext *c, const uint8_t *src[],
@@ -1148,189 +579,11 @@ static int rgbToPlanarRgbWrapper(SwsContext *c, const uint8_t *src[],
     return srcSliceH;
 }
 
-#define BAYER_GBRG
-#define BAYER_8
-#define BAYER_RENAME(x) bayer_gbrg8_to_##x
-#include "bayer_template.c"
-
-#define BAYER_GBRG
-#define BAYER_16LE
-#define BAYER_RENAME(x) bayer_gbrg16le_to_##x
-#include "bayer_template.c"
-
-#define BAYER_GBRG
-#define BAYER_16BE
-#define BAYER_RENAME(x) bayer_gbrg16be_to_##x
-#include "bayer_template.c"
-
-#define BAYER_GRBG
-#define BAYER_8
-#define BAYER_RENAME(x) bayer_grbg8_to_##x
-#include "bayer_template.c"
-
-#define BAYER_GRBG
-#define BAYER_16LE
-#define BAYER_RENAME(x) bayer_grbg16le_to_##x
-#include "bayer_template.c"
-
-#define BAYER_GRBG
-#define BAYER_16BE
-#define BAYER_RENAME(x) bayer_grbg16be_to_##x
-#include "bayer_template.c"
-
-#define BAYER_BGGR
-#define BAYER_8
-#define BAYER_RENAME(x) bayer_bggr8_to_##x
-#include "bayer_template.c"
-
-#define BAYER_BGGR
-#define BAYER_16LE
-#define BAYER_RENAME(x) bayer_bggr16le_to_##x
-#include "bayer_template.c"
-
-#define BAYER_BGGR
-#define BAYER_16BE
-#define BAYER_RENAME(x) bayer_bggr16be_to_##x
-#include "bayer_template.c"
-
-#define BAYER_RGGB
-#define BAYER_8
-#define BAYER_RENAME(x) bayer_rggb8_to_##x
-#include "bayer_template.c"
-
-#define BAYER_RGGB
-#define BAYER_16LE
-#define BAYER_RENAME(x) bayer_rggb16le_to_##x
-#include "bayer_template.c"
-
-#define BAYER_RGGB
-#define BAYER_16BE
-#define BAYER_RENAME(x) bayer_rggb16be_to_##x
-#include "bayer_template.c"
-
-static int bayer_to_rgb24_wrapper(SwsContext *c, const uint8_t* src[], int srcStride[], int srcSliceY,
-                                  int srcSliceH, uint8_t* dst[], int dstStride[])
-{
-    uint8_t *dstPtr= dst[0] + srcSliceY * dstStride[0];
-    const uint8_t *srcPtr= src[0];
-    int i;
-    void (*copy)       (const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int width);
-    void (*interpolate)(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int width);
-
-    switch(c->srcFormat) {
-#define CASE(pixfmt, prefix) \
-    case pixfmt: copy        = bayer_##prefix##_to_rgb24_copy; \
-                 interpolate = bayer_##prefix##_to_rgb24_interpolate; \
-                 break;
-    CASE(AV_PIX_FMT_BAYER_BGGR8,    bggr8)
-    CASE(AV_PIX_FMT_BAYER_BGGR16LE, bggr16le)
-    CASE(AV_PIX_FMT_BAYER_BGGR16BE, bggr16be)
-    CASE(AV_PIX_FMT_BAYER_RGGB8,    rggb8)
-    CASE(AV_PIX_FMT_BAYER_RGGB16LE, rggb16le)
-    CASE(AV_PIX_FMT_BAYER_RGGB16BE, rggb16be)
-    CASE(AV_PIX_FMT_BAYER_GBRG8,    gbrg8)
-    CASE(AV_PIX_FMT_BAYER_GBRG16LE, gbrg16le)
-    CASE(AV_PIX_FMT_BAYER_GBRG16BE, gbrg16be)
-    CASE(AV_PIX_FMT_BAYER_GRBG8,    grbg8)
-    CASE(AV_PIX_FMT_BAYER_GRBG16LE, grbg16le)
-    CASE(AV_PIX_FMT_BAYER_GRBG16BE, grbg16be)
-#undef CASE
-    default: return 0;
-    }
-
-    av_assert0(srcSliceH > 1);
-
-    copy(srcPtr, srcStride[0], dstPtr, dstStride[0], c->srcW);
-    srcPtr += 2 * srcStride[0];
-    dstPtr += 2 * dstStride[0];
-
-    for (i = 2; i < srcSliceH - 2; i += 2) {
-        interpolate(srcPtr, srcStride[0], dstPtr, dstStride[0], c->srcW);
-        srcPtr += 2 * srcStride[0];
-        dstPtr += 2 * dstStride[0];
-    }
-
-    if (i + 1 == srcSliceH) {
-        copy(srcPtr, -srcStride[0], dstPtr, -dstStride[0], c->srcW);
-    } else if (i < srcSliceH)
-        copy(srcPtr, srcStride[0], dstPtr, dstStride[0], c->srcW);
-    return srcSliceH;
-}
-
-static int bayer_to_yv12_wrapper(SwsContext *c, const uint8_t* src[], int srcStride[], int srcSliceY,
-                                 int srcSliceH, uint8_t* dst[], int dstStride[])
-{
-    const uint8_t *srcPtr= src[0];
-    uint8_t *dstY= dst[0] + srcSliceY * dstStride[0];
-    uint8_t *dstU= dst[1] + srcSliceY * dstStride[1] / 2;
-    uint8_t *dstV= dst[2] + srcSliceY * dstStride[2] / 2;
-    int i;
-    void (*copy)       (const uint8_t *src, int src_stride, uint8_t *dstY, uint8_t *dstU, uint8_t *dstV, int luma_stride, int width, int32_t *rgb2yuv);
-    void (*interpolate)(const uint8_t *src, int src_stride, uint8_t *dstY, uint8_t *dstU, uint8_t *dstV, int luma_stride, int width, int32_t *rgb2yuv);
-
-    switch(c->srcFormat) {
-#define CASE(pixfmt, prefix) \
-    case pixfmt: copy        = bayer_##prefix##_to_yv12_copy; \
-                 interpolate = bayer_##prefix##_to_yv12_interpolate; \
-                 break;
-    CASE(AV_PIX_FMT_BAYER_BGGR8,    bggr8)
-    CASE(AV_PIX_FMT_BAYER_BGGR16LE, bggr16le)
-    CASE(AV_PIX_FMT_BAYER_BGGR16BE, bggr16be)
-    CASE(AV_PIX_FMT_BAYER_RGGB8,    rggb8)
-    CASE(AV_PIX_FMT_BAYER_RGGB16LE, rggb16le)
-    CASE(AV_PIX_FMT_BAYER_RGGB16BE, rggb16be)
-    CASE(AV_PIX_FMT_BAYER_GBRG8,    gbrg8)
-    CASE(AV_PIX_FMT_BAYER_GBRG16LE, gbrg16le)
-    CASE(AV_PIX_FMT_BAYER_GBRG16BE, gbrg16be)
-    CASE(AV_PIX_FMT_BAYER_GRBG8,    grbg8)
-    CASE(AV_PIX_FMT_BAYER_GRBG16LE, grbg16le)
-    CASE(AV_PIX_FMT_BAYER_GRBG16BE, grbg16be)
-#undef CASE
-    default: return 0;
-    }
-
-    av_assert0(srcSliceH > 1);
-
-    copy(srcPtr, srcStride[0], dstY, dstU, dstV, dstStride[0], c->srcW, c->input_rgb2yuv_table);
-    srcPtr += 2 * srcStride[0];
-    dstY   += 2 * dstStride[0];
-    dstU   +=     dstStride[1];
-    dstV   +=     dstStride[1];
-
-    for (i = 2; i < srcSliceH - 2; i += 2) {
-        interpolate(srcPtr, srcStride[0], dstY, dstU, dstV, dstStride[0], c->srcW, c->input_rgb2yuv_table);
-        srcPtr += 2 * srcStride[0];
-        dstY   += 2 * dstStride[0];
-        dstU   +=     dstStride[1];
-        dstV   +=     dstStride[1];
-    }
-
-    if (i + 1 == srcSliceH) {
-        copy(srcPtr, -srcStride[0], dstY, dstU, dstV, -dstStride[0], c->srcW, c->input_rgb2yuv_table);
-    } else if (i < srcSliceH)
-        copy(srcPtr, srcStride[0], dstY, dstU, dstV, dstStride[0], c->srcW, c->input_rgb2yuv_table);
-    return srcSliceH;
-}
-
 #define isRGBA32(x) (            \
            (x) == AV_PIX_FMT_ARGB   \
         || (x) == AV_PIX_FMT_RGBA   \
         || (x) == AV_PIX_FMT_BGRA   \
         || (x) == AV_PIX_FMT_ABGR   \
-        )
-
-#define isRGBA64(x) (                \
-           (x) == AV_PIX_FMT_RGBA64LE   \
-        || (x) == AV_PIX_FMT_RGBA64BE   \
-        || (x) == AV_PIX_FMT_BGRA64LE   \
-        || (x) == AV_PIX_FMT_BGRA64BE   \
-        )
-
-#define isRGB48(x) (                \
-           (x) == AV_PIX_FMT_RGB48LE   \
-        || (x) == AV_PIX_FMT_RGB48BE   \
-        || (x) == AV_PIX_FMT_BGR48LE   \
-        || (x) == AV_PIX_FMT_BGR48BE   \
         )
 
 /* {RGB,BGR}{15,16,24,32,32_1} -> {RGB,BGR}{15,16,24,32} */
@@ -1342,10 +595,16 @@ static rgbConvFn findRgbConvFn(SwsContext *c)
     const int srcId = c->srcFormatBpp;
     const int dstId = c->dstFormatBpp;
     rgbConvFn conv = NULL;
+    const AVPixFmtDescriptor *desc_src = av_pix_fmt_desc_get(srcFormat);
+    const AVPixFmtDescriptor *desc_dst = av_pix_fmt_desc_get(dstFormat);
 
 #define IS_NOT_NE(bpp, desc) \
     (((bpp + 7) >> 3) == 2 && \
      (!(desc->flags & AV_PIX_FMT_FLAG_BE) != !HAVE_BIGENDIAN))
+
+    /* if this is non-native rgb444/555/565, don't handle it here. */
+    if (IS_NOT_NE(srcId, desc_src) || IS_NOT_NE(dstId, desc_dst))
+        return NULL;
 
 #define CONV_IS(src, dst) (srcFormat == AV_PIX_FMT_##src && dstFormat == AV_PIX_FMT_##dst)
 
@@ -1362,49 +621,6 @@ static rgbConvFn findRgbConvFn(SwsContext *c)
               || CONV_IS(RGBA, BGRA)) conv = shuffle_bytes_2103;
         else if (CONV_IS(BGRA, ABGR)
               || CONV_IS(RGBA, ARGB)) conv = shuffle_bytes_3012;
-    } else if (isRGB48(srcFormat) && isRGB48(dstFormat)) {
-        if      (CONV_IS(RGB48LE, BGR48LE)
-              || CONV_IS(BGR48LE, RGB48LE)
-              || CONV_IS(RGB48BE, BGR48BE)
-              || CONV_IS(BGR48BE, RGB48BE)) conv = rgb48tobgr48_nobswap;
-        else if (CONV_IS(RGB48LE, BGR48BE)
-              || CONV_IS(BGR48LE, RGB48BE)
-              || CONV_IS(RGB48BE, BGR48LE)
-              || CONV_IS(BGR48BE, RGB48LE)) conv = rgb48tobgr48_bswap;
-    } else if (isRGB48(srcFormat) && isRGBA64(dstFormat)) {
-        if      (CONV_IS(RGB48LE, BGRA64LE)
-              || CONV_IS(BGR48LE, RGBA64LE)
-              || CONV_IS(RGB48BE, BGRA64BE)
-              || CONV_IS(BGR48BE, RGBA64BE)) conv = rgb48tobgr64_nobswap;
-        else if (CONV_IS(RGB48LE, BGRA64BE)
-              || CONV_IS(BGR48LE, RGBA64BE)
-              || CONV_IS(RGB48BE, BGRA64LE)
-              || CONV_IS(BGR48BE, RGBA64LE)) conv = rgb48tobgr64_bswap;
-        if      (CONV_IS(RGB48LE, RGBA64LE)
-              || CONV_IS(BGR48LE, BGRA64LE)
-              || CONV_IS(RGB48BE, RGBA64BE)
-              || CONV_IS(BGR48BE, BGRA64BE)) conv = rgb48to64_nobswap;
-        else if (CONV_IS(RGB48LE, RGBA64BE)
-              || CONV_IS(BGR48LE, BGRA64BE)
-              || CONV_IS(RGB48BE, RGBA64LE)
-              || CONV_IS(BGR48BE, BGRA64LE)) conv = rgb48to64_bswap;
-    } else if (isRGBA64(srcFormat) && isRGB48(dstFormat)) {
-        if      (CONV_IS(RGBA64LE, BGR48LE)
-              || CONV_IS(BGRA64LE, RGB48LE)
-              || CONV_IS(RGBA64BE, BGR48BE)
-              || CONV_IS(BGRA64BE, RGB48BE)) conv = rgb64tobgr48_nobswap;
-        else if (CONV_IS(RGBA64LE, BGR48BE)
-              || CONV_IS(BGRA64LE, RGB48BE)
-              || CONV_IS(RGBA64BE, BGR48LE)
-              || CONV_IS(BGRA64BE, RGB48LE)) conv = rgb64tobgr48_bswap;
-        else if (CONV_IS(RGBA64LE, RGB48LE)
-              || CONV_IS(BGRA64LE, BGR48LE)
-              || CONV_IS(RGBA64BE, RGB48BE)
-              || CONV_IS(BGRA64BE, BGR48BE)) conv = rgb64to48_nobswap;
-        else if (CONV_IS(RGBA64LE, RGB48BE)
-              || CONV_IS(BGRA64LE, BGR48BE)
-              || CONV_IS(RGBA64BE, RGB48LE)
-              || CONV_IS(BGRA64BE, BGR48LE)) conv = rgb64to48_bswap;
     } else
     /* BGR -> BGR */
     if ((isBGRinInt(srcFormat) && isBGRinInt(dstFormat)) ||
@@ -1446,14 +662,6 @@ static rgbConvFn findRgbConvFn(SwsContext *c)
         }
     }
 
-    if ((dstFormat == AV_PIX_FMT_RGB32_1 || dstFormat == AV_PIX_FMT_BGR32_1) && !isRGBA32(srcFormat) && ALT32_CORR<0)
-        return NULL;
-
-    // Maintain symmetry between endianness
-    if (c->flags & SWS_BITEXACT)
-        if ((dstFormat == AV_PIX_FMT_RGB32   || dstFormat == AV_PIX_FMT_BGR32  ) && !isRGBA32(srcFormat) && ALT32_CORR>0)
-            return NULL;
-
     return conv;
 }
 
@@ -1465,52 +673,34 @@ static int rgbToRgbWrapper(SwsContext *c, const uint8_t *src[], int srcStride[],
 {
     const enum AVPixelFormat srcFormat = c->srcFormat;
     const enum AVPixelFormat dstFormat = c->dstFormat;
-    const AVPixFmtDescriptor *desc_src = av_pix_fmt_desc_get(c->srcFormat);
-    const AVPixFmtDescriptor *desc_dst = av_pix_fmt_desc_get(c->dstFormat);
     const int srcBpp = (c->srcFormatBpp + 7) >> 3;
     const int dstBpp = (c->dstFormatBpp + 7) >> 3;
     rgbConvFn conv = findRgbConvFn(c);
 
     if (!conv) {
         av_log(c, AV_LOG_ERROR, "internal error %s -> %s converter\n",
-               av_get_pix_fmt_name(srcFormat), av_get_pix_fmt_name(dstFormat));
+               sws_format_name(srcFormat), sws_format_name(dstFormat));
     } else {
         const uint8_t *srcPtr = src[0];
               uint8_t *dstPtr = dst[0];
-        int src_bswap = IS_NOT_NE(c->srcFormatBpp, desc_src);
-        int dst_bswap = IS_NOT_NE(c->dstFormatBpp, desc_dst);
-
         if ((srcFormat == AV_PIX_FMT_RGB32_1 || srcFormat == AV_PIX_FMT_BGR32_1) &&
             !isRGBA32(dstFormat))
             srcPtr += ALT32_CORR;
 
         if ((dstFormat == AV_PIX_FMT_RGB32_1 || dstFormat == AV_PIX_FMT_BGR32_1) &&
-            !isRGBA32(srcFormat)) {
-            int i;
-            av_assert0(ALT32_CORR == 1);
-            for (i = 0; i < srcSliceH; i++)
-                dstPtr[dstStride[0] * (srcSliceY + i)] = 255;
+            !isRGBA32(srcFormat))
             dstPtr += ALT32_CORR;
-        }
 
         if (dstStride[0] * srcBpp == srcStride[0] * dstBpp && srcStride[0] > 0 &&
-            !(srcStride[0] % srcBpp) && !dst_bswap && !src_bswap)
+            !(srcStride[0] % srcBpp))
             conv(srcPtr, dstPtr + dstStride[0] * srcSliceY,
                  (srcSliceH - 1) * srcStride[0] + c->srcW * srcBpp);
         else {
-            int i, j;
+            int i;
             dstPtr += dstStride[0] * srcSliceY;
 
             for (i = 0; i < srcSliceH; i++) {
-                if(src_bswap) {
-                    for(j=0; j<c->srcW; j++)
-                        ((uint16_t*)c->formatConvBuffer)[j] = av_bswap16(((uint16_t*)srcPtr)[j]);
-                    conv(c->formatConvBuffer, dstPtr, c->srcW * srcBpp);
-                }else
-                    conv(srcPtr, dstPtr, c->srcW * srcBpp);
-                if(dst_bswap)
-                    for(j=0; j<c->srcW; j++)
-                        ((uint16_t*)dstPtr)[j] = av_bswap16(((uint16_t*)dstPtr)[j]);
+                conv(srcPtr, dstPtr, c->srcW * srcBpp);
                 srcPtr += srcStride[0];
                 dstPtr += dstStride[0];
             }
@@ -1523,14 +713,13 @@ static int bgr24ToYv12Wrapper(SwsContext *c, const uint8_t *src[],
                               int srcStride[], int srcSliceY, int srcSliceH,
                               uint8_t *dst[], int dstStride[])
 {
-    ff_rgb24toyv12(
+    rgb24toyv12(
         src[0],
         dst[0] +  srcSliceY       * dstStride[0],
         dst[1] + (srcSliceY >> 1) * dstStride[1],
         dst[2] + (srcSliceY >> 1) * dstStride[2],
         c->srcW, srcSliceH,
-        dstStride[0], dstStride[1], srcStride[0],
-        c->input_rgb2yuv_table);
+        dstStride[0], dstStride[1], srcStride[0]);
     if (dst[3])
         fillPlane(dst[3], dstStride[3], c->srcW, srcSliceH, srcSliceY, 255);
     return srcSliceH;
@@ -1552,46 +741,6 @@ static int yvu9ToYv12Wrapper(SwsContext *c, const uint8_t *src[],
     return srcSliceH;
 }
 
-static int uint_y_to_float_y_wrapper(SwsContext *c, const uint8_t *src[],
-                                     int srcStride[], int srcSliceY,
-                                     int srcSliceH, uint8_t *dst[], int dstStride[])
-{
-    int y, x;
-    ptrdiff_t dstStrideFloat = dstStride[0] >> 2;
-    const uint8_t *srcPtr = src[0];
-    float *dstPtr = (float *)(dst[0] + dstStride[0] * srcSliceY);
-
-    for (y = 0; y < srcSliceH; ++y){
-        for (x = 0; x < c->srcW; ++x){
-            dstPtr[x] = c->uint2float_lut[srcPtr[x]];
-        }
-        srcPtr += srcStride[0];
-        dstPtr += dstStrideFloat;
-    }
-
-    return srcSliceH;
-}
-
-static int float_y_to_uint_y_wrapper(SwsContext *c, const uint8_t* src[],
-                                     int srcStride[], int srcSliceY,
-                                     int srcSliceH, uint8_t* dst[], int dstStride[])
-{
-    int y, x;
-    ptrdiff_t srcStrideFloat = srcStride[0] >> 2;
-    const float *srcPtr = (const float *)src[0];
-    uint8_t *dstPtr = dst[0] + dstStride[0] * srcSliceY;
-
-    for (y = 0; y < srcSliceH; ++y){
-        for (x = 0; x < c->srcW; ++x){
-            dstPtr[x] = av_clip_uint8(lrintf(255.0f * srcPtr[x]));
-        }
-        srcPtr += srcStrideFloat;
-        dstPtr += dstStride[0];
-    }
-
-    return srcSliceH;
-}
-
 /* unscaled copy like stuff (assumes nearly identical formats) */
 static int packedCopyWrapper(SwsContext *c, const uint8_t *src[],
                              int srcStride[], int srcSliceY, int srcSliceH,
@@ -1609,7 +758,7 @@ static int packedCopyWrapper(SwsContext *c, const uint8_t *src[],
         while (length + c->srcW <= FFABS(dstStride[0]) &&
                length + c->srcW <= FFABS(srcStride[0]))
             length += c->srcW;
-        av_assert1(length != 0);
+        assert(length != 0);
 
         for (i = 0; i < srcSliceH; i++) {
             memcpy(dstPtr, srcPtr, length);
@@ -1620,64 +769,25 @@ static int packedCopyWrapper(SwsContext *c, const uint8_t *src[],
     return srcSliceH;
 }
 
-#define DITHER_COPY(dst, dstStride, src, srcStride, bswap, dbswap)\
-    unsigned shift= src_depth-dst_depth, tmp;\
-    if (c->dither == SWS_DITHER_NONE) {\
-        for (i = 0; i < height; i++) {\
-            for (j = 0; j < length-7; j+=8) {\
-                dst[j+0] = dbswap(bswap(src[j+0])>>shift);\
-                dst[j+1] = dbswap(bswap(src[j+1])>>shift);\
-                dst[j+2] = dbswap(bswap(src[j+2])>>shift);\
-                dst[j+3] = dbswap(bswap(src[j+3])>>shift);\
-                dst[j+4] = dbswap(bswap(src[j+4])>>shift);\
-                dst[j+5] = dbswap(bswap(src[j+5])>>shift);\
-                dst[j+6] = dbswap(bswap(src[j+6])>>shift);\
-                dst[j+7] = dbswap(bswap(src[j+7])>>shift);\
-            }\
-            for (; j < length; j++) {\
-                dst[j] = dbswap(bswap(src[j])>>shift);\
-            }\
-            dst += dstStride;\
-            src += srcStride;\
-        }\
-    } else if (shiftonly) {\
-        for (i = 0; i < height; i++) {\
-            const uint8_t *dither= dithers[shift-1][i&7];\
-            for (j = 0; j < length-7; j+=8) {\
-                tmp = (bswap(src[j+0]) + dither[0])>>shift; dst[j+0] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+1]) + dither[1])>>shift; dst[j+1] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+2]) + dither[2])>>shift; dst[j+2] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+3]) + dither[3])>>shift; dst[j+3] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+4]) + dither[4])>>shift; dst[j+4] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+5]) + dither[5])>>shift; dst[j+5] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+6]) + dither[6])>>shift; dst[j+6] = dbswap(tmp - (tmp>>dst_depth));\
-                tmp = (bswap(src[j+7]) + dither[7])>>shift; dst[j+7] = dbswap(tmp - (tmp>>dst_depth));\
-            }\
-            for (; j < length; j++) {\
-                tmp = (bswap(src[j]) + dither[j&7])>>shift; dst[j] = dbswap(tmp - (tmp>>dst_depth));\
-            }\
-            dst += dstStride;\
-            src += srcStride;\
-        }\
-    } else {\
-        for (i = 0; i < height; i++) {\
-            const uint8_t *dither= dithers[shift-1][i&7];\
-            for (j = 0; j < length-7; j+=8) {\
-                tmp = bswap(src[j+0]); dst[j+0] = dbswap((tmp - (tmp>>dst_depth) + dither[0])>>shift);\
-                tmp = bswap(src[j+1]); dst[j+1] = dbswap((tmp - (tmp>>dst_depth) + dither[1])>>shift);\
-                tmp = bswap(src[j+2]); dst[j+2] = dbswap((tmp - (tmp>>dst_depth) + dither[2])>>shift);\
-                tmp = bswap(src[j+3]); dst[j+3] = dbswap((tmp - (tmp>>dst_depth) + dither[3])>>shift);\
-                tmp = bswap(src[j+4]); dst[j+4] = dbswap((tmp - (tmp>>dst_depth) + dither[4])>>shift);\
-                tmp = bswap(src[j+5]); dst[j+5] = dbswap((tmp - (tmp>>dst_depth) + dither[5])>>shift);\
-                tmp = bswap(src[j+6]); dst[j+6] = dbswap((tmp - (tmp>>dst_depth) + dither[6])>>shift);\
-                tmp = bswap(src[j+7]); dst[j+7] = dbswap((tmp - (tmp>>dst_depth) + dither[7])>>shift);\
-            }\
-            for (; j < length; j++) {\
-                tmp = bswap(src[j]); dst[j] = dbswap((tmp - (tmp>>dst_depth) + dither[j&7])>>shift);\
-            }\
-            dst += dstStride;\
-            src += srcStride;\
-        }\
+#define clip9(x)  av_clip_uintp2(x,  9)
+#define clip10(x) av_clip_uintp2(x, 10)
+#define DITHER_COPY(dst, dstStride, wfunc, src, srcStride, rfunc, dithers, shift, clip) \
+    for (i = 0; i < height; i++) { \
+        const uint8_t *dither = dithers[i & 7]; \
+        for (j = 0; j < length - 7; j += 8) { \
+            wfunc(&dst[j + 0], clip((rfunc(&src[j + 0]) + dither[0]) >> shift)); \
+            wfunc(&dst[j + 1], clip((rfunc(&src[j + 1]) + dither[1]) >> shift)); \
+            wfunc(&dst[j + 2], clip((rfunc(&src[j + 2]) + dither[2]) >> shift)); \
+            wfunc(&dst[j + 3], clip((rfunc(&src[j + 3]) + dither[3]) >> shift)); \
+            wfunc(&dst[j + 4], clip((rfunc(&src[j + 4]) + dither[4]) >> shift)); \
+            wfunc(&dst[j + 5], clip((rfunc(&src[j + 5]) + dither[5]) >> shift)); \
+            wfunc(&dst[j + 6], clip((rfunc(&src[j + 6]) + dither[6]) >> shift)); \
+            wfunc(&dst[j + 7], clip((rfunc(&src[j + 7]) + dither[7]) >> shift)); \
+        } \
+        for (; j < length; j++) \
+            wfunc(&dst[j],     (rfunc(&src[j]) + dither[j & 7]) >> shift); \
+        dst += dstStride; \
+        src += srcStride; \
     }
 
 static int planarCopyWrapper(SwsContext *c, const uint8_t *src[],
@@ -1700,117 +810,185 @@ static int planarCopyWrapper(SwsContext *c, const uint8_t *src[],
         // ignore palette for GRAY8
         if (plane == 1 && !dst[2]) continue;
         if (!src[plane] || (plane == 1 && !src[2])) {
-            if (is16BPS(c->dstFormat) || isNBPS(c->dstFormat)) {
-                fillPlane16(dst[plane], dstStride[plane], length, height, y,
-                        plane == 3, desc_dst->comp[plane].depth,
-                        isBE(c->dstFormat));
-            } else {
+            int val = (plane == 3) ? 255 : 128;
+            if (is16BPS(c->dstFormat))
+                length *= 2;
+            if (is9_15BPS(c->dstFormat)) {
+                fill_plane9or10(dst[plane], dstStride[plane],
+                                length, height, y, val,
+                                desc_dst->comp[plane].depth,
+                                isBE(c->dstFormat));
+            } else
                 fillPlane(dst[plane], dstStride[plane], length, height, y,
-                        (plane == 3) ? 255 : 128);
-            }
+                          val);
         } else {
-            if(isNBPS(c->srcFormat) || isNBPS(c->dstFormat)
-               || (is16BPS(c->srcFormat) != is16BPS(c->dstFormat))
-            ) {
+            if (is9_15BPS(c->srcFormat)) {
                 const int src_depth = desc_src->comp[plane].depth;
                 const int dst_depth = desc_dst->comp[plane].depth;
                 const uint16_t *srcPtr2 = (const uint16_t *) srcPtr;
-                uint16_t *dstPtr2 = (uint16_t*)dstPtr;
 
-                if (dst_depth == 8) {
-                    if(isBE(c->srcFormat) == HAVE_BIGENDIAN){
-                        DITHER_COPY(dstPtr, dstStride[plane], srcPtr2, srcStride[plane]/2, , )
+                if (is16BPS(c->dstFormat)) {
+                    uint16_t *dstPtr2 = (uint16_t *) dstPtr;
+#define COPY9_OR_10TO16(rfunc, wfunc) \
+                    if (shiftonly) { \
+                        for (i = 0; i < height; i++) { \
+                            for (j = 0; j < length; j++) { \
+                                int srcpx = rfunc(&srcPtr2[j]); \
+                                wfunc(&dstPtr2[j], srcpx << (16 - src_depth)); \
+                            } \
+                            dstPtr2 += dstStride[plane] / 2; \
+                            srcPtr2 += srcStride[plane] / 2; \
+                        } \
+                    } else { \
+                        for (i = 0; i < height; i++) { \
+                            for (j = 0; j < length; j++) { \
+                                int srcpx = rfunc(&srcPtr2[j]); \
+                                wfunc(&dstPtr2[j], (srcpx << (16 - src_depth)) | (srcpx >> (2 * src_depth - 16))); \
+                            } \
+                            dstPtr2 += dstStride[plane] / 2; \
+                            srcPtr2 += srcStride[plane] / 2; \
+                        } \
+                    }
+                    if (isBE(c->dstFormat)) {
+                        if (isBE(c->srcFormat)) {
+                            COPY9_OR_10TO16(AV_RB16, AV_WB16);
+                        } else {
+                            COPY9_OR_10TO16(AV_RL16, AV_WB16);
+                        }
                     } else {
-                        DITHER_COPY(dstPtr, dstStride[plane], srcPtr2, srcStride[plane]/2, av_bswap16, )
-                    }
-                } else if (src_depth == 8) {
-                    for (i = 0; i < height; i++) {
-                        #define COPY816(w)\
-                        if (shiftonly) {\
-                            for (j = 0; j < length; j++)\
-                                w(&dstPtr2[j], srcPtr[j]<<(dst_depth-8));\
-                        } else {\
-                            for (j = 0; j < length; j++)\
-                                w(&dstPtr2[j], (srcPtr[j]<<(dst_depth-8)) |\
-                                               (srcPtr[j]>>(2*8-dst_depth)));\
-                        }
-                        if(isBE(c->dstFormat)){
-                            COPY816(AV_WB16)
+                        if (isBE(c->srcFormat)) {
+                            COPY9_OR_10TO16(AV_RB16, AV_WL16);
                         } else {
-                            COPY816(AV_WL16)
+                            COPY9_OR_10TO16(AV_RL16, AV_WL16);
                         }
-                        dstPtr2 += dstStride[plane]/2;
-                        srcPtr  += srcStride[plane];
                     }
-                } else if (src_depth <= dst_depth) {
-                    for (i = 0; i < height; i++) {
-                        j = 0;
-                        if(isBE(c->srcFormat) == HAVE_BIGENDIAN &&
-                           isBE(c->dstFormat) == HAVE_BIGENDIAN &&
-                           shiftonly) {
-                             unsigned shift = dst_depth - src_depth;
-#if HAVE_FAST_64BIT
-#define FAST_COPY_UP(shift) \
-    for (; j < length - 3; j += 4) { \
-        uint64_t v = AV_RN64A(srcPtr2 + j); \
-        AV_WN64A(dstPtr2 + j, v << shift); \
-    }
-#else
-#define FAST_COPY_UP(shift) \
-    for (; j < length - 1; j += 2) { \
-        uint32_t v = AV_RN32A(srcPtr2 + j); \
-        AV_WN32A(dstPtr2 + j, v << shift); \
-    }
-#endif
-                             switch (shift)
-                             {
-                             case 6: FAST_COPY_UP(6); break;
-                             case 7: FAST_COPY_UP(7); break;
-                             }
-                        }
-#define COPY_UP(r,w) \
-    if(shiftonly){\
-        for (; j < length; j++){ \
-            unsigned int v= r(&srcPtr2[j]);\
-            w(&dstPtr2[j], v<<(dst_depth-src_depth));\
-        }\
-    }else{\
-        for (; j < length; j++){ \
-            unsigned int v= r(&srcPtr2[j]);\
-            w(&dstPtr2[j], (v<<(dst_depth-src_depth)) | \
-                        (v>>(2*src_depth-dst_depth)));\
-        }\
-    }
-                        if(isBE(c->srcFormat)){
-                            if(isBE(c->dstFormat)){
-                                COPY_UP(AV_RB16, AV_WB16)
-                            } else {
-                                COPY_UP(AV_RB16, AV_WL16)
-                            }
+                } else if (is9_15BPS(c->dstFormat)) {
+                    uint16_t *dstPtr2 = (uint16_t *) dstPtr;
+#define COPY9_OR_10TO9_OR_10(loop) \
+                    for (i = 0; i < height; i++) { \
+                        for (j = 0; j < length; j++) { \
+                            loop; \
+                        } \
+                        dstPtr2 += dstStride[plane] / 2; \
+                        srcPtr2 += srcStride[plane] / 2; \
+                    }
+#define COPY9_OR_10TO9_OR_10_2(rfunc, wfunc) \
+                    if (dst_depth > src_depth) { \
+                        COPY9_OR_10TO9_OR_10(int srcpx = rfunc(&srcPtr2[j]); \
+                            wfunc(&dstPtr2[j], (srcpx << 1) | (srcpx >> 9))); \
+                    } else if (dst_depth < src_depth) { \
+                        DITHER_COPY(dstPtr2, dstStride[plane] / 2, wfunc, \
+                                    srcPtr2, srcStride[plane] / 2, rfunc, \
+                                    dither_8x8_1, 1, clip9); \
+                    } else { \
+                        COPY9_OR_10TO9_OR_10(wfunc(&dstPtr2[j], rfunc(&srcPtr2[j]))); \
+                    }
+                    if (isBE(c->dstFormat)) {
+                        if (isBE(c->srcFormat)) {
+                            COPY9_OR_10TO9_OR_10_2(AV_RB16, AV_WB16);
                         } else {
-                            if(isBE(c->dstFormat)){
-                                COPY_UP(AV_RL16, AV_WB16)
-                            } else {
-                                COPY_UP(AV_RL16, AV_WL16)
-                            }
+                            COPY9_OR_10TO9_OR_10_2(AV_RL16, AV_WB16);
                         }
-                        dstPtr2 += dstStride[plane]/2;
-                        srcPtr2 += srcStride[plane]/2;
+                    } else {
+                        if (isBE(c->srcFormat)) {
+                            COPY9_OR_10TO9_OR_10_2(AV_RB16, AV_WL16);
+                        } else {
+                            COPY9_OR_10TO9_OR_10_2(AV_RL16, AV_WL16);
+                        }
                     }
                 } else {
-                    if(isBE(c->srcFormat) == HAVE_BIGENDIAN){
-                        if(isBE(c->dstFormat) == HAVE_BIGENDIAN){
-                            DITHER_COPY(dstPtr2, dstStride[plane]/2, srcPtr2, srcStride[plane]/2, , )
+#define W8(a, b) { *(a) = (b); }
+#define COPY9_OR_10TO8(rfunc) \
+                    if (src_depth == 9) { \
+                        DITHER_COPY(dstPtr,  dstStride[plane],   W8, \
+                                    srcPtr2, srcStride[plane] / 2, rfunc, \
+                                    dither_8x8_1, 1, av_clip_uint8); \
+                    } else { \
+                        DITHER_COPY(dstPtr,  dstStride[plane],   W8, \
+                                    srcPtr2, srcStride[plane] / 2, rfunc, \
+                                    dither_8x8_3, 2, av_clip_uint8); \
+                    }
+                    if (isBE(c->srcFormat)) {
+                        COPY9_OR_10TO8(AV_RB16);
+                    } else {
+                        COPY9_OR_10TO8(AV_RL16);
+                    }
+                }
+            } else if (is9_15BPS(c->dstFormat)) {
+                const int dst_depth = desc_dst->comp[plane].depth;
+                uint16_t *dstPtr2 = (uint16_t *) dstPtr;
+
+                if (is16BPS(c->srcFormat)) {
+                    const uint16_t *srcPtr2 = (const uint16_t *) srcPtr;
+#define COPY16TO9_OR_10(rfunc, wfunc) \
+                    if (dst_depth == 9) { \
+                        DITHER_COPY(dstPtr2, dstStride[plane] / 2, wfunc, \
+                                    srcPtr2, srcStride[plane] / 2, rfunc, \
+                                    ff_dither_8x8_128, 7, clip9); \
+                    } else { \
+                        DITHER_COPY(dstPtr2, dstStride[plane] / 2, wfunc, \
+                                    srcPtr2, srcStride[plane] / 2, rfunc, \
+                                    dither_8x8_64, 6, clip10); \
+                    }
+                    if (isBE(c->dstFormat)) {
+                        if (isBE(c->srcFormat)) {
+                            COPY16TO9_OR_10(AV_RB16, AV_WB16);
                         } else {
-                            DITHER_COPY(dstPtr2, dstStride[plane]/2, srcPtr2, srcStride[plane]/2, , av_bswap16)
+                            COPY16TO9_OR_10(AV_RL16, AV_WB16);
                         }
-                    }else{
-                        if(isBE(c->dstFormat) == HAVE_BIGENDIAN){
-                            DITHER_COPY(dstPtr2, dstStride[plane]/2, srcPtr2, srcStride[plane]/2, av_bswap16, )
+                    } else {
+                        if (isBE(c->srcFormat)) {
+                            COPY16TO9_OR_10(AV_RB16, AV_WL16);
                         } else {
-                            DITHER_COPY(dstPtr2, dstStride[plane]/2, srcPtr2, srcStride[plane]/2, av_bswap16, av_bswap16)
+                            COPY16TO9_OR_10(AV_RL16, AV_WL16);
                         }
                     }
+                } else /* 8 bits */ {
+#define COPY8TO9_OR_10(wfunc) \
+                    if (shiftonly) { \
+                        for (i = 0; i < height; i++) { \
+                            for (j = 0; j < length; j++) { \
+                                const int srcpx = srcPtr[j]; \
+                                wfunc(&dstPtr2[j], srcpx << (dst_depth - 8)); \
+                            } \
+                            dstPtr2 += dstStride[plane] / 2; \
+                            srcPtr  += srcStride[plane]; \
+                        } \
+                    } else { \
+                        for (i = 0; i < height; i++) { \
+                            for (j = 0; j < length; j++) { \
+                                const int srcpx = srcPtr[j]; \
+                                wfunc(&dstPtr2[j], (srcpx << (dst_depth - 8)) | (srcpx >> (16 - dst_depth))); \
+                            } \
+                            dstPtr2 += dstStride[plane] / 2; \
+                            srcPtr  += srcStride[plane]; \
+                        } \
+                    }
+                    if (isBE(c->dstFormat)) {
+                        COPY8TO9_OR_10(AV_WB16);
+                    } else {
+                        COPY8TO9_OR_10(AV_WL16);
+                    }
+                }
+            } else if (is16BPS(c->srcFormat) && !is16BPS(c->dstFormat)) {
+                const uint16_t *srcPtr2 = (const uint16_t *) srcPtr;
+#define COPY16TO8(rfunc) \
+                    DITHER_COPY(dstPtr,  dstStride[plane],   W8, \
+                                srcPtr2, srcStride[plane] / 2, rfunc, \
+                                dither_8x8_256, 8, av_clip_uint8);
+                if (isBE(c->srcFormat)) {
+                    COPY16TO8(AV_RB16);
+                } else {
+                    COPY16TO8(AV_RL16);
+                }
+            } else if (!is16BPS(c->srcFormat) && is16BPS(c->dstFormat)) {
+                for (i = 0; i < height; i++) {
+                    for (j = 0; j < length; j++) {
+                        dstPtr[ j << 1     ] = srcPtr[j];
+                        dstPtr[(j << 1) + 1] = srcPtr[j];
+                    }
+                    srcPtr += srcStride[plane];
+                    dstPtr += dstStride[plane];
                 }
             } else if (is16BPS(c->srcFormat) && is16BPS(c->dstFormat) &&
                       isBE(c->srcFormat) != isBE(c->dstFormat)) {
@@ -1818,14 +996,6 @@ static int planarCopyWrapper(SwsContext *c, const uint8_t *src[],
                 for (i = 0; i < height; i++) {
                     for (j = 0; j < length; j++)
                         ((uint16_t *) dstPtr)[j] = av_bswap16(((const uint16_t *) srcPtr)[j]);
-                    srcPtr += srcStride[plane];
-                    dstPtr += dstStride[plane];
-                }
-            } else if (isFloat(c->srcFormat) && isFloat(c->dstFormat) &&
-                       isBE(c->srcFormat) != isBE(c->dstFormat)) { /* swap float plane */
-                for (i = 0; i < height; i++) {
-                    for (j = 0; j < length; j++)
-                        ((uint32_t *) dstPtr)[j] = av_bswap32(((const uint32_t *) srcPtr)[j]);
                     srcPtr += srcStride[plane];
                     dstPtr += dstStride[plane];
                 }
@@ -1880,24 +1050,11 @@ void ff_get_unscaled_swscale(SwsContext *c)
     /* yuv2bgr */
     if ((srcFormat == AV_PIX_FMT_YUV420P || srcFormat == AV_PIX_FMT_YUV422P ||
          srcFormat == AV_PIX_FMT_YUVA420P) && isAnyRGB(dstFormat) &&
-        !(flags & SWS_ACCURATE_RND) && (c->dither == SWS_DITHER_BAYER || c->dither == SWS_DITHER_AUTO) && !(dstH & 1)) {
+        !(flags & SWS_ACCURATE_RND) && !(dstH & 1)) {
         c->swscale = ff_yuv2rgb_get_func_ptr(c);
     }
-    /* yuv420p1x_to_p01x */
-    if ((srcFormat == AV_PIX_FMT_YUV420P10 || srcFormat == AV_PIX_FMT_YUVA420P10 ||
-         srcFormat == AV_PIX_FMT_YUV420P12 ||
-         srcFormat == AV_PIX_FMT_YUV420P14 ||
-         srcFormat == AV_PIX_FMT_YUV420P16 || srcFormat == AV_PIX_FMT_YUVA420P16) &&
-        (dstFormat == AV_PIX_FMT_P010 || dstFormat == AV_PIX_FMT_P016)) {
-        c->swscale = planarToP01xWrapper;
-    }
-    /* yuv420p_to_p01xle */
-    if ((srcFormat == AV_PIX_FMT_YUV420P || srcFormat == AV_PIX_FMT_YUVA420P) &&
-        (dstFormat == AV_PIX_FMT_P010LE || dstFormat == AV_PIX_FMT_P016LE)) {
-        c->swscale = planar8ToP01xleWrapper;
-    }
 
-    if (srcFormat == AV_PIX_FMT_YUV410P && !(dstH & 3) &&
+    if (srcFormat == AV_PIX_FMT_YUV410P &&
         (dstFormat == AV_PIX_FMT_YUV420P || dstFormat == AV_PIX_FMT_YUVA420P) &&
         !(flags & SWS_BITEXACT)) {
         c->swscale = yvu9ToYv12Wrapper;
@@ -1930,102 +1087,36 @@ void ff_get_unscaled_swscale(SwsContext *c)
     if (srcFormat == AV_PIX_FMT_GBRP && isPlanar(srcFormat) && isByteRGB(dstFormat))
         c->swscale = planarRgbToRgbWrapper;
 
-    if (srcFormat == AV_PIX_FMT_GBRAP && isByteRGB(dstFormat))
-        c->swscale = planarRgbaToRgbWrapper;
-
-    if ((srcFormat == AV_PIX_FMT_RGB48LE  || srcFormat == AV_PIX_FMT_RGB48BE  ||
-         srcFormat == AV_PIX_FMT_BGR48LE  || srcFormat == AV_PIX_FMT_BGR48BE  ||
-         srcFormat == AV_PIX_FMT_RGBA64LE || srcFormat == AV_PIX_FMT_RGBA64BE ||
-         srcFormat == AV_PIX_FMT_BGRA64LE || srcFormat == AV_PIX_FMT_BGRA64BE) &&
-        (dstFormat == AV_PIX_FMT_GBRP9LE  || dstFormat == AV_PIX_FMT_GBRP9BE  ||
-         dstFormat == AV_PIX_FMT_GBRP10LE || dstFormat == AV_PIX_FMT_GBRP10BE ||
-         dstFormat == AV_PIX_FMT_GBRP12LE || dstFormat == AV_PIX_FMT_GBRP12BE ||
-         dstFormat == AV_PIX_FMT_GBRP14LE || dstFormat == AV_PIX_FMT_GBRP14BE ||
-         dstFormat == AV_PIX_FMT_GBRP16LE || dstFormat == AV_PIX_FMT_GBRP16BE ||
-         dstFormat == AV_PIX_FMT_GBRAP12LE || dstFormat == AV_PIX_FMT_GBRAP12BE ||
-         dstFormat == AV_PIX_FMT_GBRAP16LE || dstFormat == AV_PIX_FMT_GBRAP16BE ))
-        c->swscale = Rgb16ToPlanarRgb16Wrapper;
-
-    if ((srcFormat == AV_PIX_FMT_GBRP9LE  || srcFormat == AV_PIX_FMT_GBRP9BE  ||
-         srcFormat == AV_PIX_FMT_GBRP16LE || srcFormat == AV_PIX_FMT_GBRP16BE ||
-         srcFormat == AV_PIX_FMT_GBRP10LE || srcFormat == AV_PIX_FMT_GBRP10BE ||
-         srcFormat == AV_PIX_FMT_GBRP12LE || srcFormat == AV_PIX_FMT_GBRP12BE ||
-         srcFormat == AV_PIX_FMT_GBRP14LE || srcFormat == AV_PIX_FMT_GBRP14BE ||
-         srcFormat == AV_PIX_FMT_GBRAP12LE || srcFormat == AV_PIX_FMT_GBRAP12BE ||
-         srcFormat == AV_PIX_FMT_GBRAP16LE || srcFormat == AV_PIX_FMT_GBRAP16BE) &&
-        (dstFormat == AV_PIX_FMT_RGB48LE  || dstFormat == AV_PIX_FMT_RGB48BE  ||
-         dstFormat == AV_PIX_FMT_BGR48LE  || dstFormat == AV_PIX_FMT_BGR48BE  ||
-         dstFormat == AV_PIX_FMT_RGBA64LE || dstFormat == AV_PIX_FMT_RGBA64BE ||
-         dstFormat == AV_PIX_FMT_BGRA64LE || dstFormat == AV_PIX_FMT_BGRA64BE))
-        c->swscale = planarRgb16ToRgb16Wrapper;
-
     if (av_pix_fmt_desc_get(srcFormat)->comp[0].depth == 8 &&
         isPackedRGB(srcFormat) && dstFormat == AV_PIX_FMT_GBRP)
         c->swscale = rgbToPlanarRgbWrapper;
 
-    if (isBayer(srcFormat)) {
-        if (dstFormat == AV_PIX_FMT_RGB24)
-            c->swscale = bayer_to_rgb24_wrapper;
-        else if (dstFormat == AV_PIX_FMT_YUV420P)
-            c->swscale = bayer_to_yv12_wrapper;
-        else if (!isBayer(dstFormat)) {
-            av_log(c, AV_LOG_ERROR, "unsupported bayer conversion\n");
-            av_assert0(0);
-        }
-    }
-
     /* bswap 16 bits per pixel/component packed formats */
-    if (IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BAYER_BGGR16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BAYER_RGGB16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BAYER_GBRG16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BAYER_GRBG16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR444) ||
+    if (IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR444) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR48)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGRA64) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR555) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGR565) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_BGRA64) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GRAY9)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GRAY10) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GRAY12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GRAY14) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GRAY16) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YA16)   ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_AYUV64) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP9)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP10) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP14) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRP16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRAP12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRAP16) ||
+        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRAP12)||
+        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_GBRAP16)||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGB444) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGB48)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGBA64) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGB555) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGB565) ||
         IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_RGBA64) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_XYZ12)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P9)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P10) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P14) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV420P16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV422P9)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV422P10) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV422P12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV422P14) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV422P16) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV440P10) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV440P12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV444P9)  ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV444P10) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV444P12) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV444P14) ||
-        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_YUV444P16))
-        c->swscale = bswap_16bpc;
+        IS_DIFFERENT_ENDIANESS(srcFormat, dstFormat, AV_PIX_FMT_XYZ12))
+        c->swscale = packed_16bpc_bswap;
 
-    if (usePal(srcFormat) && isByteRGB(dstFormat))
+    if ((usePal(srcFormat) && (
+        dstFormat == AV_PIX_FMT_RGB32   ||
+        dstFormat == AV_PIX_FMT_RGB32_1 ||
+        dstFormat == AV_PIX_FMT_RGB24   ||
+        dstFormat == AV_PIX_FMT_BGR32   ||
+        dstFormat == AV_PIX_FMT_BGR32_1 ||
+        dstFormat == AV_PIX_FMT_BGR24)))
         c->swscale = palToRgbWrapper;
 
     if (srcFormat == AV_PIX_FMT_YUV422P) {
@@ -2033,16 +1124,6 @@ void ff_get_unscaled_swscale(SwsContext *c)
             c->swscale = yuv422pToYuy2Wrapper;
         else if (dstFormat == AV_PIX_FMT_UYVY422)
             c->swscale = yuv422pToUyvyWrapper;
-    }
-
-    /* uint Y to float Y */
-    if (srcFormat == AV_PIX_FMT_GRAY8 && dstFormat == AV_PIX_FMT_GRAYF32){
-        c->swscale = uint_y_to_float_y_wrapper;
-    }
-
-    /* float Y to uint Y */
-    if (srcFormat == AV_PIX_FMT_GRAYF32 && dstFormat == AV_PIX_FMT_GRAY8){
-        c->swscale = float_y_to_uint_y_wrapper;
     }
 
     /* LQ converters if -sws 0 or -sws 4*/
@@ -2066,18 +1147,26 @@ void ff_get_unscaled_swscale(SwsContext *c)
     if (srcFormat == AV_PIX_FMT_UYVY422 && dstFormat == AV_PIX_FMT_YUV422P)
         c->swscale = uyvyToYuv422Wrapper;
 
-#define isPlanarGray(x) (isGray(x) && (x) != AV_PIX_FMT_YA8 && (x) != AV_PIX_FMT_YA16LE && (x) != AV_PIX_FMT_YA16BE)
     /* simple copy */
     if ( srcFormat == dstFormat ||
         (srcFormat == AV_PIX_FMT_YUVA420P && dstFormat == AV_PIX_FMT_YUV420P) ||
         (srcFormat == AV_PIX_FMT_YUV420P && dstFormat == AV_PIX_FMT_YUVA420P) ||
-        (isFloat(srcFormat) == isFloat(dstFormat)) && ((isPlanarYUV(srcFormat) && isPlanarGray(dstFormat)) ||
-        (isPlanarYUV(dstFormat) && isPlanarGray(srcFormat)) ||
-        (isPlanarGray(dstFormat) && isPlanarGray(srcFormat)) ||
+        (isPlanarYUV(srcFormat) && isGray(dstFormat)) ||
+        (isPlanarYUV(dstFormat) && isGray(srcFormat)) ||
+        (isGray(dstFormat) && isGray(srcFormat)) ||
         (isPlanarYUV(srcFormat) && isPlanarYUV(dstFormat) &&
          c->chrDstHSubSample == c->chrSrcHSubSample &&
          c->chrDstVSubSample == c->chrSrcVSubSample &&
-         !isSemiPlanarYUV(srcFormat) && !isSemiPlanarYUV(dstFormat))))
+         dstFormat != AV_PIX_FMT_NV12 && dstFormat != AV_PIX_FMT_NV21 &&
+         dstFormat != AV_PIX_FMT_P010LE && dstFormat != AV_PIX_FMT_P010BE &&
+         dstFormat != AV_PIX_FMT_YUV420P12LE && dstFormat != AV_PIX_FMT_YUV420P12BE &&
+         dstFormat != AV_PIX_FMT_YUV422P12LE && dstFormat != AV_PIX_FMT_YUV422P12BE &&
+         dstFormat != AV_PIX_FMT_YUV444P12LE && dstFormat != AV_PIX_FMT_YUV444P12BE &&
+         srcFormat != AV_PIX_FMT_NV12 && srcFormat != AV_PIX_FMT_NV21 &&
+         srcFormat != AV_PIX_FMT_P010LE && srcFormat != AV_PIX_FMT_P010BE &&
+         srcFormat != AV_PIX_FMT_YUV420P12LE && srcFormat != AV_PIX_FMT_YUV420P12BE &&
+         srcFormat != AV_PIX_FMT_YUV422P12LE && srcFormat != AV_PIX_FMT_YUV422P12BE &&
+         srcFormat != AV_PIX_FMT_YUV444P12LE && srcFormat != AV_PIX_FMT_YUV444P12BE))
     {
         if (isPacked(c->srcFormat))
             c->swscale = packedCopyWrapper;
@@ -2087,10 +1176,170 @@ void ff_get_unscaled_swscale(SwsContext *c)
 
     if (ARCH_PPC)
         ff_get_unscaled_swscale_ppc(c);
-     if (ARCH_ARM)
-         ff_get_unscaled_swscale_arm(c);
-    if (ARCH_AARCH64)
-        ff_get_unscaled_swscale_aarch64(c);
+}
+
+static void reset_ptr(const uint8_t *src[], enum AVPixelFormat format)
+{
+    if (!isALPHA(format))
+        src[3] = NULL;
+    if (!isPlanar(format)) {
+        src[3] = src[2] = NULL;
+
+        if (!usePal(format))
+            src[1] = NULL;
+    }
+}
+
+#define CHECK_IMAGE_POINTERS(data, pix_fmt, linesizes, msg)            \
+    do {                                                               \
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmt); \
+        int i;                                                         \
+                                                                       \
+        for (i = 0; i < 4; i++) {                                      \
+            int plane = desc->comp[i].plane;                           \
+            if (!data[plane] || !linesizes[plane]) {                   \
+                av_log(c, AV_LOG_ERROR, msg);                          \
+                return 0;                                              \
+            }                                                          \
+        }                                                              \
+    } while (0)
+
+/**
+ * swscale wrapper, so we don't need to export the SwsContext.
+ * Assumes planar YUV to be in YUV order instead of YVU.
+ */
+int attribute_align_arg sws_scale(struct SwsContext *c,
+                                  const uint8_t * const srcSlice[],
+                                  const int srcStride[], int srcSliceY,
+                                  int srcSliceH, uint8_t *const dst[],
+                                  const int dstStride[])
+{
+    int i;
+    const uint8_t *src2[4] = { srcSlice[0], srcSlice[1], srcSlice[2], srcSlice[3] };
+    uint8_t *dst2[4] = { dst[0], dst[1], dst[2], dst[3] };
+
+    // do not mess up sliceDir if we have a "trailing" 0-size slice
+    if (srcSliceH == 0)
+        return 0;
+
+    CHECK_IMAGE_POINTERS(srcSlice, c->srcFormat, srcStride, "bad src image pointers\n");
+    CHECK_IMAGE_POINTERS(dst, c->dstFormat, dstStride, "bad dst image pointers\n");
+
+    if (c->sliceDir == 0 && srcSliceY != 0 && srcSliceY + srcSliceH != c->srcH) {
+        av_log(c, AV_LOG_ERROR, "Slices start in the middle!\n");
+        return 0;
+    }
+    if (c->sliceDir == 0) {
+        if (srcSliceY == 0) c->sliceDir = 1; else c->sliceDir = -1;
+    }
+
+    if (usePal(c->srcFormat)) {
+        for (i = 0; i < 256; i++) {
+            int r, g, b, y, u, v;
+            if (c->srcFormat == AV_PIX_FMT_PAL8) {
+                uint32_t p = ((const uint32_t *)(srcSlice[1]))[i];
+                r = (p >> 16) & 0xFF;
+                g = (p >>  8) & 0xFF;
+                b =  p        & 0xFF;
+            } else if (c->srcFormat == AV_PIX_FMT_RGB8) {
+                r = ( i >> 5     ) * 36;
+                g = ((i >> 2) & 7) * 36;
+                b = ( i       & 3) * 85;
+            } else if (c->srcFormat == AV_PIX_FMT_BGR8) {
+                b = ( i >> 6     ) * 85;
+                g = ((i >> 3) & 7) * 36;
+                r = ( i       & 7) * 36;
+            } else if (c->srcFormat == AV_PIX_FMT_RGB4_BYTE) {
+                r = ( i >> 3     ) * 255;
+                g = ((i >> 1) & 3) * 85;
+                b = ( i       & 1) * 255;
+            } else if (c->srcFormat == AV_PIX_FMT_GRAY8 ||
+                       c->srcFormat == AV_PIX_FMT_YA8) {
+                r = g = b = i;
+            } else {
+                assert(c->srcFormat == AV_PIX_FMT_BGR4_BYTE);
+                b = ( i >> 3     ) * 255;
+                g = ((i >> 1) & 3) * 85;
+                r = ( i       & 1) * 255;
+            }
+            y = av_clip_uint8((RY * r + GY * g + BY * b + ( 33 << (RGB2YUV_SHIFT - 1))) >> RGB2YUV_SHIFT);
+            u = av_clip_uint8((RU * r + GU * g + BU * b + (257 << (RGB2YUV_SHIFT - 1))) >> RGB2YUV_SHIFT);
+            v = av_clip_uint8((RV * r + GV * g + BV * b + (257 << (RGB2YUV_SHIFT - 1))) >> RGB2YUV_SHIFT);
+            c->pal_yuv[i] = y + (u << 8) + (v << 16) + (0xFFU << 24);
+
+            switch (c->dstFormat) {
+            case AV_PIX_FMT_BGR32:
+#if !HAVE_BIGENDIAN
+            case AV_PIX_FMT_RGB24:
+#endif
+                c->pal_rgb[i] =  r + (g << 8) + (b << 16) + (0xFFU << 24);
+                break;
+            case AV_PIX_FMT_BGR32_1:
+#if HAVE_BIGENDIAN
+            case AV_PIX_FMT_BGR24:
+#endif
+                c->pal_rgb[i] = 0xFF + (r << 8) + (g << 16) + ((unsigned)b << 24);
+                break;
+            case AV_PIX_FMT_RGB32_1:
+#if HAVE_BIGENDIAN
+            case AV_PIX_FMT_RGB24:
+#endif
+                c->pal_rgb[i] = 0xFF + (b << 8) + (g << 16) + ((unsigned)r << 24);
+                break;
+            case AV_PIX_FMT_RGB32:
+#if !HAVE_BIGENDIAN
+            case AV_PIX_FMT_BGR24:
+#endif
+            default:
+                c->pal_rgb[i] =  b + (g << 8) + (r << 16) + (0xFFU << 24);
+            }
+        }
+    }
+
+    // copy strides, so they can safely be modified
+    if (c->sliceDir == 1) {
+        // slices go from top to bottom
+        int srcStride2[4] = { srcStride[0], srcStride[1], srcStride[2],
+                              srcStride[3] };
+        int dstStride2[4] = { dstStride[0], dstStride[1], dstStride[2],
+                              dstStride[3] };
+
+        reset_ptr(src2, c->srcFormat);
+        reset_ptr((const uint8_t **) dst2, c->dstFormat);
+
+        /* reset slice direction at end of frame */
+        if (srcSliceY + srcSliceH == c->srcH)
+            c->sliceDir = 0;
+
+        return c->swscale(c, src2, srcStride2, srcSliceY, srcSliceH, dst2,
+                          dstStride2);
+    } else {
+        // slices go from bottom to top => we flip the image internally
+        int srcStride2[4] = { -srcStride[0], -srcStride[1], -srcStride[2],
+                              -srcStride[3] };
+        int dstStride2[4] = { -dstStride[0], -dstStride[1], -dstStride[2],
+                              -dstStride[3] };
+
+        src2[0] += (srcSliceH - 1) * srcStride[0];
+        if (!usePal(c->srcFormat))
+            src2[1] += ((srcSliceH >> c->chrSrcVSubSample) - 1) * srcStride[1];
+        src2[2] += ((srcSliceH >> c->chrSrcVSubSample) - 1) * srcStride[2];
+        src2[3] += (srcSliceH - 1) * srcStride[3];
+        dst2[0] += ( c->dstH                         - 1) * dstStride[0];
+        dst2[1] += ((c->dstH >> c->chrDstVSubSample) - 1) * dstStride[1];
+        dst2[2] += ((c->dstH >> c->chrDstVSubSample) - 1) * dstStride[2];
+        dst2[3] += ( c->dstH                         - 1) * dstStride[3];
+
+        reset_ptr(src2, c->srcFormat);
+        reset_ptr((const uint8_t **) dst2, c->dstFormat);
+
+        /* reset slice direction at end of frame */
+        if (!srcSliceY)
+            c->sliceDir = 0;
+
+        return c->swscale(c, src2, srcStride2, c->srcH-srcSliceY-srcSliceH,
+                          srcSliceH, dst2, dstStride2);
+    }
 }
 
 /* Convert the palette to the same packed 32-bit format as the palette */

@@ -2,20 +2,20 @@
  * TechSmith Screen Codec 2 (aka Dora) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,11 +28,12 @@
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
+#include "bitstream.h"
 #include "bytestream.h"
-#include "get_bits.h"
 #include "internal.h"
 #include "mathops.h"
 #include "tscc2data.h"
+#include "vlc.h"
 
 typedef struct TSCC2Context {
     AVCodecContext *avctx;
@@ -41,7 +42,7 @@ typedef struct TSCC2Context {
     uint8_t        *slice_quants;
     int            quant[2];
     int            q[2][3];
-    GetBitContext  gb;
+    BitstreamContext bc;
 
     VLC            dc_vlc, nc_vlc[NUM_VLC_SETS], ac_vlc[NUM_VLC_SETS];
     int            block[16];
@@ -91,14 +92,14 @@ static av_cold int init_vlcs(TSCC2Context *c)
     return 0;
 }
 
-#define DEQUANT(val, q) (((q) * (val) + 0x80) >> 8)
+#define DEQUANT(val, q) ((q * val + 0x80) >> 8)
 #define DCT1D(d0, d1, d2, d3, s0, s1, s2, s3, OP) \
     OP(d0, 5 * ((s0) + (s1) + (s2)) + 2 * (s3));  \
     OP(d1, 5 * ((s0) - (s2) - (s3)) + 2 * (s1));  \
     OP(d2, 5 * ((s0) - (s2) + (s3)) - 2 * (s1));  \
     OP(d3, 5 * ((s0) - (s1) + (s2)) - 2 * (s3));  \
 
-#define COL_OP(a, b)  a = (b)
+#define COL_OP(a, b)  a = b
 #define ROW_OP(a, b)  a = ((b) + 0x20) >> 6
 
 static void tscc2_idct4_put(int *in, int q[3], uint8_t *dst, int stride)
@@ -127,21 +128,21 @@ static void tscc2_idct4_put(int *in, int q[3], uint8_t *dst, int stride)
 static int tscc2_decode_mb(TSCC2Context *c, int *q, int vlc_set,
                            uint8_t *dst, int stride, int plane)
 {
-    GetBitContext *gb = &c->gb;
+    BitstreamContext *bc = &c->bc;
     int prev_dc, dc, nc, ac, bpos, val;
     int i, j, k, l;
 
-    if (get_bits1(gb)) {
-        if (get_bits1(gb)) {
-            val = get_bits(gb, 8);
+    if (bitstream_read_bit(bc)) {
+        if (bitstream_read_bit(bc)) {
+            val = bitstream_read(bc, 8);
             for (i = 0; i < 8; i++, dst += stride)
                 memset(dst, val, 16);
         } else {
-            if (get_bits_left(gb) < 16 * 8 * 8)
+            if (bitstream_bits_left(bc) < 16 * 8 * 8)
                 return AVERROR_INVALIDDATA;
             for (i = 0; i < 8; i++) {
                 for (j = 0; j < 16; j++)
-                    dst[j] = get_bits(gb, 8);
+                    dst[j] = bitstream_read(bc, 8);
                 dst += stride;
             }
         }
@@ -152,30 +153,30 @@ static int tscc2_decode_mb(TSCC2Context *c, int *q, int vlc_set,
     for (j = 0; j < 2; j++) {
         for (k = 0; k < 4; k++) {
             if (!(j | k)) {
-                dc = get_bits(gb, 8);
+                dc = bitstream_read(bc, 8);
             } else {
-                dc = get_vlc2(gb, c->dc_vlc.table, 9, 2);
+                dc = bitstream_read_vlc(bc, c->dc_vlc.table, 9, 2);
                 if (dc == -1)
                     return AVERROR_INVALIDDATA;
                 if (dc == 0x100)
-                    dc = get_bits(gb, 8);
+                    dc = bitstream_read(bc, 8);
             }
             dc          = (dc + prev_dc) & 0xFF;
             prev_dc     = dc;
             c->block[0] = dc;
 
-            nc = get_vlc2(gb, c->nc_vlc[vlc_set].table, 9, 1);
+            nc = bitstream_read_vlc(bc, c->nc_vlc[vlc_set].table, 9, 1);
             if (nc == -1)
                 return AVERROR_INVALIDDATA;
 
             bpos = 1;
             memset(c->block + 1, 0, 15 * sizeof(*c->block));
             for (l = 0; l < nc; l++) {
-                ac = get_vlc2(gb, c->ac_vlc[vlc_set].table, 9, 2);
+                ac = bitstream_read_vlc(bc, c->ac_vlc[vlc_set].table, 9, 2);
                 if (ac == -1)
                     return AVERROR_INVALIDDATA;
                 if (ac == 0x1000)
-                    ac = get_bits(gb, 12);
+                    ac = bitstream_read(bc, 12);
                 bpos += ac & 0xF;
                 if (bpos >= 16)
                     return AVERROR_INVALIDDATA;
@@ -195,8 +196,7 @@ static int tscc2_decode_slice(TSCC2Context *c, int mb_y,
     int i, mb_x, q, ret;
     int off;
 
-    if ((ret = init_get_bits8(&c->gb, buf, buf_size)) < 0)
-        return ret;
+    bitstream_init8(&c->bc, buf, buf_size);
 
     for (mb_x = 0; mb_x < c->mb_width; mb_x++) {
         q = c->slice_quants[mb_x + c->mb_width * mb_y];
@@ -235,13 +235,17 @@ static int tscc2_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    if (frame_type == 0) {
-        // Skip duplicate frames
-        return buf_size;
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+        return ret;
     }
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
-        return ret;
+    if (frame_type == 0) {
+        *got_frame      = 1;
+        if ((ret = av_frame_ref(data, c->pic)) < 0)
+            return ret;
+
+        return buf_size;
     }
 
     if (bytestream2_get_bytes_left(&gb) < 4) {

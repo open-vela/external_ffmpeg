@@ -2,20 +2,20 @@
  * MJPEG/AVI1 to JPEG/JFIF bitstream format filter
  * Copyright (c) 2010 Adrian Daerr and Nicolas George
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,12 +28,10 @@
 
 #include "libavutil/error.h"
 #include "libavutil/mem.h"
-#include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
 #include "bsf.h"
 #include "jpegtables.h"
-#include "mjpeg.h"
 
 static const uint8_t jpeg_header[] = {
     0xff, 0xd8,                     // SOI
@@ -86,24 +84,19 @@ static int mjpeg2jpeg_filter(AVBSFContext *ctx, AVPacket *out)
     uint8_t *output;
 
     ret = ff_bsf_get_packet(ctx, &in);
-    if (ret < 0)
-        return ret;
 
     if (in->size < 12) {
         av_log(ctx, AV_LOG_ERROR, "input is truncated\n");
         ret = AVERROR_INVALIDDATA;
         goto fail;
     }
-    if (AV_RB16(in->data) != 0xffd8) {
-        av_log(ctx, AV_LOG_ERROR, "input is not MJPEG\n");
+    if (memcmp("AVI1", in->data + 6, 4)) {
+        av_log(ctx, AV_LOG_ERROR, "input is not MJPEG/AVI1\n");
         ret = AVERROR_INVALIDDATA;
         goto fail;
     }
-    if (in->data[2] == 0xff && in->data[3] == APP0) {
-        input_skip = (in->data[4] << 8) + in->data[5] + 4;
-    } else {
-        input_skip = 2;
-    }
+
+    input_skip = (in->data[4] << 8) + in->data[5] + 4;
     if (in->size < input_skip) {
         av_log(ctx, AV_LOG_ERROR, "input is truncated\n");
         ret = AVERROR_INVALIDDATA;
@@ -132,12 +125,7 @@ fail:
     return ret;
 }
 
-static const enum AVCodecID codec_ids[] = {
-    AV_CODEC_ID_MJPEG, AV_CODEC_ID_NONE,
-};
-
 const AVBitStreamFilter ff_mjpeg2jpeg_bsf = {
     .name           = "mjpeg2jpeg",
     .filter         = mjpeg2jpeg_filter,
-    .codec_ids      = codec_ids,
 };

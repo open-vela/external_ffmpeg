@@ -3,30 +3,30 @@
  *
  * Copyright (c) 2013 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <inttypes.h>
 
 #include "avcodec.h"
+#include "bitstream.h"
 #include "bytestream.h"
-#include "internal.h"
-#include "get_bits.h"
 #include "golomb.h"
+#include "internal.h"
 #include "idctdsp.h"
 #include "thread.h"
 #include "unary.h"
@@ -153,7 +153,6 @@ typedef struct AICContext {
     int16_t        *data_ptr[NUM_BANDS];
 
     DECLARE_ALIGNED(16, int16_t, block)[64];
-    DECLARE_ALIGNED(16, uint8_t, quant_matrix)[64];
 } AICContext;
 
 static int aic_decode_header(AICContext *ctx, const uint8_t *src, int size)
@@ -192,42 +191,41 @@ static int aic_decode_header(AICContext *ctx, const uint8_t *src, int size)
 #define GET_CODE(val, type, add_bits)                         \
     do {                                                      \
         if (type)                                             \
-            val = get_ue_golomb(gb);                          \
+            val = get_ue_golomb(bc);                          \
         else                                                  \
-            val = get_unary(gb, 1, 31);                       \
+            val = get_unary(bc, 1, 31);                       \
         if (add_bits)                                         \
-            val = (val << add_bits) + get_bits(gb, add_bits); \
+            val = (val << add_bits) + bitstream_read(bc, add_bits); \
     } while (0)
 
-static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
+static int aic_decode_coeffs(BitstreamContext *bc, int16_t *dst,
                              int band, int slice_width, int force_chroma)
 {
     int has_skips, coeff_type, coeff_bits, skip_type, skip_bits;
     const int num_coeffs = aic_num_band_coeffs[band];
     const uint8_t *scan = aic_scan[band | force_chroma];
-    int mb, idx;
-    unsigned val;
+    int mb, idx, val;
 
-    has_skips  = get_bits1(gb);
-    coeff_type = get_bits1(gb);
-    coeff_bits = get_bits(gb, 3);
+    has_skips  = bitstream_read_bit(bc);
+    coeff_type = bitstream_read_bit(bc);
+    coeff_bits = bitstream_read(bc, 3);
 
     if (has_skips) {
-        skip_type = get_bits1(gb);
-        skip_bits = get_bits(gb, 3);
+        skip_type = bitstream_read_bit(bc);
+        skip_bits = bitstream_read(bc, 3);
 
         for (mb = 0; mb < slice_width; mb++) {
             idx = -1;
             do {
                 GET_CODE(val, skip_type, skip_bits);
-                if (val >= 0x10000)
+                if (val < 0)
                     return AVERROR_INVALIDDATA;
                 idx += val + 1;
                 if (idx >= num_coeffs)
                     break;
                 GET_CODE(val, coeff_type, coeff_bits);
                 val++;
-                if (val >= 0x10000)
+                if (val >= 0x10000 || val < 0)
                     return AVERROR_INVALIDDATA;
                 dst[scan[idx]] = val;
             } while (idx < num_coeffs - 1);
@@ -237,7 +235,7 @@ static int aic_decode_coeffs(GetBitContext *gb, int16_t *dst,
         for (mb = 0; mb < slice_width; mb++) {
             for (idx = 0; idx < num_coeffs; idx++) {
                 GET_CODE(val, coeff_type, coeff_bits);
-                if (val >= 0x10000)
+                if (val >= 0x10000 || val < 0)
                     return AVERROR_INVALIDDATA;
                 dst[scan[idx]] = val;
             }
@@ -289,7 +287,7 @@ static void recombine_block_il(int16_t *dst, const uint8_t *scan,
     }
 }
 
-static void unquant_block(int16_t *block, int q, uint8_t *quant_matrix)
+static void unquant_block(int16_t *block, int q)
 {
     int i;
 
@@ -297,7 +295,7 @@ static void unquant_block(int16_t *block, int q, uint8_t *quant_matrix)
         int val  = (uint16_t)block[i];
         int sign = val & 1;
 
-        block[i] = (((val >> 1) ^ -sign) * q * quant_matrix[i] >> 4)
+        block[i] = (((val >> 1) ^ -sign) * q * aic_quant_matrix[i] >> 4)
                    + sign;
     }
 }
@@ -305,11 +303,9 @@ static void unquant_block(int16_t *block, int q, uint8_t *quant_matrix)
 static int aic_decode_slice(AICContext *ctx, int mb_x, int mb_y,
                             const uint8_t *src, int src_size)
 {
-    GetBitContext gb;
+    BitstreamContext bc;
     int ret, i, mb, blk;
     int slice_width = FFMIN(ctx->slice_width, ctx->mb_width - mb_x);
-    int last_row = mb_y && mb_y == ctx->mb_height - 1;
-    int y_pos, c_pos;
     uint8_t *Y, *C[2];
     uint8_t *dst;
     int16_t *base_y = ctx->data_ptr[COEFF_LUMA];
@@ -318,24 +314,16 @@ static int aic_decode_slice(AICContext *ctx, int mb_x, int mb_y,
     int16_t *ext_c  = ctx->data_ptr[COEFF_CHROMA_EXT];
     const int ystride = ctx->frame->linesize[0];
 
-    if (last_row) {
-        y_pos = (ctx->avctx->height - 16);
-        c_pos = ((ctx->avctx->height+1)/2 - 8);
-    } else {
-        y_pos = mb_y * 16;
-        c_pos = mb_y * 8;
-    }
-
-    Y = ctx->frame->data[0] + mb_x * 16 + y_pos * ystride;
+    Y = ctx->frame->data[0] + mb_x * 16 + mb_y * 16 * ystride;
     for (i = 0; i < 2; i++)
         C[i] = ctx->frame->data[i + 1] + mb_x * 8
-               + c_pos * ctx->frame->linesize[i + 1];
-    init_get_bits(&gb, src, src_size * 8);
+               + mb_y * 8 * ctx->frame->linesize[i + 1];
+    bitstream_init8(&bc, src, src_size);
 
     memset(ctx->slice_data, 0,
            sizeof(*ctx->slice_data) * slice_width * AIC_BAND_COEFFS);
     for (i = 0; i < NUM_BANDS; i++)
-        if ((ret = aic_decode_coeffs(&gb, ctx->data_ptr[i],
+        if ((ret = aic_decode_coeffs(&bc, ctx->data_ptr[i],
                                      i, slice_width,
                                      !ctx->interlaced)) < 0)
             return ret;
@@ -348,7 +336,7 @@ static int aic_decode_slice(AICContext *ctx, int mb_x, int mb_y,
             else
                 recombine_block_il(ctx->block, ctx->scantable.permutated,
                                    &base_y, &ext_y, blk);
-            unquant_block(ctx->block, ctx->quant, ctx->quant_matrix);
+            unquant_block(ctx->block, ctx->quant);
             ctx->idsp.idct(ctx->block);
 
             if (!ctx->interlaced) {
@@ -365,7 +353,7 @@ static int aic_decode_slice(AICContext *ctx, int mb_x, int mb_y,
         for (blk = 0; blk < 2; blk++) {
             recombine_block(ctx->block, ctx->scantable.permutated,
                             &base_c, &ext_c);
-            unquant_block(ctx->block, ctx->quant, ctx->quant_matrix);
+            unquant_block(ctx->block, ctx->quant);
             ctx->idsp.idct(ctx->block);
             ctx->idsp.put_signed_pixels_clamped(ctx->block, C[blk],
                                                 ctx->frame->linesize[blk + 1]);
@@ -451,15 +439,13 @@ static av_cold int aic_decode_init(AVCodecContext *avctx)
     for (i = 0; i < 64; i++)
         scan[i] = i;
     ff_init_scantable(ctx->idsp.idct_permutation, &ctx->scantable, scan);
-    for (i = 0; i < 64; i++)
-        ctx->quant_matrix[ctx->idsp.idct_permutation[i]] = aic_quant_matrix[i];
 
     ctx->mb_width  = FFALIGN(avctx->width,  16) >> 4;
     ctx->mb_height = FFALIGN(avctx->height, 16) >> 4;
 
     ctx->num_x_slices = (ctx->mb_width + 15) >> 4;
     ctx->slice_width  = 16;
-    for (i = 1; i < ctx->mb_width; i++) {
+    for (i = 1; i < 32; i++) {
         if (!(ctx->mb_width % i) && (ctx->mb_width / i <= 32)) {
             ctx->slice_width  = ctx->mb_width / i;
             ctx->num_x_slices = i;
@@ -467,7 +453,7 @@ static av_cold int aic_decode_init(AVCodecContext *avctx)
         }
     }
 
-    ctx->slice_data = av_malloc_array(ctx->slice_width, AIC_BAND_COEFFS
+    ctx->slice_data = av_malloc(ctx->slice_width * AIC_BAND_COEFFS
                                 * sizeof(*ctx->slice_data));
     if (!ctx->slice_data) {
         av_log(avctx, AV_LOG_ERROR, "Error allocating slice buffer\n");

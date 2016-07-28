@@ -2,20 +2,20 @@
  * Brute Force & Ignorance (BFI) video decoder
  * Copyright (c) 2008 Sisir Koppaka
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@
 typedef struct BFIContext {
     AVCodecContext *avctx;
     uint8_t *dst;
-    uint32_t pal[256];
 } BFIContext;
 
 static av_cold int bfi_decode_init(AVCodecContext *avctx)
@@ -42,8 +41,6 @@ static av_cold int bfi_decode_init(AVCodecContext *avctx)
     BFIContext *bfi = avctx->priv_data;
     avctx->pix_fmt  = AV_PIX_FMT_PAL8;
     bfi->dst        = av_mallocz(avctx->width * avctx->height);
-    if (!bfi->dst)
-        return AVERROR(ENOMEM);
     return 0;
 }
 
@@ -60,8 +57,10 @@ static int bfi_decode_frame(AVCodecContext *avctx, void *data,
     uint32_t *pal;
     int i, j, ret, height = avctx->height;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     bytestream2_init(&g, avpkt->data, buf_size);
 
@@ -77,19 +76,16 @@ static int bfi_decode_frame(AVCodecContext *avctx, void *data,
         pal = (uint32_t *)frame->data[1];
         for (i = 0; i < avctx->extradata_size / 3; i++) {
             int shift = 16;
-            *pal = 0xFFU << 24;
+            *pal = 0;
             for (j = 0; j < 3; j++, shift -= 8)
                 *pal += ((avctx->extradata[i * 3 + j] << 2) |
                          (avctx->extradata[i * 3 + j] >> 4)) << shift;
             pal++;
         }
-        memcpy(bfi->pal, frame->data[1], sizeof(bfi->pal));
         frame->palette_has_changed = 1;
     } else {
         frame->pict_type = AV_PICTURE_TYPE_P;
         frame->key_frame = 0;
-        frame->palette_has_changed = 0;
-        memcpy(frame->data[1], bfi->pal, sizeof(bfi->pal));
     }
 
     bytestream2_skip(&g, 4); // Unpacked size, not required.
@@ -171,7 +167,7 @@ static int bfi_decode_frame(AVCodecContext *avctx, void *data,
 static av_cold int bfi_decode_close(AVCodecContext *avctx)
 {
     BFIContext *bfi = avctx->priv_data;
-    av_freep(&bfi->dst);
+    av_free(bfi->dst);
     return 0;
 }
 
