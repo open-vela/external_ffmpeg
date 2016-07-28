@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,6 +35,7 @@
 #include "cabac.h"
 #include "error_resilience.h"
 #include "h264_parse.h"
+#include "h264_ps.h"
 #include "h264_sei.h"
 #include "h2645_parse.h"
 #include "h264chroma.h"
@@ -48,16 +49,11 @@
 #include "rectangle.h"
 #include "videodsp.h"
 
-#define H264_MAX_PICTURE_COUNT 36
-
-#define MAX_SPS_COUNT          32
-#define MAX_PPS_COUNT         256
+#define H264_MAX_PICTURE_COUNT 32
 
 #define MAX_MMCO_COUNT         66
 
 #define MAX_DELAYED_PIC_COUNT  16
-
-#define MAX_MBPAIR_SIZE (256*1024) // a tighter bound could be calculated if someone cares about a few bytes
 
 /* Compiling in interlaced support reduces the speed
  * of progressive decoding by about 2%. */
@@ -72,17 +68,17 @@
 #define MAX_SLICES 32
 
 #ifdef ALLOW_INTERLACE
-#define MB_MBAFF(h)    (h)->mb_mbaff
-#define MB_FIELD(sl)  (sl)->mb_field_decoding_flag
-#define FRAME_MBAFF(h) (h)->mb_aff_frame
-#define FIELD_PICTURE(h) ((h)->picture_structure != PICT_FRAME)
+#define MB_MBAFF(h)    h->mb_mbaff
+#define MB_FIELD(h)    h->mb_field_decoding_flag
+#define FRAME_MBAFF(h) h->mb_aff_frame
+#define FIELD_PICTURE(h) (h->picture_structure != PICT_FRAME)
 #define LEFT_MBS 2
 #define LTOP     0
 #define LBOT     1
 #define LEFT(i)  (i)
 #else
 #define MB_MBAFF(h)      0
-#define MB_FIELD(sl)     0
+#define MB_FIELD(h)      0
 #define FRAME_MBAFF(h)   0
 #define FIELD_PICTURE(h) 0
 #undef  IS_INTERLACED
@@ -95,128 +91,16 @@
 #define FIELD_OR_MBAFF_PICTURE(h) (FRAME_MBAFF(h) || FIELD_PICTURE(h))
 
 #ifndef CABAC
-#define CABAC(h) (h)->ps.pps->cabac
+#define CABAC(h) h->ps.pps->cabac
 #endif
 
-#define CHROMA(h)    ((h)->ps.sps->chroma_format_idc)
-#define CHROMA422(h) ((h)->ps.sps->chroma_format_idc == 2)
-#define CHROMA444(h) ((h)->ps.sps->chroma_format_idc == 3)
-
-#define EXTENDED_SAR       255
+#define CHROMA422(h) (h->ps.sps->chroma_format_idc == 2)
+#define CHROMA444(h) (h->ps.sps->chroma_format_idc == 3)
 
 #define MB_TYPE_REF0       MB_TYPE_ACPRED // dirty but it fits in 16 bit
 #define MB_TYPE_8x8DCT     0x01000000
 #define IS_REF0(a)         ((a) & MB_TYPE_REF0)
 #define IS_8x8DCT(a)       ((a) & MB_TYPE_8x8DCT)
-
-#define QP_MAX_NUM (51 + 6*6)           // The maximum supported qp
-
-/**
- * Sequence parameter set
- */
-typedef struct SPS {
-    unsigned int sps_id;
-    int profile_idc;
-    int level_idc;
-    int chroma_format_idc;
-    int transform_bypass;              ///< qpprime_y_zero_transform_bypass_flag
-    int log2_max_frame_num;            ///< log2_max_frame_num_minus4 + 4
-    int poc_type;                      ///< pic_order_cnt_type
-    int log2_max_poc_lsb;              ///< log2_max_pic_order_cnt_lsb_minus4
-    int delta_pic_order_always_zero_flag;
-    int offset_for_non_ref_pic;
-    int offset_for_top_to_bottom_field;
-    int poc_cycle_length;              ///< num_ref_frames_in_pic_order_cnt_cycle
-    int ref_frame_count;               ///< num_ref_frames
-    int gaps_in_frame_num_allowed_flag;
-    int mb_width;                      ///< pic_width_in_mbs_minus1 + 1
-    int mb_height;                     ///< pic_height_in_map_units_minus1 + 1
-    int frame_mbs_only_flag;
-    int mb_aff;                        ///< mb_adaptive_frame_field_flag
-    int direct_8x8_inference_flag;
-    int crop;                          ///< frame_cropping_flag
-
-    /* those 4 are already in luma samples */
-    unsigned int crop_left;            ///< frame_cropping_rect_left_offset
-    unsigned int crop_right;           ///< frame_cropping_rect_right_offset
-    unsigned int crop_top;             ///< frame_cropping_rect_top_offset
-    unsigned int crop_bottom;          ///< frame_cropping_rect_bottom_offset
-    int vui_parameters_present_flag;
-    AVRational sar;
-    int video_signal_type_present_flag;
-    int full_range;
-    int colour_description_present_flag;
-    enum AVColorPrimaries color_primaries;
-    enum AVColorTransferCharacteristic color_trc;
-    enum AVColorSpace colorspace;
-    int timing_info_present_flag;
-    uint32_t num_units_in_tick;
-    uint32_t time_scale;
-    int fixed_frame_rate_flag;
-    short offset_for_ref_frame[256]; // FIXME dyn aloc?
-    int bitstream_restriction_flag;
-    int num_reorder_frames;
-    int scaling_matrix_present;
-    uint8_t scaling_matrix4[6][16];
-    uint8_t scaling_matrix8[6][64];
-    int nal_hrd_parameters_present_flag;
-    int vcl_hrd_parameters_present_flag;
-    int pic_struct_present_flag;
-    int time_offset_length;
-    int cpb_cnt;                          ///< See H.264 E.1.2
-    int initial_cpb_removal_delay_length; ///< initial_cpb_removal_delay_length_minus1 + 1
-    int cpb_removal_delay_length;         ///< cpb_removal_delay_length_minus1 + 1
-    int dpb_output_delay_length;          ///< dpb_output_delay_length_minus1 + 1
-    int bit_depth_luma;                   ///< bit_depth_luma_minus8 + 8
-    int bit_depth_chroma;                 ///< bit_depth_chroma_minus8 + 8
-    int residual_color_transform_flag;    ///< residual_colour_transform_flag
-    int constraint_set_flags;             ///< constraint_set[0-3]_flag
-    uint8_t data[4096];
-    size_t data_size;
-} SPS;
-
-/**
- * Picture parameter set
- */
-typedef struct PPS {
-    unsigned int sps_id;
-    int cabac;                  ///< entropy_coding_mode_flag
-    int pic_order_present;      ///< pic_order_present_flag
-    int slice_group_count;      ///< num_slice_groups_minus1 + 1
-    int mb_slice_group_map_type;
-    unsigned int ref_count[2];  ///< num_ref_idx_l0/1_active_minus1 + 1
-    int weighted_pred;          ///< weighted_pred_flag
-    int weighted_bipred_idc;
-    int init_qp;                ///< pic_init_qp_minus26 + 26
-    int init_qs;                ///< pic_init_qs_minus26 + 26
-    int chroma_qp_index_offset[2];
-    int deblocking_filter_parameters_present; ///< deblocking_filter_parameters_present_flag
-    int constrained_intra_pred;     ///< constrained_intra_pred_flag
-    int redundant_pic_cnt_present;  ///< redundant_pic_cnt_present_flag
-    int transform_8x8_mode;         ///< transform_8x8_mode_flag
-    uint8_t scaling_matrix4[6][16];
-    uint8_t scaling_matrix8[6][64];
-    uint8_t chroma_qp_table[2][QP_MAX_NUM+1];  ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
-    int chroma_qp_diff;
-    uint8_t data[4096];
-    size_t data_size;
-
-    uint32_t dequant4_buffer[6][QP_MAX_NUM + 1][16];
-    uint32_t dequant8_buffer[6][QP_MAX_NUM + 1][64];
-    uint32_t(*dequant4_coeff[6])[16];
-    uint32_t(*dequant8_coeff[6])[64];
-} PPS;
-
-typedef struct H264ParamSets {
-    AVBufferRef *sps_list[MAX_SPS_COUNT];
-    AVBufferRef *pps_list[MAX_PPS_COUNT];
-
-    AVBufferRef *pps_ref;
-    AVBufferRef *sps_ref;
-    /* currently active parameters sets */
-    const PPS *pps;
-    const SPS *sps;
-} H264ParamSets;
 
 /**
  * Memory management control operation opcode.
@@ -267,19 +151,13 @@ typedef struct H264Picture {
     int pic_id;             /**< pic_num (short -> no wrap version of pic_num,
                                  pic_num & max_pic_num; long -> long_pic_num) */
     int long_ref;           ///< 1->long term reference 0->short term reference
-    int ref_poc[2][2][32];  ///< POCs of the frames/fields used as reference (FIXME need per slice)
+    int ref_poc[2][2][32];  ///< POCs of the frames used as reference (FIXME need per slice)
     int ref_count[2][2];    ///< number of entries in ref_poc         (FIXME need per slice)
     int mbaff;              ///< 1 -> MBAFF frame 0-> not MBAFF
     int field_picture;      ///< whether or not picture was encoded in separate fields
 
     int reference;
     int recovered;          ///< picture at IDR or recovery point + recovery count
-    int invalid_gap;
-    int sei_recovery_frame_cnt;
-
-    int crop;
-    int crop_left;
-    int crop_top;
 } H264Picture;
 
 typedef struct H264Ref {
@@ -390,7 +268,7 @@ typedef struct H264SliceContext {
                                          *   according to picture reordering in slice header */
     struct {
         uint8_t op;
-        uint32_t val;
+        uint8_t val;
     } ref_modifications[2][32];
     int nb_ref_modifications[2];
 
@@ -464,10 +342,10 @@ typedef struct H264Context {
     H264Picture DPB[H264_MAX_PICTURE_COUNT];
     H264Picture *cur_pic_ptr;
     H264Picture cur_pic;
-    H264Picture last_pic_for_ec;
 
     H264SliceContext *slice_ctx;
     int            nb_slice_ctx;
+    int            nb_slice_ctx_queued;
 
     H2645Packet pkt;
 
@@ -476,14 +354,6 @@ typedef struct H264Context {
     /* coded dimensions -- 16 * mb w/h */
     int width, height;
     int chroma_x_shift, chroma_y_shift;
-
-    /**
-     * Backup frame properties: needed, because they can be different
-     * between returned frame and last decoded frame.
-     **/
-    int backup_width;
-    int backup_height;
-    enum AVPixelFormat backup_pix_fmt;
 
     int droppable;
     int coded_picture_number;
@@ -496,6 +366,11 @@ typedef struct H264Context {
      * during normal MB decoding and execute it serially at the end.
      */
     int postpone_filter;
+
+    /*
+     * Set to 1 when the current picture is IDR, 0 otherwise.
+     */
+    int picture_idr;
 
     int8_t(*intra4x4_pred_mode);
     H264PredContext hpc;
@@ -538,12 +413,12 @@ typedef struct H264Context {
     uint8_t field_scan[16];
     uint8_t field_scan8x8[64];
     uint8_t field_scan8x8_cavlc[64];
-    uint8_t zigzag_scan_q0[16];
-    uint8_t zigzag_scan8x8_q0[64];
-    uint8_t zigzag_scan8x8_cavlc_q0[64];
-    uint8_t field_scan_q0[16];
-    uint8_t field_scan8x8_q0[64];
-    uint8_t field_scan8x8_cavlc_q0[64];
+    const uint8_t *zigzag_scan_q0;
+    const uint8_t *zigzag_scan8x8_q0;
+    const uint8_t *zigzag_scan8x8_cavlc_q0;
+    const uint8_t *field_scan_q0;
+    const uint8_t *field_scan8x8_q0;
+    const uint8_t *field_scan8x8_cavlc_q0;
 
     int mb_y;
     int mb_height, mb_width;
@@ -571,12 +446,10 @@ typedef struct H264Context {
 
     H264POCContext poc;
 
-    H264Ref default_ref[2];
     H264Picture *short_ref[32];
     H264Picture *long_ref[32];
     H264Picture *delayed_pic[MAX_DELAYED_PIC_COUNT + 2]; // FIXME size?
     int last_pocs[MAX_DELAYED_PIC_COUNT];
-    H264Picture *next_output_pic;
     int next_outputed_poc;
 
     /**
@@ -599,20 +472,6 @@ typedef struct H264Context {
      */
     int current_slice;
 
-    /**
-     * Max number of threads / contexts.
-     * This is equal to AVCodecContext.thread_count unless
-     * multithreaded decoding is impossible, in which case it is
-     * reduced to 1.
-     */
-    int max_contexts;
-
-    /**
-     *  1 if the single thread fallback warning has already been
-     *  displayed, 0 otherwise.
-     */
-    int single_decode_warning;
-
     /** @} */
 
     /**
@@ -622,11 +481,6 @@ typedef struct H264Context {
      * This is used in an attempt to flag soft telecine progressive.
      */
     int prev_interlaced_frame;
-
-    /**
-     * Are the SEI recovery points looking valid.
-     */
-    int valid_recovery_point;
 
     /**
      * recovery_frame is the frame_num at which the next frame should
@@ -649,19 +503,13 @@ typedef struct H264Context {
 
     int frame_recovered;    ///< Initial frame has been completely recovered
 
-    int has_recovery_point;
-
-    int missing_fields;
-
     /* for frame threading, this is set to 1
      * after finish_setup() has been called, so we cannot modify
      * some context properties (which are supposed to stay constant between
      * slices) anymore */
     int setup_finished;
 
-    int cur_chroma_format_idc;
-    int cur_bit_depth_luma;
-    int16_t slice_row[MAX_SLICES]; ///< to detect when MAX_SLICES is too low
+    AVFrame *output_frame;
 
     int enable_er;
 
@@ -677,24 +525,6 @@ typedef struct H264Context {
 extern const uint16_t ff_h264_mb_sizes[4];
 
 /**
- * Uninit H264 param sets structure.
- */
-
-void ff_h264_ps_uninit(H264ParamSets *ps);
-
-/**
- * Decode SPS
- */
-int ff_h264_decode_seq_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
-                                     H264ParamSets *ps, int ignore_truncation);
-
-/**
- * Decode PPS
- */
-int ff_h264_decode_picture_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
-                                         H264ParamSets *ps, int bit_length);
-
-/**
  * Reconstruct bitstream slice_type.
  */
 int ff_h264_get_slice_type(const H264SliceContext *sl);
@@ -705,8 +535,8 @@ int ff_h264_get_slice_type(const H264SliceContext *sl);
  */
 int ff_h264_alloc_tables(H264Context *h);
 
-int ff_h264_decode_ref_pic_list_reordering(const H264Context *h, H264SliceContext *sl);
-int ff_h264_build_ref_list(H264Context *h, H264SliceContext *sl);
+int ff_h264_decode_ref_pic_list_reordering(H264SliceContext *sl, void *logctx);
+int ff_h264_build_ref_list(const H264Context *h, H264SliceContext *sl);
 void ff_h264_remove_all_refs(H264Context *h);
 
 /**
@@ -714,8 +544,8 @@ void ff_h264_remove_all_refs(H264Context *h);
  */
 int ff_h264_execute_ref_pic_marking(H264Context *h);
 
-int ff_h264_decode_ref_pic_marking(const H264Context *h, H264SliceContext *sl,
-                                   GetBitContext *gb);
+int ff_h264_decode_ref_pic_marking(H264SliceContext *sl, GetBitContext *gb,
+                                   const H2645NAL *nal, void *logctx);
 
 void ff_h264_hl_decode_mb(const H264Context *h, H264SliceContext *sl);
 int ff_h264_decode_init(AVCodecContext *avctx);
@@ -734,6 +564,8 @@ int ff_h264_decode_mb_cavlc(const H264Context *h, H264SliceContext *sl);
 int ff_h264_decode_mb_cabac(const H264Context *h, H264SliceContext *sl);
 
 void ff_h264_init_cabac_states(const H264Context *h, H264SliceContext *sl);
+
+void ff_h264_init_dequant_tables(H264Context *h);
 
 void ff_h264_direct_dist_scale_factor(const H264Context *const h, H264SliceContext *sl);
 void ff_h264_direct_ref_list_init(const H264Context *const h, H264SliceContext *sl);
@@ -797,7 +629,7 @@ static const uint8_t scan8[16 * 3 + 3] = {
     0 +  0 * 8, 0 +  5 * 8, 0 + 10 * 8
 };
 
-static av_always_inline uint32_t pack16to32(unsigned a, unsigned b)
+static av_always_inline uint32_t pack16to32(int a, int b)
 {
 #if HAVE_BIGENDIAN
     return (b & 0xFFFF) + (a << 16);
@@ -806,7 +638,7 @@ static av_always_inline uint32_t pack16to32(unsigned a, unsigned b)
 #endif
 }
 
-static av_always_inline uint16_t pack8to16(unsigned a, unsigned b)
+static av_always_inline uint16_t pack8to16(int a, int b)
 {
 #if HAVE_BIGENDIAN
     return (b & 0xFF) + (a << 8);
@@ -953,16 +785,6 @@ static av_always_inline int get_dct8x8_allowed(const H264Context *h, H264SliceCo
                   0x0001000100010001ULL));
 }
 
-static inline int find_start_code(const uint8_t *buf, int buf_size,
-                           int buf_index, int next_avc)
-{
-    uint32_t state = -1;
-
-    buf_index = avpriv_find_start_code(buf + buf_index, buf + next_avc + 1, &state) - buf - 1;
-
-    return FFMIN(buf_index, buf_size);
-}
-
 int ff_h264_field_end(H264Context *h, H264SliceContext *sl, int in_setup);
 
 int ff_h264_ref_picture(H264Context *h, H264Picture *dst, H264Picture *src);
@@ -972,19 +794,19 @@ int ff_h264_slice_context_init(H264Context *h, H264SliceContext *sl);
 
 void ff_h264_draw_horiz_band(const H264Context *h, H264SliceContext *sl, int y, int height);
 
-int ff_h264_decode_slice_header(H264Context *h, H264SliceContext *sl,
-                                const H2645NAL *nal);
-#define SLICE_SINGLETHREAD 1
-#define SLICE_SKIPED 2
-
-int ff_h264_execute_decode_slices(H264Context *h, unsigned context_count);
+/**
+ * Submit a slice for decoding.
+ *
+ * Parse the slice header, starting a new field/frame if necessary. If any
+ * slices are queued for the previous field, they are decoded.
+ */
+int ff_h264_queue_decode_slice(H264Context *h, const H2645NAL *nal);
+int ff_h264_execute_decode_slices(H264Context *h);
 int ff_h264_update_thread_context(AVCodecContext *dst,
                                   const AVCodecContext *src);
 
 void ff_h264_flush_change(H264Context *h);
 
 void ff_h264_free_tables(H264Context *h);
-
-void ff_h264_set_erpic(ERPicture *dst, H264Picture *src);
 
 #endif /* AVCODEC_H264DEC_H */
