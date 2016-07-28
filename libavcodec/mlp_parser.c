@@ -2,20 +2,20 @@
  * MLP parser
  * Copyright (c) 2007 Ian Caulfield
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,8 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/internal.h"
-#include "get_bits.h"
+
+#include "bitstream.h"
 #include "parser.h"
 #include "mlp_parser.h"
 #include "mlp.h"
@@ -44,28 +45,28 @@ static const uint8_t mlp_channels[32] = {
     5, 6, 5, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-const uint64_t ff_mlp_layout[32] = {
+static const uint64_t mlp_layout[32] = {
     AV_CH_LAYOUT_MONO,
     AV_CH_LAYOUT_STEREO,
     AV_CH_LAYOUT_2_1,
-    AV_CH_LAYOUT_QUAD,
+    AV_CH_LAYOUT_2_2,
     AV_CH_LAYOUT_STEREO|AV_CH_LOW_FREQUENCY,
     AV_CH_LAYOUT_2_1|AV_CH_LOW_FREQUENCY,
-    AV_CH_LAYOUT_QUAD|AV_CH_LOW_FREQUENCY,
+    AV_CH_LAYOUT_2_2|AV_CH_LOW_FREQUENCY,
     AV_CH_LAYOUT_SURROUND,
     AV_CH_LAYOUT_4POINT0,
-    AV_CH_LAYOUT_5POINT0_BACK,
+    AV_CH_LAYOUT_5POINT0,
     AV_CH_LAYOUT_SURROUND|AV_CH_LOW_FREQUENCY,
     AV_CH_LAYOUT_4POINT0|AV_CH_LOW_FREQUENCY,
-    AV_CH_LAYOUT_5POINT1_BACK,
+    AV_CH_LAYOUT_5POINT1,
     AV_CH_LAYOUT_4POINT0,
-    AV_CH_LAYOUT_5POINT0_BACK,
+    AV_CH_LAYOUT_5POINT0,
     AV_CH_LAYOUT_SURROUND|AV_CH_LOW_FREQUENCY,
     AV_CH_LAYOUT_4POINT0|AV_CH_LOW_FREQUENCY,
-    AV_CH_LAYOUT_5POINT1_BACK,
-    AV_CH_LAYOUT_QUAD|AV_CH_LOW_FREQUENCY,
-    AV_CH_LAYOUT_5POINT0_BACK,
-    AV_CH_LAYOUT_5POINT1_BACK,
+    AV_CH_LAYOUT_5POINT1,
+    AV_CH_LAYOUT_2_2|AV_CH_LOW_FREQUENCY,
+    AV_CH_LAYOUT_5POINT0,
+    AV_CH_LAYOUT_5POINT1,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
@@ -108,7 +109,7 @@ static int truehd_channels(int chanmap)
     return channels;
 }
 
-uint64_t ff_truehd_layout(int chanmap)
+static uint64_t truehd_layout(int chanmap)
 {
     int i;
     uint64_t layout = 0;
@@ -139,86 +140,84 @@ static int mlp_get_major_sync_size(const uint8_t * buf, int bufsize)
 /** Read a major sync info header - contains high level information about
  *  the stream - sample rate, channel arrangement etc. Most of this
  *  information is not actually necessary for decoding, only for playback.
- *  gb must be a freshly initialized GetBitContext with no bits read.
+ *  bc must be a freshly-initialized BitstreamContext with no bits read.
  */
 
-int ff_mlp_read_major_sync(void *log, MLPHeaderInfo *mh, GetBitContext *gb)
+int ff_mlp_read_major_sync(void *log, MLPHeaderInfo *mh, BitstreamContext *bc)
 {
     int ratebits, channel_arrangement, header_size;
     uint16_t checksum;
 
-    av_assert1(get_bits_count(gb) == 0);
+    assert(bitstream_tell(bc) == 0);
 
-    header_size = mlp_get_major_sync_size(gb->buffer, gb->size_in_bits >> 3);
-    if (header_size < 0 || gb->size_in_bits < header_size << 3) {
+    header_size = mlp_get_major_sync_size(bc->buffer, bc->size_in_bits >> 3);
+    if (header_size < 0 || bc->size_in_bits < header_size << 3) {
         av_log(log, AV_LOG_ERROR, "packet too short, unable to read major sync\n");
         return -1;
     }
 
-    checksum = ff_mlp_checksum16(gb->buffer, header_size - 2);
-    if (checksum != AV_RL16(gb->buffer+header_size-2)) {
+    checksum = ff_mlp_checksum16(bc->buffer, header_size - 2);
+    if (checksum != AV_RL16(bc->buffer + header_size - 2)) {
         av_log(log, AV_LOG_ERROR, "major sync info header checksum error\n");
         return AVERROR_INVALIDDATA;
     }
 
-    if (get_bits_long(gb, 24) != 0xf8726f) /* Sync words */
+    if (bitstream_read(bc, 24) != 0xf8726f) /* Sync words */
         return AVERROR_INVALIDDATA;
 
-    mh->stream_type = get_bits(gb, 8);
+    mh->stream_type = bitstream_read(bc, 8);
     mh->header_size = header_size;
 
     if (mh->stream_type == 0xbb) {
-        mh->group1_bits = mlp_quants[get_bits(gb, 4)];
-        mh->group2_bits = mlp_quants[get_bits(gb, 4)];
+        mh->group1_bits = mlp_quants[bitstream_read(bc, 4)];
+        mh->group2_bits = mlp_quants[bitstream_read(bc, 4)];
 
-        ratebits = get_bits(gb, 4);
+        ratebits = bitstream_read(bc, 4);
         mh->group1_samplerate = mlp_samplerate(ratebits);
-        mh->group2_samplerate = mlp_samplerate(get_bits(gb, 4));
+        mh->group2_samplerate = mlp_samplerate(bitstream_read(bc, 4));
 
-        skip_bits(gb, 11);
+        bitstream_skip(bc, 11);
 
-        mh->channel_arrangement=
-        channel_arrangement    = get_bits(gb, 5);
+        channel_arrangement    = bitstream_read(bc, 5);
         mh->channels_mlp       = mlp_channels[channel_arrangement];
-        mh->channel_layout_mlp = ff_mlp_layout[channel_arrangement];
+        mh->channel_layout_mlp = mlp_layout[channel_arrangement];
     } else if (mh->stream_type == 0xba) {
         mh->group1_bits = 24; // TODO: Is this information actually conveyed anywhere?
         mh->group2_bits = 0;
 
-        ratebits = get_bits(gb, 4);
+        ratebits = bitstream_read(bc, 4);
         mh->group1_samplerate = mlp_samplerate(ratebits);
         mh->group2_samplerate = 0;
 
-        skip_bits(gb, 4);
+        bitstream_skip(bc, 4);
 
-        mh->channel_modifier_thd_stream0 = get_bits(gb, 2);
-        mh->channel_modifier_thd_stream1 = get_bits(gb, 2);
+        mh->channel_modifier_thd_stream0 = bitstream_read(bc, 2);
+        mh->channel_modifier_thd_stream1 = bitstream_read(bc, 2);
 
-        mh->channel_arrangement=
-        channel_arrangement            = get_bits(gb, 5);
+        channel_arrangement            = bitstream_read(bc, 5);
         mh->channels_thd_stream1       = truehd_channels(channel_arrangement);
-        mh->channel_layout_thd_stream1 = ff_truehd_layout(channel_arrangement);
+        mh->channel_layout_thd_stream1 = truehd_layout(channel_arrangement);
 
-        mh->channel_modifier_thd_stream2 = get_bits(gb, 2);
+        mh->channel_modifier_thd_stream2 = bitstream_read(bc, 2);
 
-        channel_arrangement            = get_bits(gb, 13);
+        channel_arrangement            = bitstream_read(bc, 13);
         mh->channels_thd_stream2       = truehd_channels(channel_arrangement);
-        mh->channel_layout_thd_stream2 = ff_truehd_layout(channel_arrangement);
+        mh->channel_layout_thd_stream2 = truehd_layout(channel_arrangement);
     } else
         return AVERROR_INVALIDDATA;
 
     mh->access_unit_size = 40 << (ratebits & 7);
     mh->access_unit_size_pow2 = 64 << (ratebits & 7);
 
-    skip_bits_long(gb, 48);
+    bitstream_skip(bc, 48);
 
-    mh->is_vbr = get_bits1(gb);
+    mh->is_vbr = bitstream_read_bit(bc);
 
-    mh->peak_bitrate = (get_bits(gb, 15) * mh->group1_samplerate + 8) >> 4;
+    mh->peak_bitrate = (bitstream_read(bc, 15) * mh->group1_samplerate + 8) >> 4;
 
-    mh->num_substreams = get_bits(gb, 4);
+    mh->num_substreams = bitstream_read(bc, 4);
 
-    skip_bits_long(gb, 4 + (header_size - 17) * 8);
+    bitstream_skip(bc, 4 + (header_size - 17) * 8);
 
     return 0;
 }
@@ -249,78 +248,65 @@ static int mlp_parse(AVCodecParserContext *s,
     int sync_present;
     uint8_t parity_bits;
     int next;
-    int ret;
     int i, p = 0;
 
     *poutbuf_size = 0;
     if (buf_size == 0)
         return 0;
 
-    if (s->flags & PARSER_FLAG_COMPLETE_FRAMES) {
-        next = buf_size;
-    } else {
+    if (!mp->in_sync) {
+        // Not in sync - find a major sync header
+
+        for (i = 0; i < buf_size; i++) {
+            mp->pc.state = (mp->pc.state << 8) | buf[i];
+            if ((mp->pc.state & 0xfffffffe) == 0xf8726fba &&
+                // ignore if we do not have the data for the start of header
+                mp->pc.index + i >= 7) {
+                mp->in_sync = 1;
+                mp->bytes_left = 0;
+                break;
+            }
+        }
+
         if (!mp->in_sync) {
-            // Not in sync - find a major sync header
-
-            for (i = 0; i < buf_size; i++) {
-                mp->pc.state = (mp->pc.state << 8) | buf[i];
-                if ((mp->pc.state & 0xfffffffe) == 0xf8726fba &&
-                    // ignore if we do not have the data for the start of header
-                    mp->pc.index + i >= 7) {
-                    mp->in_sync = 1;
-                    mp->bytes_left = 0;
-                    break;
-                }
-            }
-
-            if (!mp->in_sync) {
-                if (ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size) != -1)
-                    av_log(avctx, AV_LOG_WARNING, "ff_combine_frame failed\n");
-                return buf_size;
-            }
-
-            if ((ret = ff_combine_frame(&mp->pc, i - 7, &buf, &buf_size)) < 0) {
-                av_log(avctx, AV_LOG_WARNING, "ff_combine_frame failed\n");
-                return ret;
-            }
-
-            return i - 7;
-        }
-
-        if (mp->bytes_left == 0) {
-            // Find length of this packet
-
-            /* Copy overread bytes from last frame into buffer. */
-            for(; mp->pc.overread>0; mp->pc.overread--) {
-                mp->pc.buffer[mp->pc.index++]= mp->pc.buffer[mp->pc.overread_index++];
-            }
-
-            if (mp->pc.index + buf_size < 2) {
-                if (ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size) != -1)
-                    av_log(avctx, AV_LOG_WARNING, "ff_combine_frame failed\n");
-                return buf_size;
-            }
-
-            mp->bytes_left = ((mp->pc.index > 0 ? mp->pc.buffer[0] : buf[0]) << 8)
-                           |  (mp->pc.index > 1 ? mp->pc.buffer[1] : buf[1-mp->pc.index]);
-            mp->bytes_left = (mp->bytes_left & 0xfff) * 2;
-            if (mp->bytes_left <= 0) { // prevent infinite loop
-                goto lost_sync;
-            }
-            mp->bytes_left -= mp->pc.index;
-        }
-
-        next = (mp->bytes_left > buf_size) ? END_NOT_FOUND : mp->bytes_left;
-
-        if (ff_combine_frame(&mp->pc, next, &buf, &buf_size) < 0) {
-            mp->bytes_left -= buf_size;
+            ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size);
             return buf_size;
         }
 
-        mp->bytes_left = 0;
+        ff_combine_frame(&mp->pc, i - 7, &buf, &buf_size);
+
+        return i - 7;
     }
 
-    sync_present = buf_size >= 8 && (AV_RB32(buf + 4) & 0xfffffffe) == 0xf8726fba;
+    if (mp->bytes_left == 0) {
+        // Find length of this packet
+
+        /* Copy overread bytes from last frame into buffer. */
+        for(; mp->pc.overread>0; mp->pc.overread--) {
+            mp->pc.buffer[mp->pc.index++]= mp->pc.buffer[mp->pc.overread_index++];
+        }
+
+        if (mp->pc.index + buf_size < 2) {
+            ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size);
+            return buf_size;
+        }
+
+        mp->bytes_left = ((mp->pc.index > 0 ? mp->pc.buffer[0] : buf[0]) << 8)
+                       |  (mp->pc.index > 1 ? mp->pc.buffer[1] : buf[1-mp->pc.index]);
+        mp->bytes_left = (mp->bytes_left & 0xfff) * 2;
+        mp->bytes_left -= mp->pc.index;
+    }
+
+    next = (mp->bytes_left > buf_size) ? END_NOT_FOUND : mp->bytes_left;
+
+    if (ff_combine_frame(&mp->pc, next, &buf, &buf_size) < 0) {
+        mp->bytes_left -= buf_size;
+        return buf_size;
+    }
+
+    mp->bytes_left = 0;
+
+    sync_present = (AV_RB32(buf + 4) & 0xfffffffe) == 0xf8726fba;
 
     if (!sync_present) {
         /* The first nibble of a frame is a parity check of the 4-byte
@@ -343,11 +329,11 @@ static int mlp_parse(AVCodecParserContext *s,
             goto lost_sync;
         }
     } else {
-        GetBitContext gb;
+        BitstreamContext bc;
         MLPHeaderInfo mh;
 
-        init_get_bits(&gb, buf + 4, (buf_size - 4) << 3);
-        if (ff_mlp_read_major_sync(avctx, &mh, &gb) < 0)
+        bitstream_init8(&bc, buf + 4, buf_size - 4);
+        if (ff_mlp_read_major_sync(avctx, &mh, &bc) < 0)
             goto lost_sync;
 
         avctx->bits_per_raw_sample = mh.group1_bits;
@@ -358,7 +344,6 @@ static int mlp_parse(AVCodecParserContext *s,
         avctx->sample_rate = mh.group1_samplerate;
         s->duration = mh.access_unit_size;
 
-        if(!avctx->channels || !avctx->channel_layout) {
         if (mh.stream_type == 0xbb) {
             /* MLP stream */
             avctx->channels       = mh.channels_mlp;
@@ -372,7 +357,6 @@ static int mlp_parse(AVCodecParserContext *s,
                 avctx->channels       = mh.channels_thd_stream2;
                 avctx->channel_layout = mh.channel_layout_thd_stream2;
             }
-        }
         }
 
         if (!mh.is_vbr) /* Stream is CBR */

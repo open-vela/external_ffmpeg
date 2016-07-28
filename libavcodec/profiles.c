@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,29 +30,19 @@ const AVProfile ff_aac_profiles[] = {
     { FF_PROFILE_AAC_LD,    "LD"       },
     { FF_PROFILE_AAC_ELD,   "ELD"      },
     { FF_PROFILE_AAC_MAIN,  "Main" },
+    { FF_PROFILE_AAC_LOW,   "LC"   },
     { FF_PROFILE_AAC_SSR,   "SSR"  },
     { FF_PROFILE_AAC_LTP,   "LTP"  },
     { FF_PROFILE_UNKNOWN },
 };
 
 const AVProfile ff_dca_profiles[] = {
-    { FF_PROFILE_DTS,         "DTS"         },
-    { FF_PROFILE_DTS_ES,      "DTS-ES"      },
-    { FF_PROFILE_DTS_96_24,   "DTS 96/24"   },
-    { FF_PROFILE_DTS_HD_HRA,  "DTS-HD HRA"  },
-    { FF_PROFILE_DTS_HD_MA,   "DTS-HD MA"   },
-    { FF_PROFILE_DTS_EXPRESS, "DTS Express" },
+    { FF_PROFILE_DTS,        "DTS"        },
+    { FF_PROFILE_DTS_ES,     "DTS-ES"     },
+    { FF_PROFILE_DTS_96_24,  "DTS 96/24"  },
+    { FF_PROFILE_DTS_HD_HRA, "DTS-HD HRA" },
+    { FF_PROFILE_DTS_HD_MA,  "DTS-HD MA"  },
     { FF_PROFILE_UNKNOWN },
-};
-
-const AVProfile ff_dnxhd_profiles[] = {
-  { FF_PROFILE_DNXHD,      "DNXHD"},
-  { FF_PROFILE_DNXHR_LB,   "DNXHR LB"},
-  { FF_PROFILE_DNXHR_SQ,   "DNXHR SQ"},
-  { FF_PROFILE_DNXHR_HQ,   "DNXHR HQ" },
-  { FF_PROFILE_DNXHR_HQX,  "DNXHR HQX"},
-  { FF_PROFILE_DNXHR_444,  "DNXHR 444"},
-  { FF_PROFILE_UNKNOWN },
 };
 
 const AVProfile ff_h264_profiles[] = {
@@ -78,7 +68,6 @@ const AVProfile ff_hevc_profiles[] = {
     { FF_PROFILE_HEVC_MAIN,                 "Main"                },
     { FF_PROFILE_HEVC_MAIN_10,              "Main 10"             },
     { FF_PROFILE_HEVC_MAIN_STILL_PICTURE,   "Main Still Picture"  },
-    { FF_PROFILE_HEVC_REXT,                 "Rext"                },
     { FF_PROFILE_UNKNOWN },
 };
 
@@ -129,45 +118,6 @@ const AVProfile ff_vc1_profiles[] = {
     { FF_PROFILE_VC1_COMPLEX,  "Complex"  },
     { FF_PROFILE_VC1_ADVANCED, "Advanced" },
     { FF_PROFILE_UNKNOWN },
-};
-
-const AVProfile ff_vp9_profiles[] = {
-    { FF_PROFILE_VP9_0, "Profile 0" },
-    { FF_PROFILE_VP9_1, "Profile 1" },
-    { FF_PROFILE_VP9_2, "Profile 2" },
-    { FF_PROFILE_VP9_3, "Profile 3" },
-    { FF_PROFILE_UNKNOWN },
-};
-
-const AVProfile ff_av1_profiles[] = {
-    { FF_PROFILE_AV1_MAIN,         "Main" },
-    { FF_PROFILE_AV1_HIGH,         "High" },
-    { FF_PROFILE_AV1_PROFESSIONAL, "Professional" },
-    { FF_PROFILE_UNKNOWN },
-};
-
-const AVProfile ff_sbc_profiles[] = {
-    { FF_PROFILE_SBC_MSBC, "mSBC" },
-    { FF_PROFILE_UNKNOWN },
-};
-
-const AVProfile ff_prores_profiles[] = {
-    { FF_PROFILE_PRORES_PROXY,    "Proxy"    },
-    { FF_PROFILE_PRORES_LT,       "LT"       },
-    { FF_PROFILE_PRORES_STANDARD, "Standard" },
-    { FF_PROFILE_PRORES_HQ,       "HQ"       },
-    { FF_PROFILE_PRORES_4444,     "4444"     },
-    { FF_PROFILE_PRORES_XQ,       "XQ"       },
-    { FF_PROFILE_UNKNOWN }
-};
-
-const AVProfile ff_mjpeg_profiles[] = {
-    { FF_PROFILE_MJPEG_HUFFMAN_BASELINE_DCT,            "Baseline"    },
-    { FF_PROFILE_MJPEG_HUFFMAN_EXTENDED_SEQUENTIAL_DCT, "Sequential"  },
-    { FF_PROFILE_MJPEG_HUFFMAN_PROGRESSIVE_DCT,         "Progressive" },
-    { FF_PROFILE_MJPEG_HUFFMAN_LOSSLESS,                "Lossless"    },
-    { FF_PROFILE_MJPEG_JPEG_LS,                         "JPEG LS"     },
-    { FF_PROFILE_UNKNOWN }
 };
 
 #endif /* !CONFIG_SMALL */
