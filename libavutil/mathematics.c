@@ -90,7 +90,6 @@ int64_t av_rescale_rnd(int64_t a, int64_t b, int64_t c, enum AVRounding rnd)
             return ad * b + a2;
         }
     } else {
-#if 1
         uint64_t a0  = a & 0xFFFFFFFF;
         uint64_t a1  = a >> 32;
         uint64_t b0  = b & 0xFFFFFFFF;
@@ -116,14 +115,6 @@ int64_t av_rescale_rnd(int64_t a, int64_t b, int64_t c, enum AVRounding rnd)
             return INT64_MIN;
         return t1;
     }
-#else
-        AVInteger ai;
-        ai = av_mul_i(av_int2i(a), av_int2i(b));
-        ai = av_add_i(ai, av_int2i(r));
-
-        return av_i2int(av_div_i(ai, av_int2i(c)));
-    }
-#endif
 }
 
 int64_t av_rescale(int64_t a, int64_t b, int64_t c)
