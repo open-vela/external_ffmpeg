@@ -1,20 +1,20 @@
 /*
  * Duck TrueMotion 2.0 Real Time decoder
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,14 +56,15 @@ static const int16_t *const delta_tabs[] = {
 
 /* Returns the number of bytes consumed from the bytestream, or
  * AVERROR_INVALIDDATA if there was an error while decoding the header. */
-static int truemotion2rt_decode_header(AVCodecContext *avctx, const AVPacket *avpkt)
+static int truemotion2rt_decode_header(AVCodecContext *avctx, AVPacket *avpkt)
 {
     TrueMotion2RTContext *s = avctx->priv_data;
     int header_size;
     uint8_t header_buffer[128] = { 0 };  /* logical maximum header size */
     const uint8_t *buf = avpkt->data;
     int size = avpkt->size;
-    int i;
+    int width, height;
+    int ret, i;
 
     if (size < 1) {
         av_log(avctx, AV_LOG_ERROR, "input packet too small (%d)\n", size);
@@ -90,8 +91,12 @@ static int truemotion2rt_decode_header(AVCodecContext *avctx, const AVPacket *av
     if (s->delta_size < 2 || s->delta_size > 4)
         return AVERROR_INVALIDDATA;
 
-    avctx->height = AV_RL16(header_buffer + 5);
-    avctx->width  = AV_RL16(header_buffer + 7);
+    height = AV_RL16(header_buffer + 5);
+    width  = AV_RL16(header_buffer + 7);
+
+    ret = ff_set_dimensions(avctx, width, height);
+    if (ret < 0)
+        return ret;
 
     av_log(avctx, AV_LOG_DEBUG, "Header size: %d\n", header_size);
     return header_size;

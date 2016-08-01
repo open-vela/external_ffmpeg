@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -861,12 +861,12 @@ static int vaapi_encode_h264_init_sequence_params(AVCodecContext *avctx)
             // Try to scale these to a sensible range so that the
             // golomb encode of the value is not overlong.
             mseq->bit_rate_scale =
-                av_clip_uintp2(av_log2(avctx->bit_rate) - 15, 4);
+                av_clip(av_log2(avctx->bit_rate) - 15, 0, 15);
             mseq->bit_rate_value_minus1[0] =
                 (avctx->bit_rate >> mseq->bit_rate_scale) - 1;
 
             mseq->cpb_size_scale =
-                av_clip_uintp2(av_log2(priv->hrd_params.hrd.buffer_size) - 15, 4);
+                av_clip(av_log2(priv->hrd_params.hrd.buffer_size) - 15, 0, 15);
             mseq->cpb_size_value_minus1[0] =
                 (priv->hrd_params.hrd.buffer_size >> mseq->cpb_size_scale) - 1;
 
@@ -1090,12 +1090,6 @@ static av_cold int vaapi_encode_h264_init_constant_bitrate(AVCodecContext *avctx
     int hrd_buffer_size;
     int hrd_initial_buffer_fullness;
 
-    if (avctx->bit_rate > INT32_MAX) {
-        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
-               "higher is not supported.\n");
-        return AVERROR(EINVAL);
-    }
-
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;
     else
@@ -1134,7 +1128,7 @@ static av_cold int vaapi_encode_h264_init_constant_bitrate(AVCodecContext *avctx
     priv->fixed_qp_p   = 26;
     priv->fixed_qp_b   = 26;
 
-    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
+    av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %d bps.\n",
            avctx->bit_rate);
     return 0;
 }
