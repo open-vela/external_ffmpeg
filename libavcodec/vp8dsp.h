@@ -2,20 +2,20 @@
  * Copyright (C) 2010 David Conrad
  * Copyright (C) 2010 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -70,7 +70,7 @@ typedef struct VP8DSPContext {
     void (*vp8_h_loop_filter_simple)(uint8_t *dst, ptrdiff_t stride, int flim);
 
     /**
-     * first dimension: 4-log2(width), height is assumed equal to width
+     * first dimension: 4-log2(width)
      * second dimension: 0 if no vertical interpolation is needed;
      *                   1 4-tap vertical interpolation filter (my & 1)
      *                   2 6-tap vertical interpolation filter (!(my & 1))
@@ -98,7 +98,6 @@ void ff_vp78dsp_init_x86(VP8DSPContext *c);
 void ff_vp8dsp_init(VP8DSPContext *c);
 void ff_vp8dsp_init_arm(VP8DSPContext *c);
 void ff_vp8dsp_init_x86(VP8DSPContext *c);
-void ff_vp8dsp_init_mips(VP8DSPContext *c);
 
 #define IS_VP7 1
 #define IS_VP8 0
