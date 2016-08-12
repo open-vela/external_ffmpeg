@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -342,14 +342,13 @@ static int scale_vaapi_filter_frame(AVFilterLink *inlink, AVFrame *input_frame)
         goto fail_after_render;
     }
 
-    if (ctx->hwctx->driver_quirks &
-        AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS) {
-        vas = vaDestroyBuffer(ctx->hwctx->display, params_id);
-        if (vas != VA_STATUS_SUCCESS) {
-            av_log(ctx, AV_LOG_ERROR, "Failed to free parameter buffer: "
-                   "%d (%s).\n", vas, vaErrorStr(vas));
-            // And ignore.
-        }
+    // This doesn't get freed automatically for some reason.
+    vas = vaDestroyBuffer(ctx->hwctx->display, params_id);
+    if (vas != VA_STATUS_SUCCESS) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to free parameter buffer: "
+               "%d (%s).\n", vas, vaErrorStr(vas));
+        err = AVERROR(EIO);
+        goto fail;
     }
 
     av_frame_copy_props(output_frame, input_frame);
@@ -411,7 +410,7 @@ static av_cold void scale_vaapi_uninit(AVFilterContext *avctx)
 
 
 #define OFFSET(x) offsetof(ScaleVAAPIContext, x)
-#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM)
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption scale_vaapi_options[] = {
     { "w", "Output video width",
       OFFSET(output_width),  AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, .flags = FLAGS },
