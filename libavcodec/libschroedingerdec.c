@@ -2,20 +2,20 @@
  * Dirac decoder support via Schroedinger libraries
  * Copyright (c) 2008 BBC, Anuradha Suraparaju <asuraparaju at gmail dot com >
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -130,7 +130,7 @@ static SchroBuffer *find_next_parse_unit(SchroParseUnitContext *parse_ctx)
 }
 
 /**
-* Returns Libav chroma format.
+* Returns FFmpeg chroma format.
 */
 static enum AVPixelFormat get_chroma_format(SchroChromaFormat schro_pix_fmt)
 {
@@ -175,7 +175,7 @@ static void libschroedinger_handle_first_access_unit(AVCodecContext *avctx)
 
     p_schro_params->format = schro_decoder_get_video_format(decoder);
 
-    /* Tell Libav about sequence details. */
+    /* Tell FFmpeg about sequence details. */
     if (av_image_check_size(p_schro_params->format->width,
                             p_schro_params->format->height, 0, avctx) < 0) {
         av_log(avctx, AV_LOG_ERROR, "invalid dimensions (%dx%d)\n",
@@ -308,10 +308,10 @@ static int libschroedinger_decode_frame(AVCodecContext *avctx,
     framewithpts = ff_schro_queue_pop(&p_schro_params->dec_frame_queue);
 
     if (framewithpts && framewithpts->frame) {
-        if (ff_get_buffer(avctx, avframe, 0) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Unable to allocate buffer\n");
-            return AVERROR(ENOMEM);
-        }
+        int ret;
+
+        if ((ret = ff_get_buffer(avctx, avframe, 0)) < 0)
+            return ret;
 
         memcpy(avframe->data[0],
                framewithpts->frame->components[0].data,
@@ -326,12 +326,7 @@ static int libschroedinger_decode_frame(AVCodecContext *avctx,
                framewithpts->frame->components[2].length);
 
         /* Fill frame with current buffer data from Schroedinger. */
-        avframe->pts = framewithpts->pts;
-#if FF_API_PKT_PTS
-FF_DISABLE_DEPRECATION_WARNINGS
-        avframe->pkt_pts = avframe->pts;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
+        avframe->pkt_pts = framewithpts->pts;
         avframe->linesize[0] = framewithpts->frame->components[0].stride;
         avframe->linesize[1] = framewithpts->frame->components[1].stride;
         avframe->linesize[2] = framewithpts->frame->components[2].stride;
