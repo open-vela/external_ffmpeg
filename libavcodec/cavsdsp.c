@@ -5,20 +5,20 @@
  *
  * Copyright (c) 2006  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,8 +42,7 @@
 #define Q1 p0_p[ 1*stride]
 #define Q2 p0_p[ 2*stride]
 
-static inline void loop_filter_l2(uint8_t *p0_p, ptrdiff_t stride, int alpha, int beta)
-{
+static inline void loop_filter_l2(uint8_t *p0_p,int stride,int alpha, int beta) {
     int p0 = P0;
     int q0 = Q0;
 
@@ -63,8 +62,7 @@ static inline void loop_filter_l2(uint8_t *p0_p, ptrdiff_t stride, int alpha, in
     }
 }
 
-static inline void loop_filter_l1(uint8_t *p0_p, ptrdiff_t stride, int alpha, int beta, int tc)
-{
+static inline void loop_filter_l1(uint8_t *p0_p, int stride, int alpha, int beta, int tc) {
     int p0 = P0;
     int q0 = Q0;
 
@@ -83,8 +81,7 @@ static inline void loop_filter_l1(uint8_t *p0_p, ptrdiff_t stride, int alpha, in
     }
 }
 
-static inline void loop_filter_c2(uint8_t *p0_p, ptrdiff_t stride, int alpha, int beta)
-{
+static inline void loop_filter_c2(uint8_t *p0_p,int stride,int alpha, int beta) {
     int p0 = P0;
     int q0 = Q0;
 
@@ -102,9 +99,8 @@ static inline void loop_filter_c2(uint8_t *p0_p, ptrdiff_t stride, int alpha, in
     }
 }
 
-static inline void loop_filter_c1(uint8_t *p0_p, ptrdiff_t stride, int alpha, int beta,
-                                  int tc)
-{
+static inline void loop_filter_c1(uint8_t *p0_p,int stride,int alpha, int beta,
+                                  int tc) {
     if(abs(P0-Q0)<alpha && abs(P1-P0)<beta && abs(Q1-Q0)<beta) {
         int delta = av_clip(((Q0-P0)*3+P1-Q1+4)>>3, -tc, tc);
         P0 = av_clip_uint8(P0+delta);
@@ -119,9 +115,8 @@ static inline void loop_filter_c1(uint8_t *p0_p, ptrdiff_t stride, int alpha, in
 #undef Q1
 #undef Q2
 
-static void cavs_filter_lv_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, int tc,
-                             int bs1, int bs2)
-{
+static void cavs_filter_lv_c(uint8_t *d, int stride, int alpha, int beta, int tc,
+                           int bs1, int bs2) {
     int i;
     if(bs1==2)
         for(i=0;i<16;i++)
@@ -136,9 +131,8 @@ static void cavs_filter_lv_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, 
     }
 }
 
-static void cavs_filter_lh_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, int tc,
-                             int bs1, int bs2)
-{
+static void cavs_filter_lh_c(uint8_t *d, int stride, int alpha, int beta, int tc,
+                           int bs1, int bs2) {
     int i;
     if(bs1==2)
         for(i=0;i<16;i++)
@@ -153,9 +147,8 @@ static void cavs_filter_lh_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, 
     }
 }
 
-static void cavs_filter_cv_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, int tc,
-                             int bs1, int bs2)
-{
+static void cavs_filter_cv_c(uint8_t *d, int stride, int alpha, int beta, int tc,
+                           int bs1, int bs2) {
     int i;
     if(bs1==2)
         for(i=0;i<8;i++)
@@ -170,9 +163,8 @@ static void cavs_filter_cv_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, 
     }
 }
 
-static void cavs_filter_ch_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, int tc,
-                             int bs1, int bs2)
-{
+static void cavs_filter_ch_c(uint8_t *d, int stride, int alpha, int beta, int tc,
+                           int bs1, int bs2) {
     int i;
     if(bs1==2)
         for(i=0;i<8;i++)
@@ -193,8 +185,7 @@ static void cavs_filter_ch_c(uint8_t *d, ptrdiff_t stride, int alpha, int beta, 
  *
  ****************************************************************************/
 
-static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, ptrdiff_t stride)
-{
+static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, int stride) {
     int i;
     int16_t (*src)[8] = (int16_t(*)[8])block;
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
@@ -270,8 +261,7 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, ptrdiff_t stride)
  ****************************************************************************/
 
 #define CAVS_SUBPIX(OPNAME, OP, NAME, A, B, C, D, E, F) \
-static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, const uint8_t *src, ptrdiff_t dstStride, ptrdiff_t srcStride)\
-{                                                                       \
+static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
     const int h=8;\
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
@@ -290,8 +280,7 @@ static void OPNAME ## cavs_filt8_h_ ## NAME(uint8_t *dst, const uint8_t *src, pt
     }\
 }\
 \
-static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, const uint8_t *src, ptrdiff_t dstStride, ptrdiff_t srcStride)\
-{                                                                       \
+static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
     const int w=8;\
     const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;\
     int i;\
@@ -323,8 +312,7 @@ static void OPNAME ## cavs_filt8_v_  ## NAME(uint8_t *dst, const uint8_t *src, p
     }\
 }\
 \
-static void OPNAME ## cavs_filt16_v_ ## NAME(uint8_t *dst, const uint8_t *src, ptrdiff_t dstStride, ptrdiff_t srcStride)\
-{                                                                       \
+static void OPNAME ## cavs_filt16_v_ ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
     OPNAME ## cavs_filt8_v_ ## NAME(dst  , src  , dstStride, srcStride);\
     OPNAME ## cavs_filt8_v_ ## NAME(dst+8, src+8, dstStride, srcStride);\
     src += 8*srcStride;\
@@ -333,8 +321,7 @@ static void OPNAME ## cavs_filt16_v_ ## NAME(uint8_t *dst, const uint8_t *src, p
     OPNAME ## cavs_filt8_v_ ## NAME(dst+8, src+8, dstStride, srcStride);\
 }\
 \
-static void OPNAME ## cavs_filt16_h_ ## NAME(uint8_t *dst, const uint8_t *src, ptrdiff_t dstStride, ptrdiff_t srcStride)\
-{                                                                       \
+static void OPNAME ## cavs_filt16_h_ ## NAME(uint8_t *dst, const uint8_t *src, int dstStride, int srcStride){\
     OPNAME ## cavs_filt8_h_ ## NAME(dst  , src  , dstStride, srcStride);\
     OPNAME ## cavs_filt8_h_ ## NAME(dst+8, src+8, dstStride, srcStride);\
     src += 8*srcStride;\
@@ -344,8 +331,7 @@ static void OPNAME ## cavs_filt16_h_ ## NAME(uint8_t *dst, const uint8_t *src, p
 }\
 
 #define CAVS_SUBPIX_HV(OPNAME, OP, NAME, AH, BH, CH, DH, EH, FH, AV, BV, CV, DV, EV, FV, FULL) \
-static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, ptrdiff_t dstStride, ptrdiff_t srcStride)\
-{                                                                       \
+static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int dstStride, int srcStride){\
     int16_t temp[8*(8+5)];\
     int16_t *tmp = temp;\
     const int h=8;\
@@ -426,8 +412,7 @@ static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, 
     }\
 }\
 \
-static void OPNAME ## cavs_filt16_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, ptrdiff_t dstStride, ptrdiff_t srcStride)\
-{                                                                       \
+static void OPNAME ## cavs_filt16_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, int dstStride, int srcStride){ \
     OPNAME ## cavs_filt8_hv_ ## NAME(dst  , src1,   src2  , dstStride, srcStride); \
     OPNAME ## cavs_filt8_hv_ ## NAME(dst+8, src1+8, src2+8, dstStride, srcStride); \
     src1 += 8*srcStride;\
