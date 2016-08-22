@@ -2,27 +2,27 @@
  * Floating point AAN IDCT
  * Copyright (c) 2008 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "faanidct.h"
 #include "libavutil/common.h"
 
 /* To allow switching to double. */
-#define FLOAT float
+typedef float FLOAT;
 
 #define B0 1.0000000000000000000000
 #define B1 1.3870398453221474618216 // cos(pi*1/16)sqrt(2)
@@ -62,8 +62,17 @@ static inline void p8idct(int16_t data[64], FLOAT temp[64], uint8_t *dest, int s
         od07=  s17 + s53;
         od25= (s17 - s53)*(2*A4);
 
+#if 0 //these 2 are equivalent
+        {
+            FLOAT tmp0;
+            tmp0 = (d17 + d53) *  (2 * A2);
+            od34 =  d17        *  (2 * B6) - tmp0;
+            od16 =  d53        * (-2 * B2) + tmp0;
+        }
+#else
         od34=  d17*(2*(B6-A2)) - d53*(2*A2);
         od16=  d53*(2*(A2-B2)) + d17*(2*A2);
+#endif
 
         od16 -= od07;
         od25 -= od16;
