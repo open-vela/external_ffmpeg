@@ -3,20 +3,20 @@
  * Copyright (C) 2010 Ronald S. Bultje
  * Copyright (C) 2014 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
  */
 
 #include "libavutil/common.h"
-#include "libavutil/intreadwrite.h"
 
 #include "mathops.h"
 #include "vp8dsp.h"
@@ -72,7 +71,10 @@ static void vp7_luma_dc_wht_c(int16_t block[4][4][16], int16_t dc[16])
         b1 = (tmp[i + 0] - tmp[i + 8]) * 23170;
         c1 = tmp[i + 4] * 12540 - tmp[i + 12] * 30274;
         d1 = tmp[i + 4] * 30274 + tmp[i + 12] * 12540;
-        AV_ZERO64(dc + i * 4);
+        dc[i * 4 + 0] = 0;
+        dc[i * 4 + 1] = 0;
+        dc[i * 4 + 2] = 0;
+        dc[i * 4 + 3] = 0;
         block[0][i][0] = (a1 + d1 + 0x20000) >> 18;
         block[3][i][0] = (a1 - d1 + 0x20000) >> 18;
         block[1][i][0] = (b1 + c1 + 0x20000) >> 18;
@@ -103,7 +105,10 @@ static void vp7_idct_add_c(uint8_t *dst, int16_t block[16], ptrdiff_t stride)
         b1 = (block[i * 4 + 0] - block[i * 4 + 2]) * 23170;
         c1 = block[i * 4 + 1] * 12540 - block[i * 4 + 3] * 30274;
         d1 = block[i * 4 + 1] * 30274 + block[i * 4 + 3] * 12540;
-        AV_ZERO64(block + i * 4);
+        block[i * 4 + 0] = 0;
+        block[i * 4 + 1] = 0;
+        block[i * 4 + 2] = 0;
+        block[i * 4 + 3] = 0;
         tmp[i * 4 + 0] = (a1 + d1) >> 14;
         tmp[i * 4 + 3] = (a1 - d1) >> 14;
         tmp[i * 4 + 1] = (b1 + c1) >> 14;
@@ -166,7 +171,10 @@ static void vp8_luma_dc_wht_c(int16_t block[4][4][16], int16_t dc[16])
         t1 = dc[i * 4 + 1] + dc[i * 4 + 2];
         t2 = dc[i * 4 + 1] - dc[i * 4 + 2];
         t3 = dc[i * 4 + 0] - dc[i * 4 + 3] + 3; // rounding
-        AV_ZERO64(dc + i * 4);
+        dc[i * 4 + 0] = 0;
+        dc[i * 4 + 1] = 0;
+        dc[i * 4 + 2] = 0;
+        dc[i * 4 + 3] = 0;
 
         block[i][0][0] = (t0 + t1) >> 3;
         block[i][1][0] = (t3 + t2) >> 3;
@@ -254,7 +262,7 @@ MK_IDCT_DC_ADD4_C(vp8)
     int av_unused q2 = p[ 2 * stride];                                        \
     int av_unused q3 = p[ 3 * stride];
 
-#define clip_int8(n) (cm[(n) + 0x80] - 0x80)
+#define clip_int8(n) (cm[n + 0x80] - 0x80)
 
 static av_always_inline void filter_common(uint8_t *p, ptrdiff_t stride,
                                            int is4tap, int is_vp7)
@@ -735,7 +743,5 @@ av_cold void ff_vp8dsp_init(VP8DSPContext *dsp)
         ff_vp8dsp_init_arm(dsp);
     if (ARCH_X86)
         ff_vp8dsp_init_x86(dsp);
-    if (ARCH_MIPS)
-        ff_vp8dsp_init_mips(dsp);
 }
 #endif /* CONFIG_VP8_DECODER */
