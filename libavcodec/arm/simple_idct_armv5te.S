@@ -4,20 +4,20 @@
  * Copyright (c) 2001 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2006 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -148,12 +148,6 @@ endfunc
         ldr    a4, [a1]              /* a4 = col[1:0] */
         mov    ip, #16384
         sub    ip, ip, #1            /* ip = W4 */
-#if 0
-        mov    v1, #(1<<(COL_SHIFT-1))
-        smlabt v2, ip, a4, v1        /* v2 = W4*col[1] + (1<<(COL_SHIFT-1)) */
-        smlabb v1, ip, a4, v1        /* v1 = W4*col[0] + (1<<(COL_SHIFT-1)) */
-        ldr    a4, [a1, #(16*4)]
-#else
         mov    v1, #((1<<(COL_SHIFT-1))/W4) /* this matches the C version */
         add    v2, v1, a4, asr #16
         rsb    v2, v2, v2, lsl #14
@@ -161,7 +155,6 @@ endfunc
         add    v1, v1, a4, asr #16
         ldr    a4, [a1, #(16*4)]
         rsb    v1, v1, v1, lsl #14
-#endif
 
         smulbb lr, ip, a4
         smulbt a3, ip, a4
