@@ -2,20 +2,20 @@
  * MMAL Video Decoder
  * Copyright (c) 2015 Rodger Combs
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -360,9 +360,6 @@ static av_cold int ffmmal_init_decoder(AVCodecContext *avctx)
     case AV_CODEC_ID_MPEG2VIDEO:
         format_in->encoding = MMAL_ENCODING_MP2V;
         break;
-    case AV_CODEC_ID_MPEG4:
-        format_in->encoding = MMAL_ENCODING_MP4V;
-        break;
     case AV_CODEC_ID_VC1:
         format_in->encoding = MMAL_ENCODING_WVC1;
         break;
@@ -634,7 +631,12 @@ static int ffmal_copy_frame(AVCodecContext *avctx,  AVFrame *frame,
                       avctx->pix_fmt, avctx->width, avctx->height);
     }
 
-    frame->pkt_pts = buffer->pts == MMAL_TIME_UNKNOWN ? AV_NOPTS_VALUE : buffer->pts;
+    frame->pts = buffer->pts == MMAL_TIME_UNKNOWN ? AV_NOPTS_VALUE : buffer->pts;
+#if FF_API_PKT_PTS
+FF_DISABLE_DEPRECATION_WARNINGS
+    frame->pkt_pts = frame->pts;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     frame->pkt_dts = AV_NOPTS_VALUE;
 
 done:
@@ -798,13 +800,6 @@ AVHWAccel ff_mpeg2_mmal_hwaccel = {
     .pix_fmt    = AV_PIX_FMT_MMAL,
 };
 
-AVHWAccel ff_mpeg4_mmal_hwaccel = {
-    .name       = "mpeg4_mmal",
-    .type       = AVMEDIA_TYPE_VIDEO,
-    .id         = AV_CODEC_ID_MPEG4,
-    .pix_fmt    = AV_PIX_FMT_MMAL,
-};
-
 AVHWAccel ff_vc1_mmal_hwaccel = {
     .name       = "vc1_mmal",
     .type       = AVMEDIA_TYPE_VIDEO,
@@ -847,5 +842,4 @@ static const AVOption options[]={
 
 FFMMAL_DEC(h264, AV_CODEC_ID_H264)
 FFMMAL_DEC(mpeg2, AV_CODEC_ID_MPEG2VIDEO)
-FFMMAL_DEC(mpeg4, AV_CODEC_ID_MPEG4)
 FFMMAL_DEC(vc1, AV_CODEC_ID_VC1)
