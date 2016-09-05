@@ -3,20 +3,20 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -58,7 +58,7 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
     void     *dxva_data;
     unsigned dxva_size;
     int      result;
-    HRESULT hr = 0;
+    HRESULT hr;
 
 #if CONFIG_D3D11VA
     if (avctx->pix_fmt == AV_PIX_FMT_D3D11VA_VLD)
@@ -137,7 +137,7 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
 #if CONFIG_DXVA2
     DXVA2_DecodeBufferDesc          buffer2[4];
 #endif
-    DECODER_BUFFER_DESC             *buffer = NULL, *buffer_slice = NULL;
+    DECODER_BUFFER_DESC             *buffer,*buffer_slice;
     int result, runs = 0;
     HRESULT hr;
     unsigned type;
