@@ -2,20 +2,20 @@
  * OpenH264 video decoder
  * Copyright (C) 2016 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -72,12 +72,15 @@ static av_cold int svc_decode_init(AVCodecContext *avctx)
         return err;
 
     s->packet_fifo = av_fifo_alloc(sizeof(AVPacket));
-    if (!s->packet_fifo)
-        return AVERROR(ENOMEM);
+    if (!s->packet_fifo) {
+        err = AVERROR(ENOMEM);
+        goto fail;
+    }
 
     if (WelsCreateDecoder(&s->decoder)) {
         av_log(avctx, AV_LOG_ERROR, "Unable to create decoder\n");
-        return AVERROR_UNKNOWN;
+        err = AVERROR_UNKNOWN;
+        goto fail;
     }
 
     // Pass all libopenh264 messages to our callback, to allow ourselves to filter them.
@@ -95,12 +98,14 @@ static av_cold int svc_decode_init(AVCodecContext *avctx)
 
     if ((*s->decoder)->Initialize(s->decoder, &param) != cmResultSuccess) {
         av_log(avctx, AV_LOG_ERROR, "Initialize failed\n");
-        return AVERROR_UNKNOWN;
+        err = AVERROR_UNKNOWN;
+        goto fail;
     }
 
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    return 0;
+fail:
+    return err;
 }
 
 static int init_bsf(AVCodecContext *avctx)
@@ -200,7 +205,9 @@ static int svc_decode_frame(AVCodecContext *avctx, void *data,
             continue;
         }
 
-        ff_set_dimensions(avctx, info.UsrData.sSystemBuffer.iWidth, info.UsrData.sSystemBuffer.iHeight);
+        ret = ff_set_dimensions(avctx, info.UsrData.sSystemBuffer.iWidth, info.UsrData.sSystemBuffer.iHeight);
+        if (ret < 0)
+            return ret;
         // The decoder doesn't (currently) support decoding into a user
         // provided buffer, so do a copy instead.
         if (ff_get_buffer(avctx, avframe, 0) < 0) {
@@ -214,11 +221,7 @@ static int svc_decode_frame(AVCodecContext *avctx, void *data,
 
         avframe->pts     = s->pkt_filtered.pts;
         avframe->pkt_dts = s->pkt_filtered.dts;
-#if FF_API_PKT_PTS
-FF_DISABLE_DEPRECATION_WARNINGS
         avframe->pkt_pts = s->pkt_filtered.pts;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
         *got_frame = 1;
     }

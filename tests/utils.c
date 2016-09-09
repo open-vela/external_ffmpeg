@@ -1,18 +1,20 @@
 /*
- * This file is part of Libav.
+ * copyright (c) Sebastien Bechet <s.bechet@av7.net>
  *
- * Libav is free software; you can redistribute it and/or
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +25,7 @@
 
 #define SCALEBITS 8
 #define ONE_HALF  (1 << (SCALEBITS - 1))
-#define FIX(x)    ((int) ((x) * (1L << SCALEBITS) + 0.5))
+#define FIX(x)    ((int) ((x) * (1 << SCALEBITS) + 0.5))
 
 #define err_if(expr) do {                                              \
     if (expr) {                                                        \
@@ -33,12 +35,12 @@
 } while (0)
 
 static void rgb24_to_yuv420p(unsigned char *lum, unsigned char *cb,
-                             unsigned char *cr, unsigned char *src,
+                             unsigned char *cr, const unsigned char *src,
                              int width, int height)
 {
     int wrap, wrap3, x, y;
     int r, g, b, r1, g1, b1;
-    unsigned char *p;
+    const unsigned char *p;
 
     wrap  = width;
     wrap3 = width * 3;
@@ -102,7 +104,7 @@ static void rgb24_to_yuv420p(unsigned char *lum, unsigned char *cb,
 #define DEFAULT_NB_PICT  50
 
 static void pgmyuv_save(const char *filename, int w, int h,
-                        unsigned char *rgb_tab)
+                        const unsigned char *rgb_tab)
 {
     FILE *f;
     int i, h2, w2;
