@@ -2,20 +2,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include "libavutil/error.h"
+#include "libavutil/ffmath.h"
 
 #include "opus.h"
 #include "vorbis.h"
@@ -327,13 +328,13 @@ av_cold int ff_opus_parse_extradata(AVCodecContext *avctx,
 
     channels = avctx->extradata ? extradata[9] : (avctx->channels == 1) ? 1 : 2;
     if (!channels) {
-        av_log(avctx, AV_LOG_ERROR, "Zero channel count specified in the extadata\n");
+        av_log(avctx, AV_LOG_ERROR, "Zero channel count specified in the extradata\n");
         return AVERROR_INVALIDDATA;
     }
 
     s->gain_i = AV_RL16(extradata + 16);
     if (s->gain_i)
-        s->gain = pow(10, s->gain_i / (20.0 * 256));
+        s->gain = ff_exp10(s->gain_i / (20.0 * 256));
 
     map_type = extradata[18];
     if (!map_type) {
@@ -346,7 +347,7 @@ av_cold int ff_opus_parse_extradata(AVCodecContext *avctx,
         streams        = 1;
         stereo_streams = channels - 1;
         channel_map    = default_channel_map;
-    } else if (map_type == 1 || map_type == 255) {
+    } else if (map_type == 1 || map_type == 2 || map_type == 255) {
         if (extradata_size < 21 + channels) {
             av_log(avctx, AV_LOG_ERROR, "Invalid extradata size: %d\n",
                    extradata_size);
@@ -370,6 +371,15 @@ av_cold int ff_opus_parse_extradata(AVCodecContext *avctx,
             }
             layout = ff_vorbis_channel_layouts[channels - 1];
             channel_reorder = channel_reorder_vorbis;
+        } else if (map_type == 2) {
+            int ambisonic_order = ff_sqrt(channels) - 1;
+            if (channels != (ambisonic_order + 1) * (ambisonic_order + 1)) {
+                av_log(avctx, AV_LOG_ERROR,
+                       "Channel mapping 2 is only specified for channel counts"
+                       " which can be written as (n + 1)^2 for nonnegative integer n\n");
+                return AVERROR_INVALIDDATA;
+            }
+            layout = 0;
         } else
             layout = 0;
 
