@@ -2,28 +2,27 @@
  * MagicYUV decoder
  * Copyright (c) 2016 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "libavutil/pixdesc.h"
-#include "libavutil/qsort.h"
+#include "../libavutil/pixdesc.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
@@ -85,7 +84,7 @@ static int huff_build(VLC *vlc, uint8_t *len)
         he[i].sym = 255 - i;
         he[i].len = len[i];
     }
-    AV_QSORT(he, 256, HuffEntry, huff_cmp_len);
+    qsort(he, 256, sizeof(HuffEntry), huff_cmp_len);
 
     code = 1;
     for (i = 255; i >= 0; i--) {
@@ -114,8 +113,8 @@ static int magy_decode_slice(AVCodecContext *avctx, void *tdata,
 
     for (i = 0; i < s->planes; i++) {
         int left, lefttop, top;
-        int height = AV_CEIL_RSHIFT(FFMIN(s->slice_height, avctx->coded_height - j * s->slice_height), s->vshift[i]);
-        int width = AV_CEIL_RSHIFT(avctx->coded_width, s->hshift[i]);
+        int height = AV_CEIL_RSHIFT(FFMIN(s->slice_height, avctx->height - j * s->slice_height), s->vshift[i]);
+        int width = AV_CEIL_RSHIFT(avctx->width, s->hshift[i]);
         int sheight = AV_CEIL_RSHIFT(s->slice_height, s->vshift[i]);
         ptrdiff_t fake_stride = p->linesize[i] * (1 + interlaced);
         ptrdiff_t stride = p->linesize[i];
@@ -214,8 +213,8 @@ static int magy_decode_slice(AVCodecContext *avctx, void *tdata,
     }
 
     if (s->decorrelate) {
-        int height = FFMIN(s->slice_height, avctx->coded_height - j * s->slice_height);
-        int width = avctx->coded_width;
+        int height = FFMIN(s->slice_height, avctx->height - j * s->slice_height);
+        int width = avctx->width;
         uint8_t *b = p->data[0] + j * s->slice_height * p->linesize[0];
         uint8_t *g = p->data[1] + j * s->slice_height * p->linesize[1];
         uint8_t *r = p->data[2] + j * s->slice_height * p->linesize[2];
@@ -315,12 +314,12 @@ static int magy_decode_frame(AVCodecContext *avctx, void *data,
         return ret;
 
     slice_width = bytestream2_get_le32(&gbyte);
-    if (slice_width != avctx->coded_width) {
+    if (slice_width != width) {
         avpriv_request_sample(avctx, "Slice width %"PRIu32, slice_width);
         return AVERROR_PATCHWELCOME;
     }
     s->slice_height = bytestream2_get_le32(&gbyte);
-    if (s->slice_height <= 0 || s->slice_height > INT_MAX - avctx->coded_height) {
+    if (s->slice_height <= 0 || s->slice_height > INT_MAX - height) {
         av_log(avctx, AV_LOG_ERROR,
                "invalid slice height: %d\n", s->slice_height);
         return AVERROR_INVALIDDATA;
@@ -328,7 +327,7 @@ static int magy_decode_frame(AVCodecContext *avctx, void *data,
 
     bytestream2_skip(&gbyte, 4);
 
-    s->nb_slices = (avctx->coded_height + s->slice_height - 1) / s->slice_height;
+    s->nb_slices = (height + s->slice_height - 1) / s->slice_height;
     if (s->nb_slices > INT_MAX / sizeof(Slice)) {
         av_log(avctx, AV_LOG_ERROR,
                "invalid number of slices: %d\n", s->nb_slices);
