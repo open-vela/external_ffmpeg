@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2010-2013 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -77,56 +77,56 @@ static av_cold void build_canonical_huff(const uint8_t *cb, const uint8_t *xlat,
     *tab_offset += 1 << max_len;
 }
 
-av_cold void ff_atrac3p_init_vlcs(AVCodec *codec)
+av_cold void ff_atrac3p_init_vlcs(void)
 {
     int i, wl_vlc_offs, ct_vlc_offs, sf_vlc_offs, tab_offset;
 
-    static int wl_nb_bits[4]  = { 2, 3, 5, 5 };
-    static int wl_nb_codes[4] = { 3, 5, 8, 8 };
-    static const uint8_t *wl_bits[4] = {
+    static const int wl_nb_bits[4]  = { 2, 3, 5, 5 };
+    static const int wl_nb_codes[4] = { 3, 5, 8, 8 };
+    static const uint8_t * const wl_bits[4] = {
         atrac3p_wl_huff_bits1, atrac3p_wl_huff_bits2,
         atrac3p_wl_huff_bits3, atrac3p_wl_huff_bits4
     };
-    static const uint8_t *wl_codes[4] = {
+    static const uint8_t * const wl_codes[4] = {
         atrac3p_wl_huff_code1, atrac3p_wl_huff_code2,
         atrac3p_wl_huff_code3, atrac3p_wl_huff_code4
     };
-    static const uint8_t *wl_xlats[4] = {
+    static const uint8_t * const wl_xlats[4] = {
         atrac3p_wl_huff_xlat1, atrac3p_wl_huff_xlat2, NULL, NULL
     };
 
-    static int ct_nb_bits[4]  = { 3, 4, 4, 4 };
-    static int ct_nb_codes[4] = { 4, 8, 8, 8 };
-    static const uint8_t *ct_bits[4]  = {
+    static const int ct_nb_bits[4]  = { 3, 4, 4, 4 };
+    static const int ct_nb_codes[4] = { 4, 8, 8, 8 };
+    static const uint8_t * const ct_bits[4]  = {
         atrac3p_ct_huff_bits1, atrac3p_ct_huff_bits2,
         atrac3p_ct_huff_bits2, atrac3p_ct_huff_bits3
     };
-    static const uint8_t *ct_codes[4] = {
+    static const uint8_t * const ct_codes[4] = {
         atrac3p_ct_huff_code1, atrac3p_ct_huff_code2,
         atrac3p_ct_huff_code2, atrac3p_ct_huff_code3
     };
-    static const uint8_t *ct_xlats[4] = {
+    static const uint8_t * const ct_xlats[4] = {
         NULL, NULL, atrac3p_ct_huff_xlat1, NULL
     };
 
-    static int sf_nb_bits[8]  = {  9,  9,  9,  9,  6,  6,  7,  7 };
-    static int sf_nb_codes[8] = { 64, 64, 64, 64, 16, 16, 16, 16 };
-    static const uint8_t  *sf_bits[8]  = {
+    static const  int sf_nb_bits[8]  = {  9,  9,  9,  9,  6,  6,  7,  7 };
+    static const  int sf_nb_codes[8] = { 64, 64, 64, 64, 16, 16, 16, 16 };
+    static const uint8_t  * const sf_bits[8]  = {
         atrac3p_sf_huff_bits1, atrac3p_sf_huff_bits1, atrac3p_sf_huff_bits2,
         atrac3p_sf_huff_bits3, atrac3p_sf_huff_bits4, atrac3p_sf_huff_bits4,
         atrac3p_sf_huff_bits5, atrac3p_sf_huff_bits6
     };
-    static const uint16_t *sf_codes[8] = {
+    static const uint16_t * const sf_codes[8] = {
         atrac3p_sf_huff_code1, atrac3p_sf_huff_code1, atrac3p_sf_huff_code2,
         atrac3p_sf_huff_code3, atrac3p_sf_huff_code4, atrac3p_sf_huff_code4,
         atrac3p_sf_huff_code5, atrac3p_sf_huff_code6
     };
-    static const uint8_t  *sf_xlats[8] = {
+    static const uint8_t  * const sf_xlats[8] = {
         atrac3p_sf_huff_xlat1, atrac3p_sf_huff_xlat2, NULL, NULL,
         atrac3p_sf_huff_xlat4, atrac3p_sf_huff_xlat5, NULL, NULL
     };
 
-    static const uint8_t *gain_cbs[11] = {
+    static const uint8_t * const gain_cbs[11] = {
         atrac3p_huff_gain_npoints1_cb, atrac3p_huff_gain_npoints1_cb,
         atrac3p_huff_gain_lev1_cb, atrac3p_huff_gain_lev2_cb,
         atrac3p_huff_gain_lev3_cb, atrac3p_huff_gain_lev4_cb,
@@ -134,7 +134,7 @@ av_cold void ff_atrac3p_init_vlcs(AVCodec *codec)
         atrac3p_huff_gain_loc4_cb, atrac3p_huff_gain_loc2_cb,
         atrac3p_huff_gain_loc5_cb
     };
-    static const uint8_t *gain_xlats[11] = {
+    static const uint8_t * const gain_xlats[11] = {
         NULL, atrac3p_huff_gain_npoints2_xlat, atrac3p_huff_gain_lev1_xlat,
         atrac3p_huff_gain_lev2_xlat, atrac3p_huff_gain_lev3_xlat,
         atrac3p_huff_gain_lev4_xlat, atrac3p_huff_gain_loc3_xlat,
@@ -142,13 +142,13 @@ av_cold void ff_atrac3p_init_vlcs(AVCodec *codec)
         atrac3p_huff_gain_loc2_xlat, atrac3p_huff_gain_loc5_xlat
     };
 
-    static const uint8_t *tone_cbs[7] = {
+    static const uint8_t * const tone_cbs[7] = {
         atrac3p_huff_tonebands_cb,  atrac3p_huff_numwavs1_cb,
         atrac3p_huff_numwavs2_cb,   atrac3p_huff_wav_ampsf1_cb,
         atrac3p_huff_wav_ampsf2_cb, atrac3p_huff_wav_ampsf3_cb,
         atrac3p_huff_freq_cb
     };
-    static const uint8_t *tone_xlats[7] = {
+    static const uint8_t * const tone_xlats[7] = {
         NULL, NULL, atrac3p_huff_numwavs2_xlat, atrac3p_huff_wav_ampsf1_xlat,
         atrac3p_huff_wav_ampsf2_xlat, atrac3p_huff_wav_ampsf3_xlat,
         atrac3p_huff_freq_xlat
@@ -817,7 +817,7 @@ static void decode_qu_spectra(GetBitContext *gb, const Atrac3pSpecCodeTab *tab,
     int num_coeffs = tab->num_coeffs;
     int bits       = tab->bits;
     int is_signed  = tab->is_signed;
-    unsigned val, mask = (1 << bits) - 1;
+    unsigned val;
 
     for (pos = 0; pos < num_specs;) {
         if (group_size == 1 || get_bits1(gb)) {
@@ -825,7 +825,7 @@ static void decode_qu_spectra(GetBitContext *gb, const Atrac3pSpecCodeTab *tab,
                 val = get_vlc2(gb, vlc_tab->table, vlc_tab->bits, 1);
 
                 for (i = 0; i < num_coeffs; i++) {
-                    cf = val & mask;
+                    cf = av_mod_uintp2(val, bits);
                     if (is_signed)
                         cf = sign_extend(cf, bits);
                     else if (cf && get_bits1(gb))
@@ -1721,11 +1721,7 @@ static int decode_tones_info(GetBitContext *gb, Atrac3pChanUnitCtx *ctx,
     if (num_channels == 2) {
         get_subband_flags(gb, ctx->waves_info->tone_sharing, ctx->waves_info->num_tone_bands);
         get_subband_flags(gb, ctx->waves_info->tone_master,  ctx->waves_info->num_tone_bands);
-        if (get_subband_flags(gb, ctx->waves_info->phase_shift,
-                              ctx->waves_info->num_tone_bands)) {
-            avpriv_report_missing_feature(avctx, "GHA Phase shifting");
-            return AVERROR_PATCHWELCOME;
-        }
+        get_subband_flags(gb, ctx->waves_info->invert_phase, ctx->waves_info->num_tone_bands);
     }
 
     ctx->waves_info->tones_index = 0;
