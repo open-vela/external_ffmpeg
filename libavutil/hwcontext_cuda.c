@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,8 +25,6 @@
 #include "pixdesc.h"
 #include "pixfmt.h"
 
-#define CUDA_FRAME_ALIGNMENT 256
-
 typedef struct CUDAFramesContext {
     int shift_width, shift_height;
 } CUDAFramesContext;
@@ -34,7 +32,9 @@ typedef struct CUDAFramesContext {
 static const enum AVPixelFormat supported_formats[] = {
     AV_PIX_FMT_NV12,
     AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_P010,
     AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_YUV444P16,
 };
 
 static void cuda_buffer_free(void *opaque, uint8_t *data)
@@ -85,7 +85,6 @@ fail:
 static int cuda_frames_init(AVHWFramesContext *ctx)
 {
     CUDAFramesContext *priv = ctx->internal->priv;
-    int aligned_width = FFALIGN(ctx->width, CUDA_FRAME_ALIGNMENT);
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(supported_formats); i++) {
@@ -106,10 +105,16 @@ static int cuda_frames_init(AVHWFramesContext *ctx)
         switch (ctx->sw_format) {
         case AV_PIX_FMT_NV12:
         case AV_PIX_FMT_YUV420P:
-            size = aligned_width * ctx->height * 3 / 2;
+            size = ctx->width * ctx->height * 3 / 2;
+            break;
+        case AV_PIX_FMT_P010:
+            size = ctx->width * ctx->height * 3;
             break;
         case AV_PIX_FMT_YUV444P:
-            size = aligned_width * ctx->height * 3;
+            size = ctx->width * ctx->height * 3;
+            break;
+        case AV_PIX_FMT_YUV444P16:
+            size = ctx->width * ctx->height * 6;
             break;
         }
 
@@ -123,8 +128,6 @@ static int cuda_frames_init(AVHWFramesContext *ctx)
 
 static int cuda_get_buffer(AVHWFramesContext *ctx, AVFrame *frame)
 {
-    int aligned_width = FFALIGN(ctx->width, CUDA_FRAME_ALIGNMENT);
-
     frame->buf[0] = av_buffer_pool_get(ctx->pool);
     if (!frame->buf[0])
         return AVERROR(ENOMEM);
@@ -132,25 +135,39 @@ static int cuda_get_buffer(AVHWFramesContext *ctx, AVFrame *frame)
     switch (ctx->sw_format) {
     case AV_PIX_FMT_NV12:
         frame->data[0]     = frame->buf[0]->data;
-        frame->data[1]     = frame->data[0] + aligned_width * ctx->height;
-        frame->linesize[0] = aligned_width;
-        frame->linesize[1] = aligned_width;
+        frame->data[1]     = frame->data[0] + ctx->width * ctx->height;
+        frame->linesize[0] = ctx->width;
+        frame->linesize[1] = ctx->width;
         break;
     case AV_PIX_FMT_YUV420P:
         frame->data[0]     = frame->buf[0]->data;
-        frame->data[2]     = frame->data[0] + aligned_width * ctx->height;
-        frame->data[1]     = frame->data[2] + aligned_width * ctx->height / 4;
-        frame->linesize[0] = aligned_width;
-        frame->linesize[1] = aligned_width / 2;
-        frame->linesize[2] = aligned_width / 2;
+        frame->data[2]     = frame->data[0] + ctx->width * ctx->height;
+        frame->data[1]     = frame->data[2] + ctx->width * ctx->height / 4;
+        frame->linesize[0] = ctx->width;
+        frame->linesize[1] = ctx->width / 2;
+        frame->linesize[2] = ctx->width / 2;
+        break;
+    case AV_PIX_FMT_P010:
+        frame->data[0]     = frame->buf[0]->data;
+        frame->data[1]     = frame->data[0] + 2 * ctx->width * ctx->height;
+        frame->linesize[0] = 2 * ctx->width;
+        frame->linesize[1] = 2 * ctx->width;
         break;
     case AV_PIX_FMT_YUV444P:
         frame->data[0]     = frame->buf[0]->data;
-        frame->data[1]     = frame->data[0] + aligned_width * ctx->height;
-        frame->data[2]     = frame->data[1] + aligned_width * ctx->height;
-        frame->linesize[0] = aligned_width;
-        frame->linesize[1] = aligned_width;
-        frame->linesize[2] = aligned_width;
+        frame->data[1]     = frame->data[0] + ctx->width * ctx->height;
+        frame->data[2]     = frame->data[1] + ctx->width * ctx->height;
+        frame->linesize[0] = ctx->width;
+        frame->linesize[1] = ctx->width;
+        frame->linesize[2] = ctx->width;
+        break;
+    case AV_PIX_FMT_YUV444P16:
+        frame->data[0]     = frame->buf[0]->data;
+        frame->data[1]     = frame->data[0] + 2 * ctx->width * ctx->height;
+        frame->data[2]     = frame->data[1] + 2 * ctx->width * ctx->height;
+        frame->linesize[0] = 2 * ctx->width;
+        frame->linesize[1] = 2 * ctx->width;
+        frame->linesize[2] = 2 * ctx->width;
         break;
     default:
         av_frame_unref(frame);
@@ -288,7 +305,7 @@ static int cuda_device_create(AVHWDeviceContext *ctx, const char *device,
         return AVERROR_UNKNOWN;
     }
 
-    err = cuCtxCreate(&hwctx->cuda_ctx, CU_CTX_SCHED_BLOCKING_SYNC, cu_device);
+    err = cuCtxCreate(&hwctx->cuda_ctx, 0, cu_device);
     if (err != CUDA_SUCCESS) {
         av_log(ctx, AV_LOG_ERROR, "Error creating a CUDA context\n");
         return AVERROR_UNKNOWN;
