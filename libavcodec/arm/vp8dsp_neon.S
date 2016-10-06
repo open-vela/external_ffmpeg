@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Rob Clark <rob@ti.com>
  * Copyright (c) 2011 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -1562,7 +1562,7 @@ function ff_put_vp8_epel4_h4v4_neon, export=1
 endfunc
 
 @ note: worst case sum of all 6-tap filter values * 255 is 0x7f80 so 16 bit
-@ arithmatic can be used to apply filters
+@ arithmetic can be used to apply filters
 const   subpel_filters, align=4
         .short     0,   6, 123,  12,   1,   0,   0,   0
         .short     2,  11, 108,  36,   8,   1,   0,   0
