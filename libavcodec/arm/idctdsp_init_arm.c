@@ -2,20 +2,20 @@
  * ARM-optimized IDCT functions
  * Copyright (c) 2001 Lionel Ulmer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,28 +39,28 @@ static void j_rev_dct_arm_put(uint8_t *dest, ptrdiff_t line_size,
                               int16_t *block)
 {
     ff_j_rev_dct_arm(block);
-    ff_put_pixels_clamped(block, dest, line_size);
+    ff_put_pixels_clamped_c(block, dest, line_size);
 }
 
 static void j_rev_dct_arm_add(uint8_t *dest, ptrdiff_t line_size,
                               int16_t *block)
 {
     ff_j_rev_dct_arm(block);
-    ff_add_pixels_clamped(block, dest, line_size);
+    ff_add_pixels_clamped_arm(block, dest, line_size);
 }
 
 static void simple_idct_arm_put(uint8_t *dest, ptrdiff_t line_size,
                                 int16_t *block)
 {
     ff_simple_idct_arm(block);
-    ff_put_pixels_clamped(block, dest, line_size);
+    ff_put_pixels_clamped_c(block, dest, line_size);
 }
 
 static void simple_idct_arm_add(uint8_t *dest, ptrdiff_t line_size,
                                 int16_t *block)
 {
     ff_simple_idct_arm(block);
-    ff_add_pixels_clamped(block, dest, line_size);
+    ff_add_pixels_clamped_arm(block, dest, line_size);
 }
 
 av_cold void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
@@ -68,8 +68,8 @@ av_cold void ff_idctdsp_init_arm(IDCTDSPContext *c, AVCodecContext *avctx,
 {
     int cpu_flags = av_get_cpu_flags();
 
-    if (!high_bit_depth) {
-        if (avctx->idct_algo == FF_IDCT_AUTO ||
+    if (!avctx->lowres && !high_bit_depth) {
+        if ((avctx->idct_algo == FF_IDCT_AUTO && !(avctx->flags & AV_CODEC_FLAG_BITEXACT)) ||
             avctx->idct_algo == FF_IDCT_ARM) {
             c->idct_put  = j_rev_dct_arm_put;
             c->idct_add  = j_rev_dct_arm_add;
