@@ -3,14 +3,14 @@
  * Copyright (c) 2015 Martin Storsjo
  * Copyright (c) 2015 Janne Grunau
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -52,20 +52,7 @@ endconst
 // max number of args used by any asm function.
 #define MAX_ARGS 15
 
-#define CLOBBER_STACK ((8*MAX_ARGS + 15) & ~15)
-
-function checkasm_stack_clobber, export=1
-    mov         x29, sp
-    mov         x2,  #CLOBBER_STACK
-1:
-    stp         x0,  x1,  [sp, #-16]!
-    subs        x2,  x2,  #16
-    b.gt        1b
-    mov         sp,  x29
-    ret
-endfunc
-
-#define ARG_STACK ((8*(MAX_ARGS - 8) + 15) & ~15)
+#define ARG_STACK ((8*(MAX_ARGS - 7) + 15) & ~15)
 
 function checkasm_checked_call, export=1
     stp         x29, x30, [sp, #-16]!
@@ -93,18 +80,22 @@ function checkasm_checked_call, export=1
 
     sub         sp,  sp,  #ARG_STACK
 .equ pos, 0
-.rept MAX_ARGS-8
-    // Skip the first 8 args, that are loaded into registers
-    ldr         x9, [x29, #16 + 8*8 + pos]
+// the first stacked arg is copied to x7
+.rept MAX_ARGS-7
+    ldr         x9, [x29, #16 + 8 + pos]
     str         x9, [sp, #pos]
 .equ pos, pos + 8
 .endr
 
     mov         x12, x0
-    ldp         x0,  x1,  [x29, #16]
-    ldp         x2,  x3,  [x29, #32]
-    ldp         x4,  x5,  [x29, #48]
-    ldp         x6,  x7,  [x29, #64]
+    mov         x0,  x1
+    mov         x1,  x2
+    mov         x2,  x3
+    mov         x3,  x4
+    mov         x4,  x5
+    mov         x5,  x6
+    mov         x6,  x7
+    ldr         x7,  [x29, #16]
     blr         x12
     add         sp,  sp,  #ARG_STACK
     stp         x0,  x1,  [sp, #-16]!
