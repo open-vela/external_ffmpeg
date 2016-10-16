@@ -3,20 +3,20 @@
  *
  * copyright (c) 2013 Yukinori Yamazoe
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,45 +40,10 @@ typedef struct QSVH264EncContext {
     QSVEncContext qsv;
 } QSVH264EncContext;
 
-static int qsv_h264_set_encode_ctrl(AVCodecContext *avctx,
-                                    const AVFrame *frame, mfxEncodeCtrl* enc_ctrl)
-{
-    QSVH264EncContext *qh264 = avctx->priv_data;
-    QSVEncContext *q = &qh264->qsv;
-
-    if (q->a53_cc && frame) {
-        mfxPayload* payload;
-        mfxU8* sei_data;
-        size_t sei_size;
-        int res;
-
-        res = ff_alloc_a53_sei(frame, sizeof(mfxPayload) + 2, (void**)&payload, &sei_size);
-        if (res < 0 || !payload)
-            return res;
-
-        sei_data = (mfxU8*)(payload + 1);
-        // SEI header
-        sei_data[0] = 4;
-        sei_data[1] = (mfxU8)sei_size; // size of SEI data
-        // SEI data filled in by ff_alloc_a53_sei
-
-        payload->BufSize = sei_size + 2;
-        payload->NumBit = payload->BufSize * 8;
-        payload->Type = 4;
-        payload->Data = sei_data;
-
-        enc_ctrl->NumExtParam = 0;
-        enc_ctrl->NumPayload = 1;
-        enc_ctrl->Payload[0] = payload;
-    }
-    return 0;
-}
-
 static av_cold int qsv_enc_init(AVCodecContext *avctx)
 {
     QSVH264EncContext *q = avctx->priv_data;
 
-    q->qsv.set_encode_ctrl_cb = qsv_h264_set_encode_ctrl;
     return ff_qsv_enc_init(avctx, &q->qsv);
 }
 
@@ -103,21 +68,8 @@ static const AVOption options[] = {
     QSV_COMMON_OPTS
 
     { "idr_interval", "Distance (in I-frames) between IDR frames", OFFSET(qsv.idr_interval), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
-    { "pic_timing_sei",    "Insert picture timing SEI with pic_struct_syntax element", OFFSET(qsv.pic_timing_sei), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
     { "single_sei_nal_unit",    "Put all the SEI messages into one NALU",        OFFSET(qsv.single_sei_nal_unit),     AV_OPT_TYPE_INT, { .i64 = -1 }, -1,          1, VE },
     { "max_dec_frame_buffering", "Maximum number of frames buffered in the DPB", OFFSET(qsv.max_dec_frame_buffering), AV_OPT_TYPE_INT, { .i64 = 0 },   0, UINT16_MAX, VE },
-
-#if QSV_HAVE_LA
-    { "look_ahead",       "Use VBR algorithm with look ahead",    OFFSET(qsv.look_ahead),       AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
-    { "look_ahead_depth", "Depth of look ahead in number frames", OFFSET(qsv.look_ahead_depth), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 100, VE },
-#endif
-
-#if QSV_VERSION_ATLEAST(1,8)
-    { "look_ahead_downsampling", NULL, OFFSET(qsv.look_ahead_downsampling), AV_OPT_TYPE_INT, { .i64 = MFX_LOOKAHEAD_DS_UNKNOWN }, MFX_LOOKAHEAD_DS_UNKNOWN, MFX_LOOKAHEAD_DS_2x, VE, "look_ahead_downsampling" },
-    { "unknown"                , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_LOOKAHEAD_DS_UNKNOWN }, INT_MIN, INT_MAX,     VE, "look_ahead_downsampling" },
-    { "off"                    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_LOOKAHEAD_DS_OFF     }, INT_MIN, INT_MAX,     VE, "look_ahead_downsampling" },
-    { "2x"                     , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_LOOKAHEAD_DS_2x      }, INT_MIN, INT_MAX,     VE, "look_ahead_downsampling" },
-#endif
 
     { "int_ref_type", "Intra refresh type",                                      OFFSET(qsv.int_ref_type),            AV_OPT_TYPE_INT, { .i64 = -1 }, -1, UINT16_MAX, VE, "int_ref_type" },
         { "none",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, .flags = VE, "int_ref_type" },
@@ -138,7 +90,6 @@ static const AVOption options[] = {
     { "main"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_AVC_MAIN     }, INT_MIN, INT_MAX,     VE, "profile" },
     { "high"    , NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_AVC_HIGH     }, INT_MIN, INT_MAX,     VE, "profile" },
 
-    { "a53cc" , "Use A53 Closed Captions (if available)", OFFSET(qsv.a53_cc), AV_OPT_TYPE_INT, {.i64 = 1}, 0, 1, VE},
     { NULL },
 };
 
@@ -175,6 +126,7 @@ AVCodec ff_h264_qsv_encoder = {
     .close          = qsv_enc_close,
     .capabilities   = AV_CODEC_CAP_DELAY,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
+                                                    AV_PIX_FMT_P010,
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_NONE },
     .priv_class     = &class,
