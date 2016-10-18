@@ -3,20 +3,20 @@
  * Copyright (c) 2004 Roman Shaposhnik
  * Copyright (c) 2008 Alessandro Sappia
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -69,10 +69,11 @@ typedef struct dc1394_data {
     char *pixel_format;     /**< Set by a private option. */
     char *framerate;        /**< Set by a private option. */
 
-    AVPacket packet;
+    int size;
+    int stream_index;
 } dc1394_data;
 
-static const struct dc1394_frame_format {
+struct dc1394_frame_format {
     int width;
     int height;
     enum AVPixelFormat pix_fmt;
@@ -85,7 +86,7 @@ static const struct dc1394_frame_format {
     { 0, 0, 0, 0 } /* gotta be the last one */
 };
 
-static const struct dc1394_frame_rate {
+struct dc1394_frame_rate {
     int frame_rate;
     int frame_rate_id;
 } dc1394_frame_rates[] = {
@@ -117,17 +118,16 @@ static const AVClass libdc1394_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
 
 static inline int dc1394_read_common(AVFormatContext *c,
-                                     const struct dc1394_frame_format **select_fmt, const struct dc1394_frame_rate **select_fps)
+                                     struct dc1394_frame_format **select_fmt, struct dc1394_frame_rate **select_fps)
 {
     dc1394_data* dc1394 = c->priv_data;
     AVStream* vst;
-    const struct dc1394_frame_format *fmt;
-    const struct dc1394_frame_rate *fps;
+    struct dc1394_frame_format *fmt;
+    struct dc1394_frame_rate *fps;
     enum AVPixelFormat pix_fmt;
     int width, height;
     AVRational framerate;
@@ -178,16 +178,13 @@ static inline int dc1394_read_common(AVFormatContext *c,
     vst->codecpar->format = fmt->pix_fmt;
     vst->avg_frame_rate = framerate;
 
-    /* packet init */
-    av_init_packet(&dc1394->packet);
-    dc1394->packet.size = av_image_get_buffer_size(fmt->pix_fmt,
-                                                   fmt->width, fmt->height, 1);
-    dc1394->packet.stream_index = vst->index;
-    dc1394->packet.flags |= AV_PKT_FLAG_KEY;
-
     dc1394->current_frame = 0;
+    dc1394->stream_index = vst->index;
+    dc1394->size = av_image_get_buffer_size(fmt->pix_fmt,
+                                            fmt->width, fmt->height, 1);
 
-    vst->codecpar->bit_rate = av_rescale(dc1394->packet.size * 8, fps->frame_rate, 1000);
+    vst->codecpar->bit_rate = av_rescale(dc1394->size * 8,
+                                         fps->frame_rate, 1000);
     *select_fps = fps;
     *select_fmt = fmt;
 out:
@@ -263,17 +260,17 @@ static int dc1394_v1_read_packet(AVFormatContext *c, AVPacket *pkt)
     res = dc1394_dma_single_capture(&dc1394->camera);
 
     if (res == DC1394_SUCCESS) {
-        dc1394->packet.data = (uint8_t *)(dc1394->camera.capture_buffer);
-        dc1394->packet.pts = (dc1394->current_frame * 1000000) / dc1394->frame_rate;
-        res = dc1394->packet.size;
+        pkt->data = (uint8_t *)dc1394->camera.capture_buffer;
+        pkt->size = dc1394->size;
+        pkt->pts = (dc1394->current_frame * 1000000) / dc1394->frame_rate;
+        pkt->flags |= AV_PKT_FLAG_KEY;
+        pkt->stream_index = dc1394->stream_index;
     } else {
         av_log(c, AV_LOG_ERROR, "DMA capture failed\n");
-        dc1394->packet.data = NULL;
-        res = -1;
+        return AVERROR_INVALIDDATA;
     }
 
-    *pkt = dc1394->packet;
-    return res;
+    return pkt->size;
 }
 
 static int dc1394_v1_close(AVFormatContext * context)
@@ -294,8 +291,8 @@ static int dc1394_v2_read_header(AVFormatContext *c)
     dc1394_data* dc1394 = c->priv_data;
     dc1394camera_list_t *list;
     int res, i;
-    const struct dc1394_frame_format *fmt = NULL;
-    const struct dc1394_frame_rate *fps = NULL;
+    struct dc1394_frame_format *fmt = NULL;
+    struct dc1394_frame_rate *fps = NULL;
 
     if (dc1394_read_common(c, &fmt, &fps) != 0)
        return -1;
@@ -380,17 +377,17 @@ static int dc1394_v2_read_packet(AVFormatContext *c, AVPacket *pkt)
 
     res = dc1394_capture_dequeue(dc1394->camera, DC1394_CAPTURE_POLICY_WAIT, &dc1394->frame);
     if (res == DC1394_SUCCESS) {
-        dc1394->packet.data = (uint8_t *) dc1394->frame->image;
-        dc1394->packet.pts  = dc1394->current_frame * 1000000 / dc1394->frame_rate;
-        res = dc1394->frame->image_bytes;
+        pkt->data = (uint8_t *)dc1394->frame->image;
+        pkt->size = dc1394->frame->image_bytes;
+        pkt->pts = dc1394->current_frame * 1000000 / dc1394->frame_rate;
+        pkt->flags |= AV_PKT_FLAG_KEY;
+        pkt->stream_index = dc1394->stream_index;
     } else {
         av_log(c, AV_LOG_ERROR, "DMA capture failed\n");
-        dc1394->packet.data = NULL;
-        res = -1;
+        return AVERROR_INVALIDDATA;
     }
 
-    *pkt = dc1394->packet;
-    return res;
+    return pkt->size;
 }
 
 static int dc1394_v2_close(AVFormatContext * context)
