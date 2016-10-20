@@ -309,6 +309,11 @@ static int aiff_read_packet(AVFormatContext *s,
     if (max_size <= 0)
         return AVERROR_EOF;
 
+    if (!st->codecpar->block_align) {
+        av_log(s, AV_LOG_ERROR, "block_align not set\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     /* Now for that packet */
     if (st->codecpar->block_align >= 33) // GSM, QCLP, IMA4
         size = st->codecpar->block_align;
