@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -317,6 +317,14 @@ int av_hwframe_get_buffer(AVBufferRef *hwframe_ctx, AVFrame *frame, int flags);
  * data buffers will be allocated by this function using av_frame_get_buffer().
  * If dst->format is set, then this format will be used, otherwise (when
  * dst->format is AV_PIX_FMT_NONE) the first acceptable format will be chosen.
+ *
+ * The two frames must have matching allocated dimensions (i.e. equal to
+ * AVHWFramesContext.width/height), since not all device types support
+ * transferring a sub-rectangle of the whole surface. The display dimensions
+ * (i.e. AVFrame.width/height) may be smaller than the allocated dimensions, but
+ * also have to be equal for both frames. When the display dimensions are
+ * smaller than the allocated dimensions, the content of the padding in the
+ * destination frame is unspecified.
  *
  * @param dst the destination frame. dst is not touched on failure.
  * @param src the source frame.
