@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -87,8 +87,8 @@ extern const uint8_t ff_ivi_direct_scan_4x4[16];
 /**
  *  Declare inverse transform function types
  */
-typedef void (InvTransformPtr)(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags);
-typedef void (DCTransformPtr) (const int32_t *in, int16_t *out, ptrdiff_t pitch, int blk_size);
+typedef void (InvTransformPtr)(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags);
+typedef void (DCTransformPtr) (const int32_t *in, int16_t *out, uint32_t pitch, int blk_size);
 
 
 /**
@@ -153,7 +153,7 @@ typedef struct IVIBandDesc {
     int16_t         *ref_buf;       ///< pointer to the reference frame buffer (for motion compensation)
     int16_t         *b_ref_buf;     ///< pointer to the second reference frame buffer (for motion compensation)
     int16_t         *bufs[4];       ///< array of pointers to the band buffers
-    ptrdiff_t       pitch;          ///< pitch associated with the buffers above
+    int             pitch;          ///< pitch associated with the buffers above
     int             is_empty;       ///< = 1 if this band doesn't contain any data
     int             mb_size;        ///< macroblock size
     int             blk_size;       ///< block size
@@ -164,6 +164,7 @@ typedef struct IVIBandDesc {
     int             quant_mat;      ///< dequant matrix index
     int             glob_quant;     ///< quant base for this band
     const uint8_t   *scan;          ///< ptr to the scan pattern
+    int             scan_size;      ///< size of the scantable
 
     IVIHuffTab      blk_vlc;        ///< vlc table for decoding block data
 
@@ -261,6 +262,7 @@ typedef struct IVI45DecContext {
     int             (*is_nonnull_frame)(struct IVI45DecContext *ctx);
 
     int gop_invalid;
+    int buf_invalid[4];
 
     int is_indeo4;
 
