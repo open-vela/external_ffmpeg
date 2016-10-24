@@ -2,20 +2,20 @@
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  * Copyright (c) 2013 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -264,7 +264,6 @@ endfunc
 
 function ff_h264_idct8_add_neon, export=1
         movi            v19.8H,   #0
-        sxtw            x2,       w2
         ld1             {v24.8H, v25.8H}, [x1]
         st1             {v19.8H},  [x1],   #16
         st1             {v19.8H},  [x1],   #16

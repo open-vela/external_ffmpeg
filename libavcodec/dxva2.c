@@ -3,20 +3,20 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,9 +41,10 @@ unsigned ff_dxva2_get_surface_index(const AVCodecContext *avctx,
     void *surface = ff_dxva2_get_surface(frame);
     unsigned i;
 
-    for (i = 0; i < DXVA_CONTEXT_COUNT(avctx, ctx); i++)
+    for (i = 0; i < DXVA_CONTEXT_COUNT(avctx, ctx); i++) {
 #if CONFIG_D3D11VA
-        if (avctx->pix_fmt == AV_PIX_FMT_D3D11VA_VLD && ctx->d3d11va.surface[i] == surface) {
+        if (avctx->pix_fmt == AV_PIX_FMT_D3D11VA_VLD && ctx->d3d11va.surface[i] == surface)
+        {
             D3D11_VIDEO_DECODER_OUTPUT_VIEW_DESC viewDesc;
             ID3D11VideoDecoderOutputView_GetDesc(ctx->d3d11va.surface[i], &viewDesc);
             return viewDesc.Texture2D.ArraySlice;
@@ -53,6 +54,7 @@ unsigned ff_dxva2_get_surface_index(const AVCodecContext *avctx,
         if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD && ctx->dxva2.surface[i] == surface)
             return i;
 #endif
+    }
 
     assert(0);
     return 0;
@@ -67,7 +69,7 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
     void     *dxva_data;
     unsigned dxva_size;
     int      result;
-    HRESULT hr;
+    HRESULT hr = 0;
 
 #if CONFIG_D3D11VA
     if (avctx->pix_fmt == AV_PIX_FMT_D3D11VA_VLD)
@@ -146,7 +148,7 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
 #if CONFIG_DXVA2
     DXVA2_DecodeBufferDesc          buffer2[4];
 #endif
-    DECODER_BUFFER_DESC             *buffer,*buffer_slice;
+    DECODER_BUFFER_DESC             *buffer = NULL, *buffer_slice = NULL;
     int result, runs = 0;
     HRESULT hr;
     unsigned type;
