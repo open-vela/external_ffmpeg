@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -31,21 +31,22 @@
 #include "libavutil/lfg.h"
 #include "libavutil/timer.h"
 
-void checkasm_check_alacdsp(void);
-void checkasm_check_blend(void);
+void checkasm_check_audiodsp(void);
+void checkasm_check_blockdsp(void);
 void checkasm_check_bswapdsp(void);
-void checkasm_check_colorspace(void);
-void checkasm_check_flacdsp(void);
+void checkasm_check_dcadsp(void);
 void checkasm_check_fmtconvert(void);
 void checkasm_check_h264dsp(void);
 void checkasm_check_h264pred(void);
 void checkasm_check_h264qpel(void);
-void checkasm_check_jpeg2000dsp(void);
-void checkasm_check_pixblockdsp(void);
+void checkasm_check_hevc_add_res(void);
+void checkasm_check_hevc_idct(void);
+void checkasm_check_hevc_mc(void);
+void checkasm_check_huffyuvdsp(void);
 void checkasm_check_synth_filter(void);
 void checkasm_check_v210enc(void);
+void checkasm_check_vp8dsp(void);
 void checkasm_check_vp9dsp(void);
-void checkasm_check_videodsp(void);
 
 void *checkasm_check_func(void *func, const char *name, ...) av_printf_format(2, 3);
 int checkasm_bench_func(void);
@@ -134,9 +135,14 @@ extern void (*checkasm_checked_call)(void *func, int dummy, ...);
 #define declare_new(ret, ...) ret (*checked_call)(void *, int dummy, __VA_ARGS__) = (void *)checkasm_checked_call;
 #define call_new(...) checked_call(func_new, 0, __VA_ARGS__)
 #elif ARCH_AARCH64 && !defined(__APPLE__)
+void checkasm_stack_clobber(uint64_t clobber, ...);
 void checkasm_checked_call(void *func, ...);
-#define declare_new(ret, ...) ret (*checked_call)(void *, __VA_ARGS__) = (void *)checkasm_checked_call;
-#define call_new(...) checked_call(func_new, __VA_ARGS__)
+#define declare_new(ret, ...) ret (*checked_call)(void *, int, int, int, int, int, int, int, __VA_ARGS__)\
+                              = (void *)checkasm_checked_call;
+#define CLOB (UINT64_C(0xdeadbeefdeadbeef))
+#define call_new(...) (checkasm_stack_clobber(CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,\
+                                              CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB,CLOB),\
+                      checked_call(func_new, 0, 0, 0, 0, 0, 0, 0, __VA_ARGS__))
 #else
 #define declare_new(ret, ...)
 #define declare_new_emms(cpu_flags, ret, ...)
