@@ -1,5 +1,6 @@
 FATE_LAVF-$(call ENCDEC,  PCM_S16BE,             AIFF)               += aiff
 FATE_LAVF-$(call ENCDEC,  PCM_ALAW,              PCM_ALAW)           += alaw
+FATE_LAVF-$(call ENCDEC,  APNG,                  APNG)               += apng
 FATE_LAVF-$(call ENCDEC2, MSMPEG4V3,  MP2,       ASF)                += asf
 FATE_LAVF-$(call ENCDEC,  PCM_S16BE,             AU)                 += au
 FATE_LAVF-$(call ENCDEC2, MPEG4,      MP2,       AVI)                += avi
