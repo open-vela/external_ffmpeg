@@ -2,20 +2,20 @@
  * RTP output format
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,6 +49,7 @@ static const AVClass rtp_muxer_class = {
 static int is_supported(enum AVCodecID id)
 {
     switch(id) {
+    case AV_CODEC_ID_DIRAC:
     case AV_CODEC_ID_H261:
     case AV_CODEC_ID_H263:
     case AV_CODEC_ID_H263P:
@@ -74,6 +75,7 @@ static int is_supported(enum AVCodecID id)
     case AV_CODEC_ID_VORBIS:
     case AV_CODEC_ID_THEORA:
     case AV_CODEC_ID_VP8:
+    case AV_CODEC_ID_VP9:
     case AV_CODEC_ID_ADPCM_G722:
     case AV_CODEC_ID_ADPCM_G726:
     case AV_CODEC_ID_ILBC:
@@ -98,7 +100,7 @@ static int rtp_write_header(AVFormatContext *s1)
     }
     st = s1->streams[0];
     if (!is_supported(st->codecpar->codec_id)) {
-        av_log(s1, AV_LOG_ERROR, "Unsupported codec %x\n", st->codecpar->codec_id);
+        av_log(s1, AV_LOG_ERROR, "Unsupported codec %s\n", avcodec_get_name(st->codecpar->codec_id));
 
         return -1;
     }
@@ -121,16 +123,19 @@ static int rtp_write_header(AVFormatContext *s1)
         s->ssrc = av_get_random_seed();
     s->first_packet = 1;
     s->first_rtcp_ntp_time = ff_ntp_time();
-    if (s1->start_time_realtime)
+    if (s1->start_time_realtime != 0  &&  s1->start_time_realtime != AV_NOPTS_VALUE)
         /* Round the NTP time to whole milliseconds. */
         s->first_rtcp_ntp_time = (s1->start_time_realtime / 1000) * 1000 +
                                  NTP_OFFSET_US;
     // Pick a random sequence start number, but in the lower end of the
     // available range, so that any wraparound doesn't happen immediately.
     // (Immediate wraparound would be an issue for SRTP.)
-    if (s->seq < 0)
-        s->seq = av_get_random_seed() & 0x0fff;
-    else
+    if (s->seq < 0) {
+        if (s1->flags & AVFMT_FLAG_BITEXACT) {
+            s->seq = 0;
+        } else
+            s->seq = av_get_random_seed() & 0x0fff;
+    } else
         s->seq &= 0xffff; // Use the given parameter, wrapped to the right interval
 
     if (s1->packet_size) {
@@ -140,7 +145,7 @@ static int rtp_write_header(AVFormatContext *s1)
     } else
         s1->packet_size = s1->pb->max_packet_size;
     if (s1->packet_size <= 12) {
-        av_log(s1, AV_LOG_ERROR, "Max packet size %u too low\n", s1->packet_size);
+        av_log(s1, AV_LOG_ERROR, "Max packet size %d too low\n", s1->packet_size);
         return AVERROR(EIO);
     }
     s->buf = av_malloc(s1->packet_size);
@@ -170,6 +175,17 @@ static int rtp_write_header(AVFormatContext *s1)
             n = 1;
         s->max_payload_size = n * TS_PACKET_SIZE;
         break;
+    case AV_CODEC_ID_DIRAC:
+        if (s1->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
+            av_log(s, AV_LOG_ERROR,
+                   "Packetizing VC-2 is experimental and does not use all values "
+                   "of the specification "
+                   "(even though most receivers may handle it just fine). "
+                   "Please set -strict experimental in order to enable it.\n");
+            ret = AVERROR_EXPERIMENTAL;
+            goto fail;
+        }
+        break;
     case AV_CODEC_ID_H261:
         if (s1->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
             av_log(s, AV_LOG_ERROR,
@@ -194,6 +210,16 @@ static int rtp_write_header(AVFormatContext *s1)
          * libavcodec/hevc.c). */
         if (st->codecpar->extradata_size > 21 && st->codecpar->extradata[0] == 1) {
             s->nal_length_size = (st->codecpar->extradata[21] & 0x03) + 1;
+        }
+        break;
+    case AV_CODEC_ID_VP9:
+        if (s1->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
+            av_log(s, AV_LOG_ERROR,
+                   "Packetizing VP9 is experimental and its specification is "
+                   "still in draft state. "
+                   "Please set -strict experimental in order to enable it.\n");
+            ret = AVERROR_EXPERIMENTAL;
+            goto fail;
         }
         break;
     case AV_CODEC_ID_VORBIS:
@@ -268,7 +294,8 @@ static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time, int bye)
     avio_w8(s1->pb, RTCP_SR);
     avio_wb16(s1->pb, 6); /* length in words - 1 */
     avio_wb32(s1->pb, s->ssrc);
-    avio_wb64(s1->pb, NTP_TO_RTP_FORMAT(ntp_time));
+    avio_wb32(s1->pb, ntp_time / 1000000);
+    avio_wb32(s1->pb, ((ntp_time % 1000000) << 32) / 1000000);
     avio_wb32(s1->pb, rtp_ts);
     avio_wb32(s1->pb, s->packet_count);
     avio_wb32(s1->pb, s->octet_count);
@@ -546,6 +573,9 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     case AV_CODEC_ID_MPEG2TS:
         rtp_send_mpegts_raw(s1, pkt->data, size);
         break;
+    case AV_CODEC_ID_DIRAC:
+        ff_rtp_send_vc2hq(s1, pkt->data, size, st->codecpar->field_order != AV_FIELD_PROGRESSIVE ? 1 : 0);
+        break;
     case AV_CODEC_ID_H264:
         ff_rtp_send_h264_hevc(s1, pkt->data, size);
         break;
@@ -574,6 +604,9 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
         break;
     case AV_CODEC_ID_VP8:
         ff_rtp_send_vp8(s1, pkt->data, size);
+        break;
+    case AV_CODEC_ID_VP9:
+        ff_rtp_send_vp9(s1, pkt->data, size);
         break;
     case AV_CODEC_ID_ILBC:
         rtp_send_ilbc(s1, pkt->data, size);
