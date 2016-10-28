@@ -3,14 +3,14 @@
  * Copyright (c) 2015 Martin Storsjo
  * Copyright (c) 2015 Janne Grunau
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -21,12 +21,6 @@
  *****************************************************************************/
 
 #include "libavutil/arm/asm.S"
-
-/* override fpu so that NEON instructions are rejected */
-#if HAVE_VFP
-FPU     .fpu            vfp
-ELF     .eabi_attribute 10, 0           @ suppress Tag_FP_arch
-#endif
 
 const register_init, align=3
     .quad 0x21f86d66c8ca00ce
@@ -39,18 +33,14 @@ const register_init, align=3
     .quad 0x249214109d5d1c88
 endconst
 
-const error_message_fpscr
-    .asciz "failed to preserve register FPSCR, changed bits: %x"
-error_message_gpr:
-    .asciz "failed to preserve register r%d"
-error_message_vfp:
-    .asciz "failed to preserve register d%d"
+const error_message
+    .asciz "failed to preserve register"
 endconst
 
 @ max number of args used by any asm function.
 #define MAX_ARGS 15
 
-#define ARG_STACK 4*(MAX_ARGS - 4)
+#define ARG_STACK 4*(MAX_ARGS - 2)
 
 @ align the used stack space to 8 to preserve the stack alignment
 #define ARG_STACK_A (((ARG_STACK + pushed + 7) & ~7) - pushed)
@@ -74,7 +64,7 @@ function checkasm_checked_call_\variant, export=1
 
     sub         sp,  sp,  #ARG_STACK_A
 .equ pos, 0
-.rept MAX_ARGS-4
+.rept MAX_ARGS-2
     ldr         r12, [sp, #ARG_STACK_A + pushed + 8 + pos]
     str         r12, [sp, #pos]
 .equ pos, pos + 4
@@ -89,45 +79,39 @@ function checkasm_checked_call_\variant, export=1
 
     push        {r0, r1}
     movrel      r12, register_init
+    mov         r3,  #0
 .ifc \variant, vfp
-.macro check_reg_vfp, dreg, offset
-    ldrd        r2,  r3,  [r12, #8 * (\offset)]
-    vmov        r0,  lr,  \dreg
-    eor         r2,  r2,  r0
-    eor         r3,  r3,  lr
-    orrs        r2,  r2,  r3
-    bne         4f
+.macro check_reg_vfp, dreg, inc=8
+    ldrd        r0,  r1,  [r12], #\inc
+    vmov        r2,  lr,  \dreg
+    eor         r0,  r0,  r2
+    eor         r1,  r1,  lr
+    orr         r3,  r3,  r0
+    orr         r3,  r3,  r1
 .endm
 
-.irp n, 8, 9, 10, 11, 12, 13, 14, 15
-    @ keep track of the checked double/SIMD register
-    mov         r1,  #\n
-    check_reg_vfp d\n, \n-8
+.irp n, 8, 9, 10, 11, 12, 13, 14
+    check_reg_vfp d\n
 .endr
+    check_reg_vfp d15, -56
 .purgem check_reg_vfp
 
-    fmrx        r1,  FPSCR
-    ldr         r3,  [sp, #8]
-    eor         r1,  r1,  r3
-    @ Ignore changes in bits 0-4 and 7
-    bic         r1,  r1,  #0x9f
+    fmrx        r0,  FPSCR
+    ldr         r1,  [sp, #8]
+    eor         r0,  r0,  r1
     @ Ignore changes in the topmost 5 bits
-    bics        r1,  r1,  #0xf8000000
-    bne         3f
+    lsl         r0,  r0,  #5
+    orr         r3,  r3,  r0
 .endif
 
-    @ keep track of the checked GPR
-    mov         r1,  #4
 .macro check_reg reg1, reg2=
-    ldrd        r2,  r3,  [r12], #8
-    eors        r2,  r2,  \reg1
-    bne         2f
-    add         r1,  r1,  #1
+    ldrd        r0,  r1,  [r12], #8
+    eor         r0,  r0,  \reg1
+    orrs        r3,  r3,  r0
 .ifnb \reg2
-    eors        r3,  r3,  \reg2
-    bne         2f
+    eor         r1,  r1,  \reg2
+    orrs        r3,  r3,  r1
 .endif
-    add         r1,  r1,  #1
 .endm
     check_reg   r4,  r5
     check_reg   r6,  r7
@@ -140,16 +124,9 @@ function checkasm_checked_call_\variant, export=1
     check_reg   r10, r11
 .purgem check_reg
 
-    b           0f
-4:
-    movrel      r0, error_message_vfp
-    b           1f
-3:
-    movrel      r0, error_message_fpscr
-    b           1f
-2:
-    movrel      r0, error_message_gpr
-1:
+    beq         0f
+
+    movrel      r0, error_message
     blx         X(checkasm_fail_func)
 0:
     pop         {r0, r1}
