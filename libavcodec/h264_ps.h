@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,8 +56,7 @@ typedef struct SPS {
     int ref_frame_count;               ///< num_ref_frames
     int gaps_in_frame_num_allowed_flag;
     int mb_width;                      ///< pic_width_in_mbs_minus1 + 1
-    ///< (pic_height_in_map_units_minus1 + 1) * (2 - frame_mbs_only_flag)
-    int mb_height;
+    int mb_height;                     ///< pic_height_in_map_units_minus1 + 1
     int frame_mbs_only_flag;
     int mb_aff;                        ///< mb_adaptive_frame_field_flag
     int direct_8x8_inference_flag;
@@ -98,6 +97,8 @@ typedef struct SPS {
     int bit_depth_chroma;                 ///< bit_depth_chroma_minus8 + 8
     int residual_color_transform_flag;    ///< residual_colour_transform_flag
     int constraint_set_flags;             ///< constraint_set[0-3]_flag
+    uint8_t data[4096];
+    size_t data_size;
 } SPS;
 
 /**
@@ -121,8 +122,10 @@ typedef struct PPS {
     int transform_8x8_mode;         ///< transform_8x8_mode_flag
     uint8_t scaling_matrix4[6][16];
     uint8_t scaling_matrix8[6][64];
-    uint8_t chroma_qp_table[2][64]; ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
+    uint8_t chroma_qp_table[2][QP_MAX_NUM+1];  ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
     int chroma_qp_diff;
+    uint8_t data[4096];
+    size_t data_size;
 
     uint32_t dequant4_buffer[6][QP_MAX_NUM + 1][16];
     uint32_t dequant8_buffer[6][QP_MAX_NUM + 1][64];
@@ -134,22 +137,28 @@ typedef struct H264ParamSets {
     AVBufferRef *sps_list[MAX_SPS_COUNT];
     AVBufferRef *pps_list[MAX_PPS_COUNT];
 
+    AVBufferRef *pps_ref;
+    AVBufferRef *sps_ref;
     /* currently active parameters sets */
     const PPS *pps;
-    // FIXME this should properly be const
-    SPS *sps;
+    const SPS *sps;
 } H264ParamSets;
 
 /**
  * Decode SPS
  */
 int ff_h264_decode_seq_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
-                                     H264ParamSets *ps);
+                                     H264ParamSets *ps, int ignore_truncation);
 
 /**
  * Decode PPS
  */
 int ff_h264_decode_picture_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
                                          H264ParamSets *ps, int bit_length);
+
+/**
+ * Uninit H264 param sets structure.
+ */
+void ff_h264_ps_uninit(H264ParamSets *ps);
 
 #endif /* AVCODEC_H264_PS_H */

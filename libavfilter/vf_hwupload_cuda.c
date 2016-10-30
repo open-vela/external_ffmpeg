@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -189,18 +189,13 @@ fail:
 }
 
 #define OFFSET(x) offsetof(CudaUploadContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
-static const AVOption options[] = {
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
+static const AVOption cudaupload_options[] = {
     { "device", "Number of the device to use", OFFSET(device_idx), AV_OPT_TYPE_INT, { .i64 = 0 }, .flags = FLAGS },
     { NULL },
 };
 
-static const AVClass cudaupload_class = {
-    .class_name = "cudaupload",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(cudaupload);
 
 static const AVFilterPad cudaupload_inputs[] = {
     {
@@ -222,7 +217,7 @@ static const AVFilterPad cudaupload_outputs[] = {
 
 AVFilter ff_vf_hwupload_cuda = {
     .name        = "hwupload_cuda",
-    .description = NULL_IF_CONFIG_SMALL("Upload a system memory frame to a CUDA device"),
+    .description = NULL_IF_CONFIG_SMALL("Upload a system memory frame to a CUDA device."),
 
     .init      = cudaupload_init,
     .uninit    = cudaupload_uninit,
