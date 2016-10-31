@@ -1,25 +1,25 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef AVCODEC_NVENC_H
 #define AVCODEC_NVENC_H
 
-#include "compat/nvenc/nvEncodeAPI.h"
+#include <nvEncodeAPI.h>
 
 #include "config.h"
 
@@ -29,7 +29,7 @@
 #include "avcodec.h"
 
 #if CONFIG_CUDA
-#include "libavutil/hwcontext_cuda.h"
+#include <cuda.h>
 #else
 
 #if defined(_WIN32)
@@ -48,21 +48,16 @@ typedef void* CUdeviceptr;
 
 #define MAX_REGISTERED_FRAMES 64
 
-typedef struct NvencSurface
-{
-    NV_ENC_INPUT_PTR input_surface;
-    AVFrame *in_ref;
+typedef struct NVENCFrame {
+    NV_ENC_INPUT_PTR  in;
+    AVFrame          *in_ref;
     NV_ENC_MAP_INPUT_RESOURCE in_map;
     int reg_idx;
-    int width;
-    int height;
-    int pitch;
 
-    NV_ENC_OUTPUT_PTR output_surface;
+    NV_ENC_OUTPUT_PTR out;
     NV_ENC_BUFFER_FORMAT format;
-    int size;
-    int lockCount;
-} NvencSurface;
+    int locked;
+} NVENCFrame;
 
 typedef CUresult(CUDAAPI *PCUINIT)(unsigned int Flags);
 typedef CUresult(CUDAAPI *PCUDEVICEGETCOUNT)(int *count);
@@ -73,10 +68,9 @@ typedef CUresult(CUDAAPI *PCUCTXCREATE)(CUcontext *pctx, unsigned int flags, CUd
 typedef CUresult(CUDAAPI *PCUCTXPOPCURRENT)(CUcontext *pctx);
 typedef CUresult(CUDAAPI *PCUCTXDESTROY)(CUcontext ctx);
 
-typedef NVENCSTATUS (NVENCAPI *PNVENCODEAPIGETMAXSUPPORTEDVERSION)(uint32_t* version);
 typedef NVENCSTATUS (NVENCAPI *PNVENCODEAPICREATEINSTANCE)(NV_ENCODE_API_FUNCTION_LIST *functionList);
 
-typedef struct NvencDynLoadFunctions
+typedef struct NVENCLibraryContext
 {
 #if !CONFIG_CUDA
     void *cuda;
@@ -93,11 +87,10 @@ typedef struct NvencDynLoadFunctions
     PCUCTXDESTROY cu_ctx_destroy;
 
     NV_ENCODE_API_FUNCTION_LIST nvenc_funcs;
-    int nvenc_device_count;
-} NvencDynLoadFunctions;
+} NVENCLibraryContext;
 
 enum {
-    PRESET_DEFAULT = 0,
+    PRESET_DEFAULT,
     PRESET_SLOW,
     PRESET_MEDIUM,
     PRESET_FAST,
@@ -107,7 +100,7 @@ enum {
     PRESET_LOW_LATENCY_DEFAULT ,
     PRESET_LOW_LATENCY_HQ ,
     PRESET_LOW_LATENCY_HP,
-    PRESET_LOSSLESS_DEFAULT, // lossless presets must be the last ones
+    PRESET_LOSSLESS_DEFAULT,
     PRESET_LOSSLESS_HP,
 };
 
@@ -115,7 +108,8 @@ enum {
     NV_ENC_H264_PROFILE_BASELINE,
     NV_ENC_H264_PROFILE_MAIN,
     NV_ENC_H264_PROFILE_HIGH,
-    NV_ENC_H264_PROFILE_HIGH_444P,
+    NV_ENC_H264_PROFILE_HIGH_444,
+    NV_ENC_H264_PROFILE_CONSTRAINED_HIGH,
 };
 
 enum {
@@ -136,23 +130,20 @@ enum {
     ANY_DEVICE,
 };
 
-typedef struct NvencContext
-{
-    AVClass *avclass;
+typedef struct NVENCContext {
+    AVClass *class;
+    NVENCLibraryContext nvel;
 
-    NvencDynLoadFunctions nvenc_dload_funcs;
+    NV_ENC_INITIALIZE_PARAMS params;
+    NV_ENC_CONFIG config;
 
-    NV_ENC_INITIALIZE_PARAMS init_encode_params;
-    NV_ENC_CONFIG encode_config;
     CUcontext cu_context;
     CUcontext cu_context_internal;
 
     int nb_surfaces;
-    NvencSurface *surfaces;
-
-    AVFifoBuffer *output_surface_queue;
-    AVFifoBuffer *output_surface_ready_queue;
-    AVFifoBuffer *timestamp_list;
+    NVENCFrame *frames;
+    AVFifoBuffer *timestamps;
+    AVFifoBuffer *pending, *ready;
 
     struct {
         CUdeviceptr ptr;
@@ -170,22 +161,19 @@ typedef struct NvencContext
     int64_t initial_pts[2];
     int first_packet_output;
 
-    void *nvencoder;
+    void *nvenc_ctx;
 
     int preset;
     int profile;
     int level;
     int tier;
     int rc;
-    int cbr;
-    int twopass;
     int device;
     int flags;
     int async_depth;
     int rc_lookahead;
     int aq;
     int no_scenecut;
-    int forced_idr;
     int b_adapt;
     int temporal_aq;
     int zerolatency;
@@ -193,7 +181,7 @@ typedef struct NvencContext
     int strict_gop;
     int aq_strength;
     int quality;
-} NvencContext;
+} NVENCContext;
 
 int ff_nvenc_encode_init(AVCodecContext *avctx);
 
