@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,6 +40,12 @@
 #   define FUNC @
 #endif
 
+#if HAVE_AS_FPU_DIRECTIVE
+#   define FPU
+#else
+#   define FPU @
+#endif
+
 #if   HAVE_NEON
         .arch           armv7-a
 #elif HAVE_ARMV6T2
@@ -54,11 +60,11 @@ ELF     .object_arch    armv4
 #endif
 
 #if   HAVE_NEON
-        .fpu            neon
+FPU     .fpu            neon
 ELF     .eabi_attribute 10, 0           @ suppress Tag_FP_arch
 ELF     .eabi_attribute 12, 0           @ suppress Tag_Advanced_SIMD_arch
 #elif HAVE_VFP
-        .fpu            vfp
+FPU     .fpu            vfp
 ELF     .eabi_attribute 10, 0           @ suppress Tag_FP_arch
 #endif
 
@@ -76,6 +82,9 @@ ELF     .section .note.GNU-stack,"",%progbits @ Mark stack as non-executable
         .altmacro
         put_pic         %(.Lpic_idx - 1)
         .noaltmacro
+      .endif
+      .if .Lpic_gp
+        .unreq          gp
       .endif
 ELF     .size   \name, . - \name
 FUNC    .endfunc
