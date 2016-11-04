@@ -4,20 +4,20 @@
  * copyright (c) 2013 Yukinori Yamazoe
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,6 @@
 #include "libavutil/log.h"
 #include "libavutil/time.h"
 #include "libavutil/imgutils.h"
-#include "libavcodec/bytestream.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -134,6 +133,9 @@ static void dump_video_param(AVCodecContext *avctx, QSVEncContext *q,
 #if QSV_HAVE_CO2
     mfxExtCodingOption2 *co2 = (mfxExtCodingOption2*)coding_opts[1];
 #endif
+#if QSV_HAVE_CO3
+    mfxExtCodingOption3 *co3 = (mfxExtCodingOption3*)coding_opts[2];
+#endif
 
     av_log(avctx, AV_LOG_VERBOSE, "profile: %s; level: %"PRIu16"\n",
            print_profile(info->CodecProfile), info->CodecLevel);
@@ -183,6 +185,12 @@ static void dump_video_param(AVCodecContext *avctx, QSVEncContext *q,
     } else if (info->RateControlMethod == MFX_RATECONTROL_LA_ICQ) {
         av_log(avctx, AV_LOG_VERBOSE, "ICQQuality: %"PRIu16"; LookAheadDepth: %"PRIu16"\n",
                info->ICQQuality, co2->LookAheadDepth);
+    }
+#endif
+#if QSV_HAVE_QVBR
+    else if (info->RateControlMethod == MFX_RATECONTROL_QVBR) {
+        av_log(avctx, AV_LOG_VERBOSE, "QVBRQuality: %"PRIu16"\n",
+               co3->QVBRQuality);
     }
 #endif
 
@@ -265,7 +273,7 @@ static int select_rc_mode(AVCodecContext *avctx, QSVEncContext *q)
     const char *rc_desc;
     mfxU16      rc_mode;
 
-    int want_la     = q->look_ahead;
+    int want_la     = q->la_depth >= 0;
     int want_qscale = !!(avctx->flags & AV_CODEC_FLAG_QSCALE);
     int want_vcm    = q->vcm;
 
@@ -347,6 +355,9 @@ static int rc_supported(QSVEncContext *q)
 
 static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 {
+    enum AVPixelFormat sw_format = avctx->pix_fmt == AV_PIX_FMT_QSV ?
+                                   avctx->sw_pix_fmt : avctx->pix_fmt;
+    const AVPixFmtDescriptor *desc;
     float quant;
     int ret;
 
@@ -372,24 +383,31 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->param.mfx.EncodedOrder       = 0;
     q->param.mfx.BufferSizeInKB     = 0;
 
+    desc = av_pix_fmt_desc_get(sw_format);
+    if (!desc)
+        return AVERROR_BUG;
+
+    ff_qsv_map_pixfmt(sw_format, &q->param.mfx.FrameInfo.FourCC);
+
+    q->param.mfx.FrameInfo.Width          = FFALIGN(avctx->width, q->width_align);
+    q->param.mfx.FrameInfo.Height         = FFALIGN(avctx->height, 32);
+    q->param.mfx.FrameInfo.CropX          = 0;
+    q->param.mfx.FrameInfo.CropY          = 0;
+    q->param.mfx.FrameInfo.CropW          = avctx->width;
+    q->param.mfx.FrameInfo.CropH          = avctx->height;
+    q->param.mfx.FrameInfo.AspectRatioW   = avctx->sample_aspect_ratio.num;
+    q->param.mfx.FrameInfo.AspectRatioH   = avctx->sample_aspect_ratio.den;
+    q->param.mfx.FrameInfo.PicStruct      = MFX_PICSTRUCT_PROGRESSIVE;
+    q->param.mfx.FrameInfo.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
+    q->param.mfx.FrameInfo.BitDepthLuma   = desc->comp[0].depth;
+    q->param.mfx.FrameInfo.BitDepthChroma = desc->comp[0].depth;
+    q->param.mfx.FrameInfo.Shift          = desc->comp[0].depth > 8;
+
     if (avctx->hw_frames_ctx) {
         AVHWFramesContext *frames_ctx = (AVHWFramesContext*)avctx->hw_frames_ctx->data;
         AVQSVFramesContext *frames_hwctx = frames_ctx->hwctx;
-        q->param.mfx.FrameInfo = frames_hwctx->surfaces[0].Info;
-    } else {
-        q->param.mfx.FrameInfo.FourCC         = MFX_FOURCC_NV12;
-        q->param.mfx.FrameInfo.Width          = FFALIGN(avctx->width, q->width_align);
-        q->param.mfx.FrameInfo.Height         = FFALIGN(avctx->height, 32);
-        q->param.mfx.FrameInfo.CropX          = 0;
-        q->param.mfx.FrameInfo.CropY          = 0;
-        q->param.mfx.FrameInfo.CropW          = avctx->width;
-        q->param.mfx.FrameInfo.CropH          = avctx->height;
-        q->param.mfx.FrameInfo.AspectRatioW   = avctx->sample_aspect_ratio.num;
-        q->param.mfx.FrameInfo.AspectRatioH   = avctx->sample_aspect_ratio.den;
-        q->param.mfx.FrameInfo.PicStruct      = MFX_PICSTRUCT_PROGRESSIVE;
-        q->param.mfx.FrameInfo.ChromaFormat   = MFX_CHROMAFORMAT_YUV420;
-        q->param.mfx.FrameInfo.BitDepthLuma   = 8;
-        q->param.mfx.FrameInfo.BitDepthChroma = 8;
+        q->param.mfx.FrameInfo.Width  = frames_hwctx->surfaces[0].Info.Width;
+        q->param.mfx.FrameInfo.Height = frames_hwctx->surfaces[0].Info.Height;
     }
 
     if (avctx->framerate.den > 0 && avctx->framerate.num > 0) {
@@ -430,11 +448,11 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 #if QSV_HAVE_LA
     case MFX_RATECONTROL_LA:
         q->param.mfx.TargetKbps  = avctx->bit_rate / 1000;
-        q->extco2.LookAheadDepth = q->look_ahead_depth;
+        q->extco2.LookAheadDepth = q->la_depth;
         break;
 #if QSV_HAVE_ICQ
     case MFX_RATECONTROL_LA_ICQ:
-        q->extco2.LookAheadDepth = q->look_ahead_depth;
+        q->extco2.LookAheadDepth = q->la_depth;
     case MFX_RATECONTROL_ICQ:
         q->param.mfx.ICQQuality  = avctx->global_quality;
         break;
@@ -455,9 +473,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif
         q->extco.CAVLC = q->cavlc ? MFX_CODINGOPTION_ON
                                   : MFX_CODINGOPTION_UNKNOWN;
-
-        q->extco.PicTimingSEI         = q->pic_timing_sei ?
-                                        MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
 
         if (q->rdo >= 0)
             q->extco.RateDistortionOpt = q->rdo > 0 ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
@@ -522,10 +537,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
             q->extparam_internal[q->nb_extparam_internal++] = (mfxExtBuffer *)&q->extco2;
-
-#if QSV_HAVE_LA_DS
-            q->extco2.LookAheadDS           = q->look_ahead_downsampling;
-#endif
         }
 #endif
     }
@@ -564,12 +575,21 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
         .Header.BufferSz = sizeof(co2),
     };
 #endif
+#if QSV_HAVE_CO3
+    mfxExtCodingOption3 co3 = {
+        .Header.BufferId = MFX_EXTBUFF_CODING_OPTION3,
+        .Header.BufferSz = sizeof(co3),
+    };
+#endif
 
     mfxExtBuffer *ext_buffers[] = {
         (mfxExtBuffer*)&extradata,
         (mfxExtBuffer*)&co,
 #if QSV_HAVE_CO2
         (mfxExtBuffer*)&co2,
+#endif
+#if QSV_HAVE_CO3
+        (mfxExtBuffer*)&co3,
 #endif
     };
 
@@ -581,7 +601,8 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
 
     ret = MFXVideoENCODE_GetVideoParam(q->session, &q->param);
     if (ret < 0)
-        return ff_qsv_error(ret);
+        return ff_qsv_print_error(avctx, ret,
+                                  "Error calling GetVideoParam");
 
     q->packet_size = q->param.mfx.BufferSizeInKB * 1000;
 
@@ -730,10 +751,9 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
         return ret;
 
     ret = MFXVideoENCODE_QueryIOSurf(q->session, &q->param, &q->req);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error querying the encoding parameters\n");
-        return ff_qsv_error(ret);
-    }
+    if (ret < 0)
+        return ff_qsv_print_error(avctx, ret,
+                                  "Error querying the encoding parameters");
 
     if (opaque_alloc) {
         ret = qsv_init_opaque_alloc(avctx, q);
@@ -771,12 +791,12 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     }
 
     ret = MFXVideoENCODE_Init(q->session, &q->param);
-    if (ret == MFX_WRN_PARTIAL_ACCELERATION) {
-        av_log(avctx, AV_LOG_WARNING, "Encoder will work with partial HW acceleration\n");
-    } else if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error initializing the encoder\n");
-        return ff_qsv_error(ret);
-    }
+    if (ret < 0)
+        return ff_qsv_print_error(avctx, ret,
+                                  "Error initializing the encoder");
+    else if (ret > 0)
+        ff_qsv_print_warning(avctx, ret,
+                             "Warning in encoder initialization");
 
     ret = qsv_retrieve_enc_params(avctx, q);
     if (ret < 0) {
@@ -789,24 +809,12 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     return 0;
 }
 
-static void free_encoder_ctrl_payloads(mfxEncodeCtrl* enc_ctrl)
-{
-    if (enc_ctrl) {
-        int i;
-        for (i = 0; i < enc_ctrl->NumPayload && i < QSV_MAX_ENC_PAYLOAD; i++) {
-            av_free(enc_ctrl->Payload[i]);
-        }
-        enc_ctrl->NumPayload = 0;
-    }
-}
-
 static void clear_unused_frames(QSVEncContext *q)
 {
     QSVFrame *cur = q->work_frames;
     while (cur) {
         if (cur->surface && !cur->surface->Data.Locked) {
             cur->surface = NULL;
-            free_encoder_ctrl_payloads(&cur->enc_ctrl);
             av_frame_unref(cur->frame);
         }
         cur = cur->next;
@@ -839,11 +847,6 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
         av_freep(&frame);
         return AVERROR(ENOMEM);
     }
-    frame->enc_ctrl.Payload = av_mallocz(sizeof(mfxPayload*) * QSV_MAX_ENC_PAYLOAD);
-    if (!frame->enc_ctrl.Payload) {
-        av_freep(&frame);
-        return AVERROR(ENOMEM);
-    }
     *last = frame;
 
     *f = frame;
@@ -852,7 +855,7 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
 }
 
 static int submit_frame(QSVEncContext *q, const AVFrame *frame,
-                        QSVFrame **new_frame)
+                        mfxFrameSurface1 **surface)
 {
     QSVFrame *qf;
     int ret;
@@ -912,7 +915,7 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
 
     qf->surface->Data.TimeStamp = av_rescale_q(frame->pts, q->avctx->time_base, (AVRational){1, 90000});
 
-    *new_frame = qf;
+    *surface = qf->surface;
 
     return 0;
 }
@@ -937,20 +940,14 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
 
     mfxFrameSurface1 *surf = NULL;
     mfxSyncPoint *sync     = NULL;
-    QSVFrame *qsv_frame = NULL;
-    mfxEncodeCtrl* enc_ctrl = NULL;
     int ret;
 
     if (frame) {
-        ret = submit_frame(q, frame, &qsv_frame);
+        ret = submit_frame(q, frame, &surf);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "Error submitting the frame for encoding.\n");
             return ret;
         }
-    }
-    if (qsv_frame) {
-        surf = qsv_frame->surface;
-        enc_ctrl = &qsv_frame->enc_ctrl;
     }
 
     ret = av_new_packet(&new_pkt, q->packet_size);
@@ -967,10 +964,6 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
     bs->Data      = new_pkt.data;
     bs->MaxLength = new_pkt.size;
 
-    if (q->set_encode_ctrl_cb) {
-        q->set_encode_ctrl_cb(avctx, frame, &qsv_frame->enc_ctrl);
-    }
-
     sync = av_mallocz(sizeof(*sync));
     if (!sync) {
         av_freep(&bs);
@@ -979,16 +972,20 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
     }
 
     do {
-        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, enc_ctrl, surf, bs, sync);
+        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, NULL, surf, bs, sync);
         if (ret == MFX_WRN_DEVICE_BUSY)
-            av_usleep(500);
+            av_usleep(1);
     } while (ret == MFX_WRN_DEVICE_BUSY || ret == MFX_WRN_IN_EXECUTION);
+
+    if (ret > 0)
+        ff_qsv_print_warning(avctx, ret, "Warning during encoding");
 
     if (ret < 0) {
         av_packet_unref(&new_pkt);
         av_freep(&bs);
         av_freep(&sync);
-        return (ret == MFX_ERR_MORE_DATA) ? 0 : ff_qsv_error(ret);
+        return (ret == MFX_ERR_MORE_DATA) ?
+               0 : ff_qsv_print_error(avctx, ret, "Error during encoding");
     }
 
     if (ret == MFX_WRN_INCOMPATIBLE_VIDEO_PARAM && frame->interlaced_frame)
@@ -1095,7 +1092,6 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     while (cur) {
         q->work_frames = cur->next;
         av_frame_free(&cur->frame);
-        av_free(cur->enc_ctrl.Payload);
         av_freep(&cur);
         cur = q->work_frames;
     }
