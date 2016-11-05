@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,7 @@
 #include <dxva2api.h>
 #include <initguid.h>
 
+#include "avassert.h"
 #include "common.h"
 #include "hwcontext.h"
 #include "hwcontext_dxva2.h"
@@ -36,13 +37,10 @@
 #include "imgutils.h"
 #include "pixdesc.h"
 #include "pixfmt.h"
+#include "compat/w32dlfcn.h"
 
 typedef IDirect3D9* WINAPI pDirect3DCreate9(UINT);
 typedef HRESULT WINAPI pCreateDeviceManager9(UINT *, IDirect3DDeviceManager9 **);
-
-typedef struct DXVA2Mapping {
-    uint32_t palette_dummy[256];
-} DXVA2Mapping;
 
 typedef struct DXVA2FramesContext {
     IDirect3DSurface9 **surfaces_internal;
@@ -70,7 +68,6 @@ static const struct {
 } supported_formats[] = {
     { MKTAG('N', 'V', '1', '2'), AV_PIX_FMT_NV12 },
     { MKTAG('P', '0', '1', '0'), AV_PIX_FMT_P010 },
-    { D3DFMT_P8,                 AV_PIX_FMT_PAL8 },
 };
 
 DEFINE_GUID(video_decoder_service,   0xfc51a551, 0xd5e7, 0x11d9, 0xaf, 0x55, 0x00, 0x05, 0x4e, 0x43, 0xff, 0x02);
@@ -246,24 +243,29 @@ static int dxva2_transfer_get_formats(AVHWFramesContext *ctx,
     return 0;
 }
 
-static void dxva2_unmap_frame(AVHWFramesContext *ctx, HWMapDescriptor *hwmap)
+static int dxva2_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
+                               const AVFrame *src)
 {
-    IDirect3DSurface9 *surface = (IDirect3DSurface9*)hwmap->source->data[3];
-    IDirect3DSurface9_UnlockRect(surface);
-    av_freep(&hwmap->priv);
-}
-
-static int dxva2_map_frame(AVHWFramesContext *ctx, AVFrame *dst, const AVFrame *src,
-                           int flags)
-{
-    IDirect3DSurface9 *surface = (IDirect3DSurface9*)src->data[3];
-    DXVA2Mapping      *map;
+    IDirect3DSurface9 *surface;
     D3DSURFACE_DESC    surfaceDesc;
     D3DLOCKED_RECT     LockedRect;
     HRESULT            hr;
-    int i, err, nb_planes;
 
-    nb_planes = av_pix_fmt_count_planes(dst->format);
+    int download = !!src->hw_frames_ctx;
+    int bytes_per_component;
+
+    switch (ctx->sw_format) {
+        case AV_PIX_FMT_NV12:
+            bytes_per_component = 1;
+            break;
+        case AV_PIX_FMT_P010:
+            bytes_per_component = 2;
+            break;
+        default:
+            av_assert0(0);
+    }
+
+    surface = (IDirect3DSurface9*)(download ? src->data[3] : dst->data[3]);
 
     hr = IDirect3DSurface9_GetDesc(surface, &surfaceDesc);
     if (FAILED(hr)) {
@@ -272,86 +274,29 @@ static int dxva2_map_frame(AVHWFramesContext *ctx, AVFrame *dst, const AVFrame *
     }
 
     hr = IDirect3DSurface9_LockRect(surface, &LockedRect, NULL,
-                                    flags & AV_HWFRAME_MAP_READ ? D3DLOCK_READONLY : D3DLOCK_DISCARD);
+                                    download ? D3DLOCK_READONLY : D3DLOCK_DISCARD);
     if (FAILED(hr)) {
         av_log(ctx, AV_LOG_ERROR, "Unable to lock DXVA2 surface\n");
         return AVERROR_UNKNOWN;
     }
 
-    map = av_mallocz(sizeof(*map));
-    if (!map)
-        goto fail;
-
-    err = ff_hwframe_map_create(src->hw_frames_ctx, dst, src,
-                                dxva2_unmap_frame, map);
-    if (err < 0) {
-        av_freep(&map);
-        goto fail;
-    }
-
-    for (i = 0; i < nb_planes; i++)
-        dst->linesize[i] = LockedRect.Pitch;
-
-    av_image_fill_pointers(dst->data, dst->format, surfaceDesc.Height,
-                           (uint8_t*)LockedRect.pBits, dst->linesize);
-
-    if (dst->format == AV_PIX_FMT_PAL8)
-        dst->data[1] = (uint8_t*)map->palette_dummy;
-
-    return 0;
-fail:
-    IDirect3DSurface9_UnlockRect(surface);
-    return err;
-}
-
-static int dxva2_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
-                               const AVFrame *src)
-{
-    int download = !!src->hw_frames_ctx;
-
-    AVFrame *map;
-    int ret, i;
-
-    map = av_frame_alloc();
-    if (!map)
-        return AVERROR(ENOMEM);
-    map->format = dst->format;
-
-    ret = dxva2_map_frame(ctx, map, download ? src : dst,
-                          download ? AV_HWFRAME_MAP_READ : AV_HWFRAME_MAP_WRITE);
-    if (ret < 0)
-        goto fail;
-
     if (download) {
-        ptrdiff_t src_linesize[4], dst_linesize[4];
-        for (i = 0; i < 4; i++) {
-            dst_linesize[i] = dst->linesize[i];
-            src_linesize[i] = map->linesize[i];
-        }
-        av_image_copy_uc_from(dst->data, dst_linesize, map->data, src_linesize,
-                              ctx->sw_format, src->width, src->height);
+        av_image_copy_plane(dst->data[0], dst->linesize[0],
+                            (uint8_t*)LockedRect.pBits, LockedRect.Pitch,
+                            src->width * bytes_per_component, src->height);
+        av_image_copy_plane(dst->data[1], dst->linesize[1],
+                            (uint8_t*)LockedRect.pBits + LockedRect.Pitch * surfaceDesc.Height,
+                            LockedRect.Pitch, src->width * bytes_per_component, src->height / 2);
     } else {
-        av_image_copy(map->data, map->linesize, src->data, src->linesize,
-                      ctx->sw_format, src->width, src->height);
+        av_image_copy_plane((uint8_t*)LockedRect.pBits, LockedRect.Pitch,
+                            dst->data[0], dst->linesize[0],
+                            src->width * bytes_per_component, src->height);
+        av_image_copy_plane((uint8_t*)LockedRect.pBits + LockedRect.Pitch * surfaceDesc.Height,
+                            LockedRect.Pitch, dst->data[1], dst->linesize[1],
+                            src->width * bytes_per_component, src->height / 2);
     }
 
-fail:
-    av_frame_free(&map);
-    return ret;
-}
-
-static int dxva2_map_from(AVHWFramesContext *ctx,
-                          AVFrame *dst, const AVFrame *src, int flags)
-{
-    int err;
-
-    err = dxva2_map_frame(ctx, dst, src, flags);
-    if (err < 0)
-        return err;
-
-    err = av_frame_copy_props(dst, src);
-    if (err < 0)
-        return err;
+    IDirect3DSurface9_UnlockRect(surface);
 
     return 0;
 }
@@ -374,10 +319,10 @@ static void dxva2_device_free(AVHWDeviceContext *ctx)
         IDirect3D9_Release(priv->d3d9);
 
     if (priv->d3dlib)
-        FreeLibrary(priv->d3dlib);
+        dlclose(priv->d3dlib);
 
     if (priv->dxva2lib)
-        FreeLibrary(priv->dxva2lib);
+        dlclose(priv->dxva2lib);
 
     av_freep(&ctx->user_opaque);
 }
@@ -408,24 +353,24 @@ static int dxva2_device_create(AVHWDeviceContext *ctx, const char *device,
 
     priv->device_handle = INVALID_HANDLE_VALUE;
 
-    priv->d3dlib = LoadLibrary("d3d9.dll");
+    priv->d3dlib = dlopen("d3d9.dll", 0);
     if (!priv->d3dlib) {
         av_log(ctx, AV_LOG_ERROR, "Failed to load D3D9 library\n");
         return AVERROR_UNKNOWN;
     }
-    priv->dxva2lib = LoadLibrary("dxva2.dll");
+    priv->dxva2lib = dlopen("dxva2.dll", 0);
     if (!priv->dxva2lib) {
         av_log(ctx, AV_LOG_ERROR, "Failed to load DXVA2 library\n");
         return AVERROR_UNKNOWN;
     }
 
-    createD3D = (pDirect3DCreate9 *)GetProcAddress(priv->d3dlib, "Direct3DCreate9");
+    createD3D = (pDirect3DCreate9 *)dlsym(priv->d3dlib, "Direct3DCreate9");
     if (!createD3D) {
         av_log(ctx, AV_LOG_ERROR, "Failed to locate Direct3DCreate9\n");
         return AVERROR_UNKNOWN;
     }
-    createDeviceManager = (pCreateDeviceManager9 *)GetProcAddress(priv->dxva2lib,
-                                                                  "DXVA2CreateDirect3DDeviceManager9");
+    createDeviceManager = (pCreateDeviceManager9 *)dlsym(priv->dxva2lib,
+                                                         "DXVA2CreateDirect3DDeviceManager9");
     if (!createDeviceManager) {
         av_log(ctx, AV_LOG_ERROR, "Failed to locate DXVA2CreateDirect3DDeviceManager9\n");
         return AVERROR_UNKNOWN;
@@ -446,7 +391,7 @@ static int dxva2_device_create(AVHWDeviceContext *ctx, const char *device,
     d3dpp.SwapEffect       = D3DSWAPEFFECT_DISCARD;
     d3dpp.Flags            = D3DPRESENTFLAG_VIDEO;
 
-    hr = IDirect3D9_CreateDevice(priv->d3d9, adapter, D3DDEVTYPE_HAL, GetShellWindow(),
+    hr = IDirect3D9_CreateDevice(priv->d3d9, adapter, D3DDEVTYPE_HAL, GetDesktopWindow(),
                                  D3DCREATE_SOFTWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE,
                                  &d3dpp, &priv->d3d9device);
     if (FAILED(hr)) {
@@ -490,7 +435,6 @@ const HWContextType ff_hwcontext_type_dxva2 = {
     .transfer_get_formats = dxva2_transfer_get_formats,
     .transfer_data_to     = dxva2_transfer_data,
     .transfer_data_from   = dxva2_transfer_data,
-    .map_from             = dxva2_map_from,
 
     .pix_fmts             = (const enum AVPixelFormat[]){ AV_PIX_FMT_DXVA2_VLD, AV_PIX_FMT_NONE },
 };
