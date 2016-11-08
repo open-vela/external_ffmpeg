@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,10 +55,8 @@ static int hwdownload_query_formats(AVFilterContext *avctx)
         }
     }
 
-    if ((err = ff_formats_ref(infmts,  &avctx->inputs[0]->out_formats)) < 0 ||
-        (err = ff_formats_ref(outfmts, &avctx->outputs[0]->in_formats)) < 0)
-        return err;
-
+    ff_formats_ref(infmts,  &avctx->inputs[0]->out_formats);
+    ff_formats_ref(outfmts, &avctx->outputs[0]->in_formats);
     return 0;
 }
 
@@ -142,7 +140,8 @@ static int hwdownload_filter_frame(AVFilterLink *link, AVFrame *input)
         goto fail;
     }
 
-    output = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    output = ff_get_video_buffer(outlink, ctx->hwframes->width,
+                                 ctx->hwframes->height);
     if (!output) {
         err = AVERROR(ENOMEM);
         goto fail;
@@ -153,6 +152,9 @@ static int hwdownload_filter_frame(AVFilterLink *link, AVFrame *input)
         av_log(ctx, AV_LOG_ERROR, "Failed to download frame: %d.\n", err);
         goto fail;
     }
+
+    output->width  = outlink->w;
+    output->height = outlink->h;
 
     err = av_frame_copy_props(output, input);
     if (err < 0)
@@ -210,4 +212,5 @@ AVFilter ff_vf_hwdownload = {
     .priv_class    = &hwdownload_class,
     .inputs        = hwdownload_inputs,
     .outputs       = hwdownload_outputs,
+    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

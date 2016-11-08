@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -151,20 +151,16 @@ static int cudaupload_config_output(AVFilterLink *outlink)
 static int cudaupload_filter_frame(AVFilterLink *link, AVFrame *in)
 {
     AVFilterContext   *ctx = link->dst;
-    CudaUploadContext   *s = ctx->priv;
+    AVFilterLink  *outlink = ctx->outputs[0];
 
     AVFrame *out = NULL;
     int ret;
 
-    out = av_frame_alloc();
+    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
-
-    ret = av_hwframe_get_buffer(s->hwframe, out, 0);
-    if (ret < 0)
-        goto fail;
 
     out->width  = in->width;
     out->height = in->height;
@@ -189,13 +185,18 @@ fail:
 }
 
 #define OFFSET(x) offsetof(CudaUploadContext, x)
-#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
-static const AVOption cudaupload_options[] = {
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption options[] = {
     { "device", "Number of the device to use", OFFSET(device_idx), AV_OPT_TYPE_INT, { .i64 = 0 }, .flags = FLAGS },
     { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(cudaupload);
+static const AVClass cudaupload_class = {
+    .class_name = "cudaupload",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad cudaupload_inputs[] = {
     {
@@ -217,7 +218,7 @@ static const AVFilterPad cudaupload_outputs[] = {
 
 AVFilter ff_vf_hwupload_cuda = {
     .name        = "hwupload_cuda",
-    .description = NULL_IF_CONFIG_SMALL("Upload a system memory frame to a CUDA device."),
+    .description = NULL_IF_CONFIG_SMALL("Upload a system memory frame to a CUDA device"),
 
     .init      = cudaupload_init,
     .uninit    = cudaupload_uninit,
@@ -229,4 +230,6 @@ AVFilter ff_vf_hwupload_cuda = {
 
     .inputs    = cudaupload_inputs,
     .outputs   = cudaupload_outputs,
+
+    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
