@@ -2,20 +2,20 @@
  * Common Ut Video header
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,8 +30,7 @@
 #include "libavutil/common.h"
 #include "avcodec.h"
 #include "bswapdsp.h"
-#include "lossless_videodsp.h"
-#include "lossless_videoencdsp.h"
+#include "huffyuvencdsp.h"
 
 enum {
     PRED_NONE = 0,
@@ -57,7 +56,6 @@ enum {
     UTVIDEO_RGBA = MKTAG(0x00, 0x00, 0x02, 0x18),
     UTVIDEO_420  = MKTAG('Y', 'V', '1', '2'),
     UTVIDEO_422  = MKTAG('Y', 'U', 'Y', '2'),
-    UTVIDEO_444  = MKTAG('Y', 'V', '2', '4'),
 };
 
 /* Mapping of libavcodec prediction modes to Ut Video's */
@@ -70,8 +68,7 @@ typedef struct UtvideoContext {
     const AVClass *class;
     AVCodecContext *avctx;
     BswapDSPContext bdsp;
-    LLVidDSPContext llviddsp;
-    LLVidEncDSPContext llvidencdsp;
+    HuffYUVEncDSPContext hdsp;
 
     uint32_t frame_info_size, flags, frame_info;
     int      planes;
