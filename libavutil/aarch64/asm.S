@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -72,21 +72,15 @@ ELF     .size   \name, . - \name
 \name:
 .endm
 
-.macro  movrel rd, val, offset=0
+.macro  movrel rd, val
 #if CONFIG_PIC && defined(__APPLE__)
-    .if \offset < 0
         adrp            \rd, \val@PAGE
         add             \rd, \rd, \val@PAGEOFF
-        sub             \rd, \rd, -(\offset)
-    .else
-        adrp            \rd, \val+(\offset)@PAGE
-        add             \rd, \rd, \val+(\offset)@PAGEOFF
-    .endif
 #elif CONFIG_PIC
-        adrp            \rd, \val+\offset
-        add             \rd, \rd, :lo12:\val+\offset
+        adrp            \rd, \val
+        add             \rd, \rd, :lo12:\val
 #else
-        ldr             \rd, =\val+\offset
+        ldr             \rd, =\val
 #endif
 .endm
 

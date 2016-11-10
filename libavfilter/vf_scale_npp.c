@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -294,8 +294,20 @@ static int init_processing_chain(AVFilterContext *ctx, int in_width, int in_heig
 
     /* figure out which stages need to be done */
     if (in_width != out_width || in_height != out_height ||
-        in_deinterleaved_format != out_deinterleaved_format)
+        in_deinterleaved_format != out_deinterleaved_format) {
         s->stages[STAGE_RESIZE].stage_needed = 1;
+
+        if (s->interp_algo == NPPI_INTER_SUPER &&
+            (out_width > in_width && out_height > in_height)) {
+            s->interp_algo = NPPI_INTER_LANCZOS;
+            av_log(ctx, AV_LOG_WARNING, "super-sampling not supported for output dimensions, using lanczos instead.\n");
+        }
+        if (s->interp_algo == NPPI_INTER_SUPER &&
+            !(out_width < in_width && out_height < in_height)) {
+            s->interp_algo = NPPI_INTER_CUBIC;
+            av_log(ctx, AV_LOG_WARNING, "super-sampling not supported for output dimensions, using cubic instead.\n");
+        }
+    }
 
     if (!s->stages[STAGE_RESIZE].stage_needed && in_format == out_format)
         s->passthrough = 1;
@@ -600,7 +612,7 @@ fail:
 }
 
 #define OFFSET(x) offsetof(NPPScaleContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption options[] = {
     { "w",      "Output video width",  OFFSET(w_expr),     AV_OPT_TYPE_STRING, { .str = "iw"   }, .flags = FLAGS },
     { "h",      "Output video height", OFFSET(h_expr),     AV_OPT_TYPE_STRING, { .str = "ih"   }, .flags = FLAGS },
@@ -657,6 +669,4 @@ AVFilter ff_vf_scale_npp = {
 
     .inputs    = nppscale_inputs,
     .outputs   = nppscale_outputs,
-
-    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
