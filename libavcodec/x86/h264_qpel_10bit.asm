@@ -5,20 +5,20 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -26,12 +26,11 @@
 
 SECTION_RODATA 32
 
-cextern pd_65535
-cextern pw_1023
-%define pw_pixel_max pw_1023
 cextern pw_16
 cextern pw_1
 cextern pb_0
+
+pw_pixel_max: times 8 dw ((1 << 10)-1)
 
 pad10: times 8 dw 10*1023
 pad20: times 8 dw 20*1023
@@ -43,6 +42,7 @@ unpad: times 8 dw 16*1022/32 ; needs to be mod 16
 tap1: times 4 dw  1, -5
 tap2: times 4 dw 20, 20
 tap3: times 4 dw -5,  1
+pd_0f: times 4 dd 0xffff
 
 SECTION .text
 
@@ -708,7 +708,7 @@ h%1_loop_op:
     psrad      m1, 10
     psrad      m2, 10
     pslld      m2, 16
-    pand       m1, [pd_65535]
+    pand       m1, [pd_0f]
     por        m1, m2
 %if num_mmregs <= 8
     pxor       m0, m0
