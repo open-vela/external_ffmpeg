@@ -7,34 +7,32 @@
 ;*          Loren Merritt <lorenm@u.washington.edu>
 ;*          Fiona Glaser <fiona@x264.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
 %include "libavutil/x86/x86util.asm"
-
-SECTION_RODATA
-
-pw_pixel_max: times 8 dw ((1 << 10)-1)
 
 SECTION .text
 
 cextern pw_2
 cextern pw_3
 cextern pw_4
+cextern pw_1023
+%define pw_pixel_max pw_1023
 
 ; out: %4 = |%1-%2|-%3
 ; clobbers: %5
@@ -418,8 +416,10 @@ cglobal deblock_h_luma_10, 5,7,15
 
 INIT_XMM sse2
 DEBLOCK_LUMA_64
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA_64
+%endif
 %endif
 
 %macro SWAPMOVA 2
@@ -715,8 +715,10 @@ cglobal deblock_h_luma_intra_10, 4,7,16
 
 INIT_XMM sse2
 DEBLOCK_LUMA_INTRA_64
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA_INTRA_64
+%endif
 
 %endif
 
@@ -802,9 +804,11 @@ DEBLOCK_LUMA_INTRA
 INIT_XMM sse2
 DEBLOCK_LUMA
 DEBLOCK_LUMA_INTRA
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA
 DEBLOCK_LUMA_INTRA
+%endif
 %endif
 
 ; in: %1=p0, %2=q0, %3=p1, %4=q1, %5=mask, %6=tmp, %7=tmp
@@ -918,5 +922,7 @@ DEBLOCK_CHROMA
 %endif
 INIT_XMM sse2
 DEBLOCK_CHROMA
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_CHROMA
+%endif
