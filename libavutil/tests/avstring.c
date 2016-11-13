@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,8 @@
 int main(void)
 {
     int i;
-    static const char *strings[] = {
+    char *fullpath;
+    static const char * const strings[] = {
         "''",
         "",
         ":",
@@ -65,5 +66,18 @@ int main(void)
         av_free(q);
     }
 
+    printf("Testing av_append_path_component()\n");
+    #define TEST_APPEND_PATH_COMPONENT(path, component, expected) \
+        fullpath = av_append_path_component((path), (component)); \
+        printf("%s = %s\n", fullpath ? fullpath : "(null)", expected); \
+        av_free(fullpath);
+    TEST_APPEND_PATH_COMPONENT(NULL, NULL, "(null)")
+    TEST_APPEND_PATH_COMPONENT("path", NULL, "path");
+    TEST_APPEND_PATH_COMPONENT(NULL, "comp", "comp");
+    TEST_APPEND_PATH_COMPONENT("path", "comp", "path/comp");
+    TEST_APPEND_PATH_COMPONENT("path/", "comp", "path/comp");
+    TEST_APPEND_PATH_COMPONENT("path", "/comp", "path/comp");
+    TEST_APPEND_PATH_COMPONENT("path/", "/comp", "path/comp");
+    TEST_APPEND_PATH_COMPONENT("path/path2/", "/comp/comp2", "path/path2/comp/comp2");
     return 0;
 }
