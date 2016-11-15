@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -171,7 +171,7 @@ static void check_idct_dc4(void)
     for (chroma = 0; chroma <= 1; chroma++) {
         void (*idct4dc)(uint8_t *, int16_t[4][16], ptrdiff_t) = chroma ? d.vp8_idct_dc_add4uv : d.vp8_idct_dc_add4y;
         if (check_func(idct4dc, "vp8_idct_dc_add4%s", chroma ? "uv" : "y")) {
-            ptrdiff_t stride = chroma ? 8 : 16;
+            int stride = chroma ? 8 : 16;
             int w      = chroma ? 2 : 4;
             for (i = 0; i < 4; i++) {
                 int blockx = 4 * (i % w);
@@ -247,7 +247,7 @@ static void check_luma_dc_wht(void)
 }
 
 #define SRC_BUF_STRIDE 32
-#define SRC_BUF_SIZE (((size << (size < 16)) + 5) * SRC_BUF_STRIDE)
+#define SRC_BUF_SIZE ((size + 5) * SRC_BUF_STRIDE)
 // The mc subpixel interpolation filter needs the 2 previous pixels in either
 // direction, the +1 is to make sure the actual load addresses always are
 // unaligned.
@@ -268,17 +268,15 @@ static void check_mc(void)
     LOCAL_ALIGNED_16(uint8_t, dst0, [16 * 16]);
     LOCAL_ALIGNED_16(uint8_t, dst1, [16 * 16]);
     VP8DSPContext d;
-    int type, k, dx, dy;
+    int type, hsize, dx, dy;
     declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *, ptrdiff_t, uint8_t *, ptrdiff_t, int, int, int);
 
     ff_vp78dsp_init(&d);
 
     for (type = 0; type < 2; type++) {
         vp8_mc_func (*tab)[3][3] = type ? d.put_vp8_bilinear_pixels_tab : d.put_vp8_epel_pixels_tab;
-        for (k = 1; k < 8; k++) {
-            int hsize  = k / 3;
-            int size   = 16 >> hsize;
-            int height = (size << 1) >> (k % 3);
+        for (hsize = 0; hsize < 3; hsize++) {
+            int size = 16 >> hsize;
             for (dy = 0; dy < 3; dy++) {
                 for (dx = 0; dx < 3; dx++) {
                     char str[100];
@@ -311,11 +309,11 @@ static void check_mc(void)
                             src[i                 ] = val;
                             src[i * SRC_BUF_STRIDE] = val;
                         }
-                        call_ref(dst0, size, src, SRC_BUF_STRIDE, height, mx, my);
-                        call_new(dst1, size, src, SRC_BUF_STRIDE, height, mx, my);
-                        if (memcmp(dst0, dst1, size * height))
+                        call_ref(dst0, size, src, SRC_BUF_STRIDE, size, mx, my);
+                        call_new(dst1, size, src, SRC_BUF_STRIDE, size, mx, my);
+                        if (memcmp(dst0, dst1, size * size))
                             fail();
-                        bench_new(dst1, size, src, SRC_BUF_STRIDE, height, mx, my);
+                        bench_new(dst1, size, src, SRC_BUF_STRIDE, size, mx, my);
                     }
                 }
             }
@@ -365,7 +363,7 @@ static void randomize_loopfilter_buffers(int lineoff, int str,
 }
 
 // Fill the buffer with random pixels
-static void fill_loopfilter_buffers(uint8_t *buf, ptrdiff_t stride, int w, int h)
+static void fill_loopfilter_buffers(uint8_t *buf, int stride, int w, int h)
 {
     int x, y;
     for (y = 0; y < h; y++)
