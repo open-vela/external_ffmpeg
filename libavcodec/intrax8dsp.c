@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,8 +63,8 @@
                 4   - mb_x>= (mb_width-1) last block in the row, interpolate area #5;
 -*/
 static void x8_setup_spatial_compensation(uint8_t *src, uint8_t *dst,
-                                          ptrdiff_t stride, int *range,
-                                          int *psum, int edges)
+                                          int linesize, int *range, int *psum,
+                                          int edges)
 {
     uint8_t *ptr;
     int sum;
@@ -98,12 +98,12 @@ static void x8_setup_spatial_compensation(uint8_t *src, uint8_t *dst,
             max_pix        = FFMAX(max_pix, c);
             dst[area2 + i] = c;
 
-            ptr += stride;
+            ptr += linesize;
         }
     }
 
     if (!(edges & 2)) { // (mb_y != 0) // there is row above
-        ptr = src - stride; // top line
+        ptr = src - linesize; // top line
         for (i = 0; i < 8; i++) {
             c       = *(ptr + i);
             sum    += c;
@@ -117,7 +117,7 @@ static void x8_setup_spatial_compensation(uint8_t *src, uint8_t *dst,
             memcpy(dst + area4, ptr, 16); // both area4 and 5
         }
         // area6 always present in the above block
-        memcpy(dst + area6, ptr - stride, 8);
+        memcpy(dst + area6, ptr - linesize, 8);
     }
     // now calculate the stuff we need
     if (edges & 3) { // mb_x ==0 || mb_y == 0) {
@@ -131,7 +131,7 @@ static void x8_setup_spatial_compensation(uint8_t *src, uint8_t *dst,
         sum += avg * 9;
     } else {
         // the edge pixel, in the top line and left column
-        uint8_t c = *(src - 1 - stride);
+        uint8_t c = *(src - 1 - linesize);
         dst[area3] = c;
         sum       += c;
         // edge pixel is not part of min/max
@@ -160,7 +160,7 @@ static const uint16_t zero_prediction_weights[64 * 2] = {
     317,  846, 366,  731, 458,  611, 499, 499,
 };
 
-static void spatial_compensation_0(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_0(uint8_t *src, uint8_t *dst, int linesize)
 {
     int i, j;
     int x, y;
@@ -208,55 +208,55 @@ static void spatial_compensation_0(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
             dst[x] = ((uint32_t)  top_sum[0][x] * zero_prediction_weights[y * 16 + x * 2 + 0] +
                       (uint32_t) left_sum[0][y] * zero_prediction_weights[y * 16 + x * 2 + 1] +
                       0x8000) >> 16;
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_1(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_1(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = src[area4 + FFMIN(2 * y + x + 2, 15)];
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_2(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_2(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = src[area4 + 1 + y + x];
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_3(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_3(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = src[area4 + ((y + 1) >> 1) + x];
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_4(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_4(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = (src[area4 + x] + src[area6 + x] + 1) >> 1;
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_5(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_5(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
@@ -267,22 +267,22 @@ static void spatial_compensation_5(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
             else
                 dst[x] = src[area4 + x - ((y + 1) >> 1)];
         }
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_6(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_6(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = src[area3 + x - y];
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_7(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_7(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
@@ -293,56 +293,55 @@ static void spatial_compensation_7(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
             else
                 dst[x] = src[area2 + 8 - y + (x >> 1)];
         }
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_8(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_8(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = (src[area1 + 7 - y] + src[area2 + 7 - y] + 1) >> 1;
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_9(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_9(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = src[area2 + 6 - FFMIN(x + y, 6)];
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_10(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_10(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = (src[area2 + 7 - y] * (8 - x) + src[area4 + x] * x + 4) >> 3;
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void spatial_compensation_11(uint8_t *src, uint8_t *dst, ptrdiff_t stride)
+static void spatial_compensation_11(uint8_t *src, uint8_t *dst, int linesize)
 {
     int x, y;
 
     for (y = 0; y < 8; y++) {
         for (x = 0; x < 8; x++)
             dst[x] = (src[area2 + 7 - y] * y + src[area4 + x] * (8 - y) + 4) >> 3;
-        dst += stride;
+        dst += linesize;
     }
 }
 
-static void x8_loop_filter(uint8_t *ptr, const ptrdiff_t a_stride,
-                           const ptrdiff_t b_stride, int quant)
+static void x8_loop_filter(uint8_t *ptr, const int a_stride, const int b_stride, int quant)
 {
     int i, t;
     int p0, p1, p2, p3, p4, p5, p6, p7, p8, p9;
@@ -435,12 +434,12 @@ static void x8_loop_filter(uint8_t *ptr, const ptrdiff_t a_stride,
     }
 }
 
-static void x8_h_loop_filter(uint8_t *src, ptrdiff_t stride, int qscale)
+static void x8_h_loop_filter(uint8_t *src, int stride, int qscale)
 {
     x8_loop_filter(src, stride, 1, qscale);
 }
 
-static void x8_v_loop_filter(uint8_t *src, ptrdiff_t stride, int qscale)
+static void x8_v_loop_filter(uint8_t *src, int stride, int qscale)
 {
     x8_loop_filter(src, 1, stride, qscale);
 }

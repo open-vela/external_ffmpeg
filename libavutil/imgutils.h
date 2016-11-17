@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,6 +100,9 @@ int av_image_alloc(uint8_t *pointers[4], int linesizes[4],
  * The first byte of each successive line is separated by *_linesize
  * bytes.
  *
+ * bytewidth must be contained by both absolute values of dst_linesize
+ * and src_linesize, otherwise the function behavior is undefined.
+ *
  * @param dst_linesize linesize for the image plane in dst
  * @param src_linesize linesize for the image plane in src
  */
@@ -118,24 +121,6 @@ void av_image_copy(uint8_t *dst_data[4], int dst_linesizes[4],
                    enum AVPixelFormat pix_fmt, int width, int height);
 
 /**
- * Copy image data located in uncacheable (e.g. GPU mapped) memory. Where
- * available, this function will use special functionality for reading from such
- * memory, which may result in greatly improved performance compared to plain
- * av_image_copy().
- *
- * The data pointers and the linesizes must be aligned to the maximum required
- * by the CPU architecture.
- *
- * @note The linesize parameters have the type ptrdiff_t here, while they are
- *       int for av_image_copy().
- * @note On x86, the linesizes currently need to be aligned to the cacheline
- *       size (i.e. 64) to get improved performance.
- */
-void av_image_copy_uc_from(uint8_t *dst_data[4],       const ptrdiff_t dst_linesizes[4],
-                           const uint8_t *src_data[4], const ptrdiff_t src_linesizes[4],
-                           enum AVPixelFormat pix_fmt, int width, int height);
-
-/**
  * Setup the data pointers and linesizes based on the specified image
  * parameters and the provided array.
  *
@@ -152,7 +137,7 @@ void av_image_copy_uc_from(uint8_t *dst_data[4],       const ptrdiff_t dst_lines
  * one call, use av_image_alloc().
  *
  * @param dst_data      data pointers to be filled in
- * @param dst_linesize  linesizes for the image in dst_data to be filled in
+ * @param dst_linesizes linesizes for the image in dst_data to be filled in
  * @param src           buffer which will contain or contains the actual image data, can be NULL
  * @param pix_fmt       the pixel format of the image
  * @param width         the width of the image in pixels
@@ -182,7 +167,7 @@ int av_image_get_buffer_size(enum AVPixelFormat pix_fmt, int width, int height, 
  * @param dst           a buffer into which picture data will be copied
  * @param dst_size      the size in bytes of dst
  * @param src_data      pointers containing the source image data
- * @param src_linesize  linesizes for the image in src_data
+ * @param src_linesizes linesizes for the image in src_data
  * @param pix_fmt       the pixel format of the source image
  * @param width         the width of the source image in pixels
  * @param height        the height of the source image in pixels
