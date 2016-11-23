@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -791,13 +791,15 @@ function ff_vp9_\txfm1\()_\txfm2\()_16x16_add_neon, export=1
 .ifnc \txfm1\()_\txfm2,idct_idct
         vpush           {q4-q7}
 .endif
+        mov             r7,  sp
 
         @ Align the stack, allocate a temp buffer
-T       mov             r7,  sp
-T       and             r7,  r7,  #15
-A       and             r7,  sp,  #15
-        add             r7,  r7,  #512
-        sub             sp,  sp,  r7
+T       mov             r12, sp
+T       bic             r12, r12, #15
+T       sub             r12, r12, #512
+T       mov             sp,  r12
+A       bic             sp,  sp,  #15
+A       sub             sp,  sp,  #512
 
         mov             r4,  r0
         mov             r5,  r1
@@ -826,7 +828,7 @@ A       and             r7,  sp,  #15
         bl              \txfm2\()16_1d_4x16_pass2_neon
 .endr
 
-        add             sp,  sp,  r7
+        mov             sp,  r7
 .ifnc \txfm1\()_\txfm2,idct_idct
         vpop            {q4-q7}
 .endif
@@ -1115,13 +1117,15 @@ function ff_vp9_idct_idct_32x32_add_neon, export=1
         beq             idct32x32_dc_add_neon
         push            {r4-r7,lr}
         vpush           {q4-q7}
+        mov             r7,  sp
 
         @ Align the stack, allocate a temp buffer
-T       mov             r7,  sp
-T       and             r7,  r7,  #15
-A       and             r7,  sp,  #15
-        add             r7,  r7,  #2048
-        sub             sp,  sp,  r7
+T       mov             r12, sp
+T       bic             r12, r12, #15
+T       sub             r12, r12, #2048
+T       mov             sp,  r12
+A       bic             sp,  sp,  #15
+A       sub             sp,  sp,  #2048
 
         mov             r4,  r0
         mov             r5,  r1
@@ -1139,7 +1143,7 @@ A       and             r7,  sp,  #15
         bl              idct32_1d_4x32_pass2_neon
 .endr
 
-        add             sp,  sp,  r7
+        mov             sp,  r7
         vpop            {q4-q7}
         pop             {r4-r7,pc}
 endfunc
