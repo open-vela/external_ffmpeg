@@ -2,20 +2,20 @@
 @ ARMv4-optimized halfpel functions
 @ Copyright (c) 2004 AGAWA Koji <i (AT) atty (DOT) jp>
 @
-@ This file is part of FFmpeg.
+@ This file is part of Libav.
 @
-@ FFmpeg is free software; you can redistribute it and/or
+@ Libav is free software; you can redistribute it and/or
 @ modify it under the terms of the GNU Lesser General Public
 @ License as published by the Free Software Foundation; either
 @ version 2.1 of the License, or (at your option) any later version.
 @
-@ FFmpeg is distributed in the hope that it will be useful,
+@ Libav is distributed in the hope that it will be useful,
 @ but WITHOUT ANY WARRANTY; without even the implied warranty of
 @ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 @ Lesser General Public License for more details.
 @
 @ You should have received a copy of the GNU Lesser General Public
-@ License along with FFmpeg; if not, write to the Free Software
+@ License along with Libav; if not, write to the Free Software
 @ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 @
 
@@ -90,7 +90,7 @@
 
 @ ----------------------------------------------------------------
 function ff_put_pixels16_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r11, lr}
@@ -141,7 +141,7 @@ endfunc
 
 @ ----------------------------------------------------------------
 function ff_put_pixels8_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r5,lr}
@@ -192,7 +192,7 @@ endfunc
 
 @ ----------------------------------------------------------------
 function ff_put_pixels8_x2_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r10,lr}
@@ -250,7 +250,7 @@ function ff_put_pixels8_x2_arm, export=1, align=5
 endfunc
 
 function ff_put_no_rnd_pixels8_x2_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r10,lr}
@@ -310,7 +310,7 @@ endfunc
 
 @ ----------------------------------------------------------------
 function ff_put_pixels8_y2_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r11,lr}
@@ -407,7 +407,7 @@ function ff_put_pixels8_y2_arm, export=1, align=5
 endfunc
 
 function ff_put_no_rnd_pixels8_y2_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r11,lr}
@@ -573,7 +573,7 @@ endfunc
 .endm
 
 function ff_put_pixels8_xy2_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r11,lr} @ R14 is also called LR
@@ -588,7 +588,7 @@ function ff_put_pixels8_xy2_arm, export=1, align=5
 endfunc
 
 function ff_put_no_rnd_pixels8_xy2_arm, export=1, align=5
-        @ void func(uint8_t *block, const uint8_t *pixels, int line_size, int h)
+        @ void func(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
         @ block = word aligned, pixles = unaligned
         pld             [r1]
         push            {r4-r11,lr}

@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Luca Abeni ( lucabe72 email it )
  * Copyright (c) 2007 Benoit Fouet ( benoit fouet free fr )
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,32 +32,26 @@
 
 #include <alsa/asoundlib.h>
 #include "config.h"
+#include "libavformat/avformat.h"
 #include "libavutil/log.h"
-#include "timefilter.h"
-#include "avdevice.h"
 
 /* XXX: we make the assumption that the soundcard accepts this format */
 /* XXX: find better solution with "preinit" method, needed also in
         other formats */
 #define DEFAULT_CODEC_ID AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE)
 
-typedef void (*ff_reorder_func)(const void *, void *, int);
-
-#define ALSA_BUFFER_SIZE_MAX 65536
+#define ALSA_BUFFER_SIZE_MAX 32768
 
 typedef struct AlsaData {
     AVClass *class;
     snd_pcm_t *h;
-    int frame_size;  ///< bytes per sample * channels
-    int period_size; ///< preferred size for reads and writes, in frames
+    int frame_size;  ///< preferred size for reads and writes
+    int period_size; ///< bytes per sample * channels
     int sample_rate; ///< sample rate set by user
     int channels;    ///< number of channels set by user
-    int last_period;
-    TimeFilter *timefilter;
     void (*reorder_func)(const void *, void *, int);
     void *reorder_buf;
     int reorder_buf_size; ///< in frames
-    int64_t timestamp; ///< current timestamp, without latency applied.
 } AlsaData;
 
 /**
@@ -74,7 +68,6 @@ typedef struct AlsaData {
  *
  * @return 0 if OK, AVERROR_xxx on error
  */
-av_warn_unused_result
 int ff_alsa_open(AVFormatContext *s, snd_pcm_stream_t mode,
                  unsigned int *sample_rate,
                  int channels, enum AVCodecID *codec_id);
@@ -96,13 +89,8 @@ int ff_alsa_close(AVFormatContext *s1);
  *
  * @return 0 if OK, AVERROR_xxx on error
  */
-av_warn_unused_result
 int ff_alsa_xrun_recover(AVFormatContext *s1, int err);
 
-av_warn_unused_result
 int ff_alsa_extend_reorder_buf(AlsaData *s, int size);
-
-av_warn_unused_result
-int ff_alsa_get_device_list(AVDeviceInfoList *device_list, snd_pcm_stream_t stream_type);
 
 #endif /* AVDEVICE_ALSA_H */

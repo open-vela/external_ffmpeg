@@ -3,33 +3,27 @@
  *
  * Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "config.h"
 
-#if HAVE_IO_H
-#include <io.h>
-#endif
-
-#if HAVE_UNISTD_H
+#include <fcntl.h>
 #include <unistd.h>
-#endif
-
 #include <xvid.h>
 
 #include "libavutil/attributes.h"
@@ -39,6 +33,32 @@
 #include "libxvid.h"
 #include "mpegvideo.h"
 
+/* Create temporary file using mkstemp(), tries /tmp first, if possible.
+ * *prefix can be a character constant; *filename will be allocated internally.
+ * Return file descriptor of opened file (or error code on error)
+ * and opened file name in **filename. */
+int ff_tempfile(const char *prefix, char **filename)
+{
+    int fd = -1;
+    size_t len = strlen(prefix) + 12; /* room for "/tmp/" and "XXXXXX\0" */
+    *filename  = av_malloc(len);
+    if (!(*filename)) {
+        av_log(NULL, AV_LOG_ERROR, "ff_tempfile: Cannot allocate file name\n");
+        return AVERROR(ENOMEM);
+    }
+    snprintf(*filename, len, "/tmp/%sXXXXXX", prefix);
+    fd = mkstemp(*filename);
+    if (fd < 0) {
+        snprintf(*filename, len, "./%sXXXXXX", prefix);
+        fd = mkstemp(*filename);
+    }
+    if (fd < 0) {
+        av_log(NULL, AV_LOG_ERROR, "ff_tempfile: Cannot open temporary file %s\n", *filename);
+        return AVERROR(EIO);
+    }
+    return fd; /* success */
+}
+
 av_cold int ff_xvid_rate_control_init(MpegEncContext *s)
 {
     char *tmp_name;
@@ -46,9 +66,9 @@ av_cold int ff_xvid_rate_control_init(MpegEncContext *s)
     xvid_plg_create_t xvid_plg_create = { 0 };
     xvid_plugin_2pass2_t xvid_2pass2  = { 0 };
 
-    fd = avpriv_tempfile("xvidrc.", &tmp_name, 0, s->avctx);
+    fd = ff_tempfile("xvidrc.", &tmp_name);
     if (fd < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Can't create temporary pass2 file.\n");
+        av_log(s, AV_LOG_ERROR, "Cannot create temporary pass2 file.\n");
         return fd;
     }
 
@@ -67,12 +87,9 @@ av_cold int ff_xvid_rate_control_init(MpegEncContext *s)
                  (rce->i_tex_bits + rce->p_tex_bits + rce->misc_bits + 7) / 8,
                  (rce->header_bits + rce->mv_bits + 7) / 8);
 
-        if (write(fd, tmp, strlen(tmp)) < 0) {
-            int ret = AVERROR(errno);
-            av_log(NULL, AV_LOG_ERROR, "Error %s writing 2pass logfile\n", av_err2str(ret));
-            av_free(tmp_name);
-            close(fd);
-            return ret;
+        if (strlen(tmp) > write(fd, tmp, strlen(tmp))) {
+            av_log(s, AV_LOG_ERROR, "Cannot write to temporary pass2 file.\n");
+            return AVERROR(EIO);
         }
     }
 
@@ -92,7 +109,7 @@ av_cold int ff_xvid_rate_control_init(MpegEncContext *s)
 
     if (xvid_plugin_2pass2(NULL, XVID_PLG_CREATE, &xvid_plg_create,
                            &s->rc_context.non_lavc_opaque) < 0) {
-        av_log(NULL, AV_LOG_ERROR, "xvid_plugin_2pass2 failed\n");
+        av_log(s, AV_LOG_ERROR, "xvid_plugin_2pass2 failed\n");
         return -1;
     }
     return 0;
@@ -127,7 +144,7 @@ float ff_xvid_rate_estimate_qscale(MpegEncContext *s, int dry_run)
             xvid_plg_data.type          = s->last_pict_type;
             if (xvid_plugin_2pass2(s->rc_context.non_lavc_opaque,
                                    XVID_PLG_AFTER, &xvid_plg_data, NULL)) {
-                av_log(s->avctx, AV_LOG_ERROR,
+                av_log(s, AV_LOG_ERROR,
                        "xvid_plugin_2pass2(handle, XVID_PLG_AFTER, ...) FAILED\n");
                 return -1;
             }
@@ -137,7 +154,7 @@ float ff_xvid_rate_estimate_qscale(MpegEncContext *s, int dry_run)
         xvid_plg_data.quant               = 0;
         if (xvid_plugin_2pass2(s->rc_context.non_lavc_opaque,
                                XVID_PLG_BEFORE, &xvid_plg_data, NULL)) {
-            av_log(s->avctx, AV_LOG_ERROR,
+            av_log(s, AV_LOG_ERROR,
                    "xvid_plugin_2pass2(handle, XVID_PLG_BEFORE, ...) FAILED\n");
             return -1;
         }

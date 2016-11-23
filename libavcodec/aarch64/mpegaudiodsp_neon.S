@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@ endconst
 .macro   apply_window   type, st
 function ff_mpadsp_apply_window_\type\()_neon, export=1
         mov             x7,  x0
-        sxtw            x4,  w4  // incr
         add             x8,  x0,  #512<<2
         ld1             {v0.4s,v1.4s,v2.4s,v3.4s},  [x7],  #64
         ld1             {v4.4s,v5.4s,v6.4s,v7.4s},  [x7],  #64
