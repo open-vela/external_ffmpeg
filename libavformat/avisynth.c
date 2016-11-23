@@ -2,24 +2,28 @@
  * AviSynth/AvxSynth support
  * Copyright (c) 2012 AvxSynth Team
  *
- * This file is part of FFmpeg
- * FFmpeg is free software; you can redistribute it and/or
+ * This file is part of Libav.
+ *
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/internal.h"
+
 #include "libavcodec/internal.h"
+
 #include "avformat.h"
 #include "internal.h"
 #include "config.h"
@@ -29,16 +33,20 @@
 
 /* Platform-specific directives for AviSynth vs AvxSynth. */
 #ifdef _WIN32
-  #include "compat/w32dlfcn.h"
+  #include <windows.h>
   #undef EXTERN_C
-  #include "compat/avisynth/avisynth_c.h"
+  #include <avisynth/avisynth_c.h>
   #define AVISYNTH_LIB "avisynth"
   #define USING_AVISYNTH
 #else
   #include <dlfcn.h>
-  #include "compat/avisynth/avxsynth_c.h"
+  #include <avxsynth/avxsynth_c.h>
   #define AVISYNTH_NAME "libavxsynth"
   #define AVISYNTH_LIB AVISYNTH_NAME SLIBSUF
+
+  #define LoadLibrary(x) dlopen(x, RTLD_NOW | RTLD_LOCAL)
+  #define GetProcAddress dlsym
+  #define FreeLibrary dlclose
 #endif
 
 typedef struct AviSynthLibrary {
@@ -114,13 +122,13 @@ static av_cold void avisynth_atexit_handler(void);
 
 static av_cold int avisynth_load_library(void)
 {
-    avs_library.library = dlopen(AVISYNTH_LIB, RTLD_NOW | RTLD_LOCAL);
+    avs_library.library = LoadLibrary(AVISYNTH_LIB);
     if (!avs_library.library)
         return AVERROR_UNKNOWN;
 
 #define LOAD_AVS_FUNC(name, continue_on_fail)                          \
-        avs_library.name =                                             \
-            (void *)dlsym(avs_library.library, #name);                 \
+        avs_library.name = (name ## _func)                             \
+                           GetProcAddress(avs_library.library, #name); \
         if (!continue_on_fail && !avs_library.name)                    \
             goto fail;
 
@@ -153,7 +161,7 @@ static av_cold int avisynth_load_library(void)
     return 0;
 
 fail:
-    dlclose(avs_library.library);
+    FreeLibrary(avs_library.library);
     return AVERROR_UNKNOWN;
 }
 
@@ -221,7 +229,7 @@ static av_cold void avisynth_atexit_handler(void)
         avisynth_context_destroy(avs);
         avs = next;
     }
-    dlclose(avs_library.library);
+    FreeLibrary(avs_library.library);
 
     avs_atexit_called = 1;
 }
@@ -246,7 +254,7 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
 
     switch (avs->vi->pixel_type) {
 #ifdef USING_AVISYNTH
-/* 10~16-bit YUV pix_fmts (AviSynth+) */
+    /* 10~16-bit YUV pix_fmts (AviSynth+) */
     case AVS_CS_YUV444P10:
         st->codecpar->format = AV_PIX_FMT_YUV444P10;
         planar               = 1;
@@ -271,18 +279,6 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_YUV420P12;
         planar               = 1;
         break;
-    case AVS_CS_YUV444P14:
-        st->codecpar->format = AV_PIX_FMT_YUV444P14;
-        planar               = 1;
-        break;
-    case AVS_CS_YUV422P14:
-        st->codecpar->format = AV_PIX_FMT_YUV422P14;
-        planar               = 1;
-        break;
-    case AVS_CS_YUV420P14:
-        st->codecpar->format = AV_PIX_FMT_YUV420P14;
-        planar               = 1;
-        break;
     case AVS_CS_YUV444P16:
         st->codecpar->format = AV_PIX_FMT_YUV444P16;
         planar               = 1;
@@ -295,7 +291,7 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_YUV420P16;
         planar               = 1;
         break;
-/* 8~16-bit YUV pix_fmts with Alpha (AviSynth+) */
+    /* 8~16-bit YUV pix_fmts with Alpha (AviSynth+) */
     case AVS_CS_YUVA444:
         st->codecpar->format = AV_PIX_FMT_YUVA444P;
         planar               = 4;
@@ -332,7 +328,7 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_YUVA420P16;
         planar               = 4;
         break;
-/* Planar RGB pix_fmts (AviSynth+)  */
+    /* Planar RGB pix_fmts (AviSynth+) */
     case AVS_CS_RGBP:
         st->codecpar->format = AV_PIX_FMT_GBRP;
         planar               = 3;
@@ -345,21 +341,13 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_GBRP12;
         planar               = 3;
         break;
-    case AVS_CS_RGBP14:
-        st->codecpar->format = AV_PIX_FMT_GBRP14;
-        planar               = 3;
-        break;
     case AVS_CS_RGBP16:
         st->codecpar->format = AV_PIX_FMT_GBRP16;
         planar               = 3;
         break;
-/* Planar RGB pix_fmts with Alpha (AviSynth+) */
+    /* Planar RGB pix_fmts with Alpha (AviSynth+) */
     case AVS_CS_RGBAP:
         st->codecpar->format = AV_PIX_FMT_GBRAP;
-        planar               = 5;
-        break;
-    case AVS_CS_RGBAP10:
-        st->codecpar->format = AV_PIX_FMT_GBRAP10;
         planar               = 5;
         break;
     case AVS_CS_RGBAP12:
@@ -370,12 +358,12 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_GBRAP16;
         planar               = 5;
         break;
-/* GRAY16 (AviSynth+) */
+    /* GRAY16 (AviSynth+) */
     case AVS_CS_Y16:
         st->codecpar->format = AV_PIX_FMT_GRAY16;
         planar               = 2;
         break;
-/* pix_fmts added in AviSynth 2.6 */
+    /* pix_fmts added in AviSynth 2.6 */
     case AVS_CS_YV24:
         st->codecpar->format = AV_PIX_FMT_YUV444P;
         planar               = 1;
@@ -392,7 +380,7 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_GRAY8;
         planar               = 2;
         break;
-/* 16-bit packed RGB pix_fmts (AviSynth+) */
+    /* 16-bit packed RGB pix_fmts (AviSynth+) */
     case AVS_CS_BGR48:
         st->codecpar->format = AV_PIX_FMT_BGR48;
         break;
@@ -400,7 +388,7 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
         st->codecpar->format = AV_PIX_FMT_BGRA64;
         break;
 #endif
-/* AviSynth 2.5 and AvxSynth pix_fmts */
+    /* AviSynth 2.5 and AvxSynth pix_fmts */
     case AVS_CS_BGR24:
         st->codecpar->format = AV_PIX_FMT_BGR24;
         break;
@@ -554,7 +542,7 @@ static int avisynth_open_file(AVFormatContext *s)
     avs->vi   = avs_library.avs_get_video_info(avs->clip);
 
 #ifdef USING_AVISYNTH
-    /* On Windows, FFmpeg supports AviSynth interface version 6 or higher.
+    /* On Windows, libav supports AviSynth interface version 6 or higher.
      * This includes AviSynth 2.6 RC1 or higher, and AviSynth+ r1718 or higher,
      * and excludes 2.5 and the 2.6 alphas. Since AvxSynth identifies itself
      * as interface version 3 like 2.5.8, this needs to be special-cased. */
@@ -607,6 +595,7 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
     const unsigned char *src_p;
     int n, i, plane, rowsize, planeheight, pitch, bits;
     const char *error;
+    int avsplus av_unused;
 
     if (avs->curr_frame >= avs->vi->num_frames)
         return AVERROR_EOF;
@@ -619,9 +608,6 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
 #ifdef USING_AVISYNTH
     /* Detect whether we're using AviSynth 2.6 or AviSynth+ by
      * looking for whether avs_is_planar_rgb exists. */
-
-    int avsplus;
-
     if (GetProcAddress(avs_library.library, "avs_is_planar_rgb") == NULL)
         avsplus = 0;
     else
@@ -684,7 +670,7 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
         }
 
 #ifdef USING_AVISYNTH
-        /* Flip Planar RGB video. */
+        /* Flip Planar RGB video */
         if (avsplus && (avs_library.avs_is_planar_rgb(avs->vi) ||
                         avs_library.avs_is_planar_rgba(avs->vi))) {
             src_p = src_p + (planeheight - 1) * pitch;
