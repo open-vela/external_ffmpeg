@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -204,7 +204,7 @@ function ff_vp9_\txfm1\()_\txfm2\()_4x4_add_neon, export=1
 
         movi            v31.8h, #0
 .ifc \txfm1\()_\txfm2,idct_idct
-        cmp             w3,  #1
+        cmp             x3,  #1
         b.ne            1f
         // DC-only for idct/idct
         ld1r            {v2.4h},  [x2]
@@ -344,7 +344,7 @@ function ff_vp9_\txfm1\()_\txfm2\()_8x8_add_neon, export=1
         movi            v5.16b, #0
 
 .ifc \txfm1\()_\txfm2,idct_idct
-        cmp             w3,  #1
+        cmp             x3,  #1
         b.ne            1f
         // DC-only for idct/idct
         ld1r            {v2.4h},  [x2]
@@ -599,9 +599,9 @@ endfunc
 // x1 = unused
 // x2 = src
 // x3 = slice offset
-// x9 = input stride
 .macro itxfm16_1d_funcs txfm
 function \txfm\()16_1d_8x16_pass1_neon
+        mov             x9, #32
         movi            v2.8h, #0
 .irp i, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
         load_clear      \i,  x2,  x9
@@ -649,8 +649,8 @@ endfunc
 // x1 = dst stride
 // x2 = src (temp buffer)
 // x3 = slice offset
-// x9 = temp buffer stride
 function \txfm\()16_1d_8x16_pass2_neon
+        mov             x9, #32
 .irp i, 16, 17, 18, 19, 20, 21, 22, 23
         load            \i,  x2,  x9
 .endr
@@ -722,7 +722,7 @@ itxfm16_1d_funcs iadst
 .macro itxfm_func16x16 txfm1, txfm2
 function ff_vp9_\txfm1\()_\txfm2\()_16x16_add_neon, export=1
 .ifc \txfm1\()_\txfm2,idct_idct
-        cmp             w3,  #1
+        cmp             x3,  #1
         b.eq            idct16x16_dc_add_neon
 .endif
         mov             x15, x30
@@ -747,7 +747,6 @@ function ff_vp9_\txfm1\()_\txfm2\()_16x16_add_neon, export=1
 .ifc \txfm1,idct
         ld1             {v0.8h,v1.8h}, [x10]
 .endif
-        mov             x9, #32
 
 .irp i, 0, 8
         add             x0,  sp,  #(\i*32)
@@ -883,12 +882,13 @@ endfunc
 // x0 = dst (temp buffer)
 // x1 = unused
 // x2 = src
-// x9 = double input stride
 // x10 = idct_coeffs
 // x11 = idct_coeffs + 32
 function idct32_1d_8x32_pass1_neon
         ld1             {v0.8h,v1.8h}, [x10]
 
+        // Double stride of the input, since we only read every other line
+        mov             x9,  #128
         movi            v4.8h, #0
 
         // v16 = IN(0), v17 = IN(2) ... v31 = IN(30)
@@ -969,14 +969,14 @@ function idct32_1d_8x32_pass1_neon
         st1             {v7.8h},  [x0], #16
 .endm
 
-        store_rev       31, 23
-        store_rev       30, 22
-        store_rev       29, 21
-        store_rev       28, 20
-        store_rev       27, 19
-        store_rev       26, 18
-        store_rev       25, 17
-        store_rev       24, 16
+        store_rev 31, 23
+        store_rev 30, 22
+        store_rev 29, 21
+        store_rev 28, 20
+        store_rev 27, 19
+        store_rev 26, 18
+        store_rev 25, 17
+        store_rev 24, 16
 .purgem store_rev
         ret
 endfunc
@@ -987,13 +987,12 @@ endfunc
 // x0 = dst
 // x1 = dst stride
 // x2 = src (temp buffer)
-// x7 = negative double temp buffer stride
-// x9 = double temp buffer stride
 // x10 = idct_coeffs
 // x11 = idct_coeffs + 32
 function idct32_1d_8x32_pass2_neon
         ld1             {v0.8h,v1.8h}, [x10]
 
+        mov             x9, #128
         // v16 = IN(0), v17 = IN(2) ... v31 = IN(30)
 .irp i, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
         ld1             {v\i\().8h}, [x2], x9
@@ -1002,6 +1001,7 @@ function idct32_1d_8x32_pass2_neon
 
         idct16
 
+        mov             x9,  #128
 .irp i, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
         st1             {v\i\().8h}, [x2], x9
 .endr
@@ -1018,10 +1018,11 @@ function idct32_1d_8x32_pass2_neon
 
         idct32_odd
 
+        mov             x9,  #128
 .macro load_acc_store a, b, c, d, neg=0
-.if \neg == 0
         ld1             {v4.8h},  [x2], x9
         ld1             {v5.8h},  [x2], x9
+.if \neg == 0
         add             v4.8h, v4.8h, v\a\().8h
         ld1             {v6.8h},  [x2], x9
         add             v5.8h, v5.8h, v\b\().8h
@@ -1029,12 +1030,10 @@ function idct32_1d_8x32_pass2_neon
         add             v6.8h, v6.8h, v\c\().8h
         add             v7.8h, v7.8h, v\d\().8h
 .else
-        ld1             {v4.8h},  [x2], x7
-        ld1             {v5.8h},  [x2], x7
         sub             v4.8h, v4.8h, v\a\().8h
-        ld1             {v6.8h},  [x2], x7
+        ld1             {v6.8h},  [x2], x9
         sub             v5.8h, v5.8h, v\b\().8h
-        ld1             {v7.8h},  [x2], x7
+        ld1             {v7.8h},  [x2], x9
         sub             v6.8h, v6.8h, v\c\().8h
         sub             v7.8h, v7.8h, v\d\().8h
 .endif
@@ -1065,6 +1064,7 @@ function idct32_1d_8x32_pass2_neon
         load_acc_store  23, 22, 21, 20
         load_acc_store  19, 18, 17, 16
         sub             x2,  x2,  x9
+        neg             x9,  x9
         load_acc_store  16, 17, 18, 19, 1
         load_acc_store  20, 21, 22, 23, 1
         load_acc_store  24, 25, 26, 27, 1
@@ -1074,7 +1074,7 @@ function idct32_1d_8x32_pass2_neon
 endfunc
 
 function ff_vp9_idct_idct_32x32_add_neon, export=1
-        cmp             w3,  #1
+        cmp             x3,  #1
         b.eq            idct32x32_dc_add_neon
 
         movrel          x10, idct_coeffs
@@ -1092,10 +1092,6 @@ function ff_vp9_idct_idct_32x32_add_neon, export=1
         mov             x4,  x0
         mov             x5,  x1
         mov             x6,  x2
-
-        // Double stride of the input, since we only read every other line
-        mov             x9,  #128
-        neg             x7,  x9
 
 .irp i, 0, 8, 16, 24
         add             x0,  sp,  #(\i*64)
