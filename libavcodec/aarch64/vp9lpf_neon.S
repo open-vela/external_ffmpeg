@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -218,15 +218,13 @@
         xtn_sz          v5,     v6.8h,  v7.8h,  \sz
         and             v4\sz,  v4\sz,  v5\sz         // fm
 
-        // If no pixels need filtering, just exit as soon as possible
         mov             x5,  v4.d[0]
 .ifc \sz, .16b
         mov             x6,  v4.d[1]
-        adds            x5,  x5,  x6
-        b.eq            9f
-.else
-        cbz             x5,  9f
+        orr             x5,  x5,  x6
 .endif
+        // If no pixels need filtering, just exit as soon as possible
+        cbz             x5,  9f
 
 .if \wd >= 8
         movi            v0\sz,  #1
@@ -346,17 +344,15 @@
         bit             v22\sz, v0\sz,  v5\sz       // if (!hev && fm && !flat8in)
         bit             v25\sz, v2\sz,  v5\sz
 
-        // If no pixels need flat8in, jump to flat8out
-        // (or to a writeout of the inner 4 pixels, for wd=8)
 .if \wd >= 8
         mov             x5,  v6.d[0]
 .ifc \sz, .16b
         mov             x6,  v6.d[1]
-        adds            x5,  x5,  x6
-        b.eq            6f
-.else
-        cbz             x5,  6f
+        orr             x5,  x5,  x6
 .endif
+        // If no pixels need flat8in, jump to flat8out
+        // (or to a writeout of the inner 4 pixels, for wd=8)
+        cbz             x5,  6f
 
         // flat8in
         uaddl_sz        \tmp1\().8h, \tmp2\().8h,  v20, v21, \sz
@@ -410,28 +406,19 @@
         mov             x5,  v2.d[0]
 .ifc \sz, .16b
         mov             x6,  v2.d[1]
-        adds             x5,  x5,  x6
-        b.ne            1f
-.else
-        cbnz            x5,  1f
+        orr             x5,  x5,  x6
 .endif
         // If no pixels needed flat8in nor flat8out, jump to a
         // writeout of the inner 4 pixels
-        br              x14
-1:
-
+        cbz             x5,  7f
         mov             x5,  v7.d[0]
 .ifc \sz, .16b
         mov             x6,  v7.d[1]
-        adds             x5,  x5,  x6
-        b.ne            1f
-.else
-        cbnz            x5,  1f
+        orr             x5,  x5,  x6
 .endif
         // If no pixels need flat8out, jump to a writeout of the inner 6 pixels
-        br              x15
+        cbz             x5,  8f
 
-1:
         // flat8out
         // This writes all outputs into v2-v17 (skipping v6 and v16).
         // If this part is skipped, the output is read from v21-v26 (which is the input
@@ -562,24 +549,35 @@ endfunc
 
 function vp9_loop_filter_8
         loop_filter     8,  .8b,  0,    v16, v17, v18, v19, v28, v29, v30, v31
+        mov             x5,  #0
         ret
 6:
-        br              x13
+        mov             x5,  #6
+        ret
 9:
         br              x10
 endfunc
 
 function vp9_loop_filter_8_16b_mix
         loop_filter     8,  .16b, 88,   v16, v17, v18, v19, v28, v29, v30, v31
+        mov             x5,  #0
         ret
 6:
-        br              x13
+        mov             x5,  #6
+        ret
 9:
         br              x10
 endfunc
 
 function vp9_loop_filter_16
         loop_filter     16, .8b,  0,    v8,  v9,  v10, v11, v12, v13, v14, v15
+        mov             x5,  #0
+        ret
+7:
+        mov             x5,  #7
+        ret
+8:
+        mov             x5,  #8
         ret
 9:
         ldp             d8,  d9,  [sp], 0x10
@@ -591,6 +589,13 @@ endfunc
 
 function vp9_loop_filter_16_16b
         loop_filter     16, .16b, 0,    v8,  v9,  v10, v11, v12, v13, v14, v15
+        mov             x5,  #0
+        ret
+7:
+        mov             x5,  #7
+        ret
+8:
+        mov             x5,  #8
         ret
 9:
         ldp             d8,  d9,  [sp], 0x10
@@ -609,14 +614,11 @@ endfunc
 .endm
 
 .macro loop_filter_8
-        // calculate alternative 'return' targets
-        adr             x13, 6f
         bl              vp9_loop_filter_8
+        cbnz            x5,  6f
 .endm
 
 .macro loop_filter_8_16b_mix mix
-        // calculate alternative 'return' targets
-        adr             x13, 6f
 .if \mix == 48
         mov             x11, #0xffffffff00000000
 .elseif \mix == 84
@@ -625,20 +627,21 @@ endfunc
         mov             x11, #0xffffffffffffffff
 .endif
         bl              vp9_loop_filter_8_16b_mix
+        cbnz            x5,  6f
 .endm
 
 .macro loop_filter_16
-        // calculate alternative 'return' targets
-        adr             x14, 7f
-        adr             x15, 8f
         bl              vp9_loop_filter_16
+        cmp             x5,  7
+        b.gt            8f
+        b.eq            7f
 .endm
 
 .macro loop_filter_16_16b
-        // calculate alternative 'return' targets
-        adr             x14, 7f
-        adr             x15, 8f
         bl              vp9_loop_filter_16_16b
+        cmp             x5,  7
+        b.gt            8f
+        b.eq            7f
 .endm
 
 
