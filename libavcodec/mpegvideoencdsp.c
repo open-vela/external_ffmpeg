@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "libavutil/avassert.h"
 #include "libavutil/attributes.h"
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
@@ -39,7 +40,7 @@ static int try_8x8basis_c(int16_t rem[64], int16_t weight[64],
                           (BASIS_SHIFT - RECON_SHIFT));
         int w = weight[i];
         b >>= RECON_SHIFT;
-        assert(-512 < b && b < 512);
+        av_assert2(-512 < b && b < 512);
 
         sum += (w * b) * (w * b) >> 4;
     }
@@ -84,6 +85,16 @@ static int pix_norm1_c(uint8_t *pix, int line_size)
 
     for (i = 0; i < 16; i++) {
         for (j = 0; j < 16; j += 8) {
+#if 0
+            s += sq[pix[0]];
+            s += sq[pix[1]];
+            s += sq[pix[2]];
+            s += sq[pix[3]];
+            s += sq[pix[4]];
+            s += sq[pix[5]];
+            s += sq[pix[6]];
+            s += sq[pix[7]];
+#else
 #if HAVE_FAST_64BIT
             register uint64_t x = *(uint64_t *) pix;
             s += sq[x         & 0xff];
@@ -105,6 +116,7 @@ static int pix_norm1_c(uint8_t *pix, int line_size)
             s += sq[(x >>  8) & 0xff];
             s += sq[(x >> 16) & 0xff];
             s += sq[(x >> 24) & 0xff];
+#endif
 #endif
             pix += 8;
         }
@@ -250,4 +262,6 @@ av_cold void ff_mpegvideoencdsp_init(MpegvideoEncDSPContext *c,
         ff_mpegvideoencdsp_init_ppc(c, avctx);
     if (ARCH_X86)
         ff_mpegvideoencdsp_init_x86(c, avctx);
+    if (ARCH_MIPS)
+        ff_mpegvideoencdsp_init_mips(c, avctx);
 }
