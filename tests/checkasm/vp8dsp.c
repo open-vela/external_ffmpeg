@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -171,7 +171,7 @@ static void check_idct_dc4(void)
     for (chroma = 0; chroma <= 1; chroma++) {
         void (*idct4dc)(uint8_t *, int16_t[4][16], ptrdiff_t) = chroma ? d.vp8_idct_dc_add4uv : d.vp8_idct_dc_add4y;
         if (check_func(idct4dc, "vp8_idct_dc_add4%s", chroma ? "uv" : "y")) {
-            int stride = chroma ? 8 : 16;
+            ptrdiff_t stride = chroma ? 8 : 16;
             int w      = chroma ? 2 : 4;
             for (i = 0; i < 4; i++) {
                 int blockx = 4 * (i % w);
@@ -365,7 +365,7 @@ static void randomize_loopfilter_buffers(int lineoff, int str,
 }
 
 // Fill the buffer with random pixels
-static void fill_loopfilter_buffers(uint8_t *buf, int stride, int w, int h)
+static void fill_loopfilter_buffers(uint8_t *buf, ptrdiff_t stride, int w, int h)
 {
     int x, y;
     for (y = 0; y < h; y++)
