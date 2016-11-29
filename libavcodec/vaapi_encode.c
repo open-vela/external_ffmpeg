@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -333,7 +333,7 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
         if (ctx->codec->init_slice_params) {
             err = ctx->codec->init_slice_params(avctx, pic, slice);
             if (err < 0) {
-                av_log(avctx, AV_LOG_ERROR, "Failed to initalise slice "
+                av_log(avctx, AV_LOG_ERROR, "Failed to initialise slice "
                        "parameters: %d.\n", err);
                 goto fail;
             }
@@ -1089,6 +1089,12 @@ static av_cold int vaapi_encode_init_rate_control(AVCodecContext *avctx)
     int hrd_buffer_size;
     int hrd_initial_buffer_fullness;
 
+    if (avctx->bit_rate > INT32_MAX) {
+        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
+               "higher is not supported.\n");
+        return AVERROR(EINVAL);
+    }
+
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;
     else
@@ -1398,28 +1404,6 @@ av_cold int ff_vaapi_encode_init(AVCodecContext *avctx)
     // This should be configurable somehow.  (Needs testing on a machine
     // where it actually overlaps properly, though.)
     ctx->issue_mode = ISSUE_MODE_MAXIMISE_THROUGHPUT;
-
-    if (ctx->va_packed_headers & VA_ENC_PACKED_HEADER_SEQUENCE &&
-        ctx->codec->write_sequence_header) {
-        char data[MAX_PARAM_BUFFER_SIZE];
-        size_t bit_len = 8 * sizeof(data);
-
-        err = ctx->codec->write_sequence_header(avctx, data, &bit_len);
-        if (err < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Failed to write sequence header "
-                   "for extradata: %d.\n", err);
-            goto fail;
-        } else {
-            avctx->extradata_size = (bit_len + 7) / 8;
-            avctx->extradata = av_mallocz(avctx->extradata_size +
-                                          AV_INPUT_BUFFER_PADDING_SIZE);
-            if (!avctx->extradata) {
-                err = AVERROR(ENOMEM);
-                goto fail;
-            }
-            memcpy(avctx->extradata, data, avctx->extradata_size);
-        }
-    }
 
     return 0;
 
