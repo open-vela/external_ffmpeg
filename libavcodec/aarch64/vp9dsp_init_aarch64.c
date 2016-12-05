@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,7 +22,7 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/aarch64/cpu.h"
-#include "libavcodec/vp9dsp.h"
+#include "libavcodec/vp9.h"
 
 #define declare_fpel(type, sz)                                          \
 void ff_vp9_##type##sz##_neon(uint8_t *dst, ptrdiff_t dst_stride,       \
@@ -96,12 +96,9 @@ define_8tap_2d_funcs(16)
 define_8tap_2d_funcs(8)
 define_8tap_2d_funcs(4)
 
-static av_cold void vp9dsp_mc_init_aarch64(VP9DSPContext *dsp, int bpp)
+static av_cold void vp9dsp_mc_init_aarch64(VP9DSPContext *dsp)
 {
     int cpu_flags = av_get_cpu_flags();
-
-    if (bpp != 8)
-        return;
 
 #define init_fpel(idx1, idx2, sz, type, suffix) \
     dsp->mc[idx1][FILTER_8TAP_SMOOTH ][idx2][0][0] = \
@@ -173,12 +170,9 @@ define_itxfm(idct, idct, 32);
 define_itxfm(iwht, iwht, 4);
 
 
-static av_cold void vp9dsp_itxfm_init_aarch64(VP9DSPContext *dsp, int bpp)
+static av_cold void vp9dsp_itxfm_init_aarch64(VP9DSPContext *dsp)
 {
     int cpu_flags = av_get_cpu_flags();
-
-    if (bpp != 8)
-        return;
 
     if (have_neon(cpu_flags)) {
 #define init_itxfm(tx, sz)                                             \
@@ -219,12 +213,9 @@ define_loop_filters(48, 16);
 define_loop_filters(84, 16);
 define_loop_filters(88, 16);
 
-static av_cold void vp9dsp_loopfilter_init_aarch64(VP9DSPContext *dsp, int bpp)
+static av_cold void vp9dsp_loopfilter_init_aarch64(VP9DSPContext *dsp)
 {
     int cpu_flags = av_get_cpu_flags();
-
-    if (bpp != 8)
-        return;
 
     if (have_neon(cpu_flags)) {
         dsp->loop_filter_8[0][1] = ff_vp9_loop_filter_v_4_8_neon;
@@ -248,9 +239,9 @@ static av_cold void vp9dsp_loopfilter_init_aarch64(VP9DSPContext *dsp, int bpp)
     }
 }
 
-av_cold void ff_vp9dsp_init_aarch64(VP9DSPContext *dsp, int bpp)
+av_cold void ff_vp9dsp_init_aarch64(VP9DSPContext *dsp)
 {
-    vp9dsp_mc_init_aarch64(dsp, bpp);
-    vp9dsp_loopfilter_init_aarch64(dsp, bpp);
-    vp9dsp_itxfm_init_aarch64(dsp, bpp);
+    vp9dsp_mc_init_aarch64(dsp);
+    vp9dsp_loopfilter_init_aarch64(dsp);
+    vp9dsp_itxfm_init_aarch64(dsp);
 }
