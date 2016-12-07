@@ -2,20 +2,20 @@
  * FLAC (Free Lossless Audio Codec) decoder/demuxer common functions
  * Copyright (c) 2008 Justin Ruggles
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -95,11 +95,17 @@ typedef struct FLACFrameInfo {
  * @param[out] avctx   codec context to set basic stream parameters
  * @param[out] s       where parsed information is stored
  * @param[in]  buffer  pointer to start of 34-byte streaminfo data
- *
- * @return negative error code on faiure or >= 0 on success
  */
-int ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
+void ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
                               const uint8_t *buffer);
+
+#if LIBAVCODEC_VERSION_MAJOR < 57
+void avpriv_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
+                                  const uint8_t *buffer);
+int avpriv_flac_is_extradata_valid(AVCodecContext *avctx,
+                                   enum FLACExtradataFormat *format,
+                                   uint8_t **streaminfo_start);
+#endif
 
 /**
  * Validate the FLAC extradata.
