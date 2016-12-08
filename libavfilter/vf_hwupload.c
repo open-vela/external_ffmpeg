@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -161,10 +161,15 @@ static int hwupload_filter_frame(AVFilterLink *link, AVFrame *input)
     if (input->format == outlink->format)
         return ff_filter_frame(outlink, input);
 
-    output = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    output = av_frame_alloc();
     if (!output) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to allocate frame to upload to.\n");
         err = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    err = av_hwframe_get_buffer(ctx->hwframes_ref, output, 0);
+    if (err < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to allocate frame to upload to.\n");
         goto fail;
     }
 
@@ -233,5 +238,4 @@ AVFilter ff_vf_hwupload = {
     .priv_class    = &hwupload_class,
     .inputs        = hwupload_inputs,
     .outputs       = hwupload_outputs,
-    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
