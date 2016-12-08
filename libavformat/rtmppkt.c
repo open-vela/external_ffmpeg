@@ -2,20 +2,20 @@
  * RTMP input format
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -235,6 +235,14 @@ static int rtmp_packet_read_one_chunk(URLContext *h, RTMPPacket *p,
     if (hdr != RTMP_PS_TWELVEBYTES)
         timestamp += prev_pkt[channel_id].timestamp;
 
+    if (prev_pkt[channel_id].read && size != prev_pkt[channel_id].size) {
+        av_log(NULL, AV_LOG_ERROR, "RTMP packet size mismatch %d != %d\n",
+                size,
+                prev_pkt[channel_id].size);
+        ff_rtmp_packet_destroy(&prev_pkt[channel_id]);
+        prev_pkt[channel_id].read = 0;
+    }
+
     if (!prev_pkt[channel_id].read) {
         if ((ret = ff_rtmp_packet_create(p, channel_id, type, timestamp,
                                          size)) < 0)
@@ -279,6 +287,7 @@ static int rtmp_packet_read_one_chunk(URLContext *h, RTMPPacket *p,
        prev->data = p->data;
        prev->read = p->read;
        prev->offset = p->offset;
+       p->data      = NULL;
        return AVERROR(EAGAIN);
     }
 
@@ -439,6 +448,7 @@ int ff_amf_tag_size(const uint8_t *data, const uint8_t *data_end)
     case AMF_DATA_TYPE_STRING:      return 3 + AV_RB16(data);
     case AMF_DATA_TYPE_LONG_STRING: return 5 + AV_RB32(data);
     case AMF_DATA_TYPE_NULL:        return 1;
+    case AMF_DATA_TYPE_DATE:        return 11;
     case AMF_DATA_TYPE_ARRAY:
         parse_key = 0;
     case AMF_DATA_TYPE_MIXEDARRAY:
