@@ -59,6 +59,7 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_AC3         , 0xA5 },
     { AV_CODEC_ID_DTS         , 0xA9 }, /* mp4ra.org */
     { AV_CODEC_ID_TSCC2       , 0xD0 }, /* nonstandard, camtasia uses it */
+    { AV_CODEC_ID_EVRC        , 0xD1 }, /* nonstandard, pvAuthor uses it */
     { AV_CODEC_ID_VORBIS      , 0xDD }, /* nonstandard, gpac uses it */
     { AV_CODEC_ID_DVD_SUBTITLE, 0xE0 }, /* nonstandard, see unsupported-embedded-subs-2.mp4 */
     { AV_CODEC_ID_QCELP       , 0xE1 },
