@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009-2011 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,14 +31,14 @@
 #include "ivi_dsp.h"
 
 void ff_ivi_recompose53(const IVIPlaneDesc *plane, uint8_t *dst,
-                        const ptrdiff_t dst_pitch)
+                        const int dst_pitch)
 {
     int             x, y, indx;
     int32_t         p0, p1, p2, p3, tmp0, tmp1, tmp2;
     int32_t         b0_1, b0_2, b1_1, b1_2, b1_3, b2_1, b2_2, b2_3, b2_4, b2_5, b2_6;
     int32_t         b3_1, b3_2, b3_3, b3_4, b3_5, b3_6, b3_7, b3_8, b3_9;
-    ptrdiff_t       pitch, back_pitch;
-    const short    *b0_ptr, *b1_ptr, *b2_ptr, *b3_ptr;
+    int32_t         pitch, back_pitch;
+    const short     *b0_ptr, *b1_ptr, *b2_ptr, *b3_ptr;
     const int       num_bands = 4;
 
     /* all bands should have the same pitch */
@@ -54,6 +54,9 @@ void ff_ivi_recompose53(const IVIPlaneDesc *plane, uint8_t *dst,
     b3_ptr = plane->bands[3].buf;
 
     for (y = 0; y < plane->height; y += 2) {
+
+        if (y+2 >= plane->height)
+            pitch= 0;
         /* load storage variables with values */
         if (num_bands > 0) {
             b0_1 = b0_ptr[0];
@@ -83,6 +86,13 @@ void ff_ivi_recompose53(const IVIPlaneDesc *plane, uint8_t *dst,
         }
 
         for (x = 0, indx = 0; x < plane->width; x+=2, indx++) {
+            if (x+2 >= plane->width) {
+                b0_ptr --;
+                b1_ptr --;
+                b2_ptr --;
+                b3_ptr --;
+            }
+
             /* some values calculated in the previous iterations can */
             /* be reused in the next ones, so do appropriate copying */
             b2_1 = b2_2; // b2[x-1,y  ] = b2[x,  y  ]
@@ -170,19 +180,19 @@ void ff_ivi_recompose53(const IVIPlaneDesc *plane, uint8_t *dst,
 
         back_pitch = -pitch;
 
-        b0_ptr += pitch;
-        b1_ptr += pitch;
-        b2_ptr += pitch;
-        b3_ptr += pitch;
+        b0_ptr += pitch + 1;
+        b1_ptr += pitch + 1;
+        b2_ptr += pitch + 1;
+        b3_ptr += pitch + 1;
     }
 }
 
 void ff_ivi_recompose_haar(const IVIPlaneDesc *plane, uint8_t *dst,
-                           const ptrdiff_t dst_pitch)
+                           const int dst_pitch)
 {
     int             x, y, indx, b0, b1, b2, b3, p0, p1, p2, p3;
-    const short    *b0_ptr, *b1_ptr, *b2_ptr, *b3_ptr;
-    ptrdiff_t       pitch;
+    const short     *b0_ptr, *b1_ptr, *b2_ptr, *b3_ptr;
+    int32_t         pitch;
 
     /* all bands should have the same pitch */
     pitch = plane->bands[0].pitch;
@@ -225,15 +235,15 @@ void ff_ivi_recompose_haar(const IVIPlaneDesc *plane, uint8_t *dst,
 
 /** butterfly operation for the inverse Haar transform */
 #define IVI_HAAR_BFLY(s1, s2, o1, o2, t) \
-    t  = (s1 - s2) >> 1;\
-    o1 = (s1 + s2) >> 1;\
-    o2 = t;\
+    t  = ((s1) - (s2)) >> 1;\
+    o1 = ((s1) + (s2)) >> 1;\
+    o2 = (t);\
 
 /** inverse 8-point Haar transform */
 #define INV_HAAR8(s1, s5, s3, s7, s2, s4, s6, s8,\
                   d1, d2, d3, d4, d5, d6, d7, d8,\
                   t0, t1, t2, t3, t4, t5, t6, t7, t8) {\
-    t1 = s1 << 1; t5 = s5 << 1;\
+    t1 = (s1) << 1; t5 = (s5) << 1;\
     IVI_HAAR_BFLY(t1, t5, t1, t5, t0); IVI_HAAR_BFLY(t1, s3, t1, t3, t0);\
     IVI_HAAR_BFLY(t5, s7, t5, t7, t0); IVI_HAAR_BFLY(t1, s2, t1, t2, t0);\
     IVI_HAAR_BFLY(t3, s4, t3, t4, t0); IVI_HAAR_BFLY(t5, s6, t5, t6, t0);\
@@ -257,7 +267,7 @@ void ff_ivi_recompose_haar(const IVIPlaneDesc *plane, uint8_t *dst,
     d3 = COMPENSATE(t2);\
     d4 = COMPENSATE(t3); }
 
-void ff_ivi_inverse_haar_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_inverse_haar_8x8(const int32_t *in, int16_t *out, uint32_t pitch,
                              const uint8_t *flags)
 {
     int     i, shift, sp1, sp2, sp3, sp4;
@@ -312,7 +322,7 @@ void ff_ivi_inverse_haar_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 #undef  COMPENSATE
 }
 
-void ff_ivi_row_haar8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_row_haar8(const int32_t *in, int16_t *out, uint32_t pitch,
                       const uint8_t *flags)
 {
     int     i;
@@ -337,7 +347,7 @@ void ff_ivi_row_haar8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 #undef  COMPENSATE
 }
 
-void ff_ivi_col_haar8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_col_haar8(const int32_t *in, int16_t *out, uint32_t pitch,
                       const uint8_t *flags)
 {
     int     i;
@@ -366,7 +376,7 @@ void ff_ivi_col_haar8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 #undef  COMPENSATE
 }
 
-void ff_ivi_inverse_haar_4x4(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_inverse_haar_4x4(const int32_t *in, int16_t *out, uint32_t pitch,
                              const uint8_t *flags)
 {
     int     i, shift, sp1, sp2;
@@ -413,7 +423,7 @@ void ff_ivi_inverse_haar_4x4(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 #undef  COMPENSATE
 }
 
-void ff_ivi_row_haar4(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_row_haar4(const int32_t *in, int16_t *out, uint32_t pitch,
                       const uint8_t *flags)
 {
     int     i;
@@ -435,7 +445,7 @@ void ff_ivi_row_haar4(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 #undef  COMPENSATE
 }
 
-void ff_ivi_col_haar4(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_col_haar4(const int32_t *in, int16_t *out, uint32_t pitch,
                       const uint8_t *flags)
 {
     int     i;
@@ -459,7 +469,7 @@ void ff_ivi_col_haar4(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 #undef  COMPENSATE
 }
 
-void ff_ivi_dc_haar_2d(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_dc_haar_2d(const int32_t *in, int16_t *out, uint32_t pitch,
                        int blk_size)
 {
     int     x, y;
@@ -475,21 +485,21 @@ void ff_ivi_dc_haar_2d(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 
 /** butterfly operation for the inverse slant transform */
 #define IVI_SLANT_BFLY(s1, s2, o1, o2, t) \
-    t  = s1 - s2;\
-    o1 = s1 + s2;\
-    o2 = t;\
+    t  = (s1) - (s2);\
+    o1 = (s1) + (s2);\
+    o2 = (t);\
 
 /** This is a reflection a,b = 1/2, 5/4 for the inverse slant transform */
 #define IVI_IREFLECT(s1, s2, o1, o2, t) \
-    t  = ((s1 + s2*2 + 2) >> 2) + s1;\
-    o2 = ((s1*2 - s2 + 2) >> 2) - s2;\
-    o1 = t;\
+    t  = (((s1) + (s2)*2 + 2) >> 2) + (s1);\
+    o2 = (((s1)*2 - (s2) + 2) >> 2) - (s2);\
+    o1 = (t);\
 
 /** This is a reflection a,b = 1/2, 7/8 for the inverse slant transform */
 #define IVI_SLANT_PART4(s1, s2, o1, o2, t) \
-    t  = s2 + ((s1*4  - s2 + 4) >> 3);\
-    o2 = s1 + ((-s1 - s2*4 + 4) >> 3);\
-    o1 = t;\
+    t  = (s2) + (((s1)*4  - (s2) + 4) >> 3);\
+    o2 = (s1) + ((-(s1) - (s2)*4 + 4) >> 3);\
+    o1 = (t);\
 
 /** inverse slant8 transform */
 #define IVI_INV_SLANT8(s1, s4, s8, s5, s2, s6, s3, s7,\
@@ -523,7 +533,7 @@ void ff_ivi_dc_haar_2d(const int32_t *in, int16_t *out, ptrdiff_t pitch,
     d3 = COMPENSATE(t3);\
     d4 = COMPENSATE(t4);}
 
-void ff_ivi_inverse_slant_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags)
+void ff_ivi_inverse_slant_8x8(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags)
 {
     int     i;
     const int32_t *src;
@@ -547,7 +557,7 @@ void ff_ivi_inverse_slant_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch, 
     }
 #undef COMPENSATE
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     src = tmp;
     for (i = 0; i < 8; i++) {
         if (!src[0] && !src[1] && !src[2] && !src[3] && !src[4] && !src[5] && !src[6] && !src[7]) {
@@ -563,7 +573,7 @@ void ff_ivi_inverse_slant_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch, 
 #undef COMPENSATE
 }
 
-void ff_ivi_inverse_slant_4x4(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags)
+void ff_ivi_inverse_slant_4x4(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags)
 {
     int     i;
     const int32_t *src;
@@ -587,7 +597,7 @@ void ff_ivi_inverse_slant_4x4(const int32_t *in, int16_t *out, ptrdiff_t pitch, 
     }
 #undef COMPENSATE
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     src = tmp;
     for (i = 0; i < 4; i++) {
         if (!src[0] && !src[1] && !src[2] && !src[3]) {
@@ -603,7 +613,7 @@ void ff_ivi_inverse_slant_4x4(const int32_t *in, int16_t *out, ptrdiff_t pitch, 
 #undef COMPENSATE
 }
 
-void ff_ivi_dc_slant_2d(const int32_t *in, int16_t *out, ptrdiff_t pitch, int blk_size)
+void ff_ivi_dc_slant_2d(const int32_t *in, int16_t *out, uint32_t pitch, int blk_size)
 {
     int     x, y;
     int16_t dc_coeff;
@@ -616,12 +626,12 @@ void ff_ivi_dc_slant_2d(const int32_t *in, int16_t *out, ptrdiff_t pitch, int bl
     }
 }
 
-void ff_ivi_row_slant8(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags)
+void ff_ivi_row_slant8(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags)
 {
     int     i;
     int     t0, t1, t2, t3, t4, t5, t6, t7, t8;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 8; i++) {
         if (!in[0] && !in[1] && !in[2] && !in[3] && !in[4] && !in[5] && !in[6] && !in[7]) {
             memset(out, 0, 8*sizeof(out[0]));
@@ -636,7 +646,7 @@ void ff_ivi_row_slant8(const int32_t *in, int16_t *out, ptrdiff_t pitch, const u
 #undef COMPENSATE
 }
 
-void ff_ivi_dc_row_slant(const int32_t *in, int16_t *out, ptrdiff_t pitch, int blk_size)
+void ff_ivi_dc_row_slant(const int32_t *in, int16_t *out, uint32_t pitch, int blk_size)
 {
     int     x, y;
     int16_t dc_coeff;
@@ -654,7 +664,7 @@ void ff_ivi_dc_row_slant(const int32_t *in, int16_t *out, ptrdiff_t pitch, int b
     }
 }
 
-void ff_ivi_col_slant8(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags)
+void ff_ivi_col_slant8(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags)
 {
     int     i, row2, row4, row8;
     int     t0, t1, t2, t3, t4, t5, t6, t7, t8;
@@ -663,7 +673,7 @@ void ff_ivi_col_slant8(const int32_t *in, int16_t *out, ptrdiff_t pitch, const u
     row4 = pitch << 2;
     row8 = pitch << 3;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 8; i++) {
         if (flags[i]) {
             IVI_INV_SLANT8(in[0], in[8], in[16], in[24], in[32], in[40], in[48], in[56],
@@ -681,7 +691,7 @@ void ff_ivi_col_slant8(const int32_t *in, int16_t *out, ptrdiff_t pitch, const u
 #undef COMPENSATE
 }
 
-void ff_ivi_dc_col_slant(const int32_t *in, int16_t *out, ptrdiff_t pitch, int blk_size)
+void ff_ivi_dc_col_slant(const int32_t *in, int16_t *out, uint32_t pitch, int blk_size)
 {
     int     x, y;
     int16_t dc_coeff;
@@ -695,12 +705,12 @@ void ff_ivi_dc_col_slant(const int32_t *in, int16_t *out, ptrdiff_t pitch, int b
     }
 }
 
-void ff_ivi_row_slant4(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags)
+void ff_ivi_row_slant4(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags)
 {
     int     i;
     int     t0, t1, t2, t3, t4;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 4; i++) {
         if (!in[0] && !in[1] && !in[2] && !in[3]) {
             memset(out, 0, 4*sizeof(out[0]));
@@ -715,14 +725,14 @@ void ff_ivi_row_slant4(const int32_t *in, int16_t *out, ptrdiff_t pitch, const u
 #undef COMPENSATE
 }
 
-void ff_ivi_col_slant4(const int32_t *in, int16_t *out, ptrdiff_t pitch, const uint8_t *flags)
+void ff_ivi_col_slant4(const int32_t *in, int16_t *out, uint32_t pitch, const uint8_t *flags)
 {
     int     i, row2;
     int     t0, t1, t2, t3, t4;
 
     row2 = pitch << 1;
 
-#define COMPENSATE(x) ((x + 1)>>1)
+#define COMPENSATE(x) (((x) + 1)>>1)
     for (i = 0; i < 4; i++) {
         if (flags[i]) {
             IVI_INV_SLANT4(in[0], in[4], in[8], in[12],
@@ -738,7 +748,7 @@ void ff_ivi_col_slant4(const int32_t *in, int16_t *out, ptrdiff_t pitch, const u
 #undef COMPENSATE
 }
 
-void ff_ivi_put_pixels_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_put_pixels_8x8(const int32_t *in, int16_t *out, uint32_t pitch,
                            const uint8_t *flags)
 {
     int     x, y;
@@ -748,7 +758,7 @@ void ff_ivi_put_pixels_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
             out[x] = in[x];
 }
 
-void ff_ivi_put_dc_pixel_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+void ff_ivi_put_dc_pixel_8x8(const int32_t *in, int16_t *out, uint32_t pitch,
                              int blk_size)
 {
     int     y;
@@ -763,9 +773,9 @@ void ff_ivi_put_dc_pixel_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
 
 #define IVI_MC_TEMPLATE(size, suffix, OP) \
 static void ivi_mc_ ## size ##x## size ## suffix(int16_t *buf, \
-                                                 ptrdiff_t dpitch, \
+                                                 uint32_t dpitch, \
                                                  const int16_t *ref_buf, \
-                                                 ptrdiff_t pitch, int mc_type) \
+                                                 uint32_t pitch, int mc_type) \
 { \
     int     i, j; \
     const int16_t *wptr; \
@@ -799,7 +809,7 @@ static void ivi_mc_ ## size ##x## size ## suffix(int16_t *buf, \
 } \
 \
 void ff_ivi_mc_ ## size ##x## size ## suffix(int16_t *buf, const int16_t *ref_buf, \
-                                             ptrdiff_t pitch, int mc_type) \
+                                             uint32_t pitch, int mc_type) \
 { \
     ivi_mc_ ## size ##x## size ## suffix(buf, pitch, ref_buf, pitch, mc_type); \
 } \
@@ -808,7 +818,7 @@ void ff_ivi_mc_ ## size ##x## size ## suffix(int16_t *buf, const int16_t *ref_bu
 void ff_ivi_mc_avg_ ## size ##x## size ## suffix(int16_t *buf, \
                                                  const int16_t *ref_buf, \
                                                  const int16_t *ref_buf2, \
-                                                 ptrdiff_t pitch, \
+                                                 uint32_t pitch, \
                                                  int mc_type, int mc_type2) \
 { \
     int16_t tmp[size * size]; \

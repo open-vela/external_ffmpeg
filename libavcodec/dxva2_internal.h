@@ -3,20 +3,20 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,6 +32,12 @@
 
 #if CONFIG_DXVA2
 #include "dxva2.h"
+#endif
+#if CONFIG_D3D11VA
+#include "d3d11va.h"
+#endif
+
+#if HAVE_DXVA_H
 /* When targeting WINAPI_FAMILY_PHONE_APP or WINAPI_FAMILY_APP, dxva.h
  * defines nothing. Force the struct definitions to be visible. */
 #undef WINAPI_FAMILY
@@ -39,9 +45,6 @@
 #undef _CRT_BUILD_DESKTOP_APP
 #define _CRT_BUILD_DESKTOP_APP 0
 #include <dxva.h>
-#endif
-#if CONFIG_D3D11VA
-#include "d3d11va.h"
 #endif
 
 #include "avcodec.h"
@@ -57,8 +60,12 @@ typedef union {
 #endif
 } AVDXVAContext;
 
+#if CONFIG_D3D11VA
 #define D3D11VA_CONTEXT(ctx) (&ctx->d3d11va)
+#endif
+#if CONFIG_DXVA2
 #define DXVA2_CONTEXT(ctx)   (&ctx->dxva2)
+#endif
 
 #if CONFIG_D3D11VA && CONFIG_DXVA2
 #define DXVA_CONTEXT_WORKAROUND(avctx, ctx)     (avctx->pix_fmt == AV_PIX_FMT_D3D11VA_VLD ? ctx->d3d11va.workaround : ctx->dxva2.workaround)
