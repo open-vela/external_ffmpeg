@@ -3,26 +3,27 @@
  *
  * copyright (c) 2014 - 2015 Hendrik Leppkes
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/avassert.h"
 
-#include "hevc.h"
+#include "hevc_data.h"
+#include "hevcdec.h"
 
 // The headers above may include w32threads.h, which uses the original
 // _WIN32_WINNT define, while dxva2_internal.h redefines it to target a
@@ -364,9 +365,7 @@ static int dxva2_hevc_start_frame(AVCodecContext *avctx,
     AVDXVAContext *ctx = avctx->hwaccel_context;
     struct hevc_dxva2_picture_context *ctx_pic = h->ref->hwaccel_picture_private;
 
-    if (DXVA_CONTEXT_DECODER(avctx, ctx) == NULL ||
-        DXVA_CONTEXT_CFG(avctx, ctx) == NULL ||
-        DXVA_CONTEXT_COUNT(avctx, ctx) <= 0)
+    if (!DXVA_CONTEXT_VALID(avctx, ctx))
         return -1;
     av_assert0(ctx_pic);
 
