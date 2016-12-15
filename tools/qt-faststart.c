@@ -8,7 +8,7 @@
  * is in front of the data, thus facilitating network streaming.
  *
  * To compile this program, start from the base directory from which you
- * are building FFmpeg and type:
+ * are building Libav and type:
  *  make tools/qt-faststart
  * The qt-faststart program will be built in the tools/ directory. If you
  * do not build the program in this manner, correct results are not
@@ -29,7 +29,10 @@
 #include <inttypes.h>
 #include <string.h>
 
-#ifdef __MINGW32__
+#ifdef __MINGW32CE__
+#define fseeko(x, y, z) fseek(x, y, z)
+#define ftello(x)       ftell(x)
+#elif defined(__MINGW32__)
 #undef fseeko
 #define fseeko(x, y, z) fseeko64(x, y, z)
 #undef ftello
@@ -83,7 +86,7 @@
 #define CO64_ATOM QT_ATOM('c', 'o', '6', '4')
 
 #define ATOM_PREAMBLE_SIZE    8
-#define COPY_BUFFER_SIZE   33554432
+#define COPY_BUFFER_SIZE  65536
 
 int main(int argc, char *argv[])
 {
@@ -102,12 +105,12 @@ int main(int argc, char *argv[])
     uint32_t offset_count;
     uint64_t current_offset;
     int64_t start_offset = 0;
-    unsigned char *copy_buffer = NULL;
+    unsigned char copy_buffer[COPY_BUFFER_SIZE];
     int bytes_to_copy;
 
     if (argc != 3) {
         printf("Usage: qt-faststart <infile.mov> <outfile.mov>\n"
-               "Note: alternatively you can use -movflags +faststart in ffmpeg\n");
+               "Note: alternatively you can use -movflags +faststart in avconv\n");
         return 0;
     }
 
@@ -324,15 +327,9 @@ int main(int argc, char *argv[])
     }
 
     /* copy the remainder of the infile, from offset 0 -> last_offset - 1 */
-    bytes_to_copy = MIN(COPY_BUFFER_SIZE, last_offset);
-    copy_buffer = malloc(bytes_to_copy);
-    if (!copy_buffer) {
-        printf("could not allocate %d bytes for copy_buffer\n", bytes_to_copy);
-        goto error_out;
-    }
     printf(" copying rest of file...\n");
     while (last_offset) {
-        bytes_to_copy = MIN(bytes_to_copy, last_offset);
+        bytes_to_copy = MIN(COPY_BUFFER_SIZE, last_offset);
 
         if (fread(copy_buffer, bytes_to_copy, 1, infile) != 1) {
             perror(argv[1]);
@@ -349,7 +346,6 @@ int main(int argc, char *argv[])
     fclose(outfile);
     free(moov_atom);
     free(ftyp_atom);
-    free(copy_buffer);
 
     return 0;
 
@@ -360,6 +356,5 @@ error_out:
         fclose(outfile);
     free(moov_atom);
     free(ftyp_atom);
-    free(copy_buffer);
     return 1;
 }
