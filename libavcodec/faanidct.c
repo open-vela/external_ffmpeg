@@ -2,27 +2,27 @@
  * Floating point AAN IDCT
  * Copyright (c) 2008 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "faanidct.h"
 #include "libavutil/common.h"
 
 /* To allow switching to double. */
-typedef float FLOAT;
+#define FLOAT float
 
 #define B0 1.0000000000000000000000
 #define B1 1.3870398453221474618216 // cos(pi*1/16)sqrt(2)
@@ -47,7 +47,9 @@ B6*B0/8, B6*B1/8, B6*B2/8, B6*B3/8, B6*B4/8, B6*B5/8, B6*B6/8, B6*B7/8,
 B7*B0/8, B7*B1/8, B7*B2/8, B7*B3/8, B7*B4/8, B7*B5/8, B7*B6/8, B7*B7/8,
 };
 
-static inline void p8idct(int16_t data[64], FLOAT temp[64], uint8_t *dest, int stride, int x, int y, int type){
+static inline void p8idct(int16_t data[64], FLOAT temp[64], uint8_t *dest,
+                          ptrdiff_t stride, int x, int y, int type)
+{
     int i;
     FLOAT s04, d04, s17, d17, s26, d26, s53, d53;
     FLOAT os07, os16, os25, os34;
@@ -62,17 +64,8 @@ static inline void p8idct(int16_t data[64], FLOAT temp[64], uint8_t *dest, int s
         od07=  s17 + s53;
         od25= (s17 - s53)*(2*A4);
 
-#if 0 //these 2 are equivalent
-        {
-            FLOAT tmp0;
-            tmp0 = (d17 + d53) *  (2 * A2);
-            od34 =  d17        *  (2 * B6) - tmp0;
-            od16 =  d53        * (-2 * B2) + tmp0;
-        }
-#else
         od34=  d17*(2*(B6-A2)) - d53*(2*A2);
         od16=  d53*(2*(A2-B2)) + d17*(2*A2);
-#endif
 
         od16 -= od07;
         od25 -= od16;
@@ -144,7 +137,8 @@ void ff_faanidct(int16_t block[64]){
     p8idct(block, temp, NULL, 0, 8, 1, 1);
 }
 
-void ff_faanidct_add(uint8_t *dest, int line_size, int16_t block[64]){
+void ff_faanidct_add(uint8_t *dest, ptrdiff_t line_size, int16_t block[64])
+{
     FLOAT temp[64];
     int i;
 
@@ -157,7 +151,8 @@ void ff_faanidct_add(uint8_t *dest, int line_size, int16_t block[64]){
     p8idct(NULL , temp, dest, line_size, 8, 1, 2);
 }
 
-void ff_faanidct_put(uint8_t *dest, int line_size, int16_t block[64]){
+void ff_faanidct_put(uint8_t *dest, ptrdiff_t line_size, int16_t block[64])
+{
     FLOAT temp[64];
     int i;
 
