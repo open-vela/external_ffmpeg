@@ -2,28 +2,29 @@
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  * Copyright (c) 2013 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/aarch64/asm.S"
 
-/* chroma_mc8(uint8_t *dst, uint8_t *src, ptrdiff_t stride, int h, int x, int y) */
+/* chroma_mc8(uint8_t *dst, uint8_t *src, int stride, int h, int x, int y) */
 .macro  h264_chroma_mc8 type, codec=h264
 function ff_\type\()_\codec\()_chroma_mc8_neon, export=1
+        sxtw            x2,  w2
   .ifc \type,avg
         mov             x8,  x0
   .endif
@@ -191,9 +192,10 @@ function ff_\type\()_\codec\()_chroma_mc8_neon, export=1
 endfunc
 .endm
 
-/* chroma_mc4(uint8_t *dst, uint8_t *src, ptrdiff_t stride, int h, int x, int y) */
+/* chroma_mc4(uint8_t *dst, uint8_t *src, int stride, int h, int x, int y) */
 .macro  h264_chroma_mc4 type, codec=h264
 function ff_\type\()_\codec\()_chroma_mc4_neon, export=1
+        sxtw            x2,  w2
   .ifc \type,avg
         mov             x8,  x0
   .endif
@@ -357,6 +359,7 @@ endfunc
 
 .macro  h264_chroma_mc2 type
 function ff_\type\()_h264_chroma_mc2_neon, export=1
+        sxtw            x2,  w2
         prfm            pldl1strm, [x1]
         prfm            pldl1strm, [x1, x2]
         orr             w7,  w4,  w5
@@ -442,7 +445,7 @@ endconst
         h264_chroma_mc4 avg, rv40
 #endif
 
-#if CONFIG_VC1_DECODER
+#if CONFIG_VC1DSP
         h264_chroma_mc8 put, vc1
         h264_chroma_mc8 avg, vc1
         h264_chroma_mc4 put, vc1
