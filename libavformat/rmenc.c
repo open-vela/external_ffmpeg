@@ -2,20 +2,20 @@
  * "Real" compatible muxer.
  * Copyright (c) 2000, 2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avformat.h"
@@ -29,7 +29,7 @@ typedef struct StreamInfo {
     int packet_max_size;
     /* codec related output */
     int bit_rate;
-    float frame_rate;
+    AVRational frame_rate;
     int nb_frames;    /* current frame number */
     int total_frames; /* total number of frames */
     int num;
@@ -102,7 +102,7 @@ static int rv10_write_header(AVFormatContext *ctx,
         nb_packets += stream->nb_packets;
         packet_total_size += stream->packet_total_size;
         /* select maximum duration */
-        v = (int) (1000.0 * (float)stream->total_frames / stream->frame_rate);
+        v = av_rescale_q_rnd(stream->total_frames, (AVRational){1000, 1}, stream->frame_rate, AV_ROUND_ZERO);
         if (v > duration)
             duration = v;
     }
@@ -123,7 +123,7 @@ static int rv10_write_header(AVFormatContext *ctx,
     avio_wb32(s, 0);           /* data offset : will be patched after */
     avio_wb16(s, ctx->nb_streams);    /* num streams */
     flags = 1 | 2; /* save allowed & perfect play */
-    if (!(s->seekable & AVIO_SEEKABLE_NORMAL))
+    if (!s->seekable)
         flags |= 4; /* live broadcast */
     avio_wb16(s, flags);
 
@@ -175,10 +175,10 @@ static int rv10_write_header(AVFormatContext *ctx,
         avio_wb32(s, 0);           /* start time */
         avio_wb32(s, BUFFER_DURATION);           /* preroll */
         /* duration */
-        if (!(s->seekable & AVIO_SEEKABLE_NORMAL) || !stream->total_frames)
+        if (!s->seekable || !stream->total_frames)
             avio_wb32(s, (int)(3600 * 1000));
         else
-            avio_wb32(s, (int)(stream->total_frames * 1000 / stream->frame_rate));
+            avio_wb32(s, av_rescale_q_rnd(stream->total_frames, (AVRational){1000, 1},  stream->frame_rate, AV_ROUND_ZERO));
         put_str8(s, desc);
         put_str8(s, mimetype);
         avio_wb32(s, codec_data_size);
@@ -222,8 +222,8 @@ static int rv10_write_header(AVFormatContext *ctx,
                 coded_frame_size--;
             avio_wb32(s, coded_frame_size); /* frame length */
             avio_wb32(s, 0x51540); /* unknown */
-            avio_wb32(s, 0x249f0); /* unknown */
-            avio_wb32(s, 0x249f0); /* unknown */
+            avio_wb32(s, stream->par->bit_rate / 8 * 60); /* bytes per minute */
+            avio_wb32(s, stream->par->bit_rate / 8 * 60); /* bytes per minute */
             avio_wb16(s, 0x01);
             /* frame length : seems to be very important */
             avio_wb16(s, coded_frame_size);
@@ -253,9 +253,15 @@ static int rv10_write_header(AVFormatContext *ctx,
                 ffio_wfourcc(s,"RV20");
             avio_wb16(s, stream->par->width);
             avio_wb16(s, stream->par->height);
-            avio_wb16(s, (int) stream->frame_rate); /* frames per seconds ? */
+
+            if (stream->frame_rate.num / stream->frame_rate.den > 65535) {
+                av_log(s, AV_LOG_ERROR, "Frame rate %d is too high\n", stream->frame_rate.num / stream->frame_rate.den);
+                return AVERROR(EINVAL);
+            }
+
+            avio_wb16(s, stream->frame_rate.num / stream->frame_rate.den); /* frames per seconds ? */
             avio_wb32(s,0);     /* unknown meaning */
-            avio_wb16(s, (int) stream->frame_rate);  /* unknown meaning */
+            avio_wb16(s, stream->frame_rate.num / stream->frame_rate.den);  /* unknown meaning */
             avio_wb32(s,0);     /* unknown meaning */
             avio_wb16(s, 8);    /* unknown meaning */
             /* Seems to be the codec version: only use basic H.263. The next
@@ -301,7 +307,7 @@ static void write_packet_header(AVFormatContext *ctx, StreamInfo *stream,
     avio_wb16(s,0); /* version */
     avio_wb16(s,length + 12);
     avio_wb16(s, stream->num); /* stream number */
-    timestamp = (1000 * (float)stream->nb_frames) / stream->frame_rate;
+    timestamp = av_rescale_q_rnd(stream->nb_frames, (AVRational){1000, 1}, stream->frame_rate, AV_ROUND_ZERO);
     avio_wb32(s, timestamp); /* timestamp */
     avio_w8(s, 0); /* reserved */
     avio_w8(s, key_frame ? 2 : 0); /* flags */
@@ -313,6 +319,11 @@ static int rm_write_header(AVFormatContext *s)
     StreamInfo *stream;
     int n;
     AVCodecParameters *par;
+
+    if (s->nb_streams > 2) {
+        av_log(s, AV_LOG_ERROR, "At most 2 streams are currently supported for muxing in RM\n");
+        return AVERROR_PATCHWELCOME;
+    }
 
     for(n=0;n<s->nb_streams;n++) {
         AVStream *st = s->streams[n];
@@ -330,7 +341,7 @@ static int rm_write_header(AVFormatContext *s)
         case AVMEDIA_TYPE_AUDIO:
             rm->audio_stream = stream;
             frame_size = av_get_audio_frame_duration2(par, 0);
-            stream->frame_rate = (float)par->sample_rate / (float)frame_size;
+            stream->frame_rate = (AVRational){par->sample_rate, frame_size};
             /* XXX: dummy values */
             stream->packet_max_size = 1024;
             stream->nb_packets = 0;
@@ -339,7 +350,7 @@ static int rm_write_header(AVFormatContext *s)
         case AVMEDIA_TYPE_VIDEO:
             rm->video_stream = stream;
             // TODO: should be avg_frame_rate
-            stream->frame_rate = (float)st->time_base.den / (float)st->time_base.num;
+            stream->frame_rate = av_inv_q(st->time_base);
             /* XXX: dummy values */
             stream->packet_max_size = 4096;
             stream->nb_packets = 0;
@@ -389,9 +400,10 @@ static int rm_write_video(AVFormatContext *s, const uint8_t *buf, int size, int 
 
     /* Well, I spent some time finding the meaning of these bits. I am
        not sure I understood everything, but it works !! */
+#if 1
     if (size > MAX_PACKET_SIZE) {
-        avpriv_report_missing_feature(s, "Muxing packets larger than 64 kB");
-        return AVERROR(ENOSYS);
+        av_log(s, AV_LOG_ERROR, "Muxing packets larger than 64 kB (%d) is not supported\n", size);
+        return AVERROR_PATCHWELCOME;
     }
     write_packet_header(s, stream, size + 7 + (size >= 0x4000)*4, key_frame);
     /* bit 7: '1' if final packet of a frame converted in several packets */
@@ -410,6 +422,13 @@ static int rm_write_video(AVFormatContext *s, const uint8_t *buf, int size, int 
         avio_wb16(pb, 0x4000 | size); /* total frame size */
         avio_wb16(pb, 0x4000 | size); /* offset from the start or the end */
     }
+#else
+    /* full frame */
+    write_packet_header(s, size + 6);
+    avio_w8(pb, 0xc0);
+    avio_wb16(pb, 0x4000 + size); /* total frame size */
+    avio_wb16(pb, 0x4000 + packet_number * 126); /* position in stream */
+#endif
     avio_w8(pb, stream->nb_frames & 0xff);
 
     avio_write(pb, buf, size);
@@ -433,7 +452,7 @@ static int rm_write_trailer(AVFormatContext *s)
     int data_size, index_pos, i;
     AVIOContext *pb = s->pb;
 
-    if (s->pb->seekable & AVIO_SEEKABLE_NORMAL) {
+    if (s->pb->seekable) {
         /* end of file: finish to write header */
         index_pos = avio_tell(pb);
         data_size = index_pos - rm->data_pos;

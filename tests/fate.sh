@@ -37,16 +37,18 @@ checkout(){
 update()(
     cd ${src} || return
     case "$repo" in
-        git:*) git fetch --quiet --force; git reset --quiet --hard "origin/$branch" ;;
+        git:*) git fetch --quiet --force && git reset --quiet --hard "origin/$branch" ;;
     esac
 )
 
 configure()(
     cd ${build} || return
-    ${src}/configure                                                    \
+    ${shell} ${src}/configure                                           \
         --prefix="${inst}"                                              \
         --samples="${samples}"                                          \
         --enable-gpl                                                    \
+        --enable-memory-poisoning                                       \
+        --enable-avresample                                             \
         ${arch:+--arch=$arch}                                           \
         ${cpu:+--cpu="$cpu"}                                            \
         ${toolchain:+--toolchain="$toolchain"}                          \
@@ -73,7 +75,7 @@ compile()(
 fate()(
     test "$build_only" = "yes" && return
     cd ${build} || return
-    ${make} ${makeopts_fate-${makeopts}} -k fate
+    ${make} ${makeopts} -k fate
 )
 
 clean(){
@@ -83,7 +85,8 @@ clean(){
 report(){
     date=$(date -u +%Y%m%d%H%M%S)
     echo "fate:1:${date}:${slot}:${version}:$1:$2:${branch}:${comment}" >report
-    cat ${build}/avbuild/config.fate ${build}/tests/data/fate/*.rep >> report 2> /dev/null
+    cat ${build}/config.fate >>report
+    cat ${build}/tests/data/fate/*.rep >>report || for i in ${build}/tests/data/fate/*.rep ; do cat "$i" >>report 2>/dev/null; done
     test -n "$fate_recv" && $tar report *.log | gzip | $fate_recv
 }
 
@@ -105,15 +108,15 @@ test -d "$src" && update || checkout || die "Error fetching source"
 
 cd ${workdir}
 
-version=$(${src}/avbuild/version.sh ${src})
+version=$(${src}/version.sh ${src})
 test "$version" = "$(cat version-$slot 2>/dev/null)" && exit 0
 echo ${version} >version-$slot
 
 rm -rf "${build}" *.log
 mkdir -p ${build}
 
-configure >configure.log 2>&1 || fail $? "error configuring"
-compile   >compile.log   2>&1 || fail $? "error compiling"
-fate      >test.log      2>&1 || fail $? "error testing"
+configure >configure.log 2>&1 || fail 3 "error configuring"
+compile   >compile.log   2>&1 || fail 2 "error compiling"
+fate      >test.log      2>&1 || fail 1 "error testing"
 report 0 success
 clean
