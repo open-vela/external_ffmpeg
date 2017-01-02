@@ -2,20 +2,20 @@
  * RAW HEVC video demuxer
  * Copyright (c) 2013 Dirk Farin <dirk.farin@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,15 +43,15 @@ static int hevc_probe(AVProbeData *p)
                 return 0;
 
             switch (type) {
-            case NAL_VPS:        vps++;  break;
-            case NAL_SPS:        sps++;  break;
-            case NAL_PPS:        pps++;  break;
-            case NAL_BLA_N_LP:
-            case NAL_BLA_W_LP:
-            case NAL_BLA_W_RADL:
-            case NAL_CRA_NUT:
-            case NAL_IDR_N_LP:
-            case NAL_IDR_W_RADL: irap++; break;
+            case HEVC_NAL_VPS:        vps++;  break;
+            case HEVC_NAL_SPS:        sps++;  break;
+            case HEVC_NAL_PPS:        pps++;  break;
+            case HEVC_NAL_BLA_N_LP:
+            case HEVC_NAL_BLA_W_LP:
+            case HEVC_NAL_BLA_W_RADL:
+            case HEVC_NAL_CRA_NUT:
+            case HEVC_NAL_IDR_N_LP:
+            case HEVC_NAL_IDR_W_RADL: irap++; break;
             }
         }
     }

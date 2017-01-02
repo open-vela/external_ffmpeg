@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -180,8 +180,7 @@
 
         vdup.u8         d3,  r3          @ H
         vmov            r2,  r3,  d4
-        orr             r2,  r2,  r3
-        cmp             r2,  #0
+        orrs            r2,  r2,  r3
         @ If no pixels need filtering, just exit as soon as possible
         beq             9f
 
@@ -243,7 +242,7 @@
 .if \wd == 8
         vcle.u8         d6,  d6,  d0            @ flat8in
 .endif
-        vcgt.u8         d5,  d5,  d3            @ hev
+        vcle.u8         d5,  d5,  d3            @ !hev
 .if \wd == 8
         vand            d6,  d6,  d4            @ flat8in && fm
 .endif
@@ -253,11 +252,10 @@
 .elseif \wd == 8
         vbic            d4,  d4,  d6            @ fm && !flat8in
 .endif
-        vmvn            d5,  d5                 @ !hev
+        vand            d5,  d5,  d4            @ !hev && fm && !flat8in
 .if \wd == 16
         vand            d7,  d7,  d6            @ flat8out && flat8in && fm
 .endif
-        vand            d5,  d5,  d4            @ !hev && fm && !flat8in
 
         vmul.s16        \tmpq2,  \tmpq2, \tmpq3 @ 3 * (q0 - p0)
         vbic            \tmp1,   \tmp1,   d5    @ if (!hev) av_clip_int8 = 0
@@ -286,17 +284,20 @@
 
         vmovl.u8        q0,  d22                @ p1
         vmovl.u8        q1,  d25                @ q1
+.if \wd >= 8
+        vmov            r2,  r3,  d6
+.endif
         vaddw.s8        q0,  q0,  \tmp3         @ p1 + f
         vsubw.s8        q1,  q1,  \tmp3         @ q1 - f
+.if \wd >= 8
+        orrs            r2,  r2,  r3
+.endif
         vqmovun.s16     d0,  q0                 @ out p1
         vqmovun.s16     d2,  q1                 @ out q1
         vbit            d22, d0,  d5            @ if (!hev && fm && !flat8in)
         vbit            d25, d2,  d5
 
 .if \wd >= 8
-        vmov            r2,  r3,  d6
-        orr             r2,  r2,  r3
-        cmp             r2,  #0
         @ If no pixels need flat8in, jump to flat8out
         @ (or to a writeout of the inner 4 pixels, for wd=8)
         beq             6f
@@ -351,14 +352,12 @@
 6:
         vorr            d2,  d6,  d7
         vmov            r2,  r3,  d2
-        orr             r2,  r2,  r3
-        cmp             r2,  #0
+        orrs            r2,  r2,  r3
         @ If no pixels needed flat8in nor flat8out, jump to a
         @ writeout of the inner 4 pixels
         beq             7f
         vmov            r2,  r3,  d7
-        orr             r2,  r2,  r3
-        cmp             r2,  #0
+        orrs            r2,  r2,  r3
         @ If no pixels need flat8out, jump to a writeout of the inner 6 pixels
         beq             8f
 
