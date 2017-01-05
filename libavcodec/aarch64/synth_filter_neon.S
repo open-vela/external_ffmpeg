@@ -2,20 +2,20 @@
  * Copyright (c) 2010 Mans Rullgard <mans@mansr.com>
  * Copyright (c) 2015 Janne Grunau <janne-libav@jannau.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,7 +50,7 @@ function ff_synth_filter_float_neon, export=1
         add             x1,  x1,  x7,  lsl #2   // synth_buf
         sub             w8,  w7,  #32
         stp             x5,  x1,  [sp, #16]
-        and             x7,  x7,  #~63
+        bic             x7,  x7,  #63
         and             w8,  w8,  #511
         stp             x7,  x30, [sp, #32]
         str             w8,  [x2]
