@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,8 +76,6 @@ typedef struct HpelDSPContext {
      * @param pixels source
      * @param line_size number of bytes in a horizontal line of block
      * @param h height
-     * @note The size is kept at [4][4] to match the above pixel_tabs and avoid
-     *       out of bounds reads in the motion estimation code.
      */
     op_pixels_func put_no_rnd_pixels_tab[4][4];
 
@@ -97,8 +95,10 @@ typedef struct HpelDSPContext {
 void ff_hpeldsp_init(HpelDSPContext *c, int flags);
 
 void ff_hpeldsp_init_aarch64(HpelDSPContext *c, int flags);
+void ff_hpeldsp_init_alpha(HpelDSPContext *c, int flags);
 void ff_hpeldsp_init_arm(HpelDSPContext *c, int flags);
 void ff_hpeldsp_init_ppc(HpelDSPContext *c, int flags);
 void ff_hpeldsp_init_x86(HpelDSPContext *c, int flags);
+void ff_hpeldsp_init_mips(HpelDSPContext *c, int flags);
 
 #endif /* AVCODEC_HPELDSP_H */
