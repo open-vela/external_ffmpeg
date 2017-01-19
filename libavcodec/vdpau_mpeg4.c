@@ -4,27 +4,26 @@
  * Copyright (c) 2008 NVIDIA
  * Copyright (c) 2013 Rémi Denis-Courmont
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software Foundation,
+ * License along with FFmpeg; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <vdpau/vdpau.h>
 
 #include "avcodec.h"
-#include "hwaccel.h"
 #include "mpeg4video.h"
 #include "vdpau.h"
 #include "vdpau_internal.h"
@@ -97,6 +96,9 @@ static int vdpau_mpeg4_init(AVCodecContext *avctx)
     case FF_PROFILE_MPEG4_SIMPLE:
         profile = VDP_DECODER_PROFILE_MPEG4_PART2_SP;
         break;
+    // As any ASP decoder must be able to decode SP, this
+    // should be a safe fallback if profile is unknown/unspecified.
+    case FF_PROFILE_UNKNOWN:
     case FF_PROFILE_MPEG4_ADVANCED_SIMPLE:
         profile = VDP_DECODER_PROFILE_MPEG4_PART2_ASP;
         break;
@@ -119,5 +121,4 @@ AVHWAccel ff_mpeg4_vdpau_hwaccel = {
     .init           = vdpau_mpeg4_init,
     .uninit         = ff_vdpau_common_uninit,
     .priv_data_size = sizeof(VDPAUContext),
-    .caps_internal  = HWACCEL_CAP_ASYNC_SAFE,
 };
