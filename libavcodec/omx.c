@@ -2,20 +2,20 @@
  * OMX Video encoder
  * Copyright (C) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -761,7 +761,10 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             } else {
                 // If not, we need to allocate a new buffer with the right
                 // size and copy the input frame into it.
-                uint8_t *buf = av_malloc(av_image_get_buffer_size(avctx->pix_fmt, s->stride, s->plane_size, 1));
+                uint8_t *buf = NULL;
+                int image_buffer_size = av_image_get_buffer_size(avctx->pix_fmt, s->stride, s->plane_size, 1);
+                if (image_buffer_size >= 0)
+                    buf = av_malloc(image_buffer_size);
                 if (!buf) {
                     // Return the buffer to the queue so it's not lost
                     append_buffer(&s->input_mutex, &s->input_cond, &s->num_free_in_buffers, s->free_in_buffers, buffer);
@@ -834,7 +837,7 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 }
             } else {
                 // End of frame, and the caller provided a preallocated frame
-                if ((ret = ff_alloc_packet(pkt, s->output_buf_size + buffer->nFilledLen)) < 0) {
+                if ((ret = ff_alloc_packet2(avctx, pkt, s->output_buf_size + buffer->nFilledLen, 0)) < 0) {
                     av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n",
                            (int)(s->output_buf_size + buffer->nFilledLen));
                     goto end;

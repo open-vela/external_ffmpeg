@@ -3,20 +3,20 @@
 ;* Copyright (C) 2009  Sebastien Lucas <sebastien.lucas@gmail.com>
 ;* Copyright (C) 2009  Zuxy Meng <zuxy.meng@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -115,7 +115,7 @@ SECTION .text
 %endmacro
 
 %macro vp6_filter_diag4 0
-; void ff_vp6_filter_diag4_<opt>(uint8_t *dst, uint8_t *src, ptrdiff_t stride,
+; void ff_vp6_filter_diag4_<opt>(uint8_t *dst, uint8_t *src, int stride,
 ;                                const int16_t h_weight[4], const int16_t v_weights[4])
 cglobal vp6_filter_diag4, 5, 7, 8
     mov          r5, rsp         ; backup stack pointer
@@ -125,6 +125,9 @@ cglobal vp6_filter_diag4, 5, 7, 8
 %else
     sub         rsp, 8*15
     movq         m6, [pw_64]
+%endif
+%if ARCH_X86_64
+    movsxd       r2, r2d
 %endif
 
     sub          r1, r2
