@@ -2,20 +2,20 @@
  * Resolume DXV decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,9 +105,17 @@ static int decompress_texture_thread(AVCodecContext *avctx, void *arg,
             break;                                                            \
         case 2:                                                               \
             idx = (bytestream2_get_byte(gbc) + 2) * x;                        \
+            if (idx > pos) {                                                  \
+                av_log(avctx, AV_LOG_ERROR, "idx %d > %d\n", idx, pos);       \
+                return AVERROR_INVALIDDATA;                                   \
+            }                                                                 \
             break;                                                            \
         case 3:                                                               \
             idx = (bytestream2_get_le16(gbc) + 0x102) * x;                    \
+            if (idx > pos) {                                                  \
+                av_log(avctx, AV_LOG_ERROR, "idx %d > %d\n", idx, pos);       \
+                return AVERROR_INVALIDDATA;                                   \
+            }                                                                 \
             break;                                                            \
         }                                                                     \
     } while(0)
@@ -125,7 +133,7 @@ static int dxv_decompress_dxt1(AVCodecContext *avctx)
     AV_WL32(ctx->tex_data + 4, bytestream2_get_le32(gbc));
 
     /* Process input until the whole texture has been filled */
-    while (pos + 2 <= ctx->tex_size / 4) {
+    while (pos < ctx->tex_size / 4) {
         CHECKPOINT(2);
 
         /* Copy two elements from a previous offset or from the input buffer */
@@ -178,7 +186,7 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
     AV_WL32(ctx->tex_data + 12, bytestream2_get_le32(gbc));
 
     /* Process input until the whole texture has been filled */
-    while (pos + 2 <= ctx->tex_size / 4) {
+    while (pos < ctx->tex_size / 4) {
         if (run) {
             run--;
 
@@ -207,7 +215,7 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
                         check += probe;
                     } while (probe == 0xFFFF);
                 }
-                while (check && pos + 4 <= ctx->tex_size / 4) {
+                while (check && pos < ctx->tex_size / 4) {
                     prev = AV_RL32(ctx->tex_data + 4 * (pos - 4));
                     AV_WL32(ctx->tex_data + 4 * pos, prev);
                     pos++;
@@ -252,8 +260,10 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
             case 2:
                 /* Copy two dwords from a previous index */
                 idx = 8 + bytestream2_get_le16(gbc);
-                if (idx > pos || (unsigned int)(pos - idx) + 2 > ctx->tex_size / 4)
+                if (idx > pos) {
+                    av_log(avctx, AV_LOG_ERROR, "idx %d > %d\n", idx, pos);
                     return AVERROR_INVALIDDATA;
+                }
                 prev = AV_RL32(ctx->tex_data + 4 * (pos - idx));
                 AV_WL32(ctx->tex_data + 4 * pos, prev);
                 pos++;
@@ -276,13 +286,9 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
         }
 
         CHECKPOINT(4);
-        if (pos + 2 > ctx->tex_size / 4)
-            return AVERROR_INVALIDDATA;
 
         /* Copy two elements from a previous offset or from the input buffer */
         if (op) {
-            if (idx > pos || (unsigned int)(pos - idx) + 2 > ctx->tex_size / 4)
-                return AVERROR_INVALIDDATA;
             prev = AV_RL32(ctx->tex_data + 4 * (pos - idx));
             AV_WL32(ctx->tex_data + 4 * pos, prev);
             pos++;
@@ -293,8 +299,6 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
         } else {
             CHECKPOINT(4);
 
-            if (op && (idx > pos || (unsigned int)(pos - idx) + 2 > ctx->tex_size / 4))
-                return AVERROR_INVALIDDATA;
             if (op)
                 prev = AV_RL32(ctx->tex_data + 4 * (pos - idx));
             else
@@ -366,7 +370,7 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
         break;
     case MKBETAG('Y', 'C', 'G', '6'):
     case MKBETAG('Y', 'G', '1', '0'):
-        avpriv_report_missing_feature(avctx, "Tag 0x%08"PRIX32"", tag);
+        avpriv_report_missing_feature(avctx, "Tag 0x%08X", tag);
         return AVERROR_PATCHWELCOME;
     default:
         /* Old version does not have a real header, just size and type. */
@@ -393,8 +397,7 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
             ctx->tex_funct = ctx->texdsp.dxt1_block;
             ctx->tex_step  = 8;
         } else {
-            av_log(avctx, AV_LOG_ERROR,
-                   "Unsupported header (0x%08"PRIX32")\n.", tag);
+            av_log(avctx, AV_LOG_ERROR, "Unsupported header (0x%08X)\n.", tag);
             return AVERROR_INVALIDDATA;
         }
         ctx->tex_rat = 1;
@@ -422,7 +425,7 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
 
     if (size != bytestream2_get_bytes_left(gbc)) {
         av_log(avctx, AV_LOG_ERROR,
-               "Incomplete or invalid file (header %d, left %u).\n",
+               "Incomplete or invalid file (header %d, left %d).\n",
                size, bytestream2_get_bytes_left(gbc));
         return AVERROR_INVALIDDATA;
     }
@@ -441,7 +444,6 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
     ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
-    ff_thread_finish_setup(avctx);
 
     /* Now decompress the texture with the standard functions. */
     avctx->execute2(avctx, decompress_texture_thread,
