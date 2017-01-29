@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,12 +40,6 @@
 #   define FUNC @
 #endif
 
-#if HAVE_AS_FPU_DIRECTIVE
-#   define FPU
-#else
-#   define FPU @
-#endif
-
 #if   HAVE_NEON
         .arch           armv7-a
 #elif HAVE_ARMV6T2
@@ -60,11 +54,11 @@ ELF     .object_arch    armv4
 #endif
 
 #if   HAVE_NEON
-FPU     .fpu            neon
+        .fpu            neon
 ELF     .eabi_attribute 10, 0           @ suppress Tag_FP_arch
 ELF     .eabi_attribute 12, 0           @ suppress Tag_Advanced_SIMD_arch
 #elif HAVE_VFP
-FPU     .fpu            vfp
+        .fpu            vfp
 ELF     .eabi_attribute 10, 0           @ suppress Tag_FP_arch
 #endif
 
@@ -184,15 +178,6 @@ T       ldr             \rd, [\rd]
 .endm
 
 .macro  movrelx         rd,  val, gp
-    .ifc \rd,\gp
-        .error      "movrelx needs two distinct registers"
-    .endif
-    .ifc \rd\()_\gp,r12_
-        .warning    "movrelx rd=\rd without explicit set gp"
-    .endif
-    .ifc \rd\()_\gp,ip_
-        .warning    "movrelx rd=\rd without explicit set gp"
-    .endif
 #if CONFIG_PIC && defined(__ELF__)
     .ifnb \gp
       .if .Lpic_gp
