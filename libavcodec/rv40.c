@@ -2,20 +2,20 @@
  * RV40 decoder
  * Copyright (c) 2007 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,9 +27,9 @@
 #include "libavutil/imgutils.h"
 
 #include "avcodec.h"
+#include "golomb_legacy.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
-#include "golomb.h"
 
 #include "rv34.h"
 #include "rv40vlc2.h"
@@ -109,8 +109,6 @@ static int get_dimension(GetBitContext *gb, const int *dim)
         val = dim[get_bits1(gb) - val];
     if(!val){
         do{
-            if (get_bits_left(gb) < 8)
-                return AVERROR_INVALIDDATA;
             t = get_bits(gb, 8);
             val += t << 2;
         }while(t == 0xFF);
@@ -232,11 +230,8 @@ static int rv40_decode_mb_info(RV34DecContext *r)
     int prev_type = 0;
     int mb_pos = s->mb_x + s->mb_y * s->mb_stride;
 
-    if(!r->s.mb_skip_run) {
+    if(!r->s.mb_skip_run)
         r->s.mb_skip_run = get_interleaved_ue_golomb(gb) + 1;
-        if(r->s.mb_skip_run > (unsigned)s->mb_num)
-            return -1;
-    }
 
     if(--r->s.mb_skip_run)
          return RV34_MB_SKIP;
@@ -363,7 +358,7 @@ static void rv40_loop_filter(RV34DecContext *r, int row)
     int uvcbp[4][2];
     /**
      * This mask represents the pattern of luma subblocks that should be filtered
-     * in addition to the coded ones because they lie at the edge of
+     * in addition to the coded ones because because they lie at the edge of
      * 8x8 block with different enough motion vectors
      */
     unsigned mvmasks[4];
