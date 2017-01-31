@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -800,6 +800,8 @@ static int vaapi_encode_h264_init_sequence_params(AVCodecContext *avctx)
         vseq->seq_fields.bits.direct_8x8_inference_flag = 1;
         vseq->seq_fields.bits.log2_max_frame_num_minus4 = 4;
         vseq->seq_fields.bits.pic_order_cnt_type = 0;
+        vseq->seq_fields.bits.log2_max_pic_order_cnt_lsb_minus4 =
+            av_clip(av_log2(avctx->max_b_frames + 1) - 2, 0, 12);
 
         if (avctx->width  != ctx->surface_width ||
             avctx->height != ctx->surface_height) {
@@ -1124,13 +1126,15 @@ static av_cold int vaapi_encode_h264_configure(AVCodecContext *avctx)
                "%d / %d / %d for IDR- / P- / B-frames.\n",
                priv->fixed_qp_idr, priv->fixed_qp_p, priv->fixed_qp_b);
 
-    } else if (ctx->va_rc_mode == VA_RC_CBR) {
+    } else if (ctx->va_rc_mode == VA_RC_CBR ||
+               ctx->va_rc_mode == VA_RC_VBR) {
         // These still need to be  set for pic_init_qp/slice_qp_delta.
         priv->fixed_qp_idr = 26;
         priv->fixed_qp_p   = 26;
         priv->fixed_qp_b   = 26;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %d bps.\n",
+               ctx->va_rc_mode == VA_RC_CBR ? "constant" : "variable",
                avctx->bit_rate);
 
     } else {
@@ -1190,19 +1194,9 @@ static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
     switch (avctx->profile) {
     case FF_PROFILE_H264_CONSTRAINED_BASELINE:
         ctx->va_profile = VAProfileH264ConstrainedBaseline;
-        if (avctx->max_b_frames != 0) {
-            avctx->max_b_frames = 0;
-            av_log(avctx, AV_LOG_WARNING, "H.264 constrained baseline profile "
-                   "doesn't support encoding with B frames, disabling them.\n");
-        }
         break;
     case FF_PROFILE_H264_BASELINE:
         ctx->va_profile = VAProfileH264Baseline;
-        if (avctx->max_b_frames != 0) {
-            avctx->max_b_frames = 0;
-            av_log(avctx, AV_LOG_WARNING, "H.264 baseline profile "
-                   "doesn't support encoding with B frames, disabling them.\n");
-        }
         break;
     case FF_PROFILE_H264_MAIN:
         ctx->va_profile = VAProfileH264Main;
@@ -1249,9 +1243,12 @@ static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
     // Only 8-bit encode is supported.
     ctx->va_rt_format = VA_RT_FORMAT_YUV420;
 
-    if (avctx->bit_rate > 0)
-        ctx->va_rc_mode = VA_RC_CBR;
-    else
+    if (avctx->bit_rate > 0) {
+        if (avctx->rc_max_rate == avctx->bit_rate)
+            ctx->va_rc_mode = VA_RC_CBR;
+        else
+            ctx->va_rc_mode = VA_RC_VBR;
+    } else
         ctx->va_rc_mode = VA_RC_CQP;
 
     ctx->va_packed_headers =
@@ -1285,10 +1282,11 @@ static const AVCodecDefault vaapi_encode_h264_defaults[] = {
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1"   },
-    { "i_qoffset",      "0"   },
-    { "b_qfactor",      "6/5" },
-    { "b_qoffset",      "0"   },
+    { "i_qfactor",      "1.0" },
+    { "i_qoffset",      "0.0" },
+    { "b_qfactor",      "1.2" },
+    { "b_qoffset",      "0.0" },
+    { "qmin",           "0"   },
     { NULL },
 };
 
