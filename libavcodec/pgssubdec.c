@@ -300,11 +300,8 @@ static int parse_object_segment(AVCodecContext *avctx,
 
     av_fast_padded_malloc(&object->rle, &object->rle_buffer_size, rle_bitmap_len);
 
-    if (!object->rle) {
-        object->rle_data_len      = 0;
-        object->rle_remaining_len = 0;
+    if (!object->rle)
         return AVERROR(ENOMEM);
-    }
 
     memcpy(object->rle, buf, buf_size);
     object->rle_data_len = buf_size;
