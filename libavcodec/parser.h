@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -53,7 +53,8 @@ void ff_parse_close(AVCodecParserContext *s);
  * Fetch timestamps for a specific byte within the current access unit.
  * @param off byte position within the access unit
  * @param remove Found timestamps will be removed if set to 1, kept if set to 0.
+ * @param fuzzy Only use found value if it is more informative than what we already have
  */
-void ff_fetch_timestamp(AVCodecParserContext *s, int off, int remove);
+void ff_fetch_timestamp(AVCodecParserContext *s, int off, int remove, int fuzzy);
 
 #endif /* AVCODEC_PARSER_H */
