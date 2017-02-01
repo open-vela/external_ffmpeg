@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,7 @@
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
-#include "video.h"
+#include "scale.h"
 
 typedef struct ScaleVAAPIContext {
     const AVClass *class;
@@ -51,9 +51,12 @@ typedef struct ScaleVAAPIContext {
 
     char *output_format_string;
     enum AVPixelFormat output_format;
-    int output_width;
-    int output_height;
 
+    char *w_expr;      // width expression string
+    char *h_expr;      // height expression string
+
+    int output_width;  // computed width
+    int output_height; // computed height
 } ScaleVAAPIContext;
 
 
@@ -111,6 +114,7 @@ static int scale_vaapi_config_input(AVFilterLink *inlink)
 
 static int scale_vaapi_config_output(AVFilterLink *outlink)
 {
+    AVFilterLink *inlink = outlink->src->inputs[0];
     AVFilterContext *avctx = outlink->src;
     ScaleVAAPIContext *ctx = avctx->priv;
     AVVAAPIHWConfig *hwconfig = NULL;
@@ -162,6 +166,12 @@ static int scale_vaapi_config_output(AVFilterLink *outlink)
             goto fail;
         }
     }
+
+    if ((err = ff_scale_eval_dimensions(ctx,
+                                        ctx->w_expr, ctx->h_expr,
+                                        inlink, outlink,
+                                        &ctx->output_width, &ctx->output_height)) < 0)
+        goto fail;
 
     if (ctx->output_width  < constraints->min_width  ||
         ctx->output_height < constraints->min_height ||
@@ -260,7 +270,6 @@ static int scale_vaapi_filter_frame(AVFilterLink *inlink, AVFrame *input_frame)
     VASurfaceID input_surface, output_surface;
     VAProcPipelineParameterBuffer params;
     VABufferID params_id;
-    VARectangle input_region;
     VAStatus vas;
     int err;
 
@@ -275,11 +284,17 @@ static int scale_vaapi_filter_frame(AVFilterLink *inlink, AVFrame *input_frame)
     av_log(ctx, AV_LOG_DEBUG, "Using surface %#x for scale input.\n",
            input_surface);
 
-    output_frame = ff_get_video_buffer(outlink, ctx->output_width,
-                                       ctx->output_height);
+    output_frame = av_frame_alloc();
     if (!output_frame) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to allocate output frame.");
         err = AVERROR(ENOMEM);
         goto fail;
+    }
+
+    err = av_hwframe_get_buffer(ctx->output_frames_ref, output_frame, 0);
+    if (err < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to get surface for "
+               "output: %d\n.", err);
     }
 
     output_surface = (VASurfaceID)(uintptr_t)output_frame->data[3];
@@ -288,17 +303,8 @@ static int scale_vaapi_filter_frame(AVFilterLink *inlink, AVFrame *input_frame)
 
     memset(&params, 0, sizeof(params));
 
-    // If there were top/left cropping, it could be taken into
-    // account here.
-    input_region = (VARectangle) {
-        .x      = 0,
-        .y      = 0,
-        .width  = input_frame->width,
-        .height = input_frame->height,
-    };
-
     params.surface = input_surface;
-    params.surface_region = &input_region;
+    params.surface_region = 0;
     params.surface_color_standard =
         vaapi_proc_colour_standard(input_frame->colorspace);
 
@@ -416,12 +422,12 @@ static av_cold void scale_vaapi_uninit(AVFilterContext *avctx)
 
 
 #define OFFSET(x) offsetof(ScaleVAAPIContext, x)
-#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM)
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption scale_vaapi_options[] = {
     { "w", "Output video width",
-      OFFSET(output_width),  AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, .flags = FLAGS },
+      OFFSET(w_expr), AV_OPT_TYPE_STRING, {.str = "iw"}, .flags = FLAGS },
     { "h", "Output video height",
-      OFFSET(output_height), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, .flags = FLAGS },
+      OFFSET(h_expr), AV_OPT_TYPE_STRING, {.str = "ih"}, .flags = FLAGS },
     { "format", "Output video format (software format of hardware frames)",
       OFFSET(output_format_string), AV_OPT_TYPE_STRING, .flags = FLAGS },
     { NULL },
@@ -463,5 +469,4 @@ AVFilter ff_vf_scale_vaapi = {
     .inputs        = scale_vaapi_inputs,
     .outputs       = scale_vaapi_outputs,
     .priv_class    = &scale_vaapi_class,
-    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
