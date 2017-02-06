@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -292,7 +292,7 @@
 .if \mix != 0
         sxtl            v1.8h,  v1.8b
 .endif
-        cmhi            v5\sz,  v5\sz,  v3\sz  // hev
+        cmhs            v5\sz,  v3\sz,  v5\sz  // !hev
 .if \wd == 8
         // If a 4/8 or 8/4 mix is used, clear the relevant half of v6
 .if \mix != 0
@@ -306,11 +306,10 @@
 .elseif \wd == 8
         bic             v4\sz,  v4\sz,  v6\sz  // fm && !flat8in
 .endif
-        mvn             v5\sz,  v5\sz          // !hev
+        and             v5\sz,  v5\sz,  v4\sz  // !hev && fm && !flat8in
 .if \wd == 16
         and             v7\sz,  v7\sz,  v6\sz  // flat8out && flat8in && fm
 .endif
-        and             v5\sz,  v5\sz,  v4\sz  // !hev && fm && !flat8in
 
         mul_sz          \tmp3\().8h,  \tmp4\().8h,  \tmp3\().8h, \tmp4\().8h,  \tmp5\().8h,  \tmp5\().8h, \sz // 3 * (q0 - p0)
         bic             \tmp1\sz,  \tmp1\sz,  v5\sz    // if (!hev) av_clip_int8 = 0
@@ -339,20 +338,28 @@
 
         uxtl_sz         v0.8h,  v1.8h,  v22, \sz    // p1
         uxtl_sz         v2.8h,  v3.8h,  v25, \sz    // q1
+.if \wd >= 8
+        mov             x5,  v6.d[0]
+.ifc \sz, .16b
+        mov             x6,  v6.d[1]
+.endif
+.endif
         saddw_sz        v0.8h,  v1.8h,  v0.8h,  v1.8h,  \tmp3, \sz // p1 + f
         ssubw_sz        v2.8h,  v3.8h,  v2.8h,  v3.8h,  \tmp3, \sz // q1 - f
         sqxtun_sz       v0,  v0.8h,  v1.8h, \sz     // out p1
         sqxtun_sz       v2,  v2.8h,  v3.8h, \sz     // out q1
+.if \wd >= 8
+.ifc \sz, .16b
+        adds            x5,  x5,  x6
+.endif
+.endif
         bit             v22\sz, v0\sz,  v5\sz       // if (!hev && fm && !flat8in)
         bit             v25\sz, v2\sz,  v5\sz
 
         // If no pixels need flat8in, jump to flat8out
         // (or to a writeout of the inner 4 pixels, for wd=8)
 .if \wd >= 8
-        mov             x5,  v6.d[0]
 .ifc \sz, .16b
-        mov             x6,  v6.d[1]
-        adds            x5,  x5,  x6
         b.eq            6f
 .else
         cbz             x5,  6f
@@ -410,7 +417,7 @@
         mov             x5,  v2.d[0]
 .ifc \sz, .16b
         mov             x6,  v2.d[1]
-        adds             x5,  x5,  x6
+        adds            x5,  x5,  x6
         b.ne            1f
 .else
         cbnz            x5,  1f
@@ -423,7 +430,7 @@
         mov             x5,  v7.d[0]
 .ifc \sz, .16b
         mov             x6,  v7.d[1]
-        adds             x5,  x5,  x6
+        adds            x5,  x5,  x6
         b.ne            1f
 .else
         cbnz            x5,  1f
