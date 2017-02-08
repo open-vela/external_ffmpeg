@@ -2,20 +2,20 @@
  * RTMP Diffie-Hellmann utilities
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,11 +30,6 @@
 #include <gmp.h>
 
 typedef mpz_ptr FFBigNum;
-#elif CONFIG_GCRYPT
-#include <gcrypt.h>
-
-typedef gcry_mpi_t FFBigNum;
-
 #elif CONFIG_OPENSSL
 #include <openssl/bn.h>
 #include <openssl/dh.h>
@@ -42,9 +37,10 @@ typedef gcry_mpi_t FFBigNum;
 typedef BIGNUM *FFBigNum;
 #elif CONFIG_MBEDTLS
 #include <mbedtls/bignum.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
 
 typedef mbedtls_mpi *FFBigNum;
-
 #endif
 
 typedef struct FF_DH {
