@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -690,21 +690,21 @@ function \txfm\()16_1d_4x16_pass1_neon
         @ for the first slice of the second pass (where it is the
         @ last 4x4 block).
         add             r0,  r0,  #8
-.irp i, 20, 24, 28
-        vst1.16         {d\i}, [r0,:64]!
-.endr
+        vst1.16         {d20}, [r0,:64]!
+        vst1.16         {d24}, [r0,:64]!
+        vst1.16         {d28}, [r0,:64]!
         add             r0,  r0,  #8
-.irp i, 21, 25, 29
-        vst1.16         {d\i}, [r0,:64]!
-.endr
+        vst1.16         {d21}, [r0,:64]!
+        vst1.16         {d25}, [r0,:64]!
+        vst1.16         {d29}, [r0,:64]!
         add             r0,  r0,  #8
-.irp i, 22, 26, 30
-        vst1.16         {d\i}, [r0,:64]!
-.endr
+        vst1.16         {d22}, [r0,:64]!
+        vst1.16         {d26}, [r0,:64]!
+        vst1.16         {d30}, [r0,:64]!
         add             r0,  r0,  #8
-.irp i, 23, 27, 31
-        vst1.16         {d\i}, [r0,:64]!
-.endr
+        vst1.16         {d23}, [r0,:64]!
+        vst1.16         {d27}, [r0,:64]!
+        vst1.16         {d31}, [r0,:64]!
         vmov            d28, d16
         vmov            d29, d17
         vmov            d30, d18
