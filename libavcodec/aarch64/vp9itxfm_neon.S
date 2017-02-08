@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -1260,23 +1260,23 @@ function idct32_1d_8x32_pass1\suffix\()_neon
 .macro store_rev a, b
         // There's no rev128 instruction, but we reverse each 64 bit
         // half, and then flip them using an ext with 8 bytes offset.
-        rev64           v1.8h, v\b\().8h
-        st1             {v\a\().8h},  [x0], #16
-        rev64           v0.8h, v\a\().8h
+        rev64           v1.8h, \b
+        st1             {\a},  [x0], #16
+        rev64           v0.8h, \a
         ext             v1.16b, v1.16b, v1.16b, #8
-        st1             {v\b\().8h},  [x0], #16
+        st1             {\b},  [x0], #16
         ext             v0.16b, v0.16b, v0.16b, #8
         st1             {v1.8h},  [x0], #16
         st1             {v0.8h},  [x0], #16
 .endm
-        store_rev       16, 24
-        store_rev       17, 25
-        store_rev       18, 26
-        store_rev       19, 27
-        store_rev       20, 28
-        store_rev       21, 29
-        store_rev       22, 30
-        store_rev       23, 31
+        store_rev       v16.8h, v24.8h
+        store_rev       v17.8h, v25.8h
+        store_rev       v18.8h, v26.8h
+        store_rev       v19.8h, v27.8h
+        store_rev       v20.8h, v28.8h
+        store_rev       v21.8h, v29.8h
+        store_rev       v22.8h, v30.8h
+        store_rev       v23.8h, v31.8h
         sub             x0,  x0,  #512
 .purgem store_rev
 
@@ -1321,14 +1321,14 @@ function idct32_1d_8x32_pass1\suffix\()_neon
         // subtracted from the output.
 .macro store_rev a, b
         ld1             {v4.8h},  [x0]
-        rev64           v1.8h, v\b\().8h
-        add             v4.8h, v4.8h, v\a\().8h
-        rev64           v0.8h, v\a\().8h
+        rev64           v1.8h, \b
+        add             v4.8h, v4.8h, \a
+        rev64           v0.8h, \a
         st1             {v4.8h},  [x0], #16
         ext             v1.16b, v1.16b, v1.16b, #8
         ld1             {v5.8h},  [x0]
         ext             v0.16b, v0.16b, v0.16b, #8
-        add             v5.8h, v5.8h, v\b\().8h
+        add             v5.8h, v5.8h, \b
         st1             {v5.8h},  [x0], #16
         ld1             {v6.8h},  [x0]
         sub             v6.8h, v6.8h, v1.8h
@@ -1338,14 +1338,14 @@ function idct32_1d_8x32_pass1\suffix\()_neon
         st1             {v7.8h},  [x0], #16
 .endm
 
-        store_rev       31, 23
-        store_rev       30, 22
-        store_rev       29, 21
-        store_rev       28, 20
-        store_rev       27, 19
-        store_rev       26, 18
-        store_rev       25, 17
-        store_rev       24, 16
+        store_rev       v31.8h, v23.8h
+        store_rev       v30.8h, v22.8h
+        store_rev       v29.8h, v21.8h
+        store_rev       v28.8h, v20.8h
+        store_rev       v27.8h, v19.8h
+        store_rev       v26.8h, v18.8h
+        store_rev       v25.8h, v17.8h
+        store_rev       v24.8h, v16.8h
 .purgem store_rev
         br              x14
 endfunc
@@ -1420,21 +1420,21 @@ function idct32_1d_8x32_pass2\suffix\()_neon
 .if \neg == 0
         ld1             {v4.8h},  [x2], x9
         ld1             {v5.8h},  [x2], x9
-        add             v4.8h, v4.8h, v\a\().8h
+        add             v4.8h, v4.8h, \a
         ld1             {v6.8h},  [x2], x9
-        add             v5.8h, v5.8h, v\b\().8h
+        add             v5.8h, v5.8h, \b
         ld1             {v7.8h},  [x2], x9
-        add             v6.8h, v6.8h, v\c\().8h
-        add             v7.8h, v7.8h, v\d\().8h
+        add             v6.8h, v6.8h, \c
+        add             v7.8h, v7.8h, \d
 .else
         ld1             {v4.8h},  [x2], x7
         ld1             {v5.8h},  [x2], x7
-        sub             v4.8h, v4.8h, v\a\().8h
+        sub             v4.8h, v4.8h, \a
         ld1             {v6.8h},  [x2], x7
-        sub             v5.8h, v5.8h, v\b\().8h
+        sub             v5.8h, v5.8h, \b
         ld1             {v7.8h},  [x2], x7
-        sub             v6.8h, v6.8h, v\c\().8h
-        sub             v7.8h, v7.8h, v\d\().8h
+        sub             v6.8h, v6.8h, \c
+        sub             v7.8h, v7.8h, \d
 .endif
         ld1             {v0.8b}, [x0], x1
         ld1             {v1.8b}, [x0], x1
@@ -1458,15 +1458,15 @@ function idct32_1d_8x32_pass2\suffix\()_neon
         st1             {v6.8b}, [x0], x1
         st1             {v7.8b}, [x0], x1
 .endm
-        load_acc_store  31, 30, 29, 28
-        load_acc_store  27, 26, 25, 24
-        load_acc_store  23, 22, 21, 20
-        load_acc_store  19, 18, 17, 16
+        load_acc_store  v31.8h, v30.8h, v29.8h, v28.8h
+        load_acc_store  v27.8h, v26.8h, v25.8h, v24.8h
+        load_acc_store  v23.8h, v22.8h, v21.8h, v20.8h
+        load_acc_store  v19.8h, v18.8h, v17.8h, v16.8h
         sub             x2,  x2,  x9
-        load_acc_store  16, 17, 18, 19, 1
-        load_acc_store  20, 21, 22, 23, 1
-        load_acc_store  24, 25, 26, 27, 1
-        load_acc_store  28, 29, 30, 31, 1
+        load_acc_store  v16.8h, v17.8h, v18.8h, v19.8h, 1
+        load_acc_store  v20.8h, v21.8h, v22.8h, v23.8h, 1
+        load_acc_store  v24.8h, v25.8h, v26.8h, v27.8h, 1
+        load_acc_store  v28.8h, v29.8h, v30.8h, v31.8h, 1
 .purgem load_acc_store
         br              x14
 endfunc
