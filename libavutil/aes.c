@@ -3,30 +3,42 @@
  *
  * some optimization ideas from aes128.c by Reimar Doeffinger
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "common.h"
-#include "aes.h"
-#include "aes_internal.h"
 #include "intreadwrite.h"
 #include "timer.h"
+#include "aes.h"
 
-const int av_aes_size= sizeof(AVAES);
+typedef union {
+    uint64_t u64[2];
+    uint32_t u32[4];
+    uint8_t u8x4[4][4];
+    uint8_t u8[16];
+} av_aes_block;
+
+typedef struct AVAES {
+    // Note: round_key[16] is accessed in the init code, but this only
+    // overwrites state, which does not matter (see also commit ba554c0).
+    av_aes_block round_key[15];
+    av_aes_block state[2];
+    int rounds;
+} AVAES;
 
 struct AVAES *av_aes_alloc(void)
 {
@@ -48,9 +60,9 @@ static uint32_t dec_multbl[4][256];
 #endif
 
 #if HAVE_BIGENDIAN
-#   define ROT(x, s) (((x) >> (s)) | ((x) << (32-(s))))
+#   define ROT(x, s) ((x >> s) | (x << (32-s)))
 #else
-#   define ROT(x, s) (((x) << (s)) | ((x) >> (32-(s))))
+#   define ROT(x, s) ((x << s) | (x >> (32-s)))
 #endif
 
 static inline void addkey(av_aes_block *dst, const av_aes_block *src,
@@ -115,7 +127,7 @@ static inline void mix(av_aes_block state[2], uint32_t multbl[][256], int s1, in
     state[0].u32[3] = mix_core(multbl, src[3][0], src[s1 - 1][1], src[1][2], src[s3 - 1][3]);
 }
 
-static inline void aes_crypt(AVAES *a, int s, const uint8_t *sbox,
+static inline void crypt(AVAES *a, int s, const uint8_t *sbox,
                          uint32_t multbl[][256])
 {
     int r;
@@ -128,42 +140,29 @@ static inline void aes_crypt(AVAES *a, int s, const uint8_t *sbox,
     subshift(&a->state[0], s, sbox);
 }
 
-static void aes_encrypt(AVAES *a, uint8_t *dst, const uint8_t *src,
-                        int count, uint8_t *iv, int rounds)
-{
-    while (count--) {
-        addkey_s(&a->state[1], src, &a->round_key[rounds]);
-        if (iv)
-            addkey_s(&a->state[1], iv, &a->state[1]);
-        aes_crypt(a, 2, sbox, enc_multbl);
-        addkey_d(dst, &a->state[0], &a->round_key[0]);
-        if (iv)
-            memcpy(iv, dst, 16);
-        src += 16;
-        dst += 16;
-    }
-}
-
-static void aes_decrypt(AVAES *a, uint8_t *dst, const uint8_t *src,
-                        int count, uint8_t *iv, int rounds)
-{
-    while (count--) {
-        addkey_s(&a->state[1], src, &a->round_key[rounds]);
-        aes_crypt(a, 0, inv_sbox, dec_multbl);
-        if (iv) {
-            addkey_s(&a->state[0], iv, &a->state[0]);
-            memcpy(iv, src, 16);
-        }
-        addkey_d(dst, &a->state[0], &a->round_key[0]);
-        src += 16;
-        dst += 16;
-    }
-}
-
 void av_aes_crypt(AVAES *a, uint8_t *dst, const uint8_t *src,
                   int count, uint8_t *iv, int decrypt)
 {
-    a->crypt(a, dst, src, count, iv, a->rounds);
+    while (count--) {
+        addkey_s(&a->state[1], src, &a->round_key[a->rounds]);
+        if (decrypt) {
+            crypt(a, 0, inv_sbox, dec_multbl);
+            if (iv) {
+                addkey_s(&a->state[0], iv, &a->state[0]);
+                memcpy(iv, src, 16);
+            }
+            addkey_d(dst, &a->state[0], &a->round_key[0]);
+        } else {
+            if (iv)
+                addkey_s(&a->state[1], iv, &a->state[1]);
+            crypt(a, 2, sbox, enc_multbl);
+            addkey_d(dst, &a->state[0], &a->round_key[0]);
+            if (iv)
+                memcpy(iv, dst, 16);
+        }
+        src += 16;
+        dst += 16;
+    }
 }
 
 static void init_multbl2(uint32_t tbl[][256], const int c[4],
@@ -201,8 +200,6 @@ int av_aes_init(AVAES *a, const uint8_t *key, int key_bits, int decrypt)
     uint8_t log8[256];
     uint8_t alog8[512];
 
-    a->crypt = decrypt ? aes_decrypt : aes_encrypt;
-
     if (!enc_multbl[FF_ARRAY_ELEMS(enc_multbl) - 1][FF_ARRAY_ELEMS(enc_multbl[0]) - 1]) {
         j = 1;
         for (i = 0; i < 255; i++) {
@@ -226,7 +223,7 @@ int av_aes_init(AVAES *a, const uint8_t *key, int key_bits, int decrypt)
     }
 
     if (key_bits != 128 && key_bits != 192 && key_bits != 256)
-        return AVERROR(EINVAL);
+        return -1;
 
     a->rounds = rounds;
 
@@ -265,4 +262,3 @@ int av_aes_init(AVAES *a, const uint8_t *key, int key_bits, int decrypt)
 
     return 0;
 }
-
