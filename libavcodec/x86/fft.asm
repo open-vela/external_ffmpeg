@@ -6,20 +6,20 @@
 ;* This algorithm (though not any of the implementation details) is
 ;* based on libdjbfft by D. J. Bernstein.
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -68,11 +68,12 @@ perm1: dd 0x00, 0x02, 0x03, 0x01, 0x03, 0x00, 0x02, 0x01
 perm2: dd 0x00, 0x01, 0x02, 0x03, 0x01, 0x00, 0x02, 0x03
 ps_p1p1m1p1root2: dd 1.0, 1.0, -1.0, 1.0, M_SQRT1_2, M_SQRT1_2, M_SQRT1_2, M_SQRT1_2
 ps_m1m1p1m1p1m1m1m1: dd 1<<31, 1<<31, 0, 1<<31, 0, 1<<31, 1<<31, 1<<31
-ps_m1m1m1m1: times 4 dd 1<<31
 ps_m1p1: dd 1<<31, 0
 
+cextern ps_neg
+
 %assign i 16
-%rep 13
+%rep 14
 cextern cos_ %+ i
 %assign i i<<1
 %endrep
@@ -304,6 +305,7 @@ IF%1 mova  Z(1), m5
 
 INIT_YMM avx
 
+%if HAVE_AVX_EXTERNAL
 align 16
 fft8_avx:
     mova      m0, Z(0)
@@ -392,6 +394,8 @@ fft32_interleave_avx:
     sub r2d, mmsize/4
     jg .deint_loop
     ret
+
+%endif
 
 INIT_XMM sse
 
@@ -536,6 +540,7 @@ DEFINE_ARGS zc, w, n, o1, o3
 
 INIT_YMM avx
 
+%if HAVE_AVX_EXTERNAL
 %macro INTERL_AVX 5
     vunpckhps      %3, %2, %1
     vunpcklps      %2, %2, %1
@@ -557,6 +562,7 @@ cglobal fft_calc, 2,5,8
     FFT_DISPATCH _interleave %+ SUFFIX, r1
     REP_RET
 
+%endif
 
 INIT_XMM sse
 
@@ -654,82 +660,6 @@ cglobal fft_permute, 2,7,1
     jl      .loopcopy
     REP_RET
 
-%if ARCH_X86_32
-INIT_MMX 3dnow
-%define mulps pfmul
-%define addps pfadd
-%define subps pfsub
-%define unpcklps punpckldq
-%define unpckhps punpckhdq
-DECL_PASS pass_3dnow, PASS_SMALL 1, [wq], [wq+o1q]
-DECL_PASS pass_interleave_3dnow, PASS_BIG 0
-%define pass_3dnowext pass_3dnow
-%define pass_interleave_3dnowext pass_interleave_3dnow
-%endif
-
-%ifdef PIC
-%define SECTION_REL - $$
-%else
-%define SECTION_REL
-%endif
-
-%macro DECL_FFT 1-2 ; nbits, suffix
-%ifidn %0, 1
-%xdefine fullsuffix SUFFIX
-%else
-%xdefine fullsuffix %2 %+ SUFFIX
-%endif
-%xdefine list_of_fft fft4 %+ SUFFIX SECTION_REL, fft8 %+ SUFFIX SECTION_REL
-%if %1>=5
-%xdefine list_of_fft list_of_fft, fft16 %+ SUFFIX SECTION_REL
-%endif
-%if %1>=6
-%xdefine list_of_fft list_of_fft, fft32 %+ fullsuffix SECTION_REL
-%endif
-
-%assign n 1<<%1
-%rep 17-%1
-%assign n2 n/2
-%assign n4 n/4
-%xdefine list_of_fft list_of_fft, fft %+ n %+ fullsuffix SECTION_REL
-
-align 16
-fft %+ n %+ fullsuffix:
-    call fft %+ n2 %+ SUFFIX
-    add r0, n*4 - (n&(-2<<%1))
-    call fft %+ n4 %+ SUFFIX
-    add r0, n*2 - (n2&(-2<<%1))
-    call fft %+ n4 %+ SUFFIX
-    sub r0, n*6 + (n2&(-2<<%1))
-    lea r1, [cos_ %+ n]
-    mov r2d, n4/2
-    jmp pass %+ fullsuffix
-
-%assign n n*2
-%endrep
-%undef n
-
-align 8
-dispatch_tab %+ fullsuffix: pointer list_of_fft
-%endmacro ; DECL_FFT
-
-INIT_YMM avx
-DECL_FFT 6
-DECL_FFT 6, _interleave
-INIT_XMM sse
-DECL_FFT 5
-DECL_FFT 5, _interleave
-%if ARCH_X86_32
-INIT_MMX 3dnow
-DECL_FFT 4
-DECL_FFT 4, _interleave
-INIT_MMX 3dnowext
-DECL_FFT 4
-DECL_FFT 4, _interleave
-%endif
-
-%if CONFIG_MDCT
-
 %macro IMDCT_CALC_FUNC 0
 cglobal imdct_calc, 3,5,3
     mov     r3d, [r0 + FFTContext.mdctsize]
@@ -756,7 +686,7 @@ cglobal imdct_calc, 3,5,3
     mov     r2, r3
     sub     r3, mmsize
     neg     r2
-    mova    m2, [ps_m1m1m1m1]
+    mova    m2, [ps_neg]
 .loop:
 %if mmsize == 8
     PSWAPD  m0, [r1 + r3]
@@ -791,6 +721,82 @@ IMDCT_CALC_FUNC
 
 INIT_XMM sse
 IMDCT_CALC_FUNC
+
+%if ARCH_X86_32
+INIT_MMX 3dnow
+%define mulps pfmul
+%define addps pfadd
+%define subps pfsub
+%define unpcklps punpckldq
+%define unpckhps punpckhdq
+DECL_PASS pass_3dnow, PASS_SMALL 1, [wq], [wq+o1q]
+DECL_PASS pass_interleave_3dnow, PASS_BIG 0
+%define pass_3dnowext pass_3dnow
+%define pass_interleave_3dnowext pass_interleave_3dnow
+%endif
+
+%ifdef PIC
+%define SECTION_REL - $$
+%else
+%define SECTION_REL
+%endif
+
+%macro DECL_FFT 1-2 ; nbits, suffix
+%ifidn %0, 1
+%xdefine fullsuffix SUFFIX
+%else
+%xdefine fullsuffix %2 %+ SUFFIX
+%endif
+%xdefine list_of_fft fft4 %+ SUFFIX SECTION_REL, fft8 %+ SUFFIX SECTION_REL
+%if %1>=5
+%xdefine list_of_fft list_of_fft, fft16 %+ SUFFIX SECTION_REL
+%endif
+%if %1>=6
+%xdefine list_of_fft list_of_fft, fft32 %+ fullsuffix SECTION_REL
+%endif
+
+%assign n 1<<%1
+%rep 18-%1
+%assign n2 n/2
+%assign n4 n/4
+%xdefine list_of_fft list_of_fft, fft %+ n %+ fullsuffix SECTION_REL
+
+align 16
+fft %+ n %+ fullsuffix:
+    call fft %+ n2 %+ SUFFIX
+    add r0, n*4 - (n&(-2<<%1))
+    call fft %+ n4 %+ SUFFIX
+    add r0, n*2 - (n2&(-2<<%1))
+    call fft %+ n4 %+ SUFFIX
+    sub r0, n*6 + (n2&(-2<<%1))
+    lea r1, [cos_ %+ n]
+    mov r2d, n4/2
+    jmp pass %+ fullsuffix
+
+%assign n n*2
+%endrep
+%undef n
+
+align 8
+dispatch_tab %+ fullsuffix: pointer list_of_fft
+%endmacro ; DECL_FFT
+
+%if HAVE_AVX_EXTERNAL
+INIT_YMM avx
+DECL_FFT 6
+DECL_FFT 6, _interleave
+%endif
+INIT_XMM sse
+DECL_FFT 5
+DECL_FFT 5, _interleave
+%if ARCH_X86_32
+INIT_MMX 3dnow
+DECL_FFT 4
+DECL_FFT 4, _interleave
+INIT_MMX 3dnowext
+DECL_FFT 4
+DECL_FFT 4, _interleave
+%endif
 
 INIT_XMM sse
 %undef mulps
@@ -993,7 +999,7 @@ cglobal imdct_half, 3,12,8; FFTContext *s, FFTSample *output, const FFTSample *i
     sub   r4, r3
 %endif
 %if notcpuflag(3dnowext) && mmsize == 8
-    movd  m7, [ps_m1m1m1m1]
+    movd  m7, [ps_neg]
 %endif
 .pre:
 %if ARCH_X86_64 == 0
@@ -1081,6 +1087,7 @@ DECL_IMDCT POSROTATESHUF_3DNOW
 %endif
 
 INIT_YMM avx
-DECL_IMDCT POSROTATESHUF_AVX
 
-%endif ; CONFIG_MDCT
+%if HAVE_AVX_EXTERNAL
+DECL_IMDCT POSROTATESHUF_AVX
+%endif
