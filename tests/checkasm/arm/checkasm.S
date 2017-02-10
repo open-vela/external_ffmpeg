@@ -3,14 +3,14 @@
  * Copyright (c) 2015 Martin Storsjo
  * Copyright (c) 2015 Janne Grunau
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -50,7 +50,7 @@ endconst
 @ max number of args used by any asm function.
 #define MAX_ARGS 15
 
-#define ARG_STACK 4*(MAX_ARGS - 4)
+#define ARG_STACK 4*(MAX_ARGS - 2)
 
 @ align the used stack space to 8 to preserve the stack alignment
 #define ARG_STACK_A (((ARG_STACK + pushed + 7) & ~7) - pushed)
@@ -74,7 +74,7 @@ function checkasm_checked_call_\variant, export=1
 
     sub         sp,  sp,  #ARG_STACK_A
 .equ pos, 0
-.rept MAX_ARGS-4
+.rept MAX_ARGS-2
     ldr         r12, [sp, #ARG_STACK_A + pushed + 8 + pos]
     str         r12, [sp, #pos]
 .equ pos, pos + 4

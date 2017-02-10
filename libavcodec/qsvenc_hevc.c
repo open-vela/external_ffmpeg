@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV based HEVC encoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,6 @@
 #include "bytestream.h"
 #include "get_bits.h"
 #include "hevc.h"
-#include "hevcdec.h"
 #include "h2645_parse.h"
 #include "internal.h"
 #include "qsv.h"
@@ -70,7 +69,7 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
     }
 
     /* parse the SPS */
-    ret = ff_h2645_extract_rbsp(avctx->extradata + 4, avctx->extradata_size - 4, &sps_nal);
+    ret = ff_h2645_extract_rbsp(avctx->extradata + 4, avctx->extradata_size - 4, &sps_nal, 1);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error unescaping the SPS buffer\n");
         return ret;
@@ -84,7 +83,7 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
 
     get_bits(&gb, 1);
     type = get_bits(&gb, 6);
-    if (type != HEVC_NAL_SPS) {
+    if (type != NAL_SPS) {
         av_log(avctx, AV_LOG_ERROR, "Unexpected NAL type in the extradata: %d\n",
                type);
         av_freep(&sps_nal.rbsp_buffer);
@@ -104,7 +103,7 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
     vps.vps_max_sub_layers = sps.max_sub_layers;
     memcpy(&vps.ptl, &sps.ptl, sizeof(vps.ptl));
     vps.vps_sub_layer_ordering_info_present_flag = 1;
-    for (i = 0; i < HEVC_MAX_SUB_LAYERS; i++) {
+    for (i = 0; i < MAX_SUB_LAYERS; i++) {
         vps.vps_max_dec_pic_buffering[i] = sps.temporal_layer[i].max_dec_pic_buffering;
         vps.vps_num_reorder_pics[i]      = sps.temporal_layer[i].num_reorder_pics;
         vps.vps_max_latency_increase[i]  = sps.temporal_layer[i].max_latency_increase;
@@ -128,9 +127,9 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
     bytestream2_init(&gbc, vps_rbsp_buf, ret);
     bytestream2_init_writer(&pbc, vps_buf, sizeof(vps_buf));
 
-    bytestream2_put_be32(&pbc, 1);                 // startcode
-    bytestream2_put_byte(&pbc, HEVC_NAL_VPS << 1); // NAL
-    bytestream2_put_byte(&pbc, 1);                 // header
+    bytestream2_put_be32(&pbc, 1);              // startcode
+    bytestream2_put_byte(&pbc, NAL_VPS << 1);   // NAL
+    bytestream2_put_byte(&pbc, 1);              // header
 
     while (bytestream2_get_bytes_left(&gbc)) {
         uint32_t b = bytestream2_peek_be24(&gbc);
@@ -161,8 +160,8 @@ static av_cold int qsv_enc_init(AVCodecContext *avctx)
     int ret;
 
     if (q->load_plugin != LOAD_PLUGIN_NONE) {
-        static const char * const uid_hevcenc_sw = "2fca99749fdb49aeb121a5b63ef568f7";
-        static const char * const uid_hevcenc_hw = "6fadc791a0c2eb479ab6dcd5ea9da347";
+        static const char *uid_hevcenc_sw = "2fca99749fdb49aeb121a5b63ef568f7";
+        static const char *uid_hevcenc_hw = "6fadc791a0c2eb479ab6dcd5ea9da347";
 
         if (q->qsv.load_plugins[0]) {
             av_log(avctx, AV_LOG_WARNING,
@@ -263,7 +262,6 @@ AVCodec ff_hevc_qsv_encoder = {
     .close          = qsv_enc_close,
     .capabilities   = AV_CODEC_CAP_DELAY,
     .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
-                                                    AV_PIX_FMT_P010,
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_NONE },
     .priv_class     = &class,
