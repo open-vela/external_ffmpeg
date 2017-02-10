@@ -3,20 +3,20 @@
 ;* Copyright (c) 2005 Zoltan Hidvegi <hzoli -a- hzoli -d- com>,
 ;*               2005-2008 Loren Merritt
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -105,11 +105,8 @@ SECTION .text
 %endif ; rv40
 ; void ff_put/avg_h264_chroma_mc8_*(uint8_t *dst /* align 8 */,
 ;                                   uint8_t *src /* align 1 */,
-;                                   int stride, int h, int mx, int my)
+;                                   ptrdiff_t stride, int h, int mx, int my)
 cglobal %1_%2_chroma_mc8%3, 6, 7 + extra_regs, 0
-%if ARCH_X86_64
-    movsxd        r2, r2d
-%endif
     mov          r6d, r5d
     or           r6d, r4d
     jne .at_least_one_non_zero
@@ -291,9 +288,6 @@ cglobal %1_%2_chroma_mc8%3, 6, 7 + extra_regs, 0
 %endif ; PIC
 %endif ; rv40
 cglobal %1_%2_chroma_mc4, 6, 6 + extra_regs, 0
-%if ARCH_X86_64
-    movsxd        r2, r2d
-%endif
     pxor          m7, m7
     movd          m2, r4d         ; x
     movd          m3, r5d         ; y
@@ -376,10 +370,6 @@ cglobal %1_%2_chroma_mc4, 6, 6 + extra_regs, 0
 
 %macro chroma_mc2_mmx_func 2
 cglobal %1_%2_chroma_mc2, 6, 7, 0
-%if ARCH_X86_64
-    movsxd        r2, r2d
-%endif
-
     mov          r6d, r4d
     shl          r4d, 16
     sub          r4d, r6d
@@ -465,9 +455,6 @@ chroma_mc4_mmx_func avg, rv40
 
 %macro chroma_mc8_ssse3_func 2-3
 cglobal %1_%2_chroma_mc8%3, 6, 7, 8
-%if ARCH_X86_64
-    movsxd        r2, r2d
-%endif
     mov          r6d, r5d
     or           r6d, r4d
     jne .at_least_one_non_zero
@@ -613,9 +600,6 @@ cglobal %1_%2_chroma_mc8%3, 6, 7, 8
 
 %macro chroma_mc4_ssse3_func 2
 cglobal %1_%2_chroma_mc4, 6, 7, 0
-%if ARCH_X86_64
-    movsxd        r2, r2d
-%endif
     mov           r6, r4
     shl          r4d, 8
     sub          r4d, r6d
