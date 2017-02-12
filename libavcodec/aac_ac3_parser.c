@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,6 @@ int ff_aac_ac3_parse(AVCodecParserContext *s1,
     ParseContext *pc = &s->pc;
     int len, i;
     int new_frame_start;
-    int got_frame = 0;
 
 get_next:
     i=END_NOT_FOUND;
@@ -52,7 +51,6 @@ get_next:
             if(len<=0){
                 i=END_NOT_FOUND;
             }else{
-                got_frame = 1;
                 s->state=0;
                 i-= s->header_size -1;
                 s->remaining_size = len;
@@ -78,34 +76,31 @@ get_next:
     if(s->codec_id)
         avctx->codec_id = s->codec_id;
 
-    if (got_frame) {
-        /* Due to backwards compatible HE-AAC the sample rate, channel count,
-           and total number of samples found in an AAC ADTS header are not
-           reliable. Bit rate is still accurate because the total frame
-           duration in seconds is still correct (as is the number of bits in
-           the frame). */
-        if (avctx->codec_id != AV_CODEC_ID_AAC) {
-            avctx->sample_rate = s->sample_rate;
+    /* Due to backwards compatible HE-AAC the sample rate, channel count,
+       and total number of samples found in an AAC ADTS header are not
+       reliable. Bit rate is still accurate because the total frame duration in
+       seconds is still correct (as is the number of bits in the frame). */
+    if (avctx->codec_id != AV_CODEC_ID_AAC) {
+        avctx->sample_rate = s->sample_rate;
 
-            /* (E-)AC-3: allow downmixing to stereo or mono */
-            if (s->channels > 1 &&
-                avctx->request_channel_layout == AV_CH_LAYOUT_MONO) {
-                avctx->channels       = 1;
-                avctx->channel_layout = AV_CH_LAYOUT_MONO;
-            } else if (s->channels > 2 &&
-                       avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
-                avctx->channels       = 2;
-                avctx->channel_layout = AV_CH_LAYOUT_STEREO;
-            } else {
-                avctx->channels = s->channels;
-                avctx->channel_layout = s->channel_layout;
-            }
-            s1->duration = s->samples;
-            avctx->audio_service_type = s->service_type;
+        /* (E-)AC-3: allow downmixing to stereo or mono */
+        if (s->channels > 1 &&
+            avctx->request_channel_layout == AV_CH_LAYOUT_MONO) {
+            avctx->channels       = 1;
+            avctx->channel_layout = AV_CH_LAYOUT_MONO;
+        } else if (s->channels > 2 &&
+                   avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
+            avctx->channels       = 2;
+            avctx->channel_layout = AV_CH_LAYOUT_STEREO;
+        } else {
+            avctx->channels = s->channels;
+            avctx->channel_layout = s->channel_layout;
         }
-
-        avctx->bit_rate = s->bit_rate;
+        s1->duration = s->samples;
+        avctx->audio_service_type = s->service_type;
     }
+
+    avctx->bit_rate = s->bit_rate;
 
     return i;
 }

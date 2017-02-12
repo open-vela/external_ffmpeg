@@ -2,20 +2,20 @@
  * DirectDraw Surface image decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,6 @@
 
 #include <stdint.h>
 
-#include "libavutil/libm.h"
 #include "libavutil/imgutils.h"
 
 #include "avcodec.h"
@@ -46,7 +45,6 @@ enum DDSPostProc {
     DDS_ALPHA_EXP,
     DDS_NORMAL_MAP,
     DDS_RAW_YCOCG,
-    DDS_SWAP_ALPHA,
     DDS_SWIZZLE_A2XY,
     DDS_SWIZZLE_RBXG,
     DDS_SWIZZLE_RGXB,
@@ -102,7 +100,6 @@ typedef struct DDSContext {
 
     int compressed;
     int paletted;
-    int bpp;
     enum DDSPostProc postproc;
 
     const uint8_t *tex_data; // Compressed texture
@@ -149,7 +146,7 @@ static int parse_pixel_format(AVCodecContext *avctx)
         ctx->paletted = 0;
     }
 
-    bpp = ctx->bpp = bytestream2_get_le32(gbc); // rgbbitcount
+    bpp = bytestream2_get_le32(gbc); // rgbbitcount
     r   = bytestream2_get_le32(gbc); // rbitmask
     g   = bytestream2_get_le32(gbc); // gbitmask
     b   = bytestream2_get_le32(gbc); // bbitmask
@@ -355,21 +352,14 @@ static int parse_pixel_format(AVCodecContext *avctx)
             return AVERROR_INVALIDDATA;
         }
     } else {
-        /*  4 bpp */
-        if (bpp == 4 && r == 0 && g == 0 && b == 0 && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_PAL8;
         /*  8 bpp */
-        else if (bpp == 8 && r == 0xff && g == 0 && b == 0 && a == 0)
+        if (bpp == 8 && r == 0xff && g == 0 && b == 0 && a == 0)
             avctx->pix_fmt = AV_PIX_FMT_GRAY8;
         else if (bpp == 8 && r == 0 && g == 0 && b == 0 && a == 0xff)
             avctx->pix_fmt = AV_PIX_FMT_GRAY8;
         /* 16 bpp */
         else if (bpp == 16 && r == 0xff && g == 0 && b == 0 && a == 0xff00)
             avctx->pix_fmt = AV_PIX_FMT_YA8;
-        else if (bpp == 16 && r == 0xff00 && g == 0 && b == 0 && a == 0xff) {
-            avctx->pix_fmt = AV_PIX_FMT_YA8;
-            ctx->postproc = DDS_SWAP_ALPHA;
-        }
         else if (bpp == 16 && r == 0xffff && g == 0 && b == 0 && a == 0)
             avctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
         else if (bpp == 16 && r == 0x7c00 && g == 0x3e0 && b == 0x1f && a == 0)
@@ -383,9 +373,9 @@ static int parse_pixel_format(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_BGR24;
         /* 32 bpp */
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_BGR0; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_BGRA; // opaque
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0)
-            avctx->pix_fmt = AV_PIX_FMT_RGB0; // opaque
+            avctx->pix_fmt = AV_PIX_FMT_RGBA; // opaque
         else if (bpp == 32 && r == 0xff0000 && g == 0xff00 && b == 0xff && a == 0xff000000)
             avctx->pix_fmt = AV_PIX_FMT_BGRA;
         else if (bpp == 32 && r == 0xff && g == 0xff00 && b == 0xff0000 && a == 0xff000000)
@@ -525,7 +515,7 @@ static void run_postproc(AVCodecContext *avctx, AVFrame *frame)
 
             int d = (255 * 255 - x * x - y * y) / 2;
             if (d > 0)
-                z = lrint(sqrtf(d));
+                z = rint(sqrtf(d));
 
             src[0] = x;
             src[1] = y;
@@ -549,15 +539,6 @@ static void run_postproc(AVCodecContext *avctx, AVFrame *frame)
             src[1] = av_clip_uint8(y + cg);
             src[2] = av_clip_uint8(y - co - cg);
             src[3] = a;
-        }
-        break;
-    case DDS_SWAP_ALPHA:
-        /* Alpha and Luma are stored swapped. */
-        av_log(avctx, AV_LOG_DEBUG, "Post-processing swapped Luma/Alpha.\n");
-
-        for (i = 0; i < frame->linesize[0] * frame->height; i += 2) {
-            uint8_t *src = frame->data[0] + i;
-            FFSWAP(uint8_t, src[0], src[1]);
         }
         break;
     case DDS_SWIZZLE_A2XY:
@@ -680,50 +661,22 @@ static int dds_decode(AVCodecContext *avctx, void *data,
         /* Use the decompress function on the texture, one block per thread. */
         ctx->tex_data = gbc->buffer;
         avctx->execute2(avctx, decompress_texture_thread, frame, NULL, ctx->slice_count);
-    } else if (!ctx->paletted && ctx->bpp == 4 && avctx->pix_fmt == AV_PIX_FMT_PAL8) {
-        uint8_t *dst = frame->data[0];
-        int x, y, i;
-
-        /* Use the first 64 bytes as palette, then copy the rest. */
-        bytestream2_get_buffer(gbc, frame->data[1], 16 * 4);
-        for (i = 0; i < 16; i++) {
-            AV_WN32(frame->data[1] + i*4,
-                    (frame->data[1][2+i*4]<<0)+
-                    (frame->data[1][1+i*4]<<8)+
-                    (frame->data[1][0+i*4]<<16)+
-                    (frame->data[1][3+i*4]<<24)
-            );
-        }
-        frame->palette_has_changed = 1;
-
-        if (bytestream2_get_bytes_left(gbc) < frame->height * frame->width / 2) {
-            av_log(avctx, AV_LOG_ERROR, "Buffer is too small (%d < %d).\n",
-                   bytestream2_get_bytes_left(gbc), frame->height * frame->width / 2);
-            return AVERROR_INVALIDDATA;
-        }
-
-        for (y = 0; y < frame->height; y++) {
-            for (x = 0; x < frame->width; x += 2) {
-                uint8_t val = bytestream2_get_byte(gbc);
-                dst[x    ] = val & 0xF;
-                dst[x + 1] = val >> 4;
-            }
-            dst += frame->linesize[0];
-        }
     } else {
         int linesize = av_image_get_linesize(avctx->pix_fmt, frame->width, 0);
 
         if (ctx->paletted) {
             int i;
+            uint32_t *p = (uint32_t*) frame->data[1];
+
             /* Use the first 1024 bytes as palette, then copy the rest. */
-            bytestream2_get_buffer(gbc, frame->data[1], 256 * 4);
-            for (i = 0; i < 256; i++)
-                AV_WN32(frame->data[1] + i*4,
-                        (frame->data[1][2+i*4]<<0)+
-                        (frame->data[1][1+i*4]<<8)+
-                        (frame->data[1][0+i*4]<<16)+
-                        (frame->data[1][3+i*4]<<24)
-                );
+            for (i = 0; i < 256; i++) {
+                uint32_t rgba = 0;
+                rgba |= bytestream2_get_byte(gbc) << 16;
+                rgba |= bytestream2_get_byte(gbc) << 8;
+                rgba |= bytestream2_get_byte(gbc) << 0;
+                rgba |= bytestream2_get_byte(gbc) << 24;
+                p[i] = rgba;
+            }
 
             frame->palette_has_changed = 1;
         }
