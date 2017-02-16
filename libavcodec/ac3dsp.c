@@ -2,20 +2,20 @@
  * AC-3 DSP functions
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -171,59 +171,58 @@ static void ac3_extract_exponents_c(uint8_t *exp, int32_t *coef, int nb_coefs)
     }
 }
 
-static void ac3_sum_square_butterfly_int32_c(int64_t sum[4],
-                                             const int32_t *coef0,
-                                             const int32_t *coef1,
-                                             int len)
+static void ac3_downmix_5_to_2_symmetric_c(float **samples, float **matrix,
+                                           int len)
 {
     int i;
-
-    sum[0] = sum[1] = sum[2] = sum[3] = 0;
+    float v0, v1;
+    float front_mix    = matrix[0][0];
+    float center_mix   = matrix[0][1];
+    float surround_mix = matrix[0][3];
 
     for (i = 0; i < len; i++) {
-        int lt = coef0[i];
-        int rt = coef1[i];
-        int md = lt + rt;
-        int sd = lt - rt;
-        MAC64(sum[0], lt, lt);
-        MAC64(sum[1], rt, rt);
-        MAC64(sum[2], md, md);
-        MAC64(sum[3], sd, sd);
+        v0 = samples[0][i] * front_mix  +
+             samples[1][i] * center_mix +
+             samples[3][i] * surround_mix;
+
+        v1 = samples[1][i] * center_mix +
+             samples[2][i] * front_mix  +
+             samples[4][i] * surround_mix;
+
+        samples[0][i] = v0;
+        samples[1][i] = v1;
     }
 }
 
-static void ac3_sum_square_butterfly_float_c(float sum[4],
-                                             const float *coef0,
-                                             const float *coef1,
-                                             int len)
+static void ac3_downmix_5_to_1_symmetric_c(float **samples, float **matrix,
+                                           int len)
 {
     int i;
-
-    sum[0] = sum[1] = sum[2] = sum[3] = 0;
+    float front_mix    = matrix[0][0];
+    float center_mix   = matrix[0][1];
+    float surround_mix = matrix[0][3];
 
     for (i = 0; i < len; i++) {
-        float lt = coef0[i];
-        float rt = coef1[i];
-        float md = lt + rt;
-        float sd = lt - rt;
-        sum[0] += lt * lt;
-        sum[1] += rt * rt;
-        sum[2] += md * md;
-        sum[3] += sd * sd;
+        samples[0][i] = samples[0][i] * front_mix    +
+                        samples[1][i] * center_mix   +
+                        samples[2][i] * front_mix    +
+                        samples[3][i] * surround_mix +
+                        samples[4][i] * surround_mix;
     }
 }
 
-static void ac3_downmix_c(float **samples, float (*matrix)[2],
+static void ac3_downmix_c(float **samples, float **matrix,
                           int out_ch, int in_ch, int len)
 {
     int i, j;
     float v0, v1;
+
     if (out_ch == 2) {
         for (i = 0; i < len; i++) {
             v0 = v1 = 0.0f;
             for (j = 0; j < in_ch; j++) {
-                v0 += samples[j][i] * matrix[j][0];
-                v1 += samples[j][i] * matrix[j][1];
+                v0 += samples[j][i] * matrix[0][j];
+                v1 += samples[j][i] * matrix[1][j];
             }
             samples[0][i] = v0;
             samples[1][i] = v1;
@@ -232,33 +231,8 @@ static void ac3_downmix_c(float **samples, float (*matrix)[2],
         for (i = 0; i < len; i++) {
             v0 = 0.0f;
             for (j = 0; j < in_ch; j++)
-                v0 += samples[j][i] * matrix[j][0];
+                v0 += samples[j][i] * matrix[0][j];
             samples[0][i] = v0;
-        }
-    }
-}
-
-static void ac3_downmix_c_fixed(int32_t **samples, int16_t (*matrix)[2],
-                                int out_ch, int in_ch, int len)
-{
-    int i, j;
-    int64_t v0, v1;
-    if (out_ch == 2) {
-        for (i = 0; i < len; i++) {
-            v0 = v1 = 0;
-            for (j = 0; j < in_ch; j++) {
-                v0 += (int64_t)samples[j][i] * matrix[j][0];
-                v1 += (int64_t)samples[j][i] * matrix[j][1];
-            }
-            samples[0][i] = (v0+2048)>>12;
-            samples[1][i] = (v1+2048)>>12;
-        }
-    } else if (out_ch == 1) {
-        for (i = 0; i < len; i++) {
-            v0 = 0;
-            for (j = 0; j < in_ch; j++)
-                v0 += (int64_t)samples[j][i] * matrix[j][0];
-            samples[0][i] = (v0+2048)>>12;
         }
     }
 }
@@ -276,6 +250,38 @@ static void apply_window_int16_c(int16_t *output, const int16_t *input,
     }
 }
 
+void ff_ac3dsp_downmix(AC3DSPContext *c, float **samples, float **matrix,
+                       int out_ch, int in_ch, int len)
+{
+    if (c->in_channels != in_ch || c->out_channels != out_ch) {
+        int **matrix_cmp = (int **)matrix;
+
+        c->in_channels  = in_ch;
+        c->out_channels = out_ch;
+        c->downmix      = NULL;
+
+        if (in_ch == 5 && out_ch == 2 &&
+            !(matrix_cmp[1][0] | matrix_cmp[0][2]   |
+              matrix_cmp[1][3] | matrix_cmp[0][4]   |
+             (matrix_cmp[0][1] ^ matrix_cmp[1][1]) |
+             (matrix_cmp[0][0] ^ matrix_cmp[1][2]))) {
+            c->downmix = ac3_downmix_5_to_2_symmetric_c;
+        } else if (in_ch == 5 && out_ch == 1 &&
+                   matrix_cmp[0][0] == matrix_cmp[0][2] &&
+                   matrix_cmp[0][3] == matrix_cmp[0][4]) {
+            c->downmix = ac3_downmix_5_to_1_symmetric_c;
+        }
+
+        if (ARCH_X86)
+            ff_ac3dsp_set_downmix_x86(c);
+    }
+
+    if (c->downmix)
+        c->downmix(samples, matrix, len);
+    else
+        ac3_downmix_c(samples, matrix, out_ch, in_ch, len);
+}
+
 av_cold void ff_ac3dsp_init(AC3DSPContext *c, int bit_exact)
 {
     c->ac3_exponent_min = ac3_exponent_min_c;
@@ -287,16 +293,13 @@ av_cold void ff_ac3dsp_init(AC3DSPContext *c, int bit_exact)
     c->update_bap_counts = ac3_update_bap_counts_c;
     c->compute_mantissa_size = ac3_compute_mantissa_size_c;
     c->extract_exponents = ac3_extract_exponents_c;
-    c->sum_square_butterfly_int32 = ac3_sum_square_butterfly_int32_c;
-    c->sum_square_butterfly_float = ac3_sum_square_butterfly_float_c;
-    c->downmix = ac3_downmix_c;
-    c->downmix_fixed = ac3_downmix_c_fixed;
+    c->in_channels           = 0;
+    c->out_channels          = 0;
+    c->downmix               = NULL;
     c->apply_window_int16 = apply_window_int16_c;
 
     if (ARCH_ARM)
         ff_ac3dsp_init_arm(c, bit_exact);
     if (ARCH_X86)
         ff_ac3dsp_init_x86(c, bit_exact);
-    if (ARCH_MIPS)
-        ff_ac3dsp_init_mips(c, bit_exact);
 }
