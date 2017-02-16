@@ -1,30 +1,29 @@
 /*
  * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <string.h>
 
 #include "avcodec.h"
-#include "libavutil/atomic.h"
+
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
-#include "libavutil/opt.h"
 
 #if FF_API_OLD_BSF
 FF_DISABLE_DEPRECATION_WARNINGS
@@ -46,7 +45,6 @@ void av_register_bitstream_filter(AVBitStreamFilter *bsf)
 
 typedef struct BSFCompatContext {
     AVBSFContext *ctx;
-    int extradata_updated;
 } BSFCompatContext;
 
 AVBitStreamFilterContext *av_bitstream_filter_init(const char *name)
@@ -83,12 +81,7 @@ fail:
 
 void av_bitstream_filter_close(AVBitStreamFilterContext *bsfc)
 {
-    BSFCompatContext *priv;
-
-    if (!bsfc)
-        return;
-
-    priv = bsfc->priv_data;
+    BSFCompatContext *priv = bsfc->priv_data;
 
     av_bsf_free(&priv->ctx);
     av_freep(&bsfc->priv_data);
@@ -115,19 +108,20 @@ int av_bitstream_filter_filter(AVBitStreamFilterContext *bsfc,
 
         priv->ctx->time_base_in = avctx->time_base;
 
-        if (bsfc->args && bsfc->filter->priv_class) {
-            const AVOption *opt = av_opt_next(priv->ctx->priv_data, NULL);
-            const char * shorthand[2] = {NULL};
-
-            if (opt)
-                shorthand[0] = opt->name;
-
-            ret = av_opt_set_from_string(priv->ctx->priv_data, bsfc->args, shorthand, "=", ":");
-        }
-
         ret = av_bsf_init(priv->ctx);
         if (ret < 0)
             return ret;
+
+        if (priv->ctx->par_out->extradata_size) {
+            av_freep(&avctx->extradata);
+            avctx->extradata_size = 0;
+            avctx->extradata = av_mallocz(priv->ctx->par_out->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!avctx->extradata)
+                return AVERROR(ENOMEM);
+            memcpy(avctx->extradata, priv->ctx->par_out->extradata,
+                   priv->ctx->par_out->extradata_size);
+            avctx->extradata_size = priv->ctx->par_out->extradata_size;
+        }
     }
 
     pkt.data = buf;
@@ -161,21 +155,6 @@ int av_bitstream_filter_filter(AVBitStreamFilterContext *bsfc,
     while (ret >= 0) {
         ret = av_bsf_receive_packet(priv->ctx, &pkt);
         av_packet_unref(&pkt);
-    }
-
-    if (!priv->extradata_updated) {
-        /* update extradata in avctx from the output codec parameters */
-        if (priv->ctx->par_out->extradata_size && (!args || !strstr(args, "private_spspps_buf"))) {
-            av_freep(&avctx->extradata);
-            avctx->extradata_size = 0;
-            avctx->extradata = av_mallocz(priv->ctx->par_out->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-            if (!avctx->extradata)
-                return AVERROR(ENOMEM);
-            memcpy(avctx->extradata, priv->ctx->par_out->extradata, priv->ctx->par_out->extradata_size);
-            avctx->extradata_size = priv->ctx->par_out->extradata_size;
-        }
-
-        priv->extradata_updated = 1;
     }
 
     return 1;
