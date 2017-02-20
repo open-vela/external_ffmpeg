@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -70,12 +70,20 @@ typedef struct VAAPIFramesContext {
     int derive_works;
 } VAAPIFramesContext;
 
-typedef struct VAAPIMapping {
+enum {
+    VAAPI_MAP_READ   = 0x01,
+    VAAPI_MAP_WRITE  = 0x02,
+    VAAPI_MAP_DIRECT = 0x04,
+};
+
+typedef struct VAAPISurfaceMap {
+    // The source hardware frame of this mapping (with hw_frames_ctx set).
+    const AVFrame *source;
+    // VAAPI_MAP_* flags which apply to this mapping.
+    int flags;
     // Handle to the derived or copied image which is mapped.
     VAImage image;
-    // The mapping flags actually used.
-    int flags;
-} VAAPIMapping;
+} VAAPISurfaceMap;
 
 #define MAP(va, rt, av) { \
         VA_FOURCC_ ## va, \
@@ -84,7 +92,7 @@ typedef struct VAAPIMapping {
     }
 // The map fourcc <-> pix_fmt isn't bijective because of the annoying U/V
 // plane swap cases.  The frame handling below tries to hide these.
-static const struct {
+static struct {
     unsigned int fourcc;
     unsigned int rt_format;
     enum AVPixelFormat pix_fmt;
@@ -104,13 +112,15 @@ static const struct {
     MAP(P010, YUV420_10BPP, P010),
 #endif
     MAP(BGRA, RGB32,   BGRA),
-  //MAP(BGRX, RGB32,   BGR0),
+    MAP(BGRX, RGB32,   BGR0),
     MAP(RGBA, RGB32,   RGBA),
-  //MAP(RGBX, RGB32,   RGB0),
+    MAP(RGBX, RGB32,   RGB0),
+#ifdef VA_FOURCC_ABGR
     MAP(ABGR, RGB32,   ABGR),
-  //MAP(XBGR, RGB32,   0BGR),
+    MAP(XBGR, RGB32,   0BGR),
+#endif
     MAP(ARGB, RGB32,   ARGB),
-  //MAP(XRGB, RGB32,   0RGB),
+    MAP(XRGB, RGB32,   0RGB),
 };
 #undef MAP
 
@@ -132,8 +142,7 @@ static int vaapi_get_image_format(AVHWDeviceContext *hwdev,
 
     for (i = 0; i < ctx->nb_formats; i++) {
         if (ctx->formats[i].pix_fmt == pix_fmt) {
-            if (image_format)
-                *image_format = &ctx->formats[i].image_format;
+            *image_format = &ctx->formats[i].image_format;
             return 0;
         }
     }
@@ -153,8 +162,7 @@ static int vaapi_frames_get_constraints(AVHWDeviceContext *hwdev,
     unsigned int fourcc;
     int err, i, j, attr_count, pix_fmt_count;
 
-    if (config &&
-        !(hwctx->driver_quirks & AV_VAAPI_DRIVER_QUIRK_SURFACE_ATTRIBUTES)) {
+    if (config) {
         attr_count = 0;
         vas = vaQuerySurfaceAttributes(hwctx->display, config->config_id,
                                        0, &attr_count);
@@ -271,11 +279,6 @@ static const struct {
         "Intel iHD",
         "ubit",
         AV_VAAPI_DRIVER_QUIRK_ATTRIB_MEMTYPE,
-    },
-    {
-        "VDPAU wrapper",
-        "Splitted-Desktop Systems VDPAU backend for VA-API",
-        AV_VAAPI_DRIVER_QUIRK_SURFACE_ATTRIBUTES,
     },
 };
 
@@ -394,10 +397,6 @@ static AVBufferRef *vaapi_pool_alloc(void *opaque, int size)
     VAStatus vas;
     AVBufferRef *ref;
 
-    if (hwfc->initial_pool_size > 0 &&
-        avfc->nb_surfaces >= hwfc->initial_pool_size)
-        return NULL;
-
     vas = vaCreateSurfaces(hwctx->display, ctx->rt_format,
                            hwfc->width, hwfc->height,
                            &surface_id, 1,
@@ -455,48 +454,43 @@ static int vaapi_frames_init(AVHWFramesContext *hwfc)
     }
 
     if (!hwfc->pool) {
-        if (!(hwctx->driver_quirks & AV_VAAPI_DRIVER_QUIRK_SURFACE_ATTRIBUTES)) {
-            int need_memory_type = !(hwctx->driver_quirks & AV_VAAPI_DRIVER_QUIRK_ATTRIB_MEMTYPE);
-            int need_pixel_format = 1;
-            for (i = 0; i < avfc->nb_attributes; i++) {
-                if (ctx->attributes[i].type == VASurfaceAttribMemoryType)
-                    need_memory_type  = 0;
-                if (ctx->attributes[i].type == VASurfaceAttribPixelFormat)
-                    need_pixel_format = 0;
-            }
-            ctx->nb_attributes =
-                avfc->nb_attributes + need_memory_type + need_pixel_format;
-
-            ctx->attributes = av_malloc(ctx->nb_attributes *
-                                        sizeof(*ctx->attributes));
-            if (!ctx->attributes) {
-                err = AVERROR(ENOMEM);
-                goto fail;
-            }
-
-            for (i = 0; i < avfc->nb_attributes; i++)
-                ctx->attributes[i] = avfc->attributes[i];
-            if (need_memory_type) {
-                ctx->attributes[i++] = (VASurfaceAttrib) {
-                    .type          = VASurfaceAttribMemoryType,
-                    .flags         = VA_SURFACE_ATTRIB_SETTABLE,
-                    .value.type    = VAGenericValueTypeInteger,
-                    .value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_VA,
-                };
-            }
-            if (need_pixel_format) {
-                ctx->attributes[i++] = (VASurfaceAttrib) {
-                    .type          = VASurfaceAttribPixelFormat,
-                    .flags         = VA_SURFACE_ATTRIB_SETTABLE,
-                    .value.type    = VAGenericValueTypeInteger,
-                    .value.value.i = fourcc,
-                };
-            }
-            av_assert0(i == ctx->nb_attributes);
-        } else {
-            ctx->attributes = NULL;
-            ctx->nb_attributes = 0;
+        int need_memory_type = !(hwctx->driver_quirks & AV_VAAPI_DRIVER_QUIRK_ATTRIB_MEMTYPE);
+        int need_pixel_format = 1;
+        for (i = 0; i < avfc->nb_attributes; i++) {
+            if (ctx->attributes[i].type == VASurfaceAttribMemoryType)
+                need_memory_type  = 0;
+            if (ctx->attributes[i].type == VASurfaceAttribPixelFormat)
+                need_pixel_format = 0;
         }
+        ctx->nb_attributes =
+            avfc->nb_attributes + need_memory_type + need_pixel_format;
+
+        ctx->attributes = av_malloc(ctx->nb_attributes *
+                                        sizeof(*ctx->attributes));
+        if (!ctx->attributes) {
+            err = AVERROR(ENOMEM);
+            goto fail;
+        }
+
+        for (i = 0; i < avfc->nb_attributes; i++)
+            ctx->attributes[i] = avfc->attributes[i];
+        if (need_memory_type) {
+            ctx->attributes[i++] = (VASurfaceAttrib) {
+                .type          = VASurfaceAttribMemoryType,
+                .flags         = VA_SURFACE_ATTRIB_SETTABLE,
+                .value.type    = VAGenericValueTypeInteger,
+                .value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_VA,
+            };
+        }
+        if (need_pixel_format) {
+            ctx->attributes[i++] = (VASurfaceAttrib) {
+                .type          = VASurfaceAttribPixelFormat,
+                .flags         = VA_SURFACE_ATTRIB_SETTABLE,
+                .value.type    = VAGenericValueTypeInteger,
+                .value.value.i = fourcc,
+            };
+        }
+        av_assert0(i == ctx->nb_attributes);
 
         ctx->rt_format = rt_format;
 
@@ -638,15 +632,17 @@ static int vaapi_transfer_get_formats(AVHWFramesContext *hwfc,
     return 0;
 }
 
-static void vaapi_unmap_frame(AVHWFramesContext *hwfc,
-                              HWMapDescriptor *hwmap)
+static void vaapi_unmap_frame(void *opaque, uint8_t *data)
 {
+    AVHWFramesContext *hwfc = opaque;
     AVVAAPIDeviceContext *hwctx = hwfc->device_ctx->hwctx;
-    VAAPIMapping           *map = hwmap->priv;
+    VAAPISurfaceMap *map = (VAAPISurfaceMap*)data;
+    const AVFrame *src;
     VASurfaceID surface_id;
     VAStatus vas;
 
-    surface_id = (VASurfaceID)(uintptr_t)hwmap->source->data[3];
+    src = map->source;
+    surface_id = (VASurfaceID)(uintptr_t)src->data[3];
     av_log(hwfc, AV_LOG_DEBUG, "Unmap surface %#x.\n", surface_id);
 
     vas = vaUnmapBuffer(hwctx->display, map->image.buf);
@@ -655,8 +651,8 @@ static void vaapi_unmap_frame(AVHWFramesContext *hwfc,
                "%#x: %d (%s).\n", surface_id, vas, vaErrorStr(vas));
     }
 
-    if ((map->flags & AV_HWFRAME_MAP_WRITE) &&
-        !(map->flags & AV_HWFRAME_MAP_DIRECT)) {
+    if ((map->flags & VAAPI_MAP_WRITE) &&
+        !(map->flags & VAAPI_MAP_DIRECT)) {
         vas = vaPutImage(hwctx->display, surface_id, map->image.image_id,
                          0, 0, hwfc->width, hwfc->height,
                          0, 0, hwfc->width, hwfc->height);
@@ -682,7 +678,7 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
     VAAPIFramesContext *ctx = hwfc->internal->priv;
     VASurfaceID surface_id;
     VAImageFormat *image_format;
-    VAAPIMapping *map;
+    VAAPISurfaceMap *map;
     VAStatus vas;
     void *address = NULL;
     int err, i;
@@ -690,13 +686,13 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
     surface_id = (VASurfaceID)(uintptr_t)src->data[3];
     av_log(hwfc, AV_LOG_DEBUG, "Map surface %#x.\n", surface_id);
 
-    if (!ctx->derive_works && (flags & AV_HWFRAME_MAP_DIRECT)) {
+    if (!ctx->derive_works && (flags & VAAPI_MAP_DIRECT)) {
         // Requested direct mapping but it is not possible.
         return AVERROR(EINVAL);
     }
     if (dst->format == AV_PIX_FMT_NONE)
         dst->format = hwfc->sw_format;
-    if (dst->format != hwfc->sw_format && (flags & AV_HWFRAME_MAP_DIRECT)) {
+    if (dst->format != hwfc->sw_format && (flags & VAAPI_MAP_DIRECT)) {
         // Requested direct mapping but the formats do not match.
         return AVERROR(EINVAL);
     }
@@ -707,10 +703,12 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
         return AVERROR(EINVAL);
     }
 
-    map = av_malloc(sizeof(*map));
+    map = av_malloc(sizeof(VAAPISurfaceMap));
     if (!map)
         return AVERROR(ENOMEM);
-    map->flags = flags;
+
+    map->source         = src;
+    map->flags          = flags;
     map->image.image_id = VA_INVALID_ID;
 
     vas = vaSyncSurface(hwctx->display, surface_id);
@@ -728,8 +726,8 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
     // faster with a copy routine which is aware of the limitation, but we
     // assume for now that the user is not aware of that and would therefore
     // prefer not to be given direct-mapped memory if they request read access.
-    if (ctx->derive_works && dst->format == hwfc->sw_format &&
-        ((flags & AV_HWFRAME_MAP_DIRECT) || !(flags & AV_HWFRAME_MAP_READ))) {
+    if (ctx->derive_works &&
+        ((flags & VAAPI_MAP_DIRECT) || !(flags & VAAPI_MAP_READ))) {
         vas = vaDeriveImage(hwctx->display, surface_id, &map->image);
         if (vas != VA_STATUS_SUCCESS) {
             av_log(hwfc, AV_LOG_ERROR, "Failed to derive image from "
@@ -745,7 +743,7 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
             err = AVERROR(EIO);
             goto fail;
         }
-        map->flags |= AV_HWFRAME_MAP_DIRECT;
+        map->flags |= VAAPI_MAP_DIRECT;
     } else {
         vas = vaCreateImage(hwctx->display, image_format,
                             hwfc->width, hwfc->height, &map->image);
@@ -756,7 +754,7 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
             err = AVERROR(EIO);
             goto fail;
         }
-        if (!(flags & AV_HWFRAME_MAP_OVERWRITE)) {
+        if (flags & VAAPI_MAP_READ) {
             vas = vaGetImage(hwctx->display, surface_id, 0, 0,
                              hwfc->width, hwfc->height, map->image.image_id);
             if (vas != VA_STATUS_SUCCESS) {
@@ -777,11 +775,6 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
         goto fail;
     }
 
-    err = ff_hwframe_map_create(src->hw_frames_ctx,
-                                dst, src, &vaapi_unmap_frame, map);
-    if (err < 0)
-        goto fail;
-
     dst->width  = src->width;
     dst->height = src->height;
 
@@ -796,6 +789,13 @@ static int vaapi_map_frame(AVHWFramesContext *hwfc,
         map->image.format.fourcc == VA_FOURCC_YV12) {
         // Chroma planes are YVU rather than YUV, so swap them.
         FFSWAP(uint8_t*, dst->data[1], dst->data[2]);
+    }
+
+    dst->buf[0] = av_buffer_create((uint8_t*)map, sizeof(*map),
+                                   &vaapi_unmap_frame, hwfc, 0);
+    if (!dst->buf[0]) {
+        err = AVERROR(ENOMEM);
+        goto fail;
     }
 
     return 0;
@@ -825,7 +825,7 @@ static int vaapi_transfer_data_from(AVHWFramesContext *hwfc,
         return AVERROR(ENOMEM);
     map->format = dst->format;
 
-    err = vaapi_map_frame(hwfc, map, src, AV_HWFRAME_MAP_READ);
+    err = vaapi_map_frame(hwfc, map, src, VAAPI_MAP_READ);
     if (err)
         goto fail;
 
@@ -856,7 +856,7 @@ static int vaapi_transfer_data_to(AVHWFramesContext *hwfc,
         return AVERROR(ENOMEM);
     map->format = src->format;
 
-    err = vaapi_map_frame(hwfc, map, dst, AV_HWFRAME_MAP_WRITE | AV_HWFRAME_MAP_OVERWRITE);
+    err = vaapi_map_frame(hwfc, map, dst, VAAPI_MAP_WRITE);
     if (err)
         goto fail;
 
@@ -871,28 +871,6 @@ static int vaapi_transfer_data_to(AVHWFramesContext *hwfc,
 fail:
     av_frame_free(&map);
     return err;
-}
-
-static int vaapi_map_from(AVHWFramesContext *hwfc, AVFrame *dst,
-                          const AVFrame *src, int flags)
-{
-    int err;
-
-    if (dst->format != AV_PIX_FMT_NONE) {
-        err = vaapi_get_image_format(hwfc->device_ctx, dst->format, NULL);
-        if (err < 0)
-            return AVERROR(ENOSYS);
-    }
-
-    err = vaapi_map_frame(hwfc, dst, src, flags);
-    if (err)
-        return err;
-
-    err = av_frame_copy_props(dst, src);
-    if (err)
-        return err;
-
-    return 0;
 }
 
 static void vaapi_device_free(AVHWDeviceContext *ctx)
@@ -1017,8 +995,6 @@ const HWContextType ff_hwcontext_type_vaapi = {
     .transfer_get_formats   = &vaapi_transfer_get_formats,
     .transfer_data_to       = &vaapi_transfer_data_to,
     .transfer_data_from     = &vaapi_transfer_data_from,
-    .map_to                 = NULL,
-    .map_from               = &vaapi_map_from,
 
     .pix_fmts = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_VAAPI,
