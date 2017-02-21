@@ -2,7 +2,7 @@
  * AAC decoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -44,7 +44,7 @@ typedef struct FDKAACDecContext {
     uint8_t *decoder_buffer;
     int decoder_buffer_size;
     uint8_t *anc_buffer;
-    enum ConcealMethod conceal_method;
+    int conceal_method;
     int drc_level;
     int drc_boost;
     int drc_heavy;
@@ -199,8 +199,8 @@ static av_cold int fdk_aac_decode_close(AVCodecContext *avctx)
 
     if (s->handle)
         aacDecoder_Close(s->handle);
-    av_free(s->decoder_buffer);
-    av_free(s->anc_buffer);
+    av_freep(&s->decoder_buffer);
+    av_freep(&s->anc_buffer);
 
     return 0;
 }
@@ -341,10 +341,9 @@ static int fdk_aac_decode_frame(AVCodecContext *avctx, void *data,
         goto end;
     frame->nb_samples = avctx->frame_size;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "ff_get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         goto end;
-    }
+
     memcpy(frame->extended_data[0], s->decoder_buffer,
            avctx->channels * avctx->frame_size *
            av_get_bytes_per_sample(avctx->sample_fmt));
