@@ -2,20 +2,20 @@
  * MLP codec common code
  * Copyright (c) 2007-2008 Ian Caulfield
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,6 +39,27 @@ const uint8_t ff_mlp_huffman_tables[3][18][2] = {
         {0x01, 1},
         {0x03, 3}, {0x05, 4}, {0x09, 5}, {0x11, 6}, {0x21, 7}, {0x41, 8}, {0x81, 9},
     }
+};
+
+const ChannelInformation ff_mlp_ch_info[21] = {
+    { 0x01, 0x01, 0x00, 0x1f }, { 0x03, 0x02, 0x00, 0x1b },
+    { 0x07, 0x02, 0x01, 0x1f }, { 0x0F, 0x02, 0x02, 0x19 },
+    { 0x07, 0x02, 0x01, 0x03 }, { 0x0F, 0x02, 0x02, 0x1f },
+    { 0x1F, 0x02, 0x03, 0x01 }, { 0x07, 0x02, 0x01, 0x1a },
+    { 0x0F, 0x02, 0x02, 0x1f }, { 0x1F, 0x02, 0x03, 0x18 },
+    { 0x0F, 0x02, 0x02, 0x02 }, { 0x1F, 0x02, 0x03, 0x1f },
+    { 0x3F, 0x02, 0x04, 0x00 }, { 0x0F, 0x03, 0x01, 0x1f },
+    { 0x1F, 0x03, 0x02, 0x18 }, { 0x0F, 0x03, 0x01, 0x02 },
+    { 0x1F, 0x03, 0x02, 0x1f }, { 0x3F, 0x03, 0x03, 0x00 },
+    { 0x1F, 0x04, 0x01, 0x01 }, { 0x1F, 0x04, 0x01, 0x18 },
+    { 0x3F, 0x04, 0x02, 0x00 },
+};
+
+const uint64_t ff_mlp_channel_layouts[12] = {
+    AV_CH_LAYOUT_MONO, AV_CH_LAYOUT_STEREO, AV_CH_LAYOUT_2_1,
+    AV_CH_LAYOUT_QUAD, AV_CH_LAYOUT_2POINT1, AV_CH_LAYOUT_SURROUND,
+    AV_CH_LAYOUT_4POINT0, AV_CH_LAYOUT_5POINT0_BACK, AV_CH_LAYOUT_3POINT1,
+    AV_CH_LAYOUT_4POINT1, AV_CH_LAYOUT_5POINT1_BACK, 0,
 };
 
 static int crc_init = 0;
