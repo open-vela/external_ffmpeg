@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,8 +22,7 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/arm/cpu.h"
-#include "libavcodec/vp9dsp.h"
-#include "vp9dsp_init.h"
+#include "libavcodec/vp9.h"
 
 #define declare_fpel(type, sz)                                          \
 void ff_vp9_##type##sz##_neon(uint8_t *dst, ptrdiff_t dst_stride,       \
@@ -195,6 +194,8 @@ define_loop_filters(8, 8);
 define_loop_filters(16, 8);
 define_loop_filters(16, 16);
 
+define_loop_filters(44, 16);
+
 #define lf_mix_fn(dir, wd1, wd2, stridea)                                                         \
 static void loop_filter_##dir##_##wd1##wd2##_16_neon(uint8_t *dst,                                \
                                                      ptrdiff_t stride,                            \
@@ -208,7 +209,6 @@ static void loop_filter_##dir##_##wd1##wd2##_16_neon(uint8_t *dst,              
     lf_mix_fn(h, wd1, wd2, stride) \
     lf_mix_fn(v, wd1, wd2, sizeof(uint8_t))
 
-lf_mix_fns(4, 4)
 lf_mix_fns(4, 8)
 lf_mix_fns(8, 4)
 lf_mix_fns(8, 8)
@@ -228,8 +228,8 @@ static av_cold void vp9dsp_loopfilter_init_arm(VP9DSPContext *dsp)
         dsp->loop_filter_16[0] = ff_vp9_loop_filter_h_16_16_neon;
         dsp->loop_filter_16[1] = ff_vp9_loop_filter_v_16_16_neon;
 
-        dsp->loop_filter_mix2[0][0][0] = loop_filter_h_44_16_neon;
-        dsp->loop_filter_mix2[0][0][1] = loop_filter_v_44_16_neon;
+        dsp->loop_filter_mix2[0][0][0] = ff_vp9_loop_filter_h_44_16_neon;
+        dsp->loop_filter_mix2[0][0][1] = ff_vp9_loop_filter_v_44_16_neon;
         dsp->loop_filter_mix2[0][1][0] = loop_filter_h_48_16_neon;
         dsp->loop_filter_mix2[0][1][1] = loop_filter_v_48_16_neon;
         dsp->loop_filter_mix2[1][0][0] = loop_filter_h_84_16_neon;
@@ -239,17 +239,8 @@ static av_cold void vp9dsp_loopfilter_init_arm(VP9DSPContext *dsp)
     }
 }
 
-av_cold void ff_vp9dsp_init_arm(VP9DSPContext *dsp, int bpp)
+av_cold void ff_vp9dsp_init_arm(VP9DSPContext *dsp)
 {
-    if (bpp == 10) {
-        ff_vp9dsp_init_10bpp_arm(dsp);
-        return;
-    } else if (bpp == 12) {
-        ff_vp9dsp_init_12bpp_arm(dsp);
-        return;
-    } else if (bpp != 8)
-        return;
-
     vp9dsp_mc_init_arm(dsp);
     vp9dsp_loopfilter_init_arm(dsp);
     vp9dsp_itxfm_init_arm(dsp);
