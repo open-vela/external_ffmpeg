@@ -2,20 +2,20 @@
  * ARM NEON optimised audio functions
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,9 +24,8 @@
 function ff_vector_clipf_neon, export=1
 VFP     vdup.32         q1,  d0[1]
 VFP     vdup.32         q0,  d0[0]
-NOVFP   vdup.32         q0,  r2
-NOVFP   vdup.32         q1,  r3
-NOVFP   ldr             r2,  [sp]
+NOVFP   vdup.32         q0,  r3
+NOVFP   vld1.32         {d2[],d3[]}, [sp]
         vld1.f32        {q2},[r1,:128]!
         vmin.f32        q10, q2,  q1
         vld1.f32        {q3},[r1,:128]!
