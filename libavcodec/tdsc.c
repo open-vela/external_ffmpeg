@@ -2,20 +2,20 @@
  * TDSC decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -124,8 +124,8 @@ static av_cold int tdsc_init(AVCodecContext *avctx)
     ctx->jpeg_avctx->flags = avctx->flags;
     ctx->jpeg_avctx->flags2 = avctx->flags2;
     ctx->jpeg_avctx->dct_algo = avctx->dct_algo;
-    ctx->jpeg_avctx->idct_algo = avctx->idct_algo;;
-    ret = avcodec_open2(ctx->jpeg_avctx, codec, NULL);
+    ctx->jpeg_avctx->idct_algo = avctx->idct_algo;
+    ret = ff_codec_open2_recursive(ctx->jpeg_avctx, codec, NULL);
     if (ret < 0)
         return ret;
 
@@ -343,6 +343,7 @@ static int tdsc_decode_jpeg_tile(AVCodecContext *avctx, int tile_size,
 {
     TDSCContext *ctx = avctx->priv_data;
     AVPacket jpkt;
+    int got_frame = 0;
     int ret;
 
     /* Prepare a packet and send to the MJPEG decoder */
@@ -350,16 +351,12 @@ static int tdsc_decode_jpeg_tile(AVCodecContext *avctx, int tile_size,
     jpkt.data = ctx->tilebuffer;
     jpkt.size = tile_size;
 
-    ret = avcodec_send_packet(ctx->jpeg_avctx, &jpkt);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error submitting a packet for decoding\n");
-        return ret;
-    }
-
-    ret = avcodec_receive_frame(ctx->jpeg_avctx, ctx->jpgframe);
-    if (ret < 0 || ctx->jpgframe->format != AV_PIX_FMT_YUVJ420P) {
+    ret = avcodec_decode_video2(ctx->jpeg_avctx, ctx->jpgframe,
+                                &got_frame, &jpkt);
+    if (ret < 0 || !got_frame || ctx->jpgframe->format != AV_PIX_FMT_YUVJ420P) {
         av_log(avctx, AV_LOG_ERROR,
-               "JPEG decoding error (%d).\n", ret);
+               "JPEG decoding error (%d) for (%d) frame.\n",
+               ret, got_frame);
 
         /* Normally skip, error if explode */
         if (avctx->err_recognition & AV_EF_EXPLODE)
@@ -612,7 +609,7 @@ static int tdsc_decode_frame(AVCodecContext *avctx, void *data,
     }
     *got_frame = 1;
 
-    return 0;
+    return avpkt->size;
 }
 
 AVCodec ff_tdsc_decoder = {

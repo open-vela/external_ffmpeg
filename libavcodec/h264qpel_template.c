@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -75,14 +75,14 @@ static inline void FUNC(copy_block16)(uint8_t *dst, const uint8_t *src, int dstS
 }
 
 #define H264_LOWPASS(OPNAME, OP, OP2) \
-static av_unused void FUNC(OPNAME ## h264_qpel2_h_lowpass)(uint8_t *_dst, const uint8_t *_src, int dstStride, int srcStride){\
+static av_unused void FUNC(OPNAME ## h264_qpel2_h_lowpass)(uint8_t *p_dst, const uint8_t *p_src, int dstStride, int srcStride){\
     const int h=2;\
     INIT_CLIP\
     int i;\
-    pixel *dst = (pixel*)_dst;\
-    const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    pixel *dst = (pixel*)p_dst;\
+    const pixel *src = (const pixel*)p_src;\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     for(i=0; i<h; i++)\
     {\
         OP(dst[0], (src[0]+src[1])*20 - (src[-1]+src[2])*5 + (src[-2]+src[3]));\
@@ -98,8 +98,8 @@ static av_unused void FUNC(OPNAME ## h264_qpel2_v_lowpass)(uint8_t *_dst, const 
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     for(i=0; i<w; i++)\
     {\
         const int srcB= src[-2*srcStride];\
@@ -116,16 +116,16 @@ static av_unused void FUNC(OPNAME ## h264_qpel2_v_lowpass)(uint8_t *_dst, const 
     }\
 }\
 \
-static av_unused void FUNC(OPNAME ## h264_qpel2_hv_lowpass)(uint8_t *_dst, int16_t *tmp, const uint8_t *_src, int dstStride, int tmpStride, int srcStride){\
+static av_unused void FUNC(OPNAME ## h264_qpel2_hv_lowpass)(uint8_t *_dst, pixeltmp *tmp, const uint8_t *_src, int dstStride, int tmpStride, int srcStride){\
     const int h=2;\
     const int w=2;\
-    const int pad = (BIT_DEPTH > 9) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
+    const int pad = (BIT_DEPTH == 10) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
     INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     src -= 2*srcStride;\
     for(i=0; i<h+5; i++)\
     {\
@@ -156,8 +156,8 @@ static void FUNC(OPNAME ## h264_qpel4_h_lowpass)(uint8_t *_dst, const uint8_t *_
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     for(i=0; i<h; i++)\
     {\
         OP(dst[0], (src[0]+src[1])*20 - (src[-1]+src[2])*5 + (src[-2]+src[3]));\
@@ -175,8 +175,8 @@ static void FUNC(OPNAME ## h264_qpel4_v_lowpass)(uint8_t *_dst, const uint8_t *_
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     for(i=0; i<w; i++)\
     {\
         const int srcB= src[-2*srcStride];\
@@ -197,16 +197,16 @@ static void FUNC(OPNAME ## h264_qpel4_v_lowpass)(uint8_t *_dst, const uint8_t *_
     }\
 }\
 \
-static void FUNC(OPNAME ## h264_qpel4_hv_lowpass)(uint8_t *_dst, int16_t *tmp, const uint8_t *_src, int dstStride, int tmpStride, int srcStride){\
+static void FUNC(OPNAME ## h264_qpel4_hv_lowpass)(uint8_t *_dst, pixeltmp *tmp, const uint8_t *_src, int dstStride, int tmpStride, int srcStride){\
     const int h=4;\
     const int w=4;\
-    const int pad = (BIT_DEPTH > 9) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
+    const int pad = (BIT_DEPTH == 10) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
     INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     src -= 2*srcStride;\
     for(i=0; i<h+5; i++)\
     {\
@@ -244,8 +244,8 @@ static void FUNC(OPNAME ## h264_qpel8_h_lowpass)(uint8_t *_dst, const uint8_t *_
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     for(i=0; i<h; i++)\
     {\
         OP(dst[0], (src[0]+src[1])*20 - (src[-1]+src[2])*5 + (src[-2]+src[3 ]));\
@@ -267,8 +267,8 @@ static void FUNC(OPNAME ## h264_qpel8_v_lowpass)(uint8_t *_dst, const uint8_t *_
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     for(i=0; i<w; i++)\
     {\
         const int srcB= src[-2*srcStride];\
@@ -297,16 +297,16 @@ static void FUNC(OPNAME ## h264_qpel8_v_lowpass)(uint8_t *_dst, const uint8_t *_
     }\
 }\
 \
-static void FUNC(OPNAME ## h264_qpel8_hv_lowpass)(uint8_t *_dst, int16_t *tmp, const uint8_t *_src, int dstStride, int tmpStride, int srcStride){\
+static void FUNC(OPNAME ## h264_qpel8_hv_lowpass)(uint8_t *_dst, pixeltmp *tmp, const uint8_t *_src, int dstStride, int tmpStride, int srcStride){\
     const int h=8;\
     const int w=8;\
-    const int pad = (BIT_DEPTH > 9) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
+    const int pad = (BIT_DEPTH == 10) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
     INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *src = (const pixel*)_src;\
-    dstStride /= sizeof(pixel);\
-    srcStride /= sizeof(pixel);\
+    dstStride >>= sizeof(pixel)-1;\
+    srcStride >>= sizeof(pixel)-1;\
     src -= 2*srcStride;\
     for(i=0; i<h+5; i++)\
     {\
@@ -368,7 +368,7 @@ static void FUNC(OPNAME ## h264_qpel16_h_lowpass)(uint8_t *dst, const uint8_t *s
     FUNC(OPNAME ## h264_qpel8_h_lowpass)(dst+8*sizeof(pixel), src+8*sizeof(pixel), dstStride, srcStride);\
 }\
 \
-static void FUNC(OPNAME ## h264_qpel16_hv_lowpass)(uint8_t *dst, int16_t *tmp, const uint8_t *src, int dstStride, int tmpStride, int srcStride){\
+static void FUNC(OPNAME ## h264_qpel16_hv_lowpass)(uint8_t *dst, pixeltmp *tmp, const uint8_t *src, int dstStride, int tmpStride, int srcStride){\
     FUNC(OPNAME ## h264_qpel8_hv_lowpass)(dst                , tmp  , src                , dstStride, tmpStride, srcStride);\
     FUNC(OPNAME ## h264_qpel8_hv_lowpass)(dst+8*sizeof(pixel), tmp+8, src+8*sizeof(pixel), dstStride, tmpStride, srcStride);\
     src += 8*srcStride;\
@@ -480,13 +480,13 @@ static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc33)(uint8_t *dst, const uint
 \
 static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc22)(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-    int16_t tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
+    pixeltmp tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
     FUNC(OPNAME ## h264_qpel ## SIZE ## _hv_lowpass)(dst, tmp, src, stride, SIZE*sizeof(pixel), stride);\
 }\
 \
 static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc21)(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-    int16_t tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
+    pixeltmp tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
     uint8_t halfH[SIZE*SIZE*sizeof(pixel)];\
     uint8_t halfHV[SIZE*SIZE*sizeof(pixel)];\
     FUNC(put_h264_qpel ## SIZE ## _h_lowpass)(halfH, src, SIZE*sizeof(pixel), stride);\
@@ -496,7 +496,7 @@ static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc21)(uint8_t *dst, const uint
 \
 static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc23)(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-    int16_t tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
+    pixeltmp tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
     uint8_t halfH[SIZE*SIZE*sizeof(pixel)];\
     uint8_t halfHV[SIZE*SIZE*sizeof(pixel)];\
     FUNC(put_h264_qpel ## SIZE ## _h_lowpass)(halfH, src + stride, SIZE*sizeof(pixel), stride);\
@@ -508,7 +508,7 @@ static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc12)(uint8_t *dst, const uint
 {\
     uint8_t full[SIZE*(SIZE+5)*sizeof(pixel)];\
     uint8_t * const full_mid= full + SIZE*2*sizeof(pixel);\
-    int16_t tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
+    pixeltmp tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
     uint8_t halfV[SIZE*SIZE*sizeof(pixel)];\
     uint8_t halfHV[SIZE*SIZE*sizeof(pixel)];\
     FUNC(copy_block ## SIZE )(full, src - stride*2, SIZE*sizeof(pixel),  stride, SIZE + 5);\
@@ -521,7 +521,7 @@ static void FUNCC(OPNAME ## h264_qpel ## SIZE ## _mc32)(uint8_t *dst, const uint
 {\
     uint8_t full[SIZE*(SIZE+5)*sizeof(pixel)];\
     uint8_t * const full_mid= full + SIZE*2*sizeof(pixel);\
-    int16_t tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
+    pixeltmp tmp[SIZE*(SIZE+5)*sizeof(pixel)];\
     uint8_t halfV[SIZE*SIZE*sizeof(pixel)];\
     uint8_t halfHV[SIZE*SIZE*sizeof(pixel)];\
     FUNC(copy_block ## SIZE )(full, src - stride*2 + sizeof(pixel), SIZE*sizeof(pixel),  stride, SIZE + 5);\
