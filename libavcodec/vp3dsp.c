@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2004 The FFmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
  */
 
 #include "libavutil/attributes.h"
-#include "libavutil/intreadwrite.h"
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 
@@ -42,9 +41,9 @@
 #define xC6S2 25080
 #define xC7S1 12785
 
-#define M(a, b) (((a) * (b)) >> 16)
+#define M(a, b) ((int)((SUINT)(a) * (b)) >> 16)
 
-static av_always_inline void idct(uint8_t *dst, ptrdiff_t stride,
+static av_always_inline void idct(uint8_t *dst, int stride,
                                   int16_t *input, int type)
 {
     int16_t *ip = input;
@@ -195,21 +194,21 @@ static av_always_inline void idct(uint8_t *dst, ptrdiff_t stride,
     }
 }
 
-static void vp3_idct_put_c(uint8_t *dest /* align 8 */, ptrdiff_t stride,
+static void vp3_idct_put_c(uint8_t *dest /* align 8 */, int line_size,
                            int16_t *block /* align 16 */)
 {
-    idct(dest, stride, block, 1);
+    idct(dest, line_size, block, 1);
     memset(block, 0, sizeof(*block) * 64);
 }
 
-static void vp3_idct_add_c(uint8_t *dest /* align 8 */, ptrdiff_t stride,
+static void vp3_idct_add_c(uint8_t *dest /* align 8 */, int line_size,
                            int16_t *block /* align 16 */)
 {
-    idct(dest, stride, block, 2);
+    idct(dest, line_size, block, 2);
     memset(block, 0, sizeof(*block) * 64);
 }
 
-static void vp3_idct_dc_add_c(uint8_t *dest /* align 8 */, ptrdiff_t stride,
+static void vp3_idct_dc_add_c(uint8_t *dest /* align 8 */, int line_size,
                               int16_t *block /* align 16 */)
 {
     int i, dc = (block[0] + 15) >> 5;
@@ -223,17 +222,17 @@ static void vp3_idct_dc_add_c(uint8_t *dest /* align 8 */, ptrdiff_t stride,
         dest[5] = av_clip_uint8(dest[5] + dc);
         dest[6] = av_clip_uint8(dest[6] + dc);
         dest[7] = av_clip_uint8(dest[7] + dc);
-        dest   += stride;
+        dest   += line_size;
     }
     block[0] = 0;
 }
 
-static void vp3_v_loop_filter_c(uint8_t *first_pixel, ptrdiff_t stride,
+static void vp3_v_loop_filter_c(uint8_t *first_pixel, int stride,
                                 int *bounding_values)
 {
     unsigned char *end;
     int filter_value;
-    const ptrdiff_t nstride = -stride;
+    const int nstride = -stride;
 
     for (end = first_pixel + 8; first_pixel < end; first_pixel++) {
         filter_value = (first_pixel[2 * nstride] - first_pixel[stride]) +
@@ -245,7 +244,7 @@ static void vp3_v_loop_filter_c(uint8_t *first_pixel, ptrdiff_t stride,
     }
 }
 
-static void vp3_h_loop_filter_c(uint8_t *first_pixel, ptrdiff_t stride,
+static void vp3_h_loop_filter_c(uint8_t *first_pixel, int stride,
                                 int *bounding_values)
 {
     unsigned char *end;

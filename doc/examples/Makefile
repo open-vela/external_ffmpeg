@@ -1,31 +1,46 @@
-EXAMPLES-$(CONFIG_DECODE_AUDIO_EXAMPLE)     += decode_audio
-EXAMPLES-$(CONFIG_DECODE_VIDEO_EXAMPLE)     += decode_video
-EXAMPLES-$(CONFIG_ENCODE_AUDIO_EXAMPLE)     += encode_audio
-EXAMPLES-$(CONFIG_ENCODE_VIDEO_EXAMPLE)     += encode_video
-EXAMPLES-$(CONFIG_FILTER_AUDIO_EXAMPLE)     += filter_audio
-EXAMPLES-$(CONFIG_METADATA_EXAMPLE)         += metadata
-EXAMPLES-$(CONFIG_OUTPUT_EXAMPLE)           += output
-EXAMPLES-$(CONFIG_QSVDEC_EXAMPLE)           += qsvdec
-EXAMPLES-$(CONFIG_TRANSCODE_AAC_EXAMPLE)    += transcode_aac
+# use pkg-config for getting CFLAGS and LDLIBS
+FFMPEG_LIBS=    libavdevice                        \
+                libavformat                        \
+                libavfilter                        \
+                libavcodec                         \
+                libswresample                      \
+                libswscale                         \
+                libavutil                          \
 
-EXAMPLES     := $(EXAMPLES-yes:%=doc/examples/%$(EXESUF))
-ALL_EXAMPLES := $(EXAMPLES) $(EXAMPLES-:%=doc/examples/%$(EXESUF))
-PROGS        += $(EXAMPLES)
+CFLAGS += -Wall -g
+CFLAGS := $(shell pkg-config --cflags $(FFMPEG_LIBS)) $(CFLAGS)
+LDLIBS := $(shell pkg-config --libs $(FFMPEG_LIBS)) $(LDLIBS)
 
-$(foreach P,$(EXAMPLES),$(eval OBJS-$(P:%$(EXESUF)=%) = $(P:%$(EXESUF)=%).o))
-$(EXAMPLES): %$(EXESUF): %.o
+EXAMPLES=       avio_dir_cmd                       \
+                avio_reading                       \
+                decoding_encoding                  \
+                demuxing_decoding                  \
+                extract_mvs                        \
+                filtering_video                    \
+                filtering_audio                    \
+                http_multiclient                   \
+                metadata                           \
+                muxing                             \
+                remuxing                           \
+                resampling_audio                   \
+                scaling_video                      \
+                transcode_aac                      \
+                transcoding                        \
 
-examples: $(EXAMPLES)
+OBJS=$(addsuffix .o,$(EXAMPLES))
 
-$(EXAMPLES:%$(EXESUF)=%.o): | doc/examples
-OBJDIRS += doc/examples
+# the following examples make explicit use of the math library
+avcodec:           LDLIBS += -lm
+decoding_encoding: LDLIBS += -lm
+muxing:            LDLIBS += -lm
+resampling_audio:  LDLIBS += -lm
 
-DOXY_INPUT += $(addprefix $(SRC_PATH)/, $(EXAMPLES:%$(EXESUF)=%.c))
+.phony: all clean-test clean
 
-clean::
-	$(RM) $(ALL_EXAMPLES)
-	$(RM) $(CLEANSUFFIXES:%=doc/examples/%)
+all: $(OBJS) $(EXAMPLES)
 
--include $(wildcard $(EXAMPLES:%$(EXESUF)=%.d))
+clean-test:
+	$(RM) test*.pgm test.h264 test.mp2 test.sw test.mpg
 
-.PHONY: examples
+clean: clean-test
+	$(RM) $(EXAMPLES) $(OBJS)
