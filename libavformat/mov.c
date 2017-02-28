@@ -3235,7 +3235,7 @@ static int mov_read_sv3d(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
     MOVStreamContext *sc;
-    int size, version, layout;
+    int size;
     int32_t yaw, pitch, roll;
     uint32_t tag;
     enum AVSphericalProjection projection;
@@ -3260,13 +3260,7 @@ static int mov_read_sv3d(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         av_log(c->fc, AV_LOG_ERROR, "Missing spherical video header\n");
         return 0;
     }
-    version = avio_r8(pb);
-    if (version != 0) {
-        av_log(c->fc, AV_LOG_WARNING, "Unknown spherical version %d\n",
-               version);
-        return 0;
-    }
-    avio_skip(pb, 3); /* flags */
+    avio_skip(pb, 4); /*  version + flags */
     avio_skip(pb, size - 12); /* metadata_source */
 
     size = avio_rb32(pb);
@@ -3288,13 +3282,7 @@ static int mov_read_sv3d(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         av_log(c->fc, AV_LOG_ERROR, "Missing projection header box\n");
         return 0;
     }
-    version = avio_r8(pb);
-    if (version != 0) {
-        av_log(c->fc, AV_LOG_WARNING, "Unknown spherical version %d\n",
-               version);
-        return 0;
-    }
-    avio_skip(pb, 3); /* flags */
+    avio_skip(pb, 4); /*  version + flags */
 
     /* 16.16 fixed point */
     yaw   = avio_rb32(pb);
@@ -3306,21 +3294,9 @@ static int mov_read_sv3d(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return AVERROR_INVALIDDATA;
 
     tag = avio_rl32(pb);
-    version = avio_r8(pb);
-    if (version != 0) {
-        av_log(c->fc, AV_LOG_WARNING, "Unknown spherical version %d\n",
-               version);
-        return 0;
-    }
-    avio_skip(pb, 3); /* flags */
+    avio_skip(pb, 4); /*  version + flags */
     switch (tag) {
     case MKTAG('c','b','m','p'):
-        layout = avio_rb32(pb);
-        if (layout) {
-            av_log(c->fc, AV_LOG_WARNING,
-                   "Unsupported cubemap layout %d\n", layout);
-            return 0;
-        }
         projection = AV_SPHERICAL_CUBEMAP;
         break;
     case MKTAG('e','q','u','i'):
