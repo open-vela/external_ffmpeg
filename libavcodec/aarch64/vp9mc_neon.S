@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -193,41 +193,52 @@ endfunc
 // for size >= 16), and multiply-accumulate into dst1 and dst3 (or
 // dst1-dst2 and dst3-dst4 for size >= 16)
 .macro extmla dst1, dst2, dst3, dst4, src1, src2, src3, src4, src5, src6, offset, size
-        ext             v20.16b, \src1, \src2, #(2*\offset)
-        ext             v22.16b, \src4, \src5, #(2*\offset)
+        ext             v20.16b, \src1\().16b, \src2\().16b, #(2*\offset)
+        ext             v22.16b, \src4\().16b, \src5\().16b, #(2*\offset)
 .if \size >= 16
-        mla             \dst1, v20.8h, v0.h[\offset]
-        ext             v21.16b, \src2, \src3, #(2*\offset)
-        mla             \dst3, v22.8h, v0.h[\offset]
-        ext             v23.16b, \src5, \src6, #(2*\offset)
-        mla             \dst2, v21.8h, v0.h[\offset]
-        mla             \dst4, v23.8h, v0.h[\offset]
+        mla             \dst1\().8h, v20.8h, v0.h[\offset]
+        ext             v21.16b, \src2\().16b, \src3\().16b, #(2*\offset)
+        mla             \dst3\().8h, v22.8h, v0.h[\offset]
+        ext             v23.16b, \src5\().16b, \src6\().16b, #(2*\offset)
+        mla             \dst2\().8h, v21.8h, v0.h[\offset]
+        mla             \dst4\().8h, v23.8h, v0.h[\offset]
+.elseif \size == 8
+        mla             \dst1\().8h, v20.8h, v0.h[\offset]
+        mla             \dst3\().8h, v22.8h, v0.h[\offset]
 .else
-        mla             \dst1, v20.8h, v0.h[\offset]
-        mla             \dst3, v22.8h, v0.h[\offset]
+        mla             \dst1\().4h, v20.4h, v0.h[\offset]
+        mla             \dst3\().4h, v22.4h, v0.h[\offset]
 .endif
 .endm
 // The same as above, but don't accumulate straight into the
 // destination, but use a temp register and accumulate with saturation.
 .macro extmulqadd dst1, dst2, dst3, dst4, src1, src2, src3, src4, src5, src6, offset, size
-        ext             v20.16b, \src1, \src2, #(2*\offset)
-        ext             v22.16b, \src4, \src5, #(2*\offset)
+        ext             v20.16b, \src1\().16b, \src2\().16b, #(2*\offset)
+        ext             v22.16b, \src4\().16b, \src5\().16b, #(2*\offset)
 .if \size >= 16
         mul             v20.8h, v20.8h, v0.h[\offset]
-        ext             v21.16b, \src2, \src3, #(2*\offset)
+        ext             v21.16b, \src2\().16b, \src3\().16b, #(2*\offset)
         mul             v22.8h, v22.8h, v0.h[\offset]
-        ext             v23.16b, \src5, \src6, #(2*\offset)
+        ext             v23.16b, \src5\().16b, \src6\().16b, #(2*\offset)
         mul             v21.8h, v21.8h, v0.h[\offset]
         mul             v23.8h, v23.8h, v0.h[\offset]
-.else
+.elseif \size == 8
         mul             v20.8h, v20.8h, v0.h[\offset]
         mul             v22.8h, v22.8h, v0.h[\offset]
+.else
+        mul             v20.4h, v20.4h, v0.h[\offset]
+        mul             v22.4h, v22.4h, v0.h[\offset]
 .endif
-        sqadd           \dst1, \dst1, v20.8h
-        sqadd           \dst3, \dst3, v22.8h
+.if \size == 4
+        sqadd           \dst1\().4h, \dst1\().4h, v20.4h
+        sqadd           \dst3\().4h, \dst3\().4h, v22.4h
+.else
+        sqadd           \dst1\().8h, \dst1\().8h, v20.8h
+        sqadd           \dst3\().8h, \dst3\().8h, v22.8h
 .if \size >= 16
-        sqadd           \dst2, \dst2, v21.8h
-        sqadd           \dst4, \dst4, v23.8h
+        sqadd           \dst2\().8h, \dst2\().8h, v21.8h
+        sqadd           \dst4\().8h, \dst4\().8h, v23.8h
+.endif
 .endif
 .endm
 
@@ -258,7 +269,8 @@ function \type\()_8tap_\size\()h_\idx1\idx2
         sub             x3,  x3,  #8
 .endif
         // Load the filter vector
-        ld1             {v0.8h},  [x9]
+        ld1             {v0.8b},  [x9]
+        sxtl            v0.8h,  v0.8b
 1:
 .if \size >= 16
         mov             x9,  x5
@@ -291,13 +303,13 @@ function \type\()_8tap_\size\()h_\idx1\idx2
         mul             v2.8h,  v5.8h,  v0.h[0]
         mul             v25.8h, v17.8h, v0.h[0]
 .endif
-        extmla          v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, 1,     \size
-        extmla          v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, 2,     \size
-        extmla          v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, \idx1, \size
-        extmla          v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, 5,     \size
-        extmla          v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, 6,     \size
-        extmla          v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, 7,     \size
-        extmulqadd      v1.8h,  v2.8h,  v24.8h, v25.8h, v4.16b,  v5.16b,  v6.16b,  v16.16b, v17.16b, v18.16b, \idx2, \size
+        extmla          v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, 1,     \size
+        extmla          v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, 2,     \size
+        extmla          v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, \idx1, \size
+        extmla          v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, 5,     \size
+        extmla          v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, 6,     \size
+        extmla          v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, 7,     \size
+        extmulqadd      v1,  v2,  v24, v25, v4,  v5,  v6,  v16, v17, v18, \idx2, \size
 
         // Round, shift and saturate
         sqrshrun        v1.8b,   v1.8h,  #7
@@ -372,9 +384,9 @@ do_8tap_h_size 16
 
 .macro do_8tap_h_func type, filter, offset, size
 function ff_vp9_\type\()_\filter\()\size\()_h_neon, export=1
-        movrel          x6,  X(ff_vp9_subpel_filters), 256*\offset
+        movrel          x6,  X(ff_vp9_subpel_filters), 120*\offset - 8
         cmp             w5,  #8
-        add             x9,  x6,  w5, uxtw #4
+        add             x9,  x6,  w5, uxtw #3
         mov             x5,  #\size
 .if \size >= 16
         bge             \type\()_8tap_16h_34
@@ -504,7 +516,8 @@ do_8tap_h_filters 4
 function \type\()_8tap_8v_\idx1\idx2
         sub             x2,  x2,  x3, lsl #1
         sub             x2,  x2,  x3
-        ld1             {v0.8h},  [x6]
+        ld1             {v0.8b},  [x6]
+        sxtl            v0.8h,  v0.8b
 1:
 .ifc \type,avg
         mov             x7,  x0
@@ -577,7 +590,8 @@ do_8tap_8v avg, 4, 3
 function \type\()_8tap_4v_\idx1\idx2
         sub             x2,  x2,  x3, lsl #1
         sub             x2,  x2,  x3
-        ld1             {v0.8h},  [x6]
+        ld1             {v0.8b},  [x6]
+        sxtl            v0.8h,  v0.8b
 .ifc \type,avg
         mov             x7,  x0
 .endif
@@ -646,9 +660,9 @@ do_8tap_4v avg, 4, 3
 .macro do_8tap_v_func type, filter, offset, size
 function ff_vp9_\type\()_\filter\()\size\()_v_neon, export=1
         uxtw            x4,  w4
-        movrel          x5,  X(ff_vp9_subpel_filters), 256*\offset
+        movrel          x5,  X(ff_vp9_subpel_filters), 120*\offset - 8
         cmp             w6,  #8
-        add             x6,  x5,  w6, uxtw #4
+        add             x6,  x5,  w6, uxtw #3
         mov             x5,  #\size
 .if \size >= 8
         b.ge            \type\()_8tap_8v_34
