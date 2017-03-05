@@ -1,23 +1,23 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef LIBAV_COMPAT_ATOMICS_WIN32_STDATOMIC_H
-#define LIBAV_COMPAT_ATOMICS_WIN32_STDATOMIC_H
+#ifndef COMPAT_ATOMICS_WIN32_STDATOMIC_H
+#define COMPAT_ATOMICS_WIN32_STDATOMIC_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -104,8 +104,7 @@ static inline int atomic_compare_exchange_strong(intptr_t *object, intptr_t *exp
                                                  intptr_t desired)
 {
     intptr_t old = *expected;
-    *expected = (intptr_t)InterlockedCompareExchangePointer(
-        (PVOID *)object, (PVOID)desired, (PVOID)old);
+    *expected = InterlockedCompareExchangePointer(object, desired, old);
     return *expected == old;
 }
 
@@ -177,4 +176,4 @@ static inline int atomic_compare_exchange_strong(intptr_t *object, intptr_t *exp
 #define atomic_flag_clear_explicit(object, order) \
     atomic_flag_clear(object)
 
-#endif /* LIBAV_COMPAT_ATOMICS_WIN32_STDATOMIC_H */
+#endif /* COMPAT_ATOMICS_WIN32_STDATOMIC_H */
