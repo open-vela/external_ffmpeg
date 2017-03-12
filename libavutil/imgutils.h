@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -100,6 +100,9 @@ int av_image_alloc(uint8_t *pointers[4], int linesizes[4],
  * The first byte of each successive line is separated by *_linesize
  * bytes.
  *
+ * bytewidth must be contained by both absolute values of dst_linesize
+ * and src_linesize, otherwise the function behavior is undefined.
+ *
  * @param dst_linesize linesize for the image plane in dst
  * @param src_linesize linesize for the image plane in src
  */
@@ -152,7 +155,7 @@ void av_image_copy_uc_from(uint8_t *dst_data[4],       const ptrdiff_t dst_lines
  * one call, use av_image_alloc().
  *
  * @param dst_data      data pointers to be filled in
- * @param dst_linesize  linesizes for the image in dst_data to be filled in
+ * @param dst_linesizes linesizes for the image in dst_data to be filled in
  * @param src           buffer which will contain or contains the actual image data, can be NULL
  * @param pix_fmt       the pixel format of the image
  * @param width         the width of the image in pixels
@@ -169,11 +172,7 @@ int av_image_fill_arrays(uint8_t *dst_data[4], int dst_linesize[4],
  * Return the size in bytes of the amount of data required to store an
  * image with the given parameters.
  *
- * @param pix_fmt  the pixel format of the image
- * @param width    the width of the image in pixels
- * @param height   the height of the image in pixels
- * @param align    the assumed linesize alignment
- * @return the buffer size in bytes, a negative error code in case of failure
+ * @param[in] align the assumed linesize alignment
  */
 int av_image_get_buffer_size(enum AVPixelFormat pix_fmt, int width, int height, int align);
 
@@ -186,7 +185,7 @@ int av_image_get_buffer_size(enum AVPixelFormat pix_fmt, int width, int height, 
  * @param dst           a buffer into which picture data will be copied
  * @param dst_size      the size in bytes of dst
  * @param src_data      pointers containing the source image data
- * @param src_linesize  linesizes for the image in src_data
+ * @param src_linesizes linesizes for the image in src_data
  * @param pix_fmt       the pixel format of the source image
  * @param width         the width of the source image in pixels
  * @param height        the height of the source image in pixels
@@ -209,6 +208,21 @@ int av_image_copy_to_buffer(uint8_t *dst, int dst_size,
  * @return >= 0 if valid, a negative error code otherwise
  */
 int av_image_check_size(unsigned int w, unsigned int h, int log_offset, void *log_ctx);
+
+/**
+ * Check if the given dimension of an image is valid, meaning that all
+ * bytes of a plane of an image with the specified pix_fmt can be addressed
+ * with a signed int.
+ *
+ * @param w the width of the picture
+ * @param h the height of the picture
+ * @param max_pixels the maximum number of pixels the user wants to accept
+ * @param pix_fmt the pixel format, can be AV_PIX_FMT_NONE if unknown.
+ * @param log_offset the offset to sum to the log level for logging with log_ctx
+ * @param log_ctx the parent logging context, it may be NULL
+ * @return >= 0 if valid, a negative error code otherwise
+ */
+int av_image_check_size2(unsigned int w, unsigned int h, int64_t max_pixels, enum AVPixelFormat pix_fmt, int log_offset, void *log_ctx);
 
 /**
  * Check if the given sample aspect ratio of an image is valid.
