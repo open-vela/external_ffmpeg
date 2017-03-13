@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -1483,6 +1483,7 @@ function ff_vp9_idct_idct_32x32_add_neon, export=1
         b.eq            idct32x32_dc_add_neon
 
         movrel          x10, idct_coeffs
+        movrel          x12, min_eob_idct_idct_32, 2
 
         mov             x15, x30
 
@@ -1506,8 +1507,6 @@ function ff_vp9_idct_idct_32x32_add_neon, export=1
         b.le            idct32x32_quarter_add_neon
         cmp             w3,  #135
         b.le            idct32x32_half_add_neon
-
-        movrel          x12, min_eob_idct_idct_32, 2
 
 .irp i, 0, 8, 16, 24
         add             x0,  sp,  #(\i*64)
