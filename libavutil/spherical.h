@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -164,10 +164,10 @@ typedef struct AVSphericalMapping {
      *       projection type (@ref AV_SPHERICAL_EQUIRECTANGULAR_TILE),
      *       and should be ignored in all other cases.
      */
-    uint32_t bound_left;   ///< Distance from the left edge
-    uint32_t bound_top;    ///< Distance from the top edge
-    uint32_t bound_right;  ///< Distance from the right edge
-    uint32_t bound_bottom; ///< Distance from the bottom edge
+    size_t bound_left;   ///< Distance from the left edge
+    size_t bound_top;    ///< Distance from the top edge
+    size_t bound_right;  ///< Distance from the right edge
+    size_t bound_bottom; ///< Distance from the bottom edge
     /**
      * @}
      */
@@ -179,7 +179,7 @@ typedef struct AVSphericalMapping {
      *       (@ref AV_SPHERICAL_CUBEMAP), and should be ignored in all other
      *       cases.
      */
-    uint32_t padding;
+    size_t padding;
 } AVSphericalMapping;
 
 /**
@@ -202,7 +202,7 @@ AVSphericalMapping *av_spherical_alloc(size_t *size);
  * @param right  Pixels from the right edge.
  * @param bottom Pixels from the bottom edge.
  */
-void av_spherical_tile_bounds(const AVSphericalMapping *map,
+void av_spherical_tile_bounds(AVSphericalMapping *map,
                               size_t width, size_t height,
                               size_t *left, size_t *top,
                               size_t *right, size_t *bottom);
