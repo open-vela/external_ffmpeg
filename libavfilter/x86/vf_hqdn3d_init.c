@@ -1,20 +1,18 @@
 /*
- * Copyright (c) 2012 Loren Merritt
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -40,10 +38,10 @@ void ff_hqdn3d_row_16_x86(uint8_t *src, uint8_t *dst, uint16_t *line_ant,
 
 av_cold void ff_hqdn3d_init_x86(HQDN3DContext *hqdn3d)
 {
-#if HAVE_YASM
+#if HAVE_X86ASM
     hqdn3d->denoise_row[8]  = ff_hqdn3d_row_8_x86;
     hqdn3d->denoise_row[9]  = ff_hqdn3d_row_9_x86;
     hqdn3d->denoise_row[10] = ff_hqdn3d_row_10_x86;
     hqdn3d->denoise_row[16] = ff_hqdn3d_row_16_x86;
-#endif /* HAVE_YASM */
+#endif /* HAVE_X86ASM */
 }
