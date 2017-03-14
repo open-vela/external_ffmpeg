@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,11 +26,16 @@
 #include "libavutil/common.h"
 #include "libavutil/cpu.h"
 #include "libavutil/mem.h"
-#include "libavutil/thread.h"
 
 #include "avfilter.h"
 #include "internal.h"
 #include "thread.h"
+
+#if HAVE_PTHREADS
+#include <pthread.h>
+#elif HAVE_W32THREADS
+#include "compat/w32pthreads.h"
+#endif
 
 typedef struct ThreadContext {
     AVFilterGraph *graph;
@@ -43,6 +48,7 @@ typedef struct ThreadContext {
     AVFilterContext *ctx;
     void *arg;
     int   *rets;
+    int nb_rets;
     int nb_jobs;
 
     pthread_cond_t last_job_cond;
@@ -59,11 +65,10 @@ static void* attribute_align_arg worker(void *v)
     int our_job      = c->nb_jobs;
     int nb_threads   = c->nb_threads;
     unsigned int last_execute = 0;
-    int ret, self_id;
+    int self_id;
 
     pthread_mutex_lock(&c->current_job_lock);
     self_id = c->current_job++;
-
     for (;;) {
         while (our_job >= c->nb_jobs) {
             if (c->current_job == nb_threads + c->nb_jobs)
@@ -81,9 +86,7 @@ static void* attribute_align_arg worker(void *v)
         }
         pthread_mutex_unlock(&c->current_job_lock);
 
-        ret = c->func(c->ctx, c->arg, our_job, c->nb_jobs);
-        if (c->rets)
-            c->rets[our_job % c->nb_jobs] = ret;
+        c->rets[our_job % c->nb_rets] = c->func(c->ctx, c->arg, our_job, c->nb_jobs);
 
         pthread_mutex_lock(&c->current_job_lock);
         our_job = c->current_job++;
@@ -119,6 +122,7 @@ static int thread_execute(AVFilterContext *ctx, avfilter_action_func *func,
                           void *arg, int *ret, int nb_jobs)
 {
     ThreadContext *c = ctx->graph->internal->thread;
+    int dummy_ret;
 
     if (nb_jobs <= 0)
         return 0;
@@ -130,7 +134,13 @@ static int thread_execute(AVFilterContext *ctx, avfilter_action_func *func,
     c->ctx         = ctx;
     c->arg         = arg;
     c->func        = func;
-    c->rets        = ret;
+    if (ret) {
+        c->rets    = ret;
+        c->nb_rets = nb_jobs;
+    } else {
+        c->rets    = &dummy_ret;
+        c->nb_rets = 1;
+    }
     c->current_execute++;
 
     pthread_cond_broadcast(&c->current_job_cond);
@@ -146,6 +156,7 @@ static int thread_init_internal(ThreadContext *c, int nb_threads)
 
     if (!nb_threads) {
         int nb_cpus = av_cpu_count();
+        av_log(c->graph, AV_LOG_DEBUG, "Detected %d logical cores.\n", nb_cpus);
         // use number of cores + 1 as thread count if there is more than one
         if (nb_cpus > 1)
             nb_threads = nb_cpus + 1;
@@ -157,7 +168,7 @@ static int thread_init_internal(ThreadContext *c, int nb_threads)
         return 1;
 
     c->nb_threads = nb_threads;
-    c->workers = av_mallocz_array(sizeof(*c->workers), nb_threads);
+    c->workers = av_mallocz(sizeof(*c->workers) * nb_threads);
     if (!c->workers)
         return AVERROR(ENOMEM);
 

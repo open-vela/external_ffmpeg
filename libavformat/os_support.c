@@ -3,25 +3,24 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * copyright (c) 2002 Francois Revol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /* needed by inet_aton() */
-#define _DEFAULT_SOURCE
 #define _SVID_SOURCE
 
 #include "config.h"
@@ -74,16 +73,6 @@ int ff_getaddrinfo(const char *node, const char *service,
     struct hostent *h = NULL;
     struct addrinfo *ai;
     struct sockaddr_in *sin;
-
-#if HAVE_WINSOCK2_H
-    int (WSAAPI *win_getaddrinfo)(const char *node, const char *service,
-                                  const struct addrinfo *hints,
-                                  struct addrinfo **res);
-    HMODULE ws2mod = GetModuleHandle("ws2_32.dll");
-    win_getaddrinfo = GetProcAddress(ws2mod, "getaddrinfo");
-    if (win_getaddrinfo)
-        return win_getaddrinfo(node, service, hints, res);
-#endif /* HAVE_WINSOCK2_H */
 
     *res = NULL;
     sin  = av_mallocz(sizeof(struct sockaddr_in));
@@ -148,20 +137,9 @@ int ff_getaddrinfo(const char *node, const char *service,
 
 void ff_freeaddrinfo(struct addrinfo *res)
 {
-#if HAVE_WINSOCK2_H
-    void (WSAAPI *win_freeaddrinfo)(struct addrinfo *res);
-    HMODULE ws2mod = GetModuleHandle("ws2_32.dll");
-    win_freeaddrinfo = (void (WSAAPI *)(struct addrinfo *res))
-                       GetProcAddress(ws2mod, "freeaddrinfo");
-    if (win_freeaddrinfo) {
-        win_freeaddrinfo(res);
-        return;
-    }
-#endif /* HAVE_WINSOCK2_H */
-
-    av_freep(&res->ai_canonname);
-    av_freep(&res->ai_addr);
-    av_freep(&res);
+    av_free(res->ai_canonname);
+    av_free(res->ai_addr);
+    av_free(res);
 }
 
 int ff_getnameinfo(const struct sockaddr *sa, int salen,
@@ -169,16 +147,6 @@ int ff_getnameinfo(const struct sockaddr *sa, int salen,
                    char *serv, int servlen, int flags)
 {
     const struct sockaddr_in *sin = (const struct sockaddr_in *)sa;
-
-#if HAVE_WINSOCK2_H
-    int (WSAAPI *win_getnameinfo)(const struct sockaddr *sa, socklen_t salen,
-                                  char *host, DWORD hostlen,
-                                  char *serv, DWORD servlen, int flags);
-    HMODULE ws2mod = GetModuleHandle("ws2_32.dll");
-    win_getnameinfo = GetProcAddress(ws2mod, "getnameinfo");
-    if (win_getnameinfo)
-        return win_getnameinfo(sa, salen, host, hostlen, serv, servlen, flags);
-#endif /* HAVE_WINSOCK2_H */
 
     if (sa->sa_family != AF_INET)
         return EAI_FAMILY;
