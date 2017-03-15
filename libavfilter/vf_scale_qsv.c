@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -153,8 +153,10 @@ static int qsvscale_query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_QSV, AV_PIX_FMT_NONE,
     };
     AVFilterFormats *pix_fmts  = ff_make_format_list(pixel_formats);
+    int ret;
 
-    ff_set_common_formats(ctx, pix_fmts);
+    if ((ret = ff_set_common_formats(ctx, pix_fmts)) < 0)
+        return ret;
 
     return 0;
 }
@@ -528,11 +530,15 @@ static int qsvscale_filter_frame(AVFilterLink *link, AVFrame *in)
     AVFrame *out = NULL;
     int ret = 0;
 
-    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    out = av_frame_alloc();
     if (!out) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
+
+    ret = av_hwframe_get_buffer(s->out_frames_ref, out, 0);
+    if (ret < 0)
+        goto fail;
 
     do {
         err = MFXVideoVPP_RunFrameVPPAsync(s->session,
@@ -626,6 +632,4 @@ AVFilter ff_vf_scale_qsv = {
 
     .inputs    = qsvscale_inputs,
     .outputs   = qsvscale_outputs,
-
-    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
