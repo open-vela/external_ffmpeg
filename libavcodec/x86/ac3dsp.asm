@@ -2,20 +2,20 @@
 ;* x86-optimized AC-3 DSP functions
 ;* Copyright (c) 2011 Justin Ruggles
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -32,7 +32,7 @@ pw_bap_mul1: dw 21846, 21846, 0, 32768, 21846, 21846, 0, 32768
 pw_bap_mul2: dw 5, 7, 0, 7, 5, 7, 0, 7
 
 ; used in ff_ac3_extract_exponents()
-pd_1:   times 4 dd 1
+cextern pd_1
 pd_151: times 4 dd 151
 
 ; used in ff_apply_window_int16()
