@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,6 +66,8 @@ typedef struct HWContextType {
 
     int              (*device_create)(AVHWDeviceContext *ctx, const char *device,
                                       AVDictionary *opts, int flags);
+    int              (*device_derive)(AVHWDeviceContext *dst_ctx,
+                                      AVHWDeviceContext *src_ctx, int flags);
 
     int              (*device_init)(AVHWDeviceContext *ctx);
     void             (*device_uninit)(AVHWDeviceContext *ctx);
@@ -85,11 +87,22 @@ typedef struct HWContextType {
                                          const AVFrame *src);
     int              (*transfer_data_from)(AVHWFramesContext *ctx, AVFrame *dst,
                                            const AVFrame *src);
+
+    int              (*map_to)(AVHWFramesContext *ctx, AVFrame *dst,
+                               const AVFrame *src, int flags);
+    int              (*map_from)(AVHWFramesContext *ctx, AVFrame *dst,
+                                 const AVFrame *src, int flags);
 } HWContextType;
 
 struct AVHWDeviceInternal {
     const HWContextType *hw_type;
     void                *priv;
+
+    /**
+     * For a derived device, a reference to the original device
+     * context it was derived from.
+     */
+    AVBufferRef *source_device;
 };
 
 struct AVHWFramesInternal {
@@ -97,7 +110,42 @@ struct AVHWFramesInternal {
     void                *priv;
 
     AVBufferPool *pool_internal;
+
+    /**
+     * For a derived context, a reference to the original frames
+     * context it was derived from.
+     */
+    AVBufferRef *source_frames;
 };
+
+typedef struct HWMapDescriptor {
+    /**
+     * A reference to the original source of the mapping.
+     */
+    AVFrame *source;
+    /**
+     * A reference to the hardware frames context in which this
+     * mapping was made.  May be the same as source->hw_frames_ctx,
+     * but need not be.
+     */
+    AVBufferRef *hw_frames_ctx;
+    /**
+     * Unmap function.
+     */
+    void (*unmap)(AVHWFramesContext *ctx,
+                  struct HWMapDescriptor *hwmap);
+    /**
+     * Hardware-specific private data associated with the mapping.
+     */
+    void          *priv;
+} HWMapDescriptor;
+
+int ff_hwframe_map_create(AVBufferRef *hwframe_ref,
+                          AVFrame *dst, const AVFrame *src,
+                          void (*unmap)(AVHWFramesContext *ctx,
+                                        HWMapDescriptor *hwmap),
+                          void *priv);
+
 
 extern const HWContextType ff_hwcontext_type_cuda;
 extern const HWContextType ff_hwcontext_type_dxva2;
