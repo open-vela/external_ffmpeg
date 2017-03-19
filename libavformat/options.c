@@ -1,25 +1,26 @@
 /*
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "avformat.h"
 #include "avio_internal.h"
 #include "internal.h"
+#include "url.h"
 
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
@@ -81,13 +82,6 @@ static const AVClass *format_child_class_next(const AVClass *prev)
     return NULL;
 }
 
-static AVClassCategory get_category(void *ptr)
-{
-    AVFormatContext* s = ptr;
-    if(s->iformat) return AV_CLASS_CATEGORY_DEMUXER;
-    else           return AV_CLASS_CATEGORY_MUXER;
-}
-
 static const AVClass av_format_context_class = {
     .class_name     = "AVFormatContext",
     .item_name      = format_to_name,
@@ -95,33 +89,31 @@ static const AVClass av_format_context_class = {
     .version        = LIBAVUTIL_VERSION_INT,
     .child_next     = format_child_next,
     .child_class_next = format_child_class_next,
-    .category       = AV_CLASS_CATEGORY_MUXER,
-    .get_category   = get_category,
 };
 
 static int io_open_default(AVFormatContext *s, AVIOContext **pb,
                            const char *url, int flags, AVDictionary **options)
 {
-    int loglevel;
+    AVDictionary *opts_local = NULL;
+    int ret;
 
-    if (!strcmp(url, s->url) ||
-        s->iformat && !strcmp(s->iformat->name, "image2") ||
-        s->oformat && !strcmp(s->oformat->name, "image2")
-    ) {
-        loglevel = AV_LOG_DEBUG;
-    } else
-        loglevel = AV_LOG_INFO;
+    if (!options)
+        options = &opts_local;
 
-    av_log(s, loglevel, "Opening \'%s\' for %s\n", url, flags & AVIO_FLAG_WRITE ? "writing" : "reading");
-
-#if FF_API_OLD_OPEN_CALLBACKS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (s->open_cb)
-        return s->open_cb(s, pb, url, flags, &s->interrupt_callback, options);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
-    return ffio_open_whitelist(pb, url, flags, &s->interrupt_callback, options, s->protocol_whitelist, s->protocol_blacklist);
+    if (s->protocol_whitelist) {
+        ret = av_dict_set(options, "protocol_whitelist", s->protocol_whitelist, 0);
+        if (ret < 0)
+            goto finish;
+    }
+    if (s->protocol_blacklist) {
+        ret = av_dict_set(options, "protocol_blacklist", s->protocol_blacklist, 0);
+        if (ret < 0)
+            goto finish;
+    }
+    ret = avio_open2(pb, url, flags, &s->interrupt_callback, options);
+finish:
+    av_dict_free(&opts_local);
+    return ret;
 }
 
 static void io_close_default(AVFormatContext *s, AVIOContext *pb)
@@ -154,15 +146,8 @@ AVFormatContext *avformat_alloc_context(void)
         return NULL;
     }
     ic->internal->offset = AV_NOPTS_VALUE;
-    ic->internal->raw_packet_buffer_remaining_size = RAW_PACKET_BUFFER_SIZE;
-    ic->internal->shortest_end = AV_NOPTS_VALUE;
 
     return ic;
-}
-
-enum AVDurationEstimationMethod av_fmt_ctx_get_duration_estimation_method(const AVFormatContext* ctx)
-{
-    return ctx->duration_estimation_method;
 }
 
 const AVClass *avformat_get_class(void)

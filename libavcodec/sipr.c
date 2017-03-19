@@ -4,20 +4,20 @@
  * Copyright (c) 2008 Vladimir Voroshilov
  * Copyright (c) 2009 Vitor Sessak
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,7 @@
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 #include "lsp.h"
 #include "acelp_vectors.h"
@@ -188,28 +188,28 @@ static void pitch_sharpening(int pitch_lag_int, float beta,
 /**
  * Extract decoding parameters from the input bitstream.
  * @param parms          parameters structure
- * @param pgb            pointer to initialized GetBitContext structure
+ * @param bc             pointer to initialized BitstreamContext structure
  */
-static void decode_parameters(SiprParameters* parms, GetBitContext *pgb,
+static void decode_parameters(SiprParameters* parms, BitstreamContext *bc,
                               const SiprModeParam *p)
 {
     int i, j;
 
     if (p->ma_predictor_bits)
-        parms->ma_pred_switch       = get_bits(pgb, p->ma_predictor_bits);
+        parms->ma_pred_switch = bitstream_read(bc, p->ma_predictor_bits);
 
     for (i = 0; i < 5; i++)
-        parms->vq_indexes[i]        = get_bits(pgb, p->vq_indexes_bits[i]);
+        parms->vq_indexes[i] = bitstream_read(bc, p->vq_indexes_bits[i]);
 
     for (i = 0; i < p->subframe_count; i++) {
-        parms->pitch_delay[i]       = get_bits(pgb, p->pitch_delay_bits[i]);
+        parms->pitch_delay[i] = bitstream_read(bc, p->pitch_delay_bits[i]);
         if (p->gp_index_bits)
-            parms->gp_index[i]      = get_bits(pgb, p->gp_index_bits);
+            parms->gp_index[i] = bitstream_read(bc, p->gp_index_bits);
 
         for (j = 0; j < p->number_of_fc_indexes; j++)
-            parms->fc_indexes[i][j] = get_bits(pgb, p->fc_index_bits[j]);
+            parms->fc_indexes[i][j] = bitstream_read(bc, p->fc_index_bits[j]);
 
-        parms->gc_index[i]          = get_bits(pgb, p->gc_index_bits);
+        parms->gc_index[i] = bitstream_read(bc, p->gc_index_bits);
     }
 }
 
@@ -493,7 +493,7 @@ static av_cold int sipr_decoder_init(AVCodecContext * avctx)
         else if (avctx->bit_rate > 5750 ) ctx->mode = MODE_6k5;
         else                              ctx->mode = MODE_5k0;
         av_log(avctx, AV_LOG_WARNING,
-               "Invalid block_align: %d. Mode %s guessed based on bitrate: %"PRId64"\n",
+               "Invalid block_align: %d. Mode %s guessed based on bitrate: %d\n",
                avctx->block_align, modes[ctx->mode].mode_name, avctx->bit_rate);
     }
 
@@ -527,7 +527,7 @@ static int sipr_decode_frame(AVCodecContext *avctx, void *data,
     const uint8_t *buf=avpkt->data;
     SiprParameters parm;
     const SiprModeParam *mode_par = &modes[ctx->mode];
-    GetBitContext gb;
+    BitstreamContext bc;
     float *samples;
     int subframe_size = ctx->mode == MODE_16k ? L_SUBFR_16k : SUBFR_SIZE;
     int i, ret;
@@ -537,20 +537,22 @@ static int sipr_decode_frame(AVCodecContext *avctx, void *data,
         av_log(avctx, AV_LOG_ERROR,
                "Error processing packet: packet size (%d) too small\n",
                avpkt->size);
-        return AVERROR_INVALIDDATA;
+        return -1;
     }
 
     /* get output buffer */
     frame->nb_samples = mode_par->frames_per_packet * subframe_size *
                         mode_par->subframe_count;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     samples = (float *)frame->data[0];
 
-    init_get_bits(&gb, buf, mode_par->bits_per_frame);
+    bitstream_init(&bc, buf, mode_par->bits_per_frame);
 
     for (i = 0; i < mode_par->frames_per_packet; i++) {
-        decode_parameters(&parm, &gb, mode_par);
+        decode_parameters(&parm, &bc, mode_par);
 
         ctx->decode_frame(ctx, &parm, samples);
 
