@@ -1,20 +1,20 @@
 /*
  * Mpeg video formats-related defines and utility functions
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,6 +48,7 @@
 #define MAX_FCODE        7
 
 /* MB types */
+#if !FF_API_MB_TYPE
 #define MB_TYPE_INTRA4x4   (1 <<  0)
 #define MB_TYPE_INTRA16x16 (1 <<  1) // FIXME H.264-specific
 #define MB_TYPE_INTRA_PCM  (1 <<  2) // FIXME H.264-specific
@@ -69,6 +70,7 @@
 #define MB_TYPE_L0L1       (MB_TYPE_L0   | MB_TYPE_L1)
 #define MB_TYPE_QUANT      (1 << 16)
 #define MB_TYPE_CBP        (1 << 17)
+#endif
 
 #define MB_TYPE_INTRA    MB_TYPE_INTRA4x4 // default mb_type if there is just one type
 
