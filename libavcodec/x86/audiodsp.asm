@@ -2,20 +2,20 @@
 ;* optimized audio functions
 ;* Copyright (c) 2008 Loren Merritt
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -40,15 +40,11 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
     paddd   m2, m1
     add     orderq, mmsize*2
     jl .loop
-%if mmsize == 16
-    movhlps m0, m2
-    paddd   m2, m0
-    pshuflw m0, m2, 0x4e
-%else
-    pshufw  m0, m2, 0x4e
-%endif
-    paddd   m2, m0
+    HADDD   m2, m0
     movd   eax, m2
+%if mmsize == 8
+    emms
+%endif
     RET
 %endmacro
 
@@ -66,7 +62,7 @@ SCALARPRODUCT
 ; %1 = number of xmm registers used
 ; %2 = number of inline load/process/store loops per asm loop
 ; %3 = process 4*mmsize (%3=0) or 8*mmsize (%3=1) bytes per loop
-; %4 = CLIPD function takes min/max as float instead of int (SSE2 version)
+; %4 = CLIPD function takes min/max as float instead of int (CLIPD_SSE2)
 ; %5 = suffix
 %macro VECTOR_CLIP_INT32 4-5
 cglobal vector_clip_int32%5, 5,5,%1, dst, src, min, max, len
@@ -122,11 +118,14 @@ cglobal vector_clip_int32%5, 5,5,%1, dst, src, min, max, len
 %endmacro
 
 INIT_MMX mmx
+%define CLIPD CLIPD_MMX
 VECTOR_CLIP_INT32 0, 1, 0, 0
 INIT_XMM sse2
 VECTOR_CLIP_INT32 6, 1, 0, 0, _int
+%define CLIPD CLIPD_SSE2
 VECTOR_CLIP_INT32 6, 2, 0, 1
 INIT_XMM sse4
+%define CLIPD CLIPD_SSE41
 %ifdef m8
 VECTOR_CLIP_INT32 11, 1, 1, 0
 %else
@@ -141,7 +140,8 @@ cglobal vector_clipf, 3, 3, 6, dst, src, len, min, max
     VBROADCASTSS m0, minm
     VBROADCASTSS m1, maxm
 %elif WIN64
-    VBROADCASTSS m0, m3
+    SWAP 0, 3
+    VBROADCASTSS m0, m0
     VBROADCASTSS m1, maxm
 %else ; 64bit sysv
     VBROADCASTSS m0, m0
@@ -150,7 +150,7 @@ cglobal vector_clipf, 3, 3, 6, dst, src, len, min, max
 
     movsxdifnidn lenq, lend
 
-.loop:
+.loop
     mova m2, [srcq + 4 * lenq - 4 * mmsize]
     mova m3, [srcq + 4 * lenq - 3 * mmsize]
     mova m4, [srcq + 4 * lenq - 2 * mmsize]
