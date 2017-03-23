@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2010 Justin Ruggles <justin.ruggles@gmail.com>
  * Copyright (c) 2006-2010 Prakash Punnoor <prakash@punnoor.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,12 +36,44 @@
 
 #define AC3ENC_TYPE AC3ENC_TYPE_AC3
 #include "ac3enc_opts_template.c"
-static const AVClass ac3enc_class = {
-    .class_name = "AC-3 Encoder",
-    .item_name  = av_default_item_name,
-    .option     = ac3_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+static const AVClass ac3enc_class = { "AC-3 Encoder", av_default_item_name,
+                                      ac3_options, LIBAVUTIL_VERSION_INT };
+
+
+/*
+ * Scale MDCT coefficients from float to 24-bit fixed-point.
+ */
+static void scale_coefficients(AC3EncodeContext *s)
+{
+    int chan_size = AC3_MAX_COEFS * s->num_blocks;
+    int cpl       = s->cpl_on;
+    s->ac3dsp.float_to_fixed24(s->fixed_coef_buffer + (chan_size * !cpl),
+                               s->mdct_coef_buffer  + (chan_size * !cpl),
+                               chan_size * (s->channels + cpl));
+}
+
+
+/*
+ * Clip MDCT coefficients to allowable range.
+ */
+static void clip_coefficients(AudioDSPContext *adsp, float *coef,
+                              unsigned int len)
+{
+    adsp->vector_clipf(coef, coef, len, COEF_MIN, COEF_MAX);
+}
+
+
+/*
+ * Calculate a single coupling coordinate.
+ */
+static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl)
+{
+    float coord = 0.125;
+    if (energy_cpl > 0)
+        coord *= sqrtf(energy_ch / energy_cpl);
+    return FFMIN(coord, COEF_MAX);
+}
+
 
 #include "ac3enc_template.c"
 
@@ -72,7 +104,7 @@ av_cold int ff_ac3_float_mdct_init(AC3EncodeContext *s)
     n  = 1 << 9;
     n2 = n >> 1;
 
-    window = av_malloc_array(n, sizeof(*window));
+    window = av_malloc(n * sizeof(*window));
     if (!window) {
         av_log(s->avctx, AV_LOG_ERROR, "Cannot allocate memory.\n");
         return AVERROR(ENOMEM);
@@ -86,62 +118,10 @@ av_cold int ff_ac3_float_mdct_init(AC3EncodeContext *s)
 }
 
 
-/*
- * Normalize the input samples.
- * Not needed for the floating-point encoder.
- */
-static int normalize_samples(AC3EncodeContext *s)
-{
-    return 0;
-}
-
-
-/*
- * Scale MDCT coefficients from float to 24-bit fixed-point.
- */
-static void scale_coefficients(AC3EncodeContext *s)
-{
-    int chan_size = AC3_MAX_COEFS * s->num_blocks;
-    int cpl       = s->cpl_on;
-    s->ac3dsp.float_to_fixed24(s->fixed_coef_buffer + (chan_size * !cpl),
-                               s->mdct_coef_buffer  + (chan_size * !cpl),
-                               chan_size * (s->channels + cpl));
-}
-
-static void sum_square_butterfly(AC3EncodeContext *s, float sum[4],
-                                 const float *coef0, const float *coef1,
-                                 int len)
-{
-    s->ac3dsp.sum_square_butterfly_float(sum, coef0, coef1, len);
-}
-
-/*
- * Clip MDCT coefficients to allowable range.
- */
-static void clip_coefficients(AudioDSPContext *adsp, float *coef,
-                              unsigned int len)
-{
-    adsp->vector_clipf(coef, coef, len, COEF_MIN, COEF_MAX);
-}
-
-
-/*
- * Calculate a single coupling coordinate.
- */
-static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl)
-{
-    float coord = 0.125;
-    if (energy_cpl > 0)
-        coord *= sqrtf(energy_ch / energy_cpl);
-    return FFMIN(coord, COEF_MAX);
-}
-
 av_cold int ff_ac3_float_encode_init(AVCodecContext *avctx)
 {
     AC3EncodeContext *s = avctx->priv_data;
-    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
-    if (!s->fdsp)
-        return AVERROR(ENOMEM);
+    avpriv_float_dsp_init(&s->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
     return ff_ac3_encode_init(avctx);
 }
 

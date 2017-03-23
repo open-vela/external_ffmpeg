@@ -4,20 +4,20 @@
  * Copyright (C) 2013 Ronald S. Bultje <rsbultje gmail com>
  * Copyright (C) 2013 Clément Bœsch <u pkh me>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -65,10 +65,10 @@ static void find_ref_mvs(VP9Context *s,
                        { -2,  0 }, { -1, -2 }, { -2, -1 }, { -2, -2 } },
     };
     VP9Block *b = s->b;
-    int row = s->row, col = s->col, row7 = s->row7;
+    int row = b->row, col = b->col, row7 = b->row7;
     const int8_t (*p)[2] = mv_ref_blk_off[b->bs];
 #define INVALID_MV 0x80008000U
-    uint32_t mem = INVALID_MV, mem_sub8x8 = INVALID_MV;
+    uint32_t mem = INVALID_MV;
     int i;
 
 #define RETURN_DIRECT_MV(mv)                    \
@@ -94,55 +94,47 @@ static void find_ref_mvs(VP9Context *s,
             RETURN_DIRECT_MV(b->mv[0][z]);
         }
 
-#define RETURN_MV(mv)                                                  \
-    do {                                                               \
-        if (sb > 0) {                                                  \
-            VP56mv tmp;                                                \
-            uint32_t m;                                                \
-            av_assert2(idx == 1);                                      \
-            av_assert2(mem != INVALID_MV);                             \
-            if (mem_sub8x8 == INVALID_MV) {                            \
-                clamp_mv(&tmp, &mv, s);                                \
-                m = AV_RN32A(&tmp);                                    \
-                if (m != mem) {                                        \
-                    AV_WN32A(pmv, m);                                  \
-                    return;                                            \
-                }                                                      \
-                mem_sub8x8 = AV_RN32A(&mv);                            \
-            } else if (mem_sub8x8 != AV_RN32A(&mv)) {                  \
-                clamp_mv(&tmp, &mv, s);                                \
-                m = AV_RN32A(&tmp);                                    \
-                if (m != mem) {                                        \
-                    AV_WN32A(pmv, m);                                  \
-                } else {                                               \
-                    /* BUG I'm pretty sure this isn't the intention */ \
-                    AV_WN32A(pmv, 0);                                  \
-                }                                                      \
-                return;                                                \
-            }                                                          \
-        } else {                                                       \
-            uint32_t m = AV_RN32A(&mv);                                \
-            if (!idx) {                                                \
-                clamp_mv(pmv, &mv, s);                                 \
-                return;                                                \
-            } else if (mem == INVALID_MV) {                            \
-                mem = m;                                               \
-            } else if (m != mem) {                                     \
-                clamp_mv(pmv, &mv, s);                                 \
-                return;                                                \
-            }                                                          \
-        }                                                              \
+#define RETURN_MV(mv)                           \
+    do {                                        \
+        if (sb > 0) {                           \
+            VP56mv tmp;                         \
+            uint32_t m;                         \
+            clamp_mv(&tmp, &mv, s);             \
+            m = AV_RN32A(&tmp);                 \
+            if (!idx) {                         \
+                AV_WN32A(pmv, m);               \
+                return;                         \
+            } else if (mem == INVALID_MV) {     \
+                mem = m;                        \
+            } else if (m != mem) {              \
+                AV_WN32A(pmv, m);               \
+                return;                         \
+            }                                   \
+        } else {                                \
+            uint32_t m = AV_RN32A(&mv);         \
+            if (!idx) {                         \
+                clamp_mv(pmv, &mv, s);          \
+                return;                         \
+            } else if (mem == INVALID_MV) {     \
+                mem = m;                        \
+            } else if (m != mem) {              \
+                clamp_mv(pmv, &mv, s);          \
+                return;                         \
+            }                                   \
+        }                                       \
     } while (0)
 
         if (row > 0) {
-            VP9mvrefPair *mv = &s->s.frames[CUR_FRAME].mv[(row - 1) * s->sb_cols * 8 + col];
+            VP9MVRefPair *mv = &s->frames[CUR_FRAME].mv[(row - 1) * s->sb_cols * 8 + col];
+
             if (mv->ref[0] == ref)
                 RETURN_MV(s->above_mv_ctx[2 * col + (sb & 1)][0]);
             else if (mv->ref[1] == ref)
                 RETURN_MV(s->above_mv_ctx[2 * col + (sb & 1)][1]);
         }
-        if (col > s->tile_col_start) {
-            VP9mvrefPair *mv = &s->s.frames[CUR_FRAME].mv[row * s->sb_cols * 8 + col - 1];
+        if (col > s->tiling.tile_col_start) {
+            VP9MVRefPair *mv = &s->frames[CUR_FRAME].mv[row * s->sb_cols * 8 + col - 1];
+
             if (mv->ref[0] == ref)
                 RETURN_MV(s->left_mv_ctx[2 * row7 + (sb >> 1)][0]);
             else if (mv->ref[1] == ref)
@@ -153,13 +145,13 @@ static void find_ref_mvs(VP9Context *s,
         i = 0;
     }
 
-    // previously coded MVs in this neighborhood, using same reference frame
+    // previously coded MVs in the neighborhood, using same reference frame
     for (; i < 8; i++) {
         int c = p[i][0] + col, r = p[i][1] + row;
 
-        if (c >= s->tile_col_start && c < s->cols &&
+        if (c >= s->tiling.tile_col_start && c < s->cols &&
             r >= 0 && r < s->rows) {
-            VP9mvrefPair *mv = &s->s.frames[CUR_FRAME].mv[r * s->sb_cols * 8 + c];
+            VP9MVRefPair *mv = &s->frames[CUR_FRAME].mv[r * s->sb_cols * 8 + c];
 
             if (mv->ref[0] == ref)
                 RETURN_MV(mv->mv[0]);
@@ -169,11 +161,12 @@ static void find_ref_mvs(VP9Context *s,
     }
 
     // MV at this position in previous frame, using same reference frame
-    if (s->s.h.use_last_frame_mvs) {
-        VP9mvrefPair *mv = &s->s.frames[REF_FRAME_MVPAIR].mv[row * s->sb_cols * 8 + col];
+    if (s->use_last_frame_mvs) {
+        VP9MVRefPair *mv = &s->frames[LAST_FRAME].mv[row * s->sb_cols * 8 + col];
 
-        if (!s->s.frames[REF_FRAME_MVPAIR].uses_2pass)
-            ff_thread_await_progress(&s->s.frames[REF_FRAME_MVPAIR].tf, row >> 3, 0);
+        if (!s->last_uses_2pass)
+            ff_thread_await_progress(&s->frames[LAST_FRAME].tf, row >> 3, 0);
+
         if (mv->ref[0] == ref)
             RETURN_MV(mv->mv[0]);
         else if (mv->ref[1] == ref)
@@ -190,42 +183,45 @@ static void find_ref_mvs(VP9Context *s,
         }                                       \
     } while (0)
 
-    // previously coded MVs in this neighborhood, using different reference frame
+    // previously coded MVs in the neighborhood, using different reference frame
     for (i = 0; i < 8; i++) {
         int c = p[i][0] + col, r = p[i][1] + row;
 
-        if (c >= s->tile_col_start && c < s->cols && r >= 0 && r < s->rows) {
-            VP9mvrefPair *mv = &s->s.frames[CUR_FRAME].mv[r * s->sb_cols * 8 + c];
+        if (c >= s->tiling.tile_col_start && c < s->cols &&
+            r >= 0 && r < s->rows) {
+            VP9MVRefPair *mv = &s->frames[CUR_FRAME].mv[r * s->sb_cols * 8 + c];
 
             if (mv->ref[0] != ref && mv->ref[0] >= 0)
                 RETURN_SCALE_MV(mv->mv[0],
-                                s->s.h.signbias[mv->ref[0]] != s->s.h.signbias[ref]);
+                                s->signbias[mv->ref[0]] != s->signbias[ref]);
             if (mv->ref[1] != ref && mv->ref[1] >= 0 &&
                 // BUG - libvpx has this condition regardless of whether
                 // we used the first ref MV and pre-scaling
                 AV_RN32A(&mv->mv[0]) != AV_RN32A(&mv->mv[1])) {
-                RETURN_SCALE_MV(mv->mv[1], s->s.h.signbias[mv->ref[1]] != s->s.h.signbias[ref]);
+                RETURN_SCALE_MV(mv->mv[1],
+                                s->signbias[mv->ref[1]] != s->signbias[ref]);
             }
         }
     }
 
     // MV at this position in previous frame, using different reference frame
-    if (s->s.h.use_last_frame_mvs) {
-        VP9mvrefPair *mv = &s->s.frames[REF_FRAME_MVPAIR].mv[row * s->sb_cols * 8 + col];
+    if (s->use_last_frame_mvs) {
+        VP9MVRefPair *mv = &s->frames[LAST_FRAME].mv[row * s->sb_cols * 8 + col];
 
         // no need to await_progress, because we already did that above
         if (mv->ref[0] != ref && mv->ref[0] >= 0)
-            RETURN_SCALE_MV(mv->mv[0], s->s.h.signbias[mv->ref[0]] != s->s.h.signbias[ref]);
+            RETURN_SCALE_MV(mv->mv[0],
+                            s->signbias[mv->ref[0]] != s->signbias[ref]);
         if (mv->ref[1] != ref && mv->ref[1] >= 0 &&
             // BUG - libvpx has this condition regardless of whether
             // we used the first ref MV and pre-scaling
             AV_RN32A(&mv->mv[0]) != AV_RN32A(&mv->mv[1])) {
-            RETURN_SCALE_MV(mv->mv[1], s->s.h.signbias[mv->ref[1]] != s->s.h.signbias[ref]);
+            RETURN_SCALE_MV(mv->mv[1],
+                            s->signbias[mv->ref[1]] != s->signbias[ref]);
         }
     }
 
     AV_ZERO32(pmv);
-    clamp_mv(pmv, pmv, s);
 #undef INVALID_MV
 #undef RETURN_MV
 #undef RETURN_SCALE_MV
@@ -244,7 +240,7 @@ static av_always_inline int read_mv_component(VP9Context *s, int idx, int hp)
 
         for (n = 0, m = 0; m < c; m++) {
             bit = vp56_rac_get_prob(&s->c, s->prob.p.mv_comp[idx].bits[m]);
-            n |= bit << m;
+            n  |= bit << m;
             s->counts.mv_comp[idx].bits[m][bit]++;
         }
         n <<= 3;
@@ -290,7 +286,7 @@ void ff_vp9_fill_mv(VP9Context *s, VP56mv *mv, int mode, int sb)
     VP9Block *b = s->b;
 
     if (mode == ZEROMV) {
-        AV_ZERO64(mv);
+        memset(mv, 0, sizeof(*mv) * 2);
     } else {
         int hp;
 
@@ -299,7 +295,7 @@ void ff_vp9_fill_mv(VP9Context *s, VP56mv *mv, int mode, int sb)
                      mode == NEWMV ? -1 : sb);
         // FIXME maybe move this code into find_ref_mvs()
         if ((mode == NEWMV || sb == -1) &&
-            !(hp = s->s.h.highprecisionmvs &&
+            !(hp = s->highprecisionmvs &&
               abs(mv[0].x) < 64 && abs(mv[0].y) < 64)) {
             if (mv[0].y & 1) {
                 if (mv[0].y < 0)
@@ -330,7 +326,7 @@ void ff_vp9_fill_mv(VP9Context *s, VP56mv *mv, int mode, int sb)
             find_ref_mvs(s, &mv[1], b->ref[1], 1, mode == NEARMV,
                          mode == NEWMV ? -1 : sb);
             if ((mode == NEWMV || sb == -1) &&
-                !(hp = s->s.h.highprecisionmvs &&
+                !(hp = s->highprecisionmvs &&
                   abs(mv[1].x) < 64 && abs(mv[1].y) < 64)) {
                 if (mv[1].y & 1) {
                     if (mv[1].y < 0)
