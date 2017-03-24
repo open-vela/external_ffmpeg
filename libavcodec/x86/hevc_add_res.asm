@@ -2,49 +2,51 @@
 ; * Provide SIMD optimizations for add_residual functions for HEVC decoding
 ; * Copyright (c) 2014 Pierre-Edouard LEPERE
 ; *
-; * This file is part of Libav.
+; * This file is part of FFmpeg.
 ; *
-; * Libav is free software; you can redistribute it and/or
+; * FFmpeg is free software; you can redistribute it and/or
 ; * modify it under the terms of the GNU Lesser General Public
 ; * License as published by the Free Software Foundation; either
 ; * version 2.1 of the License, or (at your option) any later version.
 ; *
-; * Libav is distributed in the hope that it will be useful,
+; * FFmpeg is distributed in the hope that it will be useful,
 ; * but WITHOUT ANY WARRANTY; without even the implied warranty of
 ; * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ; * Lesser General Public License for more details.
 ; *
 ; * You should have received a copy of the GNU Lesser General Public
-; * License along with Libav; if not, write to the Free Software
+; * License along with FFmpeg; if not, write to the Free Software
 ; * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ; ******************************************************************************
 
 %include "libavutil/x86/x86util.asm"
 
-SECTION_RODATA 32
-max_pixels_10:          times 16  dw ((1 << 10)-1)
-
 SECTION .text
+
+cextern pw_1023
+%define max_pixels_10 pw_1023
 
 ; the add_res macros and functions were largely inspired by h264_idct.asm from the x264 project
 %macro ADD_RES_MMX_4_8 0
-    mova              m0, [r1]
-    mova              m2, [r1+8]
-    pxor              m1, m1
+    mova              m2, [r1]
+    mova              m4, [r1+8]
     pxor              m3, m3
-    psubw             m1, m0
     psubw             m3, m2
-    packuswb          m0, m2
-    packuswb          m1, m3
+    packuswb          m2, m2
+    packuswb          m3, m3
+    pxor              m5, m5
+    psubw             m5, m4
+    packuswb          m4, m4
+    packuswb          m5, m5
 
-    movd              m2, [r0]
-    movd              m3, [r0+r2]
-    punpckldq         m2, m3
+    movh              m0, [r0]
+    movh              m1, [r0+r2]
     paddusb           m0, m2
-    psubusb           m0, m1
-    movd            [r0], m0
-    psrlq             m0, 32
-    movd         [r0+r2], m0
+    paddusb           m1, m4
+    psubusb           m0, m3
+    psubusb           m1, m5
+    movh            [r0], m0
+    movh         [r0+r2], m1
 %endmacro
 
 
@@ -93,8 +95,15 @@ cglobal hevc_add_residual_4_8, 3, 3, 6
     vinserti128       m2, m2, [r1+%1+32], 1
     vinserti128       m6, m6, [r1+%1+48], 1
 %endif
+%if cpuflag(avx)
     psubw             m1, m0, m2
     psubw             m5, m0, m6
+%else
+    mova              m1, m0
+    mova              m5, m0
+    psubw             m1, m2
+    psubw             m5, m6
+%endif
     packuswb          m2, m6
     packuswb          m1, m5
 
@@ -104,8 +113,15 @@ cglobal hevc_add_residual_4_8, 3, 3, 6
     vinserti128       m4, m4, [r1+%1+96 ], 1
     vinserti128       m6, m6, [r1+%1+112], 1
 %endif
+%if cpuflag(avx)
     psubw             m3, m0, m4
     psubw             m5, m0, m6
+%else
+    mova              m3, m0
+    mova              m5, m0
+    psubw             m3, m4
+    psubw             m5, m6
+%endif
     packuswb          m4, m6
     packuswb          m3, m5
 
@@ -176,7 +192,7 @@ cglobal hevc_add_residual_32_8, 3, 5, 7
     dec                 r4d
     jg .loop
     RET
-%endif ;HAVE_AVX2_EXTERNAL
+%endif
 
 %macro ADD_RES_SSE_8_10 4
     mova              m0, [%4]

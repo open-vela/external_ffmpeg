@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,22 +67,19 @@ static int run_test(int cbc, int decrypt)
     }
 }
 
-union word_byte {
-    uint64_t word;
-    uint8_t byte[8];
-};
-
 int main(void)
 {
     AVDES d;
     int i;
-    union word_byte key[3], data, ct;
+    uint64_t key[3];
+    uint64_t data;
+    uint64_t ct;
     uint64_t roundkeys[16];
     srand(av_gettime());
-    key[0].word = AV_RB64(test_key);
-    data.word   = AV_RB64(plain);
-    gen_roundkeys(roundkeys, key[0].word);
-    if (des_encdec(data.word, roundkeys, 0) != AV_RB64(crypt)) {
+    key[0] = AV_RB64(test_key);
+    data   = AV_RB64(plain);
+    gen_roundkeys(roundkeys, key[0]);
+    if (des_encdec(data, roundkeys, 0) != AV_RB64(crypt)) {
         printf("Test 1 failed\n");
         return 1;
     }
@@ -97,15 +94,15 @@ int main(void)
         return 1;
     }
     for (i = 0; i < 1000; i++) {
-        key[0].word = rand64();
-        key[1].word = rand64();
-        key[2].word = rand64();
-        data.word   = rand64();
-        av_des_init(&d, key[0].byte, 192, 0);
-        av_des_crypt(&d, ct.byte, data.byte, 1, NULL, 0);
-        av_des_init(&d, key[0].byte, 192, 1);
-        av_des_crypt(&d, ct.byte, ct.byte, 1, NULL, 1);
-        if (ct.word != data.word) {
+        key[0] = rand64();
+        key[1] = rand64();
+        key[2] = rand64();
+        data   = rand64();
+        av_des_init(&d, (uint8_t *) key, 192, 0);
+        av_des_crypt(&d, (uint8_t *) &ct, (uint8_t *) &data, 1, NULL, 0);
+        av_des_init(&d, (uint8_t *) key, 192, 1);
+        av_des_crypt(&d, (uint8_t *) &ct, (uint8_t *) &ct, 1, NULL, 1);
+        if (ct != data) {
             printf("Test 2 failed\n");
             return 1;
         }

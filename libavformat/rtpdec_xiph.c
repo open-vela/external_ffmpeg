@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Colin McQuillian
  * Copyright (c) 2010 Josh Allmann
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,13 +28,13 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavcodec/bytestream.h"
 
-#include <assert.h>
-
 #include "avio_internal.h"
+#include "internal.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
 
@@ -53,7 +53,7 @@ struct PayloadContext {
 static void xiph_close_context(PayloadContext * data)
 {
     ffio_free_dyn_buf(&data->fragment);
-    av_free(data->split_buf);
+    av_freep(&data->split_buf);
 }
 
 
@@ -73,7 +73,7 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         }
         pkt_len = AV_RB16(data->split_buf + data->split_pos);
         data->split_pos += 2;
-        if (data->split_pos + pkt_len > data->split_buf_len) {
+        if (pkt_len > data->split_buf_len - data->split_pos) {
             av_log(ctx, AV_LOG_ERROR, "Not enough data to return\n");
             return AVERROR_INVALIDDATA;
         }
@@ -88,7 +88,7 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         return data->split_pkts > 0;
     }
 
-    if (len < 6) {
+    if (len < 6 || len > INT_MAX/2) {
         av_log(ctx, AV_LOG_ERROR, "Invalid %d byte packet\n", len);
         return AVERROR_INVALIDDATA;
     }
@@ -108,14 +108,15 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
     }
 
     if (ident != data->ident) {
-        avpriv_report_missing_feature(ctx, "Xiph SDP configuration change");
+        av_log(ctx, AV_LOG_ERROR,
+               "Unimplemented Xiph SDP configuration change detected\n");
         return AVERROR_PATCHWELCOME;
     }
 
     if (tdt) {
-        avpriv_report_missing_feature(ctx,
-                                      "RTP Xiph packet settings (%d,%d,%d)",
-                                      fragmented, tdt, num_pkts);
+        av_log(ctx, AV_LOG_ERROR,
+               "Unimplemented RTP Xiph packet settings (%d,%d,%d)\n",
+               fragmented, tdt, num_pkts);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -167,7 +168,7 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         data->timestamp = *timestamp;
 
     } else {
-        assert(fragmented < 4);
+        av_assert1(fragmented < 4);
         if (data->timestamp != *timestamp) {
             // skip if fragmented timestamp is incorrect;
             // a start packet has been lost somewhere
@@ -232,7 +233,7 @@ parse_packed_headers(AVFormatContext *s,
 
     if (packed_headers_end - packed_headers < 9) {
         av_log(s, AV_LOG_ERROR,
-               "Invalid %td byte packed header.",
+               "Invalid %"PTRDIFF_SPECIFIER" byte packed header.",
                packed_headers_end - packed_headers);
         return AVERROR_INVALIDDATA;
     }
@@ -245,15 +246,16 @@ parse_packed_headers(AVFormatContext *s,
     length2            = get_base128(&packed_headers, packed_headers_end);
 
     if (num_packed != 1 || num_headers > 3) {
-        avpriv_report_missing_feature(s, "%u packed headers, %u headers",
-                                      num_packed, num_headers);
+        av_log(s, AV_LOG_ERROR,
+               "Unimplemented number of headers: %u packed headers, %u headers\n",
+               num_packed, num_headers);
         return AVERROR_PATCHWELCOME;
     }
 
     if (packed_headers_end - packed_headers != length ||
         length1 > length || length2 > length - length1) {
         av_log(s, AV_LOG_ERROR,
-               "Bad packed header lengths (%u,%u,%td,%u)\n", length1,
+               "Bad packed header lengths (%d,%d,%"PTRDIFF_SPECIFIER",%u)\n", length1,
                length2, packed_headers_end - packed_headers, length);
         return AVERROR_INVALIDDATA;
     }
@@ -264,11 +266,11 @@ parse_packed_headers(AVFormatContext *s,
      * -- AV_INPUT_BUFFER_PADDING_SIZE required */
     extradata_alloc = length + length/255 + 3 + AV_INPUT_BUFFER_PADDING_SIZE;
 
-    ptr = par->extradata = av_malloc(extradata_alloc);
-    if (!ptr) {
+    if (ff_alloc_extradata(par, extradata_alloc)) {
         av_log(s, AV_LOG_ERROR, "Out of memory\n");
         return AVERROR(ENOMEM);
     }
+    ptr = par->extradata;
     *ptr++ = 2;
     ptr += av_xiphlacing(ptr, length1);
     ptr += av_xiphlacing(ptr, length2);
