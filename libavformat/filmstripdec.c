@@ -2,20 +2,20 @@
  * Adobe Filmstrip demuxer
  * Copyright (c) 2010 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
  */
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/imgutils.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -46,7 +45,7 @@ static int read_header(AVFormatContext *s)
 
     avio_seek(pb, avio_size(pb) - 36, SEEK_SET);
     if (avio_rb32(pb) != RAND_TAG) {
-        av_log(s, AV_LOG_ERROR, "magic number not found\n");
+        av_log(s, AV_LOG_ERROR, "magic number not found");
         return AVERROR_INVALIDDATA;
     }
 
@@ -68,10 +67,6 @@ static int read_header(AVFormatContext *s)
     st->codecpar->width      = avio_rb16(pb);
     st->codecpar->height     = avio_rb16(pb);
     film->leading         = avio_rb16(pb);
-
-    if (av_image_check_size(st->codecpar->width, st->codecpar->height, 0, s) < 0)
-        return AVERROR_INVALIDDATA;
-
     avpriv_set_pts_info(st, 64, 1, avio_rb16(pb));
 
     avio_seek(pb, 0, SEEK_SET);
@@ -85,9 +80,9 @@ static int read_packet(AVFormatContext *s,
     FilmstripDemuxContext *film = s->priv_data;
     AVStream *st = s->streams[0];
 
-    if (avio_feof(s->pb))
+    if (s->pb->eof_reached)
         return AVERROR(EIO);
-    pkt->dts = avio_tell(s->pb) / (st->codecpar->width * (int64_t)(st->codecpar->height + film->leading) * 4);
+    pkt->dts = avio_tell(s->pb) / (st->codecpar->width * (st->codecpar->height + film->leading) * 4);
     pkt->size = av_get_packet(s->pb, pkt, st->codecpar->width * st->codecpar->height * 4);
     avio_skip(s->pb, st->codecpar->width * (int64_t) film->leading * 4);
     if (pkt->size < 0)
