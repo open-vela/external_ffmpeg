@@ -4,29 +4,29 @@
  * Copyright (c) 2014 Konstantin Shishkov
  * Copyright (c) 2014 Derek Buitenhuis
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/common.h"
-
+#include "libavutil/opt.h"
 #include "avcodec.h"
-#include "bitstream.h"
-#include "golomb.h"
 #include "internal.h"
+#include "get_bits.h"
+#include "golomb.h"
 
 typedef struct FICThreadContext {
     DECLARE_ALIGNED(16, int16_t, block)[64];
@@ -37,6 +37,7 @@ typedef struct FICThreadContext {
 } FICThreadContext;
 
 typedef struct FICContext {
+    AVClass *class;
     AVCodecContext *avctx;
     AVFrame *frame;
     AVFrame *final_frame;
@@ -52,6 +53,7 @@ typedef struct FICContext {
     int num_slices, slice_h;
 
     uint8_t cursor_buf[4096];
+    int skip_cursor;
 } FICContext;
 
 static const uint8_t fic_qmat_hq[64] = {
@@ -80,7 +82,7 @@ static const uint8_t fic_header[7] = { 0, 0, 1, 'F', 'I', 'C', 'V' };
 
 #define FIC_HEADER_SIZE 27
 
-static av_always_inline void fic_idct(int16_t *blk, int step, int shift)
+static av_always_inline void fic_idct(int16_t *blk, int step, int shift, int rnd)
 {
     const int t0 =  27246 * blk[3 * step] + 18405 * blk[5 * step];
     const int t1 =  27246 * blk[5 * step] - 18405 * blk[3 * step];
@@ -92,8 +94,8 @@ static av_always_inline void fic_idct(int16_t *blk, int step, int shift)
     const int t7 = t3 - t1;
     const int t8 =  17734 * blk[2 * step] - 42813 * blk[6 * step];
     const int t9 =  17734 * blk[6 * step] + 42814 * blk[2 * step];
-    const int tA = (blk[0 * step] - blk[4 * step] << 15) + (1 << shift - 1);
-    const int tB = (blk[0 * step] + blk[4 * step] << 15) + (1 << shift - 1);
+    const int tA = (blk[0 * step] - blk[4 * step] << 15) + rnd;
+    const int tB = (blk[0 * step] + blk[4 * step] << 15) + rnd;
     blk[0 * step] = (  t4       + t9 + tB) >> shift;
     blk[1 * step] = (  t6 + t7  + t8 + tA) >> shift;
     blk[2 * step] = (  t6 - t7  - t8 + tA) >> shift;
@@ -110,14 +112,15 @@ static void fic_idct_put(uint8_t *dst, int stride, int16_t *block)
     int16_t *ptr;
 
     ptr = block;
-    for (i = 0; i < 8; i++) {
-        fic_idct(ptr, 8, 13);
+    fic_idct(ptr++, 8, 13, (1 << 12) + (1 << 17));
+    for (i = 1; i < 8; i++) {
+        fic_idct(ptr, 8, 13, 1 << 12);
         ptr++;
     }
 
     ptr = block;
     for (i = 0; i < 8; i++) {
-        fic_idct(ptr, 1, 20);
+        fic_idct(ptr, 1, 20, 0);
         ptr += 8;
     }
 
@@ -129,13 +132,13 @@ static void fic_idct_put(uint8_t *dst, int stride, int16_t *block)
         ptr += 8;
     }
 }
-static int fic_decode_block(FICContext *ctx, BitstreamContext *bc,
+static int fic_decode_block(FICContext *ctx, GetBitContext *gb,
                             uint8_t *dst, int stride, int16_t *block)
 {
     int i, num_coeff;
 
     /* Is it a skip block? */
-    if (bitstream_read_bit(bc)) {
+    if (get_bits1(gb)) {
         /* This is a P-frame. */
         ctx->frame->key_frame = 0;
         ctx->frame->pict_type = AV_PICTURE_TYPE_P;
@@ -145,12 +148,12 @@ static int fic_decode_block(FICContext *ctx, BitstreamContext *bc,
 
     memset(block, 0, sizeof(*block) * 64);
 
-    num_coeff = bitstream_read(bc, 7);
+    num_coeff = get_bits(gb, 7);
     if (num_coeff > 64)
         return AVERROR_INVALIDDATA;
 
     for (i = 0; i < num_coeff; i++)
-        block[ff_zigzag_direct[i]] = get_se_golomb(bc) *
+        block[ff_zigzag_direct[i]] = get_se_golomb(gb) *
                                      ctx->qmat[ff_zigzag_direct[i]];
 
     fic_idct_put(dst, stride, block);
@@ -162,14 +165,14 @@ static int fic_decode_slice(AVCodecContext *avctx, void *tdata)
 {
     FICContext *ctx        = avctx->priv_data;
     FICThreadContext *tctx = tdata;
-    BitstreamContext bc;
+    GetBitContext gb;
     uint8_t *src = tctx->src;
     int slice_h  = tctx->slice_h;
     int src_size = tctx->src_size;
     int y_off    = tctx->y_off;
     int x, y, p;
 
-    bitstream_init8(&bc, src, src_size);
+    init_get_bits(&gb, src, src_size * 8);
 
     for (p = 0; p < 3; p++) {
         int stride   = ctx->frame->linesize[p];
@@ -179,7 +182,7 @@ static int fic_decode_slice(AVCodecContext *avctx, void *tdata)
             for (x = 0; x < (ctx->aligned_width >> !!p); x += 8) {
                 int ret;
 
-                if ((ret = fic_decode_block(ctx, &bc, dst + x, stride, tctx->block)) != 0)
+                if ((ret = fic_decode_block(ctx, &gb, dst + x, stride, tctx->block)) != 0)
                     return ret;
             }
 
@@ -263,13 +266,11 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
     int msize;
     int tsize;
     int cur_x, cur_y;
-    int skip_cursor = 0;
+    int skip_cursor = ctx->skip_cursor;
     uint8_t *sdata;
 
-    if ((ret = ff_reget_buffer(avctx, ctx->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, ctx->frame)) < 0)
         return ret;
-    }
 
     /* Header + at least one slice (4) */
     if (avpkt->size < FIC_HEADER_SIZE + 4) {
@@ -282,8 +283,13 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
         av_log(avctx, AV_LOG_WARNING, "Invalid FIC Header.\n");
 
     /* Is it a skip frame? */
-    if (src[17])
+    if (src[17]) {
+        if (!ctx->final_frame) {
+            av_log(avctx, AV_LOG_WARNING, "Initial frame is skipped\n");
+            return AVERROR_INVALIDDATA;
+        }
         goto skip;
+    }
 
     nslices = src[13];
     if (!nslices) {
@@ -303,7 +309,10 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    if (tsize < 32) {
+    if (!tsize || !AV_RL16(src + 37) || !AV_RL16(src + 39))
+        skip_cursor = 1;
+
+    if (!skip_cursor && tsize < 32) {
         av_log(avctx, AV_LOG_WARNING,
                "Cursor data too small. Skipping cursor.\n");
         skip_cursor = 1;
@@ -312,14 +321,14 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
     /* Cursor position. */
     cur_x = AV_RL16(src + 33);
     cur_y = AV_RL16(src + 35);
-    if (cur_x > avctx->width || cur_y > avctx->height) {
-        av_log(avctx, AV_LOG_WARNING,
-               "Invalid cursor position: (%d,%d). Skipping cusor.\n",
+    if (!skip_cursor && (cur_x > avctx->width || cur_y > avctx->height)) {
+        av_log(avctx, AV_LOG_DEBUG,
+               "Invalid cursor position: (%d,%d). Skipping cursor.\n",
                cur_x, cur_y);
         skip_cursor = 1;
     }
 
-    if (AV_RL16(src + 37) != 32 || AV_RL16(src + 39) != 32) {
+    if (!skip_cursor && (AV_RL16(src + 37) != 32 || AV_RL16(src + 39) != 32)) {
         av_log(avctx, AV_LOG_WARNING,
                "Invalid cursor size. Skipping cursor.\n");
         skip_cursor = 1;
@@ -446,6 +455,18 @@ static av_cold int fic_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
+static const AVOption options[] = {
+{ "skip_cursor", "skip the cursor", offsetof(FICContext, skip_cursor), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM },
+{ NULL },
+};
+
+static const AVClass fic_decoder_class = {
+    .class_name = "FIC encoder",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVCodec ff_fic_decoder = {
     .name           = "fic",
     .long_name      = NULL_IF_CONFIG_SMALL("Mirillis FIC"),
@@ -456,4 +477,5 @@ AVCodec ff_fic_decoder = {
     .decode         = fic_decode_frame,
     .close          = fic_decode_close,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
+    .priv_class     = &fic_decoder_class,
 };
