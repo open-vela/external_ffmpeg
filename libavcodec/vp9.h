@@ -4,20 +4,20 @@
  * Copyright (C) 2013 Ronald S. Bultje <rsbultje gmail com>
  * Copyright (C) 2013 Clément Bœsch <u pkh me>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -130,9 +130,6 @@ typedef struct ProbContext {
 typedef void (*vp9_mc_func)(uint8_t *dst, ptrdiff_t dst_stride,
                             const uint8_t *ref, ptrdiff_t ref_stride,
                             int h, int mx, int my);
-typedef void (*vp9_scaled_mc_func)(uint8_t *dst, ptrdiff_t dst_stride,
-                                   const uint8_t *ref, ptrdiff_t ref_stride,
-                                   int h, int mx, int my, int dx, int dy);
 
 typedef struct VP9DSPContext {
     /*
@@ -205,17 +202,11 @@ typedef struct VP9DSPContext {
      * dimension 2: filter type (0: smooth, 1: regular, 2: sharp, 3: bilin)
      * dimension 3: averaging type (0: put, 1: avg)
      * dimension 4: x subpel interpolation (0: none, 1: 8tap/bilin)
-     * dimension 5: y subpel interpolation (0: none, 1: 8tap/bilin)
+     * dimension 5: y subpel interpolation (1: none, 1: 8tap/bilin)
      *
      * dst/stride are aligned by hsize
      */
     vp9_mc_func mc[5][4][2][2][2];
-
-    /*
-     * for scalable MC, first 3 dimensions identical to above, the other two
-     * don't exist since it changes per stepsize.
-     */
-    vp9_scaled_mc_func smc[5][4][2];
 } VP9DSPContext;
 
 enum CompPredMode {
@@ -224,10 +215,10 @@ enum CompPredMode {
     PRED_SWITCHABLE,
 };
 
-typedef struct VP9mvrefPair {
+typedef struct VP9MVRefPair {
     VP56mv mv[2];
     int8_t ref[2];
-} VP9mvrefPair;
+} VP9MVRefPair;
 
 typedef struct VP9Filter {
     uint8_t level[8 * 8];
@@ -237,13 +228,12 @@ typedef struct VP9Filter {
 
 typedef struct VP9Frame {
     ThreadFrame tf;
-    AVBufferRef *extradata;
-    uint8_t *segmentation_map;
-    VP9mvrefPair *mv;
-    int uses_2pass;
 
-    AVBufferRef *hwaccel_priv_buf;
-    void *hwaccel_picture_private;
+    uint8_t *segmentation_map;
+    VP9MVRefPair *mv;
+
+    AVBufferRef *segmentation_map_buf;
+    AVBufferRef *mv_buf;
 } VP9Frame;
 
 enum BlockLevel {
@@ -276,52 +266,83 @@ typedef struct VP9Block {
     VP56mv mv[4 /* b_idx */][2 /* ref */];
     enum BlockSize bs;
     enum TxfmMode tx, uvtx;
+
+    int row, row7, col, col7;
+    uint8_t *dst[3];
+    ptrdiff_t y_stride, uv_stride;
+
     enum BlockLevel bl;
     enum BlockPartition bp;
 } VP9Block;
 
-typedef struct VP9BitstreamHeader {
+typedef struct VP9Context {
+    VP9DSPContext dsp;
+    VideoDSPContext vdsp;
+    GetBitContext gb;
+    VP56RangeCoder c;
+    VP56RangeCoder *c_b;
+    unsigned c_b_size;
+    VP9Block *b;
+    VP9Block *b_base;
+
+    int alloc_width;
+    int alloc_height;
+
+    int pass;
+    int uses_2pass;
+    int last_uses_2pass;
+    int setup_finished;
+
     // bitstream header
     uint8_t profile;
-    uint8_t bpp;
-    uint8_t keyframe;
+    uint8_t keyframe, last_keyframe;
     uint8_t invisible;
+    uint8_t use_last_frame_mvs;
     uint8_t errorres;
+    uint8_t colorspace;
+    uint8_t sub_x;
+    uint8_t sub_y;
+    uint8_t fullrange;
     uint8_t intraonly;
     uint8_t resetctx;
     uint8_t refreshrefmask;
     uint8_t highprecisionmvs;
     enum FilterMode filtermode;
     uint8_t allowcompinter;
+    uint8_t fixcompref;
     uint8_t refreshctx;
     uint8_t parallelmode;
     uint8_t framectxid;
-    uint8_t use_last_frame_mvs;
     uint8_t refidx[3];
     uint8_t signbias[3];
-    uint8_t fixcompref;
     uint8_t varcompref[2];
+
+    ThreadFrame refs[8];
+
+#define CUR_FRAME 0
+#define LAST_FRAME 1
+    VP9Frame frames[2];
+
     struct {
         uint8_t level;
         int8_t sharpness;
+        uint8_t lim_lut[64];
+        uint8_t mblim_lut[64];
     } filter;
     struct {
         uint8_t enabled;
-        uint8_t updated;
         int8_t mode[2];
         int8_t ref[4];
     } lf_delta;
     uint8_t yac_qi;
     int8_t ydc_qdelta, uvdc_qdelta, uvac_qdelta;
     uint8_t lossless;
-#define MAX_SEGMENT 8
     struct {
         uint8_t enabled;
         uint8_t temporal;
         uint8_t absolute_vals;
         uint8_t update_map;
-        uint8_t prob[7];
-        uint8_t pred_prob[3];
+        #define MAX_SEGMENT 8
         struct {
             uint8_t q_enabled;
             uint8_t lf_enabled;
@@ -334,59 +355,12 @@ typedef struct VP9BitstreamHeader {
             uint8_t lflvl[4][2];
         } feat[MAX_SEGMENT];
     } segmentation;
-    enum TxfmMode txfmmode;
-    enum CompPredMode comppredmode;
     struct {
         unsigned log2_tile_cols, log2_tile_rows;
         unsigned tile_cols, tile_rows;
+        unsigned tile_row_start, tile_row_end, tile_col_start, tile_col_end;
     } tiling;
-
-    int uncompressed_header_size;
-    int compressed_header_size;
-} VP9BitstreamHeader;
-
-typedef struct VP9SharedContext {
-    VP9BitstreamHeader h;
-
-    ThreadFrame refs[8];
-#define CUR_FRAME 0
-#define REF_FRAME_MVPAIR 1
-#define REF_FRAME_SEGMAP 2
-    VP9Frame frames[3];
-} VP9SharedContext;
-
-typedef struct VP9Context {
-    VP9SharedContext s;
-
-    VP9DSPContext dsp;
-    VideoDSPContext vdsp;
-    GetBitContext gb;
-    VP56RangeCoder c;
-    VP56RangeCoder *c_b;
-    unsigned c_b_size;
-    VP9Block *b_base, *b;
-    int pass;
-    int row, row7, col, col7;
-    uint8_t *dst[3];
-    ptrdiff_t y_stride, uv_stride;
-
-    uint8_t ss_h, ss_v;
-    uint8_t last_bpp, bpp_index, bytesperpixel;
-    uint8_t last_keyframe;
-    // sb_cols/rows, rows/cols and last_fmt are used for allocating all internal
-    // arrays, and are thus per-thread. w/h and gf_fmt are synced between threads
-    // and are therefore per-stream. pix_fmt represents the value in the header
-    // of the currently processed frame.
-    int w, h;
-    enum AVPixelFormat pix_fmt, last_fmt, gf_fmt;
     unsigned sb_cols, sb_rows, rows, cols;
-    ThreadFrame next_refs[8];
-
-    struct {
-        uint8_t lim_lut[64];
-        uint8_t mblim_lut[64];
-    } filter_lut;
-    unsigned tile_row_start, tile_row_end, tile_col_start, tile_col_end;
     struct {
         ProbContext p;
         uint8_t coef[4][2][2][6][6][3];
@@ -394,6 +368,8 @@ typedef struct VP9Context {
     struct {
         ProbContext p;
         uint8_t coef[4][2][2][6][6][11];
+        uint8_t seg[7];
+        uint8_t segpred[3];
     } prob;
     struct {
         unsigned y_mode[4][10];
@@ -423,69 +399,52 @@ typedef struct VP9Context {
         unsigned coef[4][2][2][6][6][3];
         unsigned eob[4][2][2][6][6][2];
     } counts;
+    enum TxfmMode txfmmode;
+    enum CompPredMode comppredmode;
 
     // contextual (left/above) cache
-    DECLARE_ALIGNED(16, uint8_t, left_y_nnz_ctx)[16];
-    DECLARE_ALIGNED(16, uint8_t, left_mode_ctx)[16];
-    DECLARE_ALIGNED(16, VP56mv, left_mv_ctx)[16][2];
-    DECLARE_ALIGNED(16, uint8_t, left_uv_nnz_ctx)[2][16];
-    DECLARE_ALIGNED(8, uint8_t, left_partition_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_skip_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_txfm_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_segpred_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_intra_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_comp_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_ref_ctx)[8];
-    DECLARE_ALIGNED(8, uint8_t, left_filter_ctx)[8];
-    uint8_t *above_partition_ctx;
-    uint8_t *above_mode_ctx;
+    uint8_t left_partition_ctx[8], *above_partition_ctx;
+    uint8_t left_mode_ctx[16], *above_mode_ctx;
     // FIXME maybe merge some of the below in a flags field?
-    uint8_t *above_y_nnz_ctx;
-    uint8_t *above_uv_nnz_ctx[2];
-    uint8_t *above_skip_ctx; // 1bit
-    uint8_t *above_txfm_ctx; // 2bit
-    uint8_t *above_segpred_ctx; // 1bit
-    uint8_t *above_intra_ctx; // 1bit
-    uint8_t *above_comp_ctx; // 1bit
-    uint8_t *above_ref_ctx; // 2bit
-    uint8_t *above_filter_ctx;
-    VP56mv (*above_mv_ctx)[2];
+    uint8_t left_y_nnz_ctx[16], *above_y_nnz_ctx;
+    uint8_t left_uv_nnz_ctx[2][8], *above_uv_nnz_ctx[2];
+    uint8_t left_skip_ctx[8], *above_skip_ctx; // 1bit
+    uint8_t left_txfm_ctx[8], *above_txfm_ctx; // 2bit
+    uint8_t left_segpred_ctx[8], *above_segpred_ctx; // 1bit
+    uint8_t left_intra_ctx[8], *above_intra_ctx; // 1bit
+    uint8_t left_comp_ctx[8], *above_comp_ctx; // 1bit
+    uint8_t left_ref_ctx[8], *above_ref_ctx; // 2bit
+    uint8_t left_filter_ctx[8], *above_filter_ctx;
+    VP56mv left_mv_ctx[16][2], (*above_mv_ctx)[2];
 
     // whole-frame cache
     uint8_t *intra_pred_data[3];
     VP9Filter *lflvl;
-    DECLARE_ALIGNED(32, uint8_t, edge_emu_buffer)[135 * 144 * 2];
+    // This requires 64 + 8 rows, with 80 bytes stride
+    DECLARE_ALIGNED(32, uint8_t, edge_emu_buffer)[72 * 80];
 
     // block reconstruction intermediates
-    int block_alloc_using_2pass;
     int16_t *block_base, *block, *uvblock_base[2], *uvblock[2];
     uint8_t *eob_base, *uveob_base[2], *eob, *uveob[2];
     struct { int x, y; } min_mv, max_mv;
-    DECLARE_ALIGNED(32, uint8_t, tmp_y)[64 * 64 * 2];
-    DECLARE_ALIGNED(32, uint8_t, tmp_uv)[2][64 * 64 * 2];
-    uint16_t mvscale[3][2];
-    uint8_t mvstep[3][2];
+    DECLARE_ALIGNED(32, uint8_t, tmp_y)[64 * 64];
+    DECLARE_ALIGNED(32, uint8_t, tmp_uv)[2][32 * 32];
 } VP9Context;
 
-extern const int16_t ff_vp9_subpel_filters[3][16][8];
+extern const int8_t ff_vp9_subpel_filters[3][15][8];
 
-void ff_vp9dsp_init(VP9DSPContext *dsp, int bpp, int bitexact);
+void ff_vp9dsp_init(VP9DSPContext *dsp);
 
-void ff_vp9dsp_init_8(VP9DSPContext *dsp);
-void ff_vp9dsp_init_10(VP9DSPContext *dsp);
-void ff_vp9dsp_init_12(VP9DSPContext *dsp);
-
-void ff_vp9dsp_init_aarch64(VP9DSPContext *dsp, int bpp);
-void ff_vp9dsp_init_arm(VP9DSPContext *dsp, int bpp);
-void ff_vp9dsp_init_x86(VP9DSPContext *dsp, int bpp, int bitexact);
-void ff_vp9dsp_init_mips(VP9DSPContext *dsp, int bpp);
+void ff_vp9dsp_init_aarch64(VP9DSPContext *dsp);
+void ff_vp9dsp_init_arm(VP9DSPContext *dsp);
+void ff_vp9dsp_init_x86(VP9DSPContext *dsp);
 
 void ff_vp9_fill_mv(VP9Context *s, VP56mv *mv, int mode, int sb);
 
 void ff_vp9_adapt_probs(VP9Context *s);
 
-void ff_vp9_decode_block(AVCodecContext *ctx, int row, int col,
-                         VP9Filter *lflvl, ptrdiff_t yoff, ptrdiff_t uvoff,
-                         enum BlockLevel bl, enum BlockPartition bp);
+int ff_vp9_decode_block(AVCodecContext *avctx, int row, int col,
+                        VP9Filter *lflvl, ptrdiff_t yoff, ptrdiff_t uvoff,
+                        enum BlockLevel bl, enum BlockPartition bp);
 
 #endif /* AVCODEC_VP9_H */

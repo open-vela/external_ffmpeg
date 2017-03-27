@@ -1,20 +1,20 @@
 /*
  * HEVC parameter set parsing
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -127,9 +127,6 @@ typedef struct HEVCVPS {
     uint8_t vps_poc_proportional_to_timing_flag;
     int vps_num_ticks_poc_diff_one; ///< vps_num_ticks_poc_diff_one_minus1 + 1
     int vps_num_hrd_parameters;
-
-    uint8_t data[4096];
-    int data_size;
 } HEVCVPS;
 
 typedef struct ScalingList {
@@ -140,12 +137,10 @@ typedef struct ScalingList {
 } ScalingList;
 
 typedef struct HEVCSPS {
-    unsigned vps_id;
+    int vps_id;
     int chroma_format_idc;
     uint8_t separate_colour_plane_flag;
 
-    ///< output (i.e. cropped) values
-    int output_width, output_height;
     HEVCWindow output_window;
 
     HEVCWindow pic_conf_win;
@@ -201,13 +196,6 @@ typedef struct HEVCSPS {
     int max_transform_hierarchy_depth_inter;
     int max_transform_hierarchy_depth_intra;
 
-    int transform_skip_rotation_enabled_flag;
-    int transform_skip_context_enabled_flag;
-    int implicit_rdpcm_enabled_flag;
-    int explicit_rdpcm_enabled_flag;
-    int intra_smoothing_disabled_flag;
-    int persistent_rice_adaptation_enabled_flag;
-
     ///< coded frame dimension in various units
     int width;
     int height;
@@ -220,15 +208,11 @@ typedef struct HEVCSPS {
     int min_tb_height;
     int min_pu_width;
     int min_pu_height;
-    int tb_mask;
 
     int hshift[3];
     int vshift[3];
 
     int qp_bd_offset;
-
-    uint8_t data[4096];
-    int data_size;
 } HEVCSPS;
 
 typedef struct HEVCPPS {
@@ -280,15 +264,6 @@ typedef struct HEVCPPS {
     int log2_parallel_merge_level; ///< log2_parallel_merge_level_minus2 + 2
     int num_extra_slice_header_bits;
     uint8_t slice_header_extension_present_flag;
-    uint8_t log2_max_transform_skip_block_size;
-    uint8_t cross_component_prediction_enabled_flag;
-    uint8_t chroma_qp_offset_list_enabled_flag;
-    uint8_t diff_cu_chroma_qp_offset_depth;
-    uint8_t chroma_qp_offset_list_len_minus1;
-    int8_t  cb_qp_offset_list[5];
-    int8_t  cr_qp_offset_list[5];
-    uint8_t log2_sao_offset_scale_luma;
-    uint8_t log2_sao_offset_scale_chroma;
 
     // Inferred parameters
     unsigned int *column_width;  ///< ColumnWidth
@@ -302,10 +277,6 @@ typedef struct HEVCPPS {
     int *tile_id;           ///< TileId
     int *tile_pos_rs;       ///< TilePosRS
     int *min_tb_addr_zs;    ///< MinTbAddrZS
-    int *min_tb_addr_zs_tab;///< MinTbAddrZS
-
-    uint8_t data[4096];
-    int data_size;
 } HEVCPPS;
 
 typedef struct HEVCParamSets {

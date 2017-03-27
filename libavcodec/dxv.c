@@ -2,20 +2,20 @@
  * Resolume DXV decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,17 +105,9 @@ static int decompress_texture_thread(AVCodecContext *avctx, void *arg,
             break;                                                            \
         case 2:                                                               \
             idx = (bytestream2_get_byte(gbc) + 2) * x;                        \
-            if (idx > pos) {                                                  \
-                av_log(avctx, AV_LOG_ERROR, "idx %d > %d\n", idx, pos);       \
-                return AVERROR_INVALIDDATA;                                   \
-            }                                                                 \
             break;                                                            \
         case 3:                                                               \
             idx = (bytestream2_get_le16(gbc) + 0x102) * x;                    \
-            if (idx > pos) {                                                  \
-                av_log(avctx, AV_LOG_ERROR, "idx %d > %d\n", idx, pos);       \
-                return AVERROR_INVALIDDATA;                                   \
-            }                                                                 \
             break;                                                            \
         }                                                                     \
     } while(0)
@@ -374,7 +366,7 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
         break;
     case MKBETAG('Y', 'C', 'G', '6'):
     case MKBETAG('Y', 'G', '1', '0'):
-        avpriv_report_missing_feature(avctx, "Tag 0x%08X", tag);
+        avpriv_report_missing_feature(avctx, "Tag 0x%08"PRIX32"", tag);
         return AVERROR_PATCHWELCOME;
     default:
         /* Old version does not have a real header, just size and type. */
@@ -401,7 +393,8 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
             ctx->tex_funct = ctx->texdsp.dxt1_block;
             ctx->tex_step  = 8;
         } else {
-            av_log(avctx, AV_LOG_ERROR, "Unsupported header (0x%08X)\n.", tag);
+            av_log(avctx, AV_LOG_ERROR,
+                   "Unsupported header (0x%08"PRIX32")\n.", tag);
             return AVERROR_INVALIDDATA;
         }
         ctx->tex_rat = 1;
@@ -448,6 +441,7 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
     ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
+    ff_thread_finish_setup(avctx);
 
     /* Now decompress the texture with the standard functions. */
     avctx->execute2(avctx, decompress_texture_thread,
