@@ -4,20 +4,20 @@
  * Copyright (C) 2013 Ronald S. Bultje <rsbultje gmail com>
  * Copyright (C) 2013 Clément Bœsch <u pkh me>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,11 +33,10 @@ static av_always_inline void adapt_prob(uint8_t *p, unsigned ct0, unsigned ct1,
     if (!ct)
         return;
 
+    update_factor = FASTDIV(update_factor * FFMIN(ct, max_count), max_count);
     p1 = *p;
-    p2 = ((ct0 << 8) + (ct >> 1)) / ct;
+    p2 = ((((int64_t) ct0) << 8) + (ct >> 1)) / ct;
     p2 = av_clip(p2, 1, 255);
-    ct = FFMIN(ct, max_count);
-    update_factor = FASTDIV(update_factor * ct, max_count);
 
     // (p1 * (256 - update_factor) + p2 * update_factor + 128) >> 8
     *p = p1 + (((p2 - p1) * update_factor + 128) >> 8);
@@ -46,8 +45,8 @@ static av_always_inline void adapt_prob(uint8_t *p, unsigned ct0, unsigned ct1,
 void ff_vp9_adapt_probs(VP9Context *s)
 {
     int i, j, k, l, m;
-    ProbContext *p = &s->prob_ctx[s->framectxid].p;
-    int uf = (s->keyframe || s->intraonly || !s->last_keyframe) ? 112 : 128;
+    ProbContext *p = &s->prob_ctx[s->s.h.framectxid].p;
+    int uf = (s->s.h.keyframe || s->s.h.intraonly || !s->last_keyframe) ? 112 : 128;
 
     // coefficients
     for (i = 0; i < 4; i++)
@@ -55,7 +54,7 @@ void ff_vp9_adapt_probs(VP9Context *s)
             for (k = 0; k < 2; k++)
                 for (l = 0; l < 6; l++)
                     for (m = 0; m < 6; m++) {
-                        uint8_t *pp = s->prob_ctx[s->framectxid].coef[i][j][k][l][m];
+                        uint8_t *pp = s->prob_ctx[s->s.h.framectxid].coef[i][j][k][l][m];
                         unsigned *e = s->counts.eob[i][j][k][l][m];
                         unsigned *c = s->counts.coef[i][j][k][l][m];
 
@@ -67,7 +66,7 @@ void ff_vp9_adapt_probs(VP9Context *s)
                         adapt_prob(&pp[2], c[1], c[2], 24, uf);
                     }
 
-    if (s->keyframe || s->intraonly) {
+    if (s->s.h.keyframe || s->s.h.intraonly) {
         memcpy(p->skip,  s->prob.p.skip,  sizeof(p->skip));
         memcpy(p->tx32p, s->prob.p.tx32p, sizeof(p->tx32p));
         memcpy(p->tx16p, s->prob.p.tx16p, sizeof(p->tx16p));
@@ -86,20 +85,20 @@ void ff_vp9_adapt_probs(VP9Context *s)
                    s->counts.intra[i][1], 20, 128);
 
     // comppred flag
-    if (s->comppredmode == PRED_SWITCHABLE) {
+    if (s->s.h.comppredmode == PRED_SWITCHABLE) {
         for (i = 0; i < 5; i++)
             adapt_prob(&p->comp[i], s->counts.comp[i][0],
                        s->counts.comp[i][1], 20, 128);
     }
 
     // reference frames
-    if (s->comppredmode != PRED_SINGLEREF) {
+    if (s->s.h.comppredmode != PRED_SINGLEREF) {
         for (i = 0; i < 5; i++)
             adapt_prob(&p->comp_ref[i], s->counts.comp_ref[i][0],
                        s->counts.comp_ref[i][1], 20, 128);
     }
 
-    if (s->comppredmode != PRED_COMPREF) {
+    if (s->s.h.comppredmode != PRED_COMPREF) {
         for (i = 0; i < 5; i++) {
             uint8_t *pp = p->single_ref[i];
             unsigned (*c)[2] = s->counts.single_ref[i];
@@ -121,7 +120,7 @@ void ff_vp9_adapt_probs(VP9Context *s)
         }
 
     // tx size
-    if (s->txfmmode == TX_SWITCHABLE) {
+    if (s->s.h.txfmmode == TX_SWITCHABLE) {
         for (i = 0; i < 2; i++) {
             unsigned *c16 = s->counts.tx16p[i], *c32 = s->counts.tx32p[i];
 
@@ -136,7 +135,7 @@ void ff_vp9_adapt_probs(VP9Context *s)
     }
 
     // interpolation filter
-    if (s->filtermode == FILTER_SWITCHABLE) {
+    if (s->s.h.filtermode == FILTER_SWITCHABLE) {
         for (i = 0; i < 4; i++) {
             uint8_t *pp = p->filter[i];
             unsigned *c = s->counts.filter[i];
@@ -213,7 +212,7 @@ void ff_vp9_adapt_probs(VP9Context *s)
         adapt_prob(&pp[1], c[1], c[2] + c[3], 20, 128);
         adapt_prob(&pp[2], c[2], c[3], 20, 128);
 
-        if (s->highprecisionmvs) {
+        if (s->s.h.highprecisionmvs) {
             adapt_prob(&p->mv_comp[i].class0_hp,
                        s->counts.mv_comp[i].class0_hp[0],
                        s->counts.mv_comp[i].class0_hp[1], 20, 128);
