@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Kieran Kunhya
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,11 +23,14 @@
 
 #include <stdint.h>
 
-#include "avcodec.h"
-#include "bitstream.h"
+#include "libavutil/avassert.h"
 
-#define VLC_BITS       9
-#define SUBBAND_COUNT 10
+#include "avcodec.h"
+#include "get_bits.h"
+
+#define VLC_BITS 9
+#define NB_VLC_TABLE_9 (71+3)
+#define NB_VLC_TABLE_18 (263+1)
 
 typedef struct CFHD_RL_VLC_ELEM {
     int16_t level;
@@ -40,7 +43,7 @@ typedef struct CFHD_RL_VLC_ELEM {
 typedef struct SubBand {
     int level;
     int orientation;
-    ptrdiff_t stride;
+    int stride;
     int a_width;
     int width;
     int a_height;
@@ -59,7 +62,7 @@ typedef struct Plane {
     int16_t *idwt_tmp;
 
     /* TODO: merge this into SubBand structure */
-    int16_t *subband[SUBBAND_COUNT];
+    int16_t *subband[10];
     int16_t *l_h[8];
 
     SubBand band[DWT_LEVELS][4];
@@ -74,18 +77,20 @@ typedef struct CFHDContext {
     CFHD_RL_VLC_ELEM table_18_rl_vlc[4572];
     VLC vlc_18;
 
-    BitstreamContext bc;
+    GetBitContext gb;
+
+    int chroma_x_shift;
+    int chroma_y_shift;
 
     int coded_width;
     int coded_height;
-    int cropped_height;
-    enum AVPixelFormat coded_format;
+    int coded_format;
 
     int a_width;
     int a_height;
     int a_format;
 
-    int bpc; // bits per channel/component
+    int bpc;
     int channel_cnt;
     int subband_cnt;
     int channel_num;
@@ -101,6 +106,7 @@ typedef struct CFHDContext {
 
     uint8_t prescale_shift[3];
     Plane plane[4];
+
 } CFHDContext;
 
 int ff_cfhd_init_vlcs(CFHDContext *s);

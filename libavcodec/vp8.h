@@ -6,20 +6,20 @@
  * Copyright (C) 2010 Fiona Glaser
  * Copyright (C) 2012 Daniel Kang
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,17 +27,12 @@
 #define AVCODEC_VP8_H
 
 #include "libavutil/buffer.h"
+#include "libavutil/thread.h"
 
 #include "h264pred.h"
 #include "thread.h"
 #include "vp56.h"
 #include "vp8dsp.h"
-
-#if HAVE_PTHREADS
-#   include <pthread.h>
-#elif HAVE_W32THREADS
-#   include "compat/w32pthreads.h"
-#endif
 
 #define VP8_MAX_QUANT 127
 
@@ -130,17 +125,17 @@ typedef struct VP8ThreadData {
 typedef struct VP8Frame {
     ThreadFrame tf;
     AVBufferRef *seg_map;
-
-    AVBufferRef *hwaccel_priv_buf;
-    void *hwaccel_picture_private;
 } VP8Frame;
+
+typedef struct VP8intmv {
+    int x;
+    int y;
+} VP8intmv;
 
 #define MAX_THREADS 8
 typedef struct VP8Context {
     VP8ThreadData *thread_data;
     AVCodecContext *avctx;
-    enum AVPixelFormat pix_fmt;
-
     VP8Frame *framep[4];
     VP8Frame *next_framep[4];
     VP8Frame *curframe;
@@ -155,8 +150,8 @@ typedef struct VP8Context {
     uint8_t deblock_filter;
     uint8_t mbskip_enabled;
     uint8_t profile;
-    VP56mv mv_min;
-    VP56mv mv_max;
+    VP8intmv mv_min;
+    VP8intmv mv_max;
 
     int8_t sign_bias[4]; ///< one state [0, 1] per ref frame type
     int ref_count[3];
@@ -170,7 +165,6 @@ typedef struct VP8Context {
         uint8_t enabled;
         uint8_t absolute_vals;
         uint8_t update_map;
-        uint8_t update_feature_data;
         int8_t base_quant[4];
         int8_t filter_level[4];     ///< base loop filter level
     } segmentation;
@@ -198,19 +192,8 @@ typedef struct VP8Context {
         int16_t chroma_qmul[2];
     } qmat[4];
 
-    // Raw quantisation values, which may be needed by hwaccel decode.
-    struct {
-        int yac_qi;
-        int ydc_delta;
-        int y2dc_delta;
-        int y2ac_delta;
-        int uvdc_delta;
-        int uvac_delta;
-    } quant;
-
     struct {
         uint8_t enabled;    ///< whether each mb can have a different strength based on mode/ref
-        uint8_t update;
 
         /**
          * filter strength adjustment for the following macroblock modes:
@@ -237,20 +220,6 @@ typedef struct VP8Context {
     uint8_t (*top_nnz)[9];
 
     VP56RangeCoder c;   ///< header context, includes mb modes and motion vectors
-
-    /* This contains the entropy coder state at the end of the header
-     * block, in the form specified by the standard.  For use by
-     * hwaccels, so that a hardware decoder has the information to
-     * start decoding at the macroblock layer.
-     */
-    struct {
-        const uint8_t *input;
-        uint32_t range;
-        uint32_t value;
-        int bit_count;
-    } coder_state_at_header_end;
-
-    int header_partition_size;
 
     /**
      * These are all of the updatable probabilities for binary decisions.
@@ -289,7 +258,6 @@ typedef struct VP8Context {
      */
     int num_coeff_partitions;
     VP56RangeCoder coeff_partition[8];
-    int coeff_partition_size[8];
     VideoDSPContext vdsp;
     VP8DSPContext vp8dsp;
     H264PredContext hpc;
@@ -306,6 +274,11 @@ typedef struct VP8Context {
      * 1 -> Macroblocks for entire frame allocated (sliced thread).
      */
     int mb_layout;
+
+    int (*decode_mb_row_no_filter)(AVCodecContext *avctx, void *tdata, int jobnr, int threadnr);
+    void (*filter_mb_row)(AVCodecContext *avctx, void *tdata, int jobnr, int threadnr);
+
+    int vp7;
 
     /**
      * Fade bit present in bitstream (VP7)
