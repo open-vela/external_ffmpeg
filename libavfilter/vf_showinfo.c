@@ -1,19 +1,19 @@
 /*
  * Copyright (c) 2011 Stefano Sabatini
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,53 +29,12 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/spherical.h"
 #include "libavutil/stereo3d.h"
+#include "libavutil/timestamp.h"
 
 #include "avfilter.h"
 #include "internal.h"
 #include "video.h"
-
-typedef struct ShowInfoContext {
-    unsigned int frame;
-} ShowInfoContext;
-
-static void dump_spherical(AVFilterContext *ctx, AVFrame *frame, AVFrameSideData *sd)
-{
-    AVSphericalMapping *spherical = (AVSphericalMapping *)sd->data;
-    double yaw, pitch, roll;
-
-    av_log(ctx, AV_LOG_INFO, "spherical information: ");
-    if (sd->size < sizeof(*spherical)) {
-        av_log(ctx, AV_LOG_INFO, "invalid data");
-        return;
-    }
-
-    if (spherical->projection == AV_SPHERICAL_EQUIRECTANGULAR)
-        av_log(ctx, AV_LOG_INFO, "equirectangular ");
-    else if (spherical->projection == AV_SPHERICAL_CUBEMAP)
-        av_log(ctx, AV_LOG_INFO, "cubemap ");
-    else if (spherical->projection == AV_SPHERICAL_EQUIRECTANGULAR_TILE)
-        av_log(ctx, AV_LOG_INFO, "tiled equirectangular ");
-    else {
-        av_log(ctx, AV_LOG_WARNING, "unknown");
-        return;
-    }
-
-    yaw = ((double)spherical->yaw) / (1 << 16);
-    pitch = ((double)spherical->pitch) / (1 << 16);
-    roll = ((double)spherical->roll) / (1 << 16);
-    av_log(ctx, AV_LOG_INFO, "(%f/%f/%f) ", yaw, pitch, roll);
-
-    if (spherical->projection == AV_SPHERICAL_EQUIRECTANGULAR_TILE) {
-        size_t l, t, r, b;
-        av_spherical_tile_bounds(spherical, frame->width, frame->height,
-                                 &l, &t, &r, &b);
-        av_log(ctx, AV_LOG_INFO, "[%zu, %zu, %zu, %zu] ", l, t, r, b);
-    } else if (spherical->projection == AV_SPHERICAL_CUBEMAP) {
-        av_log(ctx, AV_LOG_INFO, "[pad %"PRIu32"] ", spherical->padding);
-    }
-}
 
 static void dump_stereo3d(AVFilterContext *ctx, AVFrameSideData *sd)
 {
@@ -89,40 +48,67 @@ static void dump_stereo3d(AVFilterContext *ctx, AVFrameSideData *sd)
 
     stereo = (AVStereo3D *)sd->data;
 
-    av_log(ctx, AV_LOG_INFO, "type - %s", av_stereo3d_type_name(stereo->type));
+    av_log(ctx, AV_LOG_INFO, "type - ");
+    switch (stereo->type) {
+    case AV_STEREO3D_2D:                  av_log(ctx, AV_LOG_INFO, "2D");                     break;
+    case AV_STEREO3D_SIDEBYSIDE:          av_log(ctx, AV_LOG_INFO, "side by side");           break;
+    case AV_STEREO3D_TOPBOTTOM:           av_log(ctx, AV_LOG_INFO, "top and bottom");         break;
+    case AV_STEREO3D_FRAMESEQUENCE:       av_log(ctx, AV_LOG_INFO, "frame alternate");        break;
+    case AV_STEREO3D_CHECKERBOARD:        av_log(ctx, AV_LOG_INFO, "checkerboard");           break;
+    case AV_STEREO3D_LINES:               av_log(ctx, AV_LOG_INFO, "interleaved lines");      break;
+    case AV_STEREO3D_COLUMNS:             av_log(ctx, AV_LOG_INFO, "interleaved columns");    break;
+    case AV_STEREO3D_SIDEBYSIDE_QUINCUNX: av_log(ctx, AV_LOG_INFO, "side by side "
+                                                                   "(quincunx subsampling)"); break;
+    default:                              av_log(ctx, AV_LOG_WARNING, "unknown");             break;
+    }
 
     if (stereo->flags & AV_STEREO3D_FLAG_INVERT)
         av_log(ctx, AV_LOG_INFO, " (inverted)");
 }
 
+static void update_sample_stats(const uint8_t *src, int len, int64_t *sum, int64_t *sum2)
+{
+    int i;
+
+    for (i = 0; i < len; i++) {
+        *sum += src[i];
+        *sum2 += src[i] * src[i];
+    }
+}
+
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
-    ShowInfoContext *showinfo = ctx->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
     uint32_t plane_checksum[4] = {0}, checksum = 0;
+    int64_t sum[4] = {0}, sum2[4] = {0};
+    int32_t pixelcount[4] = {0};
     int i, plane, vsub = desc->log2_chroma_h;
 
-    for (plane = 0; frame->data[plane] && plane < 4; plane++) {
+    for (plane = 0; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++) {
         uint8_t *data = frame->data[plane];
-        int h = plane == 1 || plane == 2 ? inlink->h >> vsub : inlink->h;
+        int h = plane == 1 || plane == 2 ? AV_CEIL_RSHIFT(inlink->h, vsub) : inlink->h;
         int linesize = av_image_get_linesize(frame->format, frame->width, plane);
+
         if (linesize < 0)
             return linesize;
 
         for (i = 0; i < h; i++) {
             plane_checksum[plane] = av_adler32_update(plane_checksum[plane], data, linesize);
             checksum = av_adler32_update(checksum, data, linesize);
+
+            update_sample_stats(data, linesize, sum+plane, sum2+plane);
+            pixelcount[plane] += linesize;
             data += frame->linesize[plane];
         }
     }
 
     av_log(ctx, AV_LOG_INFO,
-           "n:%d pts:%"PRId64" pts_time:%f "
+           "n:%4"PRId64" pts:%7s pts_time:%-7s pos:%9"PRId64" "
            "fmt:%s sar:%d/%d s:%dx%d i:%c iskey:%d type:%c "
-           "checksum:%"PRIu32" plane_checksum:[%"PRIu32" %"PRIu32" %"PRIu32" %"PRIu32"]\n",
-           showinfo->frame,
-           frame->pts, frame->pts * av_q2d(inlink->time_base),
+           "checksum:%08"PRIX32" plane_checksum:[%08"PRIX32,
+           inlink->frame_count_out,
+           av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base), av_frame_get_pkt_pos(frame),
            desc->name,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
            frame->width, frame->height,
@@ -130,7 +116,18 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
            frame->top_field_first   ? 'T' : 'B',    /* Top / Bottom */
            frame->key_frame,
            av_get_picture_type_char(frame->pict_type),
-           checksum, plane_checksum[0], plane_checksum[1], plane_checksum[2], plane_checksum[3]);
+           checksum, plane_checksum[0]);
+
+    for (plane = 1; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++)
+        av_log(ctx, AV_LOG_INFO, " %08"PRIX32, plane_checksum[plane]);
+    av_log(ctx, AV_LOG_INFO, "] mean:[");
+    for (plane = 0; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++)
+        av_log(ctx, AV_LOG_INFO, "%"PRId64" ", (sum[plane] + pixelcount[plane]/2) / pixelcount[plane]);
+    av_log(ctx, AV_LOG_INFO, "\b] stdev:[");
+    for (plane = 0; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++)
+        av_log(ctx, AV_LOG_INFO, "%3.1f ",
+               sqrt((sum2[plane] - sum[plane]*(double)sum[plane]/pixelcount[plane])/pixelcount[plane]));
+    av_log(ctx, AV_LOG_INFO, "\b]\n");
 
     for (i = 0; i < frame->nb_side_data; i++) {
         AVFrameSideData *sd = frame->side_data[i];
@@ -142,9 +139,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
             break;
         case AV_FRAME_DATA_A53_CC:
             av_log(ctx, AV_LOG_INFO, "A/53 closed captions (%d bytes)", sd->size);
-            break;
-        case AV_FRAME_DATA_SPHERICAL:
-            dump_spherical(ctx, frame, sd);
             break;
         case AV_FRAME_DATA_STEREO3D:
             dump_stereo3d(ctx, sd);
@@ -165,7 +159,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         av_log(ctx, AV_LOG_INFO, "\n");
     }
 
-    showinfo->frame++;
     return ff_filter_frame(inlink->dst->outputs[0], frame);
 }
 
@@ -196,7 +189,6 @@ static const AVFilterPad avfilter_vf_showinfo_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = ff_null_get_video_buffer,
         .filter_frame     = filter_frame,
         .config_props     = config_props_in,
     },
@@ -215,10 +207,6 @@ static const AVFilterPad avfilter_vf_showinfo_outputs[] = {
 AVFilter ff_vf_showinfo = {
     .name        = "showinfo",
     .description = NULL_IF_CONFIG_SMALL("Show textual information for each video frame."),
-
-    .priv_size = sizeof(ShowInfoContext),
-
-    .inputs    = avfilter_vf_showinfo_inputs,
-
-    .outputs   = avfilter_vf_showinfo_outputs,
+    .inputs      = avfilter_vf_showinfo_inputs,
+    .outputs     = avfilter_vf_showinfo_outputs,
 };
