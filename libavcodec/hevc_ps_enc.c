@@ -1,24 +1,24 @@
 /*
  * HEVC Parameter Set encoding
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "golomb.h"
+#include "golomb_legacy.h"
 #include "hevc_ps.h"
 #include "put_bits.h"
 
@@ -90,9 +90,10 @@ int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
     put_bits(&pb, 6, vps->vps_max_layer_id);
     set_ue_golomb(&pb, vps->vps_num_layer_sets - 1);
 
-    // writing layer_id_included_flag not supported
-    if (vps->vps_num_layer_sets > 1)
+    if (vps->vps_num_layer_sets > 1) {
+        avpriv_report_missing_feature(NULL, "Writing layer_id_included_flag");
         return AVERROR_PATCHWELCOME;
+    }
 
     put_bits(&pb, 1, vps->vps_timing_info_present_flag);
     if (vps->vps_timing_info_present_flag) {
@@ -102,9 +103,10 @@ int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
         if (vps->vps_poc_proportional_to_timing_flag)
             set_ue_golomb(&pb, vps->vps_num_ticks_poc_diff_one - 1);
 
-        // writing HRD parameters not supported
-        if (vps->vps_num_hrd_parameters)
+        if (vps->vps_num_hrd_parameters) {
+            avpriv_report_missing_feature(NULL, "Writing HRD parameters");
             return AVERROR_PATCHWELCOME;
+        }
     }
 
     put_bits(&pb, 1, 0);    // extension flag
