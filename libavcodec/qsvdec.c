@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -314,7 +314,7 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
         ret = MFXVideoDECODE_DecodeFrameAsync(q->session, avpkt->size ? &bs : NULL,
                                               insurf, &outsurf, sync);
         if (ret == MFX_WRN_DEVICE_BUSY)
-            av_usleep(500);
+            av_usleep(1);
 
     } while (ret == MFX_WRN_DEVICE_BUSY || ret == MFX_ERR_MORE_SURFACE);
 
@@ -363,9 +363,11 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
         av_fifo_generic_read(q->async_fifo, &sync,      sizeof(sync),      NULL);
         out_frame->queued = 0;
 
-        do {
-            ret = MFXVideoCORE_SyncOperation(q->session, *sync, 1000);
-        } while (ret == MFX_WRN_IN_EXECUTION);
+        if (avctx->pix_fmt != AV_PIX_FMT_QSV) {
+            do {
+                ret = MFXVideoCORE_SyncOperation(q->session, *sync, 1000);
+            } while (ret == MFX_WRN_IN_EXECUTION);
+        }
 
         av_freep(&sync);
 
@@ -453,6 +455,16 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
         q->avctx_internal = avcodec_alloc_context3(NULL);
         if (!q->avctx_internal)
             return AVERROR(ENOMEM);
+
+        if (avctx->extradata) {
+            q->avctx_internal->extradata = av_mallocz(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!q->avctx_internal->extradata)
+                return AVERROR(ENOMEM);
+
+            memcpy(q->avctx_internal->extradata, avctx->extradata,
+                   avctx->extradata_size);
+            q->avctx_internal->extradata_size = avctx->extradata_size;
+        }
 
         q->parser = av_parser_init(avctx->codec_id);
         if (!q->parser)
