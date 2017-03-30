@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -31,28 +31,22 @@
 #include "libavutil/lfg.h"
 #include "libavutil/timer.h"
 
-void checkasm_check_alacdsp(void);
 void checkasm_check_audiodsp(void);
-void checkasm_check_blend(void);
 void checkasm_check_blockdsp(void);
 void checkasm_check_bswapdsp(void);
-void checkasm_check_colorspace(void);
-void checkasm_check_fixed_dsp(void);
-void checkasm_check_flacdsp(void);
+void checkasm_check_dcadsp(void);
 void checkasm_check_fmtconvert(void);
 void checkasm_check_h264dsp(void);
 void checkasm_check_h264pred(void);
 void checkasm_check_h264qpel(void);
 void checkasm_check_hevc_add_res(void);
 void checkasm_check_hevc_idct(void);
-void checkasm_check_jpeg2000dsp(void);
-void checkasm_check_llviddsp(void);
-void checkasm_check_pixblockdsp(void);
+void checkasm_check_hevc_mc(void);
+void checkasm_check_huffyuvdsp(void);
 void checkasm_check_synth_filter(void);
 void checkasm_check_v210enc(void);
 void checkasm_check_vp8dsp(void);
 void checkasm_check_vp9dsp(void);
-void checkasm_check_videodsp(void);
 
 void *checkasm_check_func(void *func, const char *name, ...) av_printf_format(2, 3);
 int checkasm_bench_func(void);
@@ -95,7 +89,7 @@ static av_unused void *func_ref, *func_new;
 /* Call the reference function */
 #define call_ref(...) ((func_type *)func_ref)(__VA_ARGS__)
 
-#if ARCH_X86 && HAVE_YASM
+#if ARCH_X86 && HAVE_X86ASM
 /* Verifies that clobbered callee-saved registers are properly saved and restored
  * and that either no MMX registers are touched or emms is issued */
 void checkasm_checked_call(void *func, ...);
