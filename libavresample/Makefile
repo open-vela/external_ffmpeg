@@ -1,5 +1,4 @@
 NAME = avresample
-DESC = Libav audio resampling library
 
 HEADERS = avresample.h                                                  \
           version.h                                                     \
@@ -12,5 +11,8 @@ OBJS = audio_convert.o                                                  \
        options.o                                                        \
        resample.o                                                       \
        utils.o                                                          \
+
+# Windows resource file
+SLIBOBJS-$(HAVE_GNU_WINDRES) += avresampleres.o
 
 TESTPROGS = avresample
