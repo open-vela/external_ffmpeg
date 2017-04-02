@@ -9,20 +9,20 @@
 ;*          Holger Lubitz <hal@duncan.ol.sub.de>
 ;*          Min Chen <chenm001.163.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;*****************************************************************************
 
@@ -697,38 +697,6 @@ cglobal h264_idct_add8_8, 5, 8 + npicregs, 0, dst1, block_offset, block, stride,
     call         h264_idct_add8_mmx_plane
     RET
 
-cglobal h264_idct_add8_422_8, 5, 8 + npicregs, 0, dst1, block_offset, block, stride, nnzc, cntr, coeff, dst2, picreg
-; dst1, block_offset, block, stride, nnzc, cntr, coeff, dst2, picreg
-    movsxdifnidn r3, r3d
-%ifdef PIC
-    lea     picregq, [scan8_mem]
-%endif
-%if ARCH_X86_64
-    mov       dst2q, r0
-%endif
-
-    mov          r5, 16  ; i
-    add          r2, 512 ; i * 16 * sizeof(dctcoef) ; #define dctcoef int16_t
-
-    call         h264_idct_add8_mmx_plane
-    add r5, 4
-    call         h264_idct_add8_mmx_plane
-
-%if ARCH_X86_64
-    add       dst2q, gprsize ; dest[1]
-%else
-    add        r0mp, gprsize
-%endif
-
-    add r5, 4   ; set to 32
-    add r2, 256 ; set to i * 16 * sizeof(dctcoef)
-
-    call         h264_idct_add8_mmx_plane
-    add r5, 4
-    call         h264_idct_add8_mmx_plane
-
-    RET
-
 h264_idct_add8_mmxext_plane:
     movsxdifnidn r3, r3d
 .nextblock:
@@ -990,7 +958,30 @@ cglobal h264_idct_add8_8, 5, 7 + ARCH_X86_64, 8
     SWAP %1, %4, %3
 %endmacro
 
-%macro DEQUANT_MMX 3
+%macro DEQUANT 1-3
+%if cpuflag(sse2)
+    movd      xmm4, t3d
+    movq      xmm5, [pw_1]
+    pshufd    xmm4, xmm4, 0
+    movq2dq   xmm0, m0
+    movq2dq   xmm1, m1
+    movq2dq   xmm2, m2
+    movq2dq   xmm3, m3
+    punpcklwd xmm0, xmm5
+    punpcklwd xmm1, xmm5
+    punpcklwd xmm2, xmm5
+    punpcklwd xmm3, xmm5
+    pmaddwd   xmm0, xmm4
+    pmaddwd   xmm1, xmm4
+    pmaddwd   xmm2, xmm4
+    pmaddwd   xmm3, xmm4
+    psrad     xmm0, %1
+    psrad     xmm1, %1
+    psrad     xmm2, %1
+    psrad     xmm3, %1
+    packssdw  xmm0, xmm1
+    packssdw  xmm2, xmm3
+%else
     mova        m7, [pw_1]
     mova        m4, %1
     punpcklwd   %1, m7
@@ -1010,6 +1001,7 @@ cglobal h264_idct_add8_8, 5, 7 + ARCH_X86_64, 8
     psrad       m5, %3
     packssdw    %1, m4
     packssdw    %2, m5
+%endif
 %endmacro
 
 %macro STORE_WORDS 5-9
@@ -1048,35 +1040,15 @@ cglobal h264_idct_add8_8, 5, 7 + ARCH_X86_64, 8
 
 %macro DEQUANT_STORE 1
 %if cpuflag(sse2)
-    movd      xmm4, t3d
-    movq      xmm5, [pw_1]
-    pshufd    xmm4, xmm4, 0
-    movq2dq   xmm0, m0
-    movq2dq   xmm1, m1
-    movq2dq   xmm2, m2
-    movq2dq   xmm3, m3
-    punpcklwd xmm0, xmm5
-    punpcklwd xmm1, xmm5
-    punpcklwd xmm2, xmm5
-    punpcklwd xmm3, xmm5
-    pmaddwd   xmm0, xmm4
-    pmaddwd   xmm1, xmm4
-    pmaddwd   xmm2, xmm4
-    pmaddwd   xmm3, xmm4
-    psrad     xmm0, %1
-    psrad     xmm1, %1
-    psrad     xmm2, %1
-    psrad     xmm3, %1
-    packssdw  xmm0, xmm1
-    packssdw  xmm2, xmm3
+    DEQUANT     %1
     STORE_WORDS xmm0,  0,  1,  4,  5,  2,  3,  6,  7
     STORE_WORDS xmm2,  8,  9, 12, 13, 10, 11, 14, 15
 %else
-    DEQUANT_MMX m0, m1, %1
+    DEQUANT     m0, m1, %1
     STORE_WORDS m0,  0,  1,  4,  5
     STORE_WORDS m1,  2,  3,  6,  7
 
-    DEQUANT_MMX m2, m3, %1
+    DEQUANT     m2, m3, %1
     STORE_WORDS m2,  8,  9, 12, 13
     STORE_WORDS m3, 10, 11, 14, 15
 %endif
