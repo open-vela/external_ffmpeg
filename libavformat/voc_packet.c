@@ -1,24 +1,21 @@
 /*
- * Copyright (c) 2006  Aurelien Jacobs <aurel@gnuage.org>
+ * This file is part of Libav.
  *
- * This file is part of FFmpeg.
- *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
 #include "voc.h"
@@ -33,20 +30,11 @@ ff_voc_get_packet(AVFormatContext *s, AVPacket *pkt, AVStream *st, int max_size)
     int size, tmp_codec=-1;
     int sample_rate = 0;
     int channels = 1;
-    int64_t duration;
-    int ret;
-
-    av_add_index_entry(st,
-                       avio_tell(pb),
-                       voc->pts,
-                       voc->remaining_size,
-                       0,
-                       AVINDEX_KEYFRAME);
 
     while (!voc->remaining_size) {
         type = avio_r8(pb);
         if (type == VOC_TYPE_EOF)
-            return AVERROR_EOF;
+            return AVERROR(EIO);
         voc->remaining_size = avio_rl24(pb);
         if (!voc->remaining_size) {
             if (!(s->pb->seekable & AVIO_SEEKABLE_NORMAL))
@@ -106,11 +94,6 @@ ff_voc_get_packet(AVFormatContext *s, AVPacket *pkt, AVStream *st, int max_size)
         }
     }
 
-    if (par->sample_rate <= 0) {
-        av_log(s, AV_LOG_ERROR, "Invalid sample rate %d\n", par->sample_rate);
-        return AVERROR_INVALIDDATA;
-    }
-
     if (tmp_codec >= 0) {
         tmp_codec = ff_codec_get_id(ff_voc_codec_tags, tmp_codec);
         if (par->codec_id == AV_CODEC_ID_NONE)
@@ -126,21 +109,11 @@ ff_voc_get_packet(AVFormatContext *s, AVPacket *pkt, AVStream *st, int max_size)
         }
     }
 
-    par->bit_rate = (int64_t)par->sample_rate * par->channels * par->bits_per_coded_sample;
+    par->bit_rate = par->sample_rate * par->bits_per_coded_sample;
 
     if (max_size <= 0)
         max_size = 2048;
     size = FFMIN(voc->remaining_size, max_size);
     voc->remaining_size -= size;
-
-    ret = av_get_packet(pb, pkt, size);
-    pkt->dts = pkt->pts = voc->pts;
-
-    duration = av_get_audio_frame_duration2(st->codecpar, size);
-    if (duration > 0 && voc->pts != AV_NOPTS_VALUE)
-        voc->pts += duration;
-    else
-        voc->pts = AV_NOPTS_VALUE;
-
-    return ret;
+    return av_get_packet(pb, pkt, size);
 }
