@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,14 +24,13 @@
 #define AVCODEC_MOTIONPIXELS_TABLEGEN_H
 
 #include <stdint.h>
-#include "libavutil/attributes.h"
 
 typedef struct YuvPixel {
     int8_t y, v, u;
 } YuvPixel;
 
 static int mp_yuv_to_rgb(int y, int v, int u, int clip_rgb) {
-    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
+    static const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
     int r, g, b;
 
     r = (1000 * y + 701 * v) / 1000;
@@ -50,7 +49,7 @@ static int mp_yuv_to_rgb(int y, int v, int u, int clip_rgb) {
 #else
 static YuvPixel mp_rgb_yuv_table[1 << 15];
 
-static av_cold void mp_set_zero_yuv(YuvPixel *p)
+static void mp_set_zero_yuv(YuvPixel *p)
 {
     int i, j;
 
@@ -64,7 +63,7 @@ static av_cold void mp_set_zero_yuv(YuvPixel *p)
     }
 }
 
-static av_cold void mp_build_rgb_yuv_table(YuvPixel *p)
+static void mp_build_rgb_yuv_table(YuvPixel *p)
 {
     int y, v, u, i;
 
@@ -82,7 +81,7 @@ static av_cold void mp_build_rgb_yuv_table(YuvPixel *p)
         mp_set_zero_yuv(p + i * 32);
 }
 
-static av_cold void motionpixels_tableinit(void)
+static void motionpixels_tableinit(void)
 {
     if (!mp_rgb_yuv_table[0].u)
         mp_build_rgb_yuv_table(mp_rgb_yuv_table);
