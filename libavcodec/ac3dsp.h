@@ -2,20 +2,20 @@
  * AC-3 DSP functions
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -126,9 +126,16 @@ typedef struct AC3DSPContext {
 
     void (*extract_exponents)(uint8_t *exp, int32_t *coef, int nb_coefs);
 
+    void (*sum_square_butterfly_int32)(int64_t sum[4], const int32_t *coef0,
+                                       const int32_t *coef1, int len);
+
+    void (*sum_square_butterfly_float)(float sum[4], const float *coef0,
+                                       const float *coef1, int len);
+
     int out_channels;
     int in_channels;
     void (*downmix)(float **samples, float **matrix, int len);
+    void (*downmix_fixed)(int32_t **samples, int16_t **matrix, int len);
 
     /**
      * Apply symmetric window in 16-bit fixed-point.
@@ -148,9 +155,13 @@ typedef struct AC3DSPContext {
 void ff_ac3dsp_init    (AC3DSPContext *c, int bit_exact);
 void ff_ac3dsp_init_arm(AC3DSPContext *c, int bit_exact);
 void ff_ac3dsp_init_x86(AC3DSPContext *c, int bit_exact);
+void ff_ac3dsp_init_mips(AC3DSPContext *c, int bit_exact);
 
 void ff_ac3dsp_downmix(AC3DSPContext *c, float **samples, float **matrix,
                        int out_ch, int in_ch, int len);
+void ff_ac3dsp_downmix_fixed(AC3DSPContext *c, int32_t **samples, int16_t **matrix,
+                             int out_ch, int in_ch, int len);
+
 void ff_ac3dsp_set_downmix_x86(AC3DSPContext *c);
 
 #endif /* AVCODEC_AC3DSP_H */
