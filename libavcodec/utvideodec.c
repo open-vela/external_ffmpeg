@@ -2,20 +2,20 @@
  * Ut Video decoder
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,10 +28,11 @@
 #include <stdlib.h>
 
 #include "libavutil/intreadwrite.h"
+
 #include "avcodec.h"
+#include "bitstream.h"
 #include "bswapdsp.h"
 #include "bytestream.h"
-#include "get_bits.h"
 #include "internal.h"
 #include "thread.h"
 #include "utvideo.h"
@@ -101,13 +102,12 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
         *fsym = he[0].sym;
         return 0;
     }
+    if (he[0].len > 32)
+        return -1;
 
     last = 255;
     while (he[last].len == 255 && last)
         last--;
-
-    if (he[last].len > 32)
-        return -1;
 
     code = 1;
     for (i = last; i >= 0; i--) {
@@ -117,22 +117,22 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
         code += 0x80000000u >> (he[i].len - 1);
     }
 
-    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 11), last + 1,
+    return ff_init_vlc_sparse(vlc, FFMIN(he[last].len, 9), last + 1,
                               bits,  sizeof(*bits),  sizeof(*bits),
                               codes, sizeof(*codes), sizeof(*codes),
                               syms,  sizeof(*syms),  sizeof(*syms), 0);
 }
 
 static int decode_plane10(UtvideoContext *c, int plane_no,
-                          uint16_t *dst, int step, ptrdiff_t stride,
+                          uint16_t *dst, int step, int stride,
                           int width, int height,
                           const uint8_t *src, const uint8_t *huff,
                           int use_pred)
 {
+    BitstreamContext bc;
     int i, j, slice, pix, ret;
     int sstart, send;
     VLC vlc;
-    GetBitContext gb;
     int prev, fsym;
 
     if ((ret = build_huff10(huff, &vlc, &fsym)) < 0) {
@@ -191,17 +191,17 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
         c->bdsp.bswap_buf((uint32_t *) c->slice_bits,
                           (uint32_t *) c->slice_bits,
                           (slice_data_end - slice_data_start + 3) >> 2);
-        init_get_bits(&gb, c->slice_bits, slice_size * 8);
+        bitstream_init8(&bc, c->slice_bits, slice_size);
 
         prev = 0x200;
         for (j = sstart; j < send; j++) {
             for (i = 0; i < width * step; i += step) {
-                if (get_bits_left(&gb) <= 0) {
+                if (bitstream_bits_left(&bc) <= 0) {
                     av_log(c->avctx, AV_LOG_ERROR,
                            "Slice decoding ran out of bits\n");
                     goto fail;
                 }
-                pix = get_vlc2(&gb, vlc.table, vlc.bits, 3);
+                pix = bitstream_read_vlc(&bc, vlc.table, vlc.bits, 3);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
                     goto fail;
@@ -215,9 +215,9 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
             }
             dest += stride;
         }
-        if (get_bits_left(&gb) > 32)
+        if (bitstream_bits_left(&bc) > 32)
             av_log(c->avctx, AV_LOG_WARNING,
-                   "%d bits left after decoding slice\n", get_bits_left(&gb));
+                   "%d bits left after decoding slice\n", bitstream_bits_left(&bc));
     }
 
     ff_free_vlc(&vlc);
@@ -236,7 +236,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
     int i, j, slice, pix;
     int sstart, send;
     VLC vlc;
-    GetBitContext gb;
+    BitstreamContext bc;
     int prev, fsym;
     const int cmask = ~(!plane_no && c->avctx->pix_fmt == AV_PIX_FMT_YUV420P);
 
@@ -297,17 +297,17 @@ static int decode_plane(UtvideoContext *c, int plane_no,
         c->bdsp.bswap_buf((uint32_t *) c->slice_bits,
                           (uint32_t *) c->slice_bits,
                           (slice_data_end - slice_data_start + 3) >> 2);
-        init_get_bits(&gb, c->slice_bits, slice_size * 8);
+        bitstream_init8(&bc, c->slice_bits, slice_size);
 
         prev = 0x80;
         for (j = sstart; j < send; j++) {
             for (i = 0; i < width * step; i += step) {
-                if (get_bits_left(&gb) <= 0) {
+                if (bitstream_bits_left(&bc) <= 0) {
                     av_log(c->avctx, AV_LOG_ERROR,
                            "Slice decoding ran out of bits\n");
                     goto fail;
                 }
-                pix = get_vlc2(&gb, vlc.table, vlc.bits, 3);
+                pix = bitstream_read_vlc(&bc, vlc.table, vlc.bits, 4);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
                     goto fail;
@@ -320,9 +320,9 @@ static int decode_plane(UtvideoContext *c, int plane_no,
             }
             dest += stride;
         }
-        if (get_bits_left(&gb) > 32)
+        if (bitstream_bits_left(&bc) > 32)
             av_log(c->avctx, AV_LOG_WARNING,
-                   "%d bits left after decoding slice\n", get_bits_left(&gb));
+                   "%d bits left after decoding slice\n", bitstream_bits_left(&bc));
     }
 
     ff_free_vlc(&vlc);
@@ -373,12 +373,9 @@ static void restore_rgb_planes10(AVFrame *frame, int width, int height)
     }
 }
 
-#undef A
-#undef B
-#undef C
-
-static void restore_median_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t stride,
-                                  int width, int height, int slices, int rmode)
+static void restore_median_planar(UtvideoContext *c, uint8_t *src,
+                                  ptrdiff_t stride, int width, int height,
+                                  int slices, int rmode)
 {
     int i, j, slice;
     int A, B, C;
@@ -397,7 +394,7 @@ static void restore_median_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t str
 
         // first line - left neighbour prediction
         bsrc[0] += 0x80;
-        c->llviddsp.add_left_pred(bsrc, bsrc, width, 0);
+        c->hdspdec.add_hfyu_left_pred(bsrc, bsrc, width, 0);
         bsrc += stride;
         if (slice_height <= 1)
             continue;
@@ -414,7 +411,7 @@ static void restore_median_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t str
         bsrc += stride;
         // the rest of lines use continuous median prediction
         for (j = 2; j < slice_height; j++) {
-            c->llviddsp.add_median_pred(bsrc, bsrc - stride,
+            c->hdspdec.add_hfyu_median_pred(bsrc, bsrc - stride,
                                             bsrc, width, &A, &B);
             bsrc += stride;
         }
@@ -425,15 +422,16 @@ static void restore_median_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t str
  * so restoring function should take care of possible padding between
  * two parts of the same "line".
  */
-static void restore_median_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_t stride,
-                                     int width, int height, int slices, int rmode)
+static void restore_median_planar_il(UtvideoContext *c, uint8_t *src,
+                                     ptrdiff_t stride, int width, int height,
+                                     int slices, int rmode)
 {
     int i, j, slice;
     int A, B, C;
     uint8_t *bsrc;
     int slice_start, slice_height;
     const int cmask   = ~(rmode ? 3 : 1);
-    const ptrdiff_t stride2 = stride << 1;
+    const int stride2 = stride << 1;
 
     for (slice = 0; slice < slices; slice++) {
         slice_start    = ((slice * height) / slices) & cmask;
@@ -447,8 +445,8 @@ static void restore_median_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_t 
 
         // first line - left neighbour prediction
         bsrc[0] += 0x80;
-        A = c->llviddsp.add_left_pred(bsrc, bsrc, width, 0);
-        c->llviddsp.add_left_pred(bsrc + stride, bsrc + stride, width, A);
+        A = c->hdspdec.add_hfyu_left_pred(bsrc, bsrc, width, 0);
+        c->hdspdec.add_hfyu_left_pred(bsrc + stride, bsrc + stride, width, A);
         bsrc += stride2;
         if (slice_height <= 1)
             continue;
@@ -462,14 +460,14 @@ static void restore_median_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_t 
             C        = B;
             A        = bsrc[i];
         }
-        c->llviddsp.add_median_pred(bsrc + stride, bsrc - stride,
+        c->hdspdec.add_hfyu_median_pred(bsrc + stride, bsrc - stride,
                                         bsrc + stride, width, &A, &B);
         bsrc += stride2;
         // the rest of lines use continuous median prediction
         for (j = 2; j < slice_height; j++) {
-            c->llviddsp.add_median_pred(bsrc, bsrc - stride2,
+            c->hdspdec.add_hfyu_median_pred(bsrc, bsrc - stride2,
                                             bsrc, width, &A, &B);
-            c->llviddsp.add_median_pred(bsrc + stride, bsrc - stride,
+            c->hdspdec.add_hfyu_median_pred(bsrc + stride, bsrc - stride,
                                             bsrc + stride, width, &A, &B);
             bsrc += stride2;
         }
@@ -477,7 +475,8 @@ static void restore_median_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_t 
 }
 
 static void restore_median_packed(uint8_t *src, int step, ptrdiff_t stride,
-                                  int width, int height, int slices, int rmode)
+                                  int width, int height,
+                                  int slices, int rmode)
 {
     int i, j, slice;
     int A, B, C;
@@ -489,9 +488,9 @@ static void restore_median_packed(uint8_t *src, int step, ptrdiff_t stride,
         slice_start  = ((slice * height) / slices) & cmask;
         slice_height = ((((slice + 1) * height) / slices) & cmask) -
                        slice_start;
-
         if (!slice_height)
             continue;
+
         bsrc = src + slice_start * stride;
 
         // first line - left neighbour prediction
@@ -502,7 +501,7 @@ static void restore_median_packed(uint8_t *src, int step, ptrdiff_t stride,
             A        = bsrc[i];
         }
         bsrc += stride;
-        if (slice_height <= 1)
+        if (slice_height == 1)
             continue;
         // second line - first element has top prediction, the rest uses median
         C        = bsrc[-stride];
@@ -533,7 +532,8 @@ static void restore_median_packed(uint8_t *src, int step, ptrdiff_t stride,
  * two parts of the same "line".
  */
 static void restore_median_packed_il(uint8_t *src, int step, ptrdiff_t stride,
-                                     int width, int height, int slices, int rmode)
+                                     int width, int height,
+                                     int slices, int rmode)
 {
     int i, j, slice;
     int A, B, C;
@@ -564,7 +564,7 @@ static void restore_median_packed_il(uint8_t *src, int step, ptrdiff_t stride,
             A                 = bsrc[stride + i];
         }
         bsrc += stride2;
-        if (slice_height <= 1)
+        if (slice_height == 1)
             continue;
         // second line - first element has top prediction, the rest uses median
         C        = bsrc[-stride2];
@@ -622,7 +622,7 @@ static void restore_gradient_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t s
 
         // first line - left neighbour prediction
         bsrc[0] += 0x80;
-        c->llviddsp.add_left_pred(bsrc, bsrc, width, 0);
+        c->hdspdec.add_hfyu_left_pred(bsrc, bsrc, width, 0);
         bsrc += stride;
         if (slice_height <= 1)
             continue;
@@ -662,8 +662,8 @@ static void restore_gradient_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_
 
         // first line - left neighbour prediction
         bsrc[0] += 0x80;
-        A = c->llviddsp.add_left_pred(bsrc, bsrc, width, 0);
-        c->llviddsp.add_left_pred(bsrc + stride, bsrc + stride, width, A);
+        A = c->hdspdec.add_hfyu_left_pred(bsrc, bsrc, width, 0);
+        c->hdspdec.add_hfyu_left_pred(bsrc + stride, bsrc + stride, width, A);
         bsrc += stride2;
         if (slice_height <= 1)
             continue;
@@ -798,8 +798,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     GetByteContext gb;
     ThreadFrame frame = { .f = data };
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
+
+    ff_thread_finish_setup(avctx);
 
     /* parse plane structure to get frame flags and validate slice offsets */
     bytestream2_init(&gb, buf, buf_size);
@@ -902,13 +906,14 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             } else if (c->frame_pred == PRED_GRADIENT) {
                 if (!c->interlaced) {
                     restore_gradient_packed(frame.f->data[0] + ff_ut_rgb_order[i],
-                                            c->planes, frame.f->linesize[0], avctx->width,
-                                            avctx->height, c->slices, 0);
+                                            c->planes, frame.f->linesize[0],
+                                            avctx->width, avctx->height,
+                                            c->slices, 0);
                 } else {
                     restore_gradient_packed_il(frame.f->data[0] + ff_ut_rgb_order[i],
                                                c->planes, frame.f->linesize[0],
-                                               avctx->width, avctx->height, c->slices,
-                                               0);
+                                               avctx->width, avctx->height,
+                                               c->slices, 0);
                 }
             }
         }
@@ -949,7 +954,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             } else if (c->frame_pred == PRED_GRADIENT) {
                 if (!c->interlaced) {
                     restore_gradient_planar(c, frame.f->data[i], frame.f->linesize[i],
-                                            avctx->width >> !!i, avctx->height >> !!i,
+                                            avctx->width >> !!i,
+                                            avctx->height >> !!i,
                                             c->slices, !i);
                 } else {
                     restore_gradient_planar_il(c, frame.f->data[i], frame.f->linesize[i],
@@ -1048,7 +1054,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->avctx = avctx;
 
     ff_bswapdsp_init(&c->bdsp);
-    ff_llviddsp_init(&c->llviddsp);
+    ff_huffyuvdsp_init(&c->hdspdec);
 
     if (avctx->extradata_size >= 16) {
         av_log(avctx, AV_LOG_DEBUG, "Encoder version %d.%d.%d.%d\n",
