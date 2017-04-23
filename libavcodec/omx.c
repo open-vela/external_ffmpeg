@@ -2,20 +2,20 @@
  * OMX Video encoder
  * Copyright (C) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -220,12 +220,13 @@ typedef struct OMXCodecContext {
 
     int mutex_cond_inited;
 
-    int eos_sent, got_eos;
+    int num_in_frames, num_out_frames;
 
     uint8_t *output_buf;
     int output_buf_size;
 
     int input_zerocopy;
+    int profile;
 } OMXCodecContext;
 
 static void append_buffer(pthread_mutex_t *mutex, pthread_cond_t *cond,
@@ -523,6 +524,19 @@ static av_cold int omx_component_init(AVCodecContext *avctx, const char *role)
         CHECK(err);
         avc.nBFrames = 0;
         avc.nPFrames = avctx->gop_size - 1;
+        switch (s->profile == FF_PROFILE_UNKNOWN ? avctx->profile : s->profile) {
+        case FF_PROFILE_H264_BASELINE:
+            avc.eProfile = OMX_VIDEO_AVCProfileBaseline;
+            break;
+        case FF_PROFILE_H264_MAIN:
+            avc.eProfile = OMX_VIDEO_AVCProfileMain;
+            break;
+        case FF_PROFILE_H264_HIGH:
+            avc.eProfile = OMX_VIDEO_AVCProfileHigh;
+            break;
+        default:
+            break;
+        }
         err = OMX_SetParameter(s->handle, OMX_IndexParamVideoAvc, &avc);
         CHECK(err);
     }
@@ -761,7 +775,10 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             } else {
                 // If not, we need to allocate a new buffer with the right
                 // size and copy the input frame into it.
-                uint8_t *buf = av_malloc(av_image_get_buffer_size(avctx->pix_fmt, s->stride, s->plane_size, 1));
+                uint8_t *buf = NULL;
+                int image_buffer_size = av_image_get_buffer_size(avctx->pix_fmt, s->stride, s->plane_size, 1);
+                if (image_buffer_size >= 0)
+                    buf = av_malloc(image_buffer_size);
                 if (!buf) {
                     // Return the buffer to the queue so it's not lost
                     append_buffer(&s->input_mutex, &s->input_cond, &s->num_free_in_buffers, s->free_in_buffers, buffer);
@@ -791,34 +808,16 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             av_log(avctx, AV_LOG_ERROR, "OMX_EmptyThisBuffer failed: %x\n", err);
             return AVERROR_UNKNOWN;
         }
-    } else if (!s->eos_sent) {
-        buffer = get_buffer(&s->input_mutex, &s->input_cond,
-                            &s->num_free_in_buffers, s->free_in_buffers, 1);
-
-        buffer->nFilledLen = 0;
-        buffer->nFlags = OMX_BUFFERFLAG_EOS;
-        buffer->pAppPrivate = buffer->pOutputPortPrivate = NULL;
-        err = OMX_EmptyThisBuffer(s->handle, buffer);
-        if (err != OMX_ErrorNone) {
-            append_buffer(&s->input_mutex, &s->input_cond, &s->num_free_in_buffers, s->free_in_buffers, buffer);
-            av_log(avctx, AV_LOG_ERROR, "OMX_EmptyThisBuffer failed: %x\n", err);
-            return AVERROR_UNKNOWN;
-        }
-        s->eos_sent = 1;
+        s->num_in_frames++;
     }
 
-    while (!*got_packet && ret == 0 && !s->got_eos) {
-        // If not flushing, just poll the queue if there's finished packets.
-        // If flushing, do a blocking wait until we either get a completed
-        // packet, or get EOS.
+    while (!*got_packet && ret == 0) {
+        // Only wait for output if flushing and not all frames have been output
         buffer = get_buffer(&s->output_mutex, &s->output_cond,
                             &s->num_done_out_buffers, s->done_out_buffers,
-                            !frame);
+                            !frame && s->num_out_frames < s->num_in_frames);
         if (!buffer)
             break;
-
-        if (buffer->nFlags & OMX_BUFFERFLAG_EOS)
-            s->got_eos = 1;
 
         if (buffer->nFlags & OMX_BUFFERFLAG_CODECCONFIG && avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
             if ((ret = av_reallocp(&avctx->extradata, avctx->extradata_size + buffer->nFilledLen + AV_INPUT_BUFFER_PADDING_SIZE)) < 0) {
@@ -829,6 +828,8 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             avctx->extradata_size += buffer->nFilledLen;
             memset(avctx->extradata + avctx->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         } else {
+            if (buffer->nFlags & OMX_BUFFERFLAG_ENDOFFRAME)
+                s->num_out_frames++;
             if (!(buffer->nFlags & OMX_BUFFERFLAG_ENDOFFRAME) || !pkt->data) {
                 // If the output packet isn't preallocated, just concatenate everything in our
                 // own buffer
@@ -850,7 +851,7 @@ static int omx_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 }
             } else {
                 // End of frame, and the caller provided a preallocated frame
-                if ((ret = ff_alloc_packet(pkt, s->output_buf_size + buffer->nFilledLen)) < 0) {
+                if ((ret = ff_alloc_packet2(avctx, pkt, s->output_buf_size + buffer->nFilledLen, 0)) < 0) {
                     av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n",
                            (int)(s->output_buf_size + buffer->nFilledLen));
                     goto end;
@@ -897,6 +898,10 @@ static const AVOption options[] = {
     { "omx_libname", "OpenMAX library name", OFFSET(libname), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VDE },
     { "omx_libprefix", "OpenMAX library prefix", OFFSET(libprefix), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VDE },
     { "zerocopy", "Try to avoid copying input frames if possible", OFFSET(input_zerocopy), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "profile",  "Set the encoding profile", OFFSET(profile), AV_OPT_TYPE_INT,   { .i64 = FF_PROFILE_UNKNOWN },       FF_PROFILE_UNKNOWN, FF_PROFILE_H264_HIGH, VE, "profile" },
+    { "baseline", "",                         0,               AV_OPT_TYPE_CONST, { .i64 = FF_PROFILE_H264_BASELINE }, 0, 0, VE, "profile" },
+    { "main",     "",                         0,               AV_OPT_TYPE_CONST, { .i64 = FF_PROFILE_H264_MAIN },     0, 0, VE, "profile" },
+    { "high",     "",                         0,               AV_OPT_TYPE_CONST, { .i64 = FF_PROFILE_H264_HIGH },     0, 0, VE, "profile" },
     { NULL }
 };
 

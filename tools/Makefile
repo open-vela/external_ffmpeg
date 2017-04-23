@@ -1,7 +1,5 @@
-TOOLS = qt-faststart trasher
+TOOLS = qt-faststart trasher uncoded_frame
 TOOLS-$(CONFIG_ZLIB) += cws2fws
-
-tools/cws2fws$(EXESUF): ELIBS = $(ZLIB)
 
 OBJDIRS += tools
 
