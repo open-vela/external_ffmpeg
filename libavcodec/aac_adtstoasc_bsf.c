@@ -2,20 +2,20 @@
  * MPEG-2/4 AAC ADTS to MPEG-4 Audio Specific Configuration bitstream filter
  * Copyright (c) 2009 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,13 +49,13 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
     if (ret < 0)
         return ret;
 
+    if (bsfc->par_in->extradata && in->size >= 2 && (AV_RB16(in->data) >> 4) != 0xfff)
+        goto finish;
+
     if (in->size < AAC_ADTS_HEADER_SIZE)
         goto packet_too_small;
 
     init_get_bits(&gb, in->data, AAC_ADTS_HEADER_SIZE * 8);
-
-    if (bsfc->par_in->extradata && show_bits(&gb, 12) != 0xfff)
-        goto finish;
 
     if (avpriv_aac_parse_header(&gb, &hdr) < 0) {
         av_log(bsfc, AV_LOG_ERROR, "Error parsing ADTS frame header!\n");
@@ -97,8 +97,7 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
             in->data += get_bits_count(&gb)/8;
         }
 
-        extradata = av_packet_new_side_data(in, AV_PKT_DATA_NEW_EXTRADATA,
-                                            2 + pce_size);
+        extradata = av_mallocz(2 + pce_size + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!extradata) {
             ret = AVERROR(ENOMEM);
             goto fail;
@@ -116,6 +115,8 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
             memcpy(extradata + 2, pce_data, pce_size);
         }
 
+        bsfc->par_out->extradata = extradata;
+        bsfc->par_out->extradata_size = 2 + pce_size;
         ctx->first_frame_done = 1;
     }
 
