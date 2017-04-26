@@ -2,20 +2,20 @@
  * RTMP input format
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -287,6 +287,7 @@ static int rtmp_packet_read_one_chunk(URLContext *h, RTMPPacket *p,
        prev->data = p->data;
        prev->read = p->read;
        prev->offset = p->offset;
+       p->data      = NULL;
        return AVERROR(EAGAIN);
     }
 
@@ -447,6 +448,7 @@ int ff_amf_tag_size(const uint8_t *data, const uint8_t *data_end)
     case AMF_DATA_TYPE_STRING:      return 3 + AV_RB16(data);
     case AMF_DATA_TYPE_LONG_STRING: return 5 + AV_RB32(data);
     case AMF_DATA_TYPE_NULL:        return 1;
+    case AMF_DATA_TYPE_DATE:        return 11;
     case AMF_DATA_TYPE_ARRAY:
         parse_key = 0;
     case AMF_DATA_TYPE_MIXEDARRAY:
@@ -527,9 +529,9 @@ static const char* rtmp_packet_type(int type)
     switch (type) {
     case RTMP_PT_CHUNK_SIZE:     return "chunk size";
     case RTMP_PT_BYTES_READ:     return "bytes read";
-    case RTMP_PT_USER_CONTROL:   return "user control";
-    case RTMP_PT_WINDOW_ACK_SIZE: return "window acknowledgement size";
-    case RTMP_PT_SET_PEER_BW:    return "set peer bandwidth";
+    case RTMP_PT_PING:           return "ping";
+    case RTMP_PT_SERVER_BW:      return "server bandwidth";
+    case RTMP_PT_CLIENT_BW:      return "client bandwidth";
     case RTMP_PT_AUDIO:          return "audio packet";
     case RTMP_PT_VIDEO:          return "video packet";
     case RTMP_PT_FLEX_STREAM:    return "Flex shared stream";
@@ -627,10 +629,10 @@ void ff_rtmp_packet_dump(void *ctx, RTMPPacket *p)
                 break;
             src += sz;
         }
-    } else if (p->type == RTMP_PT_WINDOW_ACK_SIZE) {
-        av_log(ctx, AV_LOG_DEBUG, "Window acknowledgement size = %d\n", AV_RB32(p->data));
-    } else if (p->type == RTMP_PT_SET_PEER_BW) {
-        av_log(ctx, AV_LOG_DEBUG, "Set Peer BW = %d\n", AV_RB32(p->data));
+    } else if (p->type == RTMP_PT_SERVER_BW){
+        av_log(ctx, AV_LOG_DEBUG, "Server BW = %d\n", AV_RB32(p->data));
+    } else if (p->type == RTMP_PT_CLIENT_BW){
+        av_log(ctx, AV_LOG_DEBUG, "Client BW = %d\n", AV_RB32(p->data));
     } else if (p->type != RTMP_PT_AUDIO && p->type != RTMP_PT_VIDEO && p->type != RTMP_PT_METADATA) {
         int i;
         for (i = 0; i < p->size; i++)
