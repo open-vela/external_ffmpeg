@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 #include <dxva2api.h>
 #include <initguid.h>
 
-#include "avassert.h"
 #include "common.h"
 #include "hwcontext.h"
 #include "hwcontext_dxva2.h"
@@ -37,7 +36,6 @@
 #include "imgutils.h"
 #include "pixdesc.h"
 #include "pixfmt.h"
-#include "compat/w32dlfcn.h"
 
 typedef IDirect3D9* WINAPI pDirect3DCreate9(UINT);
 typedef HRESULT WINAPI pDirect3DCreate9Ex(UINT, IDirect3D9Ex **);
@@ -121,13 +119,6 @@ static void dxva2_frames_uninit(AVHWFramesContext *ctx)
     }
 }
 
-static void dxva2_pool_release_dummy(void *opaque, uint8_t *data)
-{
-    // important not to free anything here--data is a surface object
-    // associated with the call to CreateSurface(), and these surfaces are
-    // released in dxva2_frames_uninit()
-}
-
 static AVBufferRef *dxva2_pool_alloc(void *opaque, int size)
 {
     AVHWFramesContext      *ctx = (AVHWFramesContext*)opaque;
@@ -137,7 +128,7 @@ static AVBufferRef *dxva2_pool_alloc(void *opaque, int size)
     if (s->nb_surfaces_used < hwctx->nb_surfaces) {
         s->nb_surfaces_used++;
         return av_buffer_create((uint8_t*)s->surfaces_internal[s->nb_surfaces_used - 1],
-                                sizeof(*hwctx->surfaces), dxva2_pool_release_dummy, 0, 0);
+                                sizeof(*hwctx->surfaces), NULL, 0, 0);
     }
 
     return NULL;
@@ -426,10 +417,10 @@ static void dxva2_device_free(AVHWDeviceContext *ctx)
         IDirect3D9_Release(priv->d3d9);
 
     if (priv->d3dlib)
-        dlclose(priv->d3dlib);
+        FreeLibrary(priv->d3dlib);
 
     if (priv->dxva2lib)
-        dlclose(priv->dxva2lib);
+        FreeLibrary(priv->dxva2lib);
 
     av_freep(&ctx->user_opaque);
 }
@@ -440,7 +431,7 @@ static int dxva2_device_create9(AVHWDeviceContext *ctx, UINT adapter)
     D3DPRESENT_PARAMETERS d3dpp = dxva2_present_params;
     D3DDISPLAYMODE d3ddm;
     HRESULT hr;
-    pDirect3DCreate9 *createD3D = (pDirect3DCreate9 *)dlsym(priv->d3dlib, "Direct3DCreate9");
+    pDirect3DCreate9 *createD3D = (pDirect3DCreate9 *)GetProcAddress(priv->d3dlib, "Direct3DCreate9");
     if (!createD3D) {
         av_log(ctx, AV_LOG_ERROR, "Failed to locate Direct3DCreate9\n");
         return AVERROR_UNKNOWN;
@@ -456,9 +447,9 @@ static int dxva2_device_create9(AVHWDeviceContext *ctx, UINT adapter)
 
     d3dpp.BackBufferFormat = d3ddm.Format;
 
-    hr = IDirect3D9_CreateDevice(priv->d3d9, adapter, D3DDEVTYPE_HAL, GetDesktopWindow(),
-                                 FF_D3DCREATE_FLAGS,
-                                 &d3dpp, &priv->d3d9device);
+    hr = IDirect3D9_CreateDevice(priv->d3d9, adapter, D3DDEVTYPE_HAL, GetShellWindow(),
+                                FF_D3DCREATE_FLAGS,
+                                &d3dpp, &priv->d3d9device);
     if (FAILED(hr)) {
         av_log(ctx, AV_LOG_ERROR, "Failed to create Direct3D device\n");
         return AVERROR_UNKNOWN;
@@ -475,7 +466,7 @@ static int dxva2_device_create9ex(AVHWDeviceContext *ctx, UINT adapter)
     IDirect3D9Ex *d3d9ex = NULL;
     IDirect3DDevice9Ex *exdev = NULL;
     HRESULT hr;
-    pDirect3DCreate9Ex *createD3DEx = (pDirect3DCreate9Ex *)dlsym(priv->d3dlib, "Direct3DCreate9Ex");
+    pDirect3DCreate9Ex *createD3DEx = (pDirect3DCreate9Ex *)GetProcAddress(priv->d3dlib, "Direct3DCreate9Ex");
     if (!createD3DEx)
         return AVERROR(ENOSYS);
 
@@ -487,7 +478,7 @@ static int dxva2_device_create9ex(AVHWDeviceContext *ctx, UINT adapter)
 
     d3dpp.BackBufferFormat = modeex.Format;
 
-    hr = IDirect3D9Ex_CreateDeviceEx(d3d9ex, adapter, D3DDEVTYPE_HAL, GetDesktopWindow(),
+    hr = IDirect3D9Ex_CreateDeviceEx(d3d9ex, adapter, D3DDEVTYPE_HAL, GetShellWindow(),
                                      FF_D3DCREATE_FLAGS,
                                      &d3dpp, NULL, &exdev);
     if (FAILED(hr)) {
@@ -524,19 +515,19 @@ static int dxva2_device_create(AVHWDeviceContext *ctx, const char *device,
 
     priv->device_handle = INVALID_HANDLE_VALUE;
 
-    priv->d3dlib = dlopen("d3d9.dll", 0);
+    priv->d3dlib = LoadLibrary("d3d9.dll");
     if (!priv->d3dlib) {
         av_log(ctx, AV_LOG_ERROR, "Failed to load D3D9 library\n");
         return AVERROR_UNKNOWN;
     }
-    priv->dxva2lib = dlopen("dxva2.dll", 0);
+    priv->dxva2lib = LoadLibrary("dxva2.dll");
     if (!priv->dxva2lib) {
         av_log(ctx, AV_LOG_ERROR, "Failed to load DXVA2 library\n");
         return AVERROR_UNKNOWN;
     }
 
-    createDeviceManager = (pCreateDeviceManager9 *)dlsym(priv->dxva2lib,
-                                                         "DXVA2CreateDirect3DDeviceManager9");
+    createDeviceManager = (pCreateDeviceManager9 *)GetProcAddress(priv->dxva2lib,
+                                                                  "DXVA2CreateDirect3DDeviceManager9");
     if (!createDeviceManager) {
         av_log(ctx, AV_LOG_ERROR, "Failed to locate DXVA2CreateDirect3DDeviceManager9\n");
         return AVERROR_UNKNOWN;
