@@ -1,21 +1,21 @@
 /*
- * Vp9 invisible (alt-ref) frame to superframe merge bitstream filter
+ * VP9 invisible (alt-ref) frame to superframe merge bitstream filter
  * Copyright (c) 2016 Ronald S. Bultje <rsbultje@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -70,11 +70,12 @@ static int merge_superframe(const struct CachedBuf *in, int n_in, AVPacket *out)
         ptr += in[n].size;
     }
 
-#define wloop(mag, wr) \
-    for (n = 0; n < n_in; n++) { \
-        wr; \
-        ptr += mag + 1; \
-    }
+#define wloop(mag, wr) do { \
+        for (n = 0; n < n_in; n++) { \
+            wr; \
+            ptr += mag + 1; \
+        } \
+    } while (0)
 
     // write superframe with marker 110[mag:2][nframes:3]
     *ptr++ = marker;
@@ -135,7 +136,7 @@ static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
     if (uses_superframe_syntax && s->n_cache > 0) {
         av_log(ctx, AV_LOG_ERROR,
                "Mixing of superframe syntax and naked VP9 frames not supported");
-        res = AVERROR_INVALIDDATA;
+        res = AVERROR(ENOSYS);
         goto done;
     } else if ((!invisible || uses_superframe_syntax) && !s->n_cache) {
         // passthrough
@@ -148,20 +149,21 @@ static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
         goto done;
     }
 
-    s->cache[s->n_cache].size = in->size;
-    if (invisible && !uses_superframe_syntax) {
+    if (invisible) {
         s->cache[s->n_cache].data = av_malloc(in->size);
         if (!s->cache[s->n_cache].data) {
             res = AVERROR(ENOMEM);
             goto done;
         }
-        memcpy(s->cache[s->n_cache++].data, in->data, in->size);
+        memcpy(s->cache[s->n_cache].data, in->data, in->size);
+        s->cache[s->n_cache++].size = in->size;
         res = AVERROR(EAGAIN);
         goto done;
     }
     av_assert0(s->n_cache > 0);
 
     s->cache[s->n_cache].data = in->data;
+    s->cache[s->n_cache].size = in->size;
 
     // build superframe
     if ((res = merge_superframe(s->cache, s->n_cache + 1, out)) < 0)

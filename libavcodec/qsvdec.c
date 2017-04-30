@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,7 +42,7 @@
 #include "qsvdec.h"
 
 static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession session,
-                            AVBufferRef *hw_frames_ref)
+                            AVBufferRef *hw_frames_ref, AVBufferRef *hw_device_ref)
 {
     int ret;
 
@@ -59,13 +59,25 @@ static int qsv_init_session(AVCodecContext *avctx, QSVContext *q, mfxSession ses
         if (!q->frames_ctx.hw_frames_ctx)
             return AVERROR(ENOMEM);
 
-        ret = ff_qsv_init_session_hwcontext(avctx, &q->internal_session,
-                                            &q->frames_ctx, q->load_plugins,
-                                            q->iopattern == MFX_IOPATTERN_OUT_OPAQUE_MEMORY);
+        ret = ff_qsv_init_session_frames(avctx, &q->internal_session,
+                                         &q->frames_ctx, q->load_plugins,
+                                         q->iopattern == MFX_IOPATTERN_OUT_OPAQUE_MEMORY);
         if (ret < 0) {
             av_buffer_unref(&q->frames_ctx.hw_frames_ctx);
             return ret;
         }
+
+        q->session = q->internal_session;
+    } else if (hw_device_ref) {
+        if (q->internal_session) {
+            MFXClose(q->internal_session);
+            q->internal_session = NULL;
+        }
+
+        ret = ff_qsv_init_session_device(avctx, &q->internal_session,
+                                         hw_device_ref, q->load_plugins);
+        if (ret < 0)
+            return ret;
 
         q->session = q->internal_session;
     } else {
@@ -133,7 +145,7 @@ static int qsv_decode_init(AVCodecContext *avctx, QSVContext *q)
         iopattern = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
     q->iopattern = iopattern;
 
-    ret = qsv_init_session(avctx, q, session, avctx->hw_frames_ctx);
+    ret = qsv_init_session(avctx, q, session, avctx->hw_frames_ctx, avctx->hw_device_ctx);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing an MFX session\n");
         return ret;
@@ -314,7 +326,7 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
         ret = MFXVideoDECODE_DecodeFrameAsync(q->session, avpkt->size ? &bs : NULL,
                                               insurf, &outsurf, sync);
         if (ret == MFX_WRN_DEVICE_BUSY)
-            av_usleep(500);
+            av_usleep(1);
 
     } while (ret == MFX_WRN_DEVICE_BUSY || ret == MFX_ERR_MORE_SURFACE);
 
@@ -455,6 +467,16 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
         q->avctx_internal = avcodec_alloc_context3(NULL);
         if (!q->avctx_internal)
             return AVERROR(ENOMEM);
+
+        if (avctx->extradata) {
+            q->avctx_internal->extradata = av_mallocz(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!q->avctx_internal->extradata)
+                return AVERROR(ENOMEM);
+
+            memcpy(q->avctx_internal->extradata, avctx->extradata,
+                   avctx->extradata_size);
+            q->avctx_internal->extradata_size = avctx->extradata_size;
+        }
 
         q->parser = av_parser_init(avctx->codec_id);
         if (!q->parser)
