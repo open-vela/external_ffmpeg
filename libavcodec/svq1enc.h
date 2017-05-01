@@ -1,20 +1,20 @@
 /*
  * SVQ1 encoder
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,8 +62,6 @@ typedef struct SVQ1EncContext {
     int c_block_width;
     int c_block_height;
 
-    DECLARE_ALIGNED(16, int16_t, encoded_block_levels)[6][7][256];
-
     uint16_t *mb_type;
     uint32_t *dummy;
     int16_t (*motion_val8[3])[2];
@@ -76,7 +74,7 @@ typedef struct SVQ1EncContext {
     int motion_est;
 
     int (*ssd_int8_vs_int16)(const int8_t *pix1, const int16_t *pix2,
-                             intptr_t size);
+                             int size);
 } SVQ1EncContext;
 
 void ff_svq1enc_init_ppc(SVQ1EncContext *c);
