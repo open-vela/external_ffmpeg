@@ -1,8 +1,7 @@
-TOOLS = qt-faststart trasher uncoded_frame
+TOOLS = qt-faststart trasher
 TOOLS-$(CONFIG_ZLIB) += cws2fws
 
-tools/target_dec_%_fuzzer.o: tools/target_dec_fuzzer.c
-	$(COMPILE_C) -DFFMPEG_DECODER=$*
+tools/cws2fws$(EXESUF): ELIBS = $(ZLIB)
 
 OBJDIRS += tools
 
