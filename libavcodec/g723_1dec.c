@@ -3,20 +3,20 @@
  * Copyright (c) 2006 Benjamin Larsson
  * Copyright (c) 2010 Mohamed Naufal Basheer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,8 +32,9 @@
 #define BITSTREAM_READER_LE
 #include "acelp_vectors.h"
 #include "avcodec.h"
-#include "bitstream.h"
 #include "celp_filters.h"
+#include "celp_math.h"
+#include "get_bits.h"
 #include "internal.h"
 #include "g723_1.h"
 
@@ -46,7 +47,6 @@ static av_cold int g723_1_decode_init(AVCodecContext *avctx)
     avctx->channel_layout = AV_CH_LAYOUT_MONO;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
     avctx->channels       = 1;
-    avctx->sample_rate    = 8000;
     p->pf_gain            = 1 << 12;
 
     memcpy(p->prev_lsp, dc_lsp, LPC_ORDER * sizeof(*p->prev_lsp));
@@ -68,14 +68,14 @@ static av_cold int g723_1_decode_init(AVCodecContext *avctx)
 static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
                             int buf_size)
 {
-    BitstreamContext bc;
+    GetBitContext gb;
     int ad_cb_len;
     int temp, info_bits, i;
 
-    bitstream_init8(&bc, buf, buf_size);
+    init_get_bits(&gb, buf, buf_size * 8);
 
     /* Extract frame type and rate info */
-    info_bits = bitstream_read(&bc, 2);
+    info_bits = get_bits(&gb, 2);
 
     if (info_bits == 3) {
         p->cur_frame_type = UNTRANSMITTED_FRAME;
@@ -83,13 +83,13 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
     }
 
     /* Extract 24 bit lsp indices, 8 bit for each band */
-    p->lsp_index[2] = bitstream_read(&bc, 8);
-    p->lsp_index[1] = bitstream_read(&bc, 8);
-    p->lsp_index[0] = bitstream_read(&bc, 8);
+    p->lsp_index[2] = get_bits(&gb, 8);
+    p->lsp_index[1] = get_bits(&gb, 8);
+    p->lsp_index[0] = get_bits(&gb, 8);
 
     if (info_bits == 2) {
         p->cur_frame_type = SID_FRAME;
-        p->subframe[0].amp_index = bitstream_read(&bc, 6);
+        p->subframe[0].amp_index = get_bits(&gb, 6);
         return 0;
     }
 
@@ -97,23 +97,23 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
     p->cur_rate       = info_bits ? RATE_5300 : RATE_6300;
     p->cur_frame_type = ACTIVE_FRAME;
 
-    p->pitch_lag[0] = bitstream_read(&bc, 7);
+    p->pitch_lag[0] = get_bits(&gb, 7);
     if (p->pitch_lag[0] > 123)       /* test if forbidden code */
         return -1;
     p->pitch_lag[0] += PITCH_MIN;
-    p->subframe[1].ad_cb_lag = bitstream_read(&bc, 2);
+    p->subframe[1].ad_cb_lag = get_bits(&gb, 2);
 
-    p->pitch_lag[1] = bitstream_read(&bc, 7);
+    p->pitch_lag[1] = get_bits(&gb, 7);
     if (p->pitch_lag[1] > 123)
         return -1;
     p->pitch_lag[1] += PITCH_MIN;
-    p->subframe[3].ad_cb_lag = bitstream_read(&bc, 2);
+    p->subframe[3].ad_cb_lag = get_bits(&gb, 2);
     p->subframe[0].ad_cb_lag = 1;
     p->subframe[2].ad_cb_lag = 1;
 
     for (i = 0; i < SUBFRAMES; i++) {
         /* Extract combined gain */
-        temp = bitstream_read(&bc, 12);
+        temp = get_bits(&gb, 12);
         ad_cb_len = 170;
         p->subframe[i].dirac_train = 0;
         if (p->cur_rate == RATE_6300 && p->pitch_lag[i >> 1] < SUBFRAME_LEN - 2) {
@@ -130,16 +130,16 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
         }
     }
 
-    p->subframe[0].grid_index = bitstream_read(&bc, 1);
-    p->subframe[1].grid_index = bitstream_read(&bc, 1);
-    p->subframe[2].grid_index = bitstream_read(&bc, 1);
-    p->subframe[3].grid_index = bitstream_read(&bc, 1);
+    p->subframe[0].grid_index = get_bits1(&gb);
+    p->subframe[1].grid_index = get_bits1(&gb);
+    p->subframe[2].grid_index = get_bits1(&gb);
+    p->subframe[3].grid_index = get_bits1(&gb);
 
     if (p->cur_rate == RATE_6300) {
-        bitstream_skip(&bc, 1); /* skip reserved bit */
+        skip_bits1(&gb);  /* skip reserved bit */
 
         /* Compute pulse_pos index using the 13-bit combined position index */
-        temp = bitstream_read(&bc, 13);
+        temp = get_bits(&gb, 13);
         p->subframe[0].pulse_pos = temp / 810;
 
         temp -= p->subframe[0].pulse_pos * 810;
@@ -150,28 +150,28 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
         p->subframe[3].pulse_pos = temp - p->subframe[2].pulse_pos * 9;
 
         p->subframe[0].pulse_pos = (p->subframe[0].pulse_pos << 16) +
-                                   bitstream_read(&bc, 16);
+                                   get_bits(&gb, 16);
         p->subframe[1].pulse_pos = (p->subframe[1].pulse_pos << 14) +
-                                   bitstream_read(&bc, 14);
+                                   get_bits(&gb, 14);
         p->subframe[2].pulse_pos = (p->subframe[2].pulse_pos << 16) +
-                                   bitstream_read(&bc, 16);
+                                   get_bits(&gb, 16);
         p->subframe[3].pulse_pos = (p->subframe[3].pulse_pos << 14) +
-                                   bitstream_read(&bc, 14);
+                                   get_bits(&gb, 14);
 
-        p->subframe[0].pulse_sign = bitstream_read(&bc, 6);
-        p->subframe[1].pulse_sign = bitstream_read(&bc, 5);
-        p->subframe[2].pulse_sign = bitstream_read(&bc, 6);
-        p->subframe[3].pulse_sign = bitstream_read(&bc, 5);
+        p->subframe[0].pulse_sign = get_bits(&gb, 6);
+        p->subframe[1].pulse_sign = get_bits(&gb, 5);
+        p->subframe[2].pulse_sign = get_bits(&gb, 6);
+        p->subframe[3].pulse_sign = get_bits(&gb, 5);
     } else { /* 5300 bps */
-        p->subframe[0].pulse_pos  = bitstream_read(&bc, 12);
-        p->subframe[1].pulse_pos  = bitstream_read(&bc, 12);
-        p->subframe[2].pulse_pos  = bitstream_read(&bc, 12);
-        p->subframe[3].pulse_pos  = bitstream_read(&bc, 12);
+        p->subframe[0].pulse_pos  = get_bits(&gb, 12);
+        p->subframe[1].pulse_pos  = get_bits(&gb, 12);
+        p->subframe[2].pulse_pos  = get_bits(&gb, 12);
+        p->subframe[3].pulse_pos  = get_bits(&gb, 12);
 
-        p->subframe[0].pulse_sign = bitstream_read(&bc, 4);
-        p->subframe[1].pulse_sign = bitstream_read(&bc, 4);
-        p->subframe[2].pulse_sign = bitstream_read(&bc, 4);
-        p->subframe[3].pulse_sign = bitstream_read(&bc, 4);
+        p->subframe[0].pulse_sign = get_bits(&gb, 4);
+        p->subframe[1].pulse_sign = get_bits(&gb, 4);
+        p->subframe[2].pulse_sign = get_bits(&gb, 4);
+        p->subframe[3].pulse_sign = get_bits(&gb, 4);
     }
 
     return 0;
@@ -180,29 +180,12 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
 /**
  * Bitexact implementation of sqrt(val/2).
  */
-static int16_t square_root(int val)
+static int16_t square_root(unsigned val)
 {
-    int16_t res = 0;
-    int16_t exp = 0x4000;
-    int i;
+    av_assert2(!(val & 0x80000000));
 
-    for (i = 0; i < 14; i ++) {
-        int res_exp = res + exp;
-        if (val >= res_exp * res_exp << 1)
-            res += exp;
-        exp >>= 1;
-    }
-    return res;
+    return (ff_sqrt(val << 1) >> 1) & (~1);
 }
-
-/**
- * Bitexact implementation of 2ab scaled by 1/2^16.
- *
- * @param a 32 bit multiplicand
- * @param b 16 bit multiplier
- */
-#define MULL2(a, b) \
-        ((((a) >> 16) * (b) << 1) + (((a) & 0xffff) * (b) >> 15))
 
 /**
  * Generate fixed codebook excitation vector.
@@ -477,9 +460,9 @@ static int comp_interp_index(G723_1_Context *p, int pitch_lag,
 
     temp = best_eng * *exc_eng >> 3;
 
-    if (temp < ccr * ccr)
+    if (temp < ccr * ccr) {
         return index;
-    else
+    } else
         return 0;
 }
 
@@ -519,21 +502,24 @@ static void residual_interp(int16_t *buf, int16_t *out, int lag,
  * @param iir_coef IIR coefficients
  * @param src      source vector
  * @param dest     destination vector
+ * @param width    width of the output, 16 bits(0) / 32 bits(1)
  */
-static void iir_filter(int16_t *fir_coef, int16_t *iir_coef,
-                       int16_t *src, int *dest)
-{
-    int m, n;
-
-    for (m = 0; m < SUBFRAME_LEN; m++) {
-        int64_t filter = 0;
-        for (n = 1; n <= LPC_ORDER; n++) {
-            filter -= fir_coef[n - 1] * src[m - n] -
-                      iir_coef[n - 1] * (dest[m - n] >> 16);
-        }
-
-        dest[m] = av_clipl_int32((src[m] << 16) + (filter << 3) + (1 << 15));
-    }
+#define iir_filter(fir_coef, iir_coef, src, dest, width)\
+{\
+    int m, n;\
+    int res_shift = 16 & ~-(width);\
+    int in_shift  = 16 - res_shift;\
+\
+    for (m = 0; m < SUBFRAME_LEN; m++) {\
+        int64_t filter = 0;\
+        for (n = 1; n <= LPC_ORDER; n++) {\
+            filter -= (fir_coef)[n - 1] * (src)[m - n] -\
+                      (iir_coef)[n - 1] * ((dest)[m - n] >> in_shift);\
+        }\
+\
+        (dest)[m] = av_clipl_int32(((src)[m] * 65536) + (filter * 8) +\
+                                   (1 << 15)) >> res_shift;\
+    }\
 }
 
 /**
@@ -603,13 +589,12 @@ static void formant_postfilter(G723_1_Context *p, int16_t *lpc,
             filter_coef[1][k] = (-lpc[k] * postfilter_tbl[1][k] +
                                  (1 << 14)) >> 15;
         }
-        iir_filter(filter_coef[0], filter_coef[1], buf + i, filter_signal + i);
+        iir_filter(filter_coef[0], filter_coef[1], buf + i, filter_signal + i, 1);
         lpc += LPC_ORDER;
     }
 
-    memcpy(p->fir_mem, buf + FRAME_LEN, LPC_ORDER * sizeof(*p->fir_mem));
-    memcpy(p->iir_mem, filter_signal + FRAME_LEN,
-           LPC_ORDER * sizeof(*p->iir_mem));
+    memcpy(p->fir_mem, buf + FRAME_LEN, LPC_ORDER * sizeof(int16_t));
+    memcpy(p->iir_mem, filter_signal + FRAME_LEN, LPC_ORDER * sizeof(int));
 
     buf += LPC_ORDER;
     signal_ptr = filter_signal + LPC_ORDER;
@@ -679,7 +664,7 @@ static int estimate_sid_gain(G723_1_Context *p)
         t = p->sid_gain << shift;
     else
         t = p->sid_gain >> -shift;
-    x = t * cng_filt[0] >> 16;
+    x = av_clipl_int32(t * (int64_t)cng_filt[0] >> 16);
 
     if (x >= cng_bseg[2])
         return 0x3F;
@@ -748,7 +733,7 @@ static void generate_noise(G723_1_Context *p)
         off[i * 2 + 1] = ((t >> 1) & 1) + SUBFRAME_LEN;
         t >>= 2;
         for (j = 0; j < 11; j++) {
-            signs[i * 11 + j] = (t & 1) * 2 - 1 << 14;
+            signs[i * 11 + j] = ((t & 1) * 2 - 1)  * (1 << 14);
             t >>= 1;
         }
     }
@@ -792,7 +777,7 @@ static void generate_noise(G723_1_Context *p)
         sum = 0;
         if (shift < 0) {
            for (j = 0; j < SUBFRAME_LEN * 2; j++) {
-               t      = vector_ptr[j] << -shift;
+               t      = vector_ptr[j] * (1 << -shift);
                sum   += t * t;
                tmp[j] = t;
            }
@@ -830,7 +815,7 @@ static void generate_noise(G723_1_Context *p)
         if (shift < 0)
            x >>= -shift;
         else
-           x <<= shift;
+           x *= 1 << shift;
         x = av_clip(x, -10000, 10000);
 
         for (j = 0; j < 11; j++) {
@@ -884,10 +869,8 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     frame->nb_samples = FRAME_LEN;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-         return ret;
-    }
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        return ret;
 
     out = (int16_t *)frame->data[0];
 
@@ -921,7 +904,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
                                              &p->subframe[i], p->cur_rate);
                 /* Get the total excitation */
                 for (j = 0; j < SUBFRAME_LEN; j++) {
-                    int v = av_clip_int16(vector_ptr[j] << 1);
+                    int v = av_clip_int16(vector_ptr[j] * 2);
                     vector_ptr[j] = av_clip_int16(v + acb_vector[j]);
                 }
                 vector_ptr += SUBFRAME_LEN;
@@ -1019,7 +1002,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
 #define AD     AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 
 static const AVOption options[] = {
-    { "postfilter", "postfilter on/off", OFFSET(postfilter), AV_OPT_TYPE_INT,
+    { "postfilter", "enable postfilter", OFFSET(postfilter), AV_OPT_TYPE_BOOL,
       { .i64 = 1 }, 0, 1, AD },
     { NULL }
 };
