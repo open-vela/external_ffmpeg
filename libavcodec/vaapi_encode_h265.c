@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -832,8 +832,8 @@ static int vaapi_encode_h265_init_sequence_params(AVCodecContext *avctx)
             vseq->vui_time_scale        = avctx->time_base.den;
         }
 
-        vseq->intra_period     = ctx->p_per_i * (ctx->b_per_p + 1);
-        vseq->intra_idr_period = vseq->intra_period;
+        vseq->intra_period     = avctx->gop_size;
+        vseq->intra_idr_period = avctx->gop_size;
         vseq->ip_period        = ctx->b_per_p + 1;
     }
 
@@ -1192,7 +1192,7 @@ static av_cold int vaapi_encode_h265_configure(AVCodecContext *avctx)
         priv->fixed_qp_p   = 30;
         priv->fixed_qp_b   = 30;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %"PRId64" bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using constant-bitrate = %d bps.\n",
                avctx->bit_rate);
 
     } else {
@@ -1282,10 +1282,10 @@ static const AVCodecDefault vaapi_encode_h265_defaults[] = {
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1"   },
-    { "i_qoffset",      "0"   },
-    { "b_qfactor",      "6/5" },
-    { "b_qoffset",      "0"   },
+    { "i_qfactor",      "1.0" },
+    { "i_qoffset",      "0.0" },
+    { "b_qfactor",      "1.2" },
+    { "b_qoffset",      "0.0" },
     { NULL },
 };
 
