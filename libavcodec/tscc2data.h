@@ -2,25 +2,25 @@
  * TechSmith Screen Codec 2 (aka Dora) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_TSCC2DATA_H
-#define AVCODEC_TSCC2DATA_H
+#ifndef AVCODEC_TSCC2_DATA_H
+#define AVCODEC_TSCC2_DATA_H
 
 #include <stdint.h>
 
@@ -903,14 +903,14 @@ static const int tscc2_ac_vlc_sizes[NUM_VLC_SETS] = {
     172, 169, 165, 162, 131, 132, 130, 125, 121, 114, 110, 101, 96
 };
 
-static const uint16_t *tscc2_ac_vlc_syms[NUM_VLC_SETS] = {
+static const uint16_t * const tscc2_ac_vlc_syms[NUM_VLC_SETS] = {
     ac_vlc_desc0_syms, ac_vlc_desc1_syms, ac_vlc_desc2_syms, ac_vlc_desc3_syms,
     ac_vlc_desc4_syms, ac_vlc_desc5_syms, ac_vlc_desc6_syms, ac_vlc_desc7_syms,
     ac_vlc_desc8_syms, ac_vlc_desc9_syms, ac_vlc_descA_syms, ac_vlc_descB_syms,
     ac_vlc_descC_syms,
 };
 
-static const uint16_t *tscc2_ac_vlc_codes[NUM_VLC_SETS] = {
+static const uint16_t * const tscc2_ac_vlc_codes[NUM_VLC_SETS] = {
     ac_vlc_desc0_codes, ac_vlc_desc1_codes, ac_vlc_desc2_codes,
     ac_vlc_desc3_codes, ac_vlc_desc4_codes, ac_vlc_desc5_codes,
     ac_vlc_desc6_codes, ac_vlc_desc7_codes, ac_vlc_desc8_codes,
@@ -918,11 +918,11 @@ static const uint16_t *tscc2_ac_vlc_codes[NUM_VLC_SETS] = {
     ac_vlc_descC_codes,
 };
 
-static const uint8_t *tscc2_ac_vlc_bits[NUM_VLC_SETS] = {
+static const uint8_t * const tscc2_ac_vlc_bits[NUM_VLC_SETS] = {
     ac_vlc_desc0_bits, ac_vlc_desc1_bits, ac_vlc_desc2_bits, ac_vlc_desc3_bits,
     ac_vlc_desc4_bits, ac_vlc_desc5_bits, ac_vlc_desc6_bits, ac_vlc_desc7_bits,
     ac_vlc_desc8_bits, ac_vlc_desc9_bits, ac_vlc_descA_bits, ac_vlc_descB_bits,
     ac_vlc_descC_bits,
 };
 
-#endif /* AVCODEC_TSCC2DATA_H */
+#endif /* AVCODEC_TSCC2_DATA_H */
