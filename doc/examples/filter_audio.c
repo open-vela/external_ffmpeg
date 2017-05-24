@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2013 Andrew Kelley
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,13 +64,13 @@ static int init_filter_graph(AVFilterGraph **graph, AVFilterContext **src,
 {
     AVFilterGraph *filter_graph;
     AVFilterContext *abuffer_ctx;
-    AVFilter        *abuffer;
+    const AVFilter  *abuffer;
     AVFilterContext *volume_ctx;
-    AVFilter        *volume;
+    const AVFilter  *volume;
     AVFilterContext *aformat_ctx;
-    AVFilter        *aformat;
+    const AVFilter  *aformat;
     AVFilterContext *abuffersink_ctx;
-    AVFilter        *abuffersink;
+    const AVFilter  *abuffersink;
 
     AVDictionary *options_dict = NULL;
     uint8_t options_str[1024];
