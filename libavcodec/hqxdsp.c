@@ -1,20 +1,20 @@
 /*
  * HQX DSP routines
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,18 +39,18 @@ static inline void idct_col(int16_t *blk, const uint8_t *quant)
     s6 = (int) blk[6 * 8] * quant[6 * 8];
     s7 = (int) blk[7 * 8] * quant[7 * 8];
 
-    t0  =  (int)(s3 * 19266U + s5 * 12873U) >> 15;
-    t1  =  (int)(s5 * 19266U - s3 * 12873U) >> 15;
-    t2  = ((int)(s7 * 4520U  + s1 * 22725U) >> 15) - t0;
-    t3  = ((int)(s1 * 4520U  - s7 * 22725U) >> 15) - t1;
+    t0  =  (s3 * 19266 + s5 * 12873) >> 15;
+    t1  =  (s5 * 19266 - s3 * 12873) >> 15;
+    t2  = ((s7 * 4520  + s1 * 22725) >> 15) - t0;
+    t3  = ((s1 * 4520  - s7 * 22725) >> 15) - t1;
     t4  = t0 * 2 + t2;
     t5  = t1 * 2 + t3;
     t6  = t2 - t3;
     t7  = t3 * 2 + t6;
-    t8  = (int)(t6 * 11585U) >> 14;
-    t9  = (int)(t7 * 11585U) >> 14;
-    tA  = (int)(s2 * 8867U - s6 * 21407U) >> 14;
-    tB  = (int)(s6 * 8867U + s2 * 21407U) >> 14;
+    t8  = (t6 * 11585) >> 14;
+    t9  = (t7 * 11585) >> 14;
+    tA  = (s2 * 8867 - s6 * 21407) >> 14;
+    tB  = (s6 * 8867 + s2 * 21407) >> 14;
     tC  = (s0 >> 1) - (s4 >> 1);
     tD  = (s4 >> 1) * 2 + tC;
     tE  = tC - (tA >> 1);
@@ -118,7 +118,7 @@ static void hqx_idct_put(uint16_t *dst, ptrdiff_t stride,
 
     for (i = 0; i < 8; i++) {
         for (j = 0; j < 8; j++) {
-            int v = av_clip_uintp2(block[j + i * 8] + 0x800, 12);
+            int v = av_clip(block[j + i * 8] + 0x800, 0, 0xFFF);
             dst[j] = (v << 4) | (v >> 8);
         }
         dst += stride >> 1;
