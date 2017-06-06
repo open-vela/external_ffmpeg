@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -267,9 +267,6 @@ static const struct {
 #if VA_CHECK_VERSION(0, 38, 0)
     MAP(VP9,         VP9_0,           VP9Profile0 ),
 #endif
-#if VA_CHECK_VERSION(0, 39, 0)
-    MAP(VP9,         VP9_2,           VP9Profile2 ),
-#endif
 #undef MAP
 };
 
@@ -285,14 +282,6 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
     VAProfile profile, *profile_list = NULL;
     int profile_count, exact_match, alt_profile;
     const AVPixFmtDescriptor *sw_desc, *desc;
-
-    // Allowing a profile mismatch can be useful because streams may
-    // over-declare their required capabilities - in particular, many
-    // H.264 baseline profile streams (notably some of those in FATE)
-    // only use the feature set of constrained baseline.  This flag
-    // would have to be be set by some external means in order to
-    // actually be useful.  (AV_HWACCEL_FLAG_IGNORE_PROFILE?)
-    int allow_profile_mismatch = 0;
 
     codec_desc = avcodec_descriptor_get(avctx->codec_id);
     if (!codec_desc) {
@@ -324,7 +313,8 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
         int profile_match = 0;
         if (avctx->codec_id != vaapi_profile_map[i].codec_id)
             continue;
-        if (avctx->profile == vaapi_profile_map[i].codec_profile)
+        if (avctx->profile == vaapi_profile_map[i].codec_profile ||
+            vaapi_profile_map[i].codec_profile == FF_PROFILE_UNKNOWN)
             profile_match = 1;
         profile = vaapi_profile_map[i].va_profile;
         for (j = 0; j < profile_count; j++) {
@@ -348,7 +338,8 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
         goto fail;
     }
     if (!exact_match) {
-        if (allow_profile_mismatch) {
+        if (avctx->hwaccel_flags &
+            AV_HWACCEL_FLAG_ALLOW_PROFILE_MISMATCH) {
             av_log(avctx, AV_LOG_VERBOSE, "Codec %s profile %d not "
                    "supported for hardware decode.\n",
                    codec_desc->name, avctx->profile);
@@ -484,7 +475,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
     ctx->va_config  = VA_INVALID_ID;
     ctx->va_context = VA_INVALID_ID;
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     if (avctx->hwaccel_context) {
         av_log(avctx, AV_LOG_WARNING, "Using deprecated struct "
                "vaapi_context in decode.\n");
@@ -542,7 +533,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
         goto fail;
     }
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     if (ctx->have_old_context) {
         ctx->va_config  = ctx->old_context->config_id;
         ctx->va_context = ctx->old_context->context_id;
@@ -596,7 +587,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
 
     av_log(avctx, AV_LOG_DEBUG, "Decode context initialised: "
            "%#x/%#x.\n", ctx->va_config, ctx->va_context);
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     }
 #endif
 
@@ -612,7 +603,7 @@ int ff_vaapi_decode_uninit(AVCodecContext *avctx)
     VAAPIDecodeContext *ctx = avctx->internal->hwaccel_priv_data;
     VAStatus vas;
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     if (ctx->have_old_context) {
         av_buffer_unref(&ctx->device_ref);
     } else {
@@ -635,7 +626,7 @@ int ff_vaapi_decode_uninit(AVCodecContext *avctx)
         }
     }
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     }
 #endif
 

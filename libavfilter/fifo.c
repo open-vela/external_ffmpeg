@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2007 Bobby Bingham
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -104,7 +104,7 @@ static void queue_pop(FifoContext *s)
 static void buffer_offset(AVFilterLink *link, AVFrame *frame,
                           int offset)
 {
-    int nb_channels = link->channels;
+    int nb_channels = av_get_channel_layout_nb_channels(link->channel_layout);
     int planar = av_sample_fmt_is_planar(link->format);
     int planes = planar ? nb_channels : 1;
     int block_align = av_get_bytes_per_sample(link->format) * (planar ? 1 : nb_channels);
@@ -129,7 +129,7 @@ static void buffer_offset(AVFilterLink *link, AVFrame *frame,
 static int calc_ptr_alignment(AVFrame *frame)
 {
     int planes = av_sample_fmt_is_planar(frame->format) ?
-                 frame->channels : 1;
+                 av_get_channel_layout_nb_channels(frame->channel_layout) : 1;
     int min_align = 128;
     int p;
 
@@ -170,7 +170,7 @@ static int return_audio_frame(AVFilterContext *ctx)
             buffer_offset(link, head, link->request_samples);
         }
     } else {
-        int nb_channels = link->channels;
+        int nb_channels = av_get_channel_layout_nb_channels(link->channel_layout);
 
         if (!s->out) {
             s->out = ff_get_audio_buffer(link, link->request_samples);
@@ -201,8 +201,6 @@ static int return_audio_frame(AVFilterContext *ctx)
                     break;
                 } else if (ret < 0)
                     return ret;
-                if (!s->root.next)
-                    return 0;
             }
             head = s->root.next->frame;
 
@@ -238,8 +236,6 @@ static int request_frame(AVFilterLink *outlink)
                 return return_audio_frame(outlink->src);
             return ret;
         }
-        if (!fifo->root.next)
-            return 0;
     }
 
     if (outlink->request_samples) {
@@ -256,6 +252,7 @@ static const AVFilterPad avfilter_vf_fifo_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
         .filter_frame     = add_to_queue,
     },
     { NULL }
@@ -287,6 +284,7 @@ static const AVFilterPad avfilter_af_afifo_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_AUDIO,
+        .get_audio_buffer = ff_null_get_audio_buffer,
         .filter_frame     = add_to_queue,
     },
     { NULL }
