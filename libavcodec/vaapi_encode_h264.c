@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -154,6 +154,14 @@ typedef struct VAAPIEncodeH264Context {
 
     // Rate control configuration.
     int send_timing_sei;
+
+#if VA_CHECK_VERSION(0, 36, 0)
+    // Speed-quality tradeoff setting.
+    struct {
+        VAEncMiscParameterBuffer misc;
+        VAEncMiscParameterBufferQualityLevel quality;
+    } quality_params;
+#endif
 } VAAPIEncodeH264Context;
 
 typedef struct VAAPIEncodeH264Options {
@@ -642,18 +650,18 @@ static void vaapi_encode_h264_write_sei(PutBitContext *pbc,
 
     for (payload_type = 0; payload_type < 64; payload_type++) {
         switch (payload_type) {
-        case H264_SEI_TYPE_BUFFERING_PERIOD:
+        case SEI_TYPE_BUFFERING_PERIOD:
             if (!priv->send_timing_sei ||
                 pic->type != PICTURE_TYPE_IDR)
                 continue;
             write_payload = &vaapi_encode_h264_write_buffering_period;
             break;
-        case H264_SEI_TYPE_PIC_TIMING:
+        case SEI_TYPE_PIC_TIMING:
             if (!priv->send_timing_sei)
                 continue;
             write_payload = &vaapi_encode_h264_write_pic_timing;
             break;
-        case H264_SEI_TYPE_USER_DATA_UNREGISTERED:
+        case SEI_TYPE_USER_DATA_UNREGISTERED:
             if (pic->encode_order != 0)
                 continue;
             write_payload = &vaapi_encode_h264_write_identifier;
@@ -1125,7 +1133,7 @@ static av_cold int vaapi_encode_h264_configure(AVCodecContext *avctx)
         priv->fixed_qp_p   = 26;
         priv->fixed_qp_b   = 26;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %d bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %"PRId64" bps.\n",
                ctx->va_rc_mode == VA_RC_CBR ? "constant" : "variable",
                avctx->bit_rate);
 
@@ -1133,8 +1141,21 @@ static av_cold int vaapi_encode_h264_configure(AVCodecContext *avctx)
         av_assert0(0 && "Invalid RC mode.");
     }
 
-    if (avctx->compression_level == FF_COMPRESSION_DEFAULT)
-        avctx->compression_level = opt->quality;
+    if (opt->quality > 0) {
+#if VA_CHECK_VERSION(0, 36, 0)
+        priv->quality_params.misc.type =
+            VAEncMiscParameterTypeQualityLevel;
+        priv->quality_params.quality.quality_level = opt->quality;
+
+        ctx->global_params[ctx->nb_global_params] =
+            &priv->quality_params.misc;
+        ctx->global_params_size[ctx->nb_global_params++] =
+            sizeof(priv->quality_params);
+#else
+        av_log(avctx, AV_LOG_WARNING, "The encode quality option is not "
+               "supported with this VAAPI version.\n");
+#endif
+    }
 
     return 0;
 }
@@ -1173,9 +1194,19 @@ static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
     switch (avctx->profile) {
     case FF_PROFILE_H264_CONSTRAINED_BASELINE:
         ctx->va_profile = VAProfileH264ConstrainedBaseline;
+        if (avctx->max_b_frames != 0) {
+            avctx->max_b_frames = 0;
+            av_log(avctx, AV_LOG_WARNING, "H.264 constrained baseline profile "
+                   "doesn't support encoding with B frames, disabling them.\n");
+        }
         break;
     case FF_PROFILE_H264_BASELINE:
         ctx->va_profile = VAProfileH264Baseline;
+        if (avctx->max_b_frames != 0) {
+            avctx->max_b_frames = 0;
+            av_log(avctx, AV_LOG_WARNING, "H.264 baseline profile "
+                   "doesn't support encoding with B frames, disabling them.\n");
+        }
         break;
     case FF_PROFILE_H264_MAIN:
         ctx->va_profile = VAProfileH264Main;
@@ -1261,10 +1292,10 @@ static const AVCodecDefault vaapi_encode_h264_defaults[] = {
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1.0" },
-    { "i_qoffset",      "0.0" },
-    { "b_qfactor",      "1.2" },
-    { "b_qoffset",      "0.0" },
+    { "i_qfactor",      "1"   },
+    { "i_qoffset",      "0"   },
+    { "b_qfactor",      "6/5" },
+    { "b_qoffset",      "0"   },
     { "qmin",           "0"   },
     { NULL },
 };

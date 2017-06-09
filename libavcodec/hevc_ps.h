@@ -1,20 +1,20 @@
 /*
  * HEVC parameter set parsing
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,89 @@ typedef struct ShortTermRPS {
     int32_t delta_poc[32];
     uint8_t used[32];
 } ShortTermRPS;
+
+typedef struct LongTermRPS {
+    int     poc[32];
+    uint8_t used[32];
+    uint8_t nb_refs;
+} LongTermRPS;
+
+typedef struct SliceHeader {
+    unsigned int pps_id;
+
+    ///< address (in raster order) of the first block in the current slice segment
+    unsigned int   slice_segment_addr;
+    ///< address (in raster order) of the first block in the current slice
+    unsigned int   slice_addr;
+
+    enum HEVCSliceType slice_type;
+
+    int pic_order_cnt_lsb;
+
+    uint8_t first_slice_in_pic_flag;
+    uint8_t dependent_slice_segment_flag;
+    uint8_t pic_output_flag;
+    uint8_t colour_plane_id;
+
+    ///< RPS coded in the slice header itself is stored here
+    int short_term_ref_pic_set_sps_flag;
+    int short_term_ref_pic_set_size;
+    ShortTermRPS slice_rps;
+    const ShortTermRPS *short_term_rps;
+    int long_term_ref_pic_set_size;
+    LongTermRPS long_term_rps;
+    unsigned int list_entry_lx[2][32];
+
+    uint8_t rpl_modification_flag[2];
+    uint8_t no_output_of_prior_pics_flag;
+    uint8_t slice_temporal_mvp_enabled_flag;
+
+    unsigned int nb_refs[2];
+
+    uint8_t slice_sample_adaptive_offset_flag[3];
+    uint8_t mvd_l1_zero_flag;
+
+    uint8_t cabac_init_flag;
+    uint8_t disable_deblocking_filter_flag; ///< slice_header_disable_deblocking_filter_flag
+    uint8_t slice_loop_filter_across_slices_enabled_flag;
+    uint8_t collocated_list;
+
+    unsigned int collocated_ref_idx;
+
+    int slice_qp_delta;
+    int slice_cb_qp_offset;
+    int slice_cr_qp_offset;
+
+    uint8_t cu_chroma_qp_offset_enabled_flag;
+
+    int beta_offset;    ///< beta_offset_div2 * 2
+    int tc_offset;      ///< tc_offset_div2 * 2
+
+    unsigned int max_num_merge_cand; ///< 5 - 5_minus_max_num_merge_cand
+
+    unsigned *entry_point_offset;
+    int * offset;
+    int * size;
+    int num_entry_point_offsets;
+
+    int8_t slice_qp;
+
+    uint8_t luma_log2_weight_denom;
+    int16_t chroma_log2_weight_denom;
+
+    int16_t luma_weight_l0[16];
+    int16_t chroma_weight_l0[16][2];
+    int16_t chroma_weight_l1[16][2];
+    int16_t luma_weight_l1[16];
+
+    int16_t luma_offset_l0[16];
+    int16_t chroma_offset_l0[16][2];
+
+    int16_t luma_offset_l1[16];
+    int16_t chroma_offset_l1[16][2];
+
+    int slice_ctb_addr_rs;
+} SliceHeader;
 
 typedef struct HEVCWindow {
     unsigned int left_offset;
@@ -127,6 +210,9 @@ typedef struct HEVCVPS {
     uint8_t vps_poc_proportional_to_timing_flag;
     int vps_num_ticks_poc_diff_one; ///< vps_num_ticks_poc_diff_one_minus1 + 1
     int vps_num_hrd_parameters;
+
+    uint8_t data[4096];
+    int data_size;
 } HEVCVPS;
 
 typedef struct ScalingList {
@@ -137,7 +223,7 @@ typedef struct ScalingList {
 } ScalingList;
 
 typedef struct HEVCSPS {
-    int vps_id;
+    unsigned vps_id;
     int chroma_format_idc;
     uint8_t separate_colour_plane_flag;
 
@@ -166,14 +252,14 @@ typedef struct HEVCSPS {
     ScalingList scaling_list;
 
     unsigned int nb_st_rps;
-    ShortTermRPS st_rps[HEVC_MAX_SHORT_TERM_REF_PIC_SETS];
+    ShortTermRPS st_rps[HEVC_MAX_SHORT_TERM_RPS_COUNT];
 
     uint8_t amp_enabled_flag;
     uint8_t sao_enabled;
 
     uint8_t long_term_ref_pics_present_flag;
-    uint16_t lt_ref_pic_poc_lsb_sps[HEVC_MAX_LONG_TERM_REF_PICS];
-    uint8_t used_by_curr_pic_lt_sps_flag[HEVC_MAX_LONG_TERM_REF_PICS];
+    uint16_t lt_ref_pic_poc_lsb_sps[32];
+    uint8_t used_by_curr_pic_lt_sps_flag[32];
     uint8_t num_long_term_ref_pics_sps;
 
     struct {
@@ -196,6 +282,13 @@ typedef struct HEVCSPS {
     int max_transform_hierarchy_depth_inter;
     int max_transform_hierarchy_depth_intra;
 
+    int transform_skip_rotation_enabled_flag;
+    int transform_skip_context_enabled_flag;
+    int implicit_rdpcm_enabled_flag;
+    int explicit_rdpcm_enabled_flag;
+    int intra_smoothing_disabled_flag;
+    int persistent_rice_adaptation_enabled_flag;
+
     ///< coded frame dimension in various units
     int width;
     int height;
@@ -208,11 +301,15 @@ typedef struct HEVCSPS {
     int min_tb_height;
     int min_pu_width;
     int min_pu_height;
+    int tb_mask;
 
     int hshift[3];
     int vshift[3];
 
     int qp_bd_offset;
+
+    uint8_t data[4096];
+    int data_size;
 } HEVCSPS;
 
 typedef struct HEVCPPS {
@@ -264,6 +361,15 @@ typedef struct HEVCPPS {
     int log2_parallel_merge_level; ///< log2_parallel_merge_level_minus2 + 2
     int num_extra_slice_header_bits;
     uint8_t slice_header_extension_present_flag;
+    uint8_t log2_max_transform_skip_block_size;
+    uint8_t cross_component_prediction_enabled_flag;
+    uint8_t chroma_qp_offset_list_enabled_flag;
+    uint8_t diff_cu_chroma_qp_offset_depth;
+    uint8_t chroma_qp_offset_list_len_minus1;
+    int8_t  cb_qp_offset_list[5];
+    int8_t  cr_qp_offset_list[5];
+    uint8_t log2_sao_offset_scale_luma;
+    uint8_t log2_sao_offset_scale_chroma;
 
     // Inferred parameters
     unsigned int *column_width;  ///< ColumnWidth
@@ -277,6 +383,10 @@ typedef struct HEVCPPS {
     int *tile_id;           ///< TileId
     int *tile_pos_rs;       ///< TilePosRS
     int *min_tb_addr_zs;    ///< MinTbAddrZS
+    int *min_tb_addr_zs_tab;///< MinTbAddrZS
+
+    uint8_t data[4096];
+    int data_size;
 } HEVCPPS;
 
 typedef struct HEVCParamSets {
@@ -314,5 +424,10 @@ int ff_hevc_decode_short_term_rps(GetBitContext *gb, AVCodecContext *avctx,
 
 int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
                            uint8_t *buf, int buf_size);
+
+/**
+ * Compute POC of the current frame and return it.
+ */
+int ff_hevc_compute_poc(const HEVCSPS *sps, int pocTid0, int poc_lsb, int nal_unit_type);
 
 #endif /* AVCODEC_HEVC_PS_H */
