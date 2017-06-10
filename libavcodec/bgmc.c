@@ -1,33 +1,31 @@
 /*
  * Block Gilbert-Moore decoder
- * Copyright (c) 2010 Thilo Borgmann <thilo.borgmann _at_ googlemail.com>
+ * Copyright (c) 2010 Thilo Borgmann <thilo.borgmann _at_ mail.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
  * @file
  * Block Gilbert-Moore decoder as used by MPEG-4 ALS
- * @author Thilo Borgmann <thilo.borgmann _at_ googlemail.com>
+ * @author Thilo Borgmann <thilo.borgmann _at_ mail.de>
  */
 
 #include "libavutil/attributes.h"
-
-#include "bitstream.h"
 #include "bgmc.h"
 
 #define FREQ_BITS  14                      // bits used by frequency counters
@@ -487,26 +485,24 @@ av_cold void ff_bgmc_end(uint8_t **cf_lut, int **cf_lut_status)
 
 
 /** Initialize decoding and reads the first value */
-void ff_bgmc_decode_init(BitstreamContext *bc, unsigned int *h,
+void ff_bgmc_decode_init(GetBitContext *gb, unsigned int *h,
                          unsigned int *l, unsigned int *v)
 {
     *h = TOP_VALUE;
     *l = 0;
-    *v = bitstream_read(bc, VALUE_BITS);
+    *v = get_bits_long(gb, VALUE_BITS);
 }
 
 
 /** Finish decoding */
-void ff_bgmc_decode_end(BitstreamContext *bc)
+void ff_bgmc_decode_end(GetBitContext *gb)
 {
-    unsigned pos = bitstream_tell(bc) - VALUE_BITS + 2;
-
-    bitstream_seek(bc, pos);
+    skip_bits_long(gb, -(VALUE_BITS - 2));
 }
 
 
 /** Read and decode a block Gilbert-Moore coded symbol */
-void ff_bgmc_decode(BitstreamContext *bc, unsigned int num, int32_t *dst,
+void ff_bgmc_decode(GetBitContext *gb, unsigned int num, int32_t *dst,
                     int delta, unsigned int sx,
                     unsigned int *h, unsigned int *l, unsigned int *v,
                     uint8_t *cf_lut, int *cf_lut_status)
@@ -551,7 +547,7 @@ void ff_bgmc_decode(BitstreamContext *bc, unsigned int num, int32_t *dst,
 
             low  *= 2;
             high  = 2 * high + 1;
-            value = 2 * value + bitstream_read_bit(bc);
+            value = 2 * value + get_bits1(gb);
         }
 
         *dst++ = symbol;
