@@ -3,36 +3,33 @@
  *
  * Copyright (c) 2012-2013 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <inttypes.h>
 
 #include "libavutil/intreadwrite.h"
+
+#include "bitstream.h"
 #include "bswapdsp.h"
 #include "canopus.h"
-#include "get_bits.h"
 #include "avcodec.h"
 #include "internal.h"
-#include "thread.h"
-
-#define VLC_BITS 7
-#define VLC_DEPTH 2
-
+#include "vlc.h"
 
 typedef struct CLLCContext {
     AVCodecContext *avctx;
@@ -42,7 +39,7 @@ typedef struct CLLCContext {
     int      swapped_buf_size;
 } CLLCContext;
 
-static int read_code_table(CLLCContext *ctx, GetBitContext *gb, VLC *vlc)
+static int read_code_table(CLLCContext *ctx, BitstreamContext *bc, VLC *vlc)
 {
     uint8_t symbols[256];
     uint8_t bits[256];
@@ -54,17 +51,10 @@ static int read_code_table(CLLCContext *ctx, GetBitContext *gb, VLC *vlc)
     count         = 0;
     num_codes_sum = 0;
 
-    num_lens = get_bits(gb, 5);
-
-    if (num_lens > VLC_BITS * VLC_DEPTH) {
-        vlc->table = NULL;
-
-        av_log(ctx->avctx, AV_LOG_ERROR, "To long VLCs %d\n", num_lens);
-        return AVERROR_INVALIDDATA;
-    }
+    num_lens = bitstream_read(bc, 5);
 
     for (i = 0; i < num_lens; i++) {
-        num_codes      = get_bits(gb, 9);
+        num_codes      = bitstream_read(bc, 9);
         num_codes_sum += num_codes;
 
         if (num_codes_sum > 256) {
@@ -76,21 +66,17 @@ static int read_code_table(CLLCContext *ctx, GetBitContext *gb, VLC *vlc)
         }
 
         for (j = 0; j < num_codes; j++) {
-            symbols[count] = get_bits(gb, 8);
+            symbols[count] = bitstream_read(bc, 8);
             bits[count]    = i + 1;
             codes[count]   = prefix++;
 
             count++;
         }
-        if (prefix > (65535 - 256)/2) {
-            vlc->table = NULL;
-            return AVERROR_INVALIDDATA;
-        }
 
         prefix <<= 1;
     }
 
-    return ff_init_vlc_sparse(vlc, VLC_BITS, count, bits, 1, 1,
+    return ff_init_vlc_sparse(vlc, 7, count, bits, 1, 1,
                               codes, 2, 2, symbols, 1, 1, 0);
 }
 
@@ -98,15 +84,13 @@ static int read_code_table(CLLCContext *ctx, GetBitContext *gb, VLC *vlc)
  * Unlike the RGB24 read/restore, which reads in a component at a time,
  * ARGB read/restore reads in ARGB quads.
  */
-static int read_argb_line(CLLCContext *ctx, GetBitContext *gb, int *top_left,
+static int read_argb_line(CLLCContext *ctx, BitstreamContext *bc, int *top_left,
                           VLC *vlc, uint8_t *outbuf)
 {
     uint8_t *dst;
     int pred[4];
     int code;
     int i;
-
-    OPEN_READER(bits, gb);
 
     dst     = outbuf;
     pred[0] = top_left[0];
@@ -116,8 +100,7 @@ static int read_argb_line(CLLCContext *ctx, GetBitContext *gb, int *top_left,
 
     for (i = 0; i < ctx->avctx->width; i++) {
         /* Always get the alpha component */
-        UPDATE_CACHE(bits, gb);
-        GET_VLC(code, bits, gb, vlc[0].table, VLC_BITS, VLC_DEPTH);
+        code = bitstream_read_vlc(bc, vlc[0].table, 7, 2);
 
         pred[0] += code;
         dst[0]   = pred[0];
@@ -125,22 +108,19 @@ static int read_argb_line(CLLCContext *ctx, GetBitContext *gb, int *top_left,
         /* Skip the components if they are  entirely transparent */
         if (dst[0]) {
             /* Red */
-            UPDATE_CACHE(bits, gb);
-            GET_VLC(code, bits, gb, vlc[1].table, VLC_BITS, VLC_DEPTH);
+            code = bitstream_read_vlc(bc, vlc[1].table, 7, 2);
 
             pred[1] += code;
             dst[1]   = pred[1];
 
             /* Green */
-            UPDATE_CACHE(bits, gb);
-            GET_VLC(code, bits, gb, vlc[2].table, VLC_BITS, VLC_DEPTH);
+            code = bitstream_read_vlc(bc, vlc[2].table, 7, 2);
 
             pred[2] += code;
             dst[2]   = pred[2];
 
             /* Blue */
-            UPDATE_CACHE(bits, gb);
-            GET_VLC(code, bits, gb, vlc[3].table, VLC_BITS, VLC_DEPTH);
+            code = bitstream_read_vlc(bc, vlc[3].table, 7, 2);
 
             pred[3] += code;
             dst[3]   = pred[3];
@@ -152,8 +132,6 @@ static int read_argb_line(CLLCContext *ctx, GetBitContext *gb, int *top_left,
 
         dst += 4;
     }
-
-    CLOSE_READER(bits, gb);
 
     top_left[0]  = outbuf[0];
 
@@ -167,57 +145,47 @@ static int read_argb_line(CLLCContext *ctx, GetBitContext *gb, int *top_left,
     return 0;
 }
 
-static int read_rgb24_component_line(CLLCContext *ctx, GetBitContext *gb,
+static int read_rgb24_component_line(CLLCContext *ctx, BitstreamContext *bc,
                                      int *top_left, VLC *vlc, uint8_t *outbuf)
 {
     uint8_t *dst;
     int pred, code;
     int i;
 
-    OPEN_READER(bits, gb);
-
     dst  = outbuf;
     pred = *top_left;
 
     /* Simultaneously read and restore the line */
     for (i = 0; i < ctx->avctx->width; i++) {
-        UPDATE_CACHE(bits, gb);
-        GET_VLC(code, bits, gb, vlc->table, VLC_BITS, VLC_DEPTH);
+        code = bitstream_read_vlc(bc, vlc->table, 7, 2);
 
         pred  += code;
         dst[0] = pred;
         dst   += 3;
     }
 
-    CLOSE_READER(bits, gb);
-
     /* Stash the first pixel */
     *top_left = outbuf[0];
 
     return 0;
 }
 
-static int read_yuv_component_line(CLLCContext *ctx, GetBitContext *gb,
+static int read_yuv_component_line(CLLCContext *ctx, BitstreamContext *bc,
                                    int *top_left, VLC *vlc, uint8_t *outbuf,
                                    int is_chroma)
 {
     int pred, code;
     int i;
 
-    OPEN_READER(bits, gb);
-
     pred = *top_left;
 
     /* Simultaneously read and restore the line */
     for (i = 0; i < ctx->avctx->width >> is_chroma; i++) {
-        UPDATE_CACHE(bits, gb);
-        GET_VLC(code, bits, gb, vlc->table, VLC_BITS, VLC_DEPTH);
+        code = bitstream_read_vlc(bc, vlc->table, 7, 2);
 
         pred     += code;
         outbuf[i] = pred;
     }
-
-    CLOSE_READER(bits, gb);
 
     /* Stash the first pixel */
     *top_left = outbuf[0];
@@ -225,7 +193,7 @@ static int read_yuv_component_line(CLLCContext *ctx, GetBitContext *gb,
     return 0;
 }
 
-static int decode_argb_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
+static int decode_argb_frame(CLLCContext *ctx, BitstreamContext *bc, AVFrame *pic)
 {
     AVCodecContext *avctx = ctx->avctx;
     uint8_t *dst;
@@ -241,11 +209,11 @@ static int decode_argb_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
 
     dst = pic->data[0];
 
-    skip_bits(gb, 16);
+    bitstream_skip(bc, 16);
 
     /* Read in code table for each plane */
     for (i = 0; i < 4; i++) {
-        ret = read_code_table(ctx, gb, &vlc[i]);
+        ret = read_code_table(ctx, bc, &vlc[i]);
         if (ret < 0) {
             for (j = 0; j <= i; j++)
                 ff_free_vlc(&vlc[j]);
@@ -258,7 +226,7 @@ static int decode_argb_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
 
     /* Read in and restore every line */
     for (i = 0; i < avctx->height; i++) {
-        read_argb_line(ctx, gb, pred, vlc, dst);
+        read_argb_line(ctx, bc, pred, vlc, dst);
 
         dst += pic->linesize[0];
     }
@@ -269,7 +237,7 @@ static int decode_argb_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
     return 0;
 }
 
-static int decode_rgb24_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
+static int decode_rgb24_frame(CLLCContext *ctx, BitstreamContext *bc, AVFrame *pic)
 {
     AVCodecContext *avctx = ctx->avctx;
     uint8_t *dst;
@@ -284,11 +252,11 @@ static int decode_rgb24_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
 
     dst = pic->data[0];
 
-    skip_bits(gb, 16);
+    bitstream_skip(bc, 16);
 
     /* Read in code table for each plane */
     for (i = 0; i < 3; i++) {
-        ret = read_code_table(ctx, gb, &vlc[i]);
+        ret = read_code_table(ctx, bc, &vlc[i]);
         if (ret < 0) {
             for (j = 0; j <= i; j++)
                 ff_free_vlc(&vlc[j]);
@@ -302,7 +270,7 @@ static int decode_rgb24_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
     /* Read in and restore every line */
     for (i = 0; i < avctx->height; i++) {
         for (j = 0; j < 3; j++)
-            read_rgb24_component_line(ctx, gb, &pred[j], &vlc[j], &dst[j]);
+            read_rgb24_component_line(ctx, bc, &pred[j], &vlc[j], &dst[j]);
 
         dst += pic->linesize[0];
     }
@@ -313,7 +281,7 @@ static int decode_rgb24_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
     return 0;
 }
 
-static int decode_yuv_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
+static int decode_yuv_frame(CLLCContext *ctx, BitstreamContext *bc, AVFrame *pic)
 {
     AVCodecContext *avctx = ctx->avctx;
     uint8_t block;
@@ -331,9 +299,9 @@ static int decode_yuv_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
     dst[1] = pic->data[1];
     dst[2] = pic->data[2];
 
-    skip_bits(gb, 8);
+    bitstream_skip(bc, 8);
 
-    block = get_bits(gb, 8);
+    block = bitstream_read(bc, 8);
     if (block) {
         avpriv_request_sample(ctx->avctx, "Blocked YUV");
         return AVERROR_PATCHWELCOME;
@@ -341,7 +309,7 @@ static int decode_yuv_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
 
     /* Read in code table for luma and chroma */
     for (i = 0; i < 2; i++) {
-        ret = read_code_table(ctx, gb, &vlc[i]);
+        ret = read_code_table(ctx, bc, &vlc[i]);
         if (ret < 0) {
             for (j = 0; j <= i; j++)
                 ff_free_vlc(&vlc[j]);
@@ -354,9 +322,9 @@ static int decode_yuv_frame(CLLCContext *ctx, GetBitContext *gb, AVFrame *pic)
 
     /* Read in and restore every line */
     for (i = 0; i < avctx->height; i++) {
-        read_yuv_component_line(ctx, gb, &pred[0], &vlc[0], dst[0], 0); /* Y */
-        read_yuv_component_line(ctx, gb, &pred[1], &vlc[1], dst[1], 1); /* U */
-        read_yuv_component_line(ctx, gb, &pred[2], &vlc[1], dst[2], 1); /* V */
+        read_yuv_component_line(ctx, bc, &pred[0], &vlc[0], dst[0], 0); /* Y */
+        read_yuv_component_line(ctx, bc, &pred[1], &vlc[1], dst[1], 1); /* U */
+        read_yuv_component_line(ctx, bc, &pred[2], &vlc[1], dst[2], 1); /* V */
 
         for (j = 0; j < 3; j++)
             dst[j] += pic->linesize[j];
@@ -373,11 +341,10 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
 {
     CLLCContext *ctx = avctx->priv_data;
     AVFrame *pic = data;
-    ThreadFrame frame = { .f = data };
     uint8_t *src = avpkt->data;
     uint32_t info_tag, info_offset;
     int data_size;
-    GetBitContext gb;
+    BitstreamContext bc;
     int coding_type, ret;
 
     if (avpkt->size < 4 + 4) {
@@ -415,8 +382,7 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     ctx->bdsp.bswap16_buf((uint16_t *) ctx->swapped_buf, (uint16_t *) src,
                           data_size / 2);
 
-    if ((ret = init_get_bits8(&gb, ctx->swapped_buf, data_size)) < 0)
-        return ret;
+    bitstream_init8(&bc, ctx->swapped_buf, data_size);
 
     /*
      * Read in coding type. The types are as follows:
@@ -429,18 +395,18 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     coding_type = (AV_RL32(src) >> 8) & 0xFF;
     av_log(avctx, AV_LOG_DEBUG, "Frame coding type: %d\n", coding_type);
 
-    if(get_bits_left(&gb) < avctx->height * avctx->width)
-        return AVERROR_INVALIDDATA;
-
     switch (coding_type) {
     case 0:
         avctx->pix_fmt             = AV_PIX_FMT_YUV422P;
         avctx->bits_per_raw_sample = 8;
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+        ret = ff_get_buffer(avctx, pic, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
+        }
 
-        ret = decode_yuv_frame(ctx, &gb, pic);
+        ret = decode_yuv_frame(ctx, &bc, pic);
         if (ret < 0)
             return ret;
 
@@ -450,10 +416,13 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_RGB24;
         avctx->bits_per_raw_sample = 8;
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+        ret = ff_get_buffer(avctx, pic, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
+        }
 
-        ret = decode_rgb24_frame(ctx, &gb, pic);
+        ret = decode_rgb24_frame(ctx, &bc, pic);
         if (ret < 0)
             return ret;
 
@@ -462,10 +431,13 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt             = AV_PIX_FMT_ARGB;
         avctx->bits_per_raw_sample = 8;
 
-        if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+        ret = ff_get_buffer(avctx, pic, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
+        }
 
-        ret = decode_argb_frame(ctx, &gb, pic);
+        ret = decode_argb_frame(ctx, &bc, pic);
         if (ret < 0)
             return ret;
 
@@ -482,19 +454,6 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
 
     return avpkt->size;
 }
-
-#if HAVE_THREADS
-static int cllc_init_thread_copy(AVCodecContext *avctx)
-{
-    CLLCContext *ctx = avctx->priv_data;
-
-    ctx->avctx            = avctx;
-    ctx->swapped_buf      = NULL;
-    ctx->swapped_buf_size = 0;
-
-    return 0;
-}
-#endif
 
 static av_cold int cllc_decode_close(AVCodecContext *avctx)
 {
@@ -526,9 +485,8 @@ AVCodec ff_cllc_decoder = {
     .id             = AV_CODEC_ID_CLLC,
     .priv_data_size = sizeof(CLLCContext),
     .init           = cllc_decode_init,
-    .init_thread_copy = ONLY_IF_THREADS_ENABLED(cllc_init_thread_copy),
     .decode         = cllc_decode_frame,
     .close          = cllc_decode_close,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
