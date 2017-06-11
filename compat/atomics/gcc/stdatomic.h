@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,8 +21,8 @@
  * Copyright (C) 2010 Rémi Denis-Courmont
  */
 
-#ifndef LIBAV_COMPAT_ATOMICS_GCC_STDATOMIC_H
-#define LIBAV_COMPAT_ATOMICS_GCC_STDATOMIC_H
+#ifndef COMPAT_ATOMICS_GCC_STDATOMIC_H
+#define COMPAT_ATOMICS_GCC_STDATOMIC_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -100,8 +100,8 @@ do {                                    \
 
 #define atomic_exchange(object, desired)                            \
 ({                                                                  \
-    typeof(object) _obj = (object);                                 \
-    typeof(*object) _old;                                           \
+    __typeof__(object) _obj = (object);                             \
+    __typeof__(*object) _old;                                       \
     do                                                              \
         _old = atomic_load(_obj);                                   \
     while (!__sync_bool_compare_and_swap(_obj, _old, (desired)));   \
@@ -113,8 +113,8 @@ do {                                    \
 
 #define atomic_compare_exchange_strong(object, expected, desired)   \
 ({                                                                  \
-    typeof(object) _exp = (expected);                               \
-    typeof(*object) _old = *_exp;                                   \
+    __typeof__(object) _exp = (expected);                           \
+    __typeof__(*object) _old = *_exp;                               \
     *_exp = __sync_val_compare_and_swap((object), _old, (desired)); \
     *_exp == _old;                                                  \
 })
@@ -147,10 +147,10 @@ do {                                    \
     atomic_fetch_or(object, operand)
 
 #define atomic_fetch_xor(object, operand) \
-    __sync_fetch_and_sub(object, operand)
+    __sync_fetch_and_xor(object, operand)
 
 #define atomic_fetch_xor_explicit(object, operand, order) \
-    atomic_fetch_sub(object, operand)
+    atomic_fetch_xor(object, operand)
 
 #define atomic_fetch_and(object, operand) \
     __sync_fetch_and_and(object, operand)
@@ -170,4 +170,4 @@ do {                                    \
 #define atomic_flag_clear_explicit(object, order) \
     atomic_flag_clear(object)
 
-#endif /* LIBAV_COMPAT_ATOMICS_GCC_STDATOMIC_H */
+#endif /* COMPAT_ATOMICS_GCC_STDATOMIC_H */
