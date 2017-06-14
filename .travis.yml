@@ -6,25 +6,21 @@ os:
 addons:
   apt:
     packages:
-      - nasm
+      - yasm
       - diffutils
 compiler:
   - clang
   - gcc
-matrix:
-    exclude:
-        - os: osx
-          compiler: gcc
 cache:
   directories:
-    - libav-samples
+    - ffmpeg-samples
 before_install:
   - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update --all; fi
 install:
-  - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew install nasm; fi
+  - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew install yasm; fi
 script:
-  - mkdir -p libav-samples
-  - ./configure --samples=libav-samples --cc=$CC
+  - mkdir -p ffmpeg-samples
+  - ./configure --samples=ffmpeg-samples --cc=$CC
   - make -j 8
   - make fate-rsync
   - make check -j 8
