@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,17 +28,14 @@
 #include "pixdesc.h"
 #include "pixfmt.h"
 
-static const HWContextType * const hw_table[] = {
+static const HWContextType *const hw_table[] = {
 #if CONFIG_CUDA
     &ff_hwcontext_type_cuda,
-#endif
-#if CONFIG_D3D11VA
-    &ff_hwcontext_type_d3d11va,
 #endif
 #if CONFIG_DXVA2
     &ff_hwcontext_type_dxva2,
 #endif
-#if CONFIG_LIBMFX
+#if CONFIG_QSV
     &ff_hwcontext_type_qsv,
 #endif
 #if CONFIG_VAAPI
@@ -47,16 +44,19 @@ static const HWContextType * const hw_table[] = {
 #if CONFIG_VDPAU
     &ff_hwcontext_type_vdpau,
 #endif
+#if CONFIG_VIDEOTOOLBOX
+    &ff_hwcontext_type_videotoolbox,
+#endif
     NULL,
 };
 
 static const char *const hw_type_names[] = {
     [AV_HWDEVICE_TYPE_CUDA]   = "cuda",
     [AV_HWDEVICE_TYPE_DXVA2]  = "dxva2",
-    [AV_HWDEVICE_TYPE_D3D11VA] = "d3d11va",
     [AV_HWDEVICE_TYPE_QSV]    = "qsv",
     [AV_HWDEVICE_TYPE_VAAPI]  = "vaapi",
     [AV_HWDEVICE_TYPE_VDPAU]  = "vdpau",
+    [AV_HWDEVICE_TYPE_VIDEOTOOLBOX] = "videotoolbox",
 };
 
 enum AVHWDeviceType av_hwdevice_find_type_by_name(const char *name)
@@ -71,8 +71,7 @@ enum AVHWDeviceType av_hwdevice_find_type_by_name(const char *name)
 
 const char *av_hwdevice_get_type_name(enum AVHWDeviceType type)
 {
-    if (type > AV_HWDEVICE_TYPE_NONE &&
-        type < FF_ARRAY_ELEMS(hw_type_names))
+    if (type >= 0 && type < FF_ARRAY_ELEMS(hw_type_names))
         return hw_type_names[type];
     else
         return NULL;
@@ -232,7 +231,7 @@ AVBufferRef *av_hwframe_ctx_alloc(AVBufferRef *device_ref_in)
     AVHWDeviceContext *device_ctx = (AVHWDeviceContext*)device_ref_in->data;
     const HWContextType  *hw_type = device_ctx->internal->hw_type;
     AVHWFramesContext *ctx;
-    AVBufferRef *buf, *device_ref = NULL;;
+    AVBufferRef *buf, *device_ref = NULL;
 
     ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
