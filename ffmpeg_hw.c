@@ -77,7 +77,7 @@ int hw_device_init_from_string(const char *arg, HWDevice **dev_out)
     char *type_name = NULL, *name = NULL, *device = NULL;
     enum AVHWDeviceType type;
     HWDevice *dev, *src;
-    AVBufferRef *device_ref = NULL;
+    AVBufferRef *device_ref;
     int err;
     const char *errmsg, *p, *q;
     size_t k;
@@ -210,7 +210,6 @@ invalid:
 fail:
     av_log(NULL, AV_LOG_ERROR,
            "Device creation failed: %d.\n", err);
-    av_buffer_unref(&device_ref);
     goto done;
 }
 
