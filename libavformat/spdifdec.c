@@ -2,20 +2,20 @@
  * IEC 61937 demuxer
  * Copyright (c) 2010 Anssi Hannula <anssi.hannula at iki.fi>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,18 +25,22 @@
  * @author Anssi Hannula
  */
 
+#include "libavutil/bswap.h"
+
+#include "libavcodec/ac3.h"
+#include "libavcodec/adts_parser.h"
+
 #include "avformat.h"
 #include "spdif.h"
-#include "libavcodec/ac3.h"
-#include "libavcodec/aacadtsdec.h"
 
 static int spdif_get_offset_and_codec(AVFormatContext *s,
                                       enum IEC61937DataType data_type,
                                       const char *buf, int *offset,
                                       enum AVCodecID *codec)
 {
-    AACADTSHeaderInfo aac_hdr;
-    GetBitContext gbc;
+    uint32_t samples;
+    uint8_t frames;
+    int ret;
 
     switch (data_type & 0xff) {
     case IEC61937_AC3:
@@ -56,13 +60,13 @@ static int spdif_get_offset_and_codec(AVFormatContext *s,
         *codec = AV_CODEC_ID_MP3;
         break;
     case IEC61937_MPEG2_AAC:
-        init_get_bits(&gbc, buf, AAC_ADTS_HEADER_SIZE * 8);
-        if (avpriv_aac_parse_header(&gbc, &aac_hdr) < 0) {
+        ret = av_adts_header_parse(buf, &samples, &frames);
+        if (ret < 0) {
             if (s) /* be silent during a probe */
                 av_log(s, AV_LOG_ERROR, "Invalid AAC packet in IEC 61937\n");
-            return AVERROR_INVALIDDATA;
+            return ret;
         }
-        *offset = aac_hdr.samples << 2;
+        *offset = samples << 2;
         *codec = AV_CODEC_ID_AAC;
         break;
     case IEC61937_MPEG2_LAYER1_LSF:
@@ -100,24 +104,19 @@ static int spdif_get_offset_and_codec(AVFormatContext *s,
 }
 
 /* Largest offset between bursts we currently handle, i.e. AAC with
-   aac_hdr.samples = 4096 */
+   samples = 4096 */
 #define SPDIF_MAX_OFFSET 16384
 
 static int spdif_probe(AVProbeData *p)
 {
-    enum AVCodecID codec;
-    return ff_spdif_probe (p->buf, p->buf_size, &codec);
-}
-
-int ff_spdif_probe(const uint8_t *p_buf, int buf_size, enum AVCodecID *codec)
-{
-    const uint8_t *buf = p_buf;
-    const uint8_t *probe_end = p_buf + FFMIN(2 * SPDIF_MAX_OFFSET, buf_size - 1);
+    const uint8_t *buf = p->buf;
+    const uint8_t *probe_end = p->buf + FFMIN(2 * SPDIF_MAX_OFFSET, p->buf_size - 1);
     const uint8_t *expected_code = buf + 7;
     uint32_t state = 0;
     int sync_codes = 0;
     int consecutive_codes = 0;
     int offset;
+    enum AVCodecID codec;
 
     for (; buf < probe_end; buf++) {
         state = (state << 8) | *buf;
@@ -132,16 +131,16 @@ int ff_spdif_probe(const uint8_t *p_buf, int buf_size, enum AVCodecID *codec)
             } else
                 consecutive_codes = 0;
 
-            if (buf + 4 + AAC_ADTS_HEADER_SIZE > p_buf + buf_size)
+            if (buf + 4 + AV_AAC_ADTS_HEADER_SIZE > p->buf + p->buf_size)
                 break;
 
             /* continue probing to find more sync codes */
-            probe_end = FFMIN(buf + SPDIF_MAX_OFFSET, p_buf + buf_size - 1);
+            probe_end = FFMIN(buf + SPDIF_MAX_OFFSET, p->buf + p->buf_size - 1);
 
             /* skip directly to the next sync code */
             if (!spdif_get_offset_and_codec(NULL, (buf[2] << 8) | buf[1],
-                                            &buf[5], &offset, codec)) {
-                if (buf + offset >= p_buf + buf_size)
+                                            &buf[5], &offset, &codec)) {
+                if (buf + offset >= p->buf + p->buf_size)
                     break;
                 expected_code = buf + offset;
                 buf = expected_code - 7;
@@ -166,7 +165,7 @@ static int spdif_read_header(AVFormatContext *s)
     return 0;
 }
 
-int ff_spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
+static int spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVIOContext *pb = s->pb;
     enum IEC61937DataType data_type;
@@ -176,7 +175,7 @@ int ff_spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     while (state != (AV_BSWAP16C(SYNCWORD1) << 16 | AV_BSWAP16C(SYNCWORD2))) {
         state = (state << 8) | avio_r8(pb);
-        if (avio_feof(pb))
+        if (pb->eof_reached)
             return AVERROR_EOF;
     }
 
@@ -235,6 +234,6 @@ AVInputFormat ff_spdif_demuxer = {
     .long_name      = NULL_IF_CONFIG_SMALL("IEC 61937 (compressed data in S/PDIF)"),
     .read_probe     = spdif_probe,
     .read_header    = spdif_read_header,
-    .read_packet    = ff_spdif_read_packet,
+    .read_packet    = spdif_read_packet,
     .flags          = AVFMT_GENERIC_INDEX,
 };
