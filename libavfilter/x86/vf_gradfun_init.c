@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2009 Loren Merritt <lorenm@u.washington.edu>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,29 +25,29 @@
 #include "libavutil/x86/cpu.h"
 #include "libavfilter/gradfun.h"
 
-void ff_gradfun_filter_line_mmxext(intptr_t x, uint8_t *dst, const uint8_t *src,
-                                   const uint16_t *dc, int thresh,
+void ff_gradfun_filter_line_mmxext(intptr_t x, uint8_t *dst, uint8_t *src,
+                                   uint16_t *dc, int thresh,
                                    const uint16_t *dithers);
-void ff_gradfun_filter_line_ssse3(intptr_t x, uint8_t *dst, const uint8_t *src,
-                                  const uint16_t *dc, int thresh,
+
+void ff_gradfun_filter_line_ssse3(intptr_t x, uint8_t *dst, uint8_t *src,
+                                  uint16_t *dc, int thresh,
                                   const uint16_t *dithers);
 
 void ff_gradfun_blur_line_movdqa_sse2(intptr_t x, uint16_t *buf,
-                                      const uint16_t *buf1, uint16_t *dc,
-                                      const uint8_t *src1, const uint8_t *src2);
+                                      uint16_t *buf1, uint16_t *dc,
+                                      uint8_t *src1, uint8_t *src2);
 void ff_gradfun_blur_line_movdqu_sse2(intptr_t x, uint16_t *buf,
-                                      const uint16_t *buf1, uint16_t *dc,
-                                      const uint8_t *src1, const uint8_t *src2);
+                                      uint16_t *buf1, uint16_t *dc,
+                                      uint8_t *src1, uint8_t *src2);
 
 #if HAVE_X86ASM
-static void gradfun_filter_line_mmxext(uint8_t *dst, const uint8_t *src,
-                                       const uint16_t *dc,
-                                       int width, int thresh,
-                                       const uint16_t *dithers)
+static void gradfun_filter_line(uint8_t *dst, uint8_t *src, uint16_t *dc,
+                                int width, int thresh, const uint16_t *dithers,
+                                int alignment)
 {
     intptr_t x;
-    if (width & 3) {
-        x = width & ~3;
+    if (width & alignment) {
+        x = width & ~alignment;
         ff_gradfun_filter_line_c(dst + x, src + x, dc + x / 2,
                                  width - x, thresh, dithers);
         width = x;
@@ -57,25 +57,22 @@ static void gradfun_filter_line_mmxext(uint8_t *dst, const uint8_t *src,
                                   thresh, dithers);
 }
 
-static void gradfun_filter_line_ssse3(uint8_t *dst, const uint8_t *src, const uint16_t *dc,
+static void gradfun_filter_line_mmxext(uint8_t *dst, uint8_t *src, uint16_t *dc,
+                                       int width, int thresh,
+                                       const uint16_t *dithers)
+{
+    gradfun_filter_line(dst, src, dc, width, thresh, dithers, 3);
+}
+
+static void gradfun_filter_line_ssse3(uint8_t *dst, uint8_t *src, uint16_t *dc,
                                       int width, int thresh,
                                       const uint16_t *dithers)
 {
-    intptr_t x;
-    if (width & 7) {
-        // could be 10% faster if I somehow eliminated this
-        x = width & ~7;
-        ff_gradfun_filter_line_c(dst + x, src + x, dc + x / 2,
-                                 width - x, thresh, dithers);
-        width = x;
-    }
-    x = -width;
-    ff_gradfun_filter_line_ssse3(x, dst + width, src + width, dc + width / 2,
-                                 thresh, dithers);
+    gradfun_filter_line(dst, src, dc, width, thresh, dithers, 7);
 }
 
-static void gradfun_blur_line_sse2(uint16_t *dc, uint16_t *buf, const uint16_t *buf1,
-                                   const uint8_t *src, int src_linesize, int width)
+static void gradfun_blur_line_sse2(uint16_t *dc, uint16_t *buf, uint16_t *buf1,
+                                   uint8_t *src, int src_linesize, int width)
 {
     intptr_t x = -2 * width;
     if (((intptr_t) src | src_linesize) & 15)
