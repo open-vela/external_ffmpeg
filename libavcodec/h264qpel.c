@@ -2,27 +2,26 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003-2010 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
 #include "h264qpel.h"
 
-#define pixeltmp int16_t
 #define BIT_DEPTH 8
 #include "h264qpel_template.c"
 #undef BIT_DEPTH
@@ -34,17 +33,6 @@
 #define BIT_DEPTH 10
 #include "h264qpel_template.c"
 #undef BIT_DEPTH
-#undef pixeltmp
-
-#define pixeltmp int32_t
-#define BIT_DEPTH 12
-#include "h264qpel_template.c"
-#undef BIT_DEPTH
-
-#define BIT_DEPTH 14
-#include "h264qpel_template.c"
-#undef BIT_DEPTH
-
 
 av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
 {
@@ -88,12 +76,6 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
     case 10:
         SET_QPEL(10);
         break;
-    case 12:
-        SET_QPEL(12);
-        break;
-    case 14:
-        SET_QPEL(14);
-        break;
     }
 
     if (ARCH_AARCH64)
@@ -104,6 +86,4 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
         ff_h264qpel_init_ppc(c, bit_depth);
     if (ARCH_X86)
         ff_h264qpel_init_x86(c, bit_depth);
-    if (ARCH_MIPS)
-        ff_h264qpel_init_mips(c, bit_depth);
 }

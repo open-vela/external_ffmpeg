@@ -3,20 +3,20 @@
  * Copyright (c) 2015 Henrik Gramner
  * Copyright (c) 2008 Loren Merritt
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -31,29 +31,22 @@
 #include "libavutil/lfg.h"
 #include "libavutil/timer.h"
 
-void checkasm_check_alacdsp(void);
 void checkasm_check_audiodsp(void);
-void checkasm_check_blend(void);
 void checkasm_check_blockdsp(void);
 void checkasm_check_bswapdsp(void);
-void checkasm_check_colorspace(void);
-void checkasm_check_fixed_dsp(void);
-void checkasm_check_flacdsp(void);
-void checkasm_check_float_dsp(void);
+void checkasm_check_dcadsp(void);
 void checkasm_check_fmtconvert(void);
 void checkasm_check_h264dsp(void);
 void checkasm_check_h264pred(void);
 void checkasm_check_h264qpel(void);
 void checkasm_check_hevc_add_res(void);
 void checkasm_check_hevc_idct(void);
-void checkasm_check_jpeg2000dsp(void);
-void checkasm_check_llviddsp(void);
-void checkasm_check_pixblockdsp(void);
+void checkasm_check_hevc_mc(void);
+void checkasm_check_huffyuvdsp(void);
 void checkasm_check_synth_filter(void);
 void checkasm_check_v210enc(void);
 void checkasm_check_vp8dsp(void);
 void checkasm_check_vp9dsp(void);
-void checkasm_check_videodsp(void);
 
 void *checkasm_check_func(void *func, const char *name, ...) av_printf_format(2, 3);
 int checkasm_bench_func(void);
@@ -71,9 +64,6 @@ int float_near_abs_eps_array(const float *a, const float *b, float eps,
                              unsigned len);
 int float_near_abs_eps_array_ulp(const float *a, const float *b, float eps,
                                  unsigned max_ulp, unsigned len);
-int double_near_abs_eps(double a, double b, double eps);
-int double_near_abs_eps_array(const double *a, const double *b, double eps,
-                              unsigned len);
 
 extern AVLFG checkasm_lfg;
 #define rnd() av_lfg_get(&checkasm_lfg)
@@ -88,7 +78,6 @@ static av_unused void *func_ref, *func_new;
 /* Declare the function prototype. The first argument is the return value, the remaining
  * arguments are the function parameters. Naming parameters is optional. */
 #define declare_func(ret, ...) declare_new(ret, __VA_ARGS__) typedef ret func_type(__VA_ARGS__)
-#define declare_func_float(ret, ...) declare_new_float(ret, __VA_ARGS__) typedef ret func_type(__VA_ARGS__)
 #define declare_func_emms(cpu_flags, ret, ...) declare_new_emms(cpu_flags, ret, __VA_ARGS__) typedef ret func_type(__VA_ARGS__)
 
 /* Indicate that the current test has failed */
@@ -107,9 +96,6 @@ void checkasm_checked_call(void *func, ...);
 /* Verifies that clobbered callee-saved registers are properly saved and restored
  * and issues emms for asm functions which are not required to do so */
 void checkasm_checked_call_emms(void *func, ...);
-/* Verifies that clobbered callee-saved registers are properly saved and restored
- * but doesn't issue emms. Meant for dsp functions returning float or double */
-void checkasm_checked_call_float(void *func, ...);
 
 #if ARCH_X86_64
 /* Evil hack: detect incorrect assumptions that 32-bit ints are zero-extended to 64-bit.
@@ -124,8 +110,6 @@ void checkasm_checked_call_float(void *func, ...);
 void checkasm_stack_clobber(uint64_t clobber, ...);
 #define declare_new(ret, ...) ret (*checked_call)(void *, int, int, int, int, int, __VA_ARGS__)\
                               = (void *)checkasm_checked_call;
-#define declare_new_float(ret, ...) ret (*checked_call)(void *, int, int, int, int, int, __VA_ARGS__)\
-                                    = (void *)checkasm_checked_call_float;
 #define declare_new_emms(cpu_flags, ret, ...) \
     ret (*checked_call)(void *, int, int, int, int, int, __VA_ARGS__) = \
         ((cpu_flags) & av_get_cpu_flags()) ? (void *)checkasm_checked_call_emms : \
@@ -136,7 +120,6 @@ void checkasm_stack_clobber(uint64_t clobber, ...);
                       checked_call(func_new, 0, 0, 0, 0, 0, __VA_ARGS__))
 #elif ARCH_X86_32
 #define declare_new(ret, ...) ret (*checked_call)(void *, __VA_ARGS__) = (void *)checkasm_checked_call;
-#define declare_new_float(ret, ...) ret (*checked_call)(void *, __VA_ARGS__) = (void *)checkasm_checked_call_float;
 #define declare_new_emms(cpu_flags, ret, ...) ret (*checked_call)(void *, __VA_ARGS__) = \
         ((cpu_flags) & av_get_cpu_flags()) ? (void *)checkasm_checked_call_emms :        \
                                              (void *)checkasm_checked_call;
@@ -162,7 +145,6 @@ void checkasm_checked_call(void *func, ...);
                       checked_call(func_new, 0, 0, 0, 0, 0, 0, 0, __VA_ARGS__))
 #else
 #define declare_new(ret, ...)
-#define declare_new_float(ret, ...)
 #define declare_new_emms(cpu_flags, ret, ...)
 /* Call the function */
 #define call_new(...) ((func_type *)func_new)(__VA_ARGS__)
@@ -170,9 +152,6 @@ void checkasm_checked_call(void *func, ...);
 
 #ifndef declare_new_emms
 #define declare_new_emms(cpu_flags, ret, ...) declare_new(ret, __VA_ARGS__)
-#endif
-#ifndef declare_new_float
-#define declare_new_float(ret, ...) declare_new(ret, __VA_ARGS__)
 #endif
 
 /* Benchmark the function */
