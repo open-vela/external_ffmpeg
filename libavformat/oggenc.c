@@ -622,6 +622,8 @@ static int ogg_write_trailer(AVFormatContext *s)
     for (i = 0; i < s->nb_streams; i++) {
         AVStream *st = s->streams[i];
         OGGStreamContext *oggstream = st->priv_data;
+        if (!oggstream)
+            continue;
         if (st->codecpar->codec_id == AV_CODEC_ID_FLAC ||
             st->codecpar->codec_id == AV_CODEC_ID_SPEEX ||
             st->codecpar->codec_id == AV_CODEC_ID_OPUS) {
