@@ -1,20 +1,20 @@
 /*
  * HEVC shared code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,12 +35,28 @@ enum HEVCNALUnitType {
     HEVC_NAL_RADL_R     = 7,
     HEVC_NAL_RASL_N     = 8,
     HEVC_NAL_RASL_R     = 9,
+    HEVC_NAL_VCL_N10    = 10,
+    HEVC_NAL_VCL_R11    = 11,
+    HEVC_NAL_VCL_N12    = 12,
+    HEVC_NAL_VCL_R13    = 13,
+    HEVC_NAL_VCL_N14    = 14,
+    HEVC_NAL_VCL_R15    = 15,
     HEVC_NAL_BLA_W_LP   = 16,
     HEVC_NAL_BLA_W_RADL = 17,
     HEVC_NAL_BLA_N_LP   = 18,
     HEVC_NAL_IDR_W_RADL = 19,
     HEVC_NAL_IDR_N_LP   = 20,
     HEVC_NAL_CRA_NUT    = 21,
+    HEVC_NAL_IRAP_VCL22 = 22,
+    HEVC_NAL_IRAP_VCL23 = 23,
+    HEVC_NAL_RSV_VCL24  = 24,
+    HEVC_NAL_RSV_VCL25  = 25,
+    HEVC_NAL_RSV_VCL26  = 26,
+    HEVC_NAL_RSV_VCL27  = 27,
+    HEVC_NAL_RSV_VCL28  = 28,
+    HEVC_NAL_RSV_VCL29  = 29,
+    HEVC_NAL_RSV_VCL30  = 30,
+    HEVC_NAL_RSV_VCL31  = 31,
     HEVC_NAL_VPS        = 32,
     HEVC_NAL_SPS        = 33,
     HEVC_NAL_PPS        = 34,
