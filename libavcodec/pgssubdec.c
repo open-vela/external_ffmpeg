@@ -2,20 +2,20 @@
  * PGS subtitle decoder
  * Copyright (c) 2009 Stephen Backway
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,9 +31,8 @@
 
 #include "libavutil/colorspace.h"
 #include "libavutil/imgutils.h"
-#include "libavutil/opt.h"
 
-#define RGBA(r,g,b,a) (((unsigned)(a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+#define RGBA(r,g,b,a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
 #define MAX_EPOCH_PALETTES 8   // Max 8 allowed per PGS epoch
 #define MAX_EPOCH_OBJECTS  64  // Max 64 allowed per PGS epoch
 #define MAX_OBJECT_REFS    2   // Max objects per display set
@@ -91,11 +90,9 @@ typedef struct PGSSubPalettes {
 } PGSSubPalettes;
 
 typedef struct PGSSubContext {
-    AVClass *class;
     PGSSubPresentation presentation;
     PGSSubPalettes     palettes;
     PGSSubObjects      objects;
-    int forced_subs_only;
 } PGSSubContext;
 
 static void flush_cache(AVCodecContext *avctx)
@@ -136,7 +133,7 @@ static PGSSubPalette * find_palette(int id, PGSSubPalettes *palettes)
 
 static av_cold int init_decoder(AVCodecContext *avctx)
 {
-    avctx->pix_fmt     = AV_PIX_FMT_PAL8;
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
     return 0;
 }
@@ -151,7 +148,7 @@ static av_cold int close_decoder(AVCodecContext *avctx)
 /**
  * Decode the RLE data.
  *
- * The subtitle is stored as a Run Length Encoded image.
+ * The subtitle is stored as an Run Length Encoded image.
  *
  * @param avctx contains the current codec context
  * @param sub pointer to the processed subtitle data
@@ -166,7 +163,7 @@ static int decode_rle(AVCodecContext *avctx, AVSubtitleRect *rect,
 
     rle_bitmap_end = buf + buf_size;
 
-    rect->data[0] = av_malloc_array(rect->w, rect->h);
+    rect->data[0] = av_malloc(rect->w * rect->h);
 
     if (!rect->data[0])
         return AVERROR(ENOMEM);
@@ -290,18 +287,18 @@ static int parse_object_segment(AVCodecContext *avctx,
     height = bytestream_get_be16(&buf);
 
     /* Make sure the bitmap is not too large */
-    if (avctx->width < width || avctx->height < height || !width || !height) {
-        av_log(avctx, AV_LOG_ERROR, "Bitmap dimensions (%dx%d) invalid.\n", width, height);
+    if (avctx->width < width || avctx->height < height) {
+        av_log(avctx, AV_LOG_ERROR, "Bitmap dimensions larger than video.\n");
         return AVERROR_INVALIDDATA;
     }
 
     object->w = width;
     object->h = height;
 
-    av_fast_padded_malloc(&object->rle, &object->rle_buffer_size, rle_bitmap_len);
+    av_fast_malloc(&object->rle, &object->rle_buffer_size, rle_bitmap_len);
 
     if (!object->rle) {
-        object->rle_data_len = 0;
+        object->rle_data_len      = 0;
         object->rle_remaining_len = 0;
         return AVERROR(ENOMEM);
     }
@@ -390,8 +387,8 @@ static int parse_presentation_segment(AVCodecContext *avctx,
                                       int64_t pts)
 {
     PGSSubContext *ctx = avctx->priv_data;
+
     int i, state, ret;
-    const uint8_t *buf_end = buf + buf_size;
 
     // Video descriptor
     int w = bytestream_get_be16(&buf);
@@ -440,16 +437,8 @@ static int parse_presentation_segment(AVCodecContext *avctx,
         }
     }
 
-
     for (i = 0; i < ctx->presentation.object_count; i++)
     {
-
-        if (buf_end - buf < 8) {
-            av_log(avctx, AV_LOG_ERROR, "Insufficent space for object\n");
-            ctx->presentation.object_count = i;
-            return AVERROR_INVALIDDATA;
-        }
-
         ctx->presentation.objects[i].id = bytestream_get_be16(&buf);
         ctx->presentation.objects[i].window_id = bytestream_get_byte(&buf);
         ctx->presentation.objects[i].composition_flag = bytestream_get_byte(&buf);
@@ -500,14 +489,11 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
 {
     AVSubtitle    *sub = data;
     PGSSubContext *ctx = avctx->priv_data;
-    int64_t pts;
     PGSSubPalette *palette;
     int i, ret;
 
-    pts = ctx->presentation.pts != AV_NOPTS_VALUE ? ctx->presentation.pts : sub->pts;
     memset(sub, 0, sizeof(*sub));
-    sub->pts = pts;
-    ctx->presentation.pts = AV_NOPTS_VALUE;
+    sub->pts = ctx->presentation.pts;
     sub->start_display_time = 0;
     // There is no explicit end time for PGS subtitles.  The end time
     // is defined by the start of the next sub which may contain no
@@ -518,7 +504,7 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
     // Blank if last object_count was 0.
     if (!ctx->presentation.object_count)
         return 1;
-    sub->rects = av_mallocz_array(ctx->presentation.object_count, sizeof(*sub->rects));
+    sub->rects = av_mallocz(sizeof(*sub->rects) * ctx->presentation.object_count);
     if (!sub->rects) {
         return AVERROR(ENOMEM);
     }
@@ -559,13 +545,12 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
 
         sub->rects[i]->x    = ctx->presentation.objects[i].x;
         sub->rects[i]->y    = ctx->presentation.objects[i].y;
+        sub->rects[i]->w    = object->w;
+        sub->rects[i]->h    = object->h;
+
+        sub->rects[i]->linesize[0] = object->w;
 
         if (object->rle) {
-            sub->rects[i]->w    = object->w;
-            sub->rects[i]->h    = object->h;
-
-            sub->rects[i]->linesize[0] = object->w;
-
             if (object->rle_remaining_len) {
                 av_log(avctx, AV_LOG_ERROR, "RLE data length %u is %u bytes shorter than expected\n",
                        object->rle_data_len, object->rle_remaining_len);
@@ -594,9 +579,6 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
             return AVERROR(ENOMEM);
         }
 
-        if (!ctx->forced_subs_only || ctx->presentation.objects[i].composition_flag & 0x40)
-        memcpy(sub->rects[i]->data[1], palette->clut, sub->rects[i]->nb_colors * sizeof(uint32_t));
-
 #if FF_API_AVPICTURE
 FF_DISABLE_DEPRECATION_WARNINGS
 {
@@ -610,6 +592,9 @@ FF_DISABLE_DEPRECATION_WARNINGS
 }
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
+
+        memcpy(sub->rects[i]->data[1], palette->clut, sub->rects[i]->nb_colors * sizeof(uint32_t));
+
     }
     return 1;
 }
@@ -663,7 +648,7 @@ static int decode(AVCodecContext *avctx, void *data, int *data_size,
             ret = parse_object_segment(avctx, buf, segment_length);
             break;
         case PRESENTATION_SEGMENT:
-            ret = parse_presentation_segment(avctx, buf, segment_length, ((AVSubtitle*)(data))->pts);
+            ret = parse_presentation_segment(avctx, buf, segment_length, avpkt->pts);
             break;
         case WINDOW_SEGMENT:
             /*
@@ -695,20 +680,6 @@ static int decode(AVCodecContext *avctx, void *data, int *data_size,
     return buf_size;
 }
 
-#define OFFSET(x) offsetof(PGSSubContext, x)
-#define SD AV_OPT_FLAG_SUBTITLE_PARAM | AV_OPT_FLAG_DECODING_PARAM
-static const AVOption options[] = {
-    {"forced_subs_only", "Only show forced subtitles", OFFSET(forced_subs_only), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, SD},
-    { NULL },
-};
-
-static const AVClass pgsdec_class = {
-    .class_name = "PGS subtitle decoder",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
-
 AVCodec ff_pgssub_decoder = {
     .name           = "pgssub",
     .long_name      = NULL_IF_CONFIG_SMALL("HDMV Presentation Graphic Stream subtitles"),
@@ -718,5 +689,4 @@ AVCodec ff_pgssub_decoder = {
     .init           = init_decoder,
     .close          = close_decoder,
     .decode         = decode,
-    .priv_class     = &pgsdec_class,
 };
