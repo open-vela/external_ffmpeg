@@ -2,27 +2,28 @@
  * ADX ADPCM codecs
  * Copyright (c) 2001,2003 BERO
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/intreadwrite.h"
+
 #include "avcodec.h"
 #include "adx.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 
 /**
@@ -66,7 +67,7 @@ static int adx_decode(ADXContext *c, int16_t *out, int offset,
                       const uint8_t *in, int ch)
 {
     ADXChannelState *prev = &c->prev[ch];
-    GetBitContext gb;
+    BitstreamContext bc;
     int scale = AV_RB16(in);
     int i;
     int s0, s1, s2, d;
@@ -75,13 +76,13 @@ static int adx_decode(ADXContext *c, int16_t *out, int offset,
     if (scale & 0x8000)
         return -1;
 
-    init_get_bits(&gb, in + 2, (BLOCK_SIZE - 2) * 8);
+    bitstream_init8(&bc, in + 2, BLOCK_SIZE - 2);
     out += offset;
     s1 = prev->s1;
     s2 = prev->s2;
     for (i = 0; i < BLOCK_SAMPLES; i++) {
-        d  = get_sbits(&gb, 4);
-        s0 = ((d * (1 << COEFF_BITS)) * scale + c->coeff[0] * s1 + c->coeff[1] * s2) >> COEFF_BITS;
+        d  = bitstream_read_signed(&bc, 4);
+        s0 = ((d << COEFF_BITS) * scale + c->coeff[0] * s1 + c->coeff[1] * s2) >> COEFF_BITS;
         s2 = s1;
         s1 = av_clip_int16(s0);
         *out++ = s1;
@@ -101,7 +102,6 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
     int16_t **samples;
     int samples_offset;
     const uint8_t *buf  = avpkt->data;
-    const uint8_t *buf_end = buf + avpkt->size;
     int num_blocks, ch, ret;
 
     if (c->eof) {
@@ -142,14 +142,16 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = num_blocks * BLOCK_SAMPLES;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     samples = (int16_t **)frame->extended_data;
     samples_offset = 0;
 
     while (num_blocks--) {
         for (ch = 0; ch < c->channels; ch++) {
-            if (buf_end - buf < BLOCK_SIZE || adx_decode(c, samples[ch], samples_offset, buf, ch)) {
+            if (adx_decode(c, samples[ch], samples_offset, buf, ch)) {
                 c->eof = 1;
                 buf = avpkt->data + avpkt->size;
                 break;
@@ -157,11 +159,9 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
             buf_size -= BLOCK_SIZE;
             buf      += BLOCK_SIZE;
         }
-        if (!c->eof)
-            samples_offset += BLOCK_SAMPLES;
+        samples_offset += BLOCK_SAMPLES;
     }
 
-    frame->nb_samples = samples_offset;
     *got_frame_ptr = 1;
 
     return buf - avpkt->data;
