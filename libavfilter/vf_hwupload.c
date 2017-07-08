@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -74,17 +74,15 @@ static int hwupload_query_formats(AVFilterContext *avctx)
     if (input_pix_fmts) {
         for (i = 0; input_pix_fmts[i] != AV_PIX_FMT_NONE; i++) {
             err = ff_add_format(&input_formats, input_pix_fmts[i]);
-            if (err < 0) {
-                ff_formats_unref(&input_formats);
+            if (err < 0)
                 goto fail;
-            }
         }
     }
 
-    ff_formats_ref(input_formats, &avctx->inputs[0]->out_formats);
-
-    ff_formats_ref(ff_make_format_list(output_pix_fmts),
-                   &avctx->outputs[0]->in_formats);
+    if ((err = ff_formats_ref(input_formats, &avctx->inputs[0]->out_formats)) < 0 ||
+        (err = ff_formats_ref(ff_make_format_list(output_pix_fmts),
+                              &avctx->outputs[0]->in_formats)) < 0)
+        goto fail;
 
     av_hwframe_constraints_free(&constraints);
     return 0;
