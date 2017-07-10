@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,7 +56,7 @@ static PFN_D3D11_CREATE_DEVICE mD3D11CreateDevice;
 
 static av_cold void load_functions(void)
 {
-#if !HAVE_UWP
+#if HAVE_LOADLIBRARY
     // We let these "leak" - this is fine, as unloading has no great benefit, and
     // Windows will mark a DLL as loaded forever if its internal refcount overflows
     // from too many LoadLibrary calls.
@@ -486,7 +486,7 @@ static int d3d11va_device_create(AVHWDeviceContext *ctx, const char *device,
     int ret;
 
     // (On UWP we can't check this.)
-#if !HAVE_UWP
+#if HAVE_LOADLIBRARY
     if (!LoadLibrary("d3d11_1sdklayers.dll"))
         is_debug = 0;
 #endif
@@ -527,7 +527,7 @@ static int d3d11va_device_create(AVHWDeviceContext *ctx, const char *device,
         ID3D10Multithread_Release(pMultithread);
     }
 
-#if !HAVE_UWP && HAVE_DXGIDEBUG_H
+#if HAVE_LOADLIBRARY && HAVE_DXGIDEBUG_H
     if (is_debug) {
         HANDLE dxgidebug_dll = LoadLibrary("dxgidebug.dll");
         if (dxgidebug_dll) {
