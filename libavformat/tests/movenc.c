@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,7 +44,7 @@ static const uint8_t aac_extradata[] = {
 };
 
 
-static const char *format = "mp4";
+const char *format = "mp4";
 AVFormatContext *ctx;
 uint8_t iobuf[32768];
 AVDictionary *opts;
@@ -243,12 +243,12 @@ static void init(int bf, int audio_preroll)
     init_fps(bf, audio_preroll, 30);
 }
 
-static void mux_frames(int n, int c)
+static void mux_frames(int n)
 {
     int end_frames = frames + n;
     while (1) {
         AVPacket pkt;
-        uint8_t pktdata[8] = { 0 };
+        uint8_t pktdata[4];
         av_init_packet(&pkt);
 
         if (av_compare_ts(audio_dts, audio_st->time_base, video_dts, video_st->time_base) < 0) {
@@ -292,19 +292,13 @@ static void mux_frames(int n, int c)
 
         if (clear_duration)
             pkt.duration = 0;
-        AV_WB32(pktdata + 4, pkt.pts);
+        AV_WB32(pktdata, pkt.pts);
         pkt.data = pktdata;
-        pkt.size = 8;
+        pkt.size = 4;
         if (skip_write)
             continue;
         if (skip_write_audio && pkt.stream_index == 1)
             continue;
-
-        if (c) {
-            pkt.pts += (1LL<<32);
-            pkt.dts += (1LL<<32);
-        }
-
         if (do_interleave)
             av_interleaved_write_frame(ctx, &pkt);
         else
@@ -314,7 +308,7 @@ static void mux_frames(int n, int c)
 
 static void mux_gops(int n)
 {
-    mux_frames(gop_size * n, 0);
+    mux_frames(gop_size * n);
 }
 
 static void skip_gops(int n)
@@ -344,7 +338,7 @@ static void signal_init_ts(void)
 static void finish(void)
 {
     av_write_trailer(ctx);
-    av_free(ctx->pb);
+    avio_context_free(&ctx->pb);
     avformat_free_context(ctx);
     ctx = NULL;
 }
@@ -430,7 +424,6 @@ int main(int argc, char **argv)
     // moof+mdat pairs.
     init_out("empty-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -467,7 +460,6 @@ int main(int argc, char **argv)
     // simple input
     init_out("delay-moov");
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     mux_gops(2);
     finish();
@@ -519,7 +511,6 @@ int main(int argc, char **argv)
     // is identical to the one by empty_moov.
     init_out("empty-moov-header");
     av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     close_out();
     memcpy(header, hash, HASH_SIZE);
@@ -542,7 +533,6 @@ int main(int argc, char **argv)
 
     init_out("delay-moov-header");
     av_dict_set(&opts, "movflags", "frag_custom+delay_moov", 0);
-    av_dict_set(&opts, "use_editlist", "0", 0);
     init(0, 0);
     check(out_size == 0, "Output written during init with delay_moov");
     mux_gops(1); // Write 1 second of content
@@ -671,21 +661,6 @@ int main(int argc, char **argv)
     finish();
 
 
-    // Test muxing discontinuous fragments with very large (> (1<<31)) timestamps.
-    av_dict_set(&opts, "movflags", "frag_custom+delay_moov+dash+frag_discont", 0);
-    av_dict_set(&opts, "fragment_index", "2", 0);
-    init(1, 1);
-    signal_init_ts();
-    skip_gops(1);
-    mux_frames(gop_size, 1); // Write the second fragment
-    init_out("delay-moov-elst-signal-init-discont-largets");
-    av_write_frame(ctx, NULL); // Output the moov
-    close_out();
-    init_out("delay-moov-elst-signal-second-frag-discont-largets");
-    av_write_frame(ctx, NULL); // Output the second fragment
-    close_out();
-    finish();
-
     // Test VFR content, with sidx atoms (which declare the pts duration
     // of a fragment, forcing overriding the start pts of the next one).
     // Here, the fragment duration in pts is significantly different from
@@ -701,9 +676,9 @@ int main(int argc, char **argv)
     init_out("vfr");
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov+dash", 0);
     init_fps(1, 1, 3);
-    mux_frames(gop_size/2, 0);
+    mux_frames(gop_size/2);
     duration /= 10;
-    mux_frames(gop_size/2, 0);
+    mux_frames(gop_size/2);
     mux_gops(1);
     finish();
     close_out();
@@ -720,9 +695,9 @@ int main(int argc, char **argv)
     init_out("vfr-noduration");
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov+dash", 0);
     init_fps(1, 1, 3);
-    mux_frames(gop_size/2, 0);
+    mux_frames(gop_size/2);
     duration /= 10;
-    mux_frames(gop_size/2, 0);
+    mux_frames(gop_size/2);
     mux_gops(1);
     finish();
     close_out();
@@ -750,22 +725,41 @@ int main(int argc, char **argv)
     av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov", 0);
     av_dict_set(&opts, "frag_duration", "650000", 0);
     init_fps(1, 1, 30);
-    mux_frames(gop_size/2, 0);
+    mux_frames(gop_size/2);
     // Pretend that the packet duration is the normal, even if
     // we actually skip a bunch of frames. (I.e., simulate that
     // we don't know of the framedrop in advance.)
     fake_pkt_duration = duration;
     duration *= 10;
-    mux_frames(1, 0);
+    mux_frames(1);
     fake_pkt_duration = 0;
     duration /= 10;
-    mux_frames(gop_size/2 - 1, 0);
+    mux_frames(gop_size/2 - 1);
     mux_gops(1);
     finish();
     close_out();
     clear_duration = 0;
     do_interleave = 0;
 
+    // Write a fragmented file with b-frames and audio preroll,
+    // with negative cts values, removing the edit list for the
+    // video track.
+    init_out("delay-moov-elst-neg-cts");
+    av_dict_set(&opts, "movflags", "frag_keyframe+delay_moov+negative_cts_offsets", 0);
+    init(1, 1);
+    mux_gops(2);
+    finish();
+    close_out();
+
+    // Write a fragmented file with b-frames without audio preroll,
+    // with negative cts values, avoiding any edit lists, allowing
+    // to use empty_moov instead of delay_moov.
+    init_out("empty-moov-neg-cts");
+    av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov+negative_cts_offsets", 0);
+    init(1, 0);
+    mux_gops(2);
+    finish();
+    close_out();
 
     av_free(md5);
 

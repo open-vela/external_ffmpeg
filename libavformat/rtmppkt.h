@@ -2,20 +2,20 @@
  * RTMP packet utilities
  * Copyright (c) 2009 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,9 +47,9 @@ enum RTMPChannel {
 typedef enum RTMPPacketType {
     RTMP_PT_CHUNK_SIZE   =  1,  ///< chunk size change
     RTMP_PT_BYTES_READ   =  3,  ///< number of bytes read
-    RTMP_PT_PING,               ///< ping
-    RTMP_PT_SERVER_BW,          ///< server bandwidth
-    RTMP_PT_CLIENT_BW,          ///< client bandwidth
+    RTMP_PT_USER_CONTROL,       ///< user control
+    RTMP_PT_WINDOW_ACK_SIZE,    ///< window acknowledgement size
+    RTMP_PT_SET_PEER_BW,        ///< peer bandwidth
     RTMP_PT_AUDIO        =  8,  ///< audio packet
     RTMP_PT_VIDEO,              ///< video packet
     RTMP_PT_FLEX_STREAM  = 15,  ///< Flex shared stream
