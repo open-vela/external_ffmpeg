@@ -1,18 +1,24 @@
 /*
- * This file is part of Libav.
+ * Copyright (c) 2003 Michael Zucchi <notzed@ximian.com>
+ * Copyright (c) 2010 Baptiste Coudurier
+ * Copyright (c) 2011 Stefano Sabatini
+ * Copyright (c) 2013 Vittorio Giovara <vittorio.giovara@gmail.com>
+ * Copyright (c) 2017 Thomas Mundt <tmundt75@gmail.com>
  *
- * Libav is free software; you can redistribute it and/or modify
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -33,37 +39,58 @@
 #include "video.h"
 
 #define OFFSET(x) offsetof(InterlaceContext, x)
-#define V AV_OPT_FLAG_VIDEO_PARAM
-static const AVOption options[] = {
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption interlace_options[] = {
     { "scan", "scanning mode", OFFSET(scan),
-        AV_OPT_TYPE_INT,   {.i64 = MODE_TFF }, 0, 1, .flags = V, .unit = "scan" },
+        AV_OPT_TYPE_INT,   {.i64 = MODE_TFF }, 0, 1, .flags = FLAGS, .unit = "scan" },
     { "tff", "top field first", 0,
-        AV_OPT_TYPE_CONST, {.i64 = MODE_TFF }, INT_MIN, INT_MAX, .flags = V, .unit = "scan" },
+        AV_OPT_TYPE_CONST, {.i64 = MODE_TFF }, INT_MIN, INT_MAX, .flags = FLAGS, .unit = "scan" },
     { "bff", "bottom field first", 0,
-        AV_OPT_TYPE_CONST, {.i64 = MODE_BFF }, INT_MIN, INT_MAX, .flags = V, .unit = "scan" },
-    { "lowpass", "enable vertical low-pass filter", OFFSET(lowpass),
-        AV_OPT_TYPE_INT,   {.i64 = 1 },        0, 1, .flags = V },
+        AV_OPT_TYPE_CONST, {.i64 = MODE_BFF }, INT_MIN, INT_MAX, .flags = FLAGS, .unit = "scan" },
+    { "lowpass", "set vertical low-pass filter", OFFSET(lowpass),
+        AV_OPT_TYPE_INT,   {.i64 = VLPF_LIN }, 0, 2, .flags = FLAGS, .unit = "lowpass" },
+    { "off",     "disable vertical low-pass filter", 0,
+        AV_OPT_TYPE_CONST, {.i64 = VLPF_OFF }, INT_MIN, INT_MAX, .flags = FLAGS, .unit = "lowpass" },
+    { "linear",  "linear vertical low-pass filter",  0,
+        AV_OPT_TYPE_CONST, {.i64 = VLPF_LIN }, INT_MIN, INT_MAX, .flags = FLAGS, .unit = "lowpass" },
+    { "complex", "complex vertical low-pass filter", 0,
+        AV_OPT_TYPE_CONST, {.i64 = VLPF_CMP }, INT_MIN, INT_MAX, .flags = FLAGS, .unit = "lowpass" },
     { NULL }
 };
 
-static const AVClass class = {
-    .class_name = "interlace filter",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+AVFILTER_DEFINE_CLASS(interlace);
 
 static void lowpass_line_c(uint8_t *dstp, ptrdiff_t linesize,
                            const uint8_t *srcp,
-                           const uint8_t *srcp_above,
-                           const uint8_t *srcp_below)
+                           ptrdiff_t mref, ptrdiff_t pref)
 {
+    const uint8_t *srcp_above = srcp + mref;
+    const uint8_t *srcp_below = srcp + pref;
     int i;
     for (i = 0; i < linesize; i++) {
         // this calculation is an integer representation of
         // '0.5 * current + 0.25 * above + 0.25 * below'
         // '1 +' is for rounding.
         dstp[i] = (1 + srcp[i] + srcp[i] + srcp_above[i] + srcp_below[i]) >> 2;
+    }
+}
+
+static void lowpass_line_complex_c(uint8_t *dstp, ptrdiff_t linesize,
+                                   const uint8_t *srcp,
+                                   ptrdiff_t mref, ptrdiff_t pref)
+{
+    const uint8_t *srcp_above = srcp + mref;
+    const uint8_t *srcp_below = srcp + pref;
+    const uint8_t *srcp_above2 = srcp + mref * 2;
+    const uint8_t *srcp_below2 = srcp + pref * 2;
+    int i;
+    for (i = 0; i < linesize; i++) {
+        // this calculation is an integer representation of
+        // '0.75 * current + 0.25 * above + 0.25 * below - 0.125 * above2 - 0.125 * below2'
+        // '4 +' is for rounding.
+        dstp[i] = av_clip_uint8((4 + (srcp[i] << 2)
+                  + ((srcp[i] + srcp_above[i] + srcp_below[i]) << 1)
+                  - srcp_above2[i] - srcp_below2[i]) >> 3);
     }
 }
 
@@ -76,8 +103,10 @@ static const enum AVPixelFormat formats_supported[] = {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    ff_set_common_formats(ctx, ff_make_format_list(formats_supported));
-    return 0;
+    AVFilterFormats *fmts_list = ff_make_format_list(formats_supported);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -86,8 +115,6 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     av_frame_free(&s->cur);
     av_frame_free(&s->next);
-
-    av_opt_free(s);
 }
 
 static int config_out_props(AVFilterLink *outlink)
@@ -116,7 +143,10 @@ static int config_out_props(AVFilterLink *outlink)
 
 
     if (s->lowpass) {
-        s->lowpass_line = lowpass_line_c;
+        if (s->lowpass == VLPF_LIN)
+            s->lowpass_line = lowpass_line_c;
+        else if (s->lowpass == VLPF_CMP)
+            s->lowpass_line = lowpass_line_complex_c;
         if (ARCH_X86)
             ff_interlace_init_x86(s);
     }
@@ -138,10 +168,8 @@ static void copy_picture_field(InterlaceContext *s,
     int plane, j;
 
     for (plane = 0; plane < desc->nb_components; plane++) {
-        int cols  = (plane == 1 || plane == 2) ? AV_CEIL_RSHIFT(inlink->w, hsub)
-                                               : inlink->w;
-        int lines = (plane == 1 || plane == 2) ? AV_CEIL_RSHIFT(inlink->h, vsub)
-                                               : inlink->h;
+        int cols  = (plane == 1 || plane == 2) ? -(-inlink->w) >> hsub : inlink->w;
+        int lines = (plane == 1 || plane == 2) ? AV_CEIL_RSHIFT(inlink->h, vsub) : inlink->h;
         uint8_t *dstp = dst_frame->data[plane];
         const uint8_t *srcp = src_frame->data[plane];
 
@@ -152,17 +180,31 @@ static void copy_picture_field(InterlaceContext *s,
             srcp += src_frame->linesize[plane];
             dstp += dst_frame->linesize[plane];
         }
-        if (lowpass) {
+        if (lowpass == VLPF_LIN) {
             int srcp_linesize = src_frame->linesize[plane] * 2;
             int dstp_linesize = dst_frame->linesize[plane] * 2;
             for (j = lines; j > 0; j--) {
-                const uint8_t *srcp_above = srcp - src_frame->linesize[plane];
-                const uint8_t *srcp_below = srcp + src_frame->linesize[plane];
+                ptrdiff_t pref = src_frame->linesize[plane];
+                ptrdiff_t mref = -pref;
                 if (j == lines)
-                    srcp_above = srcp; // there is no line above
-                if (j == 1)
-                    srcp_below = srcp; // there is no line below
-                s->lowpass_line(dstp, cols, srcp, srcp_above, srcp_below);
+                    mref = 0;    // there is no line above
+                else if (j == 1)
+                    pref = 0;    // there is no line below
+                s->lowpass_line(dstp, cols, srcp, mref, pref);
+                dstp += dstp_linesize;
+                srcp += srcp_linesize;
+            }
+        } else if (lowpass == VLPF_CMP) {
+            int srcp_linesize = src_frame->linesize[plane] * 2;
+            int dstp_linesize = dst_frame->linesize[plane] * 2;
+            for (j = lines; j > 0; j--) {
+                ptrdiff_t pref = src_frame->linesize[plane];
+                ptrdiff_t mref = -pref;
+                if (j >= (lines - 1))
+                    mref = 0;
+                else if (j <= 2)
+                    pref = 0;
+                s->lowpass_line(dstp, cols, srcp, mref, pref);
                 dstp += dstp_linesize;
                 srcp += srcp_linesize;
             }
@@ -198,7 +240,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
             return AVERROR(ENOMEM);
         out->pts /= 2;  // adjust pts to new framerate
         ret = ff_filter_frame(outlink, out);
-        s->got_output = 1;
         return ret;
     }
 
@@ -221,20 +262,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     av_frame_free(&s->next);
 
     ret = ff_filter_frame(outlink, out);
-    s->got_output = 1;
-
-    return ret;
-}
-
-static int request_frame(AVFilterLink *outlink)
-{
-    AVFilterContext *ctx = outlink->src;
-    InterlaceContext *s  = ctx->priv;
-    int ret = 0;
-
-    s->got_output = 0;
-    while (ret >= 0 && !s->got_output)
-        ret = ff_request_frame(ctx->inputs[0]);
 
     return ret;
 }
@@ -250,10 +277,9 @@ static const AVFilterPad inputs[] = {
 
 static const AVFilterPad outputs[] = {
     {
-        .name          = "default",
-        .type          = AVMEDIA_TYPE_VIDEO,
-        .config_props  = config_out_props,
-        .request_frame = request_frame,
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .config_props = config_out_props,
     },
     { NULL }
 };
@@ -262,12 +288,9 @@ AVFilter ff_vf_interlace = {
     .name          = "interlace",
     .description   = NULL_IF_CONFIG_SMALL("Convert progressive video into interlaced."),
     .uninit        = uninit,
-
-    .priv_class    = &class,
+    .priv_class    = &interlace_class,
     .priv_size     = sizeof(InterlaceContext),
     .query_formats = query_formats,
-
     .inputs        = inputs,
     .outputs       = outputs,
 };
-
