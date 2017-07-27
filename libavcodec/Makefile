@@ -1023,6 +1023,7 @@ SKIPHEADERS                            += %_tablegen.h                  \
                                           aacenc_quantization_misc.h    \
                                           $(ARCH)/vp56_arith.h          \
 
+SKIPHEADERS-$(CONFIG_CUVID)            += cuvid.h
 SKIPHEADERS-$(CONFIG_D3D11VA)          += d3d11va.h dxva2_internal.h
 SKIPHEADERS-$(CONFIG_DXVA2)            += dxva2.h dxva2_internal.h
 SKIPHEADERS-$(CONFIG_JNI)              += ffjni.h
