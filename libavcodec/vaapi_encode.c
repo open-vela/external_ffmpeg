@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@
 #include "vaapi_encode.h"
 #include "avcodec.h"
 
-static const char * const picture_type_name[] = { "IDR", "I", "P", "B" };
+static const char *picture_type_name[] = { "IDR", "I", "P", "B" };
 
 static int vaapi_encode_make_packed_header(AVCodecContext *avctx,
                                            VAAPIEncodePicture *pic,
@@ -334,7 +334,7 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
         if (ctx->codec->init_slice_params) {
             err = ctx->codec->init_slice_params(avctx, pic, slice);
             if (err < 0) {
-                av_log(avctx, AV_LOG_ERROR, "Failed to initalise slice "
+                av_log(avctx, AV_LOG_ERROR, "Failed to initialise slice "
                        "parameters: %d.\n", err);
                 goto fail;
             }
@@ -1120,6 +1120,12 @@ static av_cold int vaapi_encode_init_rate_control(AVCodecContext *avctx)
     int hrd_initial_buffer_fullness;
     int fr_num, fr_den;
 
+    if (avctx->bit_rate > INT32_MAX) {
+        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
+               "higher is not supported.\n");
+        return AVERROR(EINVAL);
+    }
+
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;
     else
@@ -1421,41 +1427,6 @@ av_cold int ff_vaapi_encode_init(AVCodecContext *avctx)
         err = ctx->codec->configure(avctx);
         if (err < 0)
             goto fail;
-    }
-
-    if (avctx->compression_level >= 0) {
-#if VA_CHECK_VERSION(0, 36, 0)
-        VAConfigAttrib attr = { VAConfigAttribEncQualityRange };
-
-        vas = vaGetConfigAttributes(ctx->hwctx->display,
-                                    ctx->va_profile,
-                                    ctx->va_entrypoint,
-                                    &attr, 1);
-        if (vas != VA_STATUS_SUCCESS) {
-            av_log(avctx, AV_LOG_WARNING, "Failed to query quality "
-                   "attribute: will use default compression level.\n");
-        } else {
-            if (avctx->compression_level > attr.value) {
-                av_log(avctx, AV_LOG_WARNING, "Invalid compression "
-                       "level: valid range is 0-%d, using %d.\n",
-                       attr.value, attr.value);
-                avctx->compression_level = attr.value;
-            }
-
-            ctx->quality_params.misc.type =
-                VAEncMiscParameterTypeQualityLevel;
-            ctx->quality_params.quality.quality_level =
-                avctx->compression_level;
-
-            ctx->global_params[ctx->nb_global_params] =
-                &ctx->quality_params.misc;
-            ctx->global_params_size[ctx->nb_global_params++] =
-                sizeof(ctx->quality_params);
-        }
-#else
-        av_log(avctx, AV_LOG_WARNING, "The encode compression level "
-               "option is not supported with this VAAPI version.\n");
-#endif
     }
 
     ctx->input_order  = 0;
