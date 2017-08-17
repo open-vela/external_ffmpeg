@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,6 +35,8 @@ enum {
     MAX_CONFIG_ATTRIBUTES  = 4,
     MAX_GLOBAL_PARAMS      = 4,
     MAX_PICTURE_REFERENCES = 2,
+    MAX_PICTURE_SLICES     = 112,
+    MAX_PARAM_BUFFERS      = 128,
     MAX_REORDER_DELAY      = 16,
     MAX_PARAM_BUFFER_SIZE  = 1024,
 };
@@ -71,7 +73,7 @@ typedef struct VAAPIEncodePicture {
     VASurfaceID     recon_surface;
 
     int          nb_param_buffers;
-    VABufferID     *param_buffers;
+    VABufferID      param_buffers[MAX_PARAM_BUFFERS];
 
     AVBufferRef    *output_buffer_ref;
     VABufferID      output_buffer;
@@ -83,7 +85,7 @@ typedef struct VAAPIEncodePicture {
     struct VAAPIEncodePicture *refs[MAX_PICTURE_REFERENCES];
 
     int          nb_slices;
-    VAAPIEncodeSlice *slices;
+    VAAPIEncodeSlice *slices[MAX_PICTURE_SLICES];
 } VAAPIEncodePicture;
 
 typedef struct VAAPIEncodeContext {
