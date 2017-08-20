@@ -2,20 +2,20 @@
  * C99-compatible strtod() implementation
  * Copyright (c) 2012 Ronald S. Bultje <rsbultje@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,9 +25,9 @@
 #include "libavutil/avstring.h"
 #include "libavutil/mathematics.h"
 
-static char *check_nan_suffix(char *s)
+static const char *check_nan_suffix(const char *s)
 {
-    char *start = s;
+    const char *start = s;
 
     if (*s++ != '(')
         return start;
@@ -44,7 +44,7 @@ double strtod(const char *, char **);
 
 double avpriv_strtod(const char *nptr, char **endptr)
 {
-    char *end;
+    const char *end;
     double res;
 
     /* Skip leading spaces */
@@ -81,13 +81,13 @@ double avpriv_strtod(const char *nptr, char **endptr)
                !av_strncasecmp(nptr, "+0x", 3)) {
         /* FIXME this doesn't handle exponents, non-integers (float/double)
          * and numbers too large for long long */
-        res = strtoll(nptr, &end, 16);
+        res = strtoll(nptr, (char **)&end, 16);
     } else {
-        res = strtod(nptr, &end);
+        res = strtod(nptr, (char **)&end);
     }
 
     if (endptr)
-        *endptr = end;
+        *endptr = (char *)end;
 
     return res;
 }
