@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,13 +25,12 @@
 #include "pixfmt.h"
 
 enum AVHWDeviceType {
+    AV_HWDEVICE_TYPE_NONE,
     AV_HWDEVICE_TYPE_VDPAU,
     AV_HWDEVICE_TYPE_CUDA,
     AV_HWDEVICE_TYPE_VAAPI,
     AV_HWDEVICE_TYPE_DXVA2,
     AV_HWDEVICE_TYPE_QSV,
-    AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
-    AV_HWDEVICE_TYPE_NONE,
     AV_HWDEVICE_TYPE_D3D11VA,
 };
 
@@ -253,9 +252,8 @@ const char *av_hwdevice_get_type_name(enum AVHWDeviceType type);
 enum AVHWDeviceType av_hwdevice_iterate_types(enum AVHWDeviceType prev);
 
 /**
- * Allocate an AVHWDeviceContext for a given hardware type.
+ * Allocate an AVHWDeviceContext for a given pixel format.
  *
- * @param type the type of the hardware device to allocate.
  * @return a reference to the newly created AVHWDeviceContext on success or NULL
  *         on failure.
  */
