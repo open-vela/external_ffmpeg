@@ -3,20 +3,20 @@
  * Copyright (c) 2005 DivX, Inc.
  * Copyright (c) 2009 Bjorn Axelsson
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -128,7 +128,7 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
     }
 
     // TODO: support multiple rects
-    if (h->num_rects > 1)
+    if (h->num_rects != 1)
         av_log(avctx, AV_LOG_WARNING, "Only single rects supported (%d in subtitle.)\n", h->num_rects);
 
 #if FF_API_AVPICTURE
@@ -155,7 +155,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         av_log(avctx, AV_LOG_WARNING, "No more than 4 subtitle colors supported (%d found.)\n", h->rects[0]->nb_colors);
 
     // TODO: Palette swapping if color zero is not transparent
-    if (((uint32_t *)h->rects[0]->data[1])[0] & 0xff)
+    if (((uint32_t *)h->rects[0]->data[1])[0] & 0xff000000)
         av_log(avctx, AV_LOG_WARNING, "Color index 0 is not transparent. Transparency will be messed up.\n");
 
     if (make_tc(startTime, start_tc) || make_tc(endTime, end_tc)) {
@@ -179,8 +179,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
     bytestream_put_le16(&hdr, height);
     bytestream_put_le16(&hdr, h->rects[0]->x);
     bytestream_put_le16(&hdr, h->rects[0]->y);
-    bytestream_put_le16(&hdr, h->rects[0]->x + width);
-    bytestream_put_le16(&hdr, h->rects[0]->y + height);
+    bytestream_put_le16(&hdr, h->rects[0]->x + width -1);
+    bytestream_put_le16(&hdr, h->rects[0]->y + height -1);
 
     rlelenptr = hdr; // Will store length of first field here later.
     hdr+=2;
@@ -203,7 +203,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                         h->rects[0]->w, h->rects[0]->h >> 1))
         return -1;
 
-    // Enforce total height to be be multiple of 2
+    // Enforce total height to be a multiple of 2
     if (h->rects[0]->h & 1) {
         put_xsub_rle(&pb, h->rects[0]->w, PADDING_COLOR);
         avpriv_align_put_bits(&pb);
@@ -218,6 +218,8 @@ static av_cold int xsub_encoder_init(AVCodecContext *avctx)
 {
     if (!avctx->codec_tag)
         avctx->codec_tag = MKTAG('D','X','S','B');
+
+    avctx->bits_per_coded_sample = 4;
 
     return 0;
 }
