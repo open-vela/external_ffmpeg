@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -84,7 +84,7 @@ typedef struct VAAPIMapping {
     }
 // The map fourcc <-> pix_fmt isn't bijective because of the annoying U/V
 // plane swap cases.  The frame handling below tries to hide these.
-static const struct {
+static struct {
     unsigned int fourcc;
     unsigned int rt_format;
     enum AVPixelFormat pix_fmt;
@@ -104,15 +104,15 @@ static const struct {
     MAP(P010, YUV420_10BPP, P010),
 #endif
     MAP(BGRA, RGB32,   BGRA),
-  //MAP(BGRX, RGB32,   BGR0),
+    MAP(BGRX, RGB32,   BGR0),
     MAP(RGBA, RGB32,   RGBA),
-  //MAP(RGBX, RGB32,   RGB0),
+    MAP(RGBX, RGB32,   RGB0),
 #ifdef VA_FOURCC_ABGR
     MAP(ABGR, RGB32,   ABGR),
-  //MAP(XBGR, RGB32,   0BGR),
+    MAP(XBGR, RGB32,   0BGR),
 #endif
     MAP(ARGB, RGB32,   ARGB),
-  //MAP(XRGB, RGB32,   0RGB),
+    MAP(XRGB, RGB32,   0RGB),
 };
 #undef MAP
 
