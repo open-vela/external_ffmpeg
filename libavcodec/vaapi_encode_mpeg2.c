@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -208,7 +208,7 @@ static int vaapi_encode_mpeg2_init_sequence_params(AVCodecContext *avctx)
     if (avctx->framerate.num > 0 && avctx->framerate.den > 0)
         vseq->frame_rate = (float)avctx->framerate.num / avctx->framerate.den;
     else
-        vseq->frame_rate = (float)avctx->time_base.den / avctx->time_base.num;
+        vseq->frame_rate = (float)avctx->time_base.num / avctx->time_base.den;
 
     vseq->aspect_ratio_information = 1;
     vseq->vbv_buffer_size = avctx->rc_buffer_size / (16 * 1024);
@@ -444,10 +444,10 @@ static const AVCodecDefault vaapi_encode_mpeg2_defaults[] = {
     { "level",          "4"   },
     { "bf",             "1"   },
     { "g",              "120" },
-    { "i_qfactor",      "1"   },
-    { "i_qoffset",      "0"   },
-    { "b_qfactor",      "6/5" },
-    { "b_qoffset",      "0"   },
+    { "i_qfactor",      "1.0" },
+    { "i_qoffset",      "0.0" },
+    { "b_qfactor",      "1.2" },
+    { "b_qoffset",      "0.0" },
     { "global_quality", "10"  },
     { NULL },
 };

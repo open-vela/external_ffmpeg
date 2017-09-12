@@ -2,20 +2,20 @@
  * various OS-feature replacement utilities
  * copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,32 +40,15 @@
 #endif
 #endif
 
-#if defined(_WIN32) && !defined(__MINGW32CE__)
+#ifdef _WIN32
 #  include <fcntl.h>
-#  ifdef lseek
-#   undef lseek
-#  endif
+#  undef lseek
 #  define lseek(f,p,w) _lseeki64((f), (p), (w))
-#  ifdef stat
-#   undef stat
-#  endif
+#  undef stat
 #  define stat _stati64
-#  ifdef fstat
-#   undef fstat
-#  endif
+#  undef fstat
 #  define fstat(f,s) _fstati64((f), (s))
-#endif /* defined(_WIN32) && !defined(__MINGW32CE__) */
-
-
-#ifdef __ANDROID__
-#  if HAVE_UNISTD_H
-#    include <unistd.h>
-#  endif
-#  ifdef lseek
-#   undef lseek
-#  endif
-#  define lseek(f,p,w) lseek64((f), (p), (w))
-#endif
+#endif /* defined(_WIN32) */
 
 static inline int is_dos_path(const char *path)
 {
@@ -139,9 +122,7 @@ int ff_poll(struct pollfd *fds, nfds_t numfds, int timeout);
 #endif /* HAVE_POLL_H */
 #endif /* CONFIG_NETWORK */
 
-#if defined(__MINGW32CE__)
-#define mkdir(a, b) _mkdir(a)
-#elif defined(_WIN32)
+#ifdef _WIN32
 #include <stdio.h>
 #include <windows.h>
 #include "libavutil/wchar_filename.h"
@@ -170,29 +151,6 @@ DEF_FS_FUNCTION(unlink, _wunlink, _unlink)
 DEF_FS_FUNCTION(mkdir,  _wmkdir,  _mkdir)
 DEF_FS_FUNCTION(rmdir,  _wrmdir , _rmdir)
 
-#define DEF_FS_FUNCTION2(name, wfunc, afunc, partype)     \
-static inline int win32_##name(const char *filename_utf8, partype par) \
-{                                                         \
-    wchar_t *filename_w;                                  \
-    int ret;                                              \
-                                                          \
-    if (utf8towchar(filename_utf8, &filename_w))          \
-        return -1;                                        \
-    if (!filename_w)                                      \
-        goto fallback;                                    \
-                                                          \
-    ret = wfunc(filename_w, par);                         \
-    av_free(filename_w);                                  \
-    return ret;                                           \
-                                                          \
-fallback:                                                 \
-    /* filename may be be in CP_ACP */                    \
-    return afunc(filename_utf8, par);                     \
-}
-
-DEF_FS_FUNCTION2(access, _waccess, _access, int)
-DEF_FS_FUNCTION2(stat, _wstati64, _stati64, struct stat*)
-
 static inline int win32_rename(const char *src_utf8, const char *dest_utf8)
 {
     wchar_t *src_w, *dest_w;
@@ -220,7 +178,7 @@ static inline int win32_rename(const char *src_utf8, const char *dest_utf8)
 
 fallback:
     /* filename may be be in CP_ACP */
-#if !HAVE_WINRT
+#if !HAVE_UWP
     ret = MoveFileExA(src_utf8, dest_utf8, MOVEFILE_REPLACE_EXISTING);
     if (ret)
         errno = EPERM;
@@ -242,7 +200,6 @@ fallback:
 #define rename      win32_rename
 #define rmdir       win32_rmdir
 #define unlink      win32_unlink
-#define access      win32_access
 
 #endif
 
