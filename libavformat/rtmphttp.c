@@ -2,20 +2,20 @@
  * RTMP HTTP network protocol
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -208,7 +208,7 @@ static int rtmp_http_open(URLContext *h, const char *uri, int flags)
     }
 
     /* alloc the http context */
-    if ((ret = ffurl_alloc(&rt->stream, url, AVIO_FLAG_READ_WRITE, NULL, h->protocols)) < 0)
+    if ((ret = ffurl_alloc(&rt->stream, url, AVIO_FLAG_READ_WRITE, &h->interrupt_callback)) < 0)
         goto fail;
 
     /* set options */
@@ -219,6 +219,14 @@ static int rtmp_http_open(URLContext *h, const char *uri, int flags)
     av_opt_set(rt->stream->priv_data, "headers", headers, 0);
     av_opt_set(rt->stream->priv_data, "multiple_requests", "1", 0);
     av_opt_set_bin(rt->stream->priv_data, "post_data", "", 1, 0);
+
+    if (!rt->stream->protocol_whitelist && h->protocol_whitelist) {
+        rt->stream->protocol_whitelist = av_strdup(h->protocol_whitelist);
+        if (!rt->stream->protocol_whitelist) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+    }
 
     /* open the http context */
     if ((ret = ffurl_connect(rt->stream, NULL)) < 0)
@@ -254,7 +262,7 @@ fail:
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 
 static const AVOption ffrtmphttp_options[] = {
-    {"ffrtmphttp_tls", "Use a HTTPS tunneling connection (RTMPTS).", OFFSET(tls), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, DEC},
+    {"ffrtmphttp_tls", "Use a HTTPS tunneling connection (RTMPTS).", OFFSET(tls), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DEC},
     { NULL },
 };
 
@@ -274,4 +282,5 @@ const URLProtocol ff_ffrtmphttp_protocol = {
     .priv_data_size = sizeof(RTMP_HTTPContext),
     .flags          = URL_PROTOCOL_FLAG_NETWORK,
     .priv_data_class= &ffrtmphttp_class,
+    .default_whitelist = "https,http,tcp,tls",
 };
