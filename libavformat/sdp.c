@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2007 Luca Abeni
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -203,7 +203,7 @@ static char *extradata2psets(AVFormatContext *s, AVCodecParameters *par)
             sps_end = r1;
         }
         if (!av_base64_encode(p, MAX_PSET_SIZE - (p - psets), r, r1 - r)) {
-            av_log(s, AV_LOG_ERROR, "Cannot Base64-encode %td %td!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
+            av_log(s, AV_LOG_ERROR, "Cannot Base64-encode %"PTRDIFF_SPECIFIER" %"PTRDIFF_SPECIFIER"!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
             av_free(psets);
             av_free(tmpbuf);
 
@@ -348,7 +348,7 @@ static char *extradata2config(AVFormatContext *s, AVCodecParameters *par)
 static char *xiph_extradata2config(AVFormatContext *s, AVCodecParameters *par)
 {
     char *config, *encoded_config;
-    uint8_t *header_start[3];
+    const uint8_t *header_start[3];
     int headers_len, header_len[3], config_len;
     int first_header_size;
 
@@ -479,11 +479,15 @@ static char *latm_context2config(AVFormatContext *s, AVCodecParameters *par)
     return config;
 }
 
-static char *sdp_write_media_attributes(char *buff, int size, AVCodecParameters *p, int payload_type, AVFormatContext *fmt)
+static char *sdp_write_media_attributes(char *buff, int size, AVStream *st, int payload_type, AVFormatContext *fmt)
 {
     char *config = NULL;
+    AVCodecParameters *p = st->codecpar;
 
     switch (p->codec_id) {
+        case AV_CODEC_ID_DIRAC:
+            av_strlcatf(buff, size, "a=rtpmap:%d VC2/90000\r\n", payload_type);
+            break;
         case AV_CODEC_ID_H264: {
             int mode = 1;
             if (fmt && fmt->oformat && fmt->oformat->priv_class &&
@@ -544,7 +548,7 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecParameters 
                                      payload_type, config ? config : "");
             break;
         case AV_CODEC_ID_AAC:
-            if (fmt && fmt->oformat->priv_class &&
+            if (fmt && fmt->oformat && fmt->oformat->priv_class &&
                 av_opt_flag_is_set(fmt->priv_data, "rtpflags", "latm")) {
                 config = latm_context2config(fmt, p);
                 if (!config)
@@ -637,7 +641,7 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecParameters 
             if (p->extradata_size)
                 config = xiph_extradata2config(fmt, p);
             else
-                av_log(fmt, AV_LOG_ERROR, "Theora configuation info missing\n");
+                av_log(fmt, AV_LOG_ERROR, "Theora configuration info missing\n");
             if (!config)
                 return NULL;
 
@@ -651,6 +655,10 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecParameters 
         }
         case AV_CODEC_ID_VP8:
             av_strlcatf(buff, size, "a=rtpmap:%d VP8/90000\r\n",
+                                     payload_type);
+            break;
+        case AV_CODEC_ID_VP9:
+            av_strlcatf(buff, size, "a=rtpmap:%d VP9/90000\r\n",
                                      payload_type);
             break;
         case AV_CODEC_ID_MJPEG:
@@ -681,6 +689,20 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecParameters 
         case AV_CODEC_ID_SPEEX:
             av_strlcatf(buff, size, "a=rtpmap:%d speex/%d\r\n",
                                      payload_type, p->sample_rate);
+            if (st->codec) {
+                const char *mode;
+                uint64_t vad_option;
+
+                if (st->codec->flags & AV_CODEC_FLAG_QSCALE)
+                      mode = "on";
+                else if (!av_opt_get_int(st->codec, "vad", AV_OPT_FLAG_ENCODING_PARAM, &vad_option) && vad_option)
+                      mode = "vad";
+                else
+                      mode = "off";
+
+                av_strlcatf(buff, size, "a=fmtp:%d vbr=%s\r\n",
+                                        payload_type, mode);
+            }
             break;
         case AV_CODEC_ID_OPUS:
             /* The opus RTP draft says that all opus streams MUST be declared
@@ -726,10 +748,10 @@ void ff_sdp_write_media(char *buff, int size, AVStream *st, int idx,
     av_strlcatf(buff, size, "m=%s %d RTP/AVP %d\r\n", type, port, payload_type);
     sdp_write_address(buff, size, dest_addr, dest_type, ttl);
     if (p->bit_rate) {
-        av_strlcatf(buff, size, "b=AS:%d\r\n", p->bit_rate / 1000);
+        av_strlcatf(buff, size, "b=AS:%"PRId64"\r\n", p->bit_rate / 1000);
     }
 
-    sdp_write_media_attributes(buff, size, p, payload_type, fmt);
+    sdp_write_media_attributes(buff, size, st, payload_type, fmt);
 }
 
 int av_sdp_create(AVFormatContext *ac[], int n_files, char *buf, int size)

@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV based HEVC encoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -70,7 +70,7 @@ static int generate_fake_vps(QSVEncContext *q, AVCodecContext *avctx)
     }
 
     /* parse the SPS */
-    ret = ff_h2645_extract_rbsp(avctx->extradata + 4, avctx->extradata_size - 4, &sps_nal);
+    ret = ff_h2645_extract_rbsp(avctx->extradata + 4, avctx->extradata_size - 4, &sps_nal, 1);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error unescaping the SPS buffer\n");
         return ret;
@@ -161,8 +161,8 @@ static av_cold int qsv_enc_init(AVCodecContext *avctx)
     int ret;
 
     if (q->load_plugin != LOAD_PLUGIN_NONE) {
-        static const char * const uid_hevcenc_sw = "2fca99749fdb49aeb121a5b63ef568f7";
-        static const char * const uid_hevcenc_hw = "6fadc791a0c2eb479ab6dcd5ea9da347";
+        static const char *uid_hevcenc_sw = "2fca99749fdb49aeb121a5b63ef568f7";
+        static const char *uid_hevcenc_hw = "6fadc791a0c2eb479ab6dcd5ea9da347";
 
         if (q->qsv.load_plugins[0]) {
             av_log(avctx, AV_LOG_WARNING,
@@ -209,18 +209,12 @@ static av_cold int qsv_enc_close(AVCodecContext *avctx)
     return ff_qsv_enc_close(avctx, &q->qsv);
 }
 
-#if defined(_WIN32)
-#define LOAD_PLUGIN_DEFAULT LOAD_PLUGIN_HEVC_SW
-#else
-#define LOAD_PLUGIN_DEFAULT LOAD_PLUGIN_HEVC_HW
-#endif
-
 #define OFFSET(x) offsetof(QSVHEVCEncContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     QSV_COMMON_OPTS
 
-    { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_DEFAULT }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_HEVC_HW, VE, "load_plugin" },
+    { "load_plugin", "A user plugin to load in an internal session", OFFSET(load_plugin), AV_OPT_TYPE_INT, { .i64 = LOAD_PLUGIN_HEVC_SW }, LOAD_PLUGIN_NONE, LOAD_PLUGIN_HEVC_HW, VE, "load_plugin" },
     { "none",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_NONE },    0, 0, VE, "load_plugin" },
     { "hevc_sw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_SW }, 0, 0, VE, "load_plugin" },
     { "hevc_hw",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LOAD_PLUGIN_HEVC_HW }, 0, 0, VE, "load_plugin" },
