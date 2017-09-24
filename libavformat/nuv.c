@@ -2,20 +2,20 @@
  * NuppelVideo demuxer.
  * Copyright (c) 2006 Reimar Doeffinger
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,14 +66,14 @@ static int nuv_probe(AVProbeData *p)
  * @param myth set if this is a MythTVVideo format file
  * @return 0 or AVERROR code
  */
-static int get_codec_data(AVFormatContext *s, AVIOContext *pb, AVStream *vst,
+static int get_codec_data(AVIOContext *pb, AVStream *vst,
                           AVStream *ast, int myth)
 {
     nuv_frametype frametype;
 
     if (!vst && !myth)
         return 1; // no codec data needed
-    while (!avio_feof(pb)) {
+    while (!pb->eof_reached) {
         int size, subtype;
 
         frametype = avio_r8(pb);
@@ -87,8 +87,11 @@ static int get_codec_data(AVFormatContext *s, AVIOContext *pb, AVStream *vst,
                     av_freep(&vst->codecpar->extradata);
                     vst->codecpar->extradata_size = 0;
                 }
-                if (ff_get_extradata(NULL, vst->codecpar, pb, size) < 0)
+                vst->codecpar->extradata = av_malloc(size);
+                if (!vst->codecpar->extradata)
                     return AVERROR(ENOMEM);
+                vst->codecpar->extradata_size = size;
+                avio_read(pb, vst->codecpar->extradata, size);
                 size = 0;
                 if (!myth)
                     return 0;
@@ -114,10 +117,6 @@ static int get_codec_data(AVFormatContext *s, AVIOContext *pb, AVStream *vst,
 
                 ast->codecpar->codec_tag             = avio_rl32(pb);
                 ast->codecpar->sample_rate           = avio_rl32(pb);
-                if (ast->codecpar->sample_rate <= 0) {
-                    av_log(s, AV_LOG_ERROR, "Invalid sample rate %d\n", ast->codecpar->sample_rate);
-                    return AVERROR_INVALIDDATA;
-                }
                 ast->codecpar->bits_per_coded_sample = avio_rl32(pb);
                 ast->codecpar->channels              = avio_rl32(pb);
                 ast->codecpar->channel_layout        = 0;
@@ -210,9 +209,6 @@ static int nuv_header(AVFormatContext *s)
         vst->codecpar->bits_per_coded_sample = 10;
         vst->sample_aspect_ratio          = av_d2q(aspect * height / width,
                                                    10000);
-#if FF_API_R_FRAME_RATE
-        vst->r_frame_rate =
-#endif
         vst->avg_frame_rate = av_d2q(fps, 60000);
         avpriv_set_pts_info(vst, 32, 1, 1000);
     } else
@@ -236,7 +232,7 @@ static int nuv_header(AVFormatContext *s)
     } else
         ctx->a_id = -1;
 
-    if ((ret = get_codec_data(s, pb, vst, ast, is_mythtv)) < 0)
+    if ((ret = get_codec_data(pb, vst, ast, is_mythtv)) < 0)
         return ret;
 
     ctx->rtjpg_video = vst && vst->codecpar->codec_id == AV_CODEC_ID_NUV;
@@ -254,7 +250,7 @@ static int nuv_packet(AVFormatContext *s, AVPacket *pkt)
     nuv_frametype frametype;
     int ret, size;
 
-    while (!avio_feof(pb)) {
+    while (!pb->eof_reached) {
         int copyhdrsize = ctx->rtjpg_video ? HDRSIZE : 0;
         uint64_t pos    = avio_tell(pb);
 
@@ -280,9 +276,10 @@ static int nuv_packet(AVFormatContext *s, AVPacket *pkt)
             ret = av_new_packet(pkt, copyhdrsize + size);
             if (ret < 0)
                 return ret;
-
+            // HACK: we have no idea if it is a keyframe,
+            // but if we mark none seeking will not work at all.
+            pkt->flags       |= AV_PKT_FLAG_KEY;
             pkt->pos          = pos;
-            pkt->flags       |= hdr[2] == 0 ? AV_PKT_FLAG_KEY : 0;
             pkt->pts          = AV_RL32(&hdr[4]);
             pkt->stream_index = ctx->v_id;
             memcpy(pkt->data, hdr, copyhdrsize);
@@ -320,81 +317,6 @@ static int nuv_packet(AVFormatContext *s, AVPacket *pkt)
     return AVERROR(EIO);
 }
 
-/**
- * \brief looks for the string RTjjjjjjjjjj in the stream too resync reading
- * \return 1 if the syncword is found 0 otherwise.
- */
-static int nuv_resync(AVFormatContext *s, int64_t pos_limit) {
-    AVIOContext *pb = s->pb;
-    uint32_t tag = 0;
-    while(!avio_feof(pb) && avio_tell(pb) < pos_limit) {
-        tag = (tag << 8) | avio_r8(pb);
-        if (tag                  == MKBETAG('R','T','j','j') &&
-           (tag = avio_rb32(pb)) == MKBETAG('j','j','j','j') &&
-           (tag = avio_rb32(pb)) == MKBETAG('j','j','j','j'))
-            return 1;
-    }
-    return 0;
-}
-
-/**
- * \brief attempts to read a timestamp from stream at the given stream position
- * \return timestamp if successful and AV_NOPTS_VALUE if failure
- */
-static int64_t nuv_read_dts(AVFormatContext *s, int stream_index,
-                            int64_t *ppos, int64_t pos_limit)
-{
-    NUVContext *ctx = s->priv_data;
-    AVIOContext *pb = s->pb;
-    uint8_t hdr[HDRSIZE];
-    nuv_frametype frametype;
-    int size, key, idx;
-    int64_t pos, dts;
-
-    if (avio_seek(pb, *ppos, SEEK_SET) < 0)
-        return AV_NOPTS_VALUE;
-
-    if (!nuv_resync(s, pos_limit))
-        return AV_NOPTS_VALUE;
-
-    while (!avio_feof(pb) && avio_tell(pb) < pos_limit) {
-        if (avio_read(pb, hdr, HDRSIZE) < HDRSIZE)
-            return AV_NOPTS_VALUE;
-        frametype = hdr[0];
-        size = PKTSIZE(AV_RL32(&hdr[8]));
-        switch (frametype) {
-            case NUV_SEEKP:
-                break;
-            case NUV_AUDIO:
-            case NUV_VIDEO:
-                if (frametype == NUV_VIDEO) {
-                    idx = ctx->v_id;
-                    key = hdr[2] == 0;
-                } else {
-                    idx = ctx->a_id;
-                    key = 1;
-                }
-                if (stream_index == idx) {
-
-                    pos = avio_tell(s->pb) - HDRSIZE;
-                    dts = AV_RL32(&hdr[4]);
-
-                    // TODO - add general support in av_gen_search, so it adds positions after reading timestamps
-                    av_add_index_entry(s->streams[stream_index], pos, dts, size + HDRSIZE, 0,
-                            key ? AVINDEX_KEYFRAME : 0);
-
-                    *ppos = pos;
-                    return dts;
-                }
-            default:
-                avio_skip(pb, size);
-                break;
-        }
-    }
-    return AV_NOPTS_VALUE;
-}
-
-
 AVInputFormat ff_nuv_demuxer = {
     .name           = "nuv",
     .long_name      = NULL_IF_CONFIG_SMALL("NuppelVideo"),
@@ -402,6 +324,5 @@ AVInputFormat ff_nuv_demuxer = {
     .read_probe     = nuv_probe,
     .read_header    = nuv_header,
     .read_packet    = nuv_packet,
-    .read_timestamp = nuv_read_dts,
     .flags          = AVFMT_GENERIC_INDEX,
 };
