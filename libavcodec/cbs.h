@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,34 +25,12 @@
 #include "avcodec.h"
 
 
-/*
- * This defines a framework for converting between a coded bitstream
- * and structures defining all individual syntax elements found in
- * such a stream.
- *
- * Conversion in both directions is possible.  Given a coded bitstream
- * (any meaningful fragment), it can be parsed and decomposed into
- * syntax elements stored in a set of codec-specific structures.
- * Similarly, given a set of those same codec-specific structures the
- * syntax elements can be serialised and combined to create a coded
- * bitstream.
- */
-
 struct CodedBitstreamType;
-
-/**
- * The codec-specific type of a bitstream unit.
- *
- * H.264 / AVC: nal_unit_type
- * H.265 / HEVC: nal_unit_type
- * MPEG-2: start code value (without prefix)
- */
-typedef uint32_t CodedBitstreamUnitType;
 
 /**
  * Coded bitstream unit structure.
  *
- * A bitstream unit the smallest element of a bitstream which
+ * A bitstream unit the the smallest element of a bitstream which
  * is meaningful on its own.  For example, an H.264 NAL unit.
  *
  * See the codec-specific header for the meaning of this for any
@@ -62,10 +40,10 @@ typedef struct CodedBitstreamUnit {
     /**
      * Codec-specific type of this unit.
      */
-    CodedBitstreamUnitType type;
+    uint32_t type;
 
     /**
-     * Pointer to the directly-parsable bitstream form of this unit.
+     * Pointer to the bitstream form of this unit.
      *
      * May be NULL if the unit currently only exists in decomposed form.
      */
@@ -127,7 +105,7 @@ typedef struct CodedBitstreamFragment {
     /**
      * Number of units in this fragment.
      *
-     * This may be zero if the fragment only exists in bitstream form
+     * This may be zero if the fragment only exists in bistream form
      * and has not been decomposed.
      */
     int              nb_units;
@@ -171,11 +149,11 @@ typedef struct CodedBitstreamContext {
      * Types not in this list will be available in bitstream form only.
      * If NULL, all supported types will be decomposed.
      */
-    CodedBitstreamUnitType *decompose_unit_types;
+    uint32_t *decompose_unit_types;
     /**
      * Length of the decompose_unit_types array.
      */
-    int nb_decompose_unit_types;
+    int    nb_decompose_unit_types;
 
     /**
      * Enable trace output during read/write operations.
@@ -191,15 +169,15 @@ typedef struct CodedBitstreamContext {
 
 
 /**
- * Create and initialise a new context for the given codec.
+ * Initialise a new context for the given codec.
  */
-int ff_cbs_init(CodedBitstreamContext **ctx,
+int ff_cbs_init(CodedBitstreamContext *ctx,
                 enum AVCodecID codec_id, void *log_ctx);
 
 /**
  * Close a context and free all internal state.
  */
-void ff_cbs_close(CodedBitstreamContext **ctx);
+void ff_cbs_close(CodedBitstreamContext *ctx);
 
 
 /**
@@ -217,10 +195,6 @@ int ff_cbs_read_extradata(CodedBitstreamContext *ctx,
 /**
  * Read the data bitstream from a packet into a fragment, then
  * split into units and decompose.
- *
- * This also updates the internal state of the coded bitstream context
- * with any persistent data from the fragment which may be required to
- * read following fragments (e.g. parameter sets).
  */
 int ff_cbs_read_packet(CodedBitstreamContext *ctx,
                        CodedBitstreamFragment *frag,
@@ -229,10 +203,6 @@ int ff_cbs_read_packet(CodedBitstreamContext *ctx,
 /**
  * Read a bitstream from a memory region into a fragment, then
  * split into units and decompose.
- *
- * This also updates the internal state of the coded bitstream context
- * with any persistent data from the fragment which may be required to
- * read following fragments (e.g. parameter sets).
  */
 int ff_cbs_read(CodedBitstreamContext *ctx,
                 CodedBitstreamFragment *frag,
@@ -246,18 +216,12 @@ int ff_cbs_read(CodedBitstreamContext *ctx,
  * data buffer.  When modifying the content of decomposed units, this
  * can be used to regenerate the bitstream form of units or the whole
  * fragment so that it can be extracted for other use.
- *
- * This also updates the internal state of the coded bitstream context
- * with any persistent data from the fragment which may be required to
- * write following fragments (e.g. parameter sets).
  */
 int ff_cbs_write_fragment_data(CodedBitstreamContext *ctx,
                                CodedBitstreamFragment *frag);
 
 /**
  * Write the bitstream of a fragment to the extradata in codec parameters.
- *
- * This replaces any existing extradata in the structure.
  */
 int ff_cbs_write_extradata(CodedBitstreamContext *ctx,
                            AVCodecParameters *par,
@@ -286,8 +250,7 @@ void ff_cbs_fragment_uninit(CodedBitstreamContext *ctx,
  */
 int ff_cbs_insert_unit_content(CodedBitstreamContext *ctx,
                                CodedBitstreamFragment *frag,
-                               int position,
-                               CodedBitstreamUnitType type,
+                               int position, uint32_t type,
                                void *content);
 
 /**
@@ -297,8 +260,7 @@ int ff_cbs_insert_unit_content(CodedBitstreamContext *ctx,
  */
 int ff_cbs_insert_unit_data(CodedBitstreamContext *ctx,
                             CodedBitstreamFragment *frag,
-                            int position,
-                            CodedBitstreamUnitType type,
+                            int position, uint32_t type,
                             uint8_t *data, size_t data_size);
 
 /**
