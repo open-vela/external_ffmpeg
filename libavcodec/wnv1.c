@@ -2,20 +2,20 @@
  * Winnov WNV1 codec
  * Copyright (c) 2005 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,14 +25,17 @@
  */
 
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 #include "mathops.h"
+#include "vlc.h"
 
 
 typedef struct WNV1Context {
+    AVCodecContext *avctx;
+
     int shift;
-    GetBitContext gb;
+    BitstreamContext bc;
 } WNV1Context;
 
 static const uint16_t code_tab[16][2] = {
@@ -47,12 +50,12 @@ static VLC code_vlc;
 /* returns modified base_value */
 static inline int wnv1_get_code(WNV1Context *w, int base_value)
 {
-    int v = get_vlc2(&w->gb, code_vlc.table, CODE_VLC_BITS, 1);
+    int v = bitstream_read_vlc(&w->bc, code_vlc.table, CODE_VLC_BITS, 1);
 
     if (v == 15)
-        return ff_reverse[get_bits(&w->gb, 8 - w->shift)];
+        return ff_reverse[bitstream_read(&w->bc, 8 - w->shift)];
     else
-        return base_value + ((v - 7U) << w->shift);
+        return base_value + ((v - 7) << w->shift);
 }
 
 static int decode_frame(AVCodecContext *avctx,
@@ -68,8 +71,8 @@ static int decode_frame(AVCodecContext *avctx,
     int prev_y = 0, prev_u = 0, prev_v = 0;
     uint8_t *rbuf;
 
-    if (buf_size < 8 + avctx->height * (avctx->width/2)/8) {
-        av_log(avctx, AV_LOG_ERROR, "Packet size %d is too small\n", buf_size);
+    if (buf_size < 8) {
+        av_log(avctx, AV_LOG_ERROR, "Packet is too short\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -78,9 +81,9 @@ static int decode_frame(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer\n");
         return AVERROR(ENOMEM);
     }
-    memset(rbuf + buf_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         av_free(rbuf);
         return ret;
     }
@@ -88,9 +91,7 @@ static int decode_frame(AVCodecContext *avctx,
 
     for (i = 8; i < buf_size; i++)
         rbuf[i] = ff_reverse[buf[i]];
-
-    if ((ret = init_get_bits8(&l->gb, rbuf + 8, buf_size - 8)) < 0)
-        return ret;
+    bitstream_init8(&l->bc, rbuf + 8, buf_size - 8);
 
     if (buf[2] >> 4 == 6)
         l->shift = 2;
@@ -134,8 +135,10 @@ static int decode_frame(AVCodecContext *avctx,
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
+    WNV1Context * const l = avctx->priv_data;
     static VLC_TYPE code_table[1 << CODE_VLC_BITS][2];
 
+    l->avctx       = avctx;
     avctx->pix_fmt = AV_PIX_FMT_YUV422P;
 
     code_vlc.table           = code_table;
