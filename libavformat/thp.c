@@ -2,20 +2,20 @@
  * THP Demuxer
  * Copyright (c) 2007 Marco Gerards
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,37 +26,32 @@
 
 typedef struct ThpDemuxContext {
     int              version;
-    unsigned         first_frame;
-    unsigned         first_framesz;
-    unsigned         last_frame;
+    int              first_frame;
+    int              first_framesz;
+    int              last_frame;
     int              compoff;
-    unsigned         framecnt;
+    int              framecnt;
     AVRational       fps;
-    unsigned         frame;
-    int64_t          next_frame;
-    unsigned         next_framesz;
+    int              frame;
+    int              next_frame;
+    int              next_framesz;
     int              video_stream_index;
     int              audio_stream_index;
     int              compcount;
     unsigned char    components[16];
     AVStream*        vst;
     int              has_audio;
-    unsigned         audiosize;
+    int              audiosize;
 } ThpDemuxContext;
 
 
 static int thp_probe(AVProbeData *p)
 {
-    double d;
     /* check file header */
-    if (AV_RL32(p->buf) != MKTAG('T', 'H', 'P', '\0'))
+    if (AV_RL32(p->buf) == MKTAG('T', 'H', 'P', '\0'))
+        return AVPROBE_SCORE_MAX;
+    else
         return 0;
-
-    d = av_int2float(AV_RB32(p->buf + 16));
-    if (d < 0.1 || d > 1000 || isnan(d))
-        return AVPROBE_SCORE_MAX/4;
-
-    return AVPROBE_SCORE_MAX;
 }
 
 static int thp_read_header(AVFormatContext *s)
@@ -64,7 +59,6 @@ static int thp_read_header(AVFormatContext *s)
     ThpDemuxContext *thp = s->priv_data;
     AVStream *st;
     AVIOContext *pb = s->pb;
-    int64_t fsize= avio_size(pb);
     int i;
 
     /* Read the file header.  */
@@ -77,9 +71,7 @@ static int thp_read_header(AVFormatContext *s)
     thp->fps             = av_d2q(av_int2float(avio_rb32(pb)), INT_MAX);
     thp->framecnt        = avio_rb32(pb);
     thp->first_framesz   = avio_rb32(pb);
-    pb->maxsize          = avio_rb32(pb);
-    if(fsize>0 && (!pb->maxsize || fsize < pb->maxsize))
-        pb->maxsize= fsize;
+                           avio_rb32(pb); /* Data size.  */
 
     thp->compoff         = avio_rb32(pb);
                            avio_rb32(pb); /* offsetDataOffset.  */
@@ -98,7 +90,7 @@ static int thp_read_header(AVFormatContext *s)
 
     for (i = 0; i < thp->compcount; i++) {
         if (thp->components[i] == 0) {
-            if (thp->vst)
+            if (thp->vst != 0)
                 break;
 
             /* Video component.  */
@@ -115,8 +107,6 @@ static int thp_read_header(AVFormatContext *s)
             st->codecpar->width = avio_rb32(pb);
             st->codecpar->height = avio_rb32(pb);
             st->codecpar->sample_rate = av_q2d(thp->fps);
-            st->nb_frames =
-            st->duration = thp->framecnt;
             thp->vst = st;
             thp->video_stream_index = st->index;
 
@@ -153,18 +143,18 @@ static int thp_read_packet(AVFormatContext *s,
 {
     ThpDemuxContext *thp = s->priv_data;
     AVIOContext *pb = s->pb;
-    unsigned int size;
+    int size;
     int ret;
 
     if (thp->audiosize == 0) {
         /* Terminate when last frame is reached.  */
         if (thp->frame >= thp->framecnt)
-            return AVERROR_EOF;
+            return AVERROR(EIO);
 
         avio_seek(pb, thp->next_frame, SEEK_SET);
 
         /* Locate the next frame and read out its size.  */
-        thp->next_frame += FFMAX(thp->next_framesz, 1);
+        thp->next_frame += thp->next_framesz;
         thp->next_framesz = avio_rb32(pb);
 
                         avio_rb32(pb); /* Previous total size.  */
@@ -178,8 +168,6 @@ static int thp_read_packet(AVFormatContext *s,
             thp->frame++;
 
         ret = av_get_packet(pb, pkt, size);
-        if (ret < 0)
-            return ret;
         if (ret != size) {
             av_packet_unref(pkt);
             return AVERROR(EIO);
@@ -188,8 +176,6 @@ static int thp_read_packet(AVFormatContext *s,
         pkt->stream_index = thp->video_stream_index;
     } else {
         ret = av_get_packet(pb, pkt, thp->audiosize);
-        if (ret < 0)
-            return ret;
         if (ret != thp->audiosize) {
             av_packet_unref(pkt);
             return AVERROR(EIO);
