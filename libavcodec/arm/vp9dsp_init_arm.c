@@ -1,30 +1,28 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdint.h>
 
 #include "libavutil/attributes.h"
-#include "libavutil/internal.h"
 #include "libavutil/arm/cpu.h"
-#include "libavcodec/vp9dsp.h"
-#include "vp9dsp_init.h"
+#include "libavcodec/vp9.h"
 
 #define declare_fpel(type, sz)                                          \
 void ff_vp9_##type##sz##_neon(uint8_t *dst, ptrdiff_t dst_stride,       \
@@ -241,17 +239,8 @@ static av_cold void vp9dsp_loopfilter_init_arm(VP9DSPContext *dsp)
     }
 }
 
-av_cold void ff_vp9dsp_init_arm(VP9DSPContext *dsp, int bpp)
+av_cold void ff_vp9dsp_init_arm(VP9DSPContext *dsp)
 {
-    if (bpp == 10) {
-        ff_vp9dsp_init_10bpp_arm(dsp);
-        return;
-    } else if (bpp == 12) {
-        ff_vp9dsp_init_12bpp_arm(dsp);
-        return;
-    } else if (bpp != 8)
-        return;
-
     vp9dsp_mc_init_arm(dsp);
     vp9dsp_loopfilter_init_arm(dsp);
     vp9dsp_itxfm_init_arm(dsp);

@@ -2,29 +2,29 @@
 ; * Provide SIMD optimizations for add_residual functions for HEVC decoding
 ; * Copyright (c) 2014 Pierre-Edouard LEPERE
 ; *
-; * This file is part of FFmpeg.
+; * This file is part of Libav.
 ; *
-; * FFmpeg is free software; you can redistribute it and/or
+; * Libav is free software; you can redistribute it and/or
 ; * modify it under the terms of the GNU Lesser General Public
 ; * License as published by the Free Software Foundation; either
 ; * version 2.1 of the License, or (at your option) any later version.
 ; *
-; * FFmpeg is distributed in the hope that it will be useful,
+; * Libav is distributed in the hope that it will be useful,
 ; * but WITHOUT ANY WARRANTY; without even the implied warranty of
 ; * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ; * Lesser General Public License for more details.
 ; *
 ; * You should have received a copy of the GNU Lesser General Public
-; * License along with FFmpeg; if not, write to the Free Software
+; * License along with Libav; if not, write to the Free Software
 ; * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ; ******************************************************************************
 
 %include "libavutil/x86/x86util.asm"
 
-SECTION .text
+SECTION_RODATA 32
+max_pixels_10:          times 16  dw ((1 << 10)-1)
 
-cextern pw_1023
-%define max_pixels_10 pw_1023
+SECTION .text
 
 ; the add_res macros and functions were largely inspired by h264_idct.asm from the x264 project
 %macro ADD_RES_MMX_4_8 0
