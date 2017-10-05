@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -188,14 +188,14 @@ int ff_vaapi_decode_issue(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "Failed to end picture decode "
                "issue: %d (%s).\n", vas, vaErrorStr(vas));
         err = AVERROR(EIO);
-        if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
+        if (ctx->hwctx->driver_quirks &
             AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS)
             goto fail;
         else
             goto fail_at_end;
     }
 
-    if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
+    if (ctx->hwctx->driver_quirks &
         AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS)
         ff_vaapi_decode_destroy_buffers(avctx, pic);
 
@@ -246,6 +246,7 @@ static const struct {
     MAP(MPEG4,       MPEG4_MAIN,      MPEG4Main   ),
     MAP(H264,        H264_CONSTRAINED_BASELINE,
                            H264ConstrainedBaseline),
+    MAP(H264,        H264_BASELINE,   H264Baseline),
     MAP(H264,        H264_MAIN,       H264Main    ),
     MAP(H264,        H264_HIGH,       H264High    ),
 #if VA_CHECK_VERSION(0, 37, 0)
@@ -266,9 +267,6 @@ static const struct {
 #if VA_CHECK_VERSION(0, 38, 0)
     MAP(VP9,         VP9_0,           VP9Profile0 ),
 #endif
-#if VA_CHECK_VERSION(0, 39, 0)
-    MAP(VP9,         VP9_2,           VP9Profile2 ),
-#endif
 #undef MAP
 };
 
@@ -281,7 +279,7 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
     VAStatus vas;
     int err, i, j;
     const AVCodecDescriptor *codec_desc;
-    VAProfile profile, va_profile, *profile_list = NULL;
+    VAProfile profile, *profile_list = NULL;
     int profile_count, exact_match, alt_profile;
     const AVPixFmtDescriptor *sw_desc, *desc;
 
@@ -315,7 +313,8 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
         int profile_match = 0;
         if (avctx->codec_id != vaapi_profile_map[i].codec_id)
             continue;
-        if (avctx->profile == vaapi_profile_map[i].codec_profile)
+        if (avctx->profile == vaapi_profile_map[i].codec_profile ||
+            vaapi_profile_map[i].codec_profile == FF_PROFILE_UNKNOWN)
             profile_match = 1;
         profile = vaapi_profile_map[i].va_profile;
         for (j = 0; j < profile_count; j++) {
@@ -328,7 +327,6 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
             if (exact_match)
                 break;
             alt_profile = vaapi_profile_map[i].codec_profile;
-            va_profile = vaapi_profile_map[i].va_profile;
         }
     }
     av_freep(&profile_list);
@@ -348,7 +346,6 @@ static int vaapi_decode_make_config(AVCodecContext *avctx)
             av_log(avctx, AV_LOG_WARNING, "Using possibly-"
                    "incompatible profile %d instead.\n",
                    alt_profile);
-            profile = va_profile;
         } else {
             av_log(avctx, AV_LOG_VERBOSE, "Codec %s profile %d not "
                    "supported for hardware decode.\n",
@@ -478,7 +475,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
     ctx->va_config  = VA_INVALID_ID;
     ctx->va_context = VA_INVALID_ID;
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     if (avctx->hwaccel_context) {
         av_log(avctx, AV_LOG_WARNING, "Using deprecated struct "
                "vaapi_context in decode.\n");
@@ -536,7 +533,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
         goto fail;
     }
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     if (ctx->have_old_context) {
         ctx->va_config  = ctx->old_context->config_id;
         ctx->va_context = ctx->old_context->context_id;
@@ -590,7 +587,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
 
     av_log(avctx, AV_LOG_DEBUG, "Decode context initialised: "
            "%#x/%#x.\n", ctx->va_config, ctx->va_context);
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     }
 #endif
 
@@ -606,7 +603,7 @@ int ff_vaapi_decode_uninit(AVCodecContext *avctx)
     VAAPIDecodeContext *ctx = avctx->internal->hwaccel_priv_data;
     VAStatus vas;
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     if (ctx->have_old_context) {
         av_buffer_unref(&ctx->device_ref);
     } else {
@@ -629,7 +626,7 @@ int ff_vaapi_decode_uninit(AVCodecContext *avctx)
         }
     }
 
-#if FF_API_STRUCT_VAAPI_CONTEXT
+#if FF_API_VAAPI_CONTEXT
     }
 #endif
 
