@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,11 +29,9 @@
 #ifndef AVCODEC_IVI_H
 #define AVCODEC_IVI_H
 
-#include <stdint.h>
-
 #include "avcodec.h"
-#include "bitstream.h"
-#include "vlc.h"
+#include "get_bits.h"
+#include <stdint.h>
 
 /**
  *  Indeo 4 frame types.
@@ -166,6 +164,7 @@ typedef struct IVIBandDesc {
     int             quant_mat;      ///< dequant matrix index
     int             glob_quant;     ///< quant base for this band
     const uint8_t   *scan;          ///< ptr to the scan pattern
+    int             scan_size;      ///< size of the scantable
 
     IVIHuffTab      blk_vlc;        ///< vlc table for decoding block data
 
@@ -212,7 +211,7 @@ typedef struct IVIPicConfig {
 } IVIPicConfig;
 
 typedef struct IVI45DecContext {
-    BitstreamContext bc;
+    GetBitContext   gb;
     RVMapDesc       rvmap_tabs[9];   ///< local corrected copy of the static rvmap tables
 
     uint32_t        frame_num;
@@ -263,6 +262,7 @@ typedef struct IVI45DecContext {
     int             (*is_nonnull_frame)(struct IVI45DecContext *ctx);
 
     int gop_invalid;
+    int buf_invalid[4];
 
     int is_indeo4;
 
@@ -304,14 +304,14 @@ void ff_ivi_init_static_vlc(void);
  *  Decode a huffman codebook descriptor from the bitstream
  *  and select specified huffman table.
  *
- *  @param[in,out]  bc          the Bitstream context
+ *  @param[in,out]  gb          the GetBit context
  *  @param[in]      desc_coded  flag signalling if table descriptor was coded
  *  @param[in]      which_tab   codebook purpose (IVI_MB_HUFF or IVI_BLK_HUFF)
  *  @param[out]     huff_tab    pointer to the descriptor of the selected table
  *  @param[in]      avctx       AVCodecContext pointer
  *  @return             zero on success, negative value otherwise
  */
-int  ff_ivi_dec_huff_desc(BitstreamContext *bc, int desc_coded, int which_tab,
+int  ff_ivi_dec_huff_desc(GetBitContext *gb, int desc_coded, int which_tab,
                           IVIHuffTab *huff_tab, AVCodecContext *avctx);
 
 /**
@@ -322,8 +322,8 @@ int  ff_ivi_dec_huff_desc(BitstreamContext *bc, int desc_coded, int which_tab,
  *  @param[in]      is_indeo4  flag signalling if it is Indeo 4 or not
  *  @return             result code: 0 - OK
  */
-int  ff_ivi_init_planes(IVIPlaneDesc *planes, const IVIPicConfig *cfg,
-                        int is_indeo4);
+int  ff_ivi_init_planes(AVCodecContext *avctx, IVIPlaneDesc *planes,
+                        const IVIPicConfig *cfg, int is_indeo4);
 
 /**
  *  Initialize tile and macroblock descriptors.
