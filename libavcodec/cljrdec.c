@@ -2,20 +2,20 @@
  * Cirrus Logic AccuPak (CLJR) decoder
  * Copyright (c) 2003 Alex Beregszaszi
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,7 @@
  */
 
 #include "avcodec.h"
-#include "bitstream.h"
+#include "get_bits.h"
 #include "internal.h"
 
 static int decode_frame(AVCodecContext *avctx,
@@ -34,7 +34,7 @@ static int decode_frame(AVCodecContext *avctx,
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
-    BitstreamContext bc;
+    GetBitContext gb;
     AVFrame * const p = data;
     int x, y, ret;
 
@@ -43,33 +43,31 @@ static int decode_frame(AVCodecContext *avctx,
         return AVERROR_INVALIDDATA;
     }
 
-    if (buf_size < avctx->height * avctx->width) {
+    if (buf_size / avctx->height < avctx->width) {
         av_log(avctx, AV_LOG_ERROR,
                "Resolution larger than buffer size. Invalid header?\n");
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
 
-    bitstream_init8(&bc, buf, buf_size);
+    init_get_bits(&gb, buf, buf_size * 8);
 
     for (y = 0; y < avctx->height; y++) {
         uint8_t *luma = &p->data[0][y * p->linesize[0]];
         uint8_t *cb   = &p->data[1][y * p->linesize[1]];
         uint8_t *cr   = &p->data[2][y * p->linesize[2]];
         for (x = 0; x < avctx->width; x += 4) {
-            luma[3] = bitstream_read(&bc, 5) << 3;
-            luma[2] = bitstream_read(&bc, 5) << 3;
-            luma[1] = bitstream_read(&bc, 5) << 3;
-            luma[0] = bitstream_read(&bc, 5) << 3;
+            luma[3] = (get_bits(&gb, 5)*33) >> 2;
+            luma[2] = (get_bits(&gb, 5)*33) >> 2;
+            luma[1] = (get_bits(&gb, 5)*33) >> 2;
+            luma[0] = (get_bits(&gb, 5)*33) >> 2;
             luma += 4;
-            *(cb++) = bitstream_read(&bc, 6) << 2;
-            *(cr++) = bitstream_read(&bc, 6) << 2;
+            *(cb++) = get_bits(&gb, 6) << 2;
+            *(cr++) = get_bits(&gb, 6) << 2;
         }
     }
 
@@ -93,3 +91,4 @@ AVCodec ff_cljr_decoder = {
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
+
