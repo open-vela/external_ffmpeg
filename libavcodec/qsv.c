@@ -1,25 +1,26 @@
 /*
  * Intel MediaSDK QSV encoder/decoder shared code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <mfx/mfxvideo.h>
 #include <mfx/mfxplugin.h>
+#include <mfx/mfxjpeg.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -56,6 +57,8 @@ int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id)
     case AV_CODEC_ID_VP8:
         return MFX_CODEC_VP8;
 #endif
+    case AV_CODEC_ID_MJPEG:
+        return MFX_CODEC_JPEG;
     default:
         break;
     }
@@ -589,6 +592,11 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
             return ff_qsv_print_error(avctx, err,
                                       "Error setting a HW handle");
     }
+
+    err = MFXJoinSession(parent_session, session);
+    if (err != MFX_ERR_NONE)
+        return ff_qsv_print_error(avctx, err,
+                                  "Error joining session");
 
     ret = qsv_load_plugins(session, load_plugins, avctx);
     if (ret < 0) {
