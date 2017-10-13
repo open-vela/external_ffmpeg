@@ -2,25 +2,25 @@
  * AVS video decoder.
  * Copyright (c) 2006  Aurelien Jacobs <aurel@gnuage.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 
 typedef struct AvsContext {
@@ -57,10 +57,12 @@ avs_decode_frame(AVCodecContext * avctx,
     int i, j, x, y, stride, ret, vect_w = 3, vect_h = 3;
     AvsVideoSubType sub_type;
     AvsBlockType type;
-    GetBitContext change_map = {0}; //init to silence warning
+    BitstreamContext change_map;
 
-    if ((ret = ff_reget_buffer(avctx, p)) < 0)
+    if ((ret = ff_reget_buffer(avctx, p)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
     p->pict_type = AV_PICTURE_TYPE_P;
     p->key_frame = 0;
 
@@ -82,10 +84,8 @@ avs_decode_frame(AVCodecContext * avctx,
         if (first >= 256 || last > 256 || buf_end - buf < 4 + 4 + 3 * (last - first))
             return AVERROR_INVALIDDATA;
         buf += 4;
-        for (i=first; i<last; i++, buf+=3) {
+        for (i=first; i<last; i++, buf+=3)
             pal[i] = (buf[0] << 18) | (buf[1] << 10) | (buf[2] << 2);
-            pal[i] |= 0xFFU << 24 | (pal[i] >> 6) & 0x30303;
-        }
 
         sub_type = buf[0];
         type = buf[1];
@@ -125,13 +125,13 @@ avs_decode_frame(AVCodecContext * avctx,
         int map_size = ((318 / vect_w + 7) / 8) * (198 / vect_h);
         if (buf_end - table < map_size)
             return AVERROR_INVALIDDATA;
-        init_get_bits(&change_map, table, map_size * 8);
+        bitstream_init8(&change_map, table, map_size);
         table += map_size;
     }
 
     for (y=0; y<198; y+=vect_h) {
         for (x=0; x<318; x+=vect_w) {
-            if (sub_type == AVS_I_FRAME || get_bits1(&change_map)) {
+            if (sub_type == AVS_I_FRAME || bitstream_read_bit(&change_map)) {
                 if (buf_end - table < 1)
                     return AVERROR_INVALIDDATA;
                 vect = &buf[*table++ * (vect_w * vect_h)];
@@ -145,7 +145,7 @@ avs_decode_frame(AVCodecContext * avctx,
             }
         }
         if (sub_type != AVS_I_FRAME)
-            align_get_bits(&change_map);
+            bitstream_align(&change_map);
     }
 
     if ((ret = av_frame_ref(picture, p)) < 0)

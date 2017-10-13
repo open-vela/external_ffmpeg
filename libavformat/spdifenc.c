@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Anssi Hannula
  * Copyright (c) 2010 Carl Eugen Hoyos
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,9 +50,9 @@
 #include "avio_internal.h"
 #include "spdif.h"
 #include "libavcodec/ac3.h"
+#include "libavcodec/adts_parser.h"
 #include "libavcodec/dca.h"
 #include "libavcodec/dca_syncwords.h"
-#include "libavcodec/aacadtsdec.h"
 #include "libavutil/opt.h"
 
 typedef struct IEC61937Context {
@@ -95,7 +95,7 @@ static const AVOption options[] = {
 { NULL },
 };
 
-static const AVClass spdif_class = {
+static const AVClass class = {
     .class_name     = "spdif",
     .item_name      = av_default_item_name,
     .option         = options,
@@ -349,19 +349,18 @@ static int spdif_header_mpeg(AVFormatContext *s, AVPacket *pkt)
 static int spdif_header_aac(AVFormatContext *s, AVPacket *pkt)
 {
     IEC61937Context *ctx = s->priv_data;
-    AACADTSHeaderInfo hdr;
-    GetBitContext gbc;
+    uint32_t samples;
+    uint8_t frames;
     int ret;
 
-    init_get_bits(&gbc, pkt->data, AAC_ADTS_HEADER_SIZE * 8);
-    ret = avpriv_aac_parse_header(&gbc, &hdr);
+    ret = av_adts_header_parse(pkt->data, &samples, &frames);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Wrong AAC file format\n");
-        return AVERROR_INVALIDDATA;
+        return ret;
     }
 
-    ctx->pkt_offset = hdr.samples << 2;
-    switch (hdr.num_aac_frames) {
+    ctx->pkt_offset = samples << 2;
+    switch (frames) {
     case 1:
         ctx->data_type = IEC61937_MPEG2_AAC;
         break;
@@ -373,7 +372,7 @@ static int spdif_header_aac(AVFormatContext *s, AVPacket *pkt)
         break;
     default:
         av_log(s, AV_LOG_ERROR,
-               "%"PRIu32" samples in AAC frame not supported\n", hdr.samples);
+               "%"PRIu32" samples in AAC frame not supported\n", samples);
         return AVERROR(EINVAL);
     }
     //TODO Data type dependent info (LC profile/SBR)
@@ -463,7 +462,6 @@ static int spdif_write_header(AVFormatContext *s)
         ctx->header_info = spdif_header_aac;
         break;
     case AV_CODEC_ID_TRUEHD:
-    case AV_CODEC_ID_MLP:
         ctx->header_info = spdif_header_truehd;
         ctx->hd_buf = av_malloc(MAT_FRAME_SIZE);
         if (!ctx->hd_buf)
@@ -525,13 +523,13 @@ static int spdif_write_packet(struct AVFormatContext *s, AVPacket *pkt)
     }
 
     if (ctx->extra_bswap ^ (ctx->spdif_flags & SPDIF_FLAG_BIGENDIAN)) {
-        avio_write(s->pb, ctx->out_buf, ctx->out_bytes & ~1);
+    avio_write(s->pb, ctx->out_buf, ctx->out_bytes & ~1);
     } else {
-        av_fast_malloc(&ctx->buffer, &ctx->buffer_size, ctx->out_bytes + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!ctx->buffer)
-            return AVERROR(ENOMEM);
-        ff_spdif_bswap_buf16((uint16_t *)ctx->buffer, (uint16_t *)ctx->out_buf, ctx->out_bytes >> 1);
-        avio_write(s->pb, ctx->buffer, ctx->out_bytes & ~1);
+    av_fast_malloc(&ctx->buffer, &ctx->buffer_size, ctx->out_bytes + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!ctx->buffer)
+        return AVERROR(ENOMEM);
+    ff_spdif_bswap_buf16((uint16_t *)ctx->buffer, (uint16_t *)ctx->out_buf, ctx->out_bytes >> 1);
+    avio_write(s->pb, ctx->buffer, ctx->out_bytes & ~1);
     }
 
     /* a final lone byte has to be MSB aligned */
@@ -557,5 +555,5 @@ AVOutputFormat ff_spdif_muxer = {
     .write_packet      = spdif_write_packet,
     .write_trailer     = spdif_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
-    .priv_class        = &spdif_class,
+    .priv_class        = &class,
 };
