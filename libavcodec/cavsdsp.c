@@ -5,20 +5,20 @@
  *
  * Copyright (c) 2006  Stefan Gehrer <stefan.gehrer@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -197,6 +197,7 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, ptrdiff_t stride)
 {
     int i;
     int16_t (*src)[8] = (int16_t(*)[8])block;
+    const uint8_t *cm = ff_crop_tab + MAX_NEG_CROP;
 
     src[0][0] += 8;
 
@@ -251,14 +252,14 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, ptrdiff_t stride)
         const int b2 = a5 - a7;
         const int b3 = a4 - a6;
 
-        dst[i + 0*stride] = av_clip_uint8( dst[i + 0*stride] + ((b0 + b4) >> 7));
-        dst[i + 1*stride] = av_clip_uint8( dst[i + 1*stride] + ((b1 + b5) >> 7));
-        dst[i + 2*stride] = av_clip_uint8( dst[i + 2*stride] + ((b2 + b6) >> 7));
-        dst[i + 3*stride] = av_clip_uint8( dst[i + 3*stride] + ((b3 + b7) >> 7));
-        dst[i + 4*stride] = av_clip_uint8( dst[i + 4*stride] + ((b3 - b7) >> 7));
-        dst[i + 5*stride] = av_clip_uint8( dst[i + 5*stride] + ((b2 - b6) >> 7));
-        dst[i + 6*stride] = av_clip_uint8( dst[i + 6*stride] + ((b1 - b5) >> 7));
-        dst[i + 7*stride] = av_clip_uint8( dst[i + 7*stride] + ((b0 - b4) >> 7));
+        dst[i + 0*stride] = cm[ dst[i + 0*stride] + ((b0 + b4) >> 7)];
+        dst[i + 1*stride] = cm[ dst[i + 1*stride] + ((b1 + b5) >> 7)];
+        dst[i + 2*stride] = cm[ dst[i + 2*stride] + ((b2 + b6) >> 7)];
+        dst[i + 3*stride] = cm[ dst[i + 3*stride] + ((b3 + b7) >> 7)];
+        dst[i + 4*stride] = cm[ dst[i + 4*stride] + ((b3 - b7) >> 7)];
+        dst[i + 5*stride] = cm[ dst[i + 5*stride] + ((b2 - b6) >> 7)];
+        dst[i + 6*stride] = cm[ dst[i + 6*stride] + ((b1 - b5) >> 7)];
+        dst[i + 7*stride] = cm[ dst[i + 7*stride] + ((b0 - b4) >> 7)];
     }
 }
 
