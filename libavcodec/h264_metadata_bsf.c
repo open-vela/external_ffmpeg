@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,7 @@ enum {
 typedef struct H264MetadataContext {
     const AVClass *class;
 
-    CodedBitstreamContext *cbc;
+    CodedBitstreamContext cbc;
     CodedBitstreamFragment access_unit;
 
     H264RawAUD aud_nal;
@@ -62,7 +62,6 @@ typedef struct H264MetadataContext {
     int crop_bottom;
 
     const char *sei_user_data;
-    int sei_first_au;
 } H264MetadataContext;
 
 
@@ -215,7 +214,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     if (err < 0)
         goto fail;
 
-    err = ff_cbs_read_packet(ctx->cbc, au, in);
+    err = ff_cbs_read_packet(&ctx->cbc, au, in);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to read packet.\n");
         goto fail;
@@ -230,7 +229,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     // If an AUD is present, it must be the first NAL unit.
     if (au->units[0].type == H264_NAL_AUD) {
         if (ctx->aud == REMOVE)
-            ff_cbs_delete_unit(ctx->cbc, au, 0);
+            ff_cbs_delete_unit(&ctx->cbc, au, 0);
     } else {
         if (ctx->aud == INSERT) {
             static const int primary_pic_type_table[] = {
@@ -270,7 +269,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
             aud->nal_unit_header.nal_unit_type = H264_NAL_AUD;
             aud->primary_pic_type = j;
 
-            err = ff_cbs_insert_unit_content(ctx->cbc, au,
+            err = ff_cbs_insert_unit_content(&ctx->cbc, au,
                                              0, H264_NAL_AUD, aud);
             if (err < 0) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to insert AUD.\n");
@@ -289,15 +288,12 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
         }
     }
 
-    // Insert the SEI in access units containing SPSs, and also
-    // unconditionally in the first access unit we ever see.
-    if (ctx->sei_user_data && (has_sps || !ctx->sei_first_au)) {
+    // Only insert the SEI in access units containing SPSs.
+    if (has_sps && ctx->sei_user_data) {
         H264RawSEI *sei;
         H264RawSEIPayload *payload;
         H264RawSEIUserDataUnregistered *udu;
         int sei_pos, sei_new;
-
-        ctx->sei_first_au = 1;
 
         for (i = 0; i < au->nb_units; i++) {
             if (au->units[i].type == H264_NAL_SEI ||
@@ -318,7 +314,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
             sei->nal_unit_header.nal_unit_type = H264_NAL_SEI;
 
-            err = ff_cbs_insert_unit_content(ctx->cbc, au,
+            err = ff_cbs_insert_unit_content(&ctx->cbc, au,
                                              sei_pos, H264_NAL_SEI, sei);
             if (err < 0) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to insert SEI.\n");
@@ -379,7 +375,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
         ++sei->payload_count;
     }
 
-    err = ff_cbs_write_packet(ctx->cbc, out, au);
+    err = ff_cbs_write_packet(&ctx->cbc, out, au);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to write packet.\n");
         goto fail;
@@ -391,7 +387,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(ctx->cbc, au);
+    ff_cbs_fragment_uninit(&ctx->cbc, au);
     av_freep(&sei_udu_string);
 
     av_packet_free(&in);
@@ -410,7 +406,7 @@ static int h264_metadata_init(AVBSFContext *bsf)
         return err;
 
     if (bsf->par_in->extradata) {
-        err = ff_cbs_read_extradata(ctx->cbc, au, bsf->par_in);
+        err = ff_cbs_read_extradata(&ctx->cbc, au, bsf->par_in);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to read extradata.\n");
             goto fail;
@@ -424,7 +420,7 @@ static int h264_metadata_init(AVBSFContext *bsf)
             }
         }
 
-        err = ff_cbs_write_extradata(ctx->cbc, bsf->par_out, au);
+        err = ff_cbs_write_extradata(&ctx->cbc, bsf->par_out, au);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
             goto fail;
@@ -433,7 +429,7 @@ static int h264_metadata_init(AVBSFContext *bsf)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(ctx->cbc, au);
+    ff_cbs_fragment_uninit(&ctx->cbc, au);
     return err;
 }
 
@@ -454,7 +450,7 @@ static const AVOption h264_metadata_options[] = {
 
     { "sample_aspect_ratio", "Set sample aspect ratio (table E-1)",
         OFFSET(sample_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, 65535 },
+        { .i64 = 0 }, 0, 65535 },
 
     { "video_format", "Set video format (table E-2)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
@@ -478,7 +474,7 @@ static const AVOption h264_metadata_options[] = {
 
     { "tick_rate", "Set VUI tick rate (num_units_in_tick / time_scale)",
         OFFSET(tick_rate), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, UINT_MAX },
+        { .i64 = 0 }, 0, UINT_MAX },
     { "fixed_frame_rate_flag", "Set VUI fixed frame rate flag",
         OFFSET(fixed_frame_rate_flag), AV_OPT_TYPE_INT,
         { .i64 = -1 }, -1, 1 },

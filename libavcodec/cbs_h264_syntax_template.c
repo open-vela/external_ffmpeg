@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -705,7 +705,7 @@ static int FUNC(sei_payload)(CodedBitstreamContext *ctx, RWContext *rw,
     int start_position, end_position;
 
 #ifdef READ
-    start_position = get_bits_count(rw);
+    start_position = bitstream_tell(rw);
 #else
     start_position = put_bits_count(rw);
 #endif
@@ -758,7 +758,7 @@ static int FUNC(sei_payload)(CodedBitstreamContext *ctx, RWContext *rw,
     }
 
 #ifdef READ
-    end_position = get_bits_count(rw);
+    end_position = bitstream_tell(rw);
     if (end_position < start_position + 8 * current->payload_size) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "Incorrect SEI payload length: "
                "header %d bits, actually %d bits.\n",
@@ -790,14 +790,14 @@ static int FUNC(sei)(CodedBitstreamContext *ctx, RWContext *rw,
         uint32_t payload_size = 0;
         uint32_t tmp;
 
-        while (show_bits(rw, 8) == 0xff) {
+        while (bitstream_peek(rw, 8) == 0xff) {
             xu(8, ff_byte, tmp, 0xff, 0xff);
             payload_type += 255;
         }
         xu(8, last_payload_type_byte, tmp, 0, 254);
         payload_type += tmp;
 
-        while (show_bits(rw, 8) == 0xff) {
+        while (bitstream_peek(rw, 8) == 0xff) {
             xu(8, ff_byte, tmp, 0xff, 0xff);
             payload_size += 255;
         }

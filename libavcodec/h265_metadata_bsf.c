@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,7 @@ enum {
 typedef struct H265MetadataContext {
     const AVClass *class;
 
-    CodedBitstreamContext *cbc;
+    CodedBitstreamContext cbc;
     CodedBitstreamFragment access_unit;
 
     H265RawAUD aud_nal;
@@ -241,7 +241,7 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     if (err < 0)
         goto fail;
 
-    err = ff_cbs_read_packet(ctx->cbc, au, in);
+    err = ff_cbs_read_packet(&ctx->cbc, au, in);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to read packet.\n");
         goto fail;
@@ -256,7 +256,7 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     // If an AUD is present, it must be the first NAL unit.
     if (au->units[0].type == HEVC_NAL_AUD) {
         if (ctx->aud == REMOVE)
-            ff_cbs_delete_unit(ctx->cbc, au, 0);
+            ff_cbs_delete_unit(&ctx->cbc, au, 0);
     } else {
         if (ctx->aud == INSERT) {
             H265RawAUD *aud = &ctx->aud_nal;
@@ -288,7 +288,7 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
             };
             aud->pic_type = pic_type;
 
-            err = ff_cbs_insert_unit_content(ctx->cbc, au,
+            err = ff_cbs_insert_unit_content(&ctx->cbc, au,
                                              0, HEVC_NAL_AUD, aud);
             if (err) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to insert AUD.\n");
@@ -310,7 +310,7 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
         }
     }
 
-    err = ff_cbs_write_packet(ctx->cbc, out, au);
+    err = ff_cbs_write_packet(&ctx->cbc, out, au);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to write packet.\n");
         goto fail;
@@ -322,7 +322,7 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(ctx->cbc, au);
+    ff_cbs_fragment_uninit(&ctx->cbc, au);
 
     av_packet_free(&in);
 
@@ -340,7 +340,7 @@ static int h265_metadata_init(AVBSFContext *bsf)
         return err;
 
     if (bsf->par_in->extradata) {
-        err = ff_cbs_read_extradata(ctx->cbc, au, bsf->par_in);
+        err = ff_cbs_read_extradata(&ctx->cbc, au, bsf->par_in);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to read extradata.\n");
             goto fail;
@@ -359,7 +359,7 @@ static int h265_metadata_init(AVBSFContext *bsf)
             }
         }
 
-        err = ff_cbs_write_extradata(ctx->cbc, bsf->par_out, au);
+        err = ff_cbs_write_extradata(&ctx->cbc, bsf->par_out, au);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
             goto fail;
@@ -368,7 +368,7 @@ static int h265_metadata_init(AVBSFContext *bsf)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(ctx->cbc, au);
+    ff_cbs_fragment_uninit(&ctx->cbc, au);
     return err;
 }
 
@@ -389,7 +389,7 @@ static const AVOption h265_metadata_options[] = {
 
     { "sample_aspect_ratio", "Set sample aspect ratio (table E-1)",
         OFFSET(sample_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, 65535 },
+        { .i64 = 0 }, 0, 65535 },
 
     { "video_format", "Set video format (table E-2)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
@@ -414,7 +414,7 @@ static const AVOption h265_metadata_options[] = {
     { "tick_rate",
         "Set VPS and VUI tick rate (num_units_in_tick / time_scale)",
         OFFSET(tick_rate), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, UINT_MAX },
+        { .i64 = 0 }, 0, UINT_MAX },
     { "num_ticks_poc_diff_one",
         "Set VPS and VUI number of ticks per POC increment",
         OFFSET(num_ticks_poc_diff_one), AV_OPT_TYPE_INT,
