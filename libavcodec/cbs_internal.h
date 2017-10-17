@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -20,8 +20,8 @@
 #define AVCODEC_CBS_INTERNAL_H
 
 #include "avcodec.h"
-#include "bitstream.h"
 #include "cbs.h"
+#include "get_bits.h"
 #include "put_bits.h"
 
 
@@ -32,6 +32,9 @@ typedef struct CodedBitstreamType {
 
     // Split frag->data into coded bitstream units, creating the
     // frag->units array.  Fill data but not content on each unit.
+    // header is set if the fragment came from a header block, which
+    // may require different parsing for some codecs (e.g. the AVCC
+    // header in H.264).
     int (*split_fragment)(CodedBitstreamContext *ctx,
                           CodedBitstreamFragment *frag,
                           int header);
@@ -71,7 +74,7 @@ void ff_cbs_trace_syntax_element(CodedBitstreamContext *ctx,
 // Helper functions for read/write of common bitstream elements, including
 // generation of trace output.
 
-int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, BitstreamContext *bc,
+int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
                          int width, const char *name, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max);
 
