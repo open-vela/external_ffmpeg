@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@
 
 
 typedef struct TraceHeadersContext {
-    CodedBitstreamContext *cbc;
+    CodedBitstreamContext cbc;
 } TraceHeadersContext;
 
 
@@ -40,21 +40,21 @@ static int trace_headers_init(AVBSFContext *bsf)
     if (err < 0)
         return err;
 
-    ctx->cbc->trace_enable = 1;
-    ctx->cbc->trace_level  = AV_LOG_INFO;
+    ctx->cbc.trace_enable = 1;
+    ctx->cbc.trace_level  = AV_LOG_INFO;
 
     if (bsf->par_in->extradata) {
         CodedBitstreamFragment ps;
 
         av_log(bsf, AV_LOG_INFO, "Extradata\n");
 
-        err = ff_cbs_read_extradata(ctx->cbc, &ps, bsf->par_in);
+        err = ff_cbs_read_extradata(&ctx->cbc, &ps, bsf->par_in);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to read extradata.\n");
             return err;
         }
 
-        ff_cbs_fragment_uninit(ctx->cbc, &ps);
+        ff_cbs_fragment_uninit(&ctx->cbc, &ps);
     }
 
     return 0;
@@ -97,11 +97,11 @@ static int trace_headers(AVBSFContext *bsf, AVPacket *out)
 
     av_log(bsf, AV_LOG_INFO, "Packet: %d bytes%s.\n", in->size, tmp);
 
-    err = ff_cbs_read_packet(ctx->cbc, &au, in);
+    err = ff_cbs_read_packet(&ctx->cbc, &au, in);
     if (err < 0)
         return err;
 
-    ff_cbs_fragment_uninit(ctx->cbc, &au);
+    ff_cbs_fragment_uninit(&ctx->cbc, &au);
 
     av_packet_move_ref(out, in);
     av_packet_free(&in);
