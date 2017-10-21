@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,7 @@
 #include "avcodec.h"
 
 #include "version.h"
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
 #include "vaapi.h"
 #endif
 
@@ -53,13 +53,17 @@ typedef struct VAAPIDecodePicture {
 } VAAPIDecodePicture;
 
 typedef struct VAAPIDecodeContext {
+    VAProfile             va_profile;
+    VAEntrypoint          va_entrypoint;
     VAConfigID            va_config;
     VAContextID           va_context;
 
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
+FF_DISABLE_DEPRECATION_WARNINGS
     int                   have_old_context;
     struct vaapi_context *old_context;
     AVBufferRef          *device_ref;
+FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
     AVHWDeviceContext    *device;
@@ -93,8 +97,5 @@ int ff_vaapi_decode_cancel(AVCodecContext *avctx,
 
 int ff_vaapi_decode_init(AVCodecContext *avctx);
 int ff_vaapi_decode_uninit(AVCodecContext *avctx);
-
-int ff_vaapi_common_frame_params(AVCodecContext *avctx,
-                                 AVBufferRef *hw_frames_ctx);
 
 #endif /* AVCODEC_VAAPI_DECODE_H */

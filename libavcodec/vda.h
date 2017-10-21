@@ -3,20 +3,20 @@
  *
  * copyright (c) 2011 Sebastien Zwickert
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,7 +30,6 @@
  */
 
 #include "libavcodec/avcodec.h"
-#include "libavcodec/version.h"
 
 #include <stdint.h>
 
@@ -42,6 +41,14 @@
 #include <VideoDecodeAcceleration/VDADecoder.h>
 #undef Picture
 
+#include "libavcodec/version.h"
+
+// extra flags not defined in VDADecoder.h
+enum {
+    kVDADecodeInfo_Asynchronous = 1UL << 0,
+    kVDADecodeInfo_FrameDropped = 1UL << 1
+};
+
 /**
  * @defgroup lavc_codec_hwaccel_vda VDA
  * @ingroup lavc_codec_hwaccel
@@ -51,7 +58,7 @@
 
 /**
  * This structure is used to provide the necessary configurations and data
- * to the VDA Libav HWAccel implementation.
+ * to the VDA FFmpeg HWAccel implementation.
  *
  * The application must make it available as AVCodecContext.hwaccel_context.
  */
@@ -126,6 +133,17 @@ struct vda_context {
      * unused
      */
     int                 priv_allocated_size;
+
+    /**
+     * Use av_buffer to manage buffer.
+     * When the flag is set, the CVPixelBuffers returned by the decoder will
+     * be released automatically, so you have to retain them if necessary.
+     * Not setting this flag may cause memory leak.
+     *
+     * encoding: unused
+     * decoding: Set by user.
+     */
+    int                 use_ref_buffer;
 };
 
 /** Create the video decoder. */
