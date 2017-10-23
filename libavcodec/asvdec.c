@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,7 @@
 #include "asv.h"
 #include "avcodec.h"
 #include "blockdsp.h"
+#include "put_bits.h"
 #include "idctdsp.h"
 #include "internal.h"
 #include "mathops.h"
@@ -69,27 +70,27 @@ static av_cold void init_vlcs(ASV1Context *a)
 }
 
 // FIXME write a reversed bitstream reader to avoid the double reverse
-static inline int asv2_get_bits(GetBitContext *gb, int n)
+static inline int asv2_get_bits(BitstreamContext *bc, int n)
 {
-    return ff_reverse[get_bits(gb, n) << (8 - n)];
+    return ff_reverse[bitstream_read(bc, n) << (8 - n)];
 }
 
-static inline int asv1_get_level(GetBitContext *gb)
+static inline int asv1_get_level(BitstreamContext *bc)
 {
-    int code = get_vlc2(gb, level_vlc.table, VLC_BITS, 1);
+    int code = bitstream_read_vlc(bc, level_vlc.table, VLC_BITS, 1);
 
     if (code == 3)
-        return get_sbits(gb, 8);
+        return bitstream_read_signed(bc, 8);
     else
         return code - 3;
 }
 
-static inline int asv2_get_level(GetBitContext *gb)
+static inline int asv2_get_level(BitstreamContext *bc)
 {
-    int code = get_vlc2(gb, asv2_level_vlc.table, ASV2_LEVEL_VLC_BITS, 1);
+    int code = bitstream_read_vlc(bc, asv2_level_vlc.table, ASV2_LEVEL_VLC_BITS, 1);
 
     if (code == 31)
-        return (int8_t) asv2_get_bits(gb, 8);
+        return (int8_t) asv2_get_bits(bc, 8);
     else
         return code - 31;
 }
@@ -98,10 +99,10 @@ static inline int asv1_decode_block(ASV1Context *a, int16_t block[64])
 {
     int i;
 
-    block[0] = 8 * get_bits(&a->gb, 8);
+    block[0] = 8 * bitstream_read(&a->bc, 8);
 
     for (i = 0; i < 11; i++) {
-        const int ccp = get_vlc2(&a->gb, ccp_vlc.table, VLC_BITS, 1);
+        const int ccp = bitstream_read_vlc(&a->bc, ccp_vlc.table, VLC_BITS, 1);
 
         if (ccp) {
             if (ccp == 16)
@@ -112,13 +113,13 @@ static inline int asv1_decode_block(ASV1Context *a, int16_t block[64])
             }
 
             if (ccp & 8)
-                block[a->scantable.permutated[4 * i + 0]] = (asv1_get_level(&a->gb) * a->intra_matrix[4 * i + 0]) >> 4;
+                block[a->scantable.permutated[4 * i + 0]] = (asv1_get_level(&a->bc) * a->intra_matrix[4 * i + 0]) >> 4;
             if (ccp & 4)
-                block[a->scantable.permutated[4 * i + 1]] = (asv1_get_level(&a->gb) * a->intra_matrix[4 * i + 1]) >> 4;
+                block[a->scantable.permutated[4 * i + 1]] = (asv1_get_level(&a->bc) * a->intra_matrix[4 * i + 1]) >> 4;
             if (ccp & 2)
-                block[a->scantable.permutated[4 * i + 2]] = (asv1_get_level(&a->gb) * a->intra_matrix[4 * i + 2]) >> 4;
+                block[a->scantable.permutated[4 * i + 2]] = (asv1_get_level(&a->bc) * a->intra_matrix[4 * i + 2]) >> 4;
             if (ccp & 1)
-                block[a->scantable.permutated[4 * i + 3]] = (asv1_get_level(&a->gb) * a->intra_matrix[4 * i + 3]) >> 4;
+                block[a->scantable.permutated[4 * i + 3]] = (asv1_get_level(&a->bc) * a->intra_matrix[4 * i + 3]) >> 4;
         }
     }
 
@@ -129,32 +130,32 @@ static inline int asv2_decode_block(ASV1Context *a, int16_t block[64])
 {
     int i, count, ccp;
 
-    count = asv2_get_bits(&a->gb, 4);
+    count = asv2_get_bits(&a->bc, 4);
 
-    block[0] = 8 * asv2_get_bits(&a->gb, 8);
+    block[0] = 8 * asv2_get_bits(&a->bc, 8);
 
-    ccp = get_vlc2(&a->gb, dc_ccp_vlc.table, VLC_BITS, 1);
+    ccp = bitstream_read_vlc(&a->bc, dc_ccp_vlc.table, VLC_BITS, 1);
     if (ccp) {
         if (ccp & 4)
-            block[a->scantable.permutated[1]] = (asv2_get_level(&a->gb) * a->intra_matrix[1]) >> 4;
+            block[a->scantable.permutated[1]] = (asv2_get_level(&a->bc) * a->intra_matrix[1]) >> 4;
         if (ccp & 2)
-            block[a->scantable.permutated[2]] = (asv2_get_level(&a->gb) * a->intra_matrix[2]) >> 4;
+            block[a->scantable.permutated[2]] = (asv2_get_level(&a->bc) * a->intra_matrix[2]) >> 4;
         if (ccp & 1)
-            block[a->scantable.permutated[3]] = (asv2_get_level(&a->gb) * a->intra_matrix[3]) >> 4;
+            block[a->scantable.permutated[3]] = (asv2_get_level(&a->bc) * a->intra_matrix[3]) >> 4;
     }
 
     for (i = 1; i < count + 1; i++) {
-        const int ccp = get_vlc2(&a->gb, ac_ccp_vlc.table, VLC_BITS, 1);
+        const int ccp = bitstream_read_vlc(&a->bc, ac_ccp_vlc.table, VLC_BITS, 1);
 
         if (ccp) {
             if (ccp & 8)
-                block[a->scantable.permutated[4 * i + 0]] = (asv2_get_level(&a->gb) * a->intra_matrix[4 * i + 0]) >> 4;
+                block[a->scantable.permutated[4 * i + 0]] = (asv2_get_level(&a->bc) * a->intra_matrix[4 * i + 0]) >> 4;
             if (ccp & 4)
-                block[a->scantable.permutated[4 * i + 1]] = (asv2_get_level(&a->gb) * a->intra_matrix[4 * i + 1]) >> 4;
+                block[a->scantable.permutated[4 * i + 1]] = (asv2_get_level(&a->bc) * a->intra_matrix[4 * i + 1]) >> 4;
             if (ccp & 2)
-                block[a->scantable.permutated[4 * i + 2]] = (asv2_get_level(&a->gb) * a->intra_matrix[4 * i + 2]) >> 4;
+                block[a->scantable.permutated[4 * i + 2]] = (asv2_get_level(&a->bc) * a->intra_matrix[4 * i + 2]) >> 4;
             if (ccp & 1)
-                block[a->scantable.permutated[4 * i + 3]] = (asv2_get_level(&a->gb) * a->intra_matrix[4 * i + 3]) >> 4;
+                block[a->scantable.permutated[4 * i + 3]] = (asv2_get_level(&a->bc) * a->intra_matrix[4 * i + 3]) >> 4;
         }
     }
 
@@ -163,19 +164,19 @@ static inline int asv2_decode_block(ASV1Context *a, int16_t block[64])
 
 static inline int decode_mb(ASV1Context *a, int16_t block[6][64])
 {
-    int i, ret;
+    int i;
 
     a->bdsp.clear_blocks(block[0]);
 
     if (a->avctx->codec_id == AV_CODEC_ID_ASV1) {
         for (i = 0; i < 6; i++) {
-            if ((ret = asv1_decode_block(a, block[i])) < 0)
-                return ret;
+            if (asv1_decode_block(a, block[i]) < 0)
+                return -1;
         }
     } else {
         for (i = 0; i < 6; i++) {
-            if ((ret = asv2_decode_block(a, block[i])) < 0)
-                return ret;
+            if (asv2_decode_block(a, block[i]) < 0)
+                return -1;
         }
     }
     return 0;
@@ -210,11 +211,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     AVFrame *const p = data;
     int mb_x, mb_y, ret;
 
-    if (buf_size * 8LL < a->mb_height * a->mb_width * 13LL)
-        return AVERROR_INVALIDDATA;
-
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
 
@@ -232,7 +232,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             a->bitstream_buffer[i] = ff_reverse[buf[i]];
     }
 
-    init_get_bits(&a->gb, a->bitstream_buffer, buf_size * 8);
+    bitstream_init8(&a->bc, a->bitstream_buffer, buf_size);
 
     for (mb_y = 0; mb_y < a->mb_height2; mb_y++) {
         for (mb_x = 0; mb_x < a->mb_width2; mb_x++) {
@@ -267,7 +267,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     emms_c();
 
-    return (get_bits_count(&a->gb) + 31) / 32 * 4;
+    return (bitstream_tell(&a->bc) + 31) / 32 * 4;
 }
 
 static av_cold int decode_init(AVCodecContext *avctx)
@@ -277,17 +277,19 @@ static av_cold int decode_init(AVCodecContext *avctx)
     int i;
 
     if (avctx->extradata_size < 1) {
-        av_log(avctx, AV_LOG_WARNING, "No extradata provided\n");
+        av_log(avctx, AV_LOG_ERROR, "No extradata provided\n");
+        return AVERROR_INVALIDDATA;
     }
 
     ff_asv_common_init(avctx);
-    ff_blockdsp_init(&a->bdsp, avctx);
+    ff_blockdsp_init(&a->bdsp);
     ff_idctdsp_init(&a->idsp, avctx);
     init_vlcs(a);
     ff_init_scantable(a->idsp.idct_permutation, &a->scantable, ff_asv_scantab);
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    if (avctx->extradata_size < 1 || (a->inv_qscale = avctx->extradata[0]) == 0) {
+    a->inv_qscale = avctx->extradata[0];
+    if (a->inv_qscale == 0) {
         av_log(avctx, AV_LOG_ERROR, "illegal qscale 0\n");
         if (avctx->codec_id == AV_CODEC_ID_ASV1)
             a->inv_qscale = 6;
@@ -315,7 +317,6 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-#if CONFIG_ASV1_DECODER
 AVCodec ff_asv1_decoder = {
     .name           = "asv1",
     .long_name      = NULL_IF_CONFIG_SMALL("ASUS V1"),
@@ -327,9 +328,7 @@ AVCodec ff_asv1_decoder = {
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
-#endif
 
-#if CONFIG_ASV2_DECODER
 AVCodec ff_asv2_decoder = {
     .name           = "asv2",
     .long_name      = NULL_IF_CONFIG_SMALL("ASUS V2"),
@@ -341,4 +340,3 @@ AVCodec ff_asv2_decoder = {
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
-#endif

@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,7 +78,7 @@ typedef struct VAAPIEncodeH264Context {
     int cpb_delay;
     int dpb_delay;
 
-    CodedBitstreamContext *cbc;
+    CodedBitstreamContext cbc;
     CodedBitstreamFragment current_access_unit;
     int aud_needed;
     int sei_needed;
@@ -88,8 +88,6 @@ typedef struct VAAPIEncodeH264Options {
     int qp;
     int quality;
     int low_power;
-    // Entropy encoder type.
-    int coder;
     int aud;
     int sei;
 } VAAPIEncodeH264Options;
@@ -103,7 +101,7 @@ static int vaapi_encode_h264_write_access_unit(AVCodecContext *avctx,
     VAAPIEncodeH264Context *priv = ctx->priv_data;
     int err;
 
-    err = ff_cbs_write_fragment_data(priv->cbc, au);
+    err = ff_cbs_write_fragment_data(&priv->cbc, au);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to write packed header.\n");
         return err;
@@ -131,7 +129,7 @@ static int vaapi_encode_h264_add_nal(AVCodecContext *avctx,
     H264RawNALUnitHeader *header = nal_unit;
     int err;
 
-    err = ff_cbs_insert_unit_content(priv->cbc, au, -1,
+    err = ff_cbs_insert_unit_content(&priv->cbc, au, -1,
                                      header->nal_unit_type, nal_unit);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to add NAL unit: "
@@ -167,7 +165,7 @@ static int vaapi_encode_h264_write_sequence_header(AVCodecContext *avctx,
 
     err = vaapi_encode_h264_write_access_unit(avctx, data, data_len, au);
 fail:
-    ff_cbs_fragment_uninit(priv->cbc, au);
+    ff_cbs_fragment_uninit(&priv->cbc, au);
     return err;
 }
 
@@ -194,7 +192,7 @@ static int vaapi_encode_h264_write_slice_header(AVCodecContext *avctx,
 
     err = vaapi_encode_h264_write_access_unit(avctx, data, data_len, au);
 fail:
-    ff_cbs_fragment_uninit(priv->cbc, au);
+    ff_cbs_fragment_uninit(&priv->cbc, au);
     return err;
 }
 
@@ -211,9 +209,7 @@ static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
 
     if (priv->sei_needed) {
         if (priv->aud_needed) {
-            err = vaapi_encode_h264_add_nal(avctx, au, &priv->aud);
-            if (err < 0)
-                goto fail;
+            vaapi_encode_h264_add_nal(avctx, au, &priv->aud);
             priv->aud_needed = 0;
         }
 
@@ -254,16 +250,16 @@ static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
         if (err < 0)
             goto fail;
 
-        ff_cbs_fragment_uninit(priv->cbc, au);
+        ff_cbs_fragment_uninit(&priv->cbc, au);
 
-        *type = VAEncPackedHeaderRawData;
+        *type = VAEncPackedHeaderH264_SEI;
         return 0;
     } else {
         return AVERROR_EOF;
     }
 
 fail:
-    ff_cbs_fragment_uninit(priv->cbc, au);
+    ff_cbs_fragment_uninit(&priv->cbc, au);
     return err;
 }
 
@@ -453,8 +449,6 @@ static int vaapi_encode_h264_init_sequence_params(AVCodecContext *avctx)
         !(sps->profile_idc == FF_PROFILE_H264_BASELINE ||
           sps->profile_idc == FF_PROFILE_H264_EXTENDED ||
           sps->profile_idc == FF_PROFILE_H264_CAVLC_444);
-    if (!opt->coder && pps->entropy_coding_mode_flag)
-        pps->entropy_coding_mode_flag = 0;
 
     pps->num_ref_idx_l0_default_active_minus1 = 0;
     pps->num_ref_idx_l1_default_active_minus1 = 0;
@@ -795,7 +789,7 @@ static av_cold int vaapi_encode_h264_configure(AVCodecContext *avctx)
         priv->fixed_qp_p   = 26;
         priv->fixed_qp_b   = 26;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %"PRId64" bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %d bps.\n",
                ctx->va_rc_mode == VA_RC_CBR ? "constant" : "variable",
                avctx->bit_rate);
 
@@ -869,17 +863,11 @@ static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
     ctx->codec = &vaapi_encode_type_h264;
 
     switch (avctx->profile) {
-    case FF_PROFILE_H264_BASELINE:
-        av_log(avctx, AV_LOG_WARNING, "H.264 baseline profile is not "
-               "supported, using constrained baseline profile instead.\n");
-        avctx->profile = FF_PROFILE_H264_CONSTRAINED_BASELINE;
     case FF_PROFILE_H264_CONSTRAINED_BASELINE:
         ctx->va_profile = VAProfileH264ConstrainedBaseline;
-        if (avctx->max_b_frames != 0) {
-            avctx->max_b_frames = 0;
-            av_log(avctx, AV_LOG_WARNING, "H.264 constrained baseline profile "
-                   "doesn't support encoding with B frames, disabling them.\n");
-        }
+        break;
+    case FF_PROFILE_H264_BASELINE:
+        ctx->va_profile = VAProfileH264Baseline;
         break;
     case FF_PROFILE_H264_MAIN:
         ctx->va_profile = VAProfileH264Main;
@@ -969,12 +957,6 @@ static const AVOption vaapi_encode_h264_options[] = {
     { "low_power", "Use low-power encoding mode (experimental: only supported "
       "on some platforms, does not support all features)",
       OFFSET(low_power), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
-    { "coder", "Entropy coder type",
-      OFFSET(coder), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, FLAGS, "coder" },
-        { "cavlc", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
-        { "cabac", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
-        { "vlc",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
-        { "ac",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
 
     { "aud", "Include AUD",
       OFFSET(aud), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
@@ -1001,10 +983,10 @@ static const AVCodecDefault vaapi_encode_h264_defaults[] = {
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1"   },
-    { "i_qoffset",      "0"   },
-    { "b_qfactor",      "6/5" },
-    { "b_qoffset",      "0"   },
+    { "i_qfactor",      "1.0" },
+    { "i_qoffset",      "0.0" },
+    { "b_qfactor",      "1.2" },
+    { "b_qoffset",      "0.0" },
     { "qmin",           "0"   },
     { NULL },
 };
