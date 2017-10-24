@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -174,13 +174,17 @@ const uint8_t ff_h264_dequant8_coeff_init[6][6] = {
 const uint8_t ff_h264_quant_rem6[QP_MAX_NUM + 1] = {
     0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2,
     3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5,
-    0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3,
+    0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2,
+    3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5,
+    0, 1, 2, 3,
 };
 
 const uint8_t ff_h264_quant_div6[QP_MAX_NUM + 1] = {
     0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3,  3,  3,
     3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6,  6,  6,
-    7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10,
+    7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 10, 10, 10,
+   10,10,10,11,11,11,11,11,11,12,12,12,12,12,12,13,13,13, 13, 13, 13,
+   14,14,14,14,
 };
 
 #define QP(qP, depth) ((qP) + 6 * ((depth) - 8))
@@ -196,11 +200,33 @@ const uint8_t ff_h264_quant_div6[QP_MAX_NUM + 1] = {
     QP(37, d), QP(37, d), QP(37, d), QP(38, d), QP(38, d), QP(38, d),   \
     QP(39, d), QP(39, d), QP(39, d), QP(39, d)
 
-const uint8_t ff_h264_chroma_qp[3][QP_MAX_NUM + 1] = {
+const uint8_t ff_h264_chroma_qp[7][QP_MAX_NUM + 1] = {
     { CHROMA_QP_TABLE_END(8) },
     { 0, 1, 2, 3, 4, 5,
       CHROMA_QP_TABLE_END(9) },
-    { 0, 1, 2, 3, 4, 5,
+    { 0, 1, 2, 3,  4,  5,
       6, 7, 8, 9, 10, 11,
       CHROMA_QP_TABLE_END(10) },
+    { 0,  1, 2, 3,  4,  5,
+      6,  7, 8, 9, 10, 11,
+      12,13,14,15, 16, 17,
+      CHROMA_QP_TABLE_END(11) },
+    { 0,  1, 2, 3,  4,  5,
+      6,  7, 8, 9, 10, 11,
+      12,13,14,15, 16, 17,
+      18,19,20,21, 22, 23,
+      CHROMA_QP_TABLE_END(12) },
+    { 0,  1, 2, 3,  4,  5,
+      6,  7, 8, 9, 10, 11,
+      12,13,14,15, 16, 17,
+      18,19,20,21, 22, 23,
+      24,25,26,27, 28, 29,
+      CHROMA_QP_TABLE_END(13) },
+    { 0,  1, 2, 3,  4,  5,
+      6,  7, 8, 9, 10, 11,
+      12,13,14,15, 16, 17,
+      18,19,20,21, 22, 23,
+      24,25,26,27, 28, 29,
+      30,31,32,33, 34, 35,
+      CHROMA_QP_TABLE_END(14) },
 };
