@@ -2,20 +2,20 @@
  * FLAC (Free Lossless Audio Codec) decoder/demuxer common functions
  * Copyright (c) 2008 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,8 +28,8 @@
 #define AVCODEC_FLAC_H
 
 #include "avcodec.h"
-#include "bitstream.h"
 #include "bytestream.h"
+#include "get_bits.h"
 
 #define FLAC_STREAMINFO_SIZE   34
 #define FLAC_MAX_CHANNELS       8
@@ -95,17 +95,11 @@ typedef struct FLACFrameInfo {
  * @param[out] avctx   codec context to set basic stream parameters
  * @param[out] s       where parsed information is stored
  * @param[in]  buffer  pointer to start of 34-byte streaminfo data
+ *
+ * @return negative error code on faiure or >= 0 on success
  */
-void ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
+int ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
                               const uint8_t *buffer);
-
-#if LIBAVCODEC_VERSION_MAJOR < 57
-void avpriv_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
-                                  const uint8_t *buffer);
-int avpriv_flac_is_extradata_valid(AVCodecContext *avctx,
-                                   enum FLACExtradataFormat *format,
-                                   uint8_t **streaminfo_start);
-#endif
 
 /**
  * Validate the FLAC extradata.
@@ -129,12 +123,12 @@ int ff_flac_get_max_frame_size(int blocksize, int ch, int bps);
 /**
  * Validate and decode a frame header.
  * @param      avctx AVCodecContext to use as av_log() context
- * @param      bc    BitstreamContext from which to read frame header
+ * @param      gb    GetBitContext from which to read frame header
  * @param[out] fi    frame information
  * @param      log_level_offset  log level offset. can be used to silence error messages.
  * @return non-zero on error, 0 if ok
  */
-int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
+int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
                                 FLACFrameInfo *fi, int log_level_offset);
 
 void ff_flac_set_channel_layout(AVCodecContext *avctx);
