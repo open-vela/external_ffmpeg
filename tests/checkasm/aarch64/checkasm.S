@@ -3,14 +3,14 @@
  * Copyright (c) 2015 Martin Storsjo
  * Copyright (c) 2015 Janne Grunau
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -112,10 +112,10 @@ function checkasm_checked_call, export=1
     movi        v3.8h,  #0
 
 .macro check_reg_neon reg1, reg2
-    ldr         q1,  [x9], #16
-    uzp1        v2.2d,  v\reg1\().2d, v\reg2\().2d
-    eor         v1.16b, v1.16b, v2.16b
-    orr         v3.16b, v3.16b, v1.16b
+    ldr         q0,  [x9], #16
+    uzp1        v1.2d,  v\reg1\().2d, v\reg2\().2d
+    eor         v0.16b, v0.16b, v1.16b
+    orr         v3.16b, v3.16b, v0.16b
 .endm
     check_reg_neon  8,  9
     check_reg_neon  10, 11

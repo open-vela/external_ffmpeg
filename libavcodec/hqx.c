@@ -1,20 +1,20 @@
 /*
  * Canopus HQX decoder
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,10 +24,9 @@
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
+#include "bitstream.h"
 #include "canopus.h"
-#include "get_bits.h"
 #include "internal.h"
-#include "thread.h"
 
 #include "hqx.h"
 #include "hqxdsp.h"
@@ -96,23 +95,23 @@ static inline void put_blocks(HQXContext *ctx, int plane,
                          lsize * fields, block1, quant);
 }
 
-static inline void hqx_get_ac(GetBitContext *gb, const HQXAC *ac,
+static inline void hqx_get_ac(BitstreamContext *bc, const HQXAC *ac,
                               int *run, int *lev)
 {
     int val;
 
-    val = show_bits(gb, ac->lut_bits);
+    val = bitstream_peek(bc, ac->lut_bits);
     if (ac->lut[val].bits == -1) {
-        GetBitContext gb2 = *gb;
-        skip_bits(&gb2, ac->lut_bits);
-        val = ac->lut[val].lev + show_bits(&gb2, ac->extra_bits);
+        BitstreamContext bc2 = *bc;
+        bitstream_skip(&bc2, ac->lut_bits);
+        val = ac->lut[val].lev + bitstream_peek(&bc2, ac->extra_bits);
     }
     *run = ac->lut[val].run;
     *lev = ac->lut[val].lev;
-    skip_bits(gb, ac->lut[val].bits);
+    bitstream_skip(bc, ac->lut[val].bits);
 }
 
-static int decode_block(GetBitContext *gb, VLC *vlc,
+static int decode_block(BitstreamContext *bc, VLC *vlc,
                         const int *quants, int dcb,
                         int16_t block[64], int *last_dc)
 {
@@ -121,14 +120,14 @@ static int decode_block(GetBitContext *gb, VLC *vlc,
     int run, lev, pos = 1;
 
     memset(block, 0, 64 * sizeof(*block));
-    dc = get_vlc2(gb, vlc->table, HQX_DC_VLC_BITS, 2);
+    dc = bitstream_read_vlc(bc, vlc->table, HQX_DC_VLC_BITS, 2);
     if (dc < 0)
         return AVERROR_INVALIDDATA;
     *last_dc += dc;
 
     block[0] = sign_extend(*last_dc << (12 - dcb), 12);
 
-    q = quants[get_bits(gb, 2)];
+    q = quants[bitstream_read(bc, 2)];
     if (q >= 128)
         ac_idx = HQX_AC_Q128;
     else if (q >= 64)
@@ -143,7 +142,7 @@ static int decode_block(GetBitContext *gb, VLC *vlc,
         ac_idx = HQX_AC_Q0;
 
     do {
-        hqx_get_ac(gb, &ff_hqx_ac[ac_idx], &run, &lev);
+        hqx_get_ac(bc, &ff_hqx_ac[ac_idx], &run, &lev);
         pos += run;
         if (pos >= 64)
             break;
@@ -156,24 +155,24 @@ static int decode_block(GetBitContext *gb, VLC *vlc,
 static int hqx_decode_422(HQXContext *ctx, int slice_no, int x, int y)
 {
     HQXSlice *slice = &ctx->slice[slice_no];
-    GetBitContext *gb = &slice->gb;
+    BitstreamContext *bc = &slice->bc;
     const int *quants;
     int flag;
     int last_dc;
     int i, ret;
 
     if (ctx->interlaced)
-        flag = get_bits1(gb);
+        flag = bitstream_read_bit(bc);
     else
         flag = 0;
 
-    quants = hqx_quants[get_bits(gb, 4)];
+    quants = hqx_quants[bitstream_read(bc, 4)];
 
     for (i = 0; i < 8; i++) {
         int vlc_index = ctx->dcb - 9;
         if (i == 0 || i == 4 || i == 6)
             last_dc = 0;
-        ret = decode_block(gb, &ctx->dc_vlc[vlc_index], quants,
+        ret = decode_block(bc, &ctx->dc_vlc[vlc_index], quants,
                            ctx->dcb, slice->block[i], &last_dc);
         if (ret < 0)
             return ret;
@@ -190,14 +189,14 @@ static int hqx_decode_422(HQXContext *ctx, int slice_no, int x, int y)
 static int hqx_decode_422a(HQXContext *ctx, int slice_no, int x, int y)
 {
     HQXSlice *slice = &ctx->slice[slice_no];
-    GetBitContext *gb = &slice->gb;
+    BitstreamContext *bc = &slice->bc;
     const int *quants;
     int flag = 0;
     int last_dc;
     int i, ret;
     int cbp;
 
-    cbp = get_vlc2(gb, ctx->cbp_vlc.table, ctx->cbp_vlc.bits, 1);
+    cbp = bitstream_read_vlc(bc, ctx->cbp_vlc.table, ctx->cbp_vlc.bits, 1);
 
     for (i = 0; i < 12; i++)
         memset(slice->block[i], 0, sizeof(**slice->block) * 64);
@@ -205,9 +204,9 @@ static int hqx_decode_422a(HQXContext *ctx, int slice_no, int x, int y)
         slice->block[i][0] = -0x800;
     if (cbp) {
         if (ctx->interlaced)
-            flag = get_bits1(gb);
+            flag = bitstream_read_bit(bc);
 
-        quants = hqx_quants[get_bits(gb, 4)];
+        quants = hqx_quants[bitstream_read(bc, 4)];
 
         cbp |= cbp << 4; // alpha CBP
         if (cbp & 0x3)   // chroma CBP - top
@@ -219,7 +218,7 @@ static int hqx_decode_422a(HQXContext *ctx, int slice_no, int x, int y)
                 last_dc = 0;
             if (cbp & (1 << i)) {
                 int vlc_index = ctx->dcb - 9;
-                ret = decode_block(gb, &ctx->dc_vlc[vlc_index], quants,
+                ret = decode_block(bc, &ctx->dc_vlc[vlc_index], quants,
                                    ctx->dcb, slice->block[i], &last_dc);
                 if (ret < 0)
                     return ret;
@@ -240,24 +239,24 @@ static int hqx_decode_422a(HQXContext *ctx, int slice_no, int x, int y)
 static int hqx_decode_444(HQXContext *ctx, int slice_no, int x, int y)
 {
     HQXSlice *slice = &ctx->slice[slice_no];
-    GetBitContext *gb = &slice->gb;
+    BitstreamContext *bc = &slice->bc;
     const int *quants;
     int flag;
     int last_dc;
     int i, ret;
 
     if (ctx->interlaced)
-        flag = get_bits1(gb);
+        flag = bitstream_read_bit(bc);
     else
         flag = 0;
 
-    quants = hqx_quants[get_bits(gb, 4)];
+    quants = hqx_quants[bitstream_read(bc, 4)];
 
     for (i = 0; i < 12; i++) {
         int vlc_index = ctx->dcb - 9;
         if (i == 0 || i == 4 || i == 8)
             last_dc = 0;
-        ret = decode_block(gb, &ctx->dc_vlc[vlc_index], quants,
+        ret = decode_block(bc, &ctx->dc_vlc[vlc_index], quants,
                            ctx->dcb, slice->block[i], &last_dc);
         if (ret < 0)
             return ret;
@@ -276,14 +275,14 @@ static int hqx_decode_444(HQXContext *ctx, int slice_no, int x, int y)
 static int hqx_decode_444a(HQXContext *ctx, int slice_no, int x, int y)
 {
     HQXSlice *slice = &ctx->slice[slice_no];
-    GetBitContext *gb = &slice->gb;
+    BitstreamContext *bc = &slice->bc;
     const int *quants;
     int flag = 0;
     int last_dc;
     int i, ret;
     int cbp;
 
-    cbp = get_vlc2(gb, ctx->cbp_vlc.table, ctx->cbp_vlc.bits, 1);
+    cbp = bitstream_read_vlc(bc, ctx->cbp_vlc.table, ctx->cbp_vlc.bits, 1);
 
     for (i = 0; i < 16; i++)
         memset(slice->block[i], 0, sizeof(**slice->block) * 64);
@@ -291,9 +290,9 @@ static int hqx_decode_444a(HQXContext *ctx, int slice_no, int x, int y)
         slice->block[i][0] = -0x800;
     if (cbp) {
         if (ctx->interlaced)
-            flag = get_bits1(gb);
+            flag = bitstream_read_bit(bc);
 
-        quants = hqx_quants[get_bits(gb, 4)];
+        quants = hqx_quants[bitstream_read(bc, 4)];
 
         cbp |= cbp << 4; // alpha CBP
         cbp |= cbp << 8; // chroma CBP
@@ -302,7 +301,7 @@ static int hqx_decode_444a(HQXContext *ctx, int slice_no, int x, int y)
                 last_dc = 0;
             if (cbp & (1 << i)) {
                 int vlc_index = ctx->dcb - 9;
-                ret = decode_block(gb, &ctx->dc_vlc[vlc_index], quants,
+                ret = decode_block(bc, &ctx->dc_vlc[vlc_index], quants,
                                    ctx->dcb, slice->block[i], &last_dc);
                 if (ret < 0)
                     return ret;
@@ -393,9 +392,9 @@ static int decode_slice_thread(AVCodecContext *avctx, void *arg,
         return AVERROR_INVALIDDATA;
     }
 
-    ret = init_get_bits8(&ctx->slice[slice_no].gb,
-                         ctx->src + slice_off[slice_no],
-                         slice_off[slice_no + 1] - slice_off[slice_no]);
+    ret = bitstream_init8(&ctx->slice[slice_no].bc,
+                          ctx->src + slice_off[slice_no],
+                          slice_off[slice_no + 1] - slice_off[slice_no]);
     if (ret < 0)
         return ret;
 
@@ -406,7 +405,6 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_picture_ptr, AVPacket *avpkt)
 {
     HQXContext *ctx = avctx->priv_data;
-    ThreadFrame frame = { .f = data };
     uint8_t *src = avpkt->data;
     uint32_t info_tag;
     int data_start;
@@ -460,7 +458,7 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
     }
     ret = av_image_check_size(ctx->width, ctx->height, 0, avctx);
     if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid stored dimensions %dx%d.\n",
+        av_log(avctx, AV_LOG_ERROR, "Invalid stored dimenstions %dx%d.\n",
                ctx->width, ctx->height);
         return AVERROR_INVALIDDATA;
     }
@@ -493,9 +491,11 @@ static int hqx_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    ret = ff_thread_get_buffer(avctx, &frame, 0);
-    if (ret < 0)
+    ret = ff_get_buffer(avctx, ctx->pic, 0);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
         return ret;
+    }
 
     avctx->execute2(avctx, decode_slice_thread, NULL, NULL, 16);
 
@@ -511,9 +511,6 @@ static av_cold int hqx_decode_close(AVCodecContext *avctx)
 {
     int i;
     HQXContext *ctx = avctx->priv_data;
-
-    if (avctx->internal->is_copy)
-        return 0;
 
     ff_free_vlc(&ctx->cbp_vlc);
     for (i = 0; i < 3; i++) {
@@ -541,8 +538,7 @@ AVCodec ff_hqx_decoder = {
     .init           = hqx_decode_init,
     .decode         = hqx_decode_frame,
     .close          = hqx_decode_close,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS |
-                      AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };
