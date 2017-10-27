@@ -2,20 +2,20 @@
  * DES encryption/decryption
  * Copyright (c) 2007 Reimar Doeffinger
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,13 +26,6 @@
 #include "intreadwrite.h"
 #include "mem.h"
 #include "des.h"
-
-#if !FF_API_CRYPTO_CONTEXT
-struct AVDES {
-    uint64_t round_keys[3][16];
-    int triple_des;
-};
-#endif
 
 #define T(a, b, c, d, e, f, g, h) 64 - a, 64 - b, 64 - c, 64 - d, 64 - e, 64 - f, 64 - g, 64 - h
 static const uint8_t IP_shuffle[] = {
@@ -282,10 +275,9 @@ AVDES *av_des_alloc(void)
     return av_mallocz(sizeof(struct AVDES));
 }
 
-int av_des_init(AVDES *d, const uint8_t *key, int key_bits, int decrypt)
-{
+int av_des_init(AVDES *d, const uint8_t *key, int key_bits, av_unused int decrypt) {
     if (key_bits != 64 && key_bits != 192)
-        return -1;
+        return AVERROR(EINVAL);
     d->triple_des = key_bits > 64;
     gen_roundkeys(d->round_keys[0], AV_RB64(key));
     if (d->triple_des) {
