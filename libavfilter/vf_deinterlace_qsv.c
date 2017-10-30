@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -68,13 +68,19 @@ typedef struct QSVDeintContext {
     int             nb_surface_ptrs;
 
     mfxExtOpaqueSurfaceAlloc opaque_alloc;
-    mfxExtBuffer            *ext_buffers[1];
+    mfxExtVPPDeinterlacing   deint_conf;
+    mfxExtBuffer            *ext_buffers[2];
+    int                      num_ext_buffers;
 
     QSVFrame *work_frames;
 
     int64_t last_pts;
 
+    int got_output_frame;
     int eof;
+
+    /* option for Deinterlacing algorithm to be used */
+    int mode;
 } QSVDeintContext;
 
 static void qsvdeint_uninit(AVFilterContext *ctx)
@@ -109,10 +115,8 @@ static int qsvdeint_query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_QSV, AV_PIX_FMT_NONE,
     };
     AVFilterFormats *pix_fmts  = ff_make_format_list(pixel_formats);
-    int ret;
 
-    if ((ret = ff_set_common_formats(ctx, pix_fmts)) < 0)
-        return ret;
+    ff_set_common_formats(ctx, pix_fmts);
 
     return 0;
 }
@@ -212,6 +216,12 @@ static int init_out_session(AVFilterContext *ctx)
 
     memset(&par, 0, sizeof(par));
 
+    s->deint_conf.Header.BufferId = MFX_EXTBUFF_VPP_DEINTERLACING;
+    s->deint_conf.Header.BufferSz = sizeof(s->deint_conf);
+    s->deint_conf.Mode = s->mode;
+
+    s->ext_buffers[s->num_ext_buffers++] = (mfxExtBuffer *)&s->deint_conf;
+
     if (opaque) {
         s->surface_ptrs = av_mallocz_array(hw_frames_hwctx->nb_surfaces,
                                            sizeof(*s->surface_ptrs));
@@ -230,10 +240,7 @@ static int init_out_session(AVFilterContext *ctx)
         s->opaque_alloc.Header.BufferId = MFX_EXTBUFF_OPAQUE_SURFACE_ALLOCATION;
         s->opaque_alloc.Header.BufferSz = sizeof(s->opaque_alloc);
 
-        s->ext_buffers[0] = (mfxExtBuffer*)&s->opaque_alloc;
-
-        par.ExtParam    = s->ext_buffers;
-        par.NumExtParam = FF_ARRAY_ELEMS(s->ext_buffers);
+        s->ext_buffers[s->num_ext_buffers++] = (mfxExtBuffer *)&s->opaque_alloc;
 
         par.IOPattern = MFX_IOPATTERN_IN_OPAQUE_MEMORY | MFX_IOPATTERN_OUT_OPAQUE_MEMORY;
     } else {
@@ -260,6 +267,9 @@ static int init_out_session(AVFilterContext *ctx)
 
         par.IOPattern = MFX_IOPATTERN_IN_VIDEO_MEMORY | MFX_IOPATTERN_OUT_VIDEO_MEMORY;
     }
+
+    par.ExtParam    = s->ext_buffers;
+    par.NumExtParam = s->num_ext_buffers;
 
     par.AsyncDepth = 1;    // TODO async
 
@@ -522,13 +532,22 @@ static int qsvdeint_filter_frame(AVFilterLink *link, AVFrame *in)
 static int qsvdeint_request_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
+    QSVDeintContext   *s = ctx->priv;
+    int ret = 0;
 
-    return ff_request_frame(ctx->inputs[0]);
+    s->got_output_frame = 0;
+    while (ret >= 0 && !s->got_output_frame)
+        ret = ff_request_frame(ctx->inputs[0]);
+
+    return ret;
 }
 
 #define OFFSET(x) offsetof(QSVDeintContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
 static const AVOption options[] = {
+    { "mode", "set deinterlace mode", OFFSET(mode),   AV_OPT_TYPE_INT, {.i64 = MFX_DEINTERLACING_ADVANCED}, MFX_DEINTERLACING_BOB, MFX_DEINTERLACING_ADVANCED, FLAGS, "mode"},
+    { "bob",   "bob algorithm",                  0, AV_OPT_TYPE_CONST,      {.i64 = MFX_DEINTERLACING_BOB}, MFX_DEINTERLACING_BOB, MFX_DEINTERLACING_ADVANCED, FLAGS, "mode"},
+    { "advanced", "Motion adaptive algorithm",   0, AV_OPT_TYPE_CONST, {.i64 = MFX_DEINTERLACING_ADVANCED}, MFX_DEINTERLACING_BOB, MFX_DEINTERLACING_ADVANCED, FLAGS, "mode"},
     { NULL },
 };
 
