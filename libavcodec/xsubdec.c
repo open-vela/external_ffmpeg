@@ -2,28 +2,27 @@
  * XSUB subtitle decoder
  * Copyright (c) 2007 Reimar Döffinger
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/mathematics.h"
 #include "libavutil/imgutils.h"
-
 #include "avcodec.h"
-#include "bitstream.h"
+#include "get_bits.h"
 #include "bytestream.h"
 
 static av_cold int decode_init(AVCodecContext *avctx) {
@@ -54,16 +53,14 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     AVSubtitle *sub = data;
     const uint8_t *buf_end = buf + buf_size;
     uint8_t *bitmap;
-    int w, h, x, y, i;
+    int w, h, x, y, i, ret;
     int64_t packet_time = 0;
-    BitstreamContext bc;
+    GetBitContext gb;
     int has_alpha = avctx->codec_tag == MKTAG('D','X','S','A');
-
-    memset(sub, 0, sizeof(*sub));
 
     // check that at least header fits
     if (buf_size < 27 + 7 * 2 + 4 * (3 + has_alpha)) {
-        av_log(avctx, AV_LOG_ERROR, "coded frame too small\n");
+        av_log(avctx, AV_LOG_ERROR, "coded frame size %d too small\n", buf_size);
         return -1;
     }
 
@@ -94,16 +91,19 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     // we just ignore it
     bytestream_get_le16(&buf);
 
+    if (buf_end - buf < h + 3*4)
+        return AVERROR_INVALIDDATA;
+
     // allocate sub and set values
     sub->rects =  av_mallocz(sizeof(*sub->rects));
     if (!sub->rects)
         return AVERROR(ENOMEM);
+
     sub->rects[0] = av_mallocz(sizeof(*sub->rects[0]));
     if (!sub->rects[0]) {
         av_freep(&sub->rects);
         return AVERROR(ENOMEM);
     }
-    sub->num_rects = 1;
     sub->rects[0]->x = x; sub->rects[0]->y = y;
     sub->rects[0]->w = w; sub->rects[0]->h = h;
     sub->rects[0]->type = SUBTITLE_BITMAP;
@@ -118,6 +118,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
         av_freep(&sub->rects);
         return AVERROR(ENOMEM);
     }
+    sub->num_rects = 1;
 
     // read palette
     for (i = 0; i < sub->rects[0]->nb_colors; i++)
@@ -147,15 +148,16 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
     // process RLE-compressed data
-    bitstream_init8(&bc, buf, buf_end - buf);
+    if ((ret = init_get_bits8(&gb, buf, buf_end - buf)) < 0)
+        return ret;
     bitmap = sub->rects[0]->data[0];
     for (y = 0; y < h; y++) {
         // interlaced: do odd lines
         if (y == (h + 1) / 2) bitmap = sub->rects[0]->data[0] + w;
         for (x = 0; x < w; ) {
-            int log2 = ff_log2_tab[bitstream_peek(&bc, 8)];
-            int run = bitstream_read(&bc, 14 - 4 * (log2 >> 1));
-            int color = bitstream_read(&bc, 2);
+            int log2 = ff_log2_tab[show_bits(&gb, 8)];
+            int run = get_bits(&gb, 14 - 4 * (log2 >> 1));
+            int color = get_bits(&gb, 2);
             run = FFMIN(run, w - x);
             // run length 0 means till end of row
             if (!run) run = w - x;
@@ -165,7 +167,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         }
         // interlaced, skip every second line
         bitmap += w;
-        bitstream_align(&bc);
+        align_get_bits(&gb);
     }
     *data_size = 1;
     return buf_size;
