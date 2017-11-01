@@ -2,20 +2,20 @@
  * id RoQ (.roq) File Demuxer
  * Copyright (c) 2003 The FFmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,7 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
+#include "avio_internal.h"
 
 #define RoQ_MAGIC_NUMBER 0x1084
 #define RoQ_CHUNK_PREAMBLE_SIZE 8
@@ -105,7 +106,7 @@ static int roq_read_packet(AVFormatContext *s,
 
     while (!packet_read) {
 
-        if (s->pb->eof_reached)
+        if (avio_feof(s->pb))
             return AVERROR(EIO);
 
         /* get the next chunk preamble */
@@ -117,6 +118,8 @@ static int roq_read_packet(AVFormatContext *s,
         chunk_size = AV_RL32(&preamble[2]);
         if(chunk_size > INT_MAX)
             return AVERROR_INVALIDDATA;
+
+        chunk_size = ffio_limit(pb, chunk_size);
 
         switch (chunk_type) {
 
@@ -153,6 +156,9 @@ static int roq_read_packet(AVFormatContext *s,
                 return AVERROR(EIO);
             chunk_size = AV_RL32(&preamble[2]) + RoQ_CHUNK_PREAMBLE_SIZE * 2 +
                 codebook_size;
+
+            if (chunk_size > INT_MAX)
+                return AVERROR_INVALIDDATA;
 
             /* rewind */
             avio_seek(pb, codebook_offset, SEEK_SET);
@@ -216,8 +222,10 @@ static int roq_read_packet(AVFormatContext *s,
             pkt->pos= avio_tell(pb);
             ret = avio_read(pb, pkt->data + RoQ_CHUNK_PREAMBLE_SIZE,
                 chunk_size);
-            if (ret != chunk_size)
+            if (ret != chunk_size) {
+                av_packet_unref(pkt);
                 ret = AVERROR(EIO);
+            }
 
             packet_read = 1;
             break;
