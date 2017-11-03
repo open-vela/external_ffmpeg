@@ -2,20 +2,20 @@
  * ID3v1 header parser
  * Copyright (c) 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,7 @@
 #include "libavcodec/avcodec.h"
 #include "libavutil/dict.h"
 
+/* See Genre List at http://id3.org/id3v2.3.0 */
 const char * const ff_id3v1_genre_str[ID3v1_GENRE_MAX + 1] = {
       [0] = "Blues",
       [1] = "Classic Rock",
@@ -91,7 +92,7 @@ const char * const ff_id3v1_genre_str[ID3v1_GENRE_MAX + 1] = {
      [64] = "Native American",
      [65] = "Cabaret",
      [66] = "New Wave",
-     [67] = "Psychadelic",
+     [67] = "Psychadelic", /* sic, the misspelling is used in the specification */
      [68] = "Rave",
      [69] = "Showtunes",
      [70] = "Trailer",
@@ -178,7 +179,7 @@ static void get_string(AVFormatContext *s, const char *key,
                        const uint8_t *buf, int buf_size)
 {
     int i, c;
-    char *q, str[512];
+    char *q, str[512], *first_free_space = NULL;
 
     q = str;
     for(i = 0; i < buf_size; i++) {
@@ -187,9 +188,18 @@ static void get_string(AVFormatContext *s, const char *key,
             break;
         if ((q - str) >= sizeof(str) - 1)
             break;
+        if (c == ' ') {
+            if (!first_free_space)
+                first_free_space = q;
+        } else {
+            first_free_space = NULL;
+        }
         *q++ = c;
     }
     *q = '\0';
+
+    if (first_free_space)
+        *first_free_space = '\0';
 
     if (*str)
         av_dict_set(&s->metadata, key, str, 0);
@@ -202,7 +212,6 @@ static void get_string(AVFormatContext *s, const char *key,
  */
 static int parse_tag(AVFormatContext *s, const uint8_t *buf)
 {
-    char str[5];
     int genre;
 
     if (!(buf[0] == 'T' &&
@@ -215,8 +224,7 @@ static int parse_tag(AVFormatContext *s, const uint8_t *buf)
     get_string(s, "date",    buf + 93,  4);
     get_string(s, "comment", buf + 97, 30);
     if (buf[125] == 0 && buf[126] != 0) {
-        snprintf(str, sizeof(str), "%d", buf[126]);
-        av_dict_set(&s->metadata, "track", str, 0);
+        av_dict_set_int(&s->metadata, "track", buf[126], 0);
     }
     genre = buf[127];
     if (genre <= ID3v1_GENRE_MAX)
