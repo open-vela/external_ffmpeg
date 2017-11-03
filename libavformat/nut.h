@@ -2,20 +2,20 @@
  * "NUT" Container Format (de)muxer
  * Copyright (c) 2006 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,6 +48,7 @@ typedef enum{
     FLAG_SIZE_MSB   =  32, // if set, data_size_msb is at frame header, otherwise data_size_msb is 0
     FLAG_CHECKSUM   =  64, // if set, the frame header contains a checksum
     FLAG_RESERVED   = 128, // if set, reserved_count is coded in the frame header
+    FLAG_SM_DATA    = 256, // if set, side / meta data is stored in the frame header.
     FLAG_HEADER_IDX =1024, // If set, header_idx is coded in the frame header.
     FLAG_MATCH_TIME =2048, // If set, match_time_delta is coded in the frame header
     FLAG_CODED      =4096, // if set, coded_flags are stored in the frame header
@@ -80,6 +81,7 @@ typedef struct StreamContext {
     int msb_pts_shift;
     int max_pts_distance;
     int decode_delay; //FIXME duplicate of has_b_frames
+    int64_t *keyframe_pts;
 } StreamContext;
 
 typedef struct ChapterContext {
@@ -100,18 +102,25 @@ typedef struct NUTContext {
     unsigned int max_distance;
     unsigned int time_base_count;
     int64_t last_syncpoint_pos;
+    int64_t last_resync_pos;
     int header_count;
     AVRational *time_base;
     struct AVTreeNode *syncpoints;
+    int sp_count;
+    int write_index;
+    int64_t max_pts;
+    AVRational *max_pts_tb;
 #define NUT_BROADCAST 1 // use extended syncpoints
 #define NUT_PIPE 2      // do not write syncpoints
     int flags;
     int version; // version currently in use
+    int minor_version;
 } NUTContext;
 
 extern const AVCodecTag ff_nut_subtitle_tags[];
 extern const AVCodecTag ff_nut_video_tags[];
 extern const AVCodecTag ff_nut_audio_tags[];
+extern const AVCodecTag ff_nut_audio_extra_tags[];
 extern const AVCodecTag ff_nut_data_tags[];
 
 extern const AVCodecTag * const ff_nut_codec_tags[];
@@ -123,8 +132,8 @@ typedef struct Dispositions {
 
 void ff_nut_reset_ts(NUTContext *nut, AVRational time_base, int64_t val);
 int64_t ff_lsb2full(StreamContext *stream, int64_t lsb);
-int ff_nut_sp_pos_cmp(const Syncpoint *a, const Syncpoint *b);
-int ff_nut_sp_pts_cmp(const Syncpoint *a, const Syncpoint *b);
+int ff_nut_sp_pos_cmp(const void *a, const void *b);
+int ff_nut_sp_pts_cmp(const void *a, const void *b);
 int ff_nut_add_sp(NUTContext *nut, int64_t pos, int64_t back_ptr, int64_t ts);
 void ff_nut_free_sp(NUTContext *nut);
 
