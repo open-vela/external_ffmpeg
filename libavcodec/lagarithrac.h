@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Nathan Caldwell <saintdev (at) gmail.com>
  * Copyright (c) 2009 David Conrad
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,12 +31,10 @@
 #define AVCODEC_LAGARITHRAC_H
 
 #include <stdint.h>
-
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
-
 #include "avcodec.h"
-#include "bitstream.h"
+#include "get_bits.h"
 
 typedef struct lag_rac {
     AVCodecContext *avctx;
@@ -49,11 +47,14 @@ typedef struct lag_rac {
     const uint8_t *bytestream;        /**< Current position in input bytestream. */
     const uint8_t *bytestream_end;    /**< End position of input bytestream. */
 
+    int overread;
+#define MAX_OVERREAD 4
+
     uint32_t prob[258];         /**< Table of cumulative probability for each symbol. */
-    uint8_t  range_hash[256];   /**< Hash table mapping upper byte to approximate symbol. */
+    uint8_t  range_hash[1024];   /**< Hash table mapping upper byte to approximate symbol. */
 } lag_rac;
 
-void ff_lag_rac_init(lag_rac *l, BitstreamContext *bc, int length);
+void ff_lag_rac_init(lag_rac *l, GetBitContext *gb, int length);
 
 /* TODO: Optimize */
 static inline void lag_rac_refill(lag_rac *l)
@@ -64,6 +65,8 @@ static inline void lag_rac_refill(lag_rac *l)
         l->low |= 0xff & (AV_RB16(l->bytestream) >> 1);
         if (l->bytestream < l->bytestream_end)
             l->bytestream++;
+        else
+            l->overread++;
     }
 }
 
@@ -74,9 +77,8 @@ static inline void lag_rac_refill(lag_rac *l)
  */
 static inline uint8_t lag_get_rac(lag_rac *l)
 {
-    unsigned range_scaled, low_scaled, div;
+    unsigned range_scaled, low_scaled;
     int val;
-    uint8_t shift;
 
     lag_rac_refill(l);
 
@@ -87,18 +89,9 @@ static inline uint8_t lag_get_rac(lag_rac *l)
         if (l->low < range_scaled * l->prob[1]) {
             val = 0;
         } else {
-            /* FIXME __builtin_clz is ~20% faster here, but not allowed in generic code. */
-            shift = 30 - av_log2(range_scaled);
-            div = ((range_scaled << shift) + (1 << 23) - 1) >> 23;
-            /* low>>24 ensures that any cases too big for exact FASTDIV are
-             * under- rather than over-estimated
-             */
-            low_scaled = FASTDIV(l->low - (l->low >> 24), div);
-            shift -= l->hash_shift;
-            shift &= 31;
-            low_scaled = (low_scaled << shift) | (low_scaled >> (32 - shift));
-            /* low_scaled is now a lower bound of low/range_scaled */
-            val = l->range_hash[(uint8_t) low_scaled];
+            low_scaled = l->low / (range_scaled<<(l->hash_shift));
+
+            val = l->range_hash[low_scaled];
             while (l->low >= range_scaled * l->prob[val + 1])
                 val++;
         }
