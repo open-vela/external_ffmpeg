@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... loop filter
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,6 +34,8 @@
 #include "mathops.h"
 #include "mpegutils.h"
 #include "rectangle.h"
+
+#include <assert.h>
 
 /* Deblocking filter (p153) */
 static const uint8_t alpha_table[52*3] = {
@@ -243,7 +245,7 @@ static av_always_inline void h264_filter_mb_fast_internal(const H264Context *h,
                                                           unsigned int uvlinesize,
                                                           int pixel_shift)
 {
-    int chroma = CHROMA(h) && !(CONFIG_GRAY && (h->flags & AV_CODEC_FLAG_GRAY));
+    int chroma = !(CONFIG_GRAY && (h->flags & AV_CODEC_FLAG_GRAY));
     int chroma444 = CHROMA444(h);
     int chroma422 = CHROMA422(h);
 
@@ -357,7 +359,7 @@ static av_always_inline void h264_filter_mb_fast_internal(const H264Context *h,
         }
         return;
     } else {
-        LOCAL_ALIGNED(8, int16_t, bS, [2], [4][4]);
+        LOCAL_ALIGNED_8(int16_t, bS, [2], [4][4]);
         int edges;
         if( IS_8x8DCT(mb_type) && (sl->cbp&7) == 7 && !chroma444 ) {
             edges = 4;
@@ -420,7 +422,7 @@ void ff_h264_filter_mb_fast(const H264Context *h, H264SliceContext *sl,
                             uint8_t *img_cb, uint8_t *img_cr,
                             unsigned int linesize, unsigned int uvlinesize)
 {
-    av_assert2(!FRAME_MBAFF(h));
+    assert(!FRAME_MBAFF(h));
     if(!h->h264dsp.h264_loop_filter_strength || h->ps.pps->chroma_qp_diff) {
         ff_h264_filter_mb(h, sl, mb_x, mb_y, img_y, img_cb, img_cr, linesize, uvlinesize);
         return;
@@ -506,7 +508,7 @@ static av_always_inline void filter_mb_dir(const H264Context *h, H264SliceContex
             int j;
 
             for(j=0; j<2; j++, mbn_xy += h->mb_stride){
-                LOCAL_ALIGNED(8, int16_t, bS, [4]);
+                DECLARE_ALIGNED(8, int16_t, bS)[4];
                 int qp;
                 if (IS_INTRA(mb_type | h->cur_pic.mb_type[mbn_xy])) {
                     AV_WN64A(bS, 0x0003000300030003ULL);
@@ -543,7 +545,7 @@ static av_always_inline void filter_mb_dir(const H264Context *h, H264SliceContex
                 }
             }
         }else{
-            LOCAL_ALIGNED(8, int16_t, bS, [4]);
+            DECLARE_ALIGNED(8, int16_t, bS)[4];
             int qp;
 
             if( IS_INTRA(mb_type|mbm_type)) {
@@ -592,9 +594,7 @@ static av_always_inline void filter_mb_dir(const H264Context *h, H264SliceContex
             // value in IPCM macroblocks.
             if(bS[0]+bS[1]+bS[2]+bS[3]){
                 qp = (h->cur_pic.qscale_table[mb_xy] + h->cur_pic.qscale_table[mbm_xy] + 1) >> 1;
-                //ff_tlog(h->avctx, "filter mb:%d/%d dir:%d edge:%d, QPy:%d, QPc:%d, QPcn:%d\n", mb_x, mb_y, dir, edge, qp, h->chroma_qp[0], h->cur_pic.qscale_table[mbn_xy]);
                 ff_tlog(h->avctx, "filter mb:%d/%d dir:%d edge:%d, QPy:%d ls:%d uvls:%d", mb_x, mb_y, dir, edge, qp, linesize, uvlinesize);
-                //{ int i; for (i = 0; i < 4; i++) ff_tlog(h->avctx, " bS[%d]:%d", i, bS[i]); ff_tlog(h->avctx, "\n"); }
                 chroma_qp_avg[0] = (sl->chroma_qp[0] + get_chroma_qp(h->ps.pps, 0, h->cur_pic.qscale_table[mbm_xy]) + 1) >> 1;
                 chroma_qp_avg[1] = (sl->chroma_qp[1] + get_chroma_qp(h->ps.pps, 1, h->cur_pic.qscale_table[mbm_xy]) + 1) >> 1;
                 if( dir == 0 ) {
@@ -626,7 +626,7 @@ static av_always_inline void filter_mb_dir(const H264Context *h, H264SliceContex
 
     /* Calculate bS */
     for( edge = 1; edge < edges; edge++ ) {
-        LOCAL_ALIGNED(8, int16_t, bS, [4]);
+        DECLARE_ALIGNED(8, int16_t, bS)[4];
         int qp;
         const int deblock_edge = !IS_8x8DCT(mb_type & (edge<<24)); // (edge&1) && IS_8x8DCT(mb_type)
 
@@ -677,9 +677,7 @@ static av_always_inline void filter_mb_dir(const H264Context *h, H264SliceContex
         // Do not use s->qscale as luma quantizer because it has not the same
         // value in IPCM macroblocks.
         qp = h->cur_pic.qscale_table[mb_xy];
-        //ff_tlog(h->avctx, "filter mb:%d/%d dir:%d edge:%d, QPy:%d, QPc:%d, QPcn:%d\n", mb_x, mb_y, dir, edge, qp, h->chroma_qp[0], h->cur_pic.qscale_table[mbn_xy]);
         ff_tlog(h->avctx, "filter mb:%d/%d dir:%d edge:%d, QPy:%d ls:%d uvls:%d", mb_x, mb_y, dir, edge, qp, linesize, uvlinesize);
-        //{ int i; for (i = 0; i < 4; i++) ff_tlog(h->avctx, " bS[%d]:%d", i, bS[i]); ff_tlog(h->avctx, "\n"); }
         if( dir == 0 ) {
             filter_mb_edgev( &img_y[4*edge << h->pixel_shift], linesize, bS, qp, a, b, h, 0 );
             if (chroma) {
@@ -724,7 +722,7 @@ void ff_h264_filter_mb(const H264Context *h, H264SliceContext *sl,
     const int mb_type = h->cur_pic.mb_type[mb_xy];
     const int mvy_limit = IS_INTERLACED(mb_type) ? 2 : 4;
     int first_vertical_edge_done = 0;
-    int chroma = CHROMA(h) && !(CONFIG_GRAY && (h->flags & AV_CODEC_FLAG_GRAY));
+    int chroma = !(CONFIG_GRAY && (h->flags & AV_CODEC_FLAG_GRAY));
     int qp_bd_offset = 6 * (h->ps.sps->bit_depth_luma - 8);
     int a = 52 + sl->slice_alpha_c0_offset - qp_bd_offset;
     int b = 52 + sl->slice_beta_offset - qp_bd_offset;
@@ -737,7 +735,7 @@ void ff_h264_filter_mb(const H264Context *h, H264SliceContext *sl,
         /* First vertical edge is different in MBAFF frames
          * There are 8 different bS to compute and 2 different Qp
          */
-        LOCAL_ALIGNED(8, int16_t, bS, [8]);
+        DECLARE_ALIGNED(8, int16_t, bS)[8];
         int qp[2];
         int bqp[2];
         int rqp[2];
