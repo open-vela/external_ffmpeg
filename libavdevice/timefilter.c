@@ -5,20 +5,20 @@
  * Author: Olivier Guilyardi <olivier samalyse com>
  *         Michael Niedermayer <michaelni gmx at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,18 +37,25 @@ struct TimeFilter {
     int count;
 };
 
-TimeFilter *ff_timefilter_new(double clock_period,
-                              double feedback2_factor,
-                              double feedback3_factor)
+/* 1 - exp(-x) using a 3-order power series */
+static double qexpneg(double x)
 {
-    TimeFilter *self = av_mallocz(sizeof(TimeFilter));
+    return 1 - 1 / (1 + x * (1 + x / 2 * (1 + x / 3)));
+}
+
+TimeFilter *ff_timefilter_new(double time_base,
+                              double period,
+                              double bandwidth)
+{
+    TimeFilter *self       = av_mallocz(sizeof(TimeFilter));
+    double o               = 2 * M_PI * bandwidth * period * time_base;
 
     if (!self)
         return NULL;
 
-    self->clock_period     = clock_period;
-    self->feedback2_factor = feedback2_factor;
-    self->feedback3_factor = feedback3_factor;
+    self->clock_period     = time_base;
+    self->feedback2_factor = qexpneg(M_SQRT2 * o);
+    self->feedback3_factor = qexpneg(o * o) / period;
     return self;
 }
 
@@ -73,7 +80,12 @@ double ff_timefilter_update(TimeFilter *self, double system_time, double period)
         loop_error = system_time - self->cycle_time;
 
         self->cycle_time   += FFMAX(self->feedback2_factor, 1.0 / self->count) * loop_error;
-        self->clock_period += self->feedback3_factor * loop_error / period;
+        self->clock_period += self->feedback3_factor * loop_error;
     }
     return self->cycle_time;
+}
+
+double ff_timefilter_eval(TimeFilter *self, double delta)
+{
+    return self->cycle_time + self->clock_period * delta;
 }

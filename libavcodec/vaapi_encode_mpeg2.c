@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,7 +52,7 @@ typedef struct VAAPIEncodeMPEG2Context {
     unsigned int f_code_horizontal;
     unsigned int f_code_vertical;
 
-    CodedBitstreamContext cbc;
+    CodedBitstreamContext *cbc;
     CodedBitstreamFragment current_fragment;
 } VAAPIEncodeMPEG2Context;
 
@@ -65,7 +65,7 @@ static int vaapi_encode_mpeg2_write_fragment(AVCodecContext *avctx,
     VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
     int err;
 
-    err = ff_cbs_write_fragment_data(&priv->cbc, frag);
+    err = ff_cbs_write_fragment_data(priv->cbc, frag);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to write packed header.\n");
         return err;
@@ -92,7 +92,7 @@ static int vaapi_encode_mpeg2_add_header(AVCodecContext *avctx,
     VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
     int err;
 
-    err = ff_cbs_insert_unit_content(&priv->cbc, frag, -1, type, header);
+    err = ff_cbs_insert_unit_content(priv->cbc, frag, -1, type, header);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to add header: "
                "type = %d.\n", type);
@@ -132,7 +132,7 @@ static int vaapi_encode_mpeg2_write_sequence_header(AVCodecContext *avctx,
 
     err = vaapi_encode_mpeg2_write_fragment(avctx, data, data_len, frag);
 fail:
-    ff_cbs_fragment_uninit(&priv->cbc, frag);
+    ff_cbs_fragment_uninit(priv->cbc, frag);
     return 0;
 }
 
@@ -157,7 +157,7 @@ static int vaapi_encode_mpeg2_write_picture_header(AVCodecContext *avctx,
 
     err = vaapi_encode_mpeg2_write_fragment(avctx, data, data_len, frag);
 fail:
-    ff_cbs_fragment_uninit(&priv->cbc, frag);
+    ff_cbs_fragment_uninit(priv->cbc, frag);
     return 0;
 }
 
@@ -652,10 +652,10 @@ static const AVCodecDefault vaapi_encode_mpeg2_defaults[] = {
     { "level",          "4"   },
     { "bf",             "1"   },
     { "g",              "120" },
-    { "i_qfactor",      "1.0" },
-    { "i_qoffset",      "0.0" },
-    { "b_qfactor",      "1.2" },
-    { "b_qoffset",      "0.0" },
+    { "i_qfactor",      "1"   },
+    { "i_qoffset",      "0"   },
+    { "b_qfactor",      "6/5" },
+    { "b_qoffset",      "0"   },
     { "global_quality", "10"  },
     { NULL },
 };
