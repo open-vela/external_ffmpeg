@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,7 @@
 typedef struct MPEG2MetadataContext {
     const AVClass *class;
 
-    CodedBitstreamContext cbc;
+    CodedBitstreamContext *cbc;
     CodedBitstreamFragment fragment;
 
     MPEG2RawExtensionData sequence_display_extension;
@@ -165,7 +165,7 @@ static int mpeg2_metadata_update_fragment(AVBSFContext *bsf,
     if (add_sde) {
         int err;
 
-        err = ff_cbs_insert_unit_content(&ctx->cbc, frag, se_pos + 1,
+        err = ff_cbs_insert_unit_content(ctx->cbc, frag, se_pos + 1,
                                          MPEG2_START_EXTENSION,
                                          &ctx->sequence_display_extension);
         if (err < 0) {
@@ -189,7 +189,7 @@ static int mpeg2_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     if (err < 0)
         goto fail;
 
-    err = ff_cbs_read_packet(&ctx->cbc, frag, in);
+    err = ff_cbs_read_packet(ctx->cbc, frag, in);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to read packet.\n");
         goto fail;
@@ -201,7 +201,7 @@ static int mpeg2_metadata_filter(AVBSFContext *bsf, AVPacket *out)
         goto fail;
     }
 
-    err = ff_cbs_write_packet(&ctx->cbc, out, frag);
+    err = ff_cbs_write_packet(ctx->cbc, out, frag);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to write packet.\n");
         goto fail;
@@ -215,7 +215,7 @@ static int mpeg2_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(&ctx->cbc, frag);
+    ff_cbs_fragment_uninit(ctx->cbc, frag);
 
     av_packet_free(&in);
 
@@ -233,7 +233,7 @@ static int mpeg2_metadata_init(AVBSFContext *bsf)
         return err;
 
     if (bsf->par_in->extradata) {
-        err = ff_cbs_read_extradata(&ctx->cbc, frag, bsf->par_in);
+        err = ff_cbs_read_extradata(ctx->cbc, frag, bsf->par_in);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to read extradata.\n");
             goto fail;
@@ -245,7 +245,7 @@ static int mpeg2_metadata_init(AVBSFContext *bsf)
             goto fail;
         }
 
-        err = ff_cbs_write_extradata(&ctx->cbc, bsf->par_out, frag);
+        err = ff_cbs_write_extradata(ctx->cbc, bsf->par_out, frag);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
             goto fail;
@@ -254,7 +254,7 @@ static int mpeg2_metadata_init(AVBSFContext *bsf)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(&ctx->cbc, frag);
+    ff_cbs_fragment_uninit(ctx->cbc, frag);
     return err;
 }
 
@@ -268,11 +268,11 @@ static void mpeg2_metadata_close(AVBSFContext *bsf)
 static const AVOption mpeg2_metadata_options[] = {
     { "display_aspect_ratio", "Set display aspect ratio (table 6-3)",
         OFFSET(display_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, 65535 },
+        { .dbl = 0.0 }, 0, 65535 },
 
     { "frame_rate", "Set frame rate",
         OFFSET(frame_rate), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, UINT_MAX },
+        { .dbl = 0.0 }, 0, UINT_MAX },
 
     { "video_format", "Set video format (table 6-6)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
