@@ -3,7 +3,7 @@
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  * Based on public domain code by Fabian Giesen, Sean Barrett and Yann Collet.
  *
- * This file is part of FFmpeg
+ * This file is part of Libav
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -140,14 +140,14 @@ static const uint8_t match6[256][2] = {
 };
 
 /* Multiplication over 8 bit emulation */
-#define mul8(a, b) (((a) * (b) + 128 + (((a) * (b) + 128) >> 8)) >> 8)
+#define mul8(a, b) (a * b + 128 + ((a * b + 128) >> 8)) >> 8
 
 /* Conversion from rgb24 to rgb565 */
 #define rgb2rgb565(r, g, b) \
-    ((mul8(r, 31) << 11) | (mul8(g, 63) << 5) | (mul8(b, 31) << 0))
+    (mul8(r, 31) << 11) | (mul8(g, 63) << 5) | (mul8(b, 31) << 0)
 
 /* Linear interpolation at 1/3 point between a and b */
-#define lerp13(a, b) ((2 * (a) + (b)) / 3)
+#define lerp13(a, b) (2 * a + b) / 3
 
 /* Linear interpolation on an RGB pixel */
 static inline void lerp13rgb(uint8_t *out, uint8_t *p1, uint8_t *p2)
@@ -647,26 +647,9 @@ static int dxt5ys_block(uint8_t *dst, ptrdiff_t stride, const uint8_t *block)
     return 16;
 }
 
-/**
- * Compress one block of RGBA pixels in a RGTC1U texture and store the
- * resulting bytes in 'dst'. Use the alpha channel of the input image.
- *
- * @param dst    output buffer.
- * @param stride scanline in bytes.
- * @param block  block to compress.
- * @return how much texture data has been written.
- */
-static int rgtc1u_alpha_block(uint8_t *dst, ptrdiff_t stride, const uint8_t *block)
-{
-    compress_alpha(dst, stride, block);
-
-    return 8;
-}
-
 av_cold void ff_texturedspenc_init(TextureDSPContext *c)
 {
-    c->dxt1_block         = dxt1_block;
-    c->dxt5_block         = dxt5_block;
-    c->dxt5ys_block       = dxt5ys_block;
-    c->rgtc1u_alpha_block = rgtc1u_alpha_block;
+    c->dxt1_block   = dxt1_block;
+    c->dxt5_block   = dxt5_block;
+    c->dxt5ys_block = dxt5ys_block;
 }

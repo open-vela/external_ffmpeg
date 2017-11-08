@@ -1,26 +1,29 @@
 /*
- * This file is part of FFmpeg.
+ * AMD AMF support
+ * Copyright (C) 2017 Luca Barbato
+ * Copyright (C) 2017 Mikhail Mironov <mikhail.mironov@amd.com>
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * This file is part of Libav.
+ *
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#include "config.h"
 
 #include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/hwcontext.h"
+#include "internal.h"
 #if CONFIG_D3D11VA
 #include "libavutil/hwcontext_d3d11va.h"
 #endif
@@ -29,19 +32,19 @@
 #include "libavutil/time.h"
 
 #include "amfenc.h"
-#include "internal.h"
 
 #if CONFIG_D3D11VA
 #include <d3d11.h>
 #endif
 
-#ifdef _WIN32
-#include "compat/w32dlfcn.h"
+#if HAVE_WINDOWS_H
+#include <windows.h>
+#define dlopen(filename, flags) LoadLibrary((filename))
+#define dlsym(handle, symbol)   GetProcAddress(handle, symbol)
+#define dlclose(handle)         FreeLibrary(handle)
 #else
 #include <dlfcn.h>
 #endif
-
-#define FFMPEG_AMF_WRITER_ID L"ffmpeg_amf"
 
 #define PTS_PROP L"PtsProp"
 
@@ -63,8 +66,8 @@ static const FormatMap format_map[] =
 {
     { AV_PIX_FMT_NONE,       AMF_SURFACE_UNKNOWN },
     { AV_PIX_FMT_NV12,       AMF_SURFACE_NV12 },
-    { AV_PIX_FMT_BGR0,       AMF_SURFACE_BGRA },
-    { AV_PIX_FMT_RGB0,       AMF_SURFACE_RGBA },
+//    { AV_PIX_FMT_BGR0,       AMF_SURFACE_BGRA },
+//    { AV_PIX_FMT_RGB0,       AMF_SURFACE_RGBA },
     { AV_PIX_FMT_GRAY8,      AMF_SURFACE_GRAY8 },
     { AV_PIX_FMT_YUV420P,    AMF_SURFACE_YUV420P },
     { AV_PIX_FMT_YUYV422,    AMF_SURFACE_YUY2 },
@@ -168,8 +171,8 @@ static int amf_init_context(AVCodecContext *avctx)
     // connect AMF logger to av_log
     ctx->tracer.vtbl = &tracer_vtbl;
     ctx->tracer.avctx = avctx;
-    ctx->trace->pVtbl->RegisterWriter(ctx->trace, FFMPEG_AMF_WRITER_ID,(AMFTraceWriter*)&ctx->tracer, 1);
-    ctx->trace->pVtbl->SetWriterLevel(ctx->trace, FFMPEG_AMF_WRITER_ID, AMF_TRACE_TRACE);
+    ctx->trace->pVtbl->RegisterWriter(ctx->trace, ctx->writer_id, (AMFTraceWriter*)&ctx->tracer, 1);
+    ctx->trace->pVtbl->SetWriterLevel(ctx->trace, ctx->writer_id, AMF_TRACE_TRACE);
 
     res = ctx->factory->pVtbl->CreateContext(ctx->factory, &ctx->context);
     AMF_RETURN_IF_FALSE(ctx, res == AMF_OK, AVERROR_UNKNOWN, "CreateContext() failed with error %d\n", res);
@@ -280,7 +283,7 @@ int av_cold ff_amf_encode_close(AVCodecContext *avctx)
     av_buffer_unref(&ctx->hw_frames_ctx);
 
     if (ctx->trace) {
-        ctx->trace->pVtbl->UnregisterWriter(ctx->trace, FFMPEG_AMF_WRITER_ID);
+        ctx->trace->pVtbl->UnregisterWriter(ctx->trace, ctx->writer_id);
     }
     if (ctx->library) {
         dlclose(ctx->library);
@@ -292,7 +295,9 @@ int av_cold ff_amf_encode_close(AVCodecContext *avctx)
     ctx->version = 0;
     ctx->delayed_drain = 0;
     av_frame_free(&ctx->delayed_frame);
-    av_fifo_freep(&ctx->timestamp_list);
+    av_fifo_free(ctx->timestamp_list);
+    ctx->timestamp_list = NULL;
+    ctx->timestamp_last = 0;
 
     return 0;
 }
@@ -347,11 +352,13 @@ static inline int timestamp_queue_enqueue(AVCodecContext *avctx, int64_t timesta
 {
     AmfContext         *ctx = avctx->priv_data;
     if (av_fifo_space(ctx->timestamp_list) < sizeof(timestamp)) {
-        if (av_fifo_grow(ctx->timestamp_list, sizeof(timestamp)) < 0) {
-            return AVERROR(ENOMEM);
-        }
+        int size = av_fifo_size(ctx->timestamp_list);
+        if (INT_MAX / 2 - size < sizeof(timestamp))
+            return AVERROR(EINVAL);
+        av_fifo_realloc2(ctx->timestamp_list, (size + sizeof(timestamp)) * 2);
     }
     av_fifo_generic_write(ctx->timestamp_list, &timestamp, sizeof(timestamp), NULL);
+    ctx->timestamp_last = timestamp;
     return 0;
 }
 
@@ -363,7 +370,8 @@ static int amf_copy_buffer(AVCodecContext *avctx, AVPacket *pkt, AMFBuffer *buff
     int64_t                 timestamp = AV_NOPTS_VALUE;
     int64_t                 size = buffer->pVtbl->GetSize(buffer);
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, size, 0)) < 0) {
+    //if ((ret = ff_alloc_packet2(avctx, pkt, size, 0)) < 0) {
+    if  (ret = ff_alloc_packet(pkt, size)) {
         return ret;
     }
     memcpy(pkt->data, buffer->pVtbl->GetNative(buffer), size);
@@ -396,19 +404,13 @@ static int amf_copy_buffer(AVCodecContext *avctx, AVPacket *pkt, AMFBuffer *buff
 
     // calc dts shift if max_b_frames > 0
     if (avctx->max_b_frames > 0 && ctx->dts_delay == 0) {
-        int64_t timestamp_last = AV_NOPTS_VALUE;
         AMF_RETURN_IF_FALSE(ctx, av_fifo_size(ctx->timestamp_list) > 0, AVERROR_UNKNOWN,
             "timestamp_list is empty while max_b_frames = %d\n", avctx->max_b_frames);
-        av_fifo_generic_peek_at(
-            ctx->timestamp_list,
-            &timestamp_last,
-            (av_fifo_size(ctx->timestamp_list) / sizeof(timestamp) - 1) * sizeof(timestamp_last),
-            sizeof(timestamp_last),
-            NULL);
-        if (timestamp < 0 || timestamp_last < AV_NOPTS_VALUE) {
+
+        if (timestamp < 0 || ctx->timestamp_last < AV_NOPTS_VALUE) {
             return AVERROR(ERANGE);
         }
-        ctx->dts_delay = timestamp_last - timestamp;
+        ctx->dts_delay = ctx->timestamp_last - timestamp;
     }
     pkt->dts = timestamp - ctx->dts_delay;
     return 0;

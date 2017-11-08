@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -137,10 +137,10 @@ static int cbs_read_fragment_content(CodedBitstreamContext *ctx,
         if (err == AVERROR(ENOSYS)) {
             av_log(ctx->log_ctx, AV_LOG_WARNING,
                    "Decomposition unimplemented for unit %d "
-                   "(type %"PRIu32").\n", i, frag->units[i].type);
+                   "(type %d).\n", i, frag->units[i].type);
         } else if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to read unit %d "
-                   "(type %"PRIu32").\n", i, frag->units[i].type);
+                   "(type %d).\n", i, frag->units[i].type);
             return err;
         }
     }
@@ -225,7 +225,7 @@ int ff_cbs_write_fragment_data(CodedBitstreamContext *ctx,
         err = ctx->codec->write_unit(ctx, &frag->units[i]);
         if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to write unit %d "
-                   "(type %"PRIu32").\n", i, frag->units[i].type);
+                   "(type %d).\n", i, frag->units[i].type);
             return err;
         }
     }
@@ -318,25 +318,25 @@ void ff_cbs_trace_syntax_element(CodedBitstreamContext *ctx, int position,
            position, name, pad, bits, value);
 }
 
-int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, BitstreamContext *bc,
                          int width, const char *name, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max)
 {
     uint32_t value;
     int position;
 
-    av_assert0(width > 0 && width <= 32);
+    av_assert0(width <= 32);
 
-    if (get_bits_left(gbc) < width) {
+    if (bitstream_bits_left(bc) < width) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "Invalid value at "
                "%s: bitstream ended.\n", name);
         return AVERROR_INVALIDDATA;
     }
 
     if (ctx->trace_enable)
-        position = get_bits_count(gbc);
+        position = bitstream_tell(bc);
 
-    value = get_bits_long(gbc, width);
+    value = bitstream_read(bc, width);
 
     if (ctx->trace_enable) {
         char bits[33];
@@ -363,7 +363,7 @@ int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
                           int width, const char *name, uint32_t value,
                           uint32_t range_min, uint32_t range_max)
 {
-    av_assert0(width > 0 && width <= 32);
+    av_assert0(width <= 32);
 
     if (value < range_min || value > range_max) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "%s out of range: "
@@ -421,8 +421,7 @@ static int cbs_insert_unit(CodedBitstreamContext *ctx,
 
 int ff_cbs_insert_unit_content(CodedBitstreamContext *ctx,
                                CodedBitstreamFragment *frag,
-                               int position,
-                               CodedBitstreamUnitType type,
+                               int position, uint32_t type,
                                void *content)
 {
     int err;
@@ -444,8 +443,7 @@ int ff_cbs_insert_unit_content(CodedBitstreamContext *ctx,
 
 int ff_cbs_insert_unit_data(CodedBitstreamContext *ctx,
                             CodedBitstreamFragment *frag,
-                            int position,
-                            CodedBitstreamUnitType type,
+                            int position, uint32_t type,
                             uint8_t *data, size_t data_size)
 {
     int err;
