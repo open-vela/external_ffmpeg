@@ -2,20 +2,20 @@
  * Copyright (c) 2007-2008 Ian Caulfield
  *               2009 Ramiro Polla
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -113,11 +113,11 @@ int32_t ff_mlp_pack_output(int32_t lossless_check_data,
     for (i = 0; i < blockpos; i++) {
         for (out_ch = 0; out_ch <= max_matrix_channel; out_ch++) {
             int mat_ch = ch_assign[out_ch];
-            int32_t sample = sample_buffer[i][mat_ch] *
-                          (1U << output_shift[mat_ch]);
+            int32_t sample = sample_buffer[i][mat_ch]
+                          << output_shift[mat_ch];
             lossless_check_data ^= (sample & 0xffffff) << mat_ch;
             if (is32)
-                *data_32++ = sample * 256U;
+                *data_32++ = sample << 8;
             else
                 *data_16++ = sample >> 8;
         }
