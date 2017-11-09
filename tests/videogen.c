@@ -4,20 +4,20 @@
  *
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -141,23 +141,37 @@ static void gen_image(int num, int w, int h)
     }
 }
 
+void print_help(const char* name)
+{
+    printf("usage: %s file|dir [w=%i] [h=%i]\n"
+            "generate a test video stream\n",
+            name, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    exit(1);
+}
+
 int main(int argc, char **argv)
 {
     int w, h, i;
     char buf[1024];
     int isdir = 0;
 
-    if (argc != 2) {
-        printf("usage: %s file|dir\n"
-               "generate a test video stream\n", argv[0]);
-        exit(1);
+    if (argc < 2 || argc > 4) {
+        print_help(argv[0]);
     }
 
     if (!freopen(argv[1], "wb", stdout))
         isdir = 1;
 
     w = DEFAULT_WIDTH;
+    if(argc > 2) {
+        w = atoi(argv[2]);
+        if (w < 1) print_help(argv[0]);
+    }
     h = DEFAULT_HEIGHT;
+    if(argc > 3) {
+        h = atoi(argv[3]);
+        if (h < 1) print_help(argv[0]);
+    }
 
     rgb_tab = malloc(w * h * 3);
     wrap    = w * 3;
