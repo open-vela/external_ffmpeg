@@ -3,20 +3,20 @@
  *
  * copyright (c) 2014 - 2015 Hendrik Leppkes
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -432,7 +432,6 @@ AVHWAccel ff_hevc_dxva2_hwaccel = {
     .start_frame    = dxva2_hevc_start_frame,
     .decode_slice   = dxva2_hevc_decode_slice,
     .end_frame      = dxva2_hevc_end_frame,
-    .frame_params   = ff_dxva2_common_frame_params,
     .frame_priv_data_size = sizeof(struct hevc_dxva2_picture_context),
     .priv_data_size = sizeof(FFDXVASharedContext),
 };
@@ -449,7 +448,6 @@ AVHWAccel ff_hevc_d3d11va_hwaccel = {
     .start_frame    = dxva2_hevc_start_frame,
     .decode_slice   = dxva2_hevc_decode_slice,
     .end_frame      = dxva2_hevc_end_frame,
-    .frame_params   = ff_dxva2_common_frame_params,
     .frame_priv_data_size = sizeof(struct hevc_dxva2_picture_context),
     .priv_data_size = sizeof(FFDXVASharedContext),
 };
@@ -466,7 +464,6 @@ AVHWAccel ff_hevc_d3d11va2_hwaccel = {
     .start_frame    = dxva2_hevc_start_frame,
     .decode_slice   = dxva2_hevc_decode_slice,
     .end_frame      = dxva2_hevc_end_frame,
-    .frame_params   = ff_dxva2_common_frame_params,
     .frame_priv_data_size = sizeof(struct hevc_dxva2_picture_context),
     .priv_data_size = sizeof(FFDXVASharedContext),
 };
