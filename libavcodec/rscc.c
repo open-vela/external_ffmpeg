@@ -2,20 +2,20 @@
  * innoHeim/Rsupport Screen Capture Codec
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,7 @@
  * and it can be deflated or not. Similarly, pixel data comes after the header
  * and a variable size value, and it can be deflated or just raw.
  *
- * Supports: PAL8, BGRA, BGR24, RGB555, RGB8
+ * Supports: PAL8, BGRA, BGR24, RGB555
  */
 
 #include <stdint.h>
@@ -100,7 +100,7 @@ static av_cold int rscc_init(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_BGR24;
             break;
         case 32:
-            avctx->pix_fmt = AV_PIX_FMT_BGRA;
+            avctx->pix_fmt = AV_PIX_FMT_BGR0;
             break;
         default:
             av_log(avctx, AV_LOG_ERROR, "Invalid bits per pixel value (%d)\n",
@@ -108,8 +108,9 @@ static av_cold int rscc_init(AVCodecContext *avctx)
             return AVERROR_INVALIDDATA;
         }
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Invalid codec tag\n");
-        return AVERROR_INVALIDDATA;
+        avctx->pix_fmt = AV_PIX_FMT_BGR0;
+        ctx->component_size = 4;
+        av_log(avctx, AV_LOG_WARNING, "Invalid codec tag\n");
     }
 
     /* Store the value to check for keyframes */
@@ -210,6 +211,12 @@ static int rscc_decode_frame(AVCodecContext *avctx, void *data,
         ctx->tiles[i].y = bytestream2_get_le16(gbc);
         ctx->tiles[i].h = bytestream2_get_le16(gbc);
 
+        if (pixel_size + ctx->tiles[i].w * (int64_t)ctx->tiles[i].h * ctx->component_size > INT_MAX) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid tile dimensions\n");
+            ret = AVERROR_INVALIDDATA;
+            goto end;
+        }
+
         pixel_size += ctx->tiles[i].w * ctx->tiles[i].h * ctx->component_size;
 
         ff_dlog(avctx, "tile %d orig(%d,%d) %dx%d.\n", i,
@@ -249,11 +256,27 @@ static int rscc_decode_frame(AVCodecContext *avctx, void *data,
 
     ff_dlog(avctx, "pixel_size %d packed_size %d.\n", pixel_size, packed_size);
 
+    if (packed_size < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid tile size %d\n", packed_size);
+        ret = AVERROR_INVALIDDATA;
+        goto end;
+    }
+
     /* Get pixels buffer, it may be deflated or just raw */
     if (pixel_size == packed_size) {
+        if (bytestream2_get_bytes_left(gbc) < pixel_size) {
+            av_log(avctx, AV_LOG_ERROR, "Insufficient input for %d\n", pixel_size);
+            ret = AVERROR_INVALIDDATA;
+            goto end;
+        }
         pixels = gbc->buffer;
     } else {
         uLongf len = ctx->inflated_size;
+        if (bytestream2_get_bytes_left(gbc) < packed_size) {
+            av_log(avctx, AV_LOG_ERROR, "Insufficient input for %d\n", packed_size);
+            ret = AVERROR_INVALIDDATA;
+            goto end;
+        }
         ret = uncompress(ctx->inflated_buf, &len, gbc->buffer, packed_size);
         if (ret) {
             av_log(avctx, AV_LOG_ERROR, "Pixel deflate error %d.\n", ret);
@@ -296,18 +319,22 @@ static int rscc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Palette handling */
     if (avctx->pix_fmt == AV_PIX_FMT_PAL8) {
+        int size;
         const uint8_t *palette = av_packet_get_side_data(avpkt,
                                                          AV_PKT_DATA_PALETTE,
-                                                         NULL);
-        if (palette) {
+                                                         &size);
+        if (palette && size == AVPALETTE_SIZE) {
             frame->palette_has_changed = 1;
             memcpy(ctx->palette, palette, AVPALETTE_SIZE);
+        } else if (palette) {
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
-        memcpy(frame->data[1], ctx->palette, AVPALETTE_SIZE);
+        memcpy (frame->data[1], ctx->palette, AVPALETTE_SIZE);
     }
 
     *got_frame = 1;
 
+    ret = avpkt->size;
 end:
     av_free(inflated_tiles);
     return ret;
