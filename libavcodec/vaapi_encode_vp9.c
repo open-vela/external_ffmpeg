@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,8 +28,6 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "vaapi_encode.h"
-
-#define VP9_MAX_QUANT 255
 
 
 typedef struct VAAPIEncodeVP9Context {
@@ -183,19 +181,19 @@ static av_cold int vaapi_encode_vp9_configure(AVCodecContext *avctx)
     VAAPIEncodeContext     *ctx = avctx->priv_data;
     VAAPIEncodeVP9Context *priv = ctx->priv_data;
 
-    priv->q_idx_p = av_clip(avctx->global_quality, 0, VP9_MAX_QUANT);
+    priv->q_idx_p = av_clip(avctx->global_quality, 0, 255);
     if (avctx->i_quant_factor > 0.0)
         priv->q_idx_idr = av_clip((avctx->global_quality *
                                    avctx->i_quant_factor +
                                    avctx->i_quant_offset) + 0.5,
-                                  0, VP9_MAX_QUANT);
+                                  0, 255);
     else
         priv->q_idx_idr = priv->q_idx_p;
     if (avctx->b_quant_factor > 0.0)
         priv->q_idx_b = av_clip((avctx->global_quality *
                                  avctx->b_quant_factor +
                                  avctx->b_quant_offset) + 0.5,
-                                0, VP9_MAX_QUANT);
+                                0, 255);
     else
         priv->q_idx_b = priv->q_idx_p;
 
