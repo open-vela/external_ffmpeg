@@ -2,26 +2,26 @@
 ;* 36 point SSE-optimized IMDCT transform
 ;* Copyright (c) 2011 Vitor Sessak
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
 %include "libavutil/x86/x86util.asm"
 
-SECTION_RODATA 16
+SECTION_RODATA
 
 ps_mask:  dd 0, ~0, ~0, ~0
 ps_mask2: dd 0, ~0,  0, ~0
@@ -49,7 +49,7 @@ ps_cosh_sse3:  dd 1.0, -0.50190991877167369479,  1.0, -5.73685662283492756461
                dd 1.0, -0.51763809020504152469,  1.0, -1.93185165257813657349
                dd 1.0, -0.55168895948124587824, -1.0,  1.18310079157624925896
                dd 1.0, -0.61038729438072803416, -1.0,  0.87172339781054900991
-               dd 1.0,  0.70710678118654752439,  0.0,  0.0
+               dd 1.0, -0.70710678118654752439,  0.0,  0.0
 
 costabs:  times 4 dd  0.98480773
           times 4 dd  0.93969262
@@ -128,7 +128,26 @@ SECTION .text
 %endif
 %endmacro
 
+%macro BUTTERF2 3
+%if cpuflag(sse3)
+    mulps    %1, %1, [ps_cosh_sse3 + %3]
+    PSHUFD   %2, %1, 0xe1
+    addsubps %1, %1, %2
+%else
+    mulps    %1, [ps_cosh + %3]
+    PSHUFD   %2, %1, 0xe1
+    xorps    %1, [ps_p1m1p1m1]
+    addps    %1, %2
+%endif
+%endmacro
+
 %macro STORE 4
+%if cpuflag(sse4)
+    movss     [%3       ], %1
+    extractps dword [%3 +   %4], %1, 1
+    extractps dword [%3 + 2*%4], %1, 2
+    extractps dword [%3 + 3*%4], %1, 3
+%else
     movhlps %2, %1
     movss   [%3       ], %1
     movss   [%3 + 2*%4], %2
@@ -136,6 +155,7 @@ SECTION .text
     movss   [%3 +   %4], %1
     movhlps %2, %1
     movss   [%3 + 3*%4], %2
+%endif
 %endmacro
 
 %macro LOAD 4
@@ -278,11 +298,7 @@ cglobal imdct36_float, 4,4,9, out, buf, in, win
     BUTTERF  m7, m2, 16
     BUTTERF  m3, m6, 32
     BUTTERF  m4, m1, 48
-
-    mulps   m5, m5, [ps_cosh + 64]
-    PSHUFD  m1, m5, 0xe1
-    xorps   m5, m5, [ps_p1m1p1m1]
-    addps   m5, m5, m1
+    BUTTERF2 m5, m1, 64
 
     ; permutates:
     ; m0    0  1  2  3     =>     2  6 10 14   m1
@@ -357,8 +373,10 @@ cglobal imdct36_float, 4,4,9, out, buf, in, win
     RET
 %endmacro
 
+%if ARCH_X86_32
 INIT_XMM sse
 DEFINE_IMDCT
+%endif
 
 INIT_XMM sse2
 DEFINE_IMDCT
@@ -369,8 +387,10 @@ DEFINE_IMDCT
 INIT_XMM ssse3
 DEFINE_IMDCT
 
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEFINE_IMDCT
+%endif
 
 INIT_XMM sse
 
@@ -715,5 +735,7 @@ cglobal four_imdct36_float, 5,5,16, out, buf, in, win, tmp
 INIT_XMM sse
 DEFINE_FOUR_IMDCT
 
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEFINE_FOUR_IMDCT
+%endif
