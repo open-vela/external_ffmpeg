@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,8 @@
 
 #include "avcodec.h"
 #include "bsf.h"
-#include "bitstream.h"
 #include "bytestream.h"
+#include "get_bits.h"
 
 typedef struct VP9SFSplitContext {
     AVPacket *buffer_pkt;
@@ -87,7 +87,7 @@ static int vp9_superframe_split_filter(AVBSFContext *ctx, AVPacket *out)
     }
 
     if (is_superframe) {
-        BitstreamContext bc;
+        GetBitContext gb;
         int profile, invisible = 0;
 
         ret = av_packet_ref(out, s->buffer_pkt);
@@ -103,18 +103,18 @@ static int vp9_superframe_split_filter(AVBSFContext *ctx, AVPacket *out)
         if (s->next_frame >= s->nb_frames)
             av_packet_free(&s->buffer_pkt);
 
-        ret = bitstream_init8(&bc, out->data, out->size);
+        ret = init_get_bits8(&gb, out->data, out->size);
         if (ret < 0)
             goto fail;
 
-        bitstream_read(&bc, 2); // frame_marker
-        profile  = bitstream_read(&bc, 1);
-        profile |= bitstream_read(&bc, 1) << 1;
+        get_bits(&gb, 2); // frame_marker
+        profile  = get_bits1(&gb);
+        profile |= get_bits1(&gb) << 1;
         if (profile == 3)
-            bitstream_read(&bc, 1);
-        if (!bitstream_read(&bc, 1)) {
-            bitstream_read(&bc, 1);
-            invisible = !bitstream_read(&bc, 1);
+            get_bits1(&gb);
+        if (!get_bits1(&gb)) {
+            get_bits1(&gb);
+            invisible = !get_bits1(&gb);
         }
 
         if (invisible)
