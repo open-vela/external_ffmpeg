@@ -1,20 +1,20 @@
 /*
  * copyright (c) 2001 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,12 +26,11 @@
 #ifndef AVCODEC_MPEGAUDIO_H
 #define AVCODEC_MPEGAUDIO_H
 
-#ifndef USE_FLOATS
-#   define USE_FLOATS 0
+#ifndef CONFIG_FLOAT
+#   define CONFIG_FLOAT 0
 #endif
 
 #include <stdint.h>
-#include "libavutil/internal.h"
 
 /* max frame size, in samples */
 #define MPA_FRAME_SIZE 1152
@@ -53,25 +52,20 @@
 #define WFRAC_BITS  16   /* fractional bits for window */
 #endif
 
-#define IMDCT_SCALAR 1.759
-
 #define FRAC_ONE    (1 << FRAC_BITS)
 
 #define FIX(a)   ((int)((a) * FRAC_ONE))
 
-#if USE_FLOATS
+#if CONFIG_FLOAT
 #   define INTFLOAT float
-#   define SUINTFLOAT float
 typedef float MPA_INT;
 typedef float OUT_INT;
 #elif FRAC_BITS <= 15
 #   define INTFLOAT int
-#   define SUINTFLOAT SUINT
 typedef int16_t MPA_INT;
 typedef int16_t OUT_INT;
 #else
 #   define INTFLOAT int
-#   define SUINTFLOAT SUINT
 typedef int32_t MPA_INT;
 typedef int16_t OUT_INT;
 #endif

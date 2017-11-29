@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,7 @@ typedef struct VAAPIEncodeH265Context {
     int slice_type;
     int pic_type;
 
-    CodedBitstreamContext *cbc;
+    CodedBitstreamContext cbc;
     CodedBitstreamFragment current_access_unit;
     int aud_needed;
 } VAAPIEncodeH265Context;
@@ -63,8 +63,6 @@ typedef struct VAAPIEncodeH265Context {
 typedef struct VAAPIEncodeH265Options {
     int qp;
     int aud;
-    int profile;
-    int level;
 } VAAPIEncodeH265Options;
 
 
@@ -76,7 +74,7 @@ static int vaapi_encode_h265_write_access_unit(AVCodecContext *avctx,
     VAAPIEncodeH265Context *priv = ctx->priv_data;
     int err;
 
-    err = ff_cbs_write_fragment_data(priv->cbc, au);
+    err = ff_cbs_write_fragment_data(&priv->cbc, au);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to write packed header.\n");
         return err;
@@ -104,7 +102,7 @@ static int vaapi_encode_h265_add_nal(AVCodecContext *avctx,
     H265RawNALUnitHeader *header = nal_unit;
     int err;
 
-    err = ff_cbs_insert_unit_content(priv->cbc, au, -1,
+    err = ff_cbs_insert_unit_content(&priv->cbc, au, -1,
                                      header->nal_unit_type, nal_unit);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to add NAL unit: "
@@ -144,7 +142,7 @@ static int vaapi_encode_h265_write_sequence_header(AVCodecContext *avctx,
 
     err = vaapi_encode_h265_write_access_unit(avctx, data, data_len, au);
 fail:
-    ff_cbs_fragment_uninit(priv->cbc, au);
+    ff_cbs_fragment_uninit(&priv->cbc, au);
     return err;
 }
 
@@ -171,7 +169,7 @@ static int vaapi_encode_h265_write_slice_header(AVCodecContext *avctx,
 
     err = vaapi_encode_h265_write_access_unit(avctx, data, data_len, au);
 fail:
-    ff_cbs_fragment_uninit(priv->cbc, au);
+    ff_cbs_fragment_uninit(&priv->cbc, au);
     return err;
 }
 
@@ -848,7 +846,7 @@ static av_cold int vaapi_encode_h265_configure(AVCodecContext *avctx)
         priv->fixed_qp_p   = 30;
         priv->fixed_qp_b   = 30;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %"PRId64" bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %d bps.\n",
                ctx->va_rc_mode == VA_RC_CBR ? "constant" : "variable",
                avctx->bit_rate);
 
@@ -882,16 +880,9 @@ static const VAAPIEncodeType vaapi_encode_type_h265 = {
 
 static av_cold int vaapi_encode_h265_init(AVCodecContext *avctx)
 {
-    VAAPIEncodeContext     *ctx = avctx->priv_data;
-    VAAPIEncodeH265Options *opt =
-        (VAAPIEncodeH265Options*)ctx->codec_options_data;
+    VAAPIEncodeContext *ctx = avctx->priv_data;
 
     ctx->codec = &vaapi_encode_type_h265;
-
-    if (avctx->profile == FF_PROFILE_UNKNOWN)
-        avctx->profile = opt->profile;
-    if (avctx->level == FF_LEVEL_UNKNOWN)
-        avctx->level = opt->level;
 
     switch (avctx->profile) {
     case FF_PROFILE_HEVC_MAIN:
@@ -955,48 +946,19 @@ static const AVOption vaapi_encode_h265_options[] = {
     { "aud", "Include AUD",
       OFFSET(aud), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
 
-    { "profile", "Set profile (general_profile_idc)",
-      OFFSET(profile), AV_OPT_TYPE_INT,
-      { .i64 = FF_PROFILE_HEVC_MAIN }, 0x00, 0xff, FLAGS, "profile" },
-
-#define PROFILE(name, value)  name, NULL, 0, AV_OPT_TYPE_CONST, \
-      { .i64 = value }, 0, 0, FLAGS, "profile"
-    { PROFILE("main",               FF_PROFILE_HEVC_MAIN) },
-    { PROFILE("main10",             FF_PROFILE_HEVC_MAIN_10) },
-#undef PROFILE
-
-    { "level", "Set level (general_level_idc)",
-      OFFSET(level), AV_OPT_TYPE_INT,
-      { .i64 = 153 }, 0x00, 0xff, FLAGS, "level" },
-
-#define LEVEL(name, value) name, NULL, 0, AV_OPT_TYPE_CONST, \
-      { .i64 = value }, 0, 0, FLAGS, "level"
-    { LEVEL("1",    30) },
-    { LEVEL("2",    60) },
-    { LEVEL("2.1",  63) },
-    { LEVEL("3",    90) },
-    { LEVEL("3.1",  93) },
-    { LEVEL("4",   120) },
-    { LEVEL("4.1", 123) },
-    { LEVEL("5",   150) },
-    { LEVEL("5.1", 153) },
-    { LEVEL("5.2", 156) },
-    { LEVEL("6",   180) },
-    { LEVEL("6.1", 183) },
-    { LEVEL("6.2", 186) },
-#undef LEVEL
-
     { NULL },
 };
 
 static const AVCodecDefault vaapi_encode_h265_defaults[] = {
+    { "profile",        "1"   },
+    { "level",          "51"  },
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1"   },
-    { "i_qoffset",      "0"   },
-    { "b_qfactor",      "6/5" },
-    { "b_qoffset",      "0"   },
+    { "i_qfactor",      "1.0" },
+    { "i_qoffset",      "0.0" },
+    { "b_qfactor",      "1.2" },
+    { "b_qoffset",      "0.0" },
     { NULL },
 };
 
