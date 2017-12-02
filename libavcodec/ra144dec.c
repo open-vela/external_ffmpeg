@@ -5,27 +5,26 @@
  * Copyright (c) 2003 Nick Kurshev
  *     Based on public domain decoder at http://www.honeypot.net/audio
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/channel_layout.h"
-
 #include "avcodec.h"
-#include "bitstream.h"
+#include "get_bits.h"
 #include "internal.h"
 #include "ra144.h"
 
@@ -35,6 +34,7 @@ static av_cold int ra144_decode_init(AVCodecContext * avctx)
     RA144Context *ractx = avctx->priv_data;
 
     ractx->avctx = avctx;
+    ff_audiodsp_init(&ractx->adsp);
 
     ractx->lpc_coef[0] = ractx->lpc_tables[0];
     ractx->lpc_coef[1] = ractx->lpc_tables[1];
@@ -46,13 +46,13 @@ static av_cold int ra144_decode_init(AVCodecContext * avctx)
     return 0;
 }
 
-static void do_output_subblock(RA144Context *ractx, const uint16_t  *lpc_coefs,
-                               int gval, BitstreamContext *bc)
+static void do_output_subblock(RA144Context *ractx, const int16_t  *lpc_coefs,
+                               int gval, GetBitContext *gb)
 {
-    int cba_idx = bitstream_read(bc, 7); // index of the adaptive CB, 0 if none
-    int gain    = bitstream_read(bc, 8);
-    int cb1_idx = bitstream_read(bc, 7);
-    int cb2_idx = bitstream_read(bc, 7);
+    int cba_idx = get_bits(gb, 7); // index of the adaptive CB, 0 if none
+    int gain    = get_bits(gb, 8);
+    int cb1_idx = get_bits(gb, 7);
+    int cb2_idx = get_bits(gb, 7);
 
     ff_subblock_synthesis(ractx, lpc_coefs, cba_idx, cb1_idx, cb2_idx, gval,
                           gain);
@@ -67,7 +67,7 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
     int buf_size = avpkt->size;
     static const uint8_t sizes[LPC_ORDER] = {6, 5, 5, 4, 4, 3, 3, 3, 3, 2};
     unsigned int refl_rms[NBLOCKS];           // RMS of the reflection coefficients
-    uint16_t block_coefs[NBLOCKS][LPC_ORDER]; // LPC coefficients of each sub-block
+    int16_t block_coefs[NBLOCKS][LPC_ORDER];  // LPC coefficients of each sub-block
     unsigned int lpc_refl[LPC_ORDER];         // LPC reflection coefficients of the frame
     int i, j;
     int ret;
@@ -75,9 +75,9 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
     unsigned int energy;
 
     RA144Context *ractx = avctx->priv_data;
-    BitstreamContext bc;
+    GetBitContext gb;
 
-    if (buf_size < FRAMESIZE) {
+    if (buf_size < FRAME_SIZE) {
         av_log(avctx, AV_LOG_ERROR,
                "Frame too small (%d bytes). Truncated file?\n", buf_size);
         *got_frame_ptr = 0;
@@ -86,21 +86,19 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = NBLOCKS * BLOCKSIZE;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
     samples = (int16_t *)frame->data[0];
 
-    bitstream_init8(&bc, buf, FRAMESIZE);
+    init_get_bits8(&gb, buf, FRAME_SIZE);
 
     for (i = 0; i < LPC_ORDER; i++)
-        lpc_refl[i] = ff_lpc_refl_cb[i][bitstream_read(&bc, sizes[i])];
+        lpc_refl[i] = ff_lpc_refl_cb[i][get_bits(&gb, sizes[i])];
 
     ff_eval_coefs(ractx->lpc_coef[0], lpc_refl);
     ractx->lpc_refl_rms[0] = ff_rms(lpc_refl);
 
-    energy = ff_energy_tab[bitstream_read(&bc, 5)];
+    energy = ff_energy_tab[get_bits(&gb, 5)];
 
     refl_rms[0] = ff_interp(ractx, block_coefs[0], 1, 1, ractx->old_energy);
     refl_rms[1] = ff_interp(ractx, block_coefs[1], 2,
@@ -112,10 +110,10 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
     ff_int_to_int16(block_coefs[3], ractx->lpc_coef[0]);
 
     for (i=0; i < NBLOCKS; i++) {
-        do_output_subblock(ractx, block_coefs[i], refl_rms[i], &bc);
+        do_output_subblock(ractx, block_coefs[i], refl_rms[i], &gb);
 
         for (j=0; j < BLOCKSIZE; j++)
-            *samples++ = av_clip_int16(ractx->curr_sblock[j + 10] << 2);
+            *samples++ = av_clip_int16(ractx->curr_sblock[j + 10] * (1 << 2));
     }
 
     ractx->old_energy = energy;
@@ -125,7 +123,7 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
 
     *got_frame_ptr = 1;
 
-    return FRAMESIZE;
+    return FRAME_SIZE;
 }
 
 AVCodec ff_ra_144_decoder = {
