@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,8 +21,8 @@
  * Copyright (C) 2010 Rémi Denis-Courmont
  */
 
-#ifndef COMPAT_ATOMICS_DUMMY_STDATOMIC_H
-#define COMPAT_ATOMICS_DUMMY_STDATOMIC_H
+#ifndef LIBAV_COMPAT_ATOMICS_DUMMY_STDATOMIC_H
+#define LIBAV_COMPAT_ATOMICS_DUMMY_STDATOMIC_H
 
 #include <stdint.h>
 
@@ -156,7 +156,7 @@ FETCH_MODIFY(and, &)
     atomic_fetch_or(object, operand)
 
 #define atomic_fetch_xor_explicit(object, operand, order) \
-    atomic_fetch_xor(object, operand)
+    atomic_fetch_sub(object, operand)
 
 #define atomic_fetch_and_explicit(object, operand, order) \
     atomic_fetch_and(object, operand)
@@ -173,4 +173,4 @@ FETCH_MODIFY(and, &)
 #define atomic_flag_clear_explicit(object, order) \
     atomic_flag_clear(object)
 
-#endif /* COMPAT_ATOMICS_DUMMY_STDATOMIC_H */
+#endif /* LIBAV_COMPAT_ATOMICS_DUMMY_STDATOMIC_H */

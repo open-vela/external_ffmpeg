@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -123,7 +123,6 @@ static void d3d11va_frames_uninit(AVHWFramesContext *ctx)
 static void free_texture(void *opaque, uint8_t *data)
 {
     ID3D11Texture2D_Release((ID3D11Texture2D *)opaque);
-    av_free(data);
 }
 
 static AVBufferRef *wrap_texture_buf(ID3D11Texture2D *tex, int index)
@@ -458,31 +457,20 @@ static void d3d11va_device_uninit(AVHWDeviceContext *hwdev)
 {
     AVD3D11VADeviceContext *device_hwctx = hwdev->hwctx;
 
-    if (device_hwctx->device) {
+    if (device_hwctx->device)
         ID3D11Device_Release(device_hwctx->device);
-        device_hwctx->device = NULL;
-    }
 
-    if (device_hwctx->device_context) {
+    if (device_hwctx->device_context)
         ID3D11DeviceContext_Release(device_hwctx->device_context);
-        device_hwctx->device_context = NULL;
-    }
 
-    if (device_hwctx->video_device) {
+    if (device_hwctx->video_device)
         ID3D11VideoDevice_Release(device_hwctx->video_device);
-        device_hwctx->video_device = NULL;
-    }
 
-    if (device_hwctx->video_context) {
+    if (device_hwctx->video_context)
         ID3D11VideoContext_Release(device_hwctx->video_context);
-        device_hwctx->video_context = NULL;
-    }
 
-    if (device_hwctx->lock == d3d11va_default_lock) {
+    if (device_hwctx->lock == d3d11va_default_lock)
         CloseHandle(device_hwctx->lock_ctx);
-        device_hwctx->lock_ctx = INVALID_HANDLE_VALUE;
-        device_hwctx->lock = NULL;
-    }
 }
 
 static int d3d11va_device_create(AVHWDeviceContext *ctx, const char *device,
@@ -526,15 +514,8 @@ static int d3d11va_device_create(AVHWDeviceContext *ctx, const char *device,
 
     hr = mD3D11CreateDevice(pAdapter, pAdapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, NULL, creationFlags, NULL, 0,
                    D3D11_SDK_VERSION, &device_hwctx->device, NULL, NULL);
-    if (pAdapter) {
-        DXGI_ADAPTER_DESC2 desc;
-        hr = IDXGIAdapter2_GetDesc(pAdapter, &desc);
-        if (!FAILED(hr)) {
-            av_log(ctx, AV_LOG_INFO, "Using device %04x:%04x (%ls).\n",
-                   desc.VendorId, desc.DeviceId, desc.Description);
-        }
+    if (pAdapter)
         IDXGIAdapter_Release(pAdapter);
-    }
     if (FAILED(hr)) {
         av_log(ctx, AV_LOG_ERROR, "Failed to create Direct3D device (%lx)\n", (long)hr);
         return AVERROR_UNKNOWN;

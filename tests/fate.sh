@@ -37,18 +37,16 @@ checkout(){
 update()(
     cd ${src} || return
     case "$repo" in
-        git:*) git fetch --quiet --force && git reset --quiet --hard "origin/$branch" ;;
+        git:*) git fetch --quiet --force; git reset --quiet --hard "origin/$branch" ;;
     esac
 )
 
 configure()(
     cd ${build} || return
-    ${shell} ${src}/configure                                           \
+    ${src}/configure                                                    \
         --prefix="${inst}"                                              \
         --samples="${samples}"                                          \
         --enable-gpl                                                    \
-        --enable-memory-poisoning                                       \
-        --enable-avresample                                             \
         ${ignore_tests:+--ignore-tests="$ignore_tests"}                 \
         ${arch:+--arch=$arch}                                           \
         ${cpu:+--cpu="$cpu"}                                            \
@@ -86,8 +84,7 @@ clean(){
 report(){
     date=$(date -u +%Y%m%d%H%M%S)
     echo "fate:1:${date}:${slot}:${version}:$1:$2:${branch}:${comment}" >report
-    cat ${build}/ffbuild/config.fate >>report
-    cat ${build}/tests/data/fate/*.rep >>report 2>/dev/null || for i in ${build}/tests/data/fate/*.rep ; do cat "$i" >>report 2>/dev/null; done
+    cat ${build}/avbuild/config.fate ${build}/tests/data/fate/*.rep >> report 2> /dev/null
     test -n "$fate_recv" && $tar report *.log | gzip | $fate_recv
 }
 
@@ -109,15 +106,15 @@ test -d "$src" && update || checkout || die "Error fetching source"
 
 cd ${workdir}
 
-version=$(${src}/ffbuild/version.sh ${src})
+version=$(${src}/avbuild/version.sh ${src})
 test "$version" = "$(cat version-$slot 2>/dev/null)" && exit 0
 echo ${version} >version-$slot
 
 rm -rf "${build}" *.log
 mkdir -p ${build}
 
-configure >configure.log 2>&1 || fail 3 "error configuring"
-compile   >compile.log   2>&1 || fail 2 "error compiling"
-fate      >test.log      2>&1 || fail 1 "error testing"
+configure >configure.log 2>&1 || fail $? "error configuring"
+compile   >compile.log   2>&1 || fail $? "error compiling"
+fate      >test.log      2>&1 || fail $? "error testing"
 report 0 success
 clean
