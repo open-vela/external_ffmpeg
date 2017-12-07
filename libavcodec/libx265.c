@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013-2014 Derek Buitenhuis
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,6 +45,7 @@ typedef struct libx265Context {
     int   forced_idr;
     char *preset;
     char *tune;
+    char *profile;
     char *x265_opts;
 } libx265Context;
 
@@ -82,14 +83,6 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     ctx->api = x265_api_get(av_pix_fmt_desc_get(avctx->pix_fmt)->comp[0].depth);
     if (!ctx->api)
         ctx->api = x265_api_get(0);
-
-    if (avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL &&
-        !av_pix_fmt_desc_get(avctx->pix_fmt)->log2_chroma_w) {
-        av_log(avctx, AV_LOG_ERROR,
-               "4:2:2 and 4:4:4 support is not fully defined for HEVC yet. "
-               "Set -strict experimental to encode anyway.\n");
-        return AVERROR(ENOSYS);
-    }
 
     ctx->params = ctx->api->param_alloc();
     if (!ctx->params) {
@@ -155,15 +148,35 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
     switch (avctx->pix_fmt) {
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUV420P10:
+    case AV_PIX_FMT_YUV420P12:
         ctx->params->internalCsp = X265_CSP_I420;
         break;
     case AV_PIX_FMT_YUV422P:
     case AV_PIX_FMT_YUV422P10:
+    case AV_PIX_FMT_YUV422P12:
         ctx->params->internalCsp = X265_CSP_I422;
         break;
+    case AV_PIX_FMT_GBRP:
+    case AV_PIX_FMT_GBRP10:
+    case AV_PIX_FMT_GBRP12:
+        ctx->params->vui.matrixCoeffs = AVCOL_SPC_RGB;
+        ctx->params->vui.bEnableVideoSignalTypePresentFlag  = 1;
+        ctx->params->vui.bEnableColorDescriptionPresentFlag = 1;
     case AV_PIX_FMT_YUV444P:
     case AV_PIX_FMT_YUV444P10:
+    case AV_PIX_FMT_YUV444P12:
         ctx->params->internalCsp = X265_CSP_I444;
+        break;
+    case AV_PIX_FMT_GRAY8:
+    case AV_PIX_FMT_GRAY10:
+    case AV_PIX_FMT_GRAY12:
+        if (ctx->api->api_build_number < 85) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "libx265 version is %d, must be at least 85 for gray encoding.\n",
+                   ctx->api->api_build_number);
+            return AVERROR_INVALIDDATA;
+        }
+        ctx->params->internalCsp = X265_CSP_I400;
         break;
     }
 
@@ -205,6 +218,18 @@ static av_cold int libx265_encode_init(AVCodecContext *avctx)
                 }
             }
             av_dict_free(&dict);
+        }
+    }
+
+    if (ctx->profile) {
+        if (ctx->api->param_apply_profile(ctx->params, ctx->profile) < 0) {
+            int i;
+            av_log(avctx, AV_LOG_ERROR, "Invalid or incompatible profile set: %s.\n", ctx->profile);
+            av_log(avctx, AV_LOG_INFO, "Possible profiles:");
+            for (i = 0; x265_profile_names[i]; i++)
+                av_log(avctx, AV_LOG_INFO, " %s", x265_profile_names[i]);
+            av_log(avctx, AV_LOG_INFO, "\n");
+            return AVERROR(EINVAL);
         }
     }
 
@@ -274,7 +299,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ret = ctx->api->encoder_encode(ctx->encoder, &nal, &nnal,
                                    pic ? &x265pic : NULL, &x265pic_out);
     if (ret < 0)
-        return AVERROR_UNKNOWN;
+        return AVERROR_EXTERNAL;
 
     if (!nnal)
         return 0;
@@ -282,7 +307,7 @@ static int libx265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     for (i = 0; i < nnal; i++)
         payload += nal[i].sizeBytes;
 
-    ret = ff_alloc_packet(pkt, payload);
+    ret = ff_alloc_packet2(avctx, pkt, payload, payload);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
@@ -332,6 +357,22 @@ static const enum AVPixelFormat x265_csp_eight[] = {
     AV_PIX_FMT_YUV420P,
     AV_PIX_FMT_YUV422P,
     AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_GBRP,
+    AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_NONE
+};
+
+static const enum AVPixelFormat x265_csp_ten[] = {
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV422P,
+    AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_GBRP,
+    AV_PIX_FMT_YUV420P10,
+    AV_PIX_FMT_YUV422P10,
+    AV_PIX_FMT_YUV444P10,
+    AV_PIX_FMT_GBRP10,
+    AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_GRAY10,
     AV_PIX_FMT_NONE
 };
 
@@ -339,27 +380,39 @@ static const enum AVPixelFormat x265_csp_twelve[] = {
     AV_PIX_FMT_YUV420P,
     AV_PIX_FMT_YUV422P,
     AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_GBRP,
     AV_PIX_FMT_YUV420P10,
     AV_PIX_FMT_YUV422P10,
     AV_PIX_FMT_YUV444P10,
+    AV_PIX_FMT_GBRP10,
+    AV_PIX_FMT_YUV420P12,
+    AV_PIX_FMT_YUV422P12,
+    AV_PIX_FMT_YUV444P12,
+    AV_PIX_FMT_GBRP12,
+    AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_GRAY10,
+    AV_PIX_FMT_GRAY12,
     AV_PIX_FMT_NONE
 };
 
 static av_cold void libx265_encode_init_csp(AVCodec *codec)
 {
-    if (x265_max_bit_depth == 8)
-        codec->pix_fmts = x265_csp_eight;
-    else if (x265_max_bit_depth == 12)
+    if (x265_api_get(12))
         codec->pix_fmts = x265_csp_twelve;
+    else if (x265_api_get(10))
+        codec->pix_fmts = x265_csp_ten;
+    else if (x265_api_get(8))
+        codec->pix_fmts = x265_csp_eight;
 }
 
 #define OFFSET(x) offsetof(libx265Context, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     { "crf",         "set the x265 crf",                                                            OFFSET(crf),       AV_OPT_TYPE_FLOAT,  { .dbl = -1 }, -1, FLT_MAX, VE },
-    { "forced-idr",  "if forcing keyframes, force them as IDR frames",                              OFFSET(forced_idr),AV_OPT_TYPE_INT,    { .i64 =  0 },  0,       1, VE },
+    { "forced-idr",  "if forcing keyframes, force them as IDR frames",                              OFFSET(forced_idr),AV_OPT_TYPE_BOOL,   { .i64 =  0 },  0,       1, VE },
     { "preset",      "set the x265 preset",                                                         OFFSET(preset),    AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
     { "tune",        "set the x265 tune parameter",                                                 OFFSET(tune),      AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
+    { "profile",     "set the x265 profile",                                                        OFFSET(profile),   AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
     { "x265-params", "set the x265 configuration using a :-separated list of key=value parameters", OFFSET(x265_opts), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
     { NULL }
 };
