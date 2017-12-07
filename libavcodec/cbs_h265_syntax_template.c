@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,11 +64,11 @@ static int FUNC(extension_data)(CodedBitstreamContext *ctx, RWContext *rw,
     int err;
     size_t k;
 #ifdef READ
-    BitstreamContext start;
+    GetBitContext start;
     uint8_t bit;
     start = *rw;
     for (k = 0; cbs_h2645_read_more_rbsp_data(rw); k++)
-        bitstream_skip(rw, 1);
+        skip_bits(rw, 1);
     current->bit_length = k;
     if (k > 0) {
         *rw = start;
@@ -872,7 +872,7 @@ static int FUNC(pps_range_extension)(CodedBitstreamContext *ctx, RWContext *rw,
     int err, i;
 
     if (current->transform_skip_enabled_flag)
-        ue(log2_max_transform_skip_block_size_minus2, 0, 4);
+        ue(log2_max_transform_skip_block_size_minus2, 0, 3);
     flag(cross_component_prediction_enabled_flag);
 
     flag(chroma_qp_offset_list_enabled_flag);
