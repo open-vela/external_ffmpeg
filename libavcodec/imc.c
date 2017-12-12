@@ -4,20 +4,20 @@
  * Copyright (c) 2006 Benjamin Larsson
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,16 +35,15 @@
 #include <stdio.h>
 
 #include "libavutil/channel_layout.h"
+#include "libavutil/ffmath.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/internal.h"
-
 #include "avcodec.h"
-#include "bitstream.h"
 #include "bswapdsp.h"
+#include "get_bits.h"
 #include "fft.h"
 #include "internal.h"
 #include "sinewin.h"
-#include "vlc.h"
 
 #include "imcdata.h"
 
@@ -93,10 +92,10 @@ typedef struct IMCContext {
     //@}
 
     float sqrt_tab[30];
-    BitstreamContext bc;
+    GetBitContext gb;
 
     BswapDSPContext bdsp;
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
     FFTContext fft;
     DECLARE_ALIGNED(32, FFTComplex, samples)[COEFFS / 2];
     float *out_samples;
@@ -137,8 +136,8 @@ static av_cold void iac_generate_tabs(IMCContext *q, int sampling_rate)
 
         if (i > 0) {
             tb = bark - prev_bark;
-            q->weights1[i - 1] = pow(10.0, -1.0 * tb);
-            q->weights2[i - 1] = pow(10.0, -2.7 * tb);
+            q->weights1[i - 1] = ff_exp10(-1.0 * tb);
+            q->weights2[i - 1] = ff_exp10(-2.7 * tb);
         }
         prev_bark = bark;
 
@@ -179,6 +178,14 @@ static av_cold int imc_decode_init(AVCodecContext *avctx)
     int i, j, ret;
     IMCContext *q = avctx->priv_data;
     double r1, r2;
+
+    if (avctx->codec_id == AV_CODEC_ID_IAC && avctx->sample_rate > 96000) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Strange sample rate of %i, file likely corrupt or "
+               "needing a new table derivation method.\n",
+               avctx->sample_rate);
+        return AVERROR_PATCHWELCOME;
+    }
 
     if (avctx->codec_id == AV_CODEC_ID_IMC)
         avctx->channels = 1;
@@ -248,7 +255,13 @@ static av_cold int imc_decode_init(AVCodecContext *avctx)
         return ret;
     }
     ff_bswapdsp_init(&q->bdsp);
-    avpriv_float_dsp_init(&q->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    q->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!q->fdsp) {
+        ff_fft_end(&q->fft);
+
+        return AVERROR(ENOMEM);
+    }
+
     avctx->sample_fmt     = AV_SAMPLE_FMT_FLTP;
     avctx->channel_layout = avctx->channels == 1 ? AV_CH_LAYOUT_MONO
                                                  : AV_CH_LAYOUT_STEREO;
@@ -330,12 +343,12 @@ static void imc_read_level_coeffs(IMCContext *q, int stream_format_code,
     if (stream_format_code & 4)
         start = 1;
     if (start)
-        levlCoeffs[0] = bitstream_read(&q->bc, 7);
+        levlCoeffs[0] = get_bits(&q->gb, 7);
     for (i = start; i < BANDS; i++) {
-        levlCoeffs[i] = bitstream_read_vlc(&q->bc, hufftab[cb_sel[i]]->table,
-                                           hufftab[cb_sel[i]]->bits, 2);
+        levlCoeffs[i] = get_vlc2(&q->gb, hufftab[cb_sel[i]]->table,
+                                 hufftab[cb_sel[i]]->bits, 2);
         if (levlCoeffs[i] == 17)
-            levlCoeffs[i] += bitstream_read(&q->bc, 4);
+            levlCoeffs[i] += get_bits(&q->gb, 4);
     }
 }
 
@@ -344,10 +357,10 @@ static void imc_read_level_coeffs_raw(IMCContext *q, int stream_format_code,
 {
     int i;
 
-    q->coef0_pos  = bitstream_read(&q->bc, 5);
-    levlCoeffs[0] = bitstream_read(&q->bc, 7);
+    q->coef0_pos  = get_bits(&q->gb, 5);
+    levlCoeffs[0] = get_bits(&q->gb, 7);
     for (i = 1; i < BANDS; i++)
-        levlCoeffs[i] = bitstream_read(&q->bc, 4);
+        levlCoeffs[i] = get_bits(&q->gb, 4);
 }
 
 static void imc_decode_level_coefficients(IMCContext *q, int *levlCoeffBuf,
@@ -357,7 +370,7 @@ static void imc_decode_level_coefficients(IMCContext *q, int *levlCoeffBuf,
     float tmp, tmp2;
     // maybe some frequency division thingy
 
-    flcoeffs1[0] = 20000.0 / pow (2, levlCoeffBuf[0] * 0.18945); // 0.18945 = log2(10) * 0.05703125
+    flcoeffs1[0] = 20000.0 / exp2 (levlCoeffBuf[0] * 0.18945); // 0.18945 = log2(10) * 0.05703125
     flcoeffs2[0] = log2f(flcoeffs1[0]);
     tmp  = flcoeffs1[0];
     tmp2 = flcoeffs2[0];
@@ -451,8 +464,13 @@ static int bit_allocation(IMCContext *q, IMCChannel *chctx,
     for (i = 0; i < BANDS; i++)
         highest = FFMAX(highest, chctx->flcoeffs1[i]);
 
-    for (i = 0; i < BANDS - 1; i++)
+    for (i = 0; i < BANDS - 1; i++) {
+        if (chctx->flcoeffs5[i] <= 0) {
+            av_log(NULL, AV_LOG_ERROR, "flcoeffs5 %f invalid\n", chctx->flcoeffs5[i]);
+            return AVERROR_INVALIDDATA;
+        }
         chctx->flcoeffs4[i] = chctx->flcoeffs3[i] - log2f(chctx->flcoeffs5[i]);
+    }
     chctx->flcoeffs4[BANDS - 1] = limit;
 
     highest = highest * 0.25;
@@ -614,19 +632,19 @@ static void imc_get_skip_coeff(IMCContext *q, IMCChannel *chctx)
             chctx->skipFlagBits[i] = band_tab[i + 1] - band_tab[i];
 
             for (j = band_tab[i]; j < band_tab[i + 1]; j++) {
-                chctx->skipFlags[j] = bitstream_read_bit(&q->bc);
+                chctx->skipFlags[j] = get_bits1(&q->gb);
                 if (chctx->skipFlags[j])
                     chctx->skipFlagCount[i]++;
             }
         } else {
             for (j = band_tab[i]; j < band_tab[i + 1] - 1; j += 2) {
-                if (!bitstream_read_bit(&q->bc)) { // 0
+                if (!get_bits1(&q->gb)) { // 0
                     chctx->skipFlagBits[i]++;
                     chctx->skipFlags[j]      = 1;
                     chctx->skipFlags[j + 1]  = 1;
                     chctx->skipFlagCount[i] += 2;
                 } else {
-                    if (bitstream_read_bit(&q->bc)) { // 11
+                    if (get_bits1(&q->gb)) { // 11
                         chctx->skipFlagBits[i] += 2;
                         chctx->skipFlags[j]     = 0;
                         chctx->skipFlags[j + 1] = 1;
@@ -634,7 +652,7 @@ static void imc_get_skip_coeff(IMCContext *q, IMCChannel *chctx)
                     } else {
                         chctx->skipFlagBits[i] += 3;
                         chctx->skipFlags[j + 1] = 0;
-                        if (!bitstream_read_bit(&q->bc)) { // 100
+                        if (!get_bits1(&q->gb)) { // 100
                             chctx->skipFlags[j] = 1;
                             chctx->skipFlagCount[i]++;
                         } else { // 101
@@ -646,7 +664,7 @@ static void imc_get_skip_coeff(IMCContext *q, IMCChannel *chctx)
 
             if (j < band_tab[i + 1]) {
                 chctx->skipFlagBits[i]++;
-                if ((chctx->skipFlags[j] = bitstream_read_bit(&q->bc)))
+                if ((chctx->skipFlags[j] = get_bits1(&q->gb)))
                     chctx->skipFlagCount[i]++;
             }
         }
@@ -771,7 +789,8 @@ static int inverse_quant_coeff(IMCContext *q, IMCChannel *chctx,
 }
 
 
-static int imc_get_coeffs(IMCContext *q, IMCChannel *chctx)
+static void imc_get_coeffs(AVCodecContext *avctx,
+                           IMCContext *q, IMCChannel *chctx)
 {
     int i, j, cw_len, cw;
 
@@ -783,19 +802,19 @@ static int imc_get_coeffs(IMCContext *q, IMCChannel *chctx)
                 cw_len = chctx->CWlengthT[j];
                 cw = 0;
 
-                if (bitstream_tell(&q->bc) + cw_len > 512) {
-                    ff_dlog(NULL, "Band %i coeff %i cw_len %i\n", i, j, cw_len);
-                    return AVERROR_INVALIDDATA;
+                if (cw_len && (!chctx->bandFlagsBuf[i] || !chctx->skipFlags[j])) {
+                    if (get_bits_count(&q->gb) + cw_len > 512) {
+                        av_log(avctx, AV_LOG_WARNING,
+                            "Potential problem on band %i, coefficient %i"
+                            ": cw_len=%i\n", i, j, cw_len);
+                    } else
+                        cw = get_bits(&q->gb, cw_len);
                 }
-
-                if (cw_len && (!chctx->bandFlagsBuf[i] || !chctx->skipFlags[j]))
-                    cw = bitstream_read(&q->bc, cw_len);
 
                 chctx->codewords[j] = cw;
             }
         }
     }
-    return 0;
 }
 
 static void imc_refine_bit_allocation(IMCContext *q, IMCChannel *chctx)
@@ -809,7 +828,7 @@ static void imc_refine_bit_allocation(IMCContext *q, IMCChannel *chctx)
         for (j = band_tab[i]; j < band_tab[i + 1]; j++)
             chctx->sumLenArr[i] += chctx->CWlengthT[j];
         if (chctx->bandFlagsBuf[i])
-            if ((((band_tab[i + 1] - band_tab[i]) * 1.5) > chctx->sumLenArr[i]) && (chctx->sumLenArr[i] > 0))
+            if (((int)((band_tab[i + 1] - band_tab[i]) * 1.5) > chctx->sumLenArr[i]) && (chctx->sumLenArr[i] > 0))
                 chctx->skipFlagRaw[i] = 1;
     }
 
@@ -853,13 +872,13 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
 
 
     /* Check the frame header */
-    imc_hdr = bitstream_read(&q->bc, 9);
+    imc_hdr = get_bits(&q->gb, 9);
     if (imc_hdr & 0x18) {
         av_log(avctx, AV_LOG_ERROR, "frame header check failed!\n");
         av_log(avctx, AV_LOG_ERROR, "got %X.\n", imc_hdr);
         return AVERROR_INVALIDDATA;
     }
-    stream_format_code = bitstream_read(&q->bc, 3);
+    stream_format_code = get_bits(&q->gb, 3);
 
     if (stream_format_code & 0x04)
         chctx->decoder_reset = 1;
@@ -872,7 +891,7 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
         chctx->decoder_reset = 0;
     }
 
-    flag = bitstream_read_bit(&q->bc);
+    flag = get_bits1(&q->gb);
     if (stream_format_code & 0x1)
         imc_read_level_coeffs_raw(q, stream_format_code, chctx->levlCoeffBuf);
     else
@@ -887,6 +906,13 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
     else
         imc_decode_level_coefficients2(q, chctx->levlCoeffBuf, chctx->old_floor,
                                        chctx->flcoeffs1, chctx->flcoeffs2);
+
+    for(i=0; i<BANDS; i++) {
+        if(chctx->flcoeffs1[i] > INT_MAX) {
+            av_log(avctx, AV_LOG_ERROR, "scalefactor out of range\n");
+            return AVERROR_INVALIDDATA;
+        }
+    }
 
     memcpy(chctx->old_floor, chctx->flcoeffs1, 32 * sizeof(float));
 
@@ -910,7 +936,7 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
         memset(chctx->bandFlagsBuf, 0, BANDS * sizeof(int));
         for (i = 0; i < BANDS - 1; i++)
             if (chctx->bandWidthT[i])
-                chctx->bandFlagsBuf[i] = bitstream_read_bit(&q->bc);
+                chctx->bandFlagsBuf[i] = get_bits1(&q->gb);
 
         imc_calculate_coeffs(q, chctx->flcoeffs1, chctx->flcoeffs2,
                              chctx->bandWidthT, chctx->flcoeffs3,
@@ -945,7 +971,7 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
     }
 
     if ((ret = bit_allocation(q, chctx, stream_format_code,
-                              512 - bitscount - bitstream_tell(&q->bc),
+                              512 - bitscount - get_bits_count(&q->gb),
                               flag)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "Bit allocations failed\n");
         chctx->decoder_reset = 1;
@@ -969,11 +995,7 @@ static int imc_decode_block(AVCodecContext *avctx, IMCContext *q, int ch)
 
     memset(chctx->codewords, 0, sizeof(chctx->codewords));
 
-    if (imc_get_coeffs(q, chctx) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Read coefficients failed\n");
-        chctx->decoder_reset = 1;
-        return AVERROR_INVALIDDATA;
-    }
+    imc_get_coeffs(avctx, q, chctx);
 
     if (inverse_quant_coeff(q, chctx, stream_format_code) < 0) {
         av_log(avctx, AV_LOG_ERROR, "Inverse quantization of coefficients failed\n");
@@ -1007,17 +1029,15 @@ static int imc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = COEFFS;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     for (i = 0; i < avctx->channels; i++) {
         q->out_samples = (float *)frame->extended_data[i];
 
         q->bdsp.bswap16_buf(buf16, (const uint16_t *) buf, IMC_BLOCK_SIZE / 2);
 
-        bitstream_init8(&q->bc, (const uint8_t *)buf16, IMC_BLOCK_SIZE);
+        init_get_bits(&q->gb, (const uint8_t*)buf16, IMC_BLOCK_SIZE * 8);
 
         buf += IMC_BLOCK_SIZE;
 
@@ -1026,7 +1046,7 @@ static int imc_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (avctx->channels == 2) {
-        q->fdsp.butterflies_float((float *)frame->extended_data[0],
+        q->fdsp->butterflies_float((float *)frame->extended_data[0],
                                   (float *)frame->extended_data[1], COEFFS);
     }
 
@@ -1035,17 +1055,25 @@ static int imc_decode_frame(AVCodecContext *avctx, void *data,
     return IMC_BLOCK_SIZE * avctx->channels;
 }
 
-
 static av_cold int imc_decode_close(AVCodecContext * avctx)
 {
     IMCContext *q = avctx->priv_data;
 
     ff_fft_end(&q->fft);
+    av_freep(&q->fdsp);
 
     return 0;
 }
 
+static av_cold void flush(AVCodecContext *avctx)
+{
+    IMCContext *q = avctx->priv_data;
 
+    q->chctx[0].decoder_reset =
+    q->chctx[1].decoder_reset = 1;
+}
+
+#if CONFIG_IMC_DECODER
 AVCodec ff_imc_decoder = {
     .name           = "imc",
     .long_name      = NULL_IF_CONFIG_SMALL("IMC (Intel Music Coder)"),
@@ -1055,11 +1083,13 @@ AVCodec ff_imc_decoder = {
     .init           = imc_decode_init,
     .close          = imc_decode_close,
     .decode         = imc_decode_frame,
+    .flush          = flush,
     .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
-
+#endif
+#if CONFIG_IAC_DECODER
 AVCodec ff_iac_decoder = {
     .name           = "iac",
     .long_name      = NULL_IF_CONFIG_SMALL("IAC (Indeo Audio Coder)"),
@@ -1069,7 +1099,9 @@ AVCodec ff_iac_decoder = {
     .init           = imc_decode_init,
     .close          = imc_decode_close,
     .decode         = imc_decode_frame,
+    .flush          = flush,
     .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
+#endif
