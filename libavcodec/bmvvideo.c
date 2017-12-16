@@ -2,23 +2,24 @@
  * Discworld II BMV video decoder
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 
 #include "avcodec.h"
@@ -50,7 +51,7 @@ typedef struct BMVDecContext {
     const uint8_t *stream;
 } BMVDecContext;
 
-#define NEXT_BYTE(v) v = forward ? v + 1 : v - 1;
+#define NEXT_BYTE(v) (v) = forward ? (v) + 1 : (v) - 1;
 
 static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, int frame_off)
 {
@@ -100,11 +101,13 @@ static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, 
         }
         if (!(val & 0xC)) {
             for (;;) {
+                if(shift>22)
+                    return -1;
                 if (!read_two_nibbles) {
                     if (src < source || src >= source_end)
                         return AVERROR_INVALIDDATA;
                     shift += 2;
-                    val |= *src << shift;
+                    val |= (unsigned)*src << shift;
                     if (*src & 0xC)
                         break;
                 }
@@ -133,6 +136,7 @@ static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, 
         }
         advance_mode = val & 1;
         len = (val >> 1) - 1;
+        av_assert0(len>0);
         mode += 1 + advance_mode;
         if (mode >= 4)
             mode -= 3;
@@ -185,8 +189,6 @@ static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, 
                 memset(dst, val, len);
             }
             break;
-        default:
-            break;
         }
         if (dst == dst_end)
             return 0;
@@ -226,7 +228,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             return AVERROR_INVALIDDATA;
         }
         for (i = 0; i < 256; i++)
-            c->pal[i] = bytestream_get_be24(&c->stream);
+            c->pal[i] = 0xFFU << 24 | bytestream_get_be24(&c->stream);
     }
     if (type & BMV_SCROLL) {
         if (c->stream - pkt->data > pkt->size - 2) {
@@ -240,10 +242,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         scr_off = 0;
     }
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     if (decode_bmv_frame(c->stream, pkt->size - (c->stream - pkt->data), c->frame, scr_off)) {
         av_log(avctx, AV_LOG_ERROR, "Error decoding frame data\n");
@@ -274,6 +274,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     c->avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
+
+    if (avctx->width != SCREEN_WIDE || avctx->height != SCREEN_HIGH) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid dimension %dx%d\n", avctx->width, avctx->height);
+        return AVERROR_INVALIDDATA;
+    }
 
     c->frame = c->frame_base + 640;
 
