@@ -3,20 +3,20 @@
  * Copyright (c) 2002 Dieter Shirley
  * Copyright (c) 2003-2004 Romain Dolbeau <romain@dolbeau.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,27 +31,44 @@
 #include "libavcodec/mpegvideo.h"
 #include "libavcodec/me_cmp.h"
 
-#if HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_ALTIVEC
+
+#if HAVE_BIGENDIAN
+#define GET_PERM(per1, per2, pix) {\
+    per1 = vec_lvsl(0, pix);\
+    per2 = vec_add(per1, vec_splat_u8(1));\
+}
+#define LOAD_PIX(v, iv, pix, per1, per2) {\
+    vector unsigned char pix2l  = vec_ld(0,  pix);\
+    vector unsigned char pix2r  = vec_ld(16, pix);\
+    v  = vec_perm(pix2l, pix2r, per1);\
+    iv = vec_perm(pix2l, pix2r, per2);\
+}
+#else
+#define GET_PERM(per1, per2, pix) {}
+#define LOAD_PIX(v, iv, pix, per1, per2) {\
+    v  = vec_vsx_ld(0,  pix);\
+    iv = vec_vsx_ld(1,  pix);\
+}
+#endif
 static int sad16_x2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                             ptrdiff_t stride, int h)
 {
-    int i, s = 0;
+    int i;
+    int __attribute__((aligned(16))) s = 0;
     const vector unsigned char zero =
         (const vector unsigned char) vec_splat_u8(0);
-    vector unsigned char perm1 = vec_lvsl(0, pix2);
-    vector unsigned char perm2 = vec_add(perm1, vec_splat_u8(1));
     vector unsigned int sad = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumdiffs;
+    vector unsigned char perm1, perm2, pix2v, pix2iv;
 
+    GET_PERM(perm1, perm2, pix2);
     for (i = 0; i < h; i++) {
         /* Read unaligned pixels into our vectors. The vectors are as follows:
          * pix1v: pix1[0] - pix1[15]
          * pix2v: pix2[0] - pix2[15]      pix2iv: pix2[1] - pix2[16] */
         vector unsigned char pix1v  = vec_ld(0,  pix1);
-        vector unsigned char pix2l  = vec_ld(0,  pix2);
-        vector unsigned char pix2r  = vec_ld(16, pix2);
-        vector unsigned char pix2v  = vec_perm(pix2l, pix2r, perm1);
-        vector unsigned char pix2iv = vec_perm(pix2l, pix2r, perm2);
+        LOAD_PIX(pix2v, pix2iv, pix2, perm1, perm2);
 
         /* Calculate the average vector. */
         vector unsigned char avgv = vec_avg(pix2v, pix2iv);
@@ -77,13 +94,14 @@ static int sad16_x2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 static int sad16_y2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                             ptrdiff_t stride, int h)
 {
-    int i, s = 0;
+    int i;
+    int  __attribute__((aligned(16))) s = 0;
     const vector unsigned char zero =
         (const vector unsigned char) vec_splat_u8(0);
-    vector unsigned char perm = vec_lvsl(0, pix2);
     vector unsigned char pix1v, pix3v, avgv, t5;
     vector unsigned int sad = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumdiffs;
+
     uint8_t *pix3 = pix2 + stride;
 
     /* Due to the fact that pix3 = pix2 + stride, the pix3 of one
@@ -93,19 +111,14 @@ static int sad16_y2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
      * Read unaligned pixels into our vectors. The vectors are as follows:
      * pix2v: pix2[0] - pix2[15]
      * Split the pixel vectors into shorts. */
-    vector unsigned char pix2l = vec_ld(0,  pix2);
-    vector unsigned char pix2r = vec_ld(15, pix2);
-    vector unsigned char pix2v = vec_perm(pix2l, pix2r, perm);
+    vector unsigned char pix2v = VEC_LD(0, pix2);
 
     for (i = 0; i < h; i++) {
         /* Read unaligned pixels into our vectors. The vectors are as follows:
          * pix1v: pix1[0] - pix1[15]
          * pix3v: pix3[0] - pix3[15] */
         pix1v = vec_ld(0,  pix1);
-
-        pix2l = vec_ld(0,  pix3);
-        pix2r = vec_ld(15, pix3);
-        pix3v = vec_perm(pix2l, pix2r, perm);
+        pix3v = VEC_LD(0,  pix3);
 
         /* Calculate the average vector. */
         avgv = vec_avg(pix2v, pix3v);
@@ -131,20 +144,21 @@ static int sad16_y2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 static int sad16_xy2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                              ptrdiff_t stride, int h)
 {
-    int i, s = 0;
+    int i;
+    int  __attribute__((aligned(16))) s = 0;
     uint8_t *pix3 = pix2 + stride;
     const vector unsigned char zero =
         (const vector unsigned char) vec_splat_u8(0);
     const vector unsigned short two =
         (const vector unsigned short) vec_splat_u16(2);
     vector unsigned char avgv, t5;
-    vector unsigned char perm1 = vec_lvsl(0, pix2);
-    vector unsigned char perm2 = vec_add(perm1, vec_splat_u8(1));
     vector unsigned char pix1v, pix3v, pix3iv;
     vector unsigned short pix3lv, pix3hv, pix3ilv, pix3ihv;
     vector unsigned short avghv, avglv;
     vector unsigned int sad = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumdiffs;
+    vector unsigned char perm1, perm2, pix2v, pix2iv;
+    GET_PERM(perm1, perm2, pix2);
 
     /* Due to the fact that pix3 = pix2 + stride, the pix3 of one
      * iteration becomes pix2 in the next iteration. We can use this
@@ -153,19 +167,16 @@ static int sad16_xy2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
      * Read unaligned pixels into our vectors. The vectors are as follows:
      * pix2v: pix2[0] - pix2[15]  pix2iv: pix2[1] - pix2[16]
      * Split the pixel vectors into shorts. */
-    vector unsigned char pix2l  = vec_ld(0,  pix2);
-    vector unsigned char pix2r  = vec_ld(16, pix2);
-    vector unsigned char pix2v  = vec_perm(pix2l, pix2r, perm1);
-    vector unsigned char pix2iv = vec_perm(pix2l, pix2r, perm2);
-
+    LOAD_PIX(pix2v, pix2iv, pix2, perm1, perm2);
     vector unsigned short pix2hv  =
-        (vector unsigned short) vec_mergeh(zero, pix2v);
+        (vector unsigned short) VEC_MERGEH(zero, pix2v);
     vector unsigned short pix2lv  =
-        (vector unsigned short) vec_mergel(zero, pix2v);
+        (vector unsigned short) VEC_MERGEL(zero, pix2v);
     vector unsigned short pix2ihv =
-        (vector unsigned short) vec_mergeh(zero, pix2iv);
+        (vector unsigned short) VEC_MERGEH(zero, pix2iv);
     vector unsigned short pix2ilv =
-        (vector unsigned short) vec_mergel(zero, pix2iv);
+        (vector unsigned short) VEC_MERGEL(zero, pix2iv);
+
     vector unsigned short t1 = vec_add(pix2hv, pix2ihv);
     vector unsigned short t2 = vec_add(pix2lv, pix2ilv);
     vector unsigned short t3, t4;
@@ -175,11 +186,7 @@ static int sad16_xy2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
          * pix1v: pix1[0] - pix1[15]
          * pix3v: pix3[0] - pix3[15]      pix3iv: pix3[1] - pix3[16] */
         pix1v  = vec_ld(0, pix1);
-
-        pix2l  = vec_ld(0, pix3);
-        pix2r  = vec_ld(16, pix3);
-        pix3v  = vec_perm(pix2l, pix2r, perm1);
-        pix3iv = vec_perm(pix2l, pix2r, perm2);
+        LOAD_PIX(pix3v, pix3iv, pix3, perm1, perm2);
 
         /* Note that AltiVec does have vec_avg, but this works on vector pairs
          * and rounds up. We could do avg(avg(a, b), avg(c, d)), but the
@@ -188,10 +195,10 @@ static int sad16_xy2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
          * vectors of shorts and do the averaging by hand. */
 
         /* Split the pixel vectors into shorts. */
-        pix3hv  = (vector unsigned short) vec_mergeh(zero, pix3v);
-        pix3lv  = (vector unsigned short) vec_mergel(zero, pix3v);
-        pix3ihv = (vector unsigned short) vec_mergeh(zero, pix3iv);
-        pix3ilv = (vector unsigned short) vec_mergel(zero, pix3iv);
+        pix3hv  = (vector unsigned short) VEC_MERGEH(zero, pix3v);
+        pix3lv  = (vector unsigned short) VEC_MERGEL(zero, pix3v);
+        pix3ihv = (vector unsigned short) VEC_MERGEH(zero, pix3iv);
+        pix3ilv = (vector unsigned short) VEC_MERGEL(zero, pix3iv);
 
         /* Do the averaging on them. */
         t3 = vec_add(pix3hv, pix3ihv);
@@ -226,19 +233,17 @@ static int sad16_xy2_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 static int sad16_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                          ptrdiff_t stride, int h)
 {
-    int i, s;
+    int i;
+    int  __attribute__((aligned(16))) s;
     const vector unsigned int zero =
         (const vector unsigned int) vec_splat_u32(0);
-    vector unsigned char perm = vec_lvsl(0, pix2);
     vector unsigned int sad = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumdiffs;
 
     for (i = 0; i < h; i++) {
         /* Read potentially unaligned pixels into t1 and t2. */
-        vector unsigned char pix2l = vec_ld(0,  pix2);
-        vector unsigned char pix2r = vec_ld(15, pix2);
-        vector unsigned char t1 = vec_ld(0, pix1);
-        vector unsigned char t2 = vec_perm(pix2l, pix2r, perm);
+        vector unsigned char t1 =vec_ld(0, pix1);
+        vector unsigned char t2 = VEC_LD(0, pix2);
 
         /* Calculate a sum of abs differences vector. */
         vector unsigned char t3 = vec_max(t1, t2);
@@ -263,14 +268,13 @@ static int sad16_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 static int sad8_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                         ptrdiff_t stride, int h)
 {
-    int i, s;
+    int i;
+    int  __attribute__((aligned(16))) s;
     const vector unsigned int zero =
         (const vector unsigned int) vec_splat_u32(0);
     const vector unsigned char permclear =
         (vector unsigned char)
         { 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0 };
-    vector unsigned char perm1 = vec_lvsl(0, pix1);
-    vector unsigned char perm2 = vec_lvsl(0, pix2);
     vector unsigned int sad = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumdiffs;
 
@@ -278,14 +282,10 @@ static int sad8_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
         /* Read potentially unaligned pixels into t1 and t2.
          * Since we're reading 16 pixels, and actually only want 8,
          * mask out the last 8 pixels. The 0s don't change the sum. */
-        vector unsigned char pix1l = vec_ld(0, pix1);
-        vector unsigned char pix1r = vec_ld(7, pix1);
-        vector unsigned char pix2l = vec_ld(0, pix2);
-        vector unsigned char pix2r = vec_ld(7, pix2);
-        vector unsigned char t1 = vec_and(vec_perm(pix1l, pix1r, perm1),
-                                          permclear);
-        vector unsigned char t2 = vec_and(vec_perm(pix2l, pix2r, perm2),
-                                          permclear);
+        vector unsigned char pix1l = VEC_LD(0, pix1);
+        vector unsigned char pix2l = VEC_LD(0, pix2);
+        vector unsigned char t1 = vec_and(pix1l, permclear);
+        vector unsigned char t2 = vec_and(pix2l, permclear);
 
         /* Calculate a sum of abs differences vector. */
         vector unsigned char t3 = vec_max(t1, t2);
@@ -312,14 +312,13 @@ static int sad8_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 static int sse8_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                         ptrdiff_t stride, int h)
 {
-    int i, s;
+    int i;
+    int  __attribute__((aligned(16))) s;
     const vector unsigned int zero =
         (const vector unsigned int) vec_splat_u32(0);
     const vector unsigned char permclear =
         (vector unsigned char)
         { 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0 };
-    vector unsigned char perm1 = vec_lvsl(0, pix1);
-    vector unsigned char perm2 = vec_lvsl(0, pix2);
     vector unsigned int sum = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumsqr;
 
@@ -327,14 +326,8 @@ static int sse8_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
         /* Read potentially unaligned pixels into t1 and t2.
          * Since we're reading 16 pixels, and actually only want 8,
          * mask out the last 8 pixels. The 0s don't change the sum. */
-        vector unsigned char pix1l = vec_ld(0, pix1);
-        vector unsigned char pix1r = vec_ld(7, pix1);
-        vector unsigned char pix2l = vec_ld(0, pix2);
-        vector unsigned char pix2r = vec_ld(7, pix2);
-        vector unsigned char t1 = vec_and(vec_perm(pix1l, pix1r, perm1),
-                                          permclear);
-        vector unsigned char t2 = vec_and(vec_perm(pix2l, pix2r, perm2),
-                                          permclear);
+        vector unsigned char t1 = vec_and(VEC_LD(0, pix1), permclear);
+        vector unsigned char t2 = vec_and(VEC_LD(0, pix2), permclear);
 
         /* Since we want to use unsigned chars, we can take advantage
          * of the fact that abs(a - b) ^ 2 = (a - b) ^ 2. */
@@ -364,19 +357,17 @@ static int sse8_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
 static int sse16_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                          ptrdiff_t stride, int h)
 {
-    int i, s;
+    int i;
+    int  __attribute__((aligned(16))) s;
     const vector unsigned int zero =
         (const vector unsigned int) vec_splat_u32(0);
-    vector unsigned char perm = vec_lvsl(0, pix2);
     vector unsigned int sum = (vector unsigned int) vec_splat_u32(0);
     vector signed int sumsqr;
 
     for (i = 0; i < h; i++) {
         /* Read potentially unaligned pixels into t1 and t2. */
-        vector unsigned char pix2l = vec_ld(0,  pix2);
-        vector unsigned char pix2r = vec_ld(15, pix2);
         vector unsigned char t1 = vec_ld(0, pix1);
-        vector unsigned char t2 = vec_perm(pix2l, pix2r, perm);
+        vector unsigned char t2 = VEC_LD(0, pix2);
 
         /* Since we want to use unsigned chars, we can take advantage
          * of the fact that abs(a - b) ^ 2 = (a - b) ^ 2. */
@@ -396,15 +387,15 @@ static int sse16_altivec(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
     /* Sum up the four partial sums, and put the result into s. */
     sumsqr = vec_sums((vector signed int) sum, (vector signed int) zero);
     sumsqr = vec_splat(sumsqr, 3);
-    vec_ste(sumsqr, 0, &s);
 
+    vec_ste(sumsqr, 0, &s);
     return s;
 }
 
 static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
                                      uint8_t *src, ptrdiff_t stride, int h)
 {
-    int sum;
+    int __attribute__((aligned(16))) sum;
     register const vector unsigned char vzero =
         (const vector unsigned char) vec_splat_u8(0);
     register vector signed short temp0, temp1, temp2, temp3, temp4,
@@ -429,24 +420,19 @@ static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
             { 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
               0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07 };
 
+
 #define ONEITERBUTTERFLY(i, res)                                            \
     {                                                                       \
-        register vector unsigned char src1 = vec_ld(stride * i, src);       \
-        register vector unsigned char src2 = vec_ld(stride * i + 15, src);  \
-        register vector unsigned char srcO =                                \
-            vec_perm(src1, src2, vec_lvsl(stride * i, src));                \
-        register vector unsigned char dst1 = vec_ld(stride * i, dst);       \
-        register vector unsigned char dst2 = vec_ld(stride * i + 15, dst);  \
-        register vector unsigned char dstO =                                \
-            vec_perm(dst1, dst2, vec_lvsl(stride * i, dst));                \
+        register vector unsigned char srcO =  unaligned_load(stride * i, src);  \
+        register vector unsigned char dstO = unaligned_load(stride * i, dst);\
                                                                             \
         /* Promote the unsigned chars to signed shorts. */                  \
         /* We're in the 8x8 function, we only care for the first 8. */      \
         register vector signed short srcV =                                 \
-            (vector signed short) vec_mergeh((vector signed char) vzero,    \
+            (vector signed short) VEC_MERGEH((vector signed char) vzero,    \
                                              (vector signed char) srcO);    \
         register vector signed short dstV =                                 \
-            (vector signed short) vec_mergeh((vector signed char) vzero,    \
+            (vector signed short) VEC_MERGEH((vector signed char) vzero,    \
                                              (vector signed char) dstO);    \
                                                                             \
         /* subtractions inside the first butterfly */                       \
@@ -458,6 +444,7 @@ static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
         register vector signed short op3  = vec_perm(but2, but2, perm3);    \
         res  = vec_mladd(but2, vprod3, op3);                                \
     }
+
         ONEITERBUTTERFLY(0, temp0);
         ONEITERBUTTERFLY(1, temp1);
         ONEITERBUTTERFLY(2, temp2);
@@ -507,13 +494,14 @@ static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
         vsum = vec_sum4s(vec_abs(line7C), vsum);
         vsum = vec_sums(vsum, (vector signed int) vzero);
         vsum = vec_splat(vsum, 3);
+
         vec_ste(vsum, 0, &sum);
     }
     return sum;
 }
 
 /*
- * 16x8 works with 16 elements; it allows to avoid replicating loads, and
+ * 16x8 works with 16 elements; it can avoid replicating loads, and
  * gives the compiler more room for scheduling. It's only used from
  * inside hadamard8_diff16_altivec.
  *
@@ -533,7 +521,7 @@ static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
 static int hadamard8_diff16x8_altivec(MpegEncContext *s, uint8_t *dst,
                                       uint8_t *src, ptrdiff_t stride, int h)
 {
-    int sum;
+    int __attribute__((aligned(16))) sum;
     register vector signed short
         temp0 __asm__ ("v0"),
         temp1 __asm__ ("v1"),
@@ -581,31 +569,23 @@ static int hadamard8_diff16x8_altivec(MpegEncContext *s, uint8_t *dst,
 
 #define ONEITERBUTTERFLY(i, res1, res2)                                     \
     {                                                                       \
-        register vector unsigned char src1 __asm__ ("v22") =                \
-            vec_ld(stride * i, src);                                        \
-        register vector unsigned char src2 __asm__ ("v23") =                \
-            vec_ld(stride * i + 16, src);                                   \
         register vector unsigned char srcO __asm__ ("v22") =                \
-            vec_perm(src1, src2, vec_lvsl(stride * i, src));                \
-        register vector unsigned char dst1 __asm__ ("v24") =                \
-            vec_ld(stride * i, dst);                                        \
-        register vector unsigned char dst2 __asm__ ("v25") =                \
-            vec_ld(stride * i + 16, dst);                                   \
+            unaligned_load(stride * i, src);                                    \
         register vector unsigned char dstO __asm__ ("v23") =                \
-            vec_perm(dst1, dst2, vec_lvsl(stride * i, dst));                \
+            unaligned_load(stride * i, dst);\
                                                                             \
         /* Promote the unsigned chars to signed shorts. */                  \
         register vector signed short srcV __asm__ ("v24") =                 \
-            (vector signed short) vec_mergeh((vector signed char) vzero,    \
+            (vector signed short) VEC_MERGEH((vector signed char) vzero,    \
                                              (vector signed char) srcO);    \
         register vector signed short dstV __asm__ ("v25") =                 \
-            (vector signed short) vec_mergeh((vector signed char) vzero,    \
+            (vector signed short) VEC_MERGEH((vector signed char) vzero,    \
                                              (vector signed char) dstO);    \
         register vector signed short srcW __asm__ ("v26") =                 \
-            (vector signed short) vec_mergel((vector signed char) vzero,    \
+            (vector signed short) VEC_MERGEL((vector signed char) vzero,    \
                                              (vector signed char) srcO);    \
         register vector signed short dstW __asm__ ("v27") =                 \
-            (vector signed short) vec_mergel((vector signed char) vzero,    \
+            (vector signed short) VEC_MERGEL((vector signed char) vzero,    \
                                              (vector signed char) dstO);    \
                                                                             \
         /* subtractions inside the first butterfly */                       \
@@ -636,6 +616,7 @@ static int hadamard8_diff16x8_altivec(MpegEncContext *s, uint8_t *dst,
         res1 = vec_mladd(but2, vprod3, op3);                                \
         res2 = vec_mladd(but2S, vprod3, op3S);                              \
     }
+
         ONEITERBUTTERFLY(0, temp0, temp0S);
         ONEITERBUTTERFLY(1, temp1, temp1S);
         ONEITERBUTTERFLY(2, temp2, temp2S);
@@ -722,6 +703,7 @@ static int hadamard8_diff16x8_altivec(MpegEncContext *s, uint8_t *dst,
         vsum = vec_sum4s(vec_abs(line7CS), vsum);
         vsum = vec_sums(vsum, (vector signed int) vzero);
         vsum = vec_splat(vsum, 3);
+
         vec_ste(vsum, 0, &sum);
     }
     return sum;
@@ -739,11 +721,11 @@ static int hadamard8_diff16_altivec(MpegEncContext *s, uint8_t *dst,
     }
     return score;
 }
-#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
+#endif /* HAVE_ALTIVEC */
 
 av_cold void ff_me_cmp_init_ppc(MECmpContext *c, AVCodecContext *avctx)
 {
-#if HAVE_ALTIVEC && HAVE_BIGENDIAN
+#if HAVE_ALTIVEC
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 
@@ -760,5 +742,5 @@ av_cold void ff_me_cmp_init_ppc(MECmpContext *c, AVCodecContext *avctx)
 
     c->hadamard8_diff[0] = hadamard8_diff16_altivec;
     c->hadamard8_diff[1] = hadamard8_diff8x8_altivec;
-#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
+#endif /* HAVE_ALTIVEC */
 }
