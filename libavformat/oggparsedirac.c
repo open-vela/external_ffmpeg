@@ -1,24 +1,23 @@
 /*
  * Copyright (C) 2008  David Conrad
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/dirac.h"
 #include "avformat.h"
@@ -37,7 +36,7 @@ static int dirac_header(AVFormatContext *s, int idx)
     if (st->codecpar->codec_id == AV_CODEC_ID_DIRAC)
         return 0;
 
-    ret = av_dirac_parse_sequence_header(&dsh, os->buf + os->pstart + 13, (os->psize - 13), s);
+    ret = av_dirac_parse_sequence_header(&dsh, os->buf + os->pstart + 13, (os->psize - 13) * 8, s);
     if (ret < 0)
         return ret;
 
@@ -52,13 +51,12 @@ static int dirac_header(AVFormatContext *s, int idx)
     st->codecpar->color_space     = dsh->colorspace;
     st->codecpar->profile         = dsh->profile;
     st->codecpar->level           = dsh->level;
-    if (av_image_check_sar(st->codecpar->width, st->codecpar->height, dsh->sample_aspect_ratio) >= 0)
-        st->sample_aspect_ratio = dsh->sample_aspect_ratio;
 
     // Dirac in Ogg always stores timestamps as though the video were interlaced
     avpriv_set_pts_info(st, 64, dsh->framerate.den, 2 * dsh->framerate.num);
 
     av_freep(&dsh);
+
     return 1;
 }
 
