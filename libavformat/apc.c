@@ -2,20 +2,20 @@
  * CRYO APC audio format demuxer
  * Copyright (c) 2007 Anssi Hannula <anssi.hannula@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,6 @@
 
 #include "libavutil/channel_layout.h"
 #include "avformat.h"
-#include "internal.h"
 
 static int apc_probe(AVProbeData *p)
 {
@@ -52,9 +51,14 @@ static int apc_read_header(AVFormatContext *s)
     avio_rl32(pb); /* number of samples */
     st->codecpar->sample_rate = avio_rl32(pb);
 
-    /* initial predictor values for adpcm decoder */
-    if (ff_get_extradata(s, st->codecpar, pb, 2 * 4) < 0)
+    st->codecpar->extradata_size = 2 * 4;
+    st->codecpar->extradata = av_malloc(st->codecpar->extradata_size +
+                                        AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!st->codecpar->extradata)
         return AVERROR(ENOMEM);
+
+    /* initial predictor values for adpcm decoder */
+    avio_read(pb, st->codecpar->extradata, 2 * 4);
 
     if (avio_rl32(pb)) {
         st->codecpar->channels       = 2;
@@ -65,7 +69,7 @@ static int apc_read_header(AVFormatContext *s)
     }
 
     st->codecpar->bits_per_coded_sample = 4;
-    st->codecpar->bit_rate = (int64_t)st->codecpar->bits_per_coded_sample * st->codecpar->channels
+    st->codecpar->bit_rate = st->codecpar->bits_per_coded_sample * st->codecpar->channels
                           * st->codecpar->sample_rate;
     st->codecpar->block_align = 1;
 
@@ -78,7 +82,6 @@ static int apc_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     if (av_get_packet(s->pb, pkt, MAX_READ_SIZE) <= 0)
         return AVERROR(EIO);
-    pkt->flags &= ~AV_PKT_FLAG_CORRUPT;
     pkt->stream_index = 0;
     return 0;
 }
