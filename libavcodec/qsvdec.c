@@ -475,7 +475,6 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
     uint8_t *dummy_data;
     int dummy_size;
     int ret;
-    const AVPixFmtDescriptor *desc;
 
     if (!q->avctx_internal) {
         q->avctx_internal = avcodec_alloc_context3(NULL);
@@ -502,8 +501,8 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
 
     /* TODO: flush delayed frames on reinit */
     if (q->parser->format       != q->orig_pix_fmt    ||
-        FFALIGN(q->parser->coded_width, 16)  != FFALIGN(avctx->coded_width, 16) ||
-        FFALIGN(q->parser->coded_height, 16) != FFALIGN(avctx->coded_height, 16)) {
+        q->parser->coded_width  != avctx->coded_width ||
+        q->parser->coded_height != avctx->coded_height) {
         enum AVPixelFormat pix_fmts[3] = { AV_PIX_FMT_QSV,
                                            AV_PIX_FMT_NONE,
                                            AV_PIX_FMT_NONE };
@@ -522,8 +521,8 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
         avctx->pix_fmt      = pix_fmts[1] = qsv_format;
         avctx->width        = q->parser->width;
         avctx->height       = q->parser->height;
-        avctx->coded_width  = FFALIGN(q->parser->coded_width, 16);
-        avctx->coded_height = FFALIGN(q->parser->coded_height, 16);
+        avctx->coded_width  = q->parser->coded_width;
+        avctx->coded_height = q->parser->coded_height;
         avctx->field_order  = q->parser->field_order;
         avctx->level        = q->avctx_internal->level;
         avctx->profile      = q->avctx_internal->profile;
@@ -533,15 +532,6 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
             goto reinit_fail;
 
         avctx->pix_fmt = ret;
-
-        desc = av_pix_fmt_desc_get(avctx->pix_fmt);
-        if (!desc)
-            goto reinit_fail;
-
-         if (desc->comp[0].depth > 8) {
-            avctx->coded_width =  FFALIGN(q->parser->coded_width, 32);
-            avctx->coded_height = FFALIGN(q->parser->coded_height, 32);
-        }
 
         ret = qsv_decode_init(avctx, q);
         if (ret < 0)
