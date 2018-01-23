@@ -153,12 +153,8 @@ static int qsv_decode_frame(AVCodecContext *avctx, void *data,
         }
 
         ret = ff_qsv_process_data(avctx, &s->qsv, frame, got_frame, &s->buffer_pkt);
-        if (ret < 0){
-            /* Drop buffer_pkt when failed to decode the packet. Otherwise,
-               the decoder will keep decoding the failure packet. */
-            av_packet_unref(&s->buffer_pkt);
+        if (ret < 0)
             return ret;
-        }
 
         s->buffer_pkt.size -= ret;
         s->buffer_pkt.data += ret;
