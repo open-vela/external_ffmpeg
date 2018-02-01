@@ -337,6 +337,7 @@ uint8_t *av_packet_new_side_data(AVPacket *pkt, enum AVPacketSideDataType type,
     data = av_mallocz(size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!data)
         return NULL;
+    memset(data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     ret = av_packet_add_side_data(pkt, type, data, size);
     if (ret < 0) {
