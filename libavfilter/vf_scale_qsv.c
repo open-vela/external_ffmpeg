@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -71,7 +71,6 @@ enum var_name {
 typedef struct QSVScaleContext {
     const AVClass *class;
 
-    AVBufferRef *out_frames_ref;
     /* a clone of the main session, used internally for scaling */
     mfxSession   session;
 
@@ -134,7 +133,6 @@ static void qsvscale_uninit(AVFilterContext *ctx)
         MFXClose(s->session);
         s->session = NULL;
     }
-    av_buffer_unref(&s->out_frames_ref);
 
     av_freep(&s->mem_ids_in);
     av_freep(&s->mem_ids_out);
@@ -153,10 +151,8 @@ static int qsvscale_query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_QSV, AV_PIX_FMT_NONE,
     };
     AVFilterFormats *pix_fmts  = ff_make_format_list(pixel_formats);
-    int ret;
 
-    if ((ret = ff_set_common_formats(ctx, pix_fmts)) < 0)
-        return ret;
+    ff_set_common_formats(ctx, pix_fmts);
 
     return 0;
 }
@@ -165,6 +161,7 @@ static int init_out_pool(AVFilterContext *ctx,
                          int out_width, int out_height)
 {
     QSVScaleContext *s = ctx->priv;
+    AVFilterLink *outlink = ctx->outputs[0];
 
     AVHWFramesContext *in_frames_ctx;
     AVHWFramesContext *out_frames_ctx;
@@ -185,21 +182,25 @@ static int init_out_pool(AVFilterContext *ctx,
     in_format     = in_frames_ctx->sw_format;
     out_format    = (s->format == AV_PIX_FMT_NONE) ? in_format : s->format;
 
-    s->out_frames_ref = av_hwframe_ctx_alloc(in_frames_ctx->device_ref);
-    if (!s->out_frames_ref)
+    outlink->hw_frames_ctx = av_hwframe_ctx_alloc(in_frames_ctx->device_ref);
+    if (!outlink->hw_frames_ctx)
         return AVERROR(ENOMEM);
-    out_frames_ctx   = (AVHWFramesContext*)s->out_frames_ref->data;
+    out_frames_ctx   = (AVHWFramesContext*)outlink->hw_frames_ctx->data;
     out_frames_hwctx = out_frames_ctx->hwctx;
 
     out_frames_ctx->format            = AV_PIX_FMT_QSV;
     out_frames_ctx->width             = FFALIGN(out_width,  32);
     out_frames_ctx->height            = FFALIGN(out_height, 32);
     out_frames_ctx->sw_format         = out_format;
-    out_frames_ctx->initial_pool_size = 32;
+    out_frames_ctx->initial_pool_size = 4;
 
     out_frames_hwctx->frame_type = in_frames_hwctx->frame_type;
 
-    ret = av_hwframe_ctx_init(s->out_frames_ref);
+    ret = ff_filter_init_hw_frames(ctx, outlink, 32);
+    if (ret < 0)
+        return ret;
+
+    ret = av_hwframe_ctx_init(outlink->hw_frames_ctx);
     if (ret < 0)
         return ret;
 
@@ -266,7 +267,7 @@ static int init_out_session(AVFilterContext *ctx)
 
     QSVScaleContext                   *s = ctx->priv;
     AVHWFramesContext     *in_frames_ctx = (AVHWFramesContext*)ctx->inputs[0]->hw_frames_ctx->data;
-    AVHWFramesContext    *out_frames_ctx = (AVHWFramesContext*)s->out_frames_ref->data;
+    AVHWFramesContext    *out_frames_ctx = (AVHWFramesContext*)ctx->outputs[0]->hw_frames_ctx->data;
     AVQSVFramesContext  *in_frames_hwctx = in_frames_ctx->hwctx;
     AVQSVFramesContext *out_frames_hwctx = out_frames_ctx->hwctx;
     AVQSVDeviceContext     *device_hwctx = in_frames_ctx->device_ctx->hwctx;
@@ -407,8 +408,6 @@ static int init_out_session(AVFilterContext *ctx)
 static int init_scale_session(AVFilterContext *ctx, int in_width, int in_height,
                               int out_width, int out_height)
 {
-    QSVScaleContext *s = ctx->priv;
-
     int ret;
 
     qsvscale_uninit(ctx);
@@ -420,11 +419,6 @@ static int init_scale_session(AVFilterContext *ctx, int in_width, int in_height,
     ret = init_out_session(ctx);
     if (ret < 0)
         return ret;
-
-    av_buffer_unref(&ctx->outputs[0]->hw_frames_ctx);
-    ctx->outputs[0]->hw_frames_ctx = av_buffer_ref(s->out_frames_ref);
-    if (!ctx->outputs[0]->hw_frames_ctx)
-        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -581,7 +575,7 @@ fail:
 }
 
 #define OFFSET(x) offsetof(QSVScaleContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
 static const AVOption options[] = {
     { "w",      "Output video width",  OFFSET(w_expr),     AV_OPT_TYPE_STRING, { .str = "iw"   }, .flags = FLAGS },
     { "h",      "Output video height", OFFSET(h_expr),     AV_OPT_TYPE_STRING, { .str = "ih"   }, .flags = FLAGS },
