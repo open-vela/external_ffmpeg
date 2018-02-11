@@ -1,105 +1,44 @@
 /*
  * Copyright (c) 2015 Ronald S. Bultje <rsbultje@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <math.h>
 #include <string.h>
-#include "checkasm.h"
-#include "libavcodec/vp9data.h"
-#include "libavcodec/vp9.h"
+
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mathematics.h"
 
+#include "libavcodec/vp9.h"
+#include "libavcodec/vp9data.h"
+
+#include "checkasm.h"
+
 static const uint32_t pixel_mask[3] = { 0xffffffff, 0x03ff03ff, 0x0fff0fff };
-#define SIZEOF_PIXEL ((bit_depth + 7) / 8)
 
-#define randomize_buffers()                                        \
-    do {                                                           \
-        uint32_t mask = pixel_mask[(bit_depth - 8) >> 1];          \
-        int k;                                                     \
-        for (k = -4;  k < SIZEOF_PIXEL * FFMAX(8, size); k += 4) { \
-            uint32_t r = rnd() & mask;                             \
-            AV_WN32A(a + k, r);                                    \
-        }                                                          \
-        for (k = 0; k < size * SIZEOF_PIXEL; k += 4) {             \
-            uint32_t r = rnd() & mask;                             \
-            AV_WN32A(l + k, r);                                    \
-        }                                                          \
-    } while (0)
-
-static void check_ipred(void)
-{
-    LOCAL_ALIGNED_32(uint8_t, a_buf, [64 * 2]);
-    uint8_t *a = &a_buf[32 * 2];
-    LOCAL_ALIGNED_32(uint8_t, l, [32 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst0, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst1, [32 * 32 * 2]);
-    VP9DSPContext dsp;
-    int tx, mode, bit_depth;
-    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT, void, uint8_t *dst, ptrdiff_t stride,
-                      const uint8_t *left, const uint8_t *top);
-    static const char *const mode_names[N_INTRA_PRED_MODES] = {
-        [VERT_PRED] = "vert",
-        [HOR_PRED] = "hor",
-        [DC_PRED] = "dc",
-        [DIAG_DOWN_LEFT_PRED] = "diag_downleft",
-        [DIAG_DOWN_RIGHT_PRED] = "diag_downright",
-        [VERT_RIGHT_PRED] = "vert_right",
-        [HOR_DOWN_PRED] = "hor_down",
-        [VERT_LEFT_PRED] = "vert_left",
-        [HOR_UP_PRED] = "hor_up",
-        [TM_VP8_PRED] = "tm",
-        [LEFT_DC_PRED] = "dc_left",
-        [TOP_DC_PRED] = "dc_top",
-        [DC_128_PRED] = "dc_128",
-        [DC_127_PRED] = "dc_127",
-        [DC_129_PRED] = "dc_129",
-    };
-
-    for (bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
-        ff_vp9dsp_init(&dsp, bit_depth, 0);
-        for (tx = 0; tx < 4; tx++) {
-            int size = 4 << tx;
-
-            for (mode = 0; mode < N_INTRA_PRED_MODES; mode++) {
-                if (check_func(dsp.intra_pred[tx][mode], "vp9_%s_%dx%d_%dbpp",
-                               mode_names[mode], size, size, bit_depth)) {
-                    randomize_buffers();
-                    call_ref(dst0, size * SIZEOF_PIXEL, l, a);
-                    call_new(dst1, size * SIZEOF_PIXEL, l, a);
-                    if (memcmp(dst0, dst1, size * size * SIZEOF_PIXEL))
-                        fail();
-                    bench_new(dst1, size * SIZEOF_PIXEL,l, a);
-                }
-            }
-        }
-    }
-    report("ipred");
-}
-
-#undef randomize_buffers
+#define BIT_DEPTH 8
+#define SIZEOF_PIXEL ((BIT_DEPTH + 7) / 8)
 
 #define randomize_buffers() \
     do { \
-        uint32_t mask = pixel_mask[(bit_depth - 8) >> 1];                  \
+        uint32_t mask = pixel_mask[(BIT_DEPTH - 8) >> 1];                  \
         for (y = 0; y < sz; y++) {                                         \
             for (x = 0; x < sz * SIZEOF_PIXEL; x += 4) {                   \
                 uint32_t r = rnd() & mask;                                 \
@@ -107,7 +46,7 @@ static void check_ipred(void)
                 AV_WN32A(src + y * sz * SIZEOF_PIXEL + x, rnd() & mask);   \
             }                                                              \
             for (x = 0; x < sz; x++) {                                     \
-                if (bit_depth == 8) {                                      \
+                if (BIT_DEPTH == 8) {                                      \
                     coef[y * sz + x] = src[y * sz + x] - dst[y * sz + x];  \
                 } else {                                                   \
                     ((int32_t *) coef)[y * sz + x] =                       \
@@ -304,69 +243,67 @@ static int iszero(const int16_t *c, int sz)
     return 1;
 }
 
-#define SIZEOF_COEF (2 * ((bit_depth + 7) / 8))
+#define SIZEOF_COEF (2 * ((BIT_DEPTH + 7) / 8))
 
 static void check_itxfm(void)
 {
     LOCAL_ALIGNED_32(uint8_t, src, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst0, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst1, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(int16_t, coef, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(int16_t, subcoef0, [32 * 32 * 2]);
-    LOCAL_ALIGNED_32(int16_t, subcoef1, [32 * 32 * 2]);
-    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT, void, uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
+    LOCAL_ALIGNED(32, uint8_t, dst, [32 * 32 * 2]);
+    LOCAL_ALIGNED(32, uint8_t, dst0, [32 * 32 * 2]);
+    LOCAL_ALIGNED(32, uint8_t, dst1, [32 * 32 * 2]);
+    LOCAL_ALIGNED(32, int16_t, coef, [32 * 32 * 2]);
+    LOCAL_ALIGNED(32, int16_t, subcoef0, [32 * 32 * 2]);
+    LOCAL_ALIGNED(32, int16_t, subcoef1, [32 * 32 * 2]);
+    declare_func(void, uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
     VP9DSPContext dsp;
-    int y, x, tx, txtp, bit_depth, sub;
+    int y, x, tx, txtp, sub;
     static const char *const txtp_types[N_TXFM_TYPES] = {
         [DCT_DCT] = "dct_dct", [DCT_ADST] = "adst_dct",
         [ADST_DCT] = "dct_adst", [ADST_ADST] = "adst_adst"
     };
 
-    for (bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
-        ff_vp9dsp_init(&dsp, bit_depth, 0);
+    ff_vp9dsp_init(&dsp);
 
-        for (tx = TX_4X4; tx <= N_TXFM_SIZES /* 4 = lossless */; tx++) {
-            int sz = 4 << (tx & 3);
-            int n_txtps = tx < TX_32X32 ? N_TXFM_TYPES : 1;
+    for (tx = TX_4X4; tx <= N_TXFM_SIZES /* 4 = lossless */; tx++) {
+        int sz = 4 << (tx & 3);
+        int n_txtps = tx < TX_32X32 ? N_TXFM_TYPES : 1;
 
-            for (txtp = 0; txtp < n_txtps; txtp++) {
-                // skip testing sub-IDCTs for WHT or ADST since they don't
-                // implement it in any of the SIMD functions. If they do,
-                // consider changing this to ensure we have complete test
-                // coverage. Test sub=1 for dc-only, then 2, 4, 8, 12, etc,
-                // since the arm version can distinguish them at that level.
-                for (sub = (txtp == 0 && tx < 4) ? 1 : sz; sub <= sz;
-                     sub < 4 ? (sub <<= 1) : (sub += 4)) {
-                    if (check_func(dsp.itxfm_add[tx][txtp],
-                                   "vp9_inv_%s_%dx%d_sub%d_add_%d",
-                                   tx == 4 ? "wht_wht" : txtp_types[txtp],
-                                   sz, sz, sub, bit_depth)) {
-                        int eob;
+        for (txtp = 0; txtp < n_txtps; txtp++) {
+            // skip testing sub-IDCTs for WHT or ADST since they don't
+            // implement it in any of the SIMD functions. If they do,
+            // consider changing this to ensure we have complete test
+            // coverage. Test sub=1 for dc-only, then 2, 4, 8, 12, etc,
+            // since the arm version can distinguish them at that level.
+            for (sub = (txtp == 0 && tx < 4) ? 1 : sz; sub <= sz;
+                 sub < 4 ? (sub <<= 1) : (sub += 4)) {
+                if (check_func(dsp.itxfm_add[tx][txtp],
+                               "vp9_inv_%s_%dx%d_sub%d_add",
+                               tx == 4 ? "wht_wht" : txtp_types[txtp],
+                               sz, sz, sub)) {
+                    int eob;
 
-                        randomize_buffers();
-                        ftx(coef, tx, txtp, sz, bit_depth);
+                    randomize_buffers();
+                    ftx(coef, tx, txtp, sz, BIT_DEPTH);
 
-                        if (sub < sz) {
-                            eob = copy_subcoefs(subcoef0, coef, tx, txtp,
-                                                sz, sub, bit_depth);
-                        } else {
-                            eob = sz * sz;
-                            memcpy(subcoef0, coef, sz * sz * SIZEOF_COEF);
-                        }
-
-                        memcpy(dst0, dst, sz * sz * SIZEOF_PIXEL);
-                        memcpy(dst1, dst, sz * sz * SIZEOF_PIXEL);
-                        memcpy(subcoef1, subcoef0, sz * sz * SIZEOF_COEF);
-                        call_ref(dst0, sz * SIZEOF_PIXEL, subcoef0, eob);
-                        call_new(dst1, sz * SIZEOF_PIXEL, subcoef1, eob);
-                        if (memcmp(dst0, dst1, sz * sz * SIZEOF_PIXEL) ||
-                            !iszero(subcoef0, sz * sz * SIZEOF_COEF) ||
-                            !iszero(subcoef1, sz * sz * SIZEOF_COEF))
-                            fail();
-
-                        bench_new(dst, sz * SIZEOF_PIXEL, coef, eob);
+                    if (sub < sz) {
+                        eob = copy_subcoefs(subcoef0, coef, tx, txtp,
+                                            sz, sub, BIT_DEPTH);
+                    } else {
+                        eob = sz * sz;
+                        memcpy(subcoef0, coef, sz * sz * SIZEOF_COEF);
                     }
+
+                    memcpy(dst0, dst, sz * sz * SIZEOF_PIXEL);
+                    memcpy(dst1, dst, sz * sz * SIZEOF_PIXEL);
+                    memcpy(subcoef1, subcoef0, sz * sz * SIZEOF_COEF);
+                    call_ref(dst0, sz * SIZEOF_PIXEL, subcoef0, eob);
+                    call_new(dst1, sz * SIZEOF_PIXEL, subcoef1, eob);
+                    if (memcmp(dst0, dst1, sz * sz * SIZEOF_PIXEL) ||
+                        !iszero(subcoef0, sz * sz * SIZEOF_COEF) ||
+                        !iszero(subcoef1, sz * sz * SIZEOF_COEF))
+                        fail();
+
+                    bench_new(dst, sz * SIZEOF_PIXEL, coef, eob);
                 }
             }
         }
@@ -381,19 +318,19 @@ static void check_itxfm(void)
         if (SIZEOF_PIXEL == 1) { \
             buf0[(a) + (b) * jstride] = av_clip_uint8(c); \
         } else { \
-            ((uint16_t *)buf0)[(a) + (b) * jstride] = av_clip_uintp2(c, bit_depth); \
+            ((uint16_t *)buf0)[(a) + (b) * jstride] = av_clip_uintp2(c, BIT_DEPTH); \
         } \
     } while (0)
-
-// c can be an assignment and must not be put under ()
 #define setdx(a,b,c,d) setpx(a,b,c-(d)+(rnd()%((d)*2+1)))
-#define setsx(a,b,c,d) setdx(a,b,c,(d) << (bit_depth - 8))
+#define setsx(a,b,c,d) setdx(a,b,c,(d) << (BIT_DEPTH - 8))
+
 static void randomize_loopfilter_buffers(int bidx, int lineoff, int str,
-                                         int bit_depth, int dir, const int *E,
-                                         const int *F, const int *H, const int *I,
+                                         int bit_depth, int dir,
+                                         const int *E, const int *F,
+                                         const int *H, const int *I,
                                          uint8_t *buf0, uint8_t *buf1)
 {
-    uint32_t mask = (1 << bit_depth) - 1;
+    uint32_t mask = (1 << BIT_DEPTH) - 1;
     int off = dir ? lineoff : lineoff * 16;
     int istride = dir ? 1 : 16;
     int jstride = dir ? str : 1;
@@ -443,83 +380,84 @@ static void randomize_loopfilter_buffers(int bidx, int lineoff, int str,
         }
     }
 }
-#define randomize_buffers(bidx, lineoff, str) \
-        randomize_loopfilter_buffers(bidx, lineoff, str, bit_depth, dir, \
-                                     E, F, H, I, buf0, buf1)
+
+#define randomize_buffers(bidx, lineoff, str)                        \
+    randomize_loopfilter_buffers(bidx, lineoff, str, BIT_DEPTH, dir, \
+                                 E, F, H, I, buf0, buf1)
 
 static void check_loopfilter(void)
 {
     LOCAL_ALIGNED_32(uint8_t, base0, [32 + 16 * 16 * 2]);
     LOCAL_ALIGNED_32(uint8_t, base1, [32 + 16 * 16 * 2]);
     VP9DSPContext dsp;
-    int dir, wd, wd2, bit_depth;
+    int dir, wd, wd2;
     static const char *const dir_name[2] = { "h", "v" };
     static const int E[2] = { 20, 28 }, I[2] = { 10, 16 };
-    static const int H[2] = { 7, 11 }, F[2] = { 1, 1 };
-    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT, void, uint8_t *dst, ptrdiff_t stride, int E, int I, int H);
+    static const int H[2] = {  7, 11 }, F[2] = {  1,  1 };
+    declare_func(void, uint8_t *dst, ptrdiff_t stride, int E, int I, int H);
 
-    for (bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
-        ff_vp9dsp_init(&dsp, bit_depth, 0);
+    ff_vp9dsp_init(&dsp);
 
-        for (dir = 0; dir < 2; dir++) {
-            int midoff = (dir ? 8 * 8 : 8) * SIZEOF_PIXEL;
-            int midoff_aligned = (dir ? 8 * 8 : 16) * SIZEOF_PIXEL;
-            uint8_t *buf0 = base0 + midoff_aligned;
-            uint8_t *buf1 = base1 + midoff_aligned;
+    for (dir = 0; dir < 2; dir++) {
+        uint8_t *buf0, *buf1;
+        int midoff = (dir ? 8 * 8 : 8) * SIZEOF_PIXEL;
+        int midoff_aligned = (dir ? 8 * 8 : 16) * SIZEOF_PIXEL;
 
-            for (wd = 0; wd < 3; wd++) {
-                // 4/8/16wd_8px
-                if (check_func(dsp.loop_filter_8[wd][dir],
-                               "vp9_loop_filter_%s_%d_8_%dbpp",
-                               dir_name[dir], 4 << wd, bit_depth)) {
-                    randomize_buffers(0, 0, 8);
-                    memcpy(buf1 - midoff, buf0 - midoff,
-                           16 * 8 * SIZEOF_PIXEL);
-                    call_ref(buf0, 16 * SIZEOF_PIXEL >> dir, E[0], I[0], H[0]);
-                    call_new(buf1, 16 * SIZEOF_PIXEL >> dir, E[0], I[0], H[0]);
-                    if (memcmp(buf0 - midoff, buf1 - midoff, 16 * 8 * SIZEOF_PIXEL))
-                        fail();
-                    bench_new(buf1, 16 * SIZEOF_PIXEL >> dir, E[0], I[0], H[0]);
-                }
-            }
+        buf0 = base0 + midoff_aligned;
+        buf1 = base1 + midoff_aligned;
 
-            midoff = (dir ? 16 * 8 : 8) * SIZEOF_PIXEL;
-            midoff_aligned = (dir ? 16 * 8 : 16) * SIZEOF_PIXEL;
-
-            buf0 = base0 + midoff_aligned;
-            buf1 = base1 + midoff_aligned;
-
-            // 16wd_16px loopfilter
-            if (check_func(dsp.loop_filter_16[dir],
-                           "vp9_loop_filter_%s_16_16_%dbpp",
-                           dir_name[dir], bit_depth)) {
-                randomize_buffers(0, 0, 16);
-                randomize_buffers(0, 8, 16);
-                memcpy(buf1 - midoff, buf0 - midoff, 16 * 16 * SIZEOF_PIXEL);
-                call_ref(buf0, 16 * SIZEOF_PIXEL, E[0], I[0], H[0]);
-                call_new(buf1, 16 * SIZEOF_PIXEL, E[0], I[0], H[0]);
-                if (memcmp(buf0 - midoff, buf1 - midoff, 16 * 16 * SIZEOF_PIXEL))
+        for (wd = 0; wd < 3; wd++) {
+            // 4/8/16wd_8px
+            if (check_func(dsp.loop_filter_8[wd][dir],
+                           "vp9_loop_filter_%s_%d_8",
+                           dir_name[dir], 4 << wd)) {
+                randomize_buffers(0, 0, 8);
+                memcpy(buf1 - midoff, buf0 - midoff,
+                       16 * 8 * SIZEOF_PIXEL);
+                call_ref(buf0, 16 * SIZEOF_PIXEL >> dir, E[0], I[0], H[0]);
+                call_new(buf1, 16 * SIZEOF_PIXEL >> dir, E[0], I[0], H[0]);
+                if (memcmp(buf0 - midoff, buf1 - midoff, 16 * 8 * SIZEOF_PIXEL))
                     fail();
-                bench_new(buf1, 16 * SIZEOF_PIXEL, E[0], I[0], H[0]);
+                bench_new(buf1, 16 * SIZEOF_PIXEL >> dir, E[0], I[0], H[0]);
             }
+        }
 
-            for (wd = 0; wd < 2; wd++) {
-                for (wd2 = 0; wd2 < 2; wd2++) {
-                    // mix2 loopfilter
-                    if (check_func(dsp.loop_filter_mix2[wd][wd2][dir],
-                                   "vp9_loop_filter_mix2_%s_%d%d_16_%dbpp",
-                                   dir_name[dir], 4 << wd, 4 << wd2, bit_depth)) {
-                        randomize_buffers(0, 0, 16);
-                        randomize_buffers(1, 8, 16);
-                        memcpy(buf1 - midoff, buf0 - midoff, 16 * 16 * SIZEOF_PIXEL);
-#define M(a) (((a)[1] << 8) | (a)[0])
-                        call_ref(buf0, 16 * SIZEOF_PIXEL, M(E), M(I), M(H));
-                        call_new(buf1, 16 * SIZEOF_PIXEL, M(E), M(I), M(H));
-                        if (memcmp(buf0 - midoff, buf1 - midoff, 16 * 16 * SIZEOF_PIXEL))
-                            fail();
-                        bench_new(buf1, 16 * SIZEOF_PIXEL, M(E), M(I), M(H));
+        midoff = (dir ? 16 * 8 : 8) * SIZEOF_PIXEL;
+        midoff_aligned = (dir ? 16 * 8 : 16) * SIZEOF_PIXEL;
+
+        buf0 = base0 + midoff_aligned;
+        buf1 = base1 + midoff_aligned;
+
+        // 16wd_16px loopfilter
+        if (check_func(dsp.loop_filter_16[dir],
+                       "vp9_loop_filter_%s_16_16",
+                       dir_name[dir])) {
+            randomize_buffers(0, 0, 16);
+            randomize_buffers(0, 8, 16);
+            memcpy(buf1 - midoff, buf0 - midoff, 16 * 16 * SIZEOF_PIXEL);
+            call_ref(buf0, 16 * SIZEOF_PIXEL, E[0], I[0], H[0]);
+            call_new(buf1, 16 * SIZEOF_PIXEL, E[0], I[0], H[0]);
+            if (memcmp(buf0 - midoff, buf1 - midoff, 16 * 16 * SIZEOF_PIXEL))
+                fail();
+            bench_new(buf1, 16 * SIZEOF_PIXEL, E[0], I[0], H[0]);
+        }
+
+        for (wd = 0; wd < 2; wd++) {
+            for (wd2 = 0; wd2 < 2; wd2++) {
+                // mix2 loopfilter
+                if (check_func(dsp.loop_filter_mix2[wd][wd2][dir],
+                               "vp9_loop_filter_mix2_%s_%d%d_16",
+                               dir_name[dir], 4 << wd, 4 << wd2)) {
+                    randomize_buffers(0, 0, 16);
+                    randomize_buffers(1, 8, 16);
+                    memcpy(buf1 - midoff, buf0 - midoff, 16 * 16 * SIZEOF_PIXEL);
+#define M(a) ((a[1] << 8) | a[0])
+                    call_ref(buf0, 16 * SIZEOF_PIXEL, M(E), M(I), M(H));
+                    call_new(buf1, 16 * SIZEOF_PIXEL, M(E), M(I), M(H));
+                    if (memcmp(buf0 - midoff, buf1 - midoff, 16 * 16 * SIZEOF_PIXEL))
+                        fail();
+                    bench_new(buf1, 16 * SIZEOF_PIXEL, M(E), M(I), M(H));
 #undef M
-                    }
                 }
             }
         }
@@ -539,7 +477,7 @@ static void check_loopfilter(void)
 
 #define randomize_buffers()                               \
     do {                                                  \
-        uint32_t mask = pixel_mask[(bit_depth - 8) >> 1]; \
+        uint32_t mask = pixel_mask[(BIT_DEPTH - 8) >> 1]; \
         int k;                                            \
         for (k = 0; k < SRC_BUF_SIZE; k += 4) {           \
             uint32_t r = rnd() & mask;                    \
@@ -556,63 +494,60 @@ static void check_loopfilter(void)
 
 static void check_mc(void)
 {
-    LOCAL_ALIGNED_32(uint8_t, buf, [72 * 72 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst0, [64 * 64 * 2]);
-    LOCAL_ALIGNED_32(uint8_t, dst1, [64 * 64 * 2]);
-    VP9DSPContext dsp;
-    int op, hsize, bit_depth, filter, dx, dy;
-    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT, void, uint8_t *dst, ptrdiff_t dst_stride,
-                      const uint8_t *ref, ptrdiff_t ref_stride,
-                 int h, int mx, int my);
     static const char *const filter_names[4] = {
         "8tap_smooth", "8tap_regular", "8tap_sharp", "bilin"
     };
     static const char *const subpel_names[2][2] = { { "", "h" }, { "v", "hv" } };
     static const char *const op_names[2] = { "put", "avg" };
+
+    LOCAL_ALIGNED_32(uint8_t, buf,  [72 * 72 * 2]);
+    LOCAL_ALIGNED_32(uint8_t, dst0, [64 * 64 * 2]);
+    LOCAL_ALIGNED_32(uint8_t, dst1, [64 * 64 * 2]);
     char str[256];
+    VP9DSPContext dsp;
+    int op, hsize, filter, dx, dy;
+
+    declare_func_emms(AV_CPU_FLAG_MMX | AV_CPU_FLAG_MMXEXT,
+                      void, uint8_t *dst, ptrdiff_t dst_stride,
+                      const uint8_t *ref, ptrdiff_t ref_stride,
+                      int h, int mx, int my);
 
     for (op = 0; op < 2; op++) {
-        for (bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
-            ff_vp9dsp_init(&dsp, bit_depth, 0);
-            for (hsize = 0; hsize < 5; hsize++) {
-                int size = 64 >> hsize;
+        ff_vp9dsp_init(&dsp);
+        for (hsize = 0; hsize < 5; hsize++) {
+            int size = 64 >> hsize;
 
-                for (filter = 0; filter < 4; filter++) {
-                    for (dx = 0; dx < 2; dx++) {
-                        for (dy = 0; dy < 2; dy++) {
-                            if (dx || dy) {
-                                snprintf(str, sizeof(str),
-                                         "%s_%s_%d%s", op_names[op],
-                                         filter_names[filter], size,
-                                         subpel_names[dy][dx]);
-                            } else {
-                                snprintf(str, sizeof(str),
-                                         "%s%d", op_names[op], size);
-                            }
-                            if (check_func(dsp.mc[hsize][filter][op][dx][dy],
-                                           "vp9_%s_%dbpp", str, bit_depth)) {
-                                int mx = dx ? 1 + (rnd() % 14) : 0;
-                                int my = dy ? 1 + (rnd() % 14) : 0;
-                                randomize_buffers();
-                                call_ref(dst0, size * SIZEOF_PIXEL,
-                                         src, SRC_BUF_STRIDE * SIZEOF_PIXEL,
-                                         size, mx, my);
-                                call_new(dst1, size * SIZEOF_PIXEL,
-                                         src, SRC_BUF_STRIDE * SIZEOF_PIXEL,
-                                         size, mx, my);
-                                if (memcmp(dst0, dst1, DST_BUF_SIZE))
-                                    fail();
+            for (filter = 0; filter < 4; filter++) {
+                for (dx = 0; dx < 2; dx++) {
+                    for (dy = 0; dy < 2; dy++) {
+                        if (dx || dy) {
+                            snprintf(str, sizeof(str), "%s_%s_%d%s", op_names[op],
+                                     filter_names[filter], size,
+                                     subpel_names[dy][dx]);
+                        } else {
+                            snprintf(str, sizeof(str), "%s%d", op_names[op], size);
+                        }
+                        if (check_func(dsp.mc[hsize][filter][op][dx][dy],
+                                       "vp9_%s", str)) {
+                            int mx = dx ? 1 + (rnd() % 14) : 0;
+                            int my = dy ? 1 + (rnd() % 14) : 0;
+                            randomize_buffers();
+                            call_ref(dst0, size * SIZEOF_PIXEL,
+                                     src, SRC_BUF_STRIDE * SIZEOF_PIXEL,
+                                     size, mx, my);
+                            call_new(dst1, size * SIZEOF_PIXEL,
+                                     src, SRC_BUF_STRIDE * SIZEOF_PIXEL,
+                                     size, mx, my);
+                            if (memcmp(dst0, dst1, DST_BUF_SIZE))
+                                fail();
 
-                                // simd implementations for each filter of subpel
-                                // functions are identical
-                                if (filter >= 1 && filter <= 2) continue;
-                                // 10/12 bpp for bilin are identical
-                                if (bit_depth == 12 && filter == 3) continue;
+                            // SIMD implementations for each filter of subpel
+                            // functions are identical
+                            if (filter >= 1 && filter <= 2) continue;
 
-                                bench_new(dst1, size * SIZEOF_PIXEL,
-                                          src, SRC_BUF_STRIDE * SIZEOF_PIXEL,
-                                          size, mx, my);
-                            }
+                            bench_new(dst1, size * SIZEOF_PIXEL,
+                                      src, SRC_BUF_STRIDE * SIZEOF_PIXEL,
+                                      size, mx, my);
                         }
                     }
                 }
@@ -624,7 +559,6 @@ static void check_mc(void)
 
 void checkasm_check_vp9dsp(void)
 {
-    check_ipred();
     check_itxfm();
     check_loopfilter();
     check_mc();
