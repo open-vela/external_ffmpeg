@@ -2,20 +2,20 @@
  * Constants for DV codec
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,7 @@ typedef struct DVwork_chunk {
 } DVwork_chunk;
 
 typedef struct DVVideoContext {
+    AVClass *avclass;
     const AVDVProfile *sys;
     const AVFrame   *frame;
     AVCodecContext  *avctx;
@@ -51,6 +52,8 @@ typedef struct DVVideoContext {
     me_cmp_func ildct_cmp;
     DVwork_chunk work_chunks[4 * 12 * 27];
     uint32_t idct_factor[2 * 4 * 16 * 64];
+
+    int quant_deadzone;
 } DVVideoContext;
 
 enum dv_section_type {
@@ -80,10 +83,6 @@ enum dv_pack_type {
 #define DV_PROFILE_IS_1080i50(p) (((p)->video_stype == 0x14) && ((p)->dsf == 1))
 #define DV_PROFILE_IS_720p50(p)  (((p)->video_stype == 0x18) && ((p)->dsf == 1))
 
-/* minimum number of bytes to read from a DV stream in order to
- * determine the profile */
-#define DV_PROFILE_BYTES (6 * 80) /* 6 DIF blocks */
-
 /**
  * largest possible DV frame, in bytes (1080i50)
  */
@@ -94,11 +93,12 @@ enum dv_pack_type {
  */
 #define DV_MAX_BPM 8
 
-#define TEX_VLC_BITS 9
+#define TEX_VLC_BITS 10
 
-extern RL_VLC_ELEM ff_dv_rl_vlc[1184];
+extern RL_VLC_ELEM ff_dv_rl_vlc[1664];
 
 int ff_dv_init_dynamic_tables(DVVideoContext *s, const AVDVProfile *d);
+
 int ff_dvvideo_init(AVCodecContext *avctx);
 
 static inline int dv_work_pool_size(const AVDVProfile *d)
