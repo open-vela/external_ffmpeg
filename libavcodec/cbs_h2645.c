@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,7 @@
 #include "hevc.h"
 
 
-static int cbs_read_ue_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
+static int cbs_read_ue_golomb(CodedBitstreamContext *ctx, BitstreamContext *bc,
                               const char *name, uint32_t *write_to,
                               uint32_t range_min, uint32_t range_max)
 {
@@ -40,15 +40,15 @@ static int cbs_read_ue_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
     unsigned int k;
     char bits[65];
 
-    position = get_bits_count(gbc);
+    position = bitstream_tell(bc);
 
     for (i = 0; i < 32; i++) {
-        if (get_bits_left(gbc) < i + 1) {
+        if (bitstream_bits_left(bc) < i + 1) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Invalid ue-golomb code at "
                    "%s: bitstream ended.\n", name);
             return AVERROR_INVALIDDATA;
         }
-        k = get_bits1(gbc);
+        k = bitstream_read_bit(bc);
         bits[i] = k ? '1' : '0';
         if (k)
             break;
@@ -60,7 +60,7 @@ static int cbs_read_ue_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
     }
     value = 1;
     for (j = 0; j < i; j++) {
-        k = get_bits1(gbc);
+        k = bitstream_read_bit(bc);
         bits[i + j + 1] = k ? '1' : '0';
         value = value << 1 | k;
     }
@@ -81,7 +81,7 @@ static int cbs_read_ue_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
     return 0;
 }
 
-static int cbs_read_se_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
+static int cbs_read_se_golomb(CodedBitstreamContext *ctx, BitstreamContext *bc,
                               const char *name, int32_t *write_to,
                               int32_t range_min, int32_t range_max)
 {
@@ -91,15 +91,15 @@ static int cbs_read_se_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
     uint32_t v;
     char bits[65];
 
-    position = get_bits_count(gbc);
+    position = bitstream_tell(bc);
 
     for (i = 0; i < 32; i++) {
-        if (get_bits_left(gbc) < i + 1) {
+        if (bitstream_bits_left(bc) < i + 1) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Invalid se-golomb code at "
                    "%s: bitstream ended.\n", name);
             return AVERROR_INVALIDDATA;
         }
-        k = get_bits1(gbc);
+        k = bitstream_read_bit(bc);
         bits[i] = k ? '1' : '0';
         if (k)
             break;
@@ -111,7 +111,7 @@ static int cbs_read_se_golomb(CodedBitstreamContext *ctx, GetBitContext *gbc,
     }
     v = 1;
     for (j = 0; j < i; j++) {
-        k = get_bits1(gbc);
+        k = bitstream_read_bit(bc);
         bits[i + j + 1] = k ? '1' : '0';
         v = v << 1 | k;
     }
@@ -242,7 +242,7 @@ static int cbs_write_se_golomb(CodedBitstreamContext *ctx, PutBitContext *pbc,
 
 #define READ
 #define READWRITE read
-#define RWContext GetBitContext
+#define RWContext BitstreamContext
 
 #define xu(width, name, var, range_min, range_max) do { \
         uint32_t value = range_min; \
@@ -276,19 +276,19 @@ static int cbs_write_se_golomb(CodedBitstreamContext *ctx, PutBitContext *pbc,
         current->name = value; \
     } while (0)
 
-static int cbs_h2645_read_more_rbsp_data(GetBitContext *gbc)
+static int cbs_h2645_read_more_rbsp_data(BitstreamContext *bc)
 {
-    int bits_left = get_bits_left(gbc);
+    int bits_left = bitstream_bits_left(bc);
     if (bits_left > 8)
         return 1;
-    if (show_bits(gbc, bits_left) == 1 << (bits_left - 1))
+    if (bitstream_peek(bc, bits_left) == 1 << (bits_left - 1))
         return 0;
     return 1;
 }
 
 #define more_rbsp_data(var) ((var) = cbs_h2645_read_more_rbsp_data(rw))
 
-#define byte_alignment(rw) (get_bits_count(rw) % 8)
+#define byte_alignment(rw) (bitstream_tell(rw) % 8)
 
 #define allocate(name, size) do { \
         name ## _ref = av_buffer_allocz(size); \
@@ -488,7 +488,7 @@ static int cbs_h2645_fragment_add_nals(CodedBitstreamContext *ctx,
         memset(data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
         err = ff_cbs_insert_unit_data(ctx, frag, -1, nal->type,
-                                      data, size, NULL);
+                                      data, nal->size, NULL);
         if (err < 0) {
             av_freep(&data);
             return err;
@@ -548,7 +548,7 @@ static int cbs_h2645_split_fragment(CodedBitstreamContext *ctx,
 
         err = ff_h2645_packet_split(&priv->read_packet,
                                     frag->data + start, end - start,
-                                    ctx->log_ctx, 1, 2, AV_CODEC_ID_H264, 1);
+                                    ctx->log_ctx, 1, 2, AV_CODEC_ID_H264);
         if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to split AVCC SPS array.\n");
             return err;
@@ -572,7 +572,7 @@ static int cbs_h2645_split_fragment(CodedBitstreamContext *ctx,
 
         err = ff_h2645_packet_split(&priv->read_packet,
                                     frag->data + start, end - start,
-                                    ctx->log_ctx, 1, 2, AV_CODEC_ID_H264, 1);
+                                    ctx->log_ctx, 1, 2, AV_CODEC_ID_H264);
         if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to split AVCC PPS array.\n");
             return err;
@@ -626,7 +626,7 @@ static int cbs_h2645_split_fragment(CodedBitstreamContext *ctx,
 
             err = ff_h2645_packet_split(&priv->read_packet,
                                         frag->data + start, end - start,
-                                        ctx->log_ctx, 1, 2, AV_CODEC_ID_HEVC, 1);
+                                        ctx->log_ctx, 1, 2, AV_CODEC_ID_HEVC);
             if (err < 0) {
                 av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to split "
                        "HVCC array %d (%d NAL units of type %d).\n",
@@ -645,7 +645,7 @@ static int cbs_h2645_split_fragment(CodedBitstreamContext *ctx,
                                     frag->data, frag->data_size,
                                     ctx->log_ctx,
                                     priv->mp4, priv->nal_length_size,
-                                    codec_id, 1);
+                                    codec_id);
         if (err < 0)
             return err;
 
@@ -687,10 +687,10 @@ cbs_h2645_replace_ps(5, PPS, pps, pps_pic_parameter_set_id)
 static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
                                   CodedBitstreamUnit *unit)
 {
-    GetBitContext gbc;
+    BitstreamContext bc;
     int err;
 
-    err = init_get_bits(&gbc, unit->data, 8 * unit->data_size);
+    err = bitstream_init(&bc, unit->data, 8 * unit->data_size);
     if (err < 0)
         return err;
 
@@ -704,7 +704,7 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             sps = unit->content;
 
-            err = cbs_h264_read_sps(ctx, &gbc, sps);
+            err = cbs_h264_read_sps(ctx, &bc, sps);
             if (err < 0)
                 return err;
 
@@ -722,7 +722,7 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
             if (err < 0)
                 return err;
 
-            err = cbs_h264_read_sps_extension(ctx, &gbc, unit->content);
+            err = cbs_h264_read_sps_extension(ctx, &bc, unit->content);
             if (err < 0)
                 return err;
         }
@@ -738,7 +738,7 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             pps = unit->content;
 
-            err = cbs_h264_read_pps(ctx, &gbc, pps);
+            err = cbs_h264_read_pps(ctx, &bc, pps);
             if (err < 0)
                 return err;
 
@@ -761,11 +761,11 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             slice = unit->content;
 
-            err = cbs_h264_read_slice_header(ctx, &gbc, &slice->header);
+            err = cbs_h264_read_slice_header(ctx, &bc, &slice->header);
             if (err < 0)
                 return err;
 
-            pos = get_bits_count(&gbc);
+            pos = bitstream_tell(&bc);
             len = unit->data_size;
             if (!unit->data[len - 1]) {
                 int z;
@@ -796,7 +796,7 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
             if (err < 0)
                 return err;
 
-            err = cbs_h264_read_aud(ctx, &gbc, unit->content);
+            err = cbs_h264_read_aud(ctx, &bc, unit->content);
             if (err < 0)
                 return err;
         }
@@ -809,7 +809,7 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
             if (err < 0)
                 return err;
 
-            err = cbs_h264_read_sei(ctx, &gbc, unit->content);
+            err = cbs_h264_read_sei(ctx, &bc, unit->content);
             if (err < 0)
                 return err;
         }
@@ -822,7 +822,7 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
             if (err < 0)
                 return err;
 
-            err = cbs_h264_read_filler(ctx, &gbc, unit->content);
+            err = cbs_h264_read_filler(ctx, &bc, unit->content);
             if (err < 0)
                 return err;
         }
@@ -838,10 +838,10 @@ static int cbs_h264_read_nal_unit(CodedBitstreamContext *ctx,
 static int cbs_h265_read_nal_unit(CodedBitstreamContext *ctx,
                                   CodedBitstreamUnit *unit)
 {
-    GetBitContext gbc;
+    BitstreamContext bc;
     int err;
 
-    err = init_get_bits(&gbc, unit->data, 8 * unit->data_size);
+    err = bitstream_init(&bc, unit->data, 8 * unit->data_size);
     if (err < 0)
         return err;
 
@@ -856,7 +856,7 @@ static int cbs_h265_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             vps = unit->content;
 
-            err = cbs_h265_read_vps(ctx, &gbc, vps);
+            err = cbs_h265_read_vps(ctx, &bc, vps);
             if (err < 0)
                 return err;
 
@@ -875,7 +875,7 @@ static int cbs_h265_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             sps = unit->content;
 
-            err = cbs_h265_read_sps(ctx, &gbc, sps);
+            err = cbs_h265_read_sps(ctx, &bc, sps);
             if (err < 0)
                 return err;
 
@@ -895,7 +895,7 @@ static int cbs_h265_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             pps = unit->content;
 
-            err = cbs_h265_read_pps(ctx, &gbc, pps);
+            err = cbs_h265_read_pps(ctx, &bc, pps);
             if (err < 0)
                 return err;
 
@@ -931,11 +931,11 @@ static int cbs_h265_read_nal_unit(CodedBitstreamContext *ctx,
                 return err;
             slice = unit->content;
 
-            err = cbs_h265_read_slice_segment_header(ctx, &gbc, &slice->header);
+            err = cbs_h265_read_slice_segment_header(ctx, &bc, &slice->header);
             if (err < 0)
                 return err;
 
-            pos = get_bits_count(&gbc);
+            pos = bitstream_tell(&bc);
             len = unit->data_size;
             if (!unit->data[len - 1]) {
                 int z;
@@ -966,7 +966,7 @@ static int cbs_h265_read_nal_unit(CodedBitstreamContext *ctx,
             if (err < 0)
                 return err;
 
-            err = cbs_h265_read_aud(ctx, &gbc, unit->content);
+            err = cbs_h265_read_aud(ctx, &bc, unit->content);
             if (err < 0)
                 return err;
         }
@@ -1029,7 +1029,7 @@ static int cbs_h264_write_nal_unit(CodedBitstreamContext *ctx,
     case H264_NAL_AUXILIARY_SLICE:
         {
             H264RawSlice *slice = unit->content;
-            GetBitContext gbc;
+            BitstreamContext bc;
             int bits_left, end, zeroes;
 
             err = cbs_h264_write_slice_header(ctx, pbc, &slice->header);
@@ -1040,16 +1040,16 @@ static int cbs_h264_write_nal_unit(CodedBitstreamContext *ctx,
                 if (slice->data_size * 8 + 8 > put_bits_left(pbc))
                     return AVERROR(ENOSPC);
 
-                init_get_bits(&gbc, slice->data, slice->data_size * 8);
-                skip_bits_long(&gbc, slice->data_bit_start);
+                bitstream_init(&bc, slice->data, slice->data_size * 8);
+                bitstream_skip(&bc, slice->data_bit_start);
 
                 // Copy in two-byte blocks, but stop before copying the
                 // rbsp_stop_one_bit in the final byte.
-                while (get_bits_left(&gbc) > 23)
-                    put_bits(pbc, 16, get_bits(&gbc, 16));
+                while (bitstream_bits_left(&bc) > 23)
+                    put_bits(pbc, 16, bitstream_read(&bc, 16));
 
-                bits_left = get_bits_left(&gbc);
-                end = get_bits(&gbc, bits_left);
+                bits_left = bitstream_bits_left(&bc);
+                end = bitstream_read(&bc, bits_left);
 
                 // rbsp_stop_one_bit must be present here.
                 av_assert0(end);
@@ -1167,7 +1167,7 @@ static int cbs_h265_write_nal_unit(CodedBitstreamContext *ctx,
     case HEVC_NAL_CRA_NUT:
         {
             H265RawSlice *slice = unit->content;
-            GetBitContext gbc;
+            BitstreamContext bc;
             int bits_left, end, zeroes;
 
             err = cbs_h265_write_slice_segment_header(ctx, pbc, &slice->header);
@@ -1178,16 +1178,16 @@ static int cbs_h265_write_nal_unit(CodedBitstreamContext *ctx,
                 if (slice->data_size * 8 + 8 > put_bits_left(pbc))
                     return AVERROR(ENOSPC);
 
-                init_get_bits(&gbc, slice->data, slice->data_size * 8);
-                skip_bits_long(&gbc, slice->data_bit_start);
+                bitstream_init(&bc, slice->data, slice->data_size * 8);
+                bitstream_skip(&bc, slice->data_bit_start);
 
                 // Copy in two-byte blocks, but stop before copying the
                 // rbsp_stop_one_bit in the final byte.
-                while (get_bits_left(&gbc) > 23)
-                    put_bits(pbc, 16, get_bits(&gbc, 16));
+                while (bitstream_bits_left(&bc) > 23)
+                    put_bits(pbc, 16, bitstream_read(&bc, 16));
 
-                bits_left = get_bits_left(&gbc);
-                end = get_bits(&gbc, bits_left);
+                bits_left = bitstream_bits_left(&bc);
+                end = bitstream_read(&bc, bits_left);
 
                 // rbsp_stop_one_bit must be present here.
                 av_assert0(end);
@@ -1238,7 +1238,7 @@ static int cbs_h2645_write_nal_unit(CodedBitstreamContext *ctx,
         if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Unable to allocate a "
                    "sufficiently large write buffer (last attempt "
-                   "%"SIZE_SPECIFIER" bytes).\n", priv->write_buffer_size);
+                   "%zu bytes).\n", priv->write_buffer_size);
             return err;
         }
     }
