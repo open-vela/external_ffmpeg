@@ -2,20 +2,20 @@
  * G.729 raw format demuxer
  * Copyright (c) 2011 Vladimir Voroshilov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,7 +56,7 @@ static int g729_read_header(AVFormatContext *s)
         st->codecpar->block_align = 10;
         break;
     default:
-        av_log(s, AV_LOG_ERROR, "Invalid bit_rate value %"PRId64". "
+        av_log(s, AV_LOG_ERROR, "Invalid bit_rate value %d. "
                "Only 6400 and 8000 b/s are supported.", s->bit_rate);
         return AVERROR(EINVAL);
     }
