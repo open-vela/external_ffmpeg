@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,7 +21,6 @@
 #include "config.h"
 
 #include "libavutil/avassert.h"
-#include "libavutil/buffer.h"
 #include "libavutil/common.h"
 
 #include "cbs.h"
@@ -96,12 +95,11 @@ void ff_cbs_close(CodedBitstreamContext **ctx_ptr)
 static void cbs_unit_uninit(CodedBitstreamContext *ctx,
                             CodedBitstreamUnit *unit)
 {
-    av_buffer_unref(&unit->content_ref);
-    unit->content = NULL;
+    if (ctx->codec->free_unit && unit->content && !unit->content_external)
+        ctx->codec->free_unit(unit);
 
-    av_buffer_unref(&unit->data_ref);
-    unit->data             = NULL;
-    unit->data_size        = 0;
+    av_freep(&unit->data);
+    unit->data_size = 0;
     unit->data_bit_padding = 0;
 }
 
@@ -115,8 +113,7 @@ void ff_cbs_fragment_uninit(CodedBitstreamContext *ctx,
     av_freep(&frag->units);
     frag->nb_units = 0;
 
-    av_buffer_unref(&frag->data_ref);
-    frag->data             = NULL;
+    av_freep(&frag->data);
     frag->data_size        = 0;
     frag->data_bit_padding = 0;
 }
@@ -136,12 +133,9 @@ static int cbs_read_fragment_content(CodedBitstreamContext *ctx,
                 continue;
         }
 
-        av_buffer_unref(&frag->units[i].content_ref);
-        frag->units[i].content = NULL;
-
         err = ctx->codec->read_unit(ctx, &frag->units[i]);
         if (err == AVERROR(ENOSYS)) {
-            av_log(ctx->log_ctx, AV_LOG_VERBOSE,
+            av_log(ctx->log_ctx, AV_LOG_WARNING,
                    "Decomposition unimplemented for unit %d "
                    "(type %"PRIu32").\n", i, frag->units[i].type);
         } else if (err < 0) {
@@ -175,27 +169,6 @@ int ff_cbs_read_extradata(CodedBitstreamContext *ctx,
     return cbs_read_fragment_content(ctx, frag);
 }
 
-static int cbs_fill_fragment_data(CodedBitstreamContext *ctx,
-                                  CodedBitstreamFragment *frag,
-                                  const uint8_t *data, size_t size)
-{
-    av_assert0(!frag->data && !frag->data_ref);
-
-    frag->data_ref =
-        av_buffer_alloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!frag->data_ref)
-        return AVERROR(ENOMEM);
-
-    frag->data      = frag->data_ref->data;
-    frag->data_size = size;
-
-    memcpy(frag->data, data, size);
-    memset(frag->data + size, 0,
-           AV_INPUT_BUFFER_PADDING_SIZE);
-
-    return 0;
-}
-
 int ff_cbs_read_packet(CodedBitstreamContext *ctx,
                        CodedBitstreamFragment *frag,
                        const AVPacket *pkt)
@@ -204,23 +177,15 @@ int ff_cbs_read_packet(CodedBitstreamContext *ctx,
 
     memset(frag, 0, sizeof(*frag));
 
-    if (pkt->buf) {
-        frag->data_ref = av_buffer_ref(pkt->buf);
-        if (!frag->data_ref)
-            return AVERROR(ENOMEM);
-
-        frag->data      = pkt->data;
-        frag->data_size = pkt->size;
-
-    } else {
-        err = cbs_fill_fragment_data(ctx, frag, pkt->data, pkt->size);
-        if (err < 0)
-            return err;
-    }
+    frag->data      = pkt->data;
+    frag->data_size = pkt->size;
 
     err = ctx->codec->split_fragment(ctx, frag, 0);
     if (err < 0)
         return err;
+
+    frag->data      = NULL;
+    frag->data_size = 0;
 
     return cbs_read_fragment_content(ctx, frag);
 }
@@ -233,13 +198,16 @@ int ff_cbs_read(CodedBitstreamContext *ctx,
 
     memset(frag, 0, sizeof(*frag));
 
-    err = cbs_fill_fragment_data(ctx, frag, data, size);
-    if (err < 0)
-        return err;
+    // (We won't write to this during split.)
+    frag->data      = (uint8_t*)data;
+    frag->data_size = size;
 
     err = ctx->codec->split_fragment(ctx, frag, 0);
     if (err < 0)
         return err;
+
+    frag->data      = NULL;
+    frag->data_size = 0;
 
     return cbs_read_fragment_content(ctx, frag);
 }
@@ -251,24 +219,16 @@ int ff_cbs_write_fragment_data(CodedBitstreamContext *ctx,
     int err, i;
 
     for (i = 0; i < frag->nb_units; i++) {
-        CodedBitstreamUnit *unit = &frag->units[i];
-
-        if (!unit->content)
+        if (!frag->units[i].content)
             continue;
 
-        av_buffer_unref(&unit->data_ref);
-        unit->data = NULL;
-
-        err = ctx->codec->write_unit(ctx, unit);
+        err = ctx->codec->write_unit(ctx, &frag->units[i]);
         if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to write unit %d "
-                   "(type %"PRIu32").\n", i, unit->type);
+                   "(type %"PRIu32").\n", i, frag->units[i].type);
             return err;
         }
     }
-
-    av_buffer_unref(&frag->data_ref);
-    frag->data = NULL;
 
     err = ctx->codec->assemble_fragment(ctx, frag);
     if (err < 0) {
@@ -358,25 +318,25 @@ void ff_cbs_trace_syntax_element(CodedBitstreamContext *ctx, int position,
            position, name, pad, bits, value);
 }
 
-int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, BitstreamContext *bc,
+int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
                          int width, const char *name, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max)
 {
     uint32_t value;
     int position;
 
-    av_assert0(width <= 32);
+    av_assert0(width > 0 && width <= 32);
 
-    if (bitstream_bits_left(bc) < width) {
+    if (get_bits_left(gbc) < width) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "Invalid value at "
                "%s: bitstream ended.\n", name);
         return AVERROR_INVALIDDATA;
     }
 
     if (ctx->trace_enable)
-        position = bitstream_tell(bc);
+        position = get_bits_count(gbc);
 
-    value = bitstream_read(bc, width);
+    value = get_bits_long(gbc, width);
 
     if (ctx->trace_enable) {
         char bits[33];
@@ -403,7 +363,7 @@ int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
                           int width, const char *name, uint32_t value,
                           uint32_t range_min, uint32_t range_max)
 {
-    av_assert0(width <= 32);
+    av_assert0(width > 0 && width <= 32);
 
     if (value < range_min || value > range_max) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "%s out of range: "
@@ -434,45 +394,6 @@ int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
 }
 
 
-int ff_cbs_alloc_unit_content(CodedBitstreamContext *ctx,
-                              CodedBitstreamUnit *unit,
-                              size_t size,
-                              void (*free)(void *opaque, uint8_t *data))
-{
-    av_assert0(!unit->content && !unit->content_ref);
-
-    unit->content = av_mallocz(size);
-    if (!unit->content)
-        return AVERROR(ENOMEM);
-
-    unit->content_ref = av_buffer_create(unit->content, size,
-                                         free, ctx, 0);
-    if (!unit->content_ref) {
-        av_freep(&unit->content);
-        return AVERROR(ENOMEM);
-    }
-
-    return 0;
-}
-
-int ff_cbs_alloc_unit_data(CodedBitstreamContext *ctx,
-                           CodedBitstreamUnit *unit,
-                           size_t size)
-{
-    av_assert0(!unit->data && !unit->data_ref);
-
-    unit->data_ref = av_buffer_alloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!unit->data_ref)
-        return AVERROR(ENOMEM);
-
-    unit->data      = unit->data_ref->data;
-    unit->data_size = size;
-
-    memset(unit->data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
-
-    return 0;
-}
-
 static int cbs_insert_unit(CodedBitstreamContext *ctx,
                            CodedBitstreamFragment *frag,
                            int position)
@@ -502,35 +423,21 @@ int ff_cbs_insert_unit_content(CodedBitstreamContext *ctx,
                                CodedBitstreamFragment *frag,
                                int position,
                                CodedBitstreamUnitType type,
-                               void *content,
-                               AVBufferRef *content_buf)
+                               void *content)
 {
-    CodedBitstreamUnit *unit;
-    AVBufferRef *content_ref;
     int err;
 
     if (position == -1)
         position = frag->nb_units;
     av_assert0(position >= 0 && position <= frag->nb_units);
 
-    if (content_buf) {
-        content_ref = av_buffer_ref(content_buf);
-        if (!content_ref)
-            return AVERROR(ENOMEM);
-    } else {
-        content_ref = NULL;
-    }
-
     err = cbs_insert_unit(ctx, frag, position);
-    if (err < 0) {
-        av_buffer_unref(&content_ref);
+    if (err < 0)
         return err;
-    }
 
-    unit = &frag->units[position];
-    unit->type        = type;
-    unit->content     = content;
-    unit->content_ref = content_ref;
+    frag->units[position].type             = type;
+    frag->units[position].content          = content;
+    frag->units[position].content_external = 1;
 
     return 0;
 }
@@ -539,35 +446,21 @@ int ff_cbs_insert_unit_data(CodedBitstreamContext *ctx,
                             CodedBitstreamFragment *frag,
                             int position,
                             CodedBitstreamUnitType type,
-                            uint8_t *data, size_t data_size,
-                            AVBufferRef *data_buf)
+                            uint8_t *data, size_t data_size)
 {
-    CodedBitstreamUnit *unit;
-    AVBufferRef *data_ref;
     int err;
 
     if (position == -1)
         position = frag->nb_units;
     av_assert0(position >= 0 && position <= frag->nb_units);
 
-    if (data_buf)
-        data_ref = av_buffer_ref(data_buf);
-    else
-        data_ref = av_buffer_create(data, data_size, NULL, NULL, 0);
-    if (!data_ref)
-        return AVERROR(ENOMEM);
-
     err = cbs_insert_unit(ctx, frag, position);
-    if (err < 0) {
-        av_buffer_unref(&data_ref);
+    if (err < 0)
         return err;
-    }
 
-    unit = &frag->units[position];
-    unit->type      = type;
-    unit->data      = data;
-    unit->data_size = data_size;
-    unit->data_ref  = data_ref;
+    frag->units[position].type      = type;
+    frag->units[position].data      = data;
+    frag->units[position].data_size = data_size;
 
     return 0;
 }

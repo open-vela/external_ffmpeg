@@ -2,20 +2,20 @@
  * RTP/Quicktime support.
  * Copyright (c) 2009 Ronald S. Bultje
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,14 +25,13 @@
  * @author Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  */
 
-#include "libavcodec/bitstream.h"
-
 #include "avformat.h"
 #include "internal.h"
 #include "avio_internal.h"
 #include "rtp.h"
 #include "rtpdec.h"
 #include "isom.h"
+#include "libavcodec/get_bits.h"
 
 struct PayloadContext {
     AVPacket pkt;
@@ -46,7 +45,7 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
                                int len, uint16_t seq, int flags)
 {
     AVIOContext pb;
-    BitstreamContext bc;
+    GetBitContext gb;
     int packing_scheme, has_payload_desc, has_packet_info, alen,
         has_marker_bit = flags & RTP_FLAG_MARKER,
         keyframe;
@@ -72,38 +71,38 @@ static int qt_rtp_parse_packet(AVFormatContext *s, PayloadContext *qt,
      * The RTP payload is described in:
      * http://developer.apple.com/quicktime/icefloe/dispatch026.html
      */
-    bitstream_init8(&bc, buf, len);
-    ffio_init_context(&pb, buf, len, 0, NULL, NULL, NULL, NULL);
+    init_get_bits(&gb, buf, len << 3);
+    ffio_init_context(&pb, (uint8_t*)buf, len, 0, NULL, NULL, NULL, NULL);
 
     if (len < 4)
         return AVERROR_INVALIDDATA;
 
-    bitstream_skip(&bc, 4); // version
-    if ((packing_scheme = bitstream_read(&bc, 2)) == 0)
+    skip_bits(&gb, 4); // version
+    if ((packing_scheme = get_bits(&gb, 2)) == 0)
         return AVERROR_INVALIDDATA;
-    keyframe            = bitstream_read_bit(&bc);
-    has_payload_desc    = bitstream_read_bit(&bc);
-    has_packet_info     = bitstream_read_bit(&bc);
-    bitstream_skip(&bc, 23); // reserved:7, cache payload info:1, payload ID:15
+    keyframe            = get_bits1(&gb);
+    has_payload_desc    = get_bits1(&gb);
+    has_packet_info     = get_bits1(&gb);
+    skip_bits(&gb, 23); // reserved:7, cache payload info:1, payload ID:15
 
     if (has_payload_desc) {
         int data_len, pos, is_start, is_finish;
         uint32_t tag;
 
-        pos = bitstream_tell(&bc) >> 3;
+        pos = get_bits_count(&gb) >> 3;
         if (pos + 12 > len)
             return AVERROR_INVALIDDATA;
 
-        bitstream_skip(&bc, 2); // has non-I-frames:1, is sparse:1
-        is_start  = bitstream_read_bit(&bc);
-        is_finish = bitstream_read_bit(&bc);
+        skip_bits(&gb, 2); // has non-I-frames:1, is sparse:1
+        is_start  = get_bits1(&gb);
+        is_finish = get_bits1(&gb);
         if (!is_start || !is_finish) {
             avpriv_request_sample(s, "RTP-X-QT with payload description "
                                   "split over several packets");
             return AVERROR_PATCHWELCOME;
         }
-        bitstream_skip(&bc, 12); // reserved
-        data_len = bitstream_read(&bc, 16);
+        skip_bits(&gb, 12); // reserved
+        data_len = get_bits(&gb, 16);
 
         avio_seek(&pb, pos + 4, SEEK_SET);
         tag = avio_rl32(&pb);

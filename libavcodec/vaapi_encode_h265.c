@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -105,7 +105,7 @@ static int vaapi_encode_h265_add_nal(AVCodecContext *avctx,
     int err;
 
     err = ff_cbs_insert_unit_content(priv->cbc, au, -1,
-                                     header->nal_unit_type, nal_unit, NULL);
+                                     header->nal_unit_type, nal_unit);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to add NAL unit: "
                "type = %d.\n", header->nal_unit_type);
@@ -767,6 +767,8 @@ static int vaapi_encode_h265_init_slice_params(AVCodecContext *avctx,
 
         .num_ref_idx_l0_active_minus1 = sh->num_ref_idx_l0_active_minus1,
         .num_ref_idx_l1_active_minus1 = sh->num_ref_idx_l1_active_minus1,
+        .ref_pic_list0[0]             = vpic->reference_frames[0],
+        .ref_pic_list1[0]             = vpic->reference_frames[1],
 
         .luma_log2_weight_denom         = sh->luma_log2_weight_denom,
         .delta_chroma_log2_weight_denom = sh->delta_chroma_log2_weight_denom,
@@ -800,25 +802,6 @@ static int vaapi_encode_h265_init_slice_params(AVCodecContext *avctx,
         },
     };
 
-    for (i = 0; i < FF_ARRAY_ELEMS(vslice->ref_pic_list0); i++) {
-        vslice->ref_pic_list0[i].picture_id = VA_INVALID_ID;
-        vslice->ref_pic_list0[i].flags      = VA_PICTURE_HEVC_INVALID;
-        vslice->ref_pic_list1[i].picture_id = VA_INVALID_ID;
-        vslice->ref_pic_list1[i].flags      = VA_PICTURE_HEVC_INVALID;
-    }
-
-    av_assert0(pic->nb_refs <= 2);
-    if (pic->nb_refs >= 1) {
-        // Backward reference for P- or B-frame.
-        av_assert0(pic->type == PICTURE_TYPE_P ||
-                   pic->type == PICTURE_TYPE_B);
-        vslice->ref_pic_list0[0] = vpic->reference_frames[0];
-    }
-    if (pic->nb_refs >= 2) {
-        // Forward reference for B-frame.
-        av_assert0(pic->type == PICTURE_TYPE_B);
-        vslice->ref_pic_list1[0] = vpic->reference_frames[1];
-    }
 
     return 0;
 }
@@ -865,7 +848,7 @@ static av_cold int vaapi_encode_h265_configure(AVCodecContext *avctx)
         priv->fixed_qp_p   = 30;
         priv->fixed_qp_b   = 30;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %d bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %"PRId64" bps.\n",
                ctx->va_rc_mode == VA_RC_CBR ? "constant" : "variable",
                avctx->bit_rate);
 
@@ -1010,10 +993,10 @@ static const AVCodecDefault vaapi_encode_h265_defaults[] = {
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1.0" },
-    { "i_qoffset",      "0.0" },
-    { "b_qfactor",      "1.2" },
-    { "b_qoffset",      "0.0" },
+    { "i_qfactor",      "1"   },
+    { "i_qoffset",      "0"   },
+    { "b_qfactor",      "6/5" },
+    { "b_qoffset",      "0"   },
     { NULL },
 };
 

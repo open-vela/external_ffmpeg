@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,8 +21,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
-#include "libavutil/buffer.h"
 
 #include "avcodec.h"
 
@@ -83,11 +81,6 @@ typedef struct CodedBitstreamUnit {
      * This supports non-byte-aligned bitstreams.
      */
     size_t   data_bit_padding;
-    /**
-     * If data is reference counted, a reference to the buffer containing
-     * data.  Null if data is not reference counted.
-     */
-    AVBufferRef *data_ref;
 
     /**
      * Pointer to the decomposed form of this unit.
@@ -98,10 +91,11 @@ typedef struct CodedBitstreamUnit {
      */
     void *content;
     /**
-     * If content is reference counted, a reference to the buffer containing
-     * content.  Null if content is not reference counted.
+     * Whether the content was supplied externally.
+     *
+     * If so, it should not be freed when freeing the unit.
      */
-    AVBufferRef *content_ref;
+    int   content_external;
 } CodedBitstreamUnit;
 
 /**
@@ -129,11 +123,6 @@ typedef struct CodedBitstreamFragment {
      * The number of bits which should be ignored in the final byte.
      */
     size_t data_bit_padding;
-    /**
-     * If data is reference counted, a reference to the buffer containing
-     * data.  Null if data is not reference counted.
-     */
-    AVBufferRef *data_ref;
 
     /**
      * Number of units in this fragment.
@@ -290,49 +279,27 @@ void ff_cbs_fragment_uninit(CodedBitstreamContext *ctx,
 
 
 /**
- * Allocate a new internal content buffer of the given size in the unit.
- *
- * The content will be zeroed.
- */
-int ff_cbs_alloc_unit_content(CodedBitstreamContext *ctx,
-                              CodedBitstreamUnit *unit,
-                              size_t size,
-                              void (*free)(void *unit, uint8_t *content));
-
-/**
- * Allocate a new internal data buffer of the given size in the unit.
- *
- * The data buffer will have input padding.
- */
-int ff_cbs_alloc_unit_data(CodedBitstreamContext *ctx,
-                           CodedBitstreamUnit *unit,
-                           size_t size);
-
-/**
  * Insert a new unit into a fragment with the given content.
  *
- * The content structure continues to be owned by the caller if
- * content_buf is not supplied.
+ * The content structure continues to be owned by the caller, and
+ * will not be freed when the unit is.
  */
 int ff_cbs_insert_unit_content(CodedBitstreamContext *ctx,
                                CodedBitstreamFragment *frag,
                                int position,
                                CodedBitstreamUnitType type,
-                               void *content,
-                               AVBufferRef *content_buf);
+                               void *content);
 
 /**
  * Insert a new unit into a fragment with the given data bitstream.
  *
- * If data_buf is not supplied then data must have been allocated with
- * av_malloc() and will become owned by the unit after this call.
+ * The data buffer will be owned by the unit after this operation.
  */
 int ff_cbs_insert_unit_data(CodedBitstreamContext *ctx,
                             CodedBitstreamFragment *frag,
                             int position,
                             CodedBitstreamUnitType type,
-                            uint8_t *data, size_t data_size,
-                            AVBufferRef *data_buf);
+                            uint8_t *data, size_t data_size);
 
 /**
  * Delete a unit from a fragment and free all memory it uses.

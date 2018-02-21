@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,7 +22,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "cbs.h"
 #include "cbs_h2645.h"
 #include "h264.h"
 
@@ -195,9 +194,7 @@ typedef struct H264RawPPS {
     uint8_t slice_group_change_direction_flag;
     uint16_t slice_group_change_rate_minus1;
     uint16_t pic_size_in_map_units_minus1;
-
-    uint8_t *slice_group_id;
-    AVBufferRef *slice_group_id_ref;
+    uint8_t slice_group_id[H264_MAX_MB_PIC_SIZE];
 
     uint8_t num_ref_idx_l0_default_active_minus1;
     uint8_t num_ref_idx_l1_default_active_minus1;
@@ -269,14 +266,12 @@ typedef struct H264RawSEIUserDataRegistered {
     uint8_t itu_t_t35_country_code_extension_byte;
     uint8_t *data;
     size_t data_length;
-    AVBufferRef *data_ref;
 } H264RawSEIUserDataRegistered;
 
 typedef struct H264RawSEIUserDataUnregistered {
     uint8_t uuid_iso_iec_11578[16];
     uint8_t *data;
     size_t data_length;
-    AVBufferRef *data_ref;
 } H264RawSEIUserDataUnregistered;
 
 typedef struct H264RawSEIRecoveryPoint {
@@ -309,7 +304,6 @@ typedef struct H264RawSEIPayload {
         struct {
             uint8_t *data;
             size_t data_length;
-            AVBufferRef *data_ref;
         } other;
     } payload;
 } H264RawSEIPayload;
@@ -405,14 +399,7 @@ typedef struct H264RawSlice {
     uint8_t *data;
     size_t   data_size;
     int      data_bit_start;
-    AVBufferRef *data_ref;
 } H264RawSlice;
-
-typedef struct H264RawFiller {
-    H264RawNALUnitHeader nal_unit_header;
-
-    uint32_t filler_size;
-} H264RawFiller;
 
 
 typedef struct CodedBitstreamH264Context {
@@ -436,23 +423,5 @@ typedef struct CodedBitstreamH264Context {
     uint8_t last_slice_nal_unit_type;
 } CodedBitstreamH264Context;
 
-
-/**
- * Add an SEI message to an access unit.
- */
-int ff_cbs_h264_add_sei_message(CodedBitstreamContext *ctx,
-                                CodedBitstreamFragment *access_unit,
-                                const H264RawSEIPayload *payload);
-
-/**
- * Delete an SEI message from an access unit.
- *
- * Deletes from nal_unit, which must be an SEI NAL unit.  If this is the
- * last message in nal_unit, also deletes it from access_unit.
- */
-int ff_cbs_h264_delete_sei_message(CodedBitstreamContext *ctx,
-                                   CodedBitstreamFragment *access_unit,
-                                   CodedBitstreamUnit *nal_unit,
-                                   int position);
 
 #endif /* AVCODEC_CBS_H264_H */

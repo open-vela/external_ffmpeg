@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,8 +63,6 @@ typedef struct H264MetadataContext {
 
     const char *sei_user_data;
     int sei_first_au;
-
-    int delete_filler;
 } H264MetadataContext;
 
 
@@ -211,6 +209,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     AVPacket *in = NULL;
     CodedBitstreamFragment *au = &ctx->access_unit;
     int err, i, j, has_sps;
+    char *sei_udu_string = NULL;
 
     err = ff_bsf_get_packet(bsf, &in);
     if (err < 0)
@@ -272,7 +271,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
             aud->primary_pic_type = j;
 
             err = ff_cbs_insert_unit_content(ctx->cbc, au,
-                                             0, H264_NAL_AUD, aud, NULL);
+                                             0, H264_NAL_AUD, aud);
             if (err < 0) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to insert AUD.\n");
                 goto fail;
@@ -290,16 +289,47 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
         }
     }
 
-    // Only insert the SEI in access units containing SPSs, and also
+    // Insert the SEI in access units containing SPSs, and also
     // unconditionally in the first access unit we ever see.
     if (ctx->sei_user_data && (has_sps || !ctx->sei_first_au)) {
-        H264RawSEIPayload payload = {
-            .payload_type = H264_SEI_TYPE_USER_DATA_UNREGISTERED,
-        };
-        H264RawSEIUserDataUnregistered *udu =
-            &payload.payload.user_data_unregistered;
+        H264RawSEI *sei;
+        H264RawSEIPayload *payload;
+        H264RawSEIUserDataUnregistered *udu;
+        int sei_pos, sei_new;
 
         ctx->sei_first_au = 1;
+
+        for (i = 0; i < au->nb_units; i++) {
+            if (au->units[i].type == H264_NAL_SEI ||
+                au->units[i].type == H264_NAL_SLICE ||
+                au->units[i].type == H264_NAL_IDR_SLICE)
+                break;
+        }
+        sei_pos = i;
+
+        if (sei_pos < au->nb_units &&
+            au->units[sei_pos].type == H264_NAL_SEI) {
+            sei_new = 0;
+            sei = au->units[sei_pos].content;
+        } else {
+            sei_new = 1;
+            sei = &ctx->sei_nal;
+            memset(sei, 0, sizeof(*sei));
+
+            sei->nal_unit_header.nal_unit_type = H264_NAL_SEI;
+
+            err = ff_cbs_insert_unit_content(ctx->cbc, au,
+                                             sei_pos, H264_NAL_SEI, sei);
+            if (err < 0) {
+                av_log(bsf, AV_LOG_ERROR, "Failed to insert SEI.\n");
+                goto fail;
+            }
+        }
+
+        payload = &sei->payload[sei->payload_count];
+
+        payload->payload_type = H264_SEI_TYPE_USER_DATA_UNREGISTERED;
+        udu = &payload->payload.user_data_unregistered;
 
         for (i = j = 0; j < 32 && ctx->sei_user_data[i]; i++) {
             int c, v;
@@ -319,25 +349,21 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
             ++j;
         }
         if (j == 32 && ctx->sei_user_data[i] == '+') {
-            size_t len = strlen(ctx->sei_user_data + i + 1);
-
-            udu->data_ref = av_buffer_alloc(len + 1);
-            if (!udu->data_ref) {
+            sei_udu_string = av_strdup(ctx->sei_user_data + i + 1);
+            if (!sei_udu_string) {
                 err = AVERROR(ENOMEM);
-                goto fail;
+                goto sei_fail;
             }
 
-            udu->data        = udu->data_ref->data;
-            udu->data_length = len + 1;
-            memcpy(udu->data, ctx->sei_user_data + i + 1, len + 1);
+            udu->data = sei_udu_string;
+            udu->data_length = strlen(sei_udu_string);
 
-            payload.payload_size = 16 + udu->data_length;
+            payload->payload_size = 16 + udu->data_length;
 
-            err = ff_cbs_h264_add_sei_message(ctx->cbc, au, &payload);
-            if (err < 0) {
-                av_log(bsf, AV_LOG_ERROR, "Failed to add user data SEI "
-                       "message to access unit.\n");
-                goto fail;
+            if (!sei_new) {
+                // This will be freed by the existing internal
+                // reference in fragment_uninit().
+                sei_udu_string = NULL;
             }
 
         } else {
@@ -345,45 +371,12 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
             av_log(bsf, AV_LOG_ERROR, "Invalid user data: "
                    "must be \"UUID+string\".\n");
             err = AVERROR(EINVAL);
+        sei_fail:
+            memset(payload, 0, sizeof(*payload));
+            goto fail;
         }
-    }
 
-    if (ctx->delete_filler) {
-        for (i = 0; i < au->nb_units; i++) {
-            if (au->units[i].type == H264_NAL_FILLER_DATA) {
-                // Filler NAL units.
-                err = ff_cbs_delete_unit(ctx->cbc, au, i);
-                if (err < 0) {
-                    av_log(bsf, AV_LOG_ERROR, "Failed to delete "
-                           "filler NAL.\n");
-                    goto fail;
-                }
-                --i;
-                continue;
-            }
-
-            if (au->units[i].type == H264_NAL_SEI) {
-                // Filler SEI messages.
-                H264RawSEI *sei = au->units[i].content;
-
-                for (j = 0; j < sei->payload_count; j++) {
-                    if (sei->payload[j].payload_type ==
-                        H264_SEI_TYPE_FILLER_PAYLOAD) {
-                        err = ff_cbs_h264_delete_sei_message(ctx->cbc, au,
-                                                             &au->units[i], j);
-                        if (err < 0) {
-                            av_log(bsf, AV_LOG_ERROR, "Failed to delete "
-                                   "filler SEI message.\n");
-                            goto fail;
-                        }
-                        // Renumbering might have happened, start again at
-                        // the same NAL unit position.
-                        --i;
-                        break;
-                    }
-                }
-            }
-        }
+        ++sei->payload_count;
     }
 
     err = ff_cbs_write_packet(ctx->cbc, out, au);
@@ -399,6 +392,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     err = 0;
 fail:
     ff_cbs_fragment_uninit(ctx->cbc, au);
+    av_freep(&sei_udu_string);
 
     av_packet_free(&in);
 
@@ -460,7 +454,7 @@ static const AVOption h264_metadata_options[] = {
 
     { "sample_aspect_ratio", "Set sample aspect ratio (table E-1)",
         OFFSET(sample_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, 65535 },
+        { .dbl = 0.0 }, 0, 65535 },
 
     { "video_format", "Set video format (table E-2)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
@@ -484,7 +478,7 @@ static const AVOption h264_metadata_options[] = {
 
     { "tick_rate", "Set VUI tick rate (num_units_in_tick / time_scale)",
         OFFSET(tick_rate), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, UINT_MAX },
+        { .dbl = 0.0 }, 0, UINT_MAX },
     { "fixed_frame_rate_flag", "Set VUI fixed frame rate flag",
         OFFSET(fixed_frame_rate_flag), AV_OPT_TYPE_INT,
         { .i64 = -1 }, -1, 1 },
@@ -505,9 +499,6 @@ static const AVOption h264_metadata_options[] = {
     { "sei_user_data", "Insert SEI user data (UUID+string)",
         OFFSET(sei_user_data), AV_OPT_TYPE_STRING, { .str = NULL } },
 
-    { "delete_filler", "Delete all filler (both NAL and SEI)",
-        OFFSET(delete_filler), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1 },
-
     { NULL }
 };
 
@@ -515,7 +506,7 @@ static const AVClass h264_metadata_class = {
     .class_name = "h264_metadata_bsf",
     .item_name  = av_default_item_name,
     .option     = h264_metadata_options,
-    .version    = LIBAVCODEC_VERSION_MAJOR,
+    .version    = LIBAVUTIL_VERSION_INT,
 };
 
 static const enum AVCodecID h264_metadata_codec_ids[] = {

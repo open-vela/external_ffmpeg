@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -404,9 +404,6 @@ static int FUNC(pps)(CodedBitstreamContext *ctx, RWContext *rw,
             ue(slice_group_change_rate_minus1, 0, pic_size - 1);
         } else if (current->slice_group_map_type == 6) {
             ue(pic_size_in_map_units_minus1, pic_size - 1, pic_size - 1);
-
-            allocate(current->slice_group_id,
-                     current->pic_size_in_map_units_minus1 + 1);
             for (i = 0; i <= current->pic_size_in_map_units_minus1; i++)
                 u(av_log2(2 * current->num_slice_groups_minus1 + 1),
                   slice_group_id[i], 0, current->num_slice_groups_minus1);
@@ -564,22 +561,6 @@ static int FUNC(sei_pic_timing)(CodedBitstreamContext *ctx, RWContext *rw,
 
     sps = h264->active_sps;
     if (!sps) {
-        // If there is exactly one possible SPS but it is not yet active
-        // then just assume that it should be the active one.
-        int i, k = -1;
-        for (i = 0; i < H264_MAX_SPS_COUNT; i++) {
-            if (h264->sps[i]) {
-                if (k >= 0) {
-                    k = -1;
-                    break;
-                }
-                k = i;
-            }
-        }
-        if (k >= 0)
-            sps = h264->sps[k];
-    }
-    if (!sps) {
         av_log(ctx->log_ctx, AV_LOG_ERROR,
                "No active SPS for pic_timing.\n");
         return AVERROR_INVALIDDATA;
@@ -724,7 +705,7 @@ static int FUNC(sei_payload)(CodedBitstreamContext *ctx, RWContext *rw,
     int start_position, end_position;
 
 #ifdef READ
-    start_position = bitstream_tell(rw);
+    start_position = get_bits_count(rw);
 #else
     start_position = put_bits_count(rw);
 #endif
@@ -777,10 +758,10 @@ static int FUNC(sei_payload)(CodedBitstreamContext *ctx, RWContext *rw,
     }
 
 #ifdef READ
-    end_position = bitstream_tell(rw);
+    end_position = get_bits_count(rw);
     if (end_position < start_position + 8 * current->payload_size) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "Incorrect SEI payload length: "
-               "header %d bits, actually %d bits.\n",
+               "header %"PRIu32" bits, actually %d bits.\n",
                8 * current->payload_size,
                end_position - start_position);
         return AVERROR_INVALIDDATA;
@@ -809,14 +790,14 @@ static int FUNC(sei)(CodedBitstreamContext *ctx, RWContext *rw,
         uint32_t payload_size = 0;
         uint32_t tmp;
 
-        while (bitstream_peek(rw, 8) == 0xff) {
+        while (show_bits(rw, 8) == 0xff) {
             xu(8, ff_byte, tmp, 0xff, 0xff);
             payload_type += 255;
         }
         xu(8, last_payload_type_byte, tmp, 0, 254);
         payload_type += tmp;
 
-        while (bitstream_peek(rw, 8) == 0xff) {
+        while (show_bits(rw, 8) == 0xff) {
             xu(8, ff_byte, tmp, 0xff, 0xff);
             payload_size += 255;
         }
@@ -1244,35 +1225,6 @@ static int FUNC(slice_header)(CodedBitstreamContext *ctx, RWContext *rw,
         while (byte_alignment(rw))
             xu(1, cabac_alignment_one_bit, one, 1, 1);
     }
-
-    return 0;
-}
-
-static int FUNC(filler)(CodedBitstreamContext *ctx, RWContext *rw,
-                        H264RawFiller *current)
-{
-    av_unused int ff_byte = 0xff;
-    int err;
-
-    HEADER("Filler Data");
-
-    CHECK(FUNC(nal_unit_header)(ctx, rw, &current->nal_unit_header,
-                                1 << H264_NAL_FILLER_DATA));
-
-#ifdef READ
-    while (bitstream_peek(rw, 8) == 0xff) {
-        xu(8, ff_byte, ff_byte, 0xff, 0xff);
-        ++current->filler_size;
-    }
-#else
-    {
-        uint32_t i;
-        for (i = 0; i < current->filler_size; i++)
-            xu(8, ff_byte, ff_byte, 0xff, 0xff);
-    }
-#endif
-
-    CHECK(FUNC(rbsp_trailing_bits)(ctx, rw));
 
     return 0;
 }
