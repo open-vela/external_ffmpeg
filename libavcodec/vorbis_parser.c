@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Justin Ruggles
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -173,7 +173,7 @@ static int parse_setup_header(AVVorbisParseContext *s,
     skip_bits_long(&gb, got_framing_bit);
     for (i = mode_count - 1; i >= 0; i--) {
         skip_bits_long(&gb, 40);
-        s->mode_blocksize[i] = get_bits1(&gb);
+        s->mode_blocksize[i] = s->blocksize[get_bits1(&gb)];
     }
 
 bad_header:
@@ -184,7 +184,7 @@ bad_header:
 static int vorbis_parse_init(AVVorbisParseContext *s,
                              const uint8_t *extradata, int extradata_size)
 {
-    const uint8_t *header_start[3];
+    uint8_t *header_start[3];
     int header_len[3];
     int ret;
 
@@ -205,13 +205,13 @@ static int vorbis_parse_init(AVVorbisParseContext *s,
         return ret;
 
     s->valid_extradata = 1;
-    s->previous_blocksize = s->blocksize[s->mode_blocksize[0]];
+    s->previous_blocksize = s->mode_blocksize[0];
 
     return 0;
 }
 
-int av_vorbis_parse_frame_flags(AVVorbisParseContext *s, const uint8_t *buf,
-                                int buf_size, int *flags)
+int av_vorbis_parse_frame(AVVorbisParseContext *s, const uint8_t *buf,
+                          int buf_size)
 {
     int duration = 0;
 
@@ -220,24 +220,6 @@ int av_vorbis_parse_frame_flags(AVVorbisParseContext *s, const uint8_t *buf,
         int previous_blocksize = s->previous_blocksize;
 
         if (buf[0] & 1) {
-            /* If the user doesn't care about special packets, it's a bad one. */
-            if (!flags)
-                goto bad_packet;
-
-            /* Set the flag for which kind of special packet it is. */
-            if (buf[0] == 1)
-                *flags |= VORBIS_FLAG_HEADER;
-            else if (buf[0] == 3)
-                *flags |= VORBIS_FLAG_COMMENT;
-            else if (buf[0] == 5)
-                *flags |= VORBIS_FLAG_SETUP;
-            else
-                goto bad_packet;
-
-            /* Special packets have no duration. */
-            return 0;
-
-bad_packet:
             av_log(s, AV_LOG_ERROR, "Invalid packet\n");
             return AVERROR_INVALIDDATA;
         }
@@ -249,11 +231,11 @@ bad_packet:
             av_log(s, AV_LOG_ERROR, "Invalid mode in packet\n");
             return AVERROR_INVALIDDATA;
         }
-        if(s->mode_blocksize[mode]){
+        if (mode) {
             int flag = !!(buf[0] & s->prev_mask);
             previous_blocksize = s->blocksize[flag];
         }
-        current_blocksize     = s->blocksize[s->mode_blocksize[mode]];
+        current_blocksize     = s->mode_blocksize[mode];
         duration              = (previous_blocksize + current_blocksize) >> 2;
         s->previous_blocksize = current_blocksize;
     }
@@ -261,16 +243,10 @@ bad_packet:
     return duration;
 }
 
-int av_vorbis_parse_frame(AVVorbisParseContext *s, const uint8_t *buf,
-                          int buf_size)
-{
-    return av_vorbis_parse_frame_flags(s, buf, buf_size, NULL);
-}
-
 void av_vorbis_parse_reset(AVVorbisParseContext *s)
 {
     if (s->valid_extradata)
-        s->previous_blocksize = s->blocksize[0];
+        s->previous_blocksize = s->mode_blocksize[0];
 }
 
 void av_vorbis_parse_free(AVVorbisParseContext **s)
@@ -295,6 +271,22 @@ AVVorbisParseContext *av_vorbis_parse_init(const uint8_t *extradata,
 
     return s;
 }
+
+#if LIBAVCODEC_VERSION_MAJOR < 57
+int avpriv_vorbis_parse_extradata(AVCodecContext *avctx, AVVorbisParseContext *s)
+{
+    return vorbis_parse_init(s, avctx->extradata, avctx->extradata_size);
+}
+void avpriv_vorbis_parse_reset(AVVorbisParseContext *s)
+{
+    av_vorbis_parse_reset(s);
+}
+int avpriv_vorbis_parse_frame(AVVorbisParseContext *s, const uint8_t *buf,
+                              int buf_size)
+{
+    return av_vorbis_parse_frame(s, buf, buf_size);
+}
+#endif
 
 #if CONFIG_VORBIS_PARSER
 
