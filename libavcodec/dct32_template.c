@@ -2,47 +2,36 @@
  * Template for the Discrete Cosine Transform for 32 samples
  * Copyright (c) 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "dct32.h"
 #include "mathops.h"
-#include "libavutil/internal.h"
-
-#ifdef CHECKED
-#define SUINT   int
-#define SUINT32 int32_t
-#else
-#define SUINT   unsigned
-#define SUINT32 uint32_t
-#endif
 
 #if DCT32_FLOAT
 #   define dct32 ff_dct32_float
 #   define FIXHR(x)       ((float)(x))
 #   define MULH3(x, y, s) ((s)*(y)*(x))
 #   define INTFLOAT float
-#   define SUINTFLOAT float
 #else
 #   define dct32 ff_dct32_fixed
 #   define FIXHR(a)       ((int)((a) * (1LL<<32) + 0.5))
 #   define MULH3(x, y, s) MULH((s)*(x), y)
 #   define INTFLOAT int
-#   define SUINTFLOAT SUINT
 #endif
 
 
@@ -84,7 +73,7 @@
 #define COS3_0 FIXHR(0.54119610014619698439/2)
 #define COS3_1 FIXHR(1.30656296487637652785/4)
 
-#define COS4_0 FIXHR(M_SQRT1_2/2)
+#define COS4_0 FIXHR(0.70710678118654752439/2)
 
 /* butterfly operator */
 #define BF(a, b, c, s)\
@@ -123,12 +112,11 @@
 #define ADD(a, b) val##a += val##b
 
 /* DCT32 without 1/sqrt(2) coef zero scaling. */
-void dct32(INTFLOAT *out, const INTFLOAT *tab_arg)
+void dct32(INTFLOAT *out, const INTFLOAT *tab)
 {
-    const SUINTFLOAT *tab = tab_arg;
-    SUINTFLOAT tmp0, tmp1;
+    INTFLOAT tmp0, tmp1;
 
-    SUINTFLOAT val0 , val1 , val2 , val3 , val4 , val5 , val6 , val7 ,
+    INTFLOAT val0 , val1 , val2 , val3 , val4 , val5 , val6 , val7 ,
              val8 , val9 , val10, val11, val12, val13, val14, val15,
              val16, val17, val18, val19, val20, val21, val22, val23,
              val24, val25, val26, val27, val28, val29, val30, val31;
