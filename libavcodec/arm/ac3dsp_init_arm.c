@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2011 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,14 +33,6 @@ void ff_float_to_fixed24_neon(int32_t *dst, const float *src, unsigned int len);
 void ff_ac3_extract_exponents_neon(uint8_t *exp, int32_t *coef, int nb_coefs);
 void ff_apply_window_int16_neon(int16_t *dst, const int16_t *src,
                                 const int16_t *window, unsigned n);
-void ff_ac3_sum_square_butterfly_int32_neon(int64_t sum[4],
-                                            const int32_t *coef0,
-                                            const int32_t *coef1,
-                                            int len);
-void ff_ac3_sum_square_butterfly_float_neon(float sum[4],
-                                            const float *coef0,
-                                            const float *coef1,
-                                            int len);
 
 void ff_ac3_bit_alloc_calc_bap_armv6(int16_t *mask, int16_t *psd,
                                      int start, int end,
@@ -67,7 +59,5 @@ av_cold void ff_ac3dsp_init_arm(AC3DSPContext *c, int bit_exact)
         c->float_to_fixed24      = ff_float_to_fixed24_neon;
         c->extract_exponents     = ff_ac3_extract_exponents_neon;
         c->apply_window_int16    = ff_apply_window_int16_neon;
-        c->sum_square_butterfly_int32 = ff_ac3_sum_square_butterfly_int32_neon;
-        c->sum_square_butterfly_float = ff_ac3_sum_square_butterfly_float_neon;
     }
 }

@@ -2,20 +2,20 @@
  * LCL (LossLess Codec Library) Codec
  * Copyright (c) 2002-2004 Roberto Togni
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,12 +41,10 @@
 #include <stdlib.h>
 
 #include "libavutil/mem.h"
-#include "libavutil/pixdesc.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "internal.h"
 #include "lcl.h"
-#include "thread.h"
 
 #if CONFIG_ZLIB_DECODER
 #include <zlib.h>
@@ -93,13 +91,7 @@ static unsigned int mszh_decomp(const unsigned char * srcptr, int srclen, unsign
             ofs = FFMIN(ofs, destptr - destptr_bak);
             cnt *= 4;
             cnt = FFMIN(cnt, destptr_end - destptr);
-            if (ofs) {
-                av_memcpy_backptr(destptr, ofs, cnt);
-            } else {
-                // Not known what the correct behaviour is, but
-                // this at least avoids uninitialized data.
-                memset(destptr, 0, cnt);
-            }
+            av_memcpy_backptr(destptr, ofs, cnt);
             destptr += cnt;
         }
         maskbit >>= 1;
@@ -136,7 +128,7 @@ static int zlib_decomp(AVCodecContext *avctx, const uint8_t *src, int src_len, i
         av_log(avctx, AV_LOG_ERROR, "Inflate reset error: %d\n", zret);
         return AVERROR_UNKNOWN;
     }
-    c->zstream.next_in = (uint8_t *)src;
+    c->zstream.next_in = src;
     c->zstream.avail_in = src_len;
     c->zstream.next_out = c->decomp_buf + offset;
     c->zstream.avail_out = c->decomp_size - offset;
@@ -158,13 +150,12 @@ static int zlib_decomp(AVCodecContext *avctx, const uint8_t *src, int src_len, i
 static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
 {
     AVFrame *frame = data;
-    ThreadFrame tframe = { .f = data };
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     LclDecContext * const c = avctx->priv_data;
     unsigned int pixel_ptr;
     int row, col;
-    unsigned char *encoded = avpkt->data, *outptr;
+    unsigned char *encoded, *outptr;
     uint8_t *y_out, *u_out, *v_out;
     unsigned int width = avctx->width; // Real image width
     unsigned int height = avctx->height; // Real image height
@@ -173,10 +164,11 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     int uqvq, ret;
     unsigned int mthread_inlen, mthread_outlen;
     unsigned int len = buf_size;
-    int linesize;
 
-    if ((ret = ff_thread_get_buffer(avctx, &tframe, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     outptr = frame->data[0]; // Output image pointer
 
@@ -185,15 +177,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     case AV_CODEC_ID_MSZH:
         switch (c->compression) {
         case COMP_MSZH:
-            if (c->imgtype == IMGTYPE_RGB24 && len == FFALIGN(width * 3, 4) * height ||
-                c->imgtype == IMGTYPE_YUV111 && len == width * height * 3) {
-                ;
-            } else if (c->flags & FLAG_MULTITHREAD) {
+            if (c->flags & FLAG_MULTITHREAD) {
                 mthread_inlen = AV_RL32(buf);
-                if (len < 8) {
-                    av_log(avctx, AV_LOG_ERROR, "len %d is too small\n", len);
-                    return AVERROR_INVALIDDATA;
-                }
                 mthread_inlen = FFMIN(mthread_inlen, len - 8);
                 mthread_outlen = AV_RL32(buf + 4);
                 mthread_outlen = FFMIN(mthread_outlen, c->decomp_size);
@@ -405,11 +390,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
         }
         break;
     case IMGTYPE_RGB24:
-        linesize = len < FFALIGN(3 * width, 4) * height ? 3 * width : FFALIGN(3 * width, 4);
         for (row = height - 1; row >= 0; row--) {
             pixel_ptr = row * frame->linesize[0];
             memcpy(outptr + pixel_ptr, encoded, 3 * width);
-            encoded += linesize;
+            encoded += 3 * width;
         }
         break;
     case IMGTYPE_YUV411:
@@ -460,9 +444,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
         return AVERROR_INVALIDDATA;
     }
 
-    frame->key_frame = 1;
-    frame->pict_type = AV_PICTURE_TYPE_I;
-
     *got_frame = 1;
 
     /* always report that the buffer was completely consumed */
@@ -476,7 +457,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     unsigned int max_basesize = FFALIGN(avctx->width,  4) *
                                 FFALIGN(avctx->height, 4);
     unsigned int max_decomp_size;
-    int subsample_h, subsample_v;
 
     if (avctx->extradata_size < 8) {
         av_log(avctx, AV_LOG_ERROR, "Extradata size too small.\n");
@@ -502,10 +482,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
         max_decomp_size = max_basesize * 2;
         avctx->pix_fmt = AV_PIX_FMT_YUV422P;
         av_log(avctx, AV_LOG_DEBUG, "Image type is YUV 4:2:2.\n");
-        if (avctx->width % 4) {
-            avpriv_request_sample(avctx, "Unsupported dimensions");
-            return AVERROR_INVALIDDATA;
-        }
         break;
     case IMGTYPE_RGB24:
         c->decomp_size = basesize * 3;
@@ -533,12 +509,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Unsupported image format %d.\n", c->imgtype);
-        return AVERROR_INVALIDDATA;
-    }
-
-    av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &subsample_h, &subsample_v);
-    if (avctx->width % (1<<subsample_h) || avctx->height % (1<<subsample_v)) {
-        avpriv_request_sample(avctx, "Unsupported dimensions");
         return AVERROR_INVALIDDATA;
     }
 
@@ -623,13 +593,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-#if HAVE_THREADS
-static int init_thread_copy(AVCodecContext *avctx)
-{
-    return decode_init(avctx);
-}
-#endif
-
 static av_cold int decode_end(AVCodecContext *avctx)
 {
     LclDecContext * const c = avctx->priv_data;
@@ -651,10 +614,9 @@ AVCodec ff_mszh_decoder = {
     .id             = AV_CODEC_ID_MSZH,
     .priv_data_size = sizeof(LclDecContext),
     .init           = decode_init,
-    .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
@@ -667,10 +629,9 @@ AVCodec ff_zlib_decoder = {
     .id             = AV_CODEC_ID_ZLIB,
     .priv_data_size = sizeof(LclDecContext),
     .init           = decode_init,
-    .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
