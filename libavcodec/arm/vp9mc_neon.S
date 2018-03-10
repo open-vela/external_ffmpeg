@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -286,8 +286,7 @@ function \type\()_8tap_\size\()h_\idx1\idx2
         sub             r3,  r3,  #8
 .endif
         @ Load the filter vector
-        vld1.8          {d0},  [r12,:64]
-        vmovl.s8        q0,  d0
+        vld1.16         {q0},  [r12,:128]
 1:
 .if \size >= 16
         mov             r12, r5
@@ -416,9 +415,9 @@ function ff_vp9_\type\()_\filter\()\size\()_h_neon, export=1
         ldr             r5,  [sp, #20]
 .endif
         movrelx         r12, X(ff_vp9_subpel_filters), r6
-        add             r12, r12, 120*\offset - 8
+        add             r12, r12, 256*\offset
         cmp             r5,  #8
-        add             r12, r12, r5, lsl #3
+        add             r12, r12, r5, lsl #4
         mov             r5,  #\size
 .if \size >= 16
         bge             \type\()_8tap_16h_34
@@ -551,8 +550,7 @@ do_8tap_h_filters 4
 function \type\()_8tap_8v_\idx1\idx2
         sub             r2,  r2,  r3, lsl #1
         sub             r2,  r2,  r3
-        vld1.8          {d0},  [r12, :64]
-        vmovl.s8        q0,  d0
+        vld1.16         {q0},  [r12, :128]
 1:
         mov             r12, r4
 
@@ -622,8 +620,7 @@ do_8tap_8v avg, 4, 3
 function \type\()_8tap_4v_\idx1\idx2
         sub             r2,  r2,  r3, lsl #1
         sub             r2,  r2,  r3
-        vld1.8          {d0},  [r12, :64]
-        vmovl.s8        q0,  d0
+        vld1.16         {q0},  [r12, :128]
 
         vld1.32         {d2[]},   [r2], r3
         vld1.32         {d3[]},   [r2], r3
@@ -693,8 +690,8 @@ function ff_vp9_\type\()_\filter\()\size\()_v_neon, export=1
         ldr             r4,  [sp, #72]
         movrelx         r12, X(ff_vp9_subpel_filters), r5
         ldr             r5,  [sp, #80]
-        add             r12, r12, 120*\offset - 8
-        add             r12, r12, r5, lsl #3
+        add             r12, r12, 256*\offset
+        add             r12, r12, r5, lsl #4
         cmp             r5,  #8
         mov             r5,  #\size
 .if \size >= 8

@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -269,11 +269,11 @@ static void mpeg2_metadata_close(AVBSFContext *bsf)
 static const AVOption mpeg2_metadata_options[] = {
     { "display_aspect_ratio", "Set display aspect ratio (table 6-3)",
         OFFSET(display_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, 65535 },
+        { .dbl = 0.0 }, 0, 65535 },
 
     { "frame_rate", "Set frame rate",
         OFFSET(frame_rate), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, UINT_MAX },
+        { .dbl = 0.0 }, 0, UINT_MAX },
 
     { "video_format", "Set video format (table 6-6)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
@@ -295,7 +295,7 @@ static const AVClass mpeg2_metadata_class = {
     .class_name = "mpeg2_metadata_bsf",
     .item_name  = av_default_item_name,
     .option     = mpeg2_metadata_options,
-    .version    = LIBAVCODEC_VERSION_MAJOR,
+    .version    = LIBAVUTIL_VERSION_INT,
 };
 
 static const enum AVCodecID mpeg2_metadata_codec_ids[] = {
