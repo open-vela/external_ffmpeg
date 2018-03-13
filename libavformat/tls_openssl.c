@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -66,21 +66,16 @@ static unsigned long openssl_thread_id(void)
 #endif
 #endif
 
-int ff_openssl_init(void)
+void ff_openssl_init(void)
 {
-    ff_lock_avformat();
+    avpriv_lock_avformat();
     if (!openssl_init) {
         SSL_library_init();
         SSL_load_error_strings();
 #if HAVE_THREADS
         if (!CRYPTO_get_locking_callback()) {
             int i;
-            openssl_mutexes = av_malloc_array(sizeof(pthread_mutex_t), CRYPTO_num_locks());
-            if (!openssl_mutexes) {
-                ff_unlock_avformat();
-                return AVERROR(ENOMEM);
-            }
-
+            openssl_mutexes = av_malloc(sizeof(pthread_mutex_t) * CRYPTO_num_locks());
             for (i = 0; i < CRYPTO_num_locks(); i++)
                 pthread_mutex_init(&openssl_mutexes[i], NULL);
             CRYPTO_set_locking_callback(openssl_lock);
@@ -91,14 +86,12 @@ int ff_openssl_init(void)
 #endif
     }
     openssl_init++;
-    ff_unlock_avformat();
-
-    return 0;
+    avpriv_unlock_avformat();
 }
 
 void ff_openssl_deinit(void)
 {
-    ff_lock_avformat();
+    avpriv_lock_avformat();
     openssl_init--;
     if (!openssl_init) {
 #if HAVE_THREADS
@@ -111,7 +104,7 @@ void ff_openssl_deinit(void)
         }
 #endif
     }
-    ff_unlock_avformat();
+    avpriv_unlock_avformat();
 }
 
 static int print_tls_error(URLContext *h, int ret)
@@ -233,8 +226,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     BIO *bio;
     int ret;
 
-    if ((ret = ff_openssl_init()) < 0)
-        return ret;
+    ff_openssl_init();
 
     if ((ret = ff_tls_open_underlying(c, h, uri, options)) < 0)
         goto fail;
@@ -250,10 +242,8 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         goto fail;
     }
     SSL_CTX_set_options(p->ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
-    if (c->ca_file) {
-        if (!SSL_CTX_load_verify_locations(p->ctx, c->ca_file, NULL))
-            av_log(h, AV_LOG_ERROR, "SSL_CTX_load_verify_locations %s\n", ERR_error_string(ERR_get_error(), NULL));
-    }
+    if (c->ca_file)
+        SSL_CTX_load_verify_locations(p->ctx, c->ca_file, NULL);
     if (c->cert_file && !SSL_CTX_use_certificate_chain_file(p->ctx, c->cert_file)) {
         av_log(h, AV_LOG_ERROR, "Unable to load cert file %s: %s\n",
                c->cert_file, ERR_error_string(ERR_get_error(), NULL));
@@ -269,7 +259,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     // Note, this doesn't check that the peer certificate actually matches
     // the requested hostname.
     if (c->verify)
-        SSL_CTX_set_verify(p->ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+        SSL_CTX_set_verify(p->ctx, SSL_VERIFY_PEER, NULL);
     p->ssl = SSL_new(p->ctx);
     if (!p->ssl) {
         av_log(h, AV_LOG_ERROR, "%s\n", ERR_error_string(ERR_get_error(), NULL));
@@ -339,12 +329,6 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
     return print_tls_error(h, ret);
 }
 
-static int tls_get_file_handle(URLContext *h)
-{
-    TLSContext *c = h->priv_data;
-    return ffurl_get_file_handle(c->tls_shared.tcp);
-}
-
 static const AVOption options[] = {
     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
     { NULL }
@@ -363,7 +347,6 @@ const URLProtocol ff_tls_protocol = {
     .url_read       = tls_read,
     .url_write      = tls_write,
     .url_close      = tls_close,
-    .url_get_file_handle = tls_get_file_handle,
     .priv_data_size = sizeof(TLSContext),
     .flags          = URL_PROTOCOL_FLAG_NETWORK,
     .priv_data_class = &tls_class,
