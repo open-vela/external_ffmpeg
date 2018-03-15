@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -389,7 +389,7 @@ static const AVOption h265_metadata_options[] = {
 
     { "sample_aspect_ratio", "Set sample aspect ratio (table E-1)",
         OFFSET(sample_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, 65535 },
+        { .i64 = 0 }, 0, 65535 },
 
     { "video_format", "Set video format (table E-2)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
@@ -414,7 +414,7 @@ static const AVOption h265_metadata_options[] = {
     { "tick_rate",
         "Set VPS and VUI tick rate (num_units_in_tick / time_scale)",
         OFFSET(tick_rate), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, UINT_MAX },
+        { .i64 = 0 }, 0, UINT_MAX },
     { "num_ticks_poc_diff_one",
         "Set VPS and VUI number of ticks per POC increment",
         OFFSET(num_ticks_poc_diff_one), AV_OPT_TYPE_INT,
@@ -440,7 +440,7 @@ static const AVClass h265_metadata_class = {
     .class_name = "h265_metadata_bsf",
     .item_name  = av_default_item_name,
     .option     = h265_metadata_options,
-    .version    = LIBAVUTIL_VERSION_INT,
+    .version    = LIBAVCODEC_VERSION_MAJOR,
 };
 
 static const enum AVCodecID h265_metadata_codec_ids[] = {
