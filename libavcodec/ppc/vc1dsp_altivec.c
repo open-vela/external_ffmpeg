@@ -2,20 +2,20 @@
  * VC-1 and WMV3 decoder - DSP functions AltiVec-optimized
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,7 @@
 
 #include "libavcodec/vc1dsp.h"
 
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
 
 // main steps of 8x8 transform
 #define STEP8(s0, s1, s2, s3, s4, s5, s6, s7, vec_rnd) \
@@ -306,23 +306,16 @@ static void vc1_inv_trans_8x4_altivec(uint8_t *dest, ptrdiff_t stride,
     src2 = vec_pack(s2, sA);
     src3 = vec_pack(s3, sB);
 
-#if HAVE_BIGENDIAN
     p0 = vec_lvsl (0, dest);
     p1 = vec_lvsl (stride, dest);
     p = vec_splat_u8 (-1);
     perm0 = vec_mergeh (p, p0);
     perm1 = vec_mergeh (p, p1);
-#define GET_TMP2(dst, p)        \
-    tmp = vec_ld (0, dest);     \
-    tmp2 = (vector signed short)vec_perm (tmp, vec_splat_u8(0), p);
-#else
-#define GET_TMP2(dst,p)         \
-    tmp = vec_vsx_ld (0, dst);  \
-    tmp2 = (vector signed short)vec_mergeh (tmp, vec_splat_u8(0));
-#endif
 
 #define ADD(dest,src,perm)                                              \
-    GET_TMP2(dest, perm);                                               \
+    /* *(uint64_t *)&tmp = *(uint64_t *)dest; */                        \
+    tmp = vec_ld (0, dest);                                             \
+    tmp2 = (vector signed short)vec_perm (tmp, vec_splat_u8(0), perm);  \
     tmp3 = vec_adds (tmp2, src);                                        \
     tmp = vec_packsu (tmp3, tmp3);                                      \
     vec_ste ((vector unsigned int)tmp, 0, (unsigned int *)dest);        \
@@ -349,11 +342,11 @@ static void vc1_inv_trans_8x4_altivec(uint8_t *dest, ptrdiff_t stride,
 #undef OP_U8_ALTIVEC
 #undef PREFIX_no_rnd_vc1_chroma_mc8_altivec
 
-#endif /* HAVE_ALTIVEC */
+#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
 
 av_cold void ff_vc1dsp_init_ppc(VC1DSPContext *dsp)
 {
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 
@@ -361,5 +354,5 @@ av_cold void ff_vc1dsp_init_ppc(VC1DSPContext *dsp)
     dsp->vc1_inv_trans_8x4 = vc1_inv_trans_8x4_altivec;
     dsp->put_no_rnd_vc1_chroma_pixels_tab[0] = put_no_rnd_vc1_chroma_mc8_altivec;
     dsp->avg_no_rnd_vc1_chroma_pixels_tab[0] = avg_no_rnd_vc1_chroma_mc8_altivec;
-#endif /* HAVE_ALTIVEC */
+#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
 }
