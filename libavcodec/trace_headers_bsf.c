@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -67,44 +67,42 @@ static void trace_headers_close(AVBSFContext *bsf)
     ff_cbs_close(&ctx->cbc);
 }
 
-static int trace_headers(AVBSFContext *bsf, AVPacket *out)
+static int trace_headers(AVBSFContext *bsf, AVPacket *pkt)
 {
     TraceHeadersContext *ctx = bsf->priv_data;
     CodedBitstreamFragment au;
-    AVPacket *in;
     char tmp[256] = { 0 };
     int err;
 
-    err = ff_bsf_get_packet(bsf, &in);
+    err = ff_bsf_get_packet_ref(bsf, pkt);
     if (err < 0)
         return err;
 
-    if (in->flags & AV_PKT_FLAG_KEY)
+    if (pkt->flags & AV_PKT_FLAG_KEY)
         av_strlcat(tmp, ", key frame", sizeof(tmp));
-    if (in->flags & AV_PKT_FLAG_CORRUPT)
+    if (pkt->flags & AV_PKT_FLAG_CORRUPT)
         av_strlcat(tmp, ", corrupt", sizeof(tmp));
 
-    if (in->pts != AV_NOPTS_VALUE)
-        av_strlcatf(tmp, sizeof(tmp), ", pts %"PRId64, in->pts);
+    if (pkt->pts != AV_NOPTS_VALUE)
+        av_strlcatf(tmp, sizeof(tmp), ", pts %"PRId64, pkt->pts);
     else
         av_strlcat(tmp, ", no pts", sizeof(tmp));
-    if (in->dts != AV_NOPTS_VALUE)
-        av_strlcatf(tmp, sizeof(tmp), ", dts %"PRId64, in->dts);
+    if (pkt->dts != AV_NOPTS_VALUE)
+        av_strlcatf(tmp, sizeof(tmp), ", dts %"PRId64, pkt->dts);
     else
         av_strlcat(tmp, ", no dts", sizeof(tmp));
-    if (in->duration > 0)
-        av_strlcatf(tmp, sizeof(tmp), ", duration %"PRId64, in->duration);
+    if (pkt->duration > 0)
+        av_strlcatf(tmp, sizeof(tmp), ", duration %"PRId64, pkt->duration);
 
-    av_log(bsf, AV_LOG_INFO, "Packet: %d bytes%s.\n", in->size, tmp);
+    av_log(bsf, AV_LOG_INFO, "Packet: %d bytes%s.\n", pkt->size, tmp);
 
-    err = ff_cbs_read_packet(ctx->cbc, &au, in);
-    if (err < 0)
+    err = ff_cbs_read_packet(ctx->cbc, &au, pkt);
+    if (err < 0) {
+        av_packet_unref(pkt);
         return err;
+    }
 
     ff_cbs_fragment_uninit(ctx->cbc, &au);
-
-    av_packet_move_ref(out, in);
-    av_packet_free(&in);
 
     return 0;
 }

@@ -1,20 +1,20 @@
 /*
  * (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,10 @@
  */
 
 #include "config.h"
+
+#ifndef AVFFT
+#define AVFFT 0
+#endif
 
 #include <math.h>
 #if HAVE_UNISTD_H
@@ -39,7 +43,12 @@
 #include "libavutil/mathematics.h"
 #include "libavutil/time.h"
 
+#if AVFFT
+#include "libavcodec/avfft.h"
+#else
 #include "libavcodec/fft.h"
+#endif
+
 #if FFT_FLOAT
 #include "libavcodec/dct.h"
 #include "libavcodec/rdft.h"
@@ -55,10 +64,14 @@
         pim += (MUL16(are, bim) + MUL16(bre, aim)); \
     }
 
-#if FFT_FLOAT
+#if FFT_FLOAT || AVFFT
 #define RANGE 1.0
 #define REF_SCALE(x, bits)  (x)
 #define FMT "%10.6f"
+#elif FFT_FIXED_32
+#define RANGE 8388608
+#define REF_SCALE(x, bits) (x)
+#define FMT "%6d"
 #else
 #define RANGE 16384
 #define REF_SCALE(x, bits) ((x) / (1 << (bits)))
@@ -73,7 +86,7 @@ static int fft_ref_init(int nbits, int inverse)
 {
     int i, n = 1 << nbits;
 
-    exptab = av_malloc((n / 2) * sizeof(*exptab));
+    exptab = av_malloc_array((n / 2), sizeof(*exptab));
     if (!exptab)
         return AVERROR(ENOMEM);
 
@@ -150,7 +163,7 @@ static void mdct_ref(FFTSample *output, FFTSample *input, int nbits)
 
 #if FFT_FLOAT
 #if CONFIG_DCT
-static void idct_ref(float *output, float *input, int nbits)
+static void idct_ref(FFTSample *output, FFTSample *input, int nbits)
 {
     int i, k, n = 1 << nbits;
 
@@ -165,7 +178,7 @@ static void idct_ref(float *output, float *input, int nbits)
     }
 }
 
-static void dct_ref(float *output, float *input, int nbits)
+static void dct_ref(FFTSample *output, FFTSample *input, int nbits)
 {
     int i, k, n = 1 << nbits;
 
@@ -203,9 +216,137 @@ static int check_diff(FFTSample *tab1, FFTSample *tab2, int n, double scale)
         if (e > max)
             max = e;
     }
-    av_log(NULL, AV_LOG_INFO, "max:%f e:%g\n", max, sqrt(error) / n);
+    av_log(NULL, AV_LOG_INFO, "max:%f e:%g\n", max, sqrt(error / n));
     return err;
 }
+
+static inline void fft_init(FFTContext **s, int nbits, int inverse)
+{
+#if AVFFT
+    *s = av_fft_init(nbits, inverse);
+#else
+    ff_fft_init(*s, nbits, inverse);
+#endif
+}
+
+static inline void mdct_init(FFTContext **s, int nbits, int inverse, double scale)
+{
+#if AVFFT
+    *s = av_mdct_init(nbits, inverse, scale);
+#else
+    ff_mdct_init(*s, nbits, inverse, scale);
+#endif
+}
+
+static inline void mdct_calc(FFTContext *s, FFTSample *output, const FFTSample *input)
+{
+#if AVFFT
+    av_mdct_calc(s, output, input);
+#else
+    s->mdct_calc(s, output, input);
+#endif
+}
+
+static inline void imdct_calc(struct FFTContext *s, FFTSample *output, const FFTSample *input)
+{
+#if AVFFT
+    av_imdct_calc(s, output, input);
+#else
+    s->imdct_calc(s, output, input);
+#endif
+}
+
+static inline void fft_permute(FFTContext *s, FFTComplex *z)
+{
+#if AVFFT
+    av_fft_permute(s, z);
+#else
+    s->fft_permute(s, z);
+#endif
+}
+
+static inline void fft_calc(FFTContext *s, FFTComplex *z)
+{
+#if AVFFT
+    av_fft_calc(s, z);
+#else
+    s->fft_calc(s, z);
+#endif
+}
+
+static inline void mdct_end(FFTContext *s)
+{
+#if AVFFT
+    av_mdct_end(s);
+#else
+    ff_mdct_end(s);
+#endif
+}
+
+static inline void fft_end(FFTContext *s)
+{
+#if AVFFT
+    av_fft_end(s);
+#else
+    ff_fft_end(s);
+#endif
+}
+
+#if FFT_FLOAT
+static inline void rdft_init(RDFTContext **r, int nbits, enum RDFTransformType trans)
+{
+#if AVFFT
+    *r = av_rdft_init(nbits, trans);
+#else
+    ff_rdft_init(*r, nbits, trans);
+#endif
+}
+
+static inline void dct_init(DCTContext **d, int nbits, enum DCTTransformType trans)
+{
+#if AVFFT
+    *d = av_dct_init(nbits, trans);
+#else
+    ff_dct_init(*d, nbits, trans);
+#endif
+}
+
+static inline void rdft_calc(RDFTContext *r, FFTSample *tab)
+{
+#if AVFFT
+    av_rdft_calc(r, tab);
+#else
+    r->rdft_calc(r, tab);
+#endif
+}
+
+static inline void dct_calc(DCTContext *d, FFTSample *data)
+{
+#if AVFFT
+    av_dct_calc(d, data);
+#else
+    d->dct_calc(d, data);
+#endif
+}
+
+static inline void rdft_end(RDFTContext *r)
+{
+#if AVFFT
+    av_rdft_end(r);
+#else
+    ff_rdft_end(r);
+#endif
+}
+
+static inline void dct_end(DCTContext *d)
+{
+#if AVFFT
+    av_dct_end(d);
+#else
+    ff_dct_end(d);
+#endif
+}
+#endif /* FFT_FLOAT */
 
 static void help(void)
 {
@@ -237,16 +378,26 @@ int main(int argc, char **argv)
     FFTComplex *tab, *tab1, *tab_ref;
     FFTSample *tab2;
     enum tf_transform transform = TRANSFORM_FFT;
-    FFTContext m, s;
+    FFTContext *m, *s;
 #if FFT_FLOAT
-    RDFTContext r;
-    DCTContext d;
+    RDFTContext *r;
+    DCTContext *d;
 #endif /* FFT_FLOAT */
     int it, i, err = 1;
     int do_speed = 0, do_inverse = 0;
     int fft_nbits = 9, fft_size;
     double scale = 1.0;
     AVLFG prng;
+
+#if !AVFFT
+    s = av_mallocz(sizeof(*s));
+    m = av_mallocz(sizeof(*m));
+#endif
+
+#if !AVFFT && FFT_FLOAT
+    r = av_mallocz(sizeof(*r));
+    d = av_mallocz(sizeof(*d));
+#endif
 
     av_lfg_init(&prng, 1);
 
@@ -281,20 +432,22 @@ int main(int argc, char **argv)
             break;
         case 'c':
         {
-            int cpuflags = av_parse_cpu_flags(optarg);
-            if (cpuflags < 0)
+            unsigned cpuflags = av_get_cpu_flags();
+
+            if (av_parse_cpu_caps(&cpuflags, optarg) < 0)
                 return 1;
-            av_set_cpu_flags_mask(cpuflags);
+
+            av_force_cpu_flags(cpuflags);
             break;
         }
         }
     }
 
     fft_size = 1 << fft_nbits;
-    tab      = av_malloc(fft_size * sizeof(FFTComplex));
-    tab1     = av_malloc(fft_size * sizeof(FFTComplex));
-    tab_ref  = av_malloc(fft_size * sizeof(FFTComplex));
-    tab2     = av_malloc(fft_size * sizeof(FFTSample));
+    tab      = av_malloc_array(fft_size, sizeof(FFTComplex));
+    tab1     = av_malloc_array(fft_size, sizeof(FFTComplex));
+    tab_ref  = av_malloc_array(fft_size, sizeof(FFTComplex));
+    tab2     = av_malloc_array(fft_size, sizeof(FFTSample));
 
     if (!(tab && tab1 && tab_ref && tab2))
         goto cleanup;
@@ -307,7 +460,7 @@ int main(int argc, char **argv)
             av_log(NULL, AV_LOG_INFO, "IMDCT");
         else
             av_log(NULL, AV_LOG_INFO, "MDCT");
-        ff_mdct_init(&m, fft_nbits, do_inverse, scale);
+        mdct_init(&m, fft_nbits, do_inverse, scale);
         break;
 #endif /* CONFIG_MDCT */
     case TRANSFORM_FFT:
@@ -315,31 +468,31 @@ int main(int argc, char **argv)
             av_log(NULL, AV_LOG_INFO, "IFFT");
         else
             av_log(NULL, AV_LOG_INFO, "FFT");
-        ff_fft_init(&s, fft_nbits, do_inverse);
-        if (err = fft_ref_init(fft_nbits, do_inverse) < 0)
+        fft_init(&s, fft_nbits, do_inverse);
+        if ((err = fft_ref_init(fft_nbits, do_inverse)) < 0)
             goto cleanup;
         break;
 #if FFT_FLOAT
-#if CONFIG_RDFT
+#    if CONFIG_RDFT
     case TRANSFORM_RDFT:
         if (do_inverse)
             av_log(NULL, AV_LOG_INFO, "IDFT_C2R");
         else
             av_log(NULL, AV_LOG_INFO, "DFT_R2C");
-        ff_rdft_init(&r, fft_nbits, do_inverse ? IDFT_C2R : DFT_R2C);
-        if (err = fft_ref_init(fft_nbits, do_inverse) < 0)
+        rdft_init(&r, fft_nbits, do_inverse ? IDFT_C2R : DFT_R2C);
+        if ((err = fft_ref_init(fft_nbits, do_inverse)) < 0)
             goto cleanup;
         break;
-#endif /* CONFIG_RDFT */
-#if CONFIG_DCT
+#    endif /* CONFIG_RDFT */
+#    if CONFIG_DCT
     case TRANSFORM_DCT:
         if (do_inverse)
             av_log(NULL, AV_LOG_INFO, "DCT_III");
         else
             av_log(NULL, AV_LOG_INFO, "DCT_II");
-        ff_dct_init(&d, fft_nbits, do_inverse ? DCT_III : DCT_II);
+        dct_init(&d, fft_nbits, do_inverse ? DCT_III : DCT_II);
         break;
-#endif /* CONFIG_DCT */
+#    endif /* CONFIG_DCT */
 #endif /* FFT_FLOAT */
     default:
         av_log(NULL, AV_LOG_ERROR, "Requested transform not supported\n");
@@ -362,19 +515,19 @@ int main(int argc, char **argv)
     case TRANSFORM_MDCT:
         if (do_inverse) {
             imdct_ref(&tab_ref->re, &tab1->re, fft_nbits);
-            m.imdct_calc(&m, tab2, &tab1->re);
+            imdct_calc(m, tab2, &tab1->re);
             err = check_diff(&tab_ref->re, tab2, fft_size, scale);
         } else {
             mdct_ref(&tab_ref->re, &tab1->re, fft_nbits);
-            m.mdct_calc(&m, tab2, &tab1->re);
+            mdct_calc(m, tab2, &tab1->re);
             err = check_diff(&tab_ref->re, tab2, fft_size / 2, scale);
         }
         break;
 #endif /* CONFIG_MDCT */
     case TRANSFORM_FFT:
         memcpy(tab, tab1, fft_size * sizeof(FFTComplex));
-        s.fft_permute(&s, tab);
-        s.fft_calc(&s, tab);
+        fft_permute(s, tab);
+        fft_calc(s, tab);
 
         fft_ref(tab_ref, tab1, fft_nbits);
         err = check_diff(&tab_ref->re, &tab->re, fft_size * 2, 1.0);
@@ -395,7 +548,7 @@ int main(int argc, char **argv)
             memcpy(tab2, tab1, fft_size * sizeof(FFTSample));
             tab2[1] = tab1[fft_size_2].re;
 
-            r.rdft_calc(&r, tab2);
+            rdft_calc(r, tab2);
             fft_ref(tab_ref, tab1, fft_nbits);
             for (i = 0; i < fft_size; i++) {
                 tab[i].re = tab2[i];
@@ -407,7 +560,7 @@ int main(int argc, char **argv)
                 tab2[i]    = tab1[i].re;
                 tab1[i].im = 0;
             }
-            r.rdft_calc(&r, tab2);
+            rdft_calc(r, tab2);
             fft_ref(tab_ref, tab1, fft_nbits);
             tab_ref[0].im = tab_ref[fft_size_2].re;
             err = check_diff(&tab_ref->re, tab2, fft_size, 1.0);
@@ -418,7 +571,7 @@ int main(int argc, char **argv)
 #if CONFIG_DCT
     case TRANSFORM_DCT:
         memcpy(tab, tab1, fft_size * sizeof(FFTComplex));
-        d.dct_calc(&d, &tab->re);
+        dct_calc(d, &tab->re);
         if (do_inverse)
             idct_ref(&tab_ref->re, &tab1->re, fft_nbits);
         else
@@ -444,22 +597,22 @@ int main(int argc, char **argv)
                 switch (transform) {
                 case TRANSFORM_MDCT:
                     if (do_inverse)
-                        m.imdct_calc(&m, &tab->re, &tab1->re);
+                        imdct_calc(m, &tab->re, &tab1->re);
                     else
-                        m.mdct_calc(&m, &tab->re, &tab1->re);
+                        mdct_calc(m, &tab->re, &tab1->re);
                     break;
                 case TRANSFORM_FFT:
                     memcpy(tab, tab1, fft_size * sizeof(FFTComplex));
-                    s.fft_calc(&s, tab);
+                    fft_calc(s, tab);
                     break;
 #if FFT_FLOAT
                 case TRANSFORM_RDFT:
                     memcpy(tab2, tab1, fft_size * sizeof(FFTSample));
-                    r.rdft_calc(&r, tab2);
+                    rdft_calc(r, tab2);
                     break;
                 case TRANSFORM_DCT:
                     memcpy(tab2, tab1, fft_size * sizeof(FFTSample));
-                    d.dct_calc(&d, tab2);
+                    dct_calc(d, tab2);
                     break;
 #endif /* FFT_FLOAT */
                 }
@@ -479,23 +632,23 @@ int main(int argc, char **argv)
     switch (transform) {
 #if CONFIG_MDCT
     case TRANSFORM_MDCT:
-        ff_mdct_end(&m);
+        mdct_end(m);
         break;
 #endif /* CONFIG_MDCT */
     case TRANSFORM_FFT:
-        ff_fft_end(&s);
+        fft_end(s);
         break;
 #if FFT_FLOAT
-#if CONFIG_RDFT
+#    if CONFIG_RDFT
     case TRANSFORM_RDFT:
-        ff_rdft_end(&r);
+        rdft_end(r);
         break;
-#endif /* CONFIG_RDFT */
-#if CONFIG_DCT
+#    endif /* CONFIG_RDFT */
+#    if CONFIG_DCT
     case TRANSFORM_DCT:
-        ff_dct_end(&d);
+        dct_end(d);
         break;
-#endif /* CONFIG_DCT */
+#    endif /* CONFIG_DCT */
 #endif /* FFT_FLOAT */
     }
 
@@ -505,6 +658,16 @@ cleanup:
     av_free(tab2);
     av_free(tab_ref);
     av_free(exptab);
+
+#if !AVFFT
+    av_free(s);
+    av_free(m);
+#endif
+
+#if !AVFFT && FFT_FLOAT
+    av_free(r);
+    av_free(d);
+#endif
 
     if (err)
         printf("Error: %d.\n", err);

@@ -2,20 +2,20 @@
  * ClearVideo decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,11 +25,10 @@
  */
 
 #include "avcodec.h"
-#include "bitstream.h"
 #include "bytestream.h"
+#include "get_bits.h"
 #include "idctdsp.h"
 #include "internal.h"
-#include "vlc.h"
 
 #define NUM_DC_CODES 127
 #define NUM_AC_CODES 103
@@ -124,7 +123,7 @@ typedef struct CLVContext {
     AVCodecContext *avctx;
     IDCTDSPContext idsp;
     AVFrame        *pic;
-    BitstreamContext bc;
+    GetBitContext  gb;
     int            mb_width, mb_height;
     VLC            dc_vlc, ac_vlc;
     int            luma_dc_quant, chroma_dc_quant, ac_quant;
@@ -136,11 +135,11 @@ typedef struct CLVContext {
 static inline int decode_block(CLVContext *ctx, int16_t *blk, int has_ac,
                                int ac_quant)
 {
-    BitstreamContext *bc = &ctx->bc;
+    GetBitContext *gb = &ctx->gb;
     int idx = 1, last = 0, val, skip;
 
     memset(blk, 0, sizeof(*blk) * 64);
-    blk[0] = bitstream_read_vlc(bc, ctx->dc_vlc.table, 9, 3);
+    blk[0] = get_vlc2(gb, ctx->dc_vlc.table, 9, 3);
     if (blk[0] < 0)
         return AVERROR_INVALIDDATA;
     blk[0] -= 63;
@@ -149,19 +148,19 @@ static inline int decode_block(CLVContext *ctx, int16_t *blk, int has_ac,
         return 0;
 
     while (idx < 64 && !last) {
-        val = bitstream_read_vlc(bc, ctx->ac_vlc.table, 9, 2);
+        val = get_vlc2(gb, ctx->ac_vlc.table, 9, 2);
         if (val < 0)
             return AVERROR_INVALIDDATA;
         if (val != 0x1BFF) {
             last =  val >> 12;
             skip = (val >> 4) & 0xFF;
             val &= 0xF;
-            if (bitstream_read_bit(bc))
+            if (get_bits1(gb))
                 val = -val;
         } else {
-            last = bitstream_read_bit(bc);
-            skip = bitstream_read(bc, 6);
-            val  = bitstream_read_signed(bc, 8);
+            last = get_bits1(gb);
+            skip = get_bits(gb, 6);
+            val  = get_sbits(gb, 8);
         }
         if (val) {
             int aval = FFABS(val), sign = val < 0;
@@ -187,12 +186,12 @@ static inline int decode_block(CLVContext *ctx, int16_t *blk, int has_ac,
     const int t3 = OP(2408 * blk[5 * step] - 1609 * blk[3 * step]);     \
     const int t4 = OP(1108 * blk[2 * step] - 2676 * blk[6 * step]);     \
     const int t5 = OP(2676 * blk[2 * step] + 1108 * blk[6 * step]);     \
-    const int t6 = ((blk[0 * step] + blk[4 * step]) << dshift) + bias;  \
-    const int t7 = ((blk[0 * step] - blk[4 * step]) << dshift) + bias;  \
+    const int t6 = ((blk[0 * step] + blk[4 * step]) * (1 << dshift)) + bias;  \
+    const int t7 = ((blk[0 * step] - blk[4 * step]) * (1 << dshift)) + bias;  \
     const int t8 = t0 + t2;                                             \
     const int t9 = t0 - t2;                                             \
-    const int tA = 181 * (t9 + (t1 - t3)) + 0x80 >> 8;                  \
-    const int tB = 181 * (t9 - (t1 - t3)) + 0x80 >> 8;                  \
+    const int tA = (int)(181U * (t9 + (t1 - t3)) + 0x80) >> 8;          \
+    const int tB = (int)(181U * (t9 - (t1 - t3)) + 0x80) >> 8;          \
     const int tC = t1 + t3;                                             \
                                                                         \
     blk[0 * step] = (t6 + t5 + t8) >> shift;                            \
@@ -230,7 +229,7 @@ static int decode_mb(CLVContext *c, int x, int y)
     int i, has_ac[6], off;
 
     for (i = 0; i < 6; i++)
-        has_ac[i] = bitstream_read_bit(&c->bc);
+        has_ac[i] = get_bits1(&c->gb);
 
     off = x * 16 + y * 16 * c->pic->linesize[0];
     for (i = 0; i < 4; i++) {
@@ -281,6 +280,7 @@ static int clv_decode_frame(AVCodecContext *avctx, void *data,
     GetByteContext gb;
     uint32_t frame_type;
     int i, j, ret;
+    int mb_ret = 0;
 
     bytestream2_init(&gb, buf, buf_size);
     if (avctx->codec_tag == MKTAG('C', 'L', 'V', '1')) {
@@ -289,21 +289,27 @@ static int clv_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     frame_type = bytestream2_get_byte(&gb);
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
-        return ret;
-
-    c->pic->key_frame = frame_type & 0x20 ? 1 : 0;
-    c->pic->pict_type = frame_type & 0x20 ? AV_PICTURE_TYPE_I
-                                          : AV_PICTURE_TYPE_P;
 
     if (frame_type & 0x2) {
+        if (buf_size < c->mb_width * c->mb_height) {
+            av_log(avctx, AV_LOG_ERROR, "Packet too small\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
+            return ret;
+
+        c->pic->key_frame = frame_type & 0x20 ? 1 : 0;
+        c->pic->pict_type = frame_type & 0x20 ? AV_PICTURE_TYPE_I
+                                              : AV_PICTURE_TYPE_P;
+
         bytestream2_get_be32(&gb); // frame size;
         c->ac_quant        = bytestream2_get_byte(&gb);
         c->luma_dc_quant   = 32;
         c->chroma_dc_quant = 32;
 
-        if ((ret = bitstream_init8(&c->bc, buf + bytestream2_tell(&gb),
-                                   buf_size - bytestream2_tell(&gb))) < 0)
+        if ((ret = init_get_bits8(&c->gb, buf + bytestream2_tell(&gb),
+                                  buf_size - bytestream2_tell(&gb))) < 0)
             return ret;
 
         for (i = 0; i < 3; i++)
@@ -313,9 +319,16 @@ static int clv_decode_frame(AVCodecContext *avctx, void *data,
 
         for (j = 0; j < c->mb_height; j++) {
             for (i = 0; i < c->mb_width; i++) {
-                ret |= decode_mb(c, i, j);
+                ret = decode_mb(c, i, j);
+                if (ret < 0)
+                    mb_ret = ret;
             }
         }
+
+        if ((ret = av_frame_ref(data, c->pic)) < 0)
+            return ret;
+
+        *got_frame = 1;
     } else {
         if (!c->iframes_warning)
             avpriv_report_missing_feature(avctx, "Non-I-frames in Clearvideo");
@@ -323,12 +336,7 @@ static int clv_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_PATCHWELCOME;
     }
 
-    if ((ret = av_frame_ref(data, c->pic)) < 0)
-        return ret;
-
-    *got_frame = 1;
-
-    return ret < 0 ? ret : buf_size;
+    return mb_ret < 0 ? mb_ret : buf_size;
 }
 
 static av_cold int clv_decode_init(AVCodecContext *avctx)
