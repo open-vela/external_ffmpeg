@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,7 +42,7 @@
 #define OVERLAY 1
 
 #define OFFSET(x) offsetof(QSVOverlayContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM)
 
 enum var_name {
     VAR_MAIN_iW,     VAR_MW,
@@ -415,6 +415,7 @@ static void overlay_qsv_uninit(AVFilterContext *ctx)
 static int overlay_qsv_query_formats(AVFilterContext *ctx)
 {
     int i;
+    int ret;
 
     static const enum AVPixelFormat main_in_fmts[] = {
         AV_PIX_FMT_YUV420P,
@@ -430,10 +431,15 @@ static int overlay_qsv_query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    for (i = 0; i < ctx->nb_inputs; i++)
-        ff_formats_ref(ff_make_format_list(main_in_fmts), &ctx->inputs[i]->out_formats);
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        ret = ff_formats_ref(ff_make_format_list(main_in_fmts), &ctx->inputs[i]->out_formats);
+        if (ret < 0)
+            return ret;
+    }
 
-    ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->in_formats);
+    ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->in_formats);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }
