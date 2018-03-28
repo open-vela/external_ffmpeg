@@ -2,20 +2,20 @@
  * Bethsoft VID format Demuxer
  * Copyright (c) 2007 Nicholas Tung
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -60,6 +60,9 @@ static int vid_probe(AVProbeData *p)
     // little-endian VID tag, file starts with "VID\0"
     if (AV_RL32(p->buf) != MKTAG('V', 'I', 'D', 0))
         return 0;
+
+    if (p->buf[4] != 2)
+        return AVPROBE_SCORE_MAX / 4;
 
     return AVPROBE_SCORE_MAX;
 }
@@ -190,9 +193,11 @@ static int read_frame(BVID_DemuxContext *vid, AVIOContext *pb, AVPacket *pkt,
                                                  BVID_PALETTE_SIZE);
         if (!pdata) {
             ret = AVERROR(ENOMEM);
+            av_log(s, AV_LOG_ERROR, "Failed to allocate palette side data\n");
             goto fail;
         }
         memcpy(pdata, vid->palette, BVID_PALETTE_SIZE);
+
         av_freep(&vid->palette);
     }
 
@@ -211,8 +216,8 @@ static int vid_read_packet(AVFormatContext *s,
     int audio_length;
     int ret_value;
 
-    if(vid->is_finished || pb->eof_reached)
-        return AVERROR(EIO);
+    if(vid->is_finished || avio_feof(pb))
+        return AVERROR_EOF;
 
     block_type = avio_r8(pb);
     switch(block_type){
