@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,6 +35,16 @@
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 
+#ifndef GNUTLS_VERSION_NUMBER
+#define GNUTLS_VERSION_NUMBER LIBGNUTLS_VERSION_NUMBER
+#endif
+
+#if HAVE_THREADS && GNUTLS_VERSION_NUMBER <= 0x020b00
+#include <gcrypt.h>
+#include "libavutil/thread.h"
+GCRY_THREAD_OPTION_PTHREAD_IMPL;
+#endif
+
 typedef struct TLSContext {
     const AVClass *class;
     TLSShared tls_shared;
@@ -45,16 +55,20 @@ typedef struct TLSContext {
 
 void ff_gnutls_init(void)
 {
-    avpriv_lock_avformat();
+    ff_lock_avformat();
+#if HAVE_THREADS && GNUTLS_VERSION_NUMBER < 0x020b00
+    if (gcry_control(GCRYCTL_ANY_INITIALIZATION_P) == 0)
+        gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
+#endif
     gnutls_global_init();
-    avpriv_unlock_avformat();
+    ff_unlock_avformat();
 }
 
 void ff_gnutls_deinit(void)
 {
-    avpriv_lock_avformat();
+    ff_lock_avformat();
     gnutls_global_deinit();
-    avpriv_unlock_avformat();
+    ff_unlock_avformat();
 }
 
 static int print_tls_error(URLContext *h, int ret)
@@ -63,6 +77,9 @@ static int print_tls_error(URLContext *h, int ret)
     case GNUTLS_E_AGAIN:
         return AVERROR(EAGAIN);
     case GNUTLS_E_INTERRUPTED:
+#ifdef GNUTLS_E_PREMATURE_TERMINATION
+    case GNUTLS_E_PREMATURE_TERMINATION:
+#endif
         break;
     case GNUTLS_E_WARNING_ALERT_RECEIVED:
         av_log(h, AV_LOG_WARNING, "%s\n", gnutls_strerror(ret));
@@ -136,9 +153,12 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     if (!c->listen && !c->numerichost)
         gnutls_server_name_set(p->session, GNUTLS_NAME_DNS, c->host, strlen(c->host));
     gnutls_certificate_allocate_credentials(&p->cred);
-    if (c->ca_file)
-        gnutls_certificate_set_x509_trust_file(p->cred, c->ca_file, GNUTLS_X509_FMT_PEM);
-#if GNUTLS_VERSION_MAJOR >= 3
+    if (c->ca_file) {
+        ret = gnutls_certificate_set_x509_trust_file(p->cred, c->ca_file, GNUTLS_X509_FMT_PEM);
+        if (ret < 0)
+            av_log(h, AV_LOG_ERROR, "%s\n", gnutls_strerror(ret));
+    }
+#if GNUTLS_VERSION_NUMBER >= 0x030020
     else
         gnutls_certificate_set_x509_system_trust(p->cred);
 #endif
@@ -155,7 +175,8 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
             ret = AVERROR(EIO);
             goto fail;
         }
-    }
+    } else if (c->cert_file || c->key_file)
+        av_log(h, AV_LOG_ERROR, "cert and key required\n");
     gnutls_credentials_set(p->session, GNUTLS_CRD_CERTIFICATE, p->cred);
     gnutls_transport_set_pull_function(p->session, gnutls_url_pull);
     gnutls_transport_set_push_function(p->session, gnutls_url_push);
@@ -236,6 +257,12 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
     return print_tls_error(h, ret);
 }
 
+static int tls_get_file_handle(URLContext *h)
+{
+    TLSContext *c = h->priv_data;
+    return ffurl_get_file_handle(c->tls_shared.tcp);
+}
+
 static const AVOption options[] = {
     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
     { NULL }
@@ -254,6 +281,7 @@ const URLProtocol ff_tls_protocol = {
     .url_read       = tls_read,
     .url_write      = tls_write,
     .url_close      = tls_close,
+    .url_get_file_handle = tls_get_file_handle,
     .priv_data_size = sizeof(TLSContext),
     .flags          = URL_PROTOCOL_FLAG_NETWORK,
     .priv_data_class = &tls_class,
