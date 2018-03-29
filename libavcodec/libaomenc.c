@@ -1,26 +1,21 @@
 /*
  * Copyright (c) 2010, Google, Inc.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
-
-/**
- * @file
- * AV1 encoder support via libaom
  */
 
 #define AOM_DISABLE_CTRL_TYPECHECKS 1
@@ -35,20 +30,20 @@
 
 #include "avcodec.h"
 #include "internal.h"
-#include "profiles.h"
+#include "libaom.h"
 
 /*
  * Portion of struct aom_codec_cx_pkt from aom_encoder.h.
  * One encoded frame returned from the library.
  */
 struct FrameListData {
-    void *buf;                       /**< compressed data buffer */
-    size_t sz;                       /**< length of compressed data */
-    int64_t pts;                     /**< time stamp to show frame
-                                          (in timebase units) */
-    unsigned long duration;          /**< duration to show frame
-                                          (in timebase units) */
-    uint32_t flags;                  /**< flags for this frame */
+    void *buf;                       /* compressed data buffer */
+    size_t sz;                       /* length of compressed data */
+    int64_t pts;                     /* time stamp to show frame
+                                      * (in timebase units) */
+    unsigned long duration;          /* duration to show frame
+                                      * (in timebase units) */
+    uint32_t flags;                  /* flags for this frame */
     struct FrameListData *next;
 };
 
@@ -73,10 +68,6 @@ static const char *const ctlidstr[] = {
     [AOME_SET_CQ_LEVEL]         = "AOME_SET_CQ_LEVEL",
     [AOME_SET_ENABLEAUTOALTREF] = "AOME_SET_ENABLEAUTOALTREF",
     [AOME_SET_STATIC_THRESHOLD] = "AOME_SET_STATIC_THRESHOLD",
-    [AV1E_SET_COLOR_RANGE]      = "AV1E_SET_COLOR_RANGE",
-    [AV1E_SET_COLOR_PRIMARIES]  = "AV1E_SET_COLOR_PRIMARIES",
-    [AV1E_SET_MATRIX_COEFFICIENTS] = "AV1E_SET_MATRIX_COEFFICIENTS",
-    [AV1E_SET_TRANSFER_CHARACTERISTICS] = "AV1E_SET_TRANSFER_CHARACTERISTICS",
 };
 
 static av_cold void log_encoder_error(AVCodecContext *avctx, const char *desc)
@@ -99,25 +90,22 @@ static av_cold void dump_enc_cfg(AVCodecContext *avctx,
     av_log(avctx, level, "aom_codec_enc_cfg\n");
     av_log(avctx, level, "generic settings\n"
                          "  %*s%u\n  %*s%u\n  %*s%u\n  %*s%u\n  %*s%u\n"
-                         "  %*s%u\n  %*s%u\n"
                          "  %*s{%u/%u}\n  %*s%u\n  %*s%d\n  %*s%u\n",
-           width, "g_usage:",           cfg->g_usage,
-           width, "g_threads:",         cfg->g_threads,
-           width, "g_profile:",         cfg->g_profile,
-           width, "g_w:",               cfg->g_w,
-           width, "g_h:",               cfg->g_h,
-           width, "g_bit_depth:",       cfg->g_bit_depth,
-           width, "g_input_bit_depth:", cfg->g_input_bit_depth,
-           width, "g_timebase:",        cfg->g_timebase.num, cfg->g_timebase.den,
+           width, "g_usage:", cfg->g_usage,
+           width, "g_threads:", cfg->g_threads,
+           width, "g_profile:", cfg->g_profile,
+           width, "g_w:", cfg->g_w,
+           width, "g_h:", cfg->g_h,
+           width, "g_timebase:", cfg->g_timebase.num, cfg->g_timebase.den,
            width, "g_error_resilient:", cfg->g_error_resilient,
-           width, "g_pass:",            cfg->g_pass,
-           width, "g_lag_in_frames:",   cfg->g_lag_in_frames);
+           width, "g_pass:", cfg->g_pass,
+           width, "g_lag_in_frames:", cfg->g_lag_in_frames);
     av_log(avctx, level, "rate control settings\n"
-                         "  %*s%u\n  %*s%d\n  %*s%p(%"SIZE_SPECIFIER")\n  %*s%u\n",
+                         "  %*s%u\n  %*s%d\n  %*s%p(%zu)\n  %*s%u\n",
            width, "rc_dropframe_thresh:", cfg->rc_dropframe_thresh,
-           width, "rc_end_usage:",        cfg->rc_end_usage,
+           width, "rc_end_usage:", cfg->rc_end_usage,
            width, "rc_twopass_stats_in:", cfg->rc_twopass_stats_in.buf, cfg->rc_twopass_stats_in.sz,
-           width, "rc_target_bitrate:",   cfg->rc_target_bitrate);
+           width, "rc_target_bitrate:", cfg->rc_target_bitrate);
     av_log(avctx, level, "quantizer settings\n"
                          "  %*s%u\n  %*s%u\n",
            width, "rc_min_quantizer:", cfg->rc_min_quantizer,
@@ -125,20 +113,20 @@ static av_cold void dump_enc_cfg(AVCodecContext *avctx,
     av_log(avctx, level, "bitrate tolerance\n"
                          "  %*s%u\n  %*s%u\n",
            width, "rc_undershoot_pct:", cfg->rc_undershoot_pct,
-           width, "rc_overshoot_pct:",  cfg->rc_overshoot_pct);
+           width, "rc_overshoot_pct:", cfg->rc_overshoot_pct);
     av_log(avctx, level, "decoder buffer model\n"
                          "  %*s%u\n  %*s%u\n  %*s%u\n",
-           width, "rc_buf_sz:",         cfg->rc_buf_sz,
+           width, "rc_buf_sz:", cfg->rc_buf_sz,
            width, "rc_buf_initial_sz:", cfg->rc_buf_initial_sz,
            width, "rc_buf_optimal_sz:", cfg->rc_buf_optimal_sz);
     av_log(avctx, level, "2 pass rate control settings\n"
                          "  %*s%u\n  %*s%u\n  %*s%u\n",
-           width, "rc_2pass_vbr_bias_pct:",       cfg->rc_2pass_vbr_bias_pct,
+           width, "rc_2pass_vbr_bias_pct:", cfg->rc_2pass_vbr_bias_pct,
            width, "rc_2pass_vbr_minsection_pct:", cfg->rc_2pass_vbr_minsection_pct,
            width, "rc_2pass_vbr_maxsection_pct:", cfg->rc_2pass_vbr_maxsection_pct);
     av_log(avctx, level, "keyframing settings\n"
                          "  %*s%d\n  %*s%u\n  %*s%u\n",
-           width, "kf_mode:",     cfg->kf_mode,
+           width, "kf_mode:", cfg->kf_mode,
            width, "kf_min_dist:", cfg->kf_min_dist,
            width, "kf_max_dist:", cfg->kf_max_dist);
     av_log(avctx, level, "\n");
@@ -204,97 +192,13 @@ static av_cold int aom_free(AVCodecContext *avctx)
     return 0;
 }
 
-static int set_pix_fmt(AVCodecContext *avctx, aom_codec_caps_t codec_caps,
-                       struct aom_codec_enc_cfg *enccfg, aom_codec_flags_t *flags,
-                       aom_img_fmt_t *img_fmt)
-{
-    AOMContext av_unused *ctx = avctx->priv_data;
-    enccfg->g_bit_depth = enccfg->g_input_bit_depth = 8;
-    switch (avctx->pix_fmt) {
-    case AV_PIX_FMT_YUV420P:
-        enccfg->g_profile = FF_PROFILE_AV1_MAIN;
-        *img_fmt = AOM_IMG_FMT_I420;
-        return 0;
-    case AV_PIX_FMT_YUV422P:
-        enccfg->g_profile = FF_PROFILE_AV1_PROFESSIONAL;
-        *img_fmt = AOM_IMG_FMT_I422;
-        return 0;
-    case AV_PIX_FMT_GBRP:
-    case AV_PIX_FMT_YUV444P:
-        enccfg->g_profile = FF_PROFILE_AV1_HIGH;
-        *img_fmt = AOM_IMG_FMT_I444;
-        return 0;
-    case AV_PIX_FMT_YUV420P10:
-    case AV_PIX_FMT_YUV420P12:
-        if (codec_caps & AOM_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV420P10 ? 10 : 12;
-            enccfg->g_profile =
-                enccfg->g_bit_depth == 10 ? FF_PROFILE_AV1_MAIN : FF_PROFILE_AV1_PROFESSIONAL;
-            *img_fmt = AOM_IMG_FMT_I42016;
-            *flags |= AOM_CODEC_USE_HIGHBITDEPTH;
-            return 0;
-        }
-        break;
-    case AV_PIX_FMT_YUV422P10:
-    case AV_PIX_FMT_YUV422P12:
-        if (codec_caps & AOM_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV422P10 ? 10 : 12;
-            enccfg->g_profile = FF_PROFILE_AV1_PROFESSIONAL;
-            *img_fmt = AOM_IMG_FMT_I42216;
-            *flags |= AOM_CODEC_USE_HIGHBITDEPTH;
-            return 0;
-        }
-        break;
-    case AV_PIX_FMT_GBRP10:
-    case AV_PIX_FMT_GBRP12:
-    case AV_PIX_FMT_YUV444P10:
-    case AV_PIX_FMT_YUV444P12:
-        if (codec_caps & AOM_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV444P10 ||
-                avctx->pix_fmt == AV_PIX_FMT_GBRP10 ? 10 : 12;
-            enccfg->g_profile =
-                enccfg->g_bit_depth == 10 ? FF_PROFILE_AV1_HIGH : FF_PROFILE_AV1_PROFESSIONAL;
-            *img_fmt = AOM_IMG_FMT_I44416;
-            *flags |= AOM_CODEC_USE_HIGHBITDEPTH;
-            return 0;
-        }
-        break;
-    default:
-        break;
-    }
-    av_log(avctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
-    return AVERROR_INVALIDDATA;
-}
-
-static void set_color_range(AVCodecContext *avctx)
-{
-    enum aom_color_range aom_cr;
-    switch (avctx->color_range) {
-    case AVCOL_RANGE_UNSPECIFIED:
-    case AVCOL_RANGE_MPEG:       aom_cr = AOM_CR_STUDIO_RANGE; break;
-    case AVCOL_RANGE_JPEG:       aom_cr = AOM_CR_FULL_RANGE;   break;
-    default:
-        av_log(avctx, AV_LOG_WARNING, "Unsupported color range (%d)\n",
-               avctx->color_range);
-        return;
-    }
-
-    codecctl_int(avctx, AV1E_SET_COLOR_RANGE, aom_cr);
-}
-
-static av_cold int aom_init(AVCodecContext *avctx,
-                            const struct aom_codec_iface *iface)
+static av_cold int aom_init(AVCodecContext *avctx)
 {
     AOMContext *ctx = avctx->priv_data;
     struct aom_codec_enc_cfg enccfg = { 0 };
-    aom_codec_flags_t flags = 0;
     AVCPBProperties *cpb_props;
     int res;
-    aom_img_fmt_t img_fmt;
-    aom_codec_caps_t codec_caps = aom_codec_get_caps(iface);
+    const struct aom_codec_iface *iface = &aom_codec_av1_cx_algo;
 
     av_log(avctx, AV_LOG_INFO, "%s\n", aom_codec_version_str());
     av_log(avctx, AV_LOG_VERBOSE, "%s\n", aom_codec_build_config());
@@ -304,16 +208,6 @@ static av_cold int aom_init(AVCodecContext *avctx,
                aom_codec_err_to_string(res));
         return AVERROR(EINVAL);
     }
-
-    if (set_pix_fmt(avctx, codec_caps, &enccfg, &flags, &img_fmt))
-        return AVERROR(EINVAL);
-
-    if(!avctx->bit_rate)
-        if(avctx->rc_max_rate || avctx->rc_buffer_size || avctx->rc_initial_buffer_occupancy) {
-            av_log( avctx, AV_LOG_ERROR, "Rate control parameters set without a bitrate\n");
-            return AVERROR(EINVAL);
-        }
-
     dump_enc_cfg(avctx, &enccfg);
 
     enccfg.g_w            = avctx->width;
@@ -332,52 +226,29 @@ static av_cold int aom_init(AVCodecContext *avctx,
     else
         enccfg.g_pass = AOM_RC_ONE_PASS;
 
-    if (avctx->rc_min_rate == avctx->rc_max_rate &&
-        avctx->rc_min_rate == avctx->bit_rate && avctx->bit_rate) {
-        enccfg.rc_end_usage = AOM_CBR;
-    } else if (ctx->crf >= 0) {
-        enccfg.rc_end_usage = AOM_CQ;
-        if (!avctx->bit_rate)
-            enccfg.rc_end_usage = AOM_Q;
-    }
-
-    if (avctx->bit_rate) {
+    if (!avctx->bit_rate)
+        avctx->bit_rate = enccfg.rc_target_bitrate * 1000;
+    else
         enccfg.rc_target_bitrate = av_rescale_rnd(avctx->bit_rate, 1, 1000,
                                                   AV_ROUND_NEAR_INF);
-    } else if (enccfg.rc_end_usage == AOM_Q) {
-    } else {
-        if (enccfg.rc_end_usage == AOM_CQ) {
-            enccfg.rc_target_bitrate = 1000000;
-        } else {
-            avctx->bit_rate = enccfg.rc_target_bitrate * 1000;
-            av_log(avctx, AV_LOG_WARNING,
-                   "Neither bitrate nor constrained quality specified, using default bitrate of %dkbit/sec\n",
-                   enccfg.rc_target_bitrate);
-        }
-    }
 
-    if (avctx->qmin >= 0)
+    if (ctx->crf)
+        enccfg.rc_end_usage = AOM_CQ;
+    else if (avctx->rc_min_rate == avctx->rc_max_rate &&
+             avctx->rc_min_rate == avctx->bit_rate)
+        enccfg.rc_end_usage = AOM_CBR;
+
+    if (avctx->qmin > 0)
         enccfg.rc_min_quantizer = avctx->qmin;
-    if (avctx->qmax >= 0)
+    if (avctx->qmax > 0)
         enccfg.rc_max_quantizer = avctx->qmax;
-
-    if (enccfg.rc_end_usage == AOM_CQ || enccfg.rc_end_usage == AOM_Q
-       ) {
-        if (ctx->crf < enccfg.rc_min_quantizer || ctx->crf > enccfg.rc_max_quantizer) {
-            av_log(avctx, AV_LOG_ERROR,
-                   "CQ level %d must be between minimum and maximum quantizer value (%d-%d)\n",
-                   ctx->crf, enccfg.rc_min_quantizer, enccfg.rc_max_quantizer);
-            return AVERROR(EINVAL);
-        }
-    }
 
     enccfg.rc_dropframe_thresh = ctx->drop_threshold;
 
     // 0-100 (0 => CBR, 100 => VBR)
     enccfg.rc_2pass_vbr_bias_pct       = round(avctx->qcompress * 100);
-    if (avctx->bit_rate)
-        enccfg.rc_2pass_vbr_minsection_pct =
-            avctx->rc_min_rate * 100LL / avctx->bit_rate;
+    enccfg.rc_2pass_vbr_minsection_pct =
+        avctx->rc_min_rate * 100LL / avctx->bit_rate;
     if (avctx->rc_max_rate)
         enccfg.rc_2pass_vbr_maxsection_pct =
             avctx->rc_max_rate * 100LL / avctx->bit_rate;
@@ -410,9 +281,8 @@ static av_cold int aom_init(AVCodecContext *avctx,
         ret                   = av_reallocp(&ctx->twopass_stats.buf, ctx->twopass_stats.sz);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Stat buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
+                   "Stat buffer alloc (%zu bytes) failed\n",
                    ctx->twopass_stats.sz);
-            ctx->twopass_stats.sz = 0;
             return ret;
         }
         decode_size = av_base64_decode(ctx->twopass_stats.buf, avctx->stats_in,
@@ -431,12 +301,22 @@ static av_cold int aom_init(AVCodecContext *avctx,
      * quality. */
     if (avctx->profile != FF_PROFILE_UNKNOWN)
         enccfg.g_profile = avctx->profile;
+    else if (avctx->pix_fmt == AV_PIX_FMT_YUV420P)
+        avctx->profile = enccfg.g_profile = FF_PROFILE_AV1_MAIN;
+    else {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(avctx->pix_fmt);
+        if (desc->comp[0].depth < 12)
+            avctx->profile = enccfg.g_profile = FF_PROFILE_AV1_HIGH;
+        else
+            avctx->profile = enccfg.g_profile = FF_PROFILE_AV1_PROFESSIONAL;
+    }
+
 
     enccfg.g_error_resilient = ctx->error_resilient;
 
     dump_enc_cfg(avctx, &enccfg);
     /* Construct Encoder Context */
-    res = aom_codec_enc_init(&ctx->encoder, iface, &enccfg, flags);
+    res = aom_codec_enc_init(&ctx->encoder, iface, &enccfg, 0);
     if (res != AOM_CODEC_OK) {
         log_encoder_error(avctx, "Failed to initialize encoder");
         return AVERROR(EINVAL);
@@ -444,25 +324,17 @@ static av_cold int aom_init(AVCodecContext *avctx,
 
     // codec control failures are currently treated only as warnings
     av_log(avctx, AV_LOG_DEBUG, "aom_codec_control\n");
-    codecctl_int(avctx, AOME_SET_CPUUSED, ctx->cpu_used);
+    if (ctx->cpu_used != INT_MIN)
+        codecctl_int(avctx, AOME_SET_CPUUSED, ctx->cpu_used);
     if (ctx->auto_alt_ref >= 0)
         codecctl_int(avctx, AOME_SET_ENABLEAUTOALTREF, ctx->auto_alt_ref);
 
     codecctl_int(avctx, AOME_SET_STATIC_THRESHOLD, ctx->static_thresh);
-    if (ctx->crf >= 0)
-        codecctl_int(avctx, AOME_SET_CQ_LEVEL,          ctx->crf);
-
-    codecctl_int(avctx, AV1E_SET_COLOR_PRIMARIES, avctx->color_primaries);
-    codecctl_int(avctx, AV1E_SET_MATRIX_COEFFICIENTS, avctx->colorspace);
-    codecctl_int(avctx, AV1E_SET_TRANSFER_CHARACTERISTICS, avctx->color_trc);
-    set_color_range(avctx);
+    codecctl_int(avctx, AOME_SET_CQ_LEVEL, ctx->crf);
 
     // provide dummy value to initialize wrapper, values will be updated each _encode()
-    aom_img_wrap(&ctx->rawimg, img_fmt, avctx->width, avctx->height, 1,
-                 (unsigned char*)1);
-
-    if (codec_caps & AOM_CODEC_CAP_HIGHBITDEPTH)
-        ctx->rawimg.bit_depth = enccfg.g_bit_depth;
+    aom_img_wrap(&ctx->rawimg, ff_aom_pixfmt_to_imgfmt(avctx->pix_fmt),
+                 avctx->width, avctx->height, 1, (unsigned char *)1);
 
     cpb_props = ff_add_cpb_side_data(avctx);
     if (!cpb_props)
@@ -499,10 +371,10 @@ static inline void cx_pktcpy(struct FrameListData *dst,
 static int storeframe(AVCodecContext *avctx, struct FrameListData *cx_frame,
                       AVPacket *pkt)
 {
-    int ret = ff_alloc_packet2(avctx, pkt, cx_frame->sz, 0);
+    int ret = ff_alloc_packet(pkt, cx_frame->sz);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR,
-               "Error getting output packet of size %"SIZE_SPECIFIER".\n", cx_frame->sz);
+               "Error getting output packet of size %zu.\n", cx_frame->sz);
         return ret;
     }
     memcpy(pkt->data, cx_frame->buf, pkt->size);
@@ -567,7 +439,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out)
 
                 if (!cx_frame->buf) {
                     av_log(avctx, AV_LOG_ERROR,
-                           "Data buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
+                           "Data buffer alloc (%zu bytes) failed\n",
                            cx_frame->sz);
                     av_freep(&cx_frame);
                     return AVERROR(ENOMEM);
@@ -646,7 +518,7 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
 
         avctx->stats_out = av_malloc(b64_size);
         if (!avctx->stats_out) {
-            av_log(avctx, AV_LOG_ERROR, "Stat buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
+            av_log(avctx, AV_LOG_ERROR, "Stat buffer alloc (%zu bytes) failed\n",
                    b64_size);
             return AVERROR(ENOMEM);
         }
@@ -658,50 +530,12 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
     return 0;
 }
 
-static const enum AVPixelFormat av1_pix_fmts[] = {
-    AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_YUV422P,
-    AV_PIX_FMT_YUV444P,
-    AV_PIX_FMT_GBRP,
-    AV_PIX_FMT_NONE
-};
-
-static const enum AVPixelFormat av1_pix_fmts_highbd[] = {
-    AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_YUV422P,
-    AV_PIX_FMT_YUV444P,
-    AV_PIX_FMT_YUV420P10,
-    AV_PIX_FMT_YUV422P10,
-    AV_PIX_FMT_YUV444P10,
-    AV_PIX_FMT_YUV420P12,
-    AV_PIX_FMT_YUV422P12,
-    AV_PIX_FMT_YUV444P12,
-    AV_PIX_FMT_GBRP,
-    AV_PIX_FMT_GBRP10,
-    AV_PIX_FMT_GBRP12,
-    AV_PIX_FMT_NONE
-};
-
-static av_cold void av1_init_static(AVCodec *codec)
-{
-    aom_codec_caps_t codec_caps = aom_codec_get_caps(aom_codec_av1_cx());
-    if (codec_caps & AOM_CODEC_CAP_HIGHBITDEPTH)
-        codec->pix_fmts = av1_pix_fmts_highbd;
-    else
-        codec->pix_fmts = av1_pix_fmts;
-}
-
-static av_cold int av1_init(AVCodecContext *avctx)
-{
-    return aom_init(avctx, aom_codec_av1_cx());
-}
-
 #define OFFSET(x) offsetof(AOMContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "cpu-used",        "Quality/Speed ratio modifier",           OFFSET(cpu_used),        AV_OPT_TYPE_INT, {.i64 = 1}, -8, 8, VE},
+    { "cpu-used",        "Quality/Speed ratio modifier",           OFFSET(cpu_used),        AV_OPT_TYPE_INT, {.i64 = 1}, INT_MIN, INT_MAX, VE},
     { "auto-alt-ref",    "Enable use of alternate reference "
-                         "frames (2-pass only)",                   OFFSET(auto_alt_ref),    AV_OPT_TYPE_INT, {.i64 = -1},      -1,      2,       VE},
+                         "frames (2-pass only)",                   OFFSET(auto_alt_ref),    AV_OPT_TYPE_INT, {.i64 = -1},      -1,      1,       VE},
     { "lag-in-frames",   "Number of frames to look ahead at for "
                          "alternate reference frame selection",    OFFSET(lag_in_frames),   AV_OPT_TYPE_INT, {.i64 = -1},      -1,      INT_MAX, VE},
     { "error-resilience", "Error resilience configuration", OFFSET(error_resilient), AV_OPT_TYPE_FLAGS, {.i64 = 0}, INT_MIN, INT_MAX, VE, "er"},
@@ -710,7 +544,7 @@ static const AVOption options[] = {
                          "by the bool decoder, meaning that partitions can be decoded even "
                          "though earlier partitions have been lost. Note that intra predicition"
                          " is still done over the partition boundary.",       0, AV_OPT_TYPE_CONST, {.i64 = AOM_ERROR_RESILIENT_PARTITIONS}, 0, 0, VE, "er"},
-    { "crf",              "Select the quality for constant quality mode", offsetof(AOMContext, crf), AV_OPT_TYPE_INT, {.i64 = -1}, -1, 63, VE },
+    { "crf",              "Select the quality for constant quality mode", offsetof(AOMContext, crf), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 63, VE },
     { "static-thresh",    "A change threshold on blocks below which they will be skipped by the encoder", OFFSET(static_thresh), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
     { "drop-threshold",   "Frame drop threshold", offsetof(AOMContext, drop_threshold), AV_OPT_TYPE_INT, {.i64 = 0 }, INT_MIN, INT_MAX, VE },
     { "noise-sensitivity", "Noise sensitivity", OFFSET(noise_sensitivity), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 4, VE},
@@ -726,7 +560,7 @@ static const AVCodecDefault defaults[] = {
 };
 
 static const AVClass class_aom = {
-    .class_name = "libaom-av1 encoder",
+    .class_name = "libaom encoder",
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
@@ -738,13 +572,12 @@ AVCodec ff_libaom_av1_encoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_AV1,
     .priv_data_size = sizeof(AOMContext),
-    .init           = av1_init,
+    .init           = aom_init,
     .encode2        = aom_encode,
     .close          = aom_free,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_EXPERIMENTAL,
-    .profiles       = NULL_IF_CONFIG_SMALL(ff_av1_profiles),
+    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
     .priv_class     = &class_aom,
     .defaults       = defaults,
-    .init_static_data = av1_init_static,
     .wrapper_name   = "libaom",
 };

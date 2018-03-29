@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -234,8 +234,8 @@ static int qsv_init_child_ctx(AVHWFramesContext *ctx)
     child_frames_ctx->format            = device_priv->child_pix_fmt;
     child_frames_ctx->sw_format         = ctx->sw_format;
     child_frames_ctx->initial_pool_size = ctx->initial_pool_size;
-    child_frames_ctx->width             = ctx->width;
-    child_frames_ctx->height            = ctx->height;
+    child_frames_ctx->width             = FFALIGN(ctx->width, 16);
+    child_frames_ctx->height            = FFALIGN(ctx->height, 16);
 
 #if CONFIG_DXVA2
     if (child_device_ctx->type == AV_HWDEVICE_TYPE_DXVA2) {
@@ -307,9 +307,9 @@ static int qsv_init_surface(AVHWFramesContext *ctx, mfxFrameSurface1 *surf)
         surf->Info.ChromaFormat   = MFX_CHROMAFORMAT_YUV444;
 
     surf->Info.FourCC         = fourcc;
-    surf->Info.Width          = ctx->width;
+    surf->Info.Width          = FFALIGN(ctx->width, 16);
     surf->Info.CropW          = ctx->width;
-    surf->Info.Height         = ctx->height;
+    surf->Info.Height         = FFALIGN(ctx->height, 16);
     surf->Info.CropH          = ctx->height;
     surf->Info.FrameRateExtN  = 25;
     surf->Info.FrameRateExtD  = 1;

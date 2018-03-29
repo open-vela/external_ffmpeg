@@ -2,20 +2,20 @@
  * XCB input grabber
  * Copyright (C) 2014 Luca Barbato <lu_zero@gentoo.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,7 @@
 
 #include <stdlib.h>
 #include <xcb/xcb.h>
+#include <xcb/shape.h>
 
 #if CONFIG_LIBXCB_XFIXES
 #include <xcb/xfixes.h>
@@ -31,10 +32,6 @@
 #if CONFIG_LIBXCB_SHM
 #include <sys/shm.h>
 #include <xcb/shm.h>
-#endif
-
-#if CONFIG_LIBXCB_SHAPE
-#include <xcb/shape.h>
 #endif
 
 #include "libavutil/internal.h"
@@ -48,8 +45,6 @@
 
 typedef struct XCBGrabContext {
     const AVClass *class;
-
-    uint8_t *buffer;
 
     xcb_connection_t *conn;
     xcb_screen_t *screen;
@@ -102,7 +97,6 @@ static const AVClass xcbgrab_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
 static int xcbgrab_reposition(AVFormatContext *s,
@@ -221,31 +215,9 @@ static int check_shm(xcb_connection_t *conn)
     return 0;
 }
 
-static int allocate_shm(AVFormatContext *s)
+static void dealloc_shm(void *unused, uint8_t *data)
 {
-    XCBGrabContext *c = s->priv_data;
-    int size = c->frame_size + AV_INPUT_BUFFER_PADDING_SIZE;
-    uint8_t *data;
-    int id;
-
-    if (c->buffer)
-        return 0;
-    id = shmget(IPC_PRIVATE, size, IPC_CREAT | 0777);
-    if (id == -1) {
-        char errbuf[1024];
-        int err = AVERROR(errno);
-        av_strerror(err, errbuf, sizeof(errbuf));
-        av_log(s, AV_LOG_ERROR, "Cannot get %d bytes of shared memory: %s.\n",
-               size, errbuf);
-        return err;
-    }
-    xcb_shm_attach(c->conn, c->segment, id, 0);
-    data = shmat(id, NULL, 0);
-    shmctl(id, IPC_RMID, 0);
-    if ((intptr_t)data == -1 || !data)
-        return AVERROR(errno);
-    c->buffer = data;
-    return 0;
+    shmdt(data);
 }
 
 static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
@@ -254,16 +226,28 @@ static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
     xcb_shm_get_image_cookie_t iq;
     xcb_shm_get_image_reply_t *img;
     xcb_drawable_t drawable = c->screen->root;
+    uint8_t *data;
+    int size = c->frame_size + AV_INPUT_BUFFER_PADDING_SIZE;
+    int id   = shmget(IPC_PRIVATE, size, IPC_CREAT | 0777);
     xcb_generic_error_t *e = NULL;
-    int ret;
 
-    ret = allocate_shm(s);
-    if (ret < 0)
-        return ret;
+    if (id == -1) {
+        char errbuf[1024];
+        int err = AVERROR(errno);
+        av_strerror(err, errbuf, sizeof(errbuf));
+        av_log(s, AV_LOG_ERROR, "Cannot get %d bytes of shared memory: %s.\n",
+               size, errbuf);
+        return err;
+    }
+
+    xcb_shm_attach(c->conn, c->segment, id, 0);
 
     iq = xcb_shm_get_image(c->conn, drawable,
                            c->x, c->y, c->width, c->height, ~0,
                            XCB_IMAGE_FORMAT_Z_PIXMAP, c->segment, 0);
+
+    xcb_shm_detach(c->conn, c->segment);
+
     img = xcb_shm_get_image_reply(c->conn, iq, &e);
 
     xcb_flush(c->conn);
@@ -276,12 +260,25 @@ static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
                e->response_type, e->error_code,
                e->sequence, e->resource_id, e->minor_code, e->major_code);
 
+        shmctl(id, IPC_RMID, 0);
         return AVERROR(EACCES);
     }
 
     free(img);
 
-    pkt->data = c->buffer;
+    data = shmat(id, NULL, 0);
+    shmctl(id, IPC_RMID, 0);
+
+    if ((intptr_t)data == -1)
+        return AVERROR(errno);
+
+    pkt->buf = av_buffer_create(data, size, dealloc_shm, NULL, 0);
+    if (!pkt->buf) {
+        shmdt(data);
+        return AVERROR(ENOMEM);
+    }
+
+    pkt->data = pkt->buf->data;
     pkt->size = c->frame_size;
 
     return 0;
@@ -435,12 +432,6 @@ static av_cold int xcbgrab_read_close(AVFormatContext *s)
 {
     XCBGrabContext *ctx = s->priv_data;
 
-#if CONFIG_LIBXCB_SHM
-    if (ctx->buffer) {
-        shmdt(ctx->buffer);
-    }
-#endif
-
     xcb_disconnect(ctx->conn);
 
     return 0;
@@ -478,11 +469,11 @@ static int pixfmt_from_pixmap_format(AVFormatContext *s, int depth,
             switch (depth) {
             case 32:
                 if (fmt->bits_per_pixel == 32)
-                    *pix_fmt = AV_PIX_FMT_0RGB;
+                    *pix_fmt = AV_PIX_FMT_ARGB;
                 break;
             case 24:
                 if (fmt->bits_per_pixel == 32)
-                    *pix_fmt = AV_PIX_FMT_0RGB32;
+                    *pix_fmt = AV_PIX_FMT_RGB32;
                 else if (fmt->bits_per_pixel == 24)
                     *pix_fmt = AV_PIX_FMT_RGB24;
                 break;
@@ -595,7 +586,7 @@ static void setup_window(AVFormatContext *s)
     uint32_t values[] = { 1,
                           XCB_EVENT_MASK_EXPOSURE |
                           XCB_EVENT_MASK_STRUCTURE_NOTIFY };
-    av_unused xcb_rectangle_t rect = { 0, 0, c->width, c->height };
+    xcb_rectangle_t rect = { 0, 0, c->width, c->height };
 
     c->window = xcb_generate_id(c->conn);
 
@@ -611,13 +602,11 @@ static void setup_window(AVFormatContext *s)
                       XCB_COPY_FROM_PARENT,
                       mask, values);
 
-#if CONFIG_LIBXCB_SHAPE
     xcb_shape_rectangles(c->conn, XCB_SHAPE_SO_SUBTRACT,
                          XCB_SHAPE_SK_BOUNDING, XCB_CLIP_ORDERING_UNSORTED,
                          c->window,
                          c->region_border, c->region_border,
                          1, &rect);
-#endif
 
     xcb_map_window(c->conn, c->window);
 
@@ -629,24 +618,29 @@ static av_cold int xcbgrab_read_header(AVFormatContext *s)
     XCBGrabContext *c = s->priv_data;
     int screen_num, ret;
     const xcb_setup_t *setup;
-    char *display_name = av_strdup(s->url);
+    char *host        = s->filename[0] ? s->filename : NULL;
+    const char *opts  = strchr(s->filename, '+');
 
-    if (!display_name)
-        return AVERROR(ENOMEM);
-
-    if (!sscanf(s->url, "%[^+]+%d,%d", display_name, &c->x, &c->y)) {
-        *display_name = 0;
-        sscanf(s->url, "+%d,%d", &c->x, &c->y);
+    if (opts) {
+        sscanf(opts, "%d,%d", &c->x, &c->y);
+        host = av_strdup(s->filename);
+        if (!host)
+            return AVERROR(ENOMEM);
+        host[opts - s->filename] = '\0';
     }
 
-    c->conn = xcb_connect(display_name[0] ? display_name : NULL, &screen_num);
-    av_freep(&display_name);
+    c->conn = xcb_connect(host, &screen_num);
 
     if ((ret = xcb_connection_has_error(c->conn))) {
         av_log(s, AV_LOG_ERROR, "Cannot open display %s, error %d.\n",
-               s->url[0] ? s->url : "default", ret);
+               s->filename[0] ? host : "default", ret);
+        if (opts)
+            av_freep(&host);
         return AVERROR(EIO);
     }
+
+    if (opts)
+        av_freep(&host);
 
     setup = xcb_get_setup(c->conn);
 
