@@ -3,20 +3,20 @@
  * Copyright (c) 2010 Fabrice Bellard
  *                    Romain Degez
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,11 +27,13 @@
  * @author Romain Degez
  */
 
-#include "rtpdec_formats.h"
-#include "internal.h"
 #include "libavutil/attributes.h"
 #include "libavutil/avstring.h"
-#include "libavcodec/get_bits.h"
+
+#include "libavcodec/bitstream.h"
+
+#include "rtpdec_formats.h"
+#include "internal.h"
 
 #define MAX_AAC_HBR_FRAME_SIZE 8191
 
@@ -93,17 +95,19 @@ static const AttrNameMap attr_names[] = {
 
 static void close_context(PayloadContext *data)
 {
-    av_freep(&data->au_headers);
-    av_freep(&data->mode);
+    av_free(data->au_headers);
+    av_free(data->mode);
 }
 
 static int parse_fmtp_config(AVCodecParameters *par, const char *value)
 {
     /* decode the hexa encoded parameter */
     int len = ff_hex_to_data(NULL, value);
-    av_freep(&par->extradata);
-    if (ff_alloc_extradata(par, len))
+    av_free(par->extradata);
+    par->extradata = av_mallocz(len + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!par->extradata)
         return AVERROR(ENOMEM);
+    par->extradata_size = len;
     ff_hex_to_data(par->extradata, value);
     return 0;
 }
@@ -111,7 +115,7 @@ static int parse_fmtp_config(AVCodecParameters *par, const char *value)
 static int rtp_parse_mp4_au(PayloadContext *data, const uint8_t *buf, int len)
 {
     int au_headers_length, au_header_size, i;
-    GetBitContext getbitcontext;
+    BitstreamContext bctx;
 
     if (len < 2)
         return AVERROR_INVALIDDATA;
@@ -132,7 +136,7 @@ static int rtp_parse_mp4_au(PayloadContext *data, const uint8_t *buf, int len)
     if (len < data->au_headers_length_bytes)
         return AVERROR_INVALIDDATA;
 
-    init_get_bits(&getbitcontext, buf, data->au_headers_length_bytes * 8);
+    bitstream_init8(&bctx, buf, data->au_headers_length_bytes);
 
     /* XXX: Wrong if optional additional sections are present (cts, dts etc...) */
     au_header_size = data->sizelength + data->indexlength;
@@ -149,8 +153,8 @@ static int rtp_parse_mp4_au(PayloadContext *data, const uint8_t *buf, int len)
     }
 
     for (i = 0; i < data->nb_au_headers; ++i) {
-        data->au_headers[i].size  = get_bits_long(&getbitcontext, data->sizelength);
-        data->au_headers[i].index = get_bits_long(&getbitcontext, data->indexlength);
+        data->au_headers[i].size  = bitstream_read(&bctx, data->sizelength);
+        data->au_headers[i].index = bitstream_read(&bctx, data->indexlength);
     }
 
     return 0;
@@ -164,7 +168,6 @@ static int aac_parse_packet(AVFormatContext *ctx, PayloadContext *data,
                             int flags)
 {
     int ret;
-
 
     if (!buf) {
         if (data->cur_au_index > data->nb_au_headers) {
@@ -292,7 +295,7 @@ static int parse_fmtp(AVFormatContext *s,
                     int val = atoi(value);
                     if (val > 32) {
                         av_log(s, AV_LOG_ERROR,
-                               "The %s field size is invalid (%d)\n",
+                               "The %s field size is invalid (%d).",
                                attr, val);
                         return AVERROR_INVALIDDATA;
                     }
@@ -325,7 +328,7 @@ static int parse_sdp_line(AVFormatContext *s, int st_index,
     return 0;
 }
 
-const RTPDynamicProtocolHandler ff_mp4v_es_dynamic_handler = {
+RTPDynamicProtocolHandler ff_mp4v_es_dynamic_handler = {
     .enc_name           = "MP4V-ES",
     .codec_type         = AVMEDIA_TYPE_VIDEO,
     .codec_id           = AV_CODEC_ID_MPEG4,
@@ -334,7 +337,7 @@ const RTPDynamicProtocolHandler ff_mp4v_es_dynamic_handler = {
     .parse_sdp_a_line   = parse_sdp_line,
 };
 
-const RTPDynamicProtocolHandler ff_mpeg4_generic_dynamic_handler = {
+RTPDynamicProtocolHandler ff_mpeg4_generic_dynamic_handler = {
     .enc_name           = "mpeg4-generic",
     .codec_type         = AVMEDIA_TYPE_AUDIO,
     .codec_id           = AV_CODEC_ID_AAC,
