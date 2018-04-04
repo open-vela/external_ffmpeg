@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -343,7 +343,7 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
         if (ctx->codec->init_slice_params) {
             err = ctx->codec->init_slice_params(avctx, pic, slice);
             if (err < 0) {
-                av_log(avctx, AV_LOG_ERROR, "Failed to initialise slice "
+                av_log(avctx, AV_LOG_ERROR, "Failed to initalise slice "
                        "parameters: %d.\n", err);
                 goto fail;
             }
@@ -401,14 +401,14 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
         err = AVERROR(EIO);
         // vaRenderPicture() has been called here, so we should not destroy
         // the parameter buffers unless separate destruction is required.
-        if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
+        if (HAVE_VAAPI_1 || ctx->hwctx->driver_quirks &
             AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS)
             goto fail;
         else
             goto fail_at_end;
     }
 
-    if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
+    if (HAVE_VAAPI_1 || ctx->hwctx->driver_quirks &
         AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS) {
         for (i = 0; i < pic->nb_param_buffers; i++) {
             vas = vaDestroyBuffer(ctx->hwctx->display,
@@ -1038,8 +1038,6 @@ static av_cold int vaapi_encode_config_attributes(AVCodecContext *avctx)
             // Unfortunately we have to treat this as "don't know" and hope
             // for the best, because the Intel MJPEG encoder returns this
             // for all the interesting attributes.
-            av_log(avctx, AV_LOG_DEBUG, "Attribute (%d) is not supported.\n",
-                   attr[i].type);
             continue;
         }
         switch (attr[i].type) {
@@ -1096,10 +1094,10 @@ static av_cold int vaapi_encode_config_attributes(AVCodecContext *avctx)
                 goto fail;
             }
             if (avctx->max_b_frames > 0 && ref_l1 < 1) {
-                av_log(avctx, AV_LOG_WARNING, "B frames are not "
-                       "supported (%#x) by the underlying driver.\n",
-                       attr[i].value);
-                avctx->max_b_frames = 0;
+                av_log(avctx, AV_LOG_ERROR, "B frames are not "
+                       "supported (%#x).\n", attr[i].value);
+                err = AVERROR(EINVAL);
+                goto fail;
             }
         }
         break;
@@ -1141,12 +1139,6 @@ static av_cold int vaapi_encode_init_rate_control(AVCodecContext *avctx)
     int hrd_buffer_size;
     int hrd_initial_buffer_fullness;
     int fr_num, fr_den;
-
-    if (avctx->bit_rate > INT32_MAX) {
-        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
-               "higher is not supported.\n");
-        return AVERROR(EINVAL);
-    }
 
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;

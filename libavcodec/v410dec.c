@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2011 Derek Buitenhuis
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,15 +49,17 @@ static int v410_decode_frame(AVCodecContext *avctx, void *data,
     uint8_t *src = avpkt->data;
     uint16_t *y, *u, *v;
     uint32_t val;
-    int i, j, ret;
+    int i, j;
 
     if (avpkt->size < 4 * avctx->height * avctx->width) {
         av_log(avctx, AV_LOG_ERROR, "Insufficient input data.\n");
         return AVERROR(EINVAL);
     }
 
-    if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
-        return ret;
+    if (ff_get_buffer(avctx, pic, 0) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+        return AVERROR(ENOMEM);
+    }
 
     pic->key_frame = 1;
     pic->pict_type = AV_PICTURE_TYPE_I;
