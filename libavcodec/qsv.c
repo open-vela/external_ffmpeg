@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV encoder/decoder shared code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -193,6 +193,30 @@ int ff_qsv_find_surface_idx(QSVFramesContext *ctx, QSVFrame *frame)
             return i;
     }
     return AVERROR_BUG;
+}
+
+enum AVPictureType ff_qsv_map_pictype(int mfx_pic_type)
+{
+    enum AVPictureType type;
+    switch (mfx_pic_type & 0x7) {
+    case MFX_FRAMETYPE_I:
+        if (mfx_pic_type & MFX_FRAMETYPE_S)
+            type = AV_PICTURE_TYPE_SI;
+        else
+            type = AV_PICTURE_TYPE_I;
+        break;
+    case MFX_FRAMETYPE_B:
+        type = AV_PICTURE_TYPE_B;
+        break;
+    case MFX_FRAMETYPE_P:
+        if (mfx_pic_type & MFX_FRAMETYPE_S)
+            type = AV_PICTURE_TYPE_SP;
+        else
+            type = AV_PICTURE_TYPE_P;
+        break;
+    }
+
+    return type;
 }
 
 static int qsv_load_plugins(mfxSession session, const char *load_plugins,
@@ -593,10 +617,12 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
                                       "Error setting a HW handle");
     }
 
-    err = MFXJoinSession(parent_session, session);
-    if (err != MFX_ERR_NONE)
-        return ff_qsv_print_error(avctx, err,
-                                  "Error joining session");
+    if (QSV_RUNTIME_VERSION_ATLEAST(ver, 1, 25)) {
+        err = MFXJoinSession(parent_session, session);
+        if (err != MFX_ERR_NONE)
+            return ff_qsv_print_error(avctx, err,
+                                      "Error joining session");
+    }
 
     ret = qsv_load_plugins(session, load_plugins, avctx);
     if (ret < 0) {

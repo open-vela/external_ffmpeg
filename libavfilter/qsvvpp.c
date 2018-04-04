@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -515,9 +515,12 @@ static int init_vpp_session(AVFilterContext *avctx, QSVVPPContext *s)
         if (ret != MFX_ERR_NONE)
             return AVERROR_UNKNOWN;
     }
-    ret = MFXJoinSession(device_hwctx->session, s->session);
-    if (ret != MFX_ERR_NONE)
-        return AVERROR_UNKNOWN;
+
+    if (QSV_RUNTIME_VERSION_ATLEAST(ver, 1, 25)) {
+        ret = MFXJoinSession(device_hwctx->session, s->session);
+        if (ret != MFX_ERR_NONE)
+            return AVERROR_UNKNOWN;
+    }
 
     if (IS_OPAQUE_MEMORY(s->in_mem_mode) || IS_OPAQUE_MEMORY(s->out_mem_mode)) {
         s->opaque_alloc.In.Surfaces   = s->surface_ptrs_in;
