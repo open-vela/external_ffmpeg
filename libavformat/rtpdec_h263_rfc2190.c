@@ -8,20 +8,20 @@
  * Copyright 2007 Collabora Ltd, Philippe Kalaf
  * Copyright 2010 Mark Nauwelaerts
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,8 +30,7 @@
 #include "rtpdec_formats.h"
 #include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
-
-#include "libavcodec/bitstream.h"
+#include "libavcodec/get_bits.h"
 
 struct PayloadContext {
     AVIOContext *buf;
@@ -142,18 +141,18 @@ static int h263_handle_packet(AVFormatContext *ctx, PayloadContext *data,
             avio_w8(data->buf, data->endbyte);
         } else {
             /* Start/end skip bits not matching - missed packets? */
-            BitstreamContext bc;
-            bitstream_init(&bc, buf, len * 8 - ebit);
-            bitstream_skip(&bc, sbit);
+            GetBitContext gb;
+            init_get_bits(&gb, buf, len*8 - ebit);
+            skip_bits(&gb, sbit);
             if (data->endbyte_bits) {
-                data->endbyte |= bitstream_read(&bc, 8 - data->endbyte_bits);
+                data->endbyte |= get_bits(&gb, 8 - data->endbyte_bits);
                 avio_w8(data->buf, data->endbyte);
             }
-            while (bitstream_bits_left(&bc) >= 8)
-                avio_w8(data->buf, bitstream_read(&bc, 8));
-            data->endbyte_bits = bitstream_bits_left(&bc);
+            while (get_bits_left(&gb) >= 8)
+                avio_w8(data->buf, get_bits(&gb, 8));
+            data->endbyte_bits = get_bits_left(&gb);
             if (data->endbyte_bits)
-                data->endbyte = bitstream_read(&bc, data->endbyte_bits) <<
+                data->endbyte = get_bits(&gb, data->endbyte_bits) <<
                                 (8 - data->endbyte_bits);
             ebit = 0;
             len = 0;
@@ -184,7 +183,7 @@ static int h263_handle_packet(AVFormatContext *ctx, PayloadContext *data,
     return 0;
 }
 
-RTPDynamicProtocolHandler ff_h263_rfc2190_dynamic_handler = {
+const RTPDynamicProtocolHandler ff_h263_rfc2190_dynamic_handler = {
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_H263,
     .need_parsing      = AVSTREAM_PARSE_FULL,
