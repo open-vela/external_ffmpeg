@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,6 @@
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/time.h"
-#include "libavfilter/qsvvpp.h"
 
 #include "avfilter.h"
 #include "formats.h"
@@ -77,7 +76,6 @@ typedef struct QSVDeintContext {
 
     int64_t last_pts;
 
-    int got_output_frame;
     int eof;
 
     /* option for Deinterlacing algorithm to be used */
@@ -116,8 +114,10 @@ static int qsvdeint_query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_QSV, AV_PIX_FMT_NONE,
     };
     AVFilterFormats *pix_fmts  = ff_make_format_list(pixel_formats);
+    int ret;
 
-    ff_set_common_formats(ctx, pix_fmts);
+    if ((ret = ff_set_common_formats(ctx, pix_fmts)) < 0)
+        return ret;
 
     return 0;
 }
@@ -211,12 +211,6 @@ static int init_out_session(AVFilterContext *ctx)
 
     if (handle) {
         err = MFXVideoCORE_SetHandle(s->session, handle_type, handle);
-        if (err != MFX_ERR_NONE)
-            return AVERROR_UNKNOWN;
-    }
-
-    if (QSV_RUNTIME_VERSION_ATLEAST(ver, 1, 25)) {
-        err = MFXJoinSession(device_hwctx->session, s->session);
         if (err != MFX_ERR_NONE)
             return AVERROR_UNKNOWN;
     }
@@ -539,18 +533,12 @@ static int qsvdeint_filter_frame(AVFilterLink *link, AVFrame *in)
 static int qsvdeint_request_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
-    QSVDeintContext   *s = ctx->priv;
-    int ret = 0;
 
-    s->got_output_frame = 0;
-    while (ret >= 0 && !s->got_output_frame)
-        ret = ff_request_frame(ctx->inputs[0]);
-
-    return ret;
+    return ff_request_frame(ctx->inputs[0]);
 }
 
 #define OFFSET(x) offsetof(QSVDeintContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 static const AVOption options[] = {
     { "mode", "set deinterlace mode", OFFSET(mode),   AV_OPT_TYPE_INT, {.i64 = MFX_DEINTERLACING_ADVANCED}, MFX_DEINTERLACING_BOB, MFX_DEINTERLACING_ADVANCED, FLAGS, "mode"},
     { "bob",   "bob algorithm",                  0, AV_OPT_TYPE_CONST,      {.i64 = MFX_DEINTERLACING_BOB}, MFX_DEINTERLACING_BOB, MFX_DEINTERLACING_ADVANCED, FLAGS, "mode"},
