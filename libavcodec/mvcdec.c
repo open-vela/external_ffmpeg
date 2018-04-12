@@ -2,20 +2,20 @@
  * Silicon Graphics Motion Video Compressor 1 & 2 decoder
  * Copyright (c) 2012 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,6 +31,7 @@
 #include "internal.h"
 
 typedef struct MvcContext {
+    AVFrame *frame;
     int vflip;
 } MvcContext;
 
@@ -52,6 +53,10 @@ static av_cold int mvc_decode_init(AVCodecContext *avctx)
 
     avctx->pix_fmt = (avctx->codec_id == AV_CODEC_ID_MVC1) ? AV_PIX_FMT_RGB555
                                                            : AV_PIX_FMT_RGB32;
+    s->frame       = av_frame_alloc();
+    if (!s->frame)
+        return AVERROR(ENOMEM);
+
     s->vflip = avctx->extradata_size >= 9 &&
                !memcmp(avctx->extradata + avctx->extradata_size - 9, "BottomUp", 9);
     return 0;
@@ -226,30 +231,37 @@ static int mvc_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                             AVPacket *avpkt)
 {
     MvcContext *s = avctx->priv_data;
-    AVFrame *frame = data;
     GetByteContext gb;
     int ret;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
 
     bytestream2_init(&gb, avpkt->data, avpkt->size);
     if (avctx->codec_id == AV_CODEC_ID_MVC1)
-        ret = decode_mvc1(avctx, &gb, frame->data[0],
-                          avctx->width, avctx->height, frame->linesize[0]);
+        ret = decode_mvc1(avctx, &gb, s->frame->data[0],
+                          avctx->width, avctx->height, s->frame->linesize[0]);
     else
-        ret = decode_mvc2(avctx, &gb, frame->data[0],
-                          avctx->width, avctx->height, frame->linesize[0],
+        ret = decode_mvc2(avctx, &gb, s->frame->data[0],
+                          avctx->width, avctx->height, s->frame->linesize[0],
                           s->vflip);
     if (ret < 0)
         return ret;
 
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->key_frame = 1;
-
     *got_frame = 1;
+    if ((ret = av_frame_ref(data, s->frame)) < 0)
+        return ret;
 
     return avpkt->size;
+}
+
+static av_cold int mvc_decode_end(AVCodecContext *avctx)
+{
+    MvcContext *s = avctx->priv_data;
+
+    av_frame_free(&s->frame);
+
+    return 0;
 }
 
 #if CONFIG_MVC1_DECODER
@@ -260,6 +272,7 @@ AVCodec ff_mvc1_decoder = {
     .id             = AV_CODEC_ID_MVC1,
     .priv_data_size = sizeof(MvcContext),
     .init           = mvc_decode_init,
+    .close          = mvc_decode_end,
     .decode         = mvc_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
@@ -273,6 +286,7 @@ AVCodec ff_mvc2_decoder = {
     .id             = AV_CODEC_ID_MVC2,
     .priv_data_size = sizeof(MvcContext),
     .init           = mvc_decode_init,
+    .close          = mvc_decode_end,
     .decode         = mvc_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
