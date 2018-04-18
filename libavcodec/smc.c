@@ -2,20 +2,20 @@
  * Quicktime Graphics (SMC) Video Decoder
  * Copyright (C) 2003 The FFmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -84,7 +84,7 @@ static void smc_decode_stream(SmcContext *s)
     int stride = s->frame->linesize[0];
     int i;
     int chunk_size;
-    int buf_size = (int) (s->gb.buffer_end - s->gb.buffer_start);
+    int buf_size = bytestream2_size(&s->gb);
     unsigned char opcode;
     int n_blocks;
     unsigned int color_flags;
@@ -92,7 +92,7 @@ static void smc_decode_stream(SmcContext *s)
     unsigned int color_flags_b;
     unsigned int flag_mask;
 
-    unsigned char *pixels = s->frame->data[0];
+    unsigned char * const pixels = s->frame->data[0];
 
     int image_size = height * s->frame->linesize[0];
     int row_ptr = 0;
@@ -130,6 +130,10 @@ static void smc_decode_stream(SmcContext *s)
         if (row_ptr >= image_size) {
             av_log(s->avctx, AV_LOG_INFO, "SMC decoder just went out of bounds (row ptr = %d, height = %d)\n",
                 row_ptr, image_size);
+            return;
+        }
+        if (bytestream2_get_bytes_left(&s->gb) < 1) {
+            av_log(s->avctx, AV_LOG_ERROR, "input too small\n");
             return;
         }
 
@@ -431,19 +435,24 @@ static int smc_decode_frame(AVCodecContext *avctx,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     SmcContext *s = avctx->priv_data;
-    const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
+    int pal_size;
+    const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &pal_size);
     int ret;
+    int total_blocks = ((s->avctx->width + 3) / 4) * ((s->avctx->height + 3) / 4);
+
+    if (total_blocks / 1024 > avpkt->size)
+        return AVERROR_INVALIDDATA;
 
     bytestream2_init(&s->gb, buf, buf_size);
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
-    }
 
-    if (pal) {
+    if (pal && pal_size == AVPALETTE_SIZE) {
         s->frame->palette_has_changed = 1;
         memcpy(s->pal, pal, AVPALETTE_SIZE);
+    } else if (pal) {
+        av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", pal_size);
     }
 
     smc_decode_stream(s);
