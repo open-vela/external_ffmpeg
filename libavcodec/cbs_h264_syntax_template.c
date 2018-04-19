@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -342,8 +342,8 @@ static int FUNC(sps_extension)(CodedBitstreamContext *ctx, RWContext *rw,
         flag(alpha_incr_flag);
 
         bits = current->bit_depth_aux_minus8 + 9;
-        u(bits, alpha_opaque_value,      0, (1 << bits) - 1);
-        u(bits, alpha_transparent_value, 0, (1 << bits) - 1);
+        u(bits, alpha_opaque_value,      0, MAX_UINT_BITS(bits));
+        u(bits, alpha_transparent_value, 0, MAX_UINT_BITS(bits));
     }
 
     flag(additional_extension_flag);
@@ -483,10 +483,10 @@ static int FUNC(sei_buffering_period)(CodedBitstreamContext *ctx, RWContext *rw,
             length = sps->vui.nal_hrd_parameters.initial_cpb_removal_delay_length_minus1 + 1;
             xu(length, initial_cpb_removal_delay[SchedSelIdx],
                current->nal.initial_cpb_removal_delay[i],
-               0, (1 << (uint64_t)length) - 1);
+               1, MAX_UINT_BITS(length));
             xu(length, initial_cpb_removal_delay_offset[SchedSelIdx],
                current->nal.initial_cpb_removal_delay_offset[i],
-               0, (1 << (uint64_t)length) - 1);
+               0, MAX_UINT_BITS(length));
         }
     }
 
@@ -495,10 +495,10 @@ static int FUNC(sei_buffering_period)(CodedBitstreamContext *ctx, RWContext *rw,
             length = sps->vui.vcl_hrd_parameters.initial_cpb_removal_delay_length_minus1 + 1;
             xu(length, initial_cpb_removal_delay[SchedSelIdx],
                current->vcl.initial_cpb_removal_delay[i],
-               0, (1 << (uint64_t)length) - 1);
+               1, MAX_UINT_BITS(length));
             xu(length, initial_cpb_removal_delay_offset[SchedSelIdx],
                current->vcl.initial_cpb_removal_delay_offset[i],
-               0, (1 << (uint64_t)length) - 1);
+               0, MAX_UINT_BITS(length));
         }
     }
 
@@ -548,7 +548,7 @@ static int FUNC(sei_pic_timestamp)(CodedBitstreamContext *ctx, RWContext *rw,
 
     if (time_offset_length > 0)
         u(time_offset_length, time_offset,
-          0, (1 << (uint64_t)time_offset_length) - 1);
+          0, MAX_UINT_BITS(time_offset_length));
     else
         infer(time_offset, 0);
 
@@ -600,9 +600,9 @@ static int FUNC(sei_pic_timing)(CodedBitstreamContext *ctx, RWContext *rw,
         }
 
         u(hrd->cpb_removal_delay_length_minus1 + 1, cpb_removal_delay,
-          0, (1 << (uint64_t)hrd->cpb_removal_delay_length_minus1) + 1);
+          0, MAX_UINT_BITS(hrd->cpb_removal_delay_length_minus1 + 1));
         u(hrd->dpb_output_delay_length_minus1 + 1, dpb_output_delay,
-          0, (1 << (uint64_t)hrd->dpb_output_delay_length_minus1) + 1);
+          0, MAX_UINT_BITS(hrd->dpb_output_delay_length_minus1 + 1));
     }
 
     if (sps->vui.pic_struct_present_flag) {
@@ -724,7 +724,7 @@ static int FUNC(sei_payload)(CodedBitstreamContext *ctx, RWContext *rw,
     int start_position, end_position;
 
 #ifdef READ
-    start_position = bitstream_tell(rw);
+    start_position = get_bits_count(rw);
 #else
     start_position = put_bits_count(rw);
 #endif
@@ -777,10 +777,10 @@ static int FUNC(sei_payload)(CodedBitstreamContext *ctx, RWContext *rw,
     }
 
 #ifdef READ
-    end_position = bitstream_tell(rw);
+    end_position = get_bits_count(rw);
     if (end_position < start_position + 8 * current->payload_size) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "Incorrect SEI payload length: "
-               "header %d bits, actually %d bits.\n",
+               "header %"PRIu32" bits, actually %d bits.\n",
                8 * current->payload_size,
                end_position - start_position);
         return AVERROR_INVALIDDATA;
@@ -809,14 +809,14 @@ static int FUNC(sei)(CodedBitstreamContext *ctx, RWContext *rw,
         uint32_t payload_size = 0;
         uint32_t tmp;
 
-        while (bitstream_peek(rw, 8) == 0xff) {
+        while (show_bits(rw, 8) == 0xff) {
             xu(8, ff_byte, tmp, 0xff, 0xff);
             payload_type += 255;
         }
         xu(8, last_payload_type_byte, tmp, 0, 254);
         payload_type += tmp;
 
-        while (bitstream_peek(rw, 8) == 0xff) {
+        while (show_bits(rw, 8) == 0xff) {
             xu(8, ff_byte, tmp, 0xff, 0xff);
             payload_size += 255;
         }
@@ -1123,7 +1123,7 @@ static int FUNC(slice_header)(CodedBitstreamContext *ctx, RWContext *rw,
         u(2, colour_plane_id, 0, 2);
 
     u(sps->log2_max_frame_num_minus4 + 4, frame_num,
-      0, (1 << (sps->log2_max_frame_num_minus4 + 4)) - 1);
+      0, MAX_UINT_BITS(sps->log2_max_frame_num_minus4 + 4));
 
     if (!sps->frame_mbs_only_flag) {
         flag(field_pic_flag);
@@ -1141,7 +1141,7 @@ static int FUNC(slice_header)(CodedBitstreamContext *ctx, RWContext *rw,
 
     if (sps->pic_order_cnt_type == 0) {
         u(sps->log2_max_pic_order_cnt_lsb_minus4 + 4, pic_order_cnt_lsb,
-          0, (1 << (sps->log2_max_pic_order_cnt_lsb_minus4 + 4)) - 1);
+          0, MAX_UINT_BITS(sps->log2_max_pic_order_cnt_lsb_minus4 + 4));
         if (pps->bottom_field_pic_order_in_frame_present_flag &&
             !current->field_pic_flag)
             se(delta_pic_order_cnt_bottom, INT32_MIN + 1, INT32_MAX);
@@ -1260,7 +1260,7 @@ static int FUNC(filler)(CodedBitstreamContext *ctx, RWContext *rw,
                                 1 << H264_NAL_FILLER_DATA));
 
 #ifdef READ
-    while (bitstream_peek(rw, 8) == 0xff) {
+    while (show_bits(rw, 8) == 0xff) {
         xu(8, ff_byte, ff_byte, 0xff, 0xff);
         ++current->filler_size;
     }
