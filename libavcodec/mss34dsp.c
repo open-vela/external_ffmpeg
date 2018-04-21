@@ -2,20 +2,20 @@
  * Common stuff for some Microsoft Screen codecs
  * Copyright (C) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,30 +62,30 @@ void ff_mss34_gen_quant_mat(uint16_t *qmat, int quality, int luma)
 }
 
 #define DCT_TEMPLATE(blk, step, SOP, shift)                         \
-    const unsigned t0 =-39409U * blk[7 * step] - 58980U * blk[1 * step]; \
-    const unsigned t1 = 39410U * blk[1 * step] - 58980U * blk[7 * step]; \
-    const unsigned t2 =-33410U * blk[5 * step] -167963U * blk[3 * step]; \
-    const unsigned t3 = 33410U * blk[3 * step] -167963U * blk[5 * step]; \
-    const unsigned t4 =          blk[3 * step] +          blk[7 * step]; \
-    const unsigned t5 =          blk[1 * step] +          blk[5 * step]; \
-    const unsigned t6 = 77062U * t4            + 51491U * t5;            \
-    const unsigned t7 = 77062U * t5            - 51491U * t4;            \
-    const unsigned t8 = 35470U * blk[2 * step] - 85623U * blk[6 * step]; \
-    const unsigned t9 = 35470U * blk[6 * step] + 85623U * blk[2 * step]; \
-    const unsigned tA = SOP(blk[0 * step] - blk[4 * step]);              \
-    const unsigned tB = SOP(blk[0 * step] + blk[4 * step]);              \
+    const int t0 = -39409 * blk[7 * step] -  58980 * blk[1 * step]; \
+    const int t1 =  39410 * blk[1 * step] -  58980 * blk[7 * step]; \
+    const int t2 = -33410 * blk[5 * step] - 167963 * blk[3 * step]; \
+    const int t3 =  33410 * blk[3 * step] - 167963 * blk[5 * step]; \
+    const int t4 =          blk[3 * step] +          blk[7 * step]; \
+    const int t5 =          blk[1 * step] +          blk[5 * step]; \
+    const int t6 =  77062 * t4            +  51491 * t5;            \
+    const int t7 =  77062 * t5            -  51491 * t4;            \
+    const int t8 =  35470 * blk[2 * step] -  85623 * blk[6 * step]; \
+    const int t9 =  35470 * blk[6 * step] +  85623 * blk[2 * step]; \
+    const int tA = SOP(blk[0 * step] - blk[4 * step]);              \
+    const int tB = SOP(blk[0 * step] + blk[4 * step]);              \
                                                                     \
-    blk[0 * step] = (int)(  t1 + t6  + t9 + tB) >> shift;                \
-    blk[1 * step] = (int)(  t3 + t7  + t8 + tA) >> shift;                \
-    blk[2 * step] = (int)(  t2 + t6  - t8 + tA) >> shift;                \
-    blk[3 * step] = (int)(  t0 + t7  - t9 + tB) >> shift;                \
-    blk[4 * step] = (int)(-(t0 + t7) - t9 + tB) >> shift;                \
-    blk[5 * step] = (int)(-(t2 + t6) - t8 + tA) >> shift;                \
-    blk[6 * step] = (int)(-(t3 + t7) + t8 + tA) >> shift;                \
-    blk[7 * step] = (int)(-(t1 + t6) + t9 + tB) >> shift;                \
+    blk[0 * step] = (  t1 + t6  + t9 + tB) >> shift;                \
+    blk[1 * step] = (  t3 + t7  + t8 + tA) >> shift;                \
+    blk[2 * step] = (  t2 + t6  - t8 + tA) >> shift;                \
+    blk[3 * step] = (  t0 + t7  - t9 + tB) >> shift;                \
+    blk[4 * step] = (-(t0 + t7) - t9 + tB) >> shift;                \
+    blk[5 * step] = (-(t2 + t6) - t8 + tA) >> shift;                \
+    blk[6 * step] = (-(t3 + t7) + t8 + tA) >> shift;                \
+    blk[7 * step] = (-(t1 + t6) + t9 + tB) >> shift;                \
 
-#define SOP_ROW(a) (((a) * (1U << 16)) + 0x2000)
-#define SOP_COL(a) (((a) + 32) * (1U << 16))
+#define SOP_ROW(a) ((a) << 16) + 0x2000
+#define SOP_COL(a) ((a + 32) << 16)
 
 void ff_mss34_dct_put(uint8_t *dst, ptrdiff_t stride, int *block)
 {
