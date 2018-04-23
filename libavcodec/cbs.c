@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,6 +38,19 @@ static const CodedBitstreamType *cbs_type_table[] = {
 #if CONFIG_CBS_MPEG2
     &ff_cbs_type_mpeg2,
 #endif
+};
+
+const enum AVCodecID ff_cbs_all_codec_ids[] = {
+#if CONFIG_CBS_H264
+    AV_CODEC_ID_H264,
+#endif
+#if CONFIG_CBS_H265
+    AV_CODEC_ID_H265,
+#endif
+#if CONFIG_CBS_MPEG2
+    AV_CODEC_ID_MPEG2VIDEO,
+#endif
+    AV_CODEC_ID_NONE
 };
 
 int ff_cbs_init(CodedBitstreamContext **ctx_ptr,
@@ -308,17 +321,21 @@ int ff_cbs_write_packet(CodedBitstreamContext *ctx,
                         AVPacket *pkt,
                         CodedBitstreamFragment *frag)
 {
+    AVBufferRef *buf;
     int err;
 
     err = ff_cbs_write_fragment_data(ctx, frag);
     if (err < 0)
         return err;
 
-    err = av_new_packet(pkt, frag->data_size);
-    if (err < 0)
-        return err;
+    av_assert0(frag->data_ref);
+    buf = av_buffer_ref(frag->data_ref);
+    if (!buf)
+        return AVERROR(ENOMEM);
 
-    memcpy(pkt->data, frag->data, frag->data_size);
+    av_init_packet(pkt);
+    pkt->buf  = buf;
+    pkt->data = frag->data;
     pkt->size = frag->data_size;
 
     return 0;
@@ -358,25 +375,25 @@ void ff_cbs_trace_syntax_element(CodedBitstreamContext *ctx, int position,
            position, name, pad, bits, value);
 }
 
-int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, BitstreamContext *bc,
+int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
                          int width, const char *name, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max)
 {
     uint32_t value;
     int position;
 
-    av_assert0(width <= 32);
+    av_assert0(width > 0 && width <= 32);
 
-    if (bitstream_bits_left(bc) < width) {
+    if (get_bits_left(gbc) < width) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "Invalid value at "
                "%s: bitstream ended.\n", name);
         return AVERROR_INVALIDDATA;
     }
 
     if (ctx->trace_enable)
-        position = bitstream_tell(bc);
+        position = get_bits_count(gbc);
 
-    value = bitstream_read(bc, width);
+    value = get_bits_long(gbc, width);
 
     if (ctx->trace_enable) {
         char bits[33];
@@ -403,7 +420,7 @@ int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
                           int width, const char *name, uint32_t value,
                           uint32_t range_min, uint32_t range_max)
 {
-    av_assert0(width <= 32);
+    av_assert0(width > 0 && width <= 32);
 
     if (value < range_min || value > range_max) {
         av_log(ctx->log_ctx, AV_LOG_ERROR, "%s out of range: "

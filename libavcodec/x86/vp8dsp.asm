@@ -3,20 +3,20 @@
 ;* Copyright (c) 2010 Ronald S. Bultje <rsbultje@gmail.com>
 ;* Copyright (c) 2010 Fiona Glaser <fiona@x264.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -895,6 +895,7 @@ cglobal put_vp8_pixels16, 5, 5, 2, dst, dststride, src, srcstride, height
     %4 [dst2q+strideq+%3], m5
 %endmacro
 
+%if ARCH_X86_32
 INIT_MMX mmx
 cglobal vp8_idct_dc_add, 3, 3, 0, dst, block, stride
     ; load data
@@ -918,8 +919,9 @@ cglobal vp8_idct_dc_add, 3, 3, 0, dst, block, stride
     lea     dst2q, [dst1q+strideq*2]
     ADD_DC     m0, m1, 0, movh
     RET
+%endif
 
-INIT_XMM sse4
+%macro VP8_IDCT_DC_ADD 0
 cglobal vp8_idct_dc_add, 3, 3, 6, dst, block, stride
     ; load data
     movd       m0, [blockq]
@@ -945,10 +947,25 @@ cglobal vp8_idct_dc_add, 3, 3, 6, dst, block, stride
     paddw      m4, m0
     packuswb   m2, m4
     movd   [dst1q], m2
+%if cpuflag(sse4)
     pextrd [dst1q+strideq], m2, 1
     pextrd [dst2q], m2, 2
     pextrd [dst2q+strideq], m2, 3
+%else
+    psrldq     m2, 4
+    movd [dst1q+strideq], m2
+    psrldq     m2, 4
+    movd [dst2q], m2
+    psrldq     m2, 4
+    movd [dst2q+strideq], m2
+%endif
     RET
+%endmacro
+
+INIT_XMM sse2
+VP8_IDCT_DC_ADD
+INIT_XMM sse4
+VP8_IDCT_DC_ADD
 
 ;-----------------------------------------------------------------------------
 ; void ff_vp8_idct_dc_add4y_<opt>(uint8_t *dst, int16_t block[4][16], ptrdiff_t stride);

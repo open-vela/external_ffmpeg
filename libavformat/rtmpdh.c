@@ -4,20 +4,20 @@
  * Copyright (c) 2009-2010 Howard Chu
  * Copyright (c) 2012 Samuel Pitoiset
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -107,6 +107,33 @@ static int bn_modexp(FFBigNum bn, FFBigNum y, FFBigNum q, FFBigNum p)
     mpz_powm(bn, y, q, p);
     return 0;
 }
+#elif CONFIG_GCRYPT
+#define bn_new(bn)                                              \
+    do {                                                        \
+        if (!gcry_control(GCRYCTL_INITIALIZATION_FINISHED_P)) { \
+            if (!gcry_check_version("1.5.4"))                   \
+                return AVERROR(EINVAL);                         \
+            gcry_control(GCRYCTL_DISABLE_SECMEM, 0);            \
+            gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);   \
+        }                                                       \
+        bn = gcry_mpi_new(1);                                   \
+    } while (0)
+#define bn_free(bn)                 gcry_mpi_release(bn)
+#define bn_set_word(bn, w)          gcry_mpi_set_ui(bn, w)
+#define bn_cmp(a, b)                gcry_mpi_cmp(a, b)
+#define bn_copy(to, from)           gcry_mpi_set(to, from)
+#define bn_sub_word(bn, w)          gcry_mpi_sub_ui(bn, bn, w)
+#define bn_cmp_1(bn)                gcry_mpi_cmp_ui(bn, 1)
+#define bn_num_bytes(bn)            (gcry_mpi_get_nbits(bn) + 7) / 8
+#define bn_bn2bin(bn, buf, len)     gcry_mpi_print(GCRYMPI_FMT_USG, buf, len, NULL, bn)
+#define bn_bin2bn(bn, buf, len)     gcry_mpi_scan(&bn, GCRYMPI_FMT_USG, buf, len, NULL)
+#define bn_hex2bn(bn, buf, ret)     ret = (gcry_mpi_scan(&bn, GCRYMPI_FMT_HEX, buf, 0, 0) == 0)
+#define bn_random(bn, num_bits)     gcry_mpi_randomize(bn, num_bits, GCRY_WEAK_RANDOM)
+static int bn_modexp(FFBigNum bn, FFBigNum y, FFBigNum q, FFBigNum p)
+{
+    gcry_mpi_powm(bn, y, q, p);
+    return 0;
+}
 #elif CONFIG_OPENSSL
 #define bn_new(bn)                  bn = BN_new()
 #define bn_free(bn)                 BN_free(bn)
@@ -132,56 +159,6 @@ static int bn_modexp(FFBigNum bn, FFBigNum y, FFBigNum q, FFBigNum p)
     BN_CTX_free(ctx);
     return 0;
 }
-#elif CONFIG_MBEDTLS
-#define bn_new(bn)                      \
-    do {                                \
-        bn = av_malloc(sizeof(*bn));    \
-        if (bn)                         \
-            mbedtls_mpi_init(bn);       \
-    } while (0)
-#define bn_free(bn)                     \
-    do {                                \
-        mbedtls_mpi_free(bn);           \
-        av_free(bn);                    \
-    } while (0)
-#define bn_set_word(bn, w)          mbedtls_mpi_lset(bn, w)
-#define bn_cmp(a, b)                mbedtls_mpi_cmp_mpi(a, b)
-#define bn_copy(to, from)           mbedtls_mpi_copy(to, from)
-#define bn_sub_word(bn, w)          mbedtls_mpi_sub_int(bn, bn, w)
-#define bn_cmp_1(bn)                mbedtls_mpi_cmp_int(bn, 1)
-#define bn_num_bytes(bn)            (mbedtls_mpi_bitlen(bn) + 7) / 8
-#define bn_bn2bin(bn, buf, len)     mbedtls_mpi_write_binary(bn, buf, len)
-#define bn_bin2bn(bn, buf, len)                     \
-    do {                                            \
-        bn_new(bn);                                 \
-        if (bn)                                     \
-            mbedtls_mpi_read_binary(bn, buf, len);  \
-    } while (0)
-#define bn_hex2bn(bn, buf, ret)                     \
-    do {                                            \
-        bn_new(bn);                                 \
-        if (bn)                                     \
-            ret = (mbedtls_mpi_read_string(bn, 16, buf) == 0);  \
-        else                                        \
-            ret = 1;                                \
-    } while (0)
-#define bn_random(bn, num_bits)                     \
-    do {                                            \
-        mbedtls_entropy_context entropy_ctx;        \
-        mbedtls_ctr_drbg_context ctr_drbg_ctx;      \
-                                                    \
-        mbedtls_entropy_init(&entropy_ctx);         \
-        mbedtls_ctr_drbg_init(&ctr_drbg_ctx);       \
-        mbedtls_ctr_drbg_seed(&ctr_drbg_ctx,        \
-                              mbedtls_entropy_func, \
-                              &entropy_ctx,         \
-                              NULL, 0);             \
-        mbedtls_mpi_fill_random(bn, (num_bits + 7) / 8, mbedtls_ctr_drbg_random, &ctr_drbg_ctx); \
-        mbedtls_ctr_drbg_free(&ctr_drbg_ctx);       \
-        mbedtls_entropy_free(&entropy_ctx);         \
-    } while (0)
-#define bn_modexp(bn, y, q, p)      mbedtls_mpi_exp_mod(bn, y, q, p, 0)
-
 #endif
 
 #define MAX_BYTES 18000
