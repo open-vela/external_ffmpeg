@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,7 @@
 
 #define READ
 #define READWRITE read
-#define RWContext GetBitContext
+#define RWContext BitstreamContext
 
 #define xui(width, name, var) do { \
         uint32_t value = 0; \
@@ -59,8 +59,8 @@
     } while (0)
 
 #define nextbits(width, compare, var) \
-    (get_bits_left(rw) >= width && \
-     (var = show_bits(rw, width)) == (compare))
+    (bitstream_bits_left(rw) >= width && \
+     (var = bitstream_peek(rw, width)) == (compare))
 
 #include "cbs_mpeg2_syntax_template.c"
 
@@ -172,10 +172,10 @@ static int cbs_mpeg2_split_fragment(CodedBitstreamContext *ctx,
 static int cbs_mpeg2_read_unit(CodedBitstreamContext *ctx,
                                CodedBitstreamUnit *unit)
 {
-    GetBitContext gbc;
+    BitstreamContext bc;
     int err;
 
-    err = init_get_bits(&gbc, unit->data, 8 * unit->data_size);
+    err = bitstream_init(&bc, unit->data, 8 * unit->data_size);
     if (err < 0)
         return err;
 
@@ -189,11 +189,11 @@ static int cbs_mpeg2_read_unit(CodedBitstreamContext *ctx,
             return err;
         slice = unit->content;
 
-        err = cbs_mpeg2_read_slice_header(ctx, &gbc, &slice->header);
+        err = cbs_mpeg2_read_slice_header(ctx, &bc, &slice->header);
         if (err < 0)
             return err;
 
-        pos = get_bits_count(&gbc);
+        pos = bitstream_tell(&bc);
         len = unit->data_size;
 
         slice->data_size = len - pos / 8;
@@ -220,7 +220,7 @@ static int cbs_mpeg2_read_unit(CodedBitstreamContext *ctx,
                 if (err < 0) \
                     return err; \
                 header = unit->content; \
-                err = cbs_mpeg2_read_ ## read_func(ctx, &gbc, header); \
+                err = cbs_mpeg2_read_ ## read_func(ctx, &bc, header); \
                 if (err < 0) \
                     return err; \
             } \
@@ -274,7 +274,7 @@ static int cbs_mpeg2_write_slice(CodedBitstreamContext *ctx,
                                  PutBitContext *pbc)
 {
     MPEG2RawSlice *slice = unit->content;
-    GetBitContext gbc;
+    BitstreamContext bc;
     size_t bits_left;
     int err;
 
@@ -286,14 +286,14 @@ static int cbs_mpeg2_write_slice(CodedBitstreamContext *ctx,
         if (slice->data_size * 8 + 8 > put_bits_left(pbc))
             return AVERROR(ENOSPC);
 
-        init_get_bits(&gbc, slice->data, slice->data_size * 8);
-        skip_bits_long(&gbc, slice->data_bit_start);
+        bitstream_init(&bc, slice->data, slice->data_size * 8);
+        bitstream_skip(&bc, slice->data_bit_start);
 
-        while (get_bits_left(&gbc) > 15)
-            put_bits(pbc, 16, get_bits(&gbc, 16));
+        while (bitstream_bits_left(&bc) > 15)
+            put_bits(pbc, 16, bitstream_read(&bc, 16));
 
-        bits_left = get_bits_left(&gbc);
-        put_bits(pbc, bits_left, get_bits(&gbc, bits_left));
+        bits_left = bitstream_bits_left(&bc);
+        put_bits(pbc, bits_left, bitstream_read(&bc, bits_left));
 
         // Align with zeroes.
         while (put_bits_count(pbc) % 8 != 0)
@@ -319,7 +319,7 @@ static int cbs_mpeg2_write_unit(CodedBitstreamContext *ctx,
         if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Unable to allocate a "
                    "sufficiently large write buffer (last attempt "
-                   "%"SIZE_SPECIFIER" bytes).\n", priv->write_buffer_size);
+                   "%zu bytes).\n", priv->write_buffer_size);
             return err;
         }
     }
@@ -362,14 +362,14 @@ static int cbs_mpeg2_assemble_fragment(CodedBitstreamContext *ctx,
                                        CodedBitstreamFragment *frag)
 {
     uint8_t *data;
-    size_t size, dp;
+    size_t size, dp, sp;
     int i;
 
     size = 0;
     for (i = 0; i < frag->nb_units; i++)
         size += 3 + frag->units[i].data_size;
 
-    frag->data_ref = av_buffer_alloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
+    frag->data_ref = av_buffer_alloc(size);
     if (!frag->data_ref)
         return AVERROR(ENOMEM);
     data = frag->data_ref->data;
@@ -382,13 +382,12 @@ static int cbs_mpeg2_assemble_fragment(CodedBitstreamContext *ctx,
         data[dp++] = 0;
         data[dp++] = 1;
 
-        memcpy(data + dp, unit->data, unit->data_size);
-        dp += unit->data_size;
+        for (sp = 0; sp < unit->data_size; sp++)
+            data[dp++] = unit->data[sp];
     }
 
     av_assert0(dp == size);
 
-    memset(data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     frag->data      = data;
     frag->data_size = size;
 
