@@ -2,20 +2,20 @@
  * RV30/40 decoder common data declarations
  * Copyright (c) 2007 Mike Melanson, Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -102,12 +102,14 @@ typedef struct RV34DecContext{
     int dmv[4][2];           ///< differential motion vectors for the current macroblock
 
     int rv30;                ///< indicates which RV variant is currently decoded
-    int rpr;                 ///< one field size in RV30 slice header
+    int max_rpr;
 
     int cur_pts, last_pts, next_pts;
     int scaled_weight;
     int weight1, weight2;    ///< B-frame distance fractions (0.14) used in motion compensation
     int mv_weight1, mv_weight2;
+
+    int orig_width, orig_height;
 
     uint16_t *cbp_luma;      ///< CBP values for luma subblocks
     uint8_t  *cbp_chroma;    ///< CBP values for chroma subblocks
