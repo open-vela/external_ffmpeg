@@ -1,20 +1,22 @@
 /*
  * quarterpel DSP functions
+ * Copyright (c) 2000, 2001 Fabrice Bellard
+ * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -77,13 +79,13 @@ void ff_avg_mpeg4_qpel8_v_lowpass_mmxext(uint8_t *dst, const uint8_t *src,
 void ff_put_no_rnd_mpeg4_qpel8_v_lowpass_mmxext(uint8_t *dst,
                                                 const uint8_t *src,
                                                 int dstStride, int srcStride);
-#define ff_put_no_rnd_pixels16_mmxext ff_put_pixels16_mmxext
-#define ff_put_no_rnd_pixels8_mmxext ff_put_pixels8_mmxext
+#define ff_put_no_rnd_pixels16_mmxext ff_put_pixels16_mmx
+#define ff_put_no_rnd_pixels8_mmxext ff_put_pixels8_mmx
 
 #if HAVE_X86ASM
 
-CALL_2X_PIXELS(ff_avg_pixels16_mmxext, ff_avg_pixels8_mmxext, 8)
-CALL_2X_PIXELS(ff_put_pixels16_mmxext, ff_put_pixels8_mmxext, 8)
+#define ff_put_pixels16_mmxext ff_put_pixels16_mmx
+#define ff_put_pixels8_mmxext  ff_put_pixels8_mmx
 
 #define QPEL_OP(OPNAME, RND, MMX)                                       \
 static void OPNAME ## qpel8_mc00_ ## MMX(uint8_t *dst,                  \
