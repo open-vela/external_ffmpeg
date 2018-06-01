@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2006 Luca Barbato <lu_zero@gentoo.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -75,20 +75,18 @@ void ff_vector_fmul_add_altivec(float *dst, const float *src0,
                                 int len)
 {
     int i;
-    vec_f d, s0, s1, s2, t0, t1, edges;
-    vec_u8  align = vec_lvsr(0, dst);
-    vec_u8  mask  = vec_lvsl(0, dst);
+    vec_f d, ss0, ss1, ss2, t0, t1, edges;
 
     for (i = 0; i < len - 3; i += 4) {
         t0 = vec_ld(0, dst + i);
         t1 = vec_ld(15, dst + i);
-        s0 = vec_ld(0, src0 + i);
-        s1 = vec_ld(0, src1 + i);
-        s2 = vec_ld(0, src2 + i);
-        edges = vec_perm(t1, t0, mask);
-        d = vec_madd(s0, s1, s2);
-        t1 = vec_perm(d, edges, align);
-        t0 = vec_perm(edges, d, align);
+        ss0 = vec_ld(0, src0 + i);
+        ss1 = vec_ld(0, src1 + i);
+        ss2 = vec_ld(0, src2 + i);
+        edges = vec_perm(t1, t0, vcprm(0, 1, 2, 3));
+        d = vec_madd(ss0, ss1, ss2);
+        t1 = vec_perm(d, edges, vcprm(s0,s1,s2,s3));
+        t0 = vec_perm(edges, d, vcprm(s0,s1,s2,s3));
         vec_st(t1, 15, dst + i);
         vec_st(t0, 0, dst + i);
     }
