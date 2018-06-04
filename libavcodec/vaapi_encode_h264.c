@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -89,6 +89,8 @@ typedef struct VAAPIEncodeH264Options {
     int qp;
     int quality;
     int low_power;
+    // Entropy encoder type.
+    int coder;
     int aud;
     int sei;
     int profile;
@@ -206,7 +208,6 @@ static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
 {
     VAAPIEncodeContext      *ctx = avctx->priv_data;
     VAAPIEncodeH264Context *priv = ctx->priv_data;
-    VAAPIEncodeH264Options  *opt = ctx->codec_options;
     CodedBitstreamFragment   *au = &priv->current_access_unit;
     int err, i;
 
@@ -222,12 +223,12 @@ static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
         priv->sei.nal_unit_header.nal_unit_type = H264_NAL_SEI;
 
         i = 0;
-        if (pic->encode_order == 0 && opt->sei & SEI_IDENTIFIER) {
+        if (priv->sei_needed & SEI_IDENTIFIER) {
             priv->sei.payload[i].payload_type = H264_SEI_TYPE_USER_DATA_UNREGISTERED;
             priv->sei.payload[i].payload.user_data_unregistered = priv->identifier;
             ++i;
         }
-        if (opt->sei & SEI_TIMING) {
+        if (priv->sei_needed & SEI_TIMING) {
             if (pic->type == PICTURE_TYPE_IDR) {
                 priv->sei.payload[i].payload_type = H264_SEI_TYPE_BUFFERING_PERIOD;
                 priv->sei.payload[i].payload.buffering_period = priv->buffering_period;
@@ -237,7 +238,7 @@ static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
             priv->sei.payload[i].payload.pic_timing = priv->pic_timing;
             ++i;
         }
-        if (opt->sei & SEI_RECOVERY_POINT && pic->type == PICTURE_TYPE_I) {
+        if (priv->sei_needed & SEI_RECOVERY_POINT) {
             priv->sei.payload[i].payload_type = H264_SEI_TYPE_RECOVERY_POINT;
             priv->sei.payload[i].payload.recovery_point = priv->recovery_point;
             ++i;
@@ -260,7 +261,7 @@ static int vaapi_encode_h264_write_extra_header(AVCodecContext *avctx,
         *type = VAEncPackedHeaderRawData;
         return 0;
 
-#if !HAVE_VAAPI_1
+#if !CONFIG_VAAPI_1
     } else if (priv->sei_cbr_workaround_needed) {
         // Insert a zero-length header using the old SEI type.  This is
         // required to avoid triggering broken behaviour on Intel platforms
@@ -467,6 +468,8 @@ static int vaapi_encode_h264_init_sequence_params(AVCodecContext *avctx)
         !(sps->profile_idc == FF_PROFILE_H264_BASELINE ||
           sps->profile_idc == FF_PROFILE_H264_EXTENDED ||
           sps->profile_idc == FF_PROFILE_H264_CAVLC_444);
+    if (!opt->coder && pps->entropy_coding_mode_flag)
+        pps->entropy_coding_mode_flag = 0;
 
     pps->num_ref_idx_l0_default_active_minus1 = 0;
     pps->num_ref_idx_l1_default_active_minus1 = 0;
@@ -624,9 +627,11 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
         priv->aud_needed = 0;
     }
 
+    priv->sei_needed = 0;
+
     if (opt->sei & SEI_IDENTIFIER && pic->encode_order == 0)
-        priv->sei_needed = 1;
-#if !HAVE_VAAPI_1
+        priv->sei_needed |= SEI_IDENTIFIER;
+#if !CONFIG_VAAPI_1
     if (ctx->va_rc_mode == VA_RC_CBR)
         priv->sei_cbr_workaround_needed = 1;
 #endif
@@ -637,7 +642,7 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
         priv->pic_timing.cpb_removal_delay = 2 * priv->cpb_delay;
         priv->pic_timing.dpb_output_delay  = 2 * priv->dpb_delay;
 
-        priv->sei_needed = 1;
+        priv->sei_needed |= SEI_TIMING;
     }
 
     if (opt->sei & SEI_RECOVERY_POINT && pic->type == PICTURE_TYPE_I) {
@@ -645,7 +650,7 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
         priv->recovery_point.exact_match_flag   = 1;
         priv->recovery_point.broken_link_flag   = ctx->b_per_p > 0;
 
-        priv->sei_needed = 1;
+        priv->sei_needed |= SEI_RECOVERY_POINT;
     }
 
     vpic->CurrPic = (VAPictureH264) {
@@ -811,7 +816,7 @@ static av_cold int vaapi_encode_h264_configure(AVCodecContext *avctx)
         priv->fixed_qp_p   = 26;
         priv->fixed_qp_b   = 26;
 
-        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %d bps.\n",
+        av_log(avctx, AV_LOG_DEBUG, "Using %s-bitrate = %"PRId64" bps.\n",
                ctx->va_rc_mode == VA_RC_CBR ? "constant" : "variable",
                avctx->bit_rate);
 
@@ -896,6 +901,11 @@ static av_cold int vaapi_encode_h264_init(AVCodecContext *avctx)
         avctx->profile = FF_PROFILE_H264_CONSTRAINED_BASELINE;
     case FF_PROFILE_H264_CONSTRAINED_BASELINE:
         ctx->va_profile = VAProfileH264ConstrainedBaseline;
+        if (avctx->max_b_frames != 0) {
+            avctx->max_b_frames = 0;
+            av_log(avctx, AV_LOG_WARNING, "H.264 constrained baseline profile "
+                   "doesn't support encoding with B frames, disabling them.\n");
+        }
         break;
     case FF_PROFILE_H264_MAIN:
         ctx->va_profile = VAProfileH264Main;
@@ -985,6 +995,12 @@ static const AVOption vaapi_encode_h264_options[] = {
     { "low_power", "Use low-power encoding mode (experimental: only supported "
       "on some platforms, does not support all features)",
       OFFSET(low_power), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
+    { "coder", "Entropy coder type",
+      OFFSET(coder), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, FLAGS, "coder" },
+        { "cavlc", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
+        { "cabac", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
+        { "vlc",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
+        { "ac",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
 
     { "aud", "Include AUD",
       OFFSET(aud), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, FLAGS },
@@ -1048,10 +1064,10 @@ static const AVCodecDefault vaapi_encode_h264_defaults[] = {
     { "b",              "0"   },
     { "bf",             "2"   },
     { "g",              "120" },
-    { "i_qfactor",      "1.0" },
-    { "i_qoffset",      "0.0" },
-    { "b_qfactor",      "1.2" },
-    { "b_qoffset",      "0.0" },
+    { "i_qfactor",      "1"   },
+    { "i_qoffset",      "0"   },
+    { "b_qfactor",      "6/5" },
+    { "b_qoffset",      "0"   },
     { "qmin",           "0"   },
     { NULL },
 };
