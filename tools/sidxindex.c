@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2014 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -157,8 +157,8 @@ static int handle_file(struct Tracks *tracks, const char *file)
             err = AVERROR(ENOMEM);
             goto fail;
         }
-        temp = av_realloc_array(tracks->tracks, tracks->nb_tracks + 1,
-                                sizeof(*tracks->tracks));
+        temp = av_realloc(tracks->tracks,
+                          sizeof(*tracks->tracks) * (tracks->nb_tracks + 1));
         if (!temp) {
             av_free(track);
             err = AVERROR(ENOMEM);
@@ -245,7 +245,7 @@ static int output_mpd(struct Tracks *tracks, const char *filename)
         nb_tracks = nb_tracks_buf;
         nb_sets = 2;
         for (i = 0; i < 2; i++) {
-            adaptation_sets[i] = av_malloc_array(tracks->nb_tracks, sizeof(*adaptation_sets[i]));
+            adaptation_sets[i] = av_malloc(sizeof(*adaptation_sets[i]) * tracks->nb_tracks);
             if (!adaptation_sets[i]) {
                 ret = AVERROR(ENOMEM);
                 goto err;
@@ -362,6 +362,8 @@ int main(int argc, char **argv)
     const char *out = NULL;
     struct Tracks tracks = { 0 };
     int i;
+
+    av_register_all();
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-out")) {

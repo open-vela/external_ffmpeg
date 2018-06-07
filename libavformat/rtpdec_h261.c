@@ -2,24 +2,25 @@
  * RTP parser for H.261 payload format (RFC 4587)
  * Copyright (c) 2014 Thomas Volkert <thomas@homer-conferencing.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavcodec/get_bits.h"
+#include "libavcodec/bitstream.h"
+
 #include "avformat.h"
 #include "avio_internal.h"
 #include "rtpdec_formats.h"
@@ -118,18 +119,18 @@ static int h261_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_h261_ctx
             avio_w8(rtp_h261_ctx->buf, rtp_h261_ctx->endbyte);
         } else {
             /* ebit/sbit values inconsistent, assuming packet loss */
-            GetBitContext gb;
-            init_get_bits(&gb, buf, len*8 - ebit);
-            skip_bits(&gb, sbit);
+            BitstreamContext bc;
+            bitstream_init(&bc, buf, len * 8 - ebit);
+            bitstream_skip(&bc, sbit);
             if (rtp_h261_ctx->endbyte_bits) {
-                rtp_h261_ctx->endbyte |= get_bits(&gb, 8 - rtp_h261_ctx->endbyte_bits);
+                rtp_h261_ctx->endbyte |= bitstream_read(&bc, 8 - rtp_h261_ctx->endbyte_bits);
                 avio_w8(rtp_h261_ctx->buf, rtp_h261_ctx->endbyte);
             }
-            while (get_bits_left(&gb) >= 8)
-                avio_w8(rtp_h261_ctx->buf, get_bits(&gb, 8));
-            rtp_h261_ctx->endbyte_bits = get_bits_left(&gb);
+            while (bitstream_bits_left(&bc) >= 8)
+                avio_w8(rtp_h261_ctx->buf, bitstream_read(&bc, 8));
+            rtp_h261_ctx->endbyte_bits = bitstream_bits_left(&bc);
             if (rtp_h261_ctx->endbyte_bits)
-                rtp_h261_ctx->endbyte = get_bits(&gb, rtp_h261_ctx->endbyte_bits) <<
+                rtp_h261_ctx->endbyte = bitstream_read(&bc, rtp_h261_ctx->endbyte_bits) <<
                                         (8 - rtp_h261_ctx->endbyte_bits);
             ebit = 0;
             len  = 0;
@@ -162,7 +163,7 @@ static int h261_handle_packet(AVFormatContext *ctx, PayloadContext *rtp_h261_ctx
     return 0;
 }
 
-const RTPDynamicProtocolHandler ff_h261_dynamic_handler = {
+RTPDynamicProtocolHandler ff_h261_dynamic_handler = {
     .enc_name          = "H261",
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_H261,
