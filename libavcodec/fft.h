@@ -2,20 +2,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,10 @@
 
 #ifndef FFT_FLOAT
 #define FFT_FLOAT 1
+#endif
+
+#ifndef FFT_FIXED_32
+#define FFT_FIXED_32 0
 #endif
 
 #include <stdint.h>
@@ -40,15 +44,26 @@ typedef float FFTDouble;
 
 #else
 
+#if FFT_FIXED_32
+
+#define Q31(x) (int)((x)*2147483648.0 + 0.5)
+#define FFT_NAME(x) x ## _fixed_32
+
+typedef int32_t FFTSample;
+
+#else /* FFT_FIXED_32 */
+
 #define FFT_NAME(x) x ## _fixed
 
 typedef int16_t FFTSample;
-typedef int     FFTDouble;
+
+#endif /* FFT_FIXED_32 */
 
 typedef struct FFTComplex {
-    int16_t re, im;
+    FFTSample re, im;
 } FFTComplex;
 
+typedef int    FFTDouble;
 typedef struct FFTContext FFTContext;
 
 #endif /* FFT_FLOAT */
@@ -95,6 +110,7 @@ struct FFTContext {
     void (*mdct_calcw)(struct FFTContext *s, FFTDouble *output, const FFTSample *input);
     enum fft_permutation_type fft_permutation;
     enum mdct_permutation_type mdct_permutation;
+    uint32_t *revtab32;
 };
 
 #if CONFIG_HARDCODED_TABLES
@@ -119,7 +135,8 @@ extern COSTABLE(8192);
 extern COSTABLE(16384);
 extern COSTABLE(32768);
 extern COSTABLE(65536);
-extern COSTABLE_CONST FFTSample* const FFT_NAME(ff_cos_tabs)[17];
+extern COSTABLE(131072);
+extern COSTABLE_CONST FFTSample* const FFT_NAME(ff_cos_tabs)[18];
 
 #define ff_init_ff_cos_tabs FFT_NAME(ff_init_ff_cos_tabs)
 
@@ -142,6 +159,7 @@ int ff_fft_init(FFTContext *s, int nbits, int inverse);
 void ff_fft_init_aarch64(FFTContext *s);
 void ff_fft_init_x86(FFTContext *s);
 void ff_fft_init_arm(FFTContext *s);
+void ff_fft_init_mips(FFTContext *s);
 void ff_fft_init_ppc(FFTContext *s);
 
 void ff_fft_fixed_init_arm(FFTContext *s);
@@ -153,12 +171,5 @@ void ff_fft_end(FFTContext *s);
 
 int ff_mdct_init(FFTContext *s, int nbits, int inverse, double scale);
 void ff_mdct_end(FFTContext *s);
-
-void ff_mdct_init_aarch64(FFTContext *s);
-void ff_mdct_init_arm(FFTContext *s);
-void ff_mdct_init_ppc(FFTContext *s);
-void ff_mdct_init_x86(FFTContext *s);
-
-void ff_mdct_fixed_init_arm(FFTContext *s);
 
 #endif /* AVCODEC_FFT_H */

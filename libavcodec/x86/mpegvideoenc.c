@@ -2,20 +2,20 @@
  * The simplest mpeg encoder (well, it was the simplest!)
  * Copyright (c) 2000,2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,11 +29,17 @@
 
 /* not permutated inverse zigzag_direct + 1 for MMX quantizer */
 DECLARE_ALIGNED(16, static const uint16_t, inv_zigzag_direct16)[64] = {
-    1,  2,  6,  7,  15, 16, 28, 29, 3,  5,  8,  14, 17, 27, 30, 43, 4,  9,  13,
-    18, 26, 31, 42, 44, 10, 12, 19, 25, 32, 41, 45, 54, 11, 20, 24, 33, 40, 46,
-    53, 55, 21, 23, 34, 39, 47, 52, 56, 61, 22, 35, 38, 48, 51, 57, 60, 62, 36,
-    37, 49, 50, 58, 59, 63, 64,
+    1,  2,  6,  7,  15, 16, 28, 29,
+    3,  5,  8,  14, 17, 27, 30, 43,
+    4,  9,  13, 18, 26, 31, 42, 44,
+    10, 12, 19, 25, 32, 41, 45, 54,
+    11, 20, 24, 33, 40, 46, 53, 55,
+    21, 23, 34, 39, 47, 52, 56, 61,
+    22, 35, 38, 48, 51, 57, 60, 62,
+    36, 37, 49, 50, 58, 59, 63, 64,
 };
+
+#if HAVE_6REGS
 
 #if HAVE_MMX_INLINE
 #define COMPILE_TEMPLATE_MMXEXT 0
@@ -86,7 +92,10 @@ DECLARE_ALIGNED(16, static const uint16_t, inv_zigzag_direct16)[64] = {
 #include "mpegvideoenc_template.c"
 #endif /* HAVE_SSSE3_INLINE */
 
+#endif /* HAVE_6REGS */
+
 #if HAVE_INLINE_ASM
+#if HAVE_MMX_INLINE
 static void  denoise_dct_mmx(MpegEncContext *s, int16_t *block){
     const int intra= s->mb_intra;
     int *sum= s->dct_error_sum[intra];
@@ -140,7 +149,9 @@ static void  denoise_dct_mmx(MpegEncContext *s, int16_t *block){
         : "r"(block+64)
     );
 }
+#endif /* HAVE_MMX_INLINE */
 
+#if HAVE_SSE2_INLINE
 static void  denoise_dct_sse2(MpegEncContext *s, int16_t *block){
     const int intra= s->mb_intra;
     int *sum= s->dct_error_sum[intra];
@@ -196,9 +207,10 @@ static void  denoise_dct_sse2(MpegEncContext *s, int16_t *block){
                             "%xmm4", "%xmm5", "%xmm6", "%xmm7")
     );
 }
+#endif /* HAVE_SSE2_INLINE */
 #endif /* HAVE_INLINE_ASM */
 
-av_cold void ff_mpv_encode_init_x86(MpegEncContext *s)
+av_cold void ff_dct_encode_init_x86(MpegEncContext *s)
 {
     const int dct_algo = s->avctx->dct_algo;
 
@@ -206,21 +218,25 @@ av_cold void ff_mpv_encode_init_x86(MpegEncContext *s)
 #if HAVE_MMX_INLINE
         int cpu_flags = av_get_cpu_flags();
         if (INLINE_MMX(cpu_flags)) {
+#if HAVE_6REGS
             s->dct_quantize = dct_quantize_mmx;
+#endif
             s->denoise_dct  = denoise_dct_mmx;
         }
 #endif
-#if HAVE_MMXEXT_INLINE
+#if HAVE_6REGS && HAVE_MMXEXT_INLINE
         if (INLINE_MMXEXT(cpu_flags))
             s->dct_quantize = dct_quantize_mmxext;
 #endif
 #if HAVE_SSE2_INLINE
         if (INLINE_SSE2(cpu_flags)) {
+#if HAVE_6REGS
             s->dct_quantize = dct_quantize_sse2;
+#endif
             s->denoise_dct  = denoise_dct_sse2;
         }
 #endif
-#if HAVE_SSSE3_INLINE
+#if HAVE_6REGS && HAVE_SSSE3_INLINE
         if (INLINE_SSSE3(cpu_flags))
             s->dct_quantize = dct_quantize_ssse3;
 #endif

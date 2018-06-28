@@ -3,20 +3,20 @@
  * Copyright (c) 2003 Fabrice Bellard
  * Copyright (c) 2003 Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -137,8 +137,8 @@ int ff_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr)
         hdr->channel_mode = get_bits(gbc, 3);
         hdr->lfe_on = get_bits1(gbc);
 
-        hdr->bit_rate = (uint32_t)(8.0 * hdr->frame_size * hdr->sample_rate /
-                        (hdr->num_blocks * 256.0));
+        hdr->bit_rate = 8LL * hdr->frame_size * hdr->sample_rate /
+                        (hdr->num_blocks * 256);
         hdr->channels = ff_ac3_channels_tab[hdr->channel_mode] + hdr->lfe_on;
     }
     hdr->channel_layout = avpriv_ac3_channel_layout_tab[hdr->channel_mode];
@@ -146,6 +146,30 @@ int ff_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr)
         hdr->channel_layout |= AV_CH_LOW_FREQUENCY;
 
     return 0;
+}
+
+// TODO: Better way to pass AC3HeaderInfo fields to mov muxer.
+int avpriv_ac3_parse_header(AC3HeaderInfo **phdr, const uint8_t *buf,
+                            size_t size)
+{
+    GetBitContext gb;
+    AC3HeaderInfo *hdr;
+    int err;
+
+    if (!*phdr)
+        *phdr = av_mallocz(sizeof(AC3HeaderInfo));
+    if (!*phdr)
+        return AVERROR(ENOMEM);
+    hdr = *phdr;
+
+    err = init_get_bits8(&gb, buf, size);
+    if (err < 0)
+        return AVERROR_INVALIDDATA;
+    err = ff_ac3_parse_header(&gb, hdr);
+    if (err < 0)
+        return AVERROR_INVALIDDATA;
+
+    return get_bits_count(&gb);
 }
 
 int av_ac3_parse_header(const uint8_t *buf, size_t size,
@@ -196,8 +220,8 @@ static int ac3_sync(uint64_t state, AACAC3ParseContext *hdr_info,
     else if (hdr_info->codec_id == AV_CODEC_ID_NONE)
         hdr_info->codec_id = AV_CODEC_ID_AC3;
 
-    *need_next_header = (hdr.frame_type != EAC3_FRAME_TYPE_AC3_CONVERT);
     *new_frame_start  = (hdr.frame_type != EAC3_FRAME_TYPE_DEPENDENT);
+    *need_next_header = *new_frame_start || (hdr.frame_type != EAC3_FRAME_TYPE_AC3_CONVERT);
     return hdr.frame_size;
 }
 
@@ -219,6 +243,12 @@ AVCodecParser ff_ac3_parser = {
 };
 
 #else
+
+int avpriv_ac3_parse_header(AC3HeaderInfo **phdr, const uint8_t *buf,
+                            size_t size)
+{
+    return AVERROR(ENOSYS);
+}
 
 int av_ac3_parse_header(const uint8_t *buf, size_t size,
                         uint8_t *bitstream_id, uint16_t *frame_size)
