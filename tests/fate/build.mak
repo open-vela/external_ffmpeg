@@ -13,5 +13,5 @@ fate-build-testprogs: testprogs
 $(FATE_BUILD): CMD = null
 $(FATE_BUILD): CMP = null
 
-FATE += $(FATE_BUILD)
+# FATE += $(FATE_BUILD)
 fate-build: $(FATE_BUILD)
