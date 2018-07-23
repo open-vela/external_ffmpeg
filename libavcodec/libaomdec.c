@@ -157,4 +157,5 @@ AVCodec ff_libaom_av1_decoder = {
     .decode         = aom_decode,
     .capabilities   = AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
     .wrapper_name   = "libaom",
+    .bsfs           = "dump_extra",
 };
