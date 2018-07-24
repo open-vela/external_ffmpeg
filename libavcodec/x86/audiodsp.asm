@@ -2,20 +2,20 @@
 ;* optimized audio functions
 ;* Copyright (c) 2008 Loren Merritt
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -40,11 +40,15 @@ cglobal scalarproduct_int16, 3,3,3, v1, v2, order
     paddd   m2, m1
     add     orderq, mmsize*2
     jl .loop
-    HADDD   m2, m0
-    movd   eax, m2
-%if mmsize == 8
-    emms
+%if mmsize == 16
+    movhlps m0, m2
+    paddd   m2, m0
+    pshuflw m0, m2, 0x4e
+%else
+    pshufw  m0, m2, 0x4e
 %endif
+    paddd   m2, m0
+    movd   eax, m2
     RET
 %endmacro
 
@@ -137,8 +141,7 @@ cglobal vector_clipf, 3, 3, 6, dst, src, len, min, max
     VBROADCASTSS m0, minm
     VBROADCASTSS m1, maxm
 %elif WIN64
-    SWAP 0, 3
-    VBROADCASTSS m0, m0
+    VBROADCASTSS m0, m3
     VBROADCASTSS m1, maxm
 %else ; 64bit sysv
     VBROADCASTSS m0, m0

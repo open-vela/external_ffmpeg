@@ -2,27 +2,26 @@
  * LZO 1x decompression
  * Copyright (c) 2006 Reimar Doeffinger
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <string.h>
 
 #include "avutil.h"
-#include "avassert.h"
 #include "common.h"
 #include "intreadwrite.h"
 #include "lzo.h"
@@ -66,13 +65,8 @@ static inline int get_len(LZOContext *c, int x, int mask)
 {
     int cnt = x & mask;
     if (!cnt) {
-        while (!(x = get_byte(c))) {
-            if (cnt >= INT_MAX - 1000) {
-                c->error |= AV_LZO_ERROR;
-                break;
-            }
+        while (!(x = get_byte(c)))
             cnt += 255;
-        }
         cnt += mask + x;
     }
     return cnt;
@@ -86,7 +80,10 @@ static inline void copy(LZOContext *c, int cnt)
 {
     register const uint8_t *src = c->in;
     register uint8_t *dst       = c->out;
-    av_assert0(cnt >= 0);
+    if (cnt < 0) {
+        c->error |= AV_LZO_ERROR;
+        return;
+    }
     if (cnt > c->in_end - src) {
         cnt       = FFMAX(c->in_end - src, 0);
         c->error |= AV_LZO_INPUT_DEPLETED;
@@ -109,7 +106,7 @@ static inline void copy(LZOContext *c, int cnt)
 
 /**
  * @brief Copies previously decoded bytes to current position.
- * @param back how many bytes back we start, must be > 0
+ * @param back how many bytes back we start
  * @param cnt number of bytes to copy, must be > 0
  *
  * cnt > back is valid, this will copy the bytes we just copied,
@@ -118,7 +115,10 @@ static inline void copy(LZOContext *c, int cnt)
 static inline void copy_backptr(LZOContext *c, int back, int cnt)
 {
     register uint8_t *dst       = c->out;
-    av_assert0(cnt > 0);
+    if (cnt <= 0) {
+        c->error |= AV_LZO_ERROR;
+        return;
+    }
     if (dst - c->out_start < back) {
         c->error |= AV_LZO_INVALID_BACKPTR;
         return;
@@ -136,11 +136,11 @@ int av_lzo1x_decode(void *out, int *outlen, const void *in, int *inlen)
     int state = 0;
     int x;
     LZOContext c;
-    if (*outlen <= 0 || *inlen <= 0) {
+    if (!*outlen || !*inlen) {
         int res = 0;
-        if (*outlen <= 0)
+        if (!*outlen)
             res |= AV_LZO_OUTPUT_FULL;
-        if (*inlen <= 0)
+        if (!*inlen)
             res |= AV_LZO_INPUT_DEPLETED;
         return res;
     }
