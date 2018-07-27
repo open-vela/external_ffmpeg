@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -99,8 +99,8 @@ int ff_mss12_decode_init(MSS12Context *c, int version,
                          SliceContext *sc1, SliceContext *sc2);
 int ff_mss12_decode_end(MSS12Context *ctx);
 
-#define ARITH_GET_BIT(prefix)                                           \
-static int prefix ## _get_bit(ArithCoder *c)                            \
+#define ARITH_GET_BIT(VERSION)                                          \
+static int arith ## VERSION ## _get_bit(ArithCoder *c)                  \
 {                                                                       \
     int range = c->high - c->low + 1;                                   \
     int bit   = 2 * c->value - c->low >= c->high;                       \
@@ -110,22 +110,22 @@ static int prefix ## _get_bit(ArithCoder *c)                            \
     else                                                                \
         c->high = c->low + (range >> 1) - 1;                            \
                                                                         \
-    prefix ## _normalise(c);                                            \
+    arith ## VERSION ## _normalise(c);                                  \
                                                                         \
     return bit;                                                         \
 }
 
-#define ARITH_GET_MODEL_SYM(prefix)                                     \
-static int prefix ## _get_model_sym(ArithCoder *c, Model *m)            \
+#define ARITH_GET_MODEL_SYM(VERSION)                                    \
+static int arith ## VERSION ## _get_model_sym(ArithCoder *c, Model *m)  \
 {                                                                       \
     int idx, val;                                                       \
                                                                         \
-    idx = prefix ## _get_prob(c, m->cum_prob);                          \
+    idx = arith ## VERSION ## _get_prob(c, m->cum_prob);                \
                                                                         \
     val = m->idx2sym[idx];                                              \
     ff_mss12_model_update(m, idx);                                      \
                                                                         \
-    prefix ## _normalise(c);                                            \
+    arith ## VERSION ## _normalise(c);                                  \
                                                                         \
     return val;                                                         \
 }

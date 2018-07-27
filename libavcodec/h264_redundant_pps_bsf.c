@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,6 @@ typedef struct H264RedundantPPSContext {
 
     int global_pic_init_qp;
     int current_pic_init_qp;
-    int extradata_pic_init_qp;
 } H264RedundantPPSContext;
 
 
@@ -146,7 +145,6 @@ static int h264_redundant_pps_init(AVBSFContext *bsf)
                 h264_redundant_pps_fixup_pps(ctx, au->units[i].content);
         }
 
-        ctx->extradata_pic_init_qp = ctx->current_pic_init_qp;
         err = ff_cbs_write_extradata(ctx->output, bsf->par_out, au);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
@@ -157,12 +155,6 @@ static int h264_redundant_pps_init(AVBSFContext *bsf)
     }
 
     return 0;
-}
-
-static void h264_redundant_pps_flush(AVBSFContext *bsf)
-{
-    H264RedundantPPSContext *ctx = bsf->priv_data;
-    ctx->current_pic_init_qp = ctx->extradata_pic_init_qp;
 }
 
 static void h264_redundant_pps_close(AVBSFContext *bsf)
@@ -180,7 +172,6 @@ const AVBitStreamFilter ff_h264_redundant_pps_bsf = {
     .name           = "h264_redundant_pps",
     .priv_data_size = sizeof(H264RedundantPPSContext),
     .init           = &h264_redundant_pps_init,
-    .flush          = &h264_redundant_pps_flush,
     .close          = &h264_redundant_pps_close,
     .filter         = &h264_redundant_pps_filter,
     .codec_ids      = h264_redundant_pps_codec_ids,

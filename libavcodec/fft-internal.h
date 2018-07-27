@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,29 +36,12 @@
 
 #else
 
-#define SCALE_FLOAT(a, bits) lrint((a) * (double)(1 << (bits)))
-
-#if FFT_FIXED_32
-
-#define CMUL(dre, dim, are, aim, bre, bim) do {             \
-        int64_t accu;                                     \
-        (accu)  = (int64_t)(bre) * (are);                 \
-        (accu) -= (int64_t)(bim) * (aim);                 \
-        (dre)   = (int)(((accu) + 0x40000000) >> 31);       \
-        (accu)  = (int64_t)(bre) * (aim);                 \
-        (accu) += (int64_t)(bim) * (are);                 \
-        (dim)   = (int)(((accu) + 0x40000000) >> 31);       \
-    } while (0)
-
-#define FIX15(a) av_clip(SCALE_FLOAT(a, 31), -2147483647, 2147483647)
-
-#else /* FFT_FIXED_32 */
-
 #include "fft.h"
 #include "mathops.h"
 
 void ff_mdct_calcw_c(FFTContext *s, FFTDouble *output, const FFTSample *input);
 
+#define SCALE_FLOAT(a, bits) lrint((a) * (double)(1 << (bits)))
 #define FIX15(a) av_clip(SCALE_FLOAT(a, 15), -32767, 32767)
 
 #define sqrthalf ((int16_t)((1<<15)*M_SQRT1_2))
@@ -78,8 +61,6 @@ void ff_mdct_calcw_c(FFTContext *s, FFTDouble *output, const FFTSample *input);
 
 #define CMULL(dre, dim, are, aim, bre, bim)     \
     CMULS(dre, dim, are, aim, bre, bim, 0)
-
-#endif /* FFT_FIXED_32 */
 
 #endif /* FFT_FLOAT */
 
