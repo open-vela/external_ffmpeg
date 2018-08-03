@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,21 +28,15 @@
 #include "vaapi_encode.h"
 
 typedef struct VAAPIEncodeMPEG2Context {
+    VAAPIEncodeContext common;
+
+    // Derived settings.
     int mb_width;
     int mb_height;
 
     int quant_i;
     int quant_p;
     int quant_b;
-
-    MPEG2RawSequenceHeader sequence_header;
-    MPEG2RawExtensionData  sequence_extension;
-    MPEG2RawExtensionData  sequence_display_extension;
-    MPEG2RawGroupOfPicturesHeader gop_header;
-    MPEG2RawPictureHeader  picture_header;
-    MPEG2RawExtensionData  picture_coding_extension;
-
-    int64_t last_i_frame;
 
     unsigned int bit_rate;
     unsigned int vbv_buffer_size;
@@ -51,6 +45,17 @@ typedef struct VAAPIEncodeMPEG2Context {
 
     unsigned int f_code_horizontal;
     unsigned int f_code_vertical;
+
+    // Stream state.
+    int64_t last_i_frame;
+
+    // Writer structures.
+    MPEG2RawSequenceHeader sequence_header;
+    MPEG2RawExtensionData  sequence_extension;
+    MPEG2RawExtensionData  sequence_display_extension;
+    MPEG2RawGroupOfPicturesHeader gop_header;
+    MPEG2RawPictureHeader  picture_header;
+    MPEG2RawExtensionData  picture_coding_extension;
 
     CodedBitstreamContext *cbc;
     CodedBitstreamFragment current_fragment;
@@ -61,8 +66,7 @@ static int vaapi_encode_mpeg2_write_fragment(AVCodecContext *avctx,
                                              char *data, size_t *data_len,
                                              CodedBitstreamFragment *frag)
 {
-    VAAPIEncodeContext       *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context *priv = avctx->priv_data;
     int err;
 
     err = ff_cbs_write_fragment_data(priv->cbc, frag);
@@ -88,8 +92,7 @@ static int vaapi_encode_mpeg2_add_header(AVCodecContext *avctx,
                                          CodedBitstreamFragment *frag,
                                          int type, void *header)
 {
-    VAAPIEncodeContext       *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context *priv = avctx->priv_data;
     int err;
 
     err = ff_cbs_insert_unit_content(priv->cbc, frag, -1, type, header, NULL);
@@ -105,8 +108,7 @@ static int vaapi_encode_mpeg2_add_header(AVCodecContext *avctx,
 static int vaapi_encode_mpeg2_write_sequence_header(AVCodecContext *avctx,
                                                     char *data, size_t *data_len)
 {
-    VAAPIEncodeContext       *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context *priv = avctx->priv_data;
     CodedBitstreamFragment  *frag = &priv->current_fragment;
     int err;
 
@@ -140,8 +142,7 @@ static int vaapi_encode_mpeg2_write_picture_header(AVCodecContext *avctx,
                                                    VAAPIEncodePicture *pic,
                                                    char *data, size_t *data_len)
 {
-    VAAPIEncodeContext       *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context *priv = avctx->priv_data;
     CodedBitstreamFragment  *frag = &priv->current_fragment;
     int err;
 
@@ -164,7 +165,7 @@ fail:
 static int vaapi_encode_mpeg2_init_sequence_params(AVCodecContext *avctx)
 {
     VAAPIEncodeContext                 *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context           *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context           *priv = avctx->priv_data;
     MPEG2RawSequenceHeader              *sh = &priv->sequence_header;
     MPEG2RawSequenceExtension           *se = &priv->sequence_extension.data.sequence;
     MPEG2RawSequenceDisplayExtension   *sde = &priv->sequence_display_extension.data.sequence_display;
@@ -416,8 +417,7 @@ static int vaapi_encode_mpeg2_init_sequence_params(AVCodecContext *avctx)
 static int vaapi_encode_mpeg2_init_picture_params(AVCodecContext *avctx,
                                                  VAAPIEncodePicture *pic)
 {
-    VAAPIEncodeContext                *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context          *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context          *priv = avctx->priv_data;
     MPEG2RawPictureHeader              *ph = &priv->picture_header;
     MPEG2RawPictureCodingExtension    *pce = &priv->picture_coding_extension.data.picture_coding;
     VAEncPictureParameterBufferMPEG2 *vpic = pic->codec_picture_params;
@@ -482,9 +482,8 @@ static int vaapi_encode_mpeg2_init_slice_params(AVCodecContext *avctx,
                                                VAAPIEncodePicture *pic,
                                                VAAPIEncodeSlice *slice)
 {
-    VAAPIEncodeContext                  *ctx = avctx->priv_data;
+    VAAPIEncodeMPEG2Context            *priv = avctx->priv_data;
     VAEncSliceParameterBufferMPEG2   *vslice = slice->codec_slice_params;
-    VAAPIEncodeMPEG2Context            *priv = ctx->priv_data;
     int qp;
 
     vslice->macroblock_address = priv->mb_width * slice->index;
@@ -515,7 +514,7 @@ static int vaapi_encode_mpeg2_init_slice_params(AVCodecContext *avctx,
 static av_cold int vaapi_encode_mpeg2_configure(AVCodecContext *avctx)
 {
     VAAPIEncodeContext       *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context *priv = avctx->priv_data;
     int err;
 
     err = ff_cbs_init(&priv->cbc, AV_CODEC_ID_MPEG2VIDEO, avctx);
@@ -554,8 +553,6 @@ static av_cold int vaapi_encode_mpeg2_configure(AVCodecContext *avctx)
 }
 
 static const VAAPIEncodeType vaapi_encode_type_mpeg2 = {
-    .priv_data_size        = sizeof(VAAPIEncodeMPEG2Context),
-
     .configure             = &vaapi_encode_mpeg2_configure,
 
     .sequence_params_size  = sizeof(VAEncSequenceParameterBufferMPEG2),
@@ -638,11 +635,9 @@ static av_cold int vaapi_encode_mpeg2_init(AVCodecContext *avctx)
 
 static av_cold int vaapi_encode_mpeg2_close(AVCodecContext *avctx)
 {
-    VAAPIEncodeContext *ctx = avctx->priv_data;
-    VAAPIEncodeMPEG2Context *priv = ctx->priv_data;
+    VAAPIEncodeMPEG2Context *priv = avctx->priv_data;
 
-    if (priv)
-        ff_cbs_close(&priv->cbc);
+    ff_cbs_close(&priv->cbc);
 
     return ff_vaapi_encode_close(avctx);
 }
@@ -652,10 +647,10 @@ static const AVCodecDefault vaapi_encode_mpeg2_defaults[] = {
     { "level",          "4"   },
     { "bf",             "1"   },
     { "g",              "120" },
-    { "i_qfactor",      "1.0" },
-    { "i_qoffset",      "0.0" },
-    { "b_qfactor",      "1.2" },
-    { "b_qoffset",      "0.0" },
+    { "i_qfactor",      "1"   },
+    { "i_qoffset",      "0"   },
+    { "b_qfactor",      "6/5" },
+    { "b_qoffset",      "0"   },
     { "global_quality", "10"  },
     { NULL },
 };
@@ -665,7 +660,7 @@ AVCodec ff_mpeg2_vaapi_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("MPEG-2 (VAAPI)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG2VIDEO,
-    .priv_data_size = sizeof(VAAPIEncodeContext),
+    .priv_data_size = sizeof(VAAPIEncodeMPEG2Context),
     .init           = &vaapi_encode_mpeg2_init,
     .encode2        = &ff_vaapi_encode2,
     .close          = &vaapi_encode_mpeg2_close,

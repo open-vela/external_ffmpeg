@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -296,7 +296,7 @@ static QSVFrame *submit_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *p
             av_log(ctx, AV_LOG_ERROR, "QSVVPP gets a wrong frame.\n");
             return NULL;
         }
-        qsv_frame->frame   = picref;
+        qsv_frame->frame   = av_frame_clone(picref);
         qsv_frame->surface = (mfxFrameSurface1 *)qsv_frame->frame->data[3];
     } else {
         /* make a copy if the input is not padded as libmfx requires */
@@ -318,7 +318,7 @@ static QSVFrame *submit_frame(QSVVPPContext *s, AVFilterLink *inlink, AVFrame *p
             av_frame_copy_props(qsv_frame->frame, picref);
             av_frame_free(&picref);
         } else
-            qsv_frame->frame = picref;
+            qsv_frame->frame = av_frame_clone(picref);
 
         if (map_frame_to_surface(qsv_frame->frame,
                                 &qsv_frame->surface_internal) < 0) {
@@ -501,11 +501,6 @@ static int init_vpp_session(AVFilterContext *avctx, QSVVPPContext *s)
             handle_type = handle_types[i];
             break;
         }
-    }
-
-    if (ret != MFX_ERR_NONE) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting the session handle\n");
-        return AVERROR_UNKNOWN;
     }
 
     /* create a "slave" session with those same properties, to be used for vpp */

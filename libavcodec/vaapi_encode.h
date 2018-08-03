@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -113,9 +113,6 @@ typedef struct VAAPIEncodeContext {
     // Everything above this point must be set before calling
     // ff_vaapi_encode_init().
 
-    // Codec-specific state.
-    void *priv_data;
-
     // Configuration attributes to use when creating va_config.
     VAConfigAttrib  config_attributes[MAX_CONFIG_ATTRIBUTES];
     int          nb_config_attributes;
@@ -205,18 +202,10 @@ typedef struct VAAPIEncodeContext {
     int gop_counter;
     int p_counter;
     int end_of_stream;
-
-    // Codec-local options are allocated to follow this structure in
-    // memory (in the AVCodec definition, set priv_data_size to
-    // sizeof(VAAPIEncodeContext) + sizeof(VAAPIEncodeFooOptions)).
-    void *codec_options;
-    char codec_options_data[0];
 } VAAPIEncodeContext;
 
 
 typedef struct VAAPIEncodeType {
-    size_t priv_data_size;
-
     // Perform any extra codec-specific configuration after the
     // codec context is initialised (set up the private data and
     // add any necessary global parameters).

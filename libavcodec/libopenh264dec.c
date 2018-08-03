@@ -2,20 +2,20 @@
  * OpenH264 video decoder
  * Copyright (C) 2016 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -92,25 +92,11 @@ static int svc_decode_frame(AVCodecContext *avctx, void *data,
     SVCContext *s = avctx->priv_data;
     SBufferInfo info = { 0 };
     uint8_t* ptrs[3];
-    int linesize[3];
+    int ret, linesize[3];
     AVFrame *avframe = data;
     DECODING_STATE state;
-#if OPENH264_VER_AT_LEAST(1, 7)
-    int opt;
-#endif
 
-    if (!avpkt->data) {
-#if OPENH264_VER_AT_LEAST(1, 9)
-        int end_of_stream = 1;
-        (*s->decoder)->SetOption(s->decoder, DECODER_OPTION_END_OF_STREAM, &end_of_stream);
-        state = (*s->decoder)->FlushFrame(s->decoder, ptrs, &info);
-#else
-        return 0;
-#endif
-    } else {
-        info.uiInBsTimeStamp = avpkt->pts;
-        state = (*s->decoder)->DecodeFrame2(s->decoder, avpkt->data, avpkt->size, ptrs, &info);
-    }
+    state = (*s->decoder)->DecodeFrame2(s->decoder, avpkt->data, avpkt->size, ptrs, &info);
     if (state != dsErrorFree) {
         av_log(avctx, AV_LOG_ERROR, "DecodeFrame2 failed\n");
         return AVERROR_UNKNOWN;
@@ -120,7 +106,9 @@ static int svc_decode_frame(AVCodecContext *avctx, void *data,
         return avpkt->size;
     }
 
-    ff_set_dimensions(avctx, info.UsrData.sSystemBuffer.iWidth, info.UsrData.sSystemBuffer.iHeight);
+    ret = ff_set_dimensions(avctx, info.UsrData.sSystemBuffer.iWidth, info.UsrData.sSystemBuffer.iHeight);
+    if (ret < 0)
+        return ret;
     // The decoder doesn't (currently) support decoding into a user
     // provided buffer, so do a copy instead.
     if (ff_get_buffer(avctx, avframe, 0) < 0) {
@@ -132,18 +120,12 @@ static int svc_decode_frame(AVCodecContext *avctx, void *data,
     linesize[1] = linesize[2] = info.UsrData.sSystemBuffer.iStride[1];
     av_image_copy(avframe->data, avframe->linesize, (const uint8_t **) ptrs, linesize, avctx->pix_fmt, avctx->width, avctx->height);
 
-    avframe->pts     = info.uiOutYuvTimeStamp;
-    avframe->pkt_dts = AV_NOPTS_VALUE;
+    avframe->pts     = avpkt->pts;
+    avframe->pkt_dts = avpkt->dts;
 #if FF_API_PKT_PTS
 FF_DISABLE_DEPRECATION_WARNINGS
     avframe->pkt_pts = avpkt->pts;
 FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-#if OPENH264_VER_AT_LEAST(1, 7)
-    (*s->decoder)->GetOption(s->decoder, DECODER_OPTION_PROFILE, &opt);
-    avctx->profile = opt;
-    (*s->decoder)->GetOption(s->decoder, DECODER_OPTION_LEVEL, &opt);
-    avctx->level = opt;
 #endif
 
     *got_frame = 1;
@@ -159,6 +141,8 @@ AVCodec ff_libopenh264_decoder = {
     .init           = svc_decode_init,
     .decode         = svc_decode_frame,
     .close          = svc_decode_close,
+    // The decoder doesn't currently support B-frames, and the decoder's API
+    // doesn't support reordering/delay, but the BSF could incur delay.
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS | FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
