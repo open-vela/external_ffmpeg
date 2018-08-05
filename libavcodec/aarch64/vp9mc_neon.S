@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Google Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -269,8 +269,7 @@ function \type\()_8tap_\size\()h_\idx1\idx2
         sub             x3,  x3,  #8
 .endif
         // Load the filter vector
-        ld1             {v0.8b},  [x9]
-        sxtl            v0.8h,  v0.8b
+        ld1             {v0.8h},  [x9]
 1:
 .if \size >= 16
         mov             x9,  x5
@@ -384,9 +383,9 @@ do_8tap_h_size 16
 
 .macro do_8tap_h_func type, filter, offset, size
 function ff_vp9_\type\()_\filter\()\size\()_h_neon, export=1
-        movrel          x6,  X(ff_vp9_subpel_filters), 120*\offset - 8
+        movrel          x6,  X(ff_vp9_subpel_filters), 256*\offset
         cmp             w5,  #8
-        add             x9,  x6,  w5, uxtw #3
+        add             x9,  x6,  w5, uxtw #4
         mov             x5,  #\size
 .if \size >= 16
         b.ge            \type\()_8tap_16h_34
@@ -516,8 +515,7 @@ do_8tap_h_filters 4
 function \type\()_8tap_8v_\idx1\idx2
         sub             x2,  x2,  x3, lsl #1
         sub             x2,  x2,  x3
-        ld1             {v0.8b},  [x6]
-        sxtl            v0.8h,  v0.8b
+        ld1             {v0.8h},  [x6]
 1:
 .ifc \type,avg
         mov             x7,  x0
@@ -590,8 +588,7 @@ do_8tap_8v avg, 4, 3
 function \type\()_8tap_4v_\idx1\idx2
         sub             x2,  x2,  x3, lsl #1
         sub             x2,  x2,  x3
-        ld1             {v0.8b},  [x6]
-        sxtl            v0.8h,  v0.8b
+        ld1             {v0.8h},  [x6]
 .ifc \type,avg
         mov             x7,  x0
 .endif
@@ -660,9 +657,9 @@ do_8tap_4v avg, 4, 3
 .macro do_8tap_v_func type, filter, offset, size
 function ff_vp9_\type\()_\filter\()\size\()_v_neon, export=1
         uxtw            x4,  w4
-        movrel          x5,  X(ff_vp9_subpel_filters), 120*\offset - 8
+        movrel          x5,  X(ff_vp9_subpel_filters), 256*\offset
         cmp             w6,  #8
-        add             x6,  x5,  w6, uxtw #3
+        add             x6,  x5,  w6, uxtw #4
         mov             x5,  #\size
 .if \size >= 8
         b.ge            \type\()_8tap_8v_34
