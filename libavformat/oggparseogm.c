@@ -42,7 +42,6 @@ ogm_header(AVFormatContext *s, int idx)
     GetByteContext p;
     uint64_t time_unit;
     uint64_t spu;
-    uint32_t size;
 
     bytestream2_init(&p, os->buf + os->pstart, os->psize);
     if (!(bytestream2_peek_byte(&p) & 1))
@@ -58,8 +57,6 @@ ogm_header(AVFormatContext *s, int idx)
             tag = bytestream2_get_le32(&p);
             st->codecpar->codec_id = ff_codec_get_id(ff_codec_bmp_tags, tag);
             st->codecpar->codec_tag = tag;
-            if (st->codecpar->codec_id == AV_CODEC_ID_MPEG4)
-                st->need_parsing = AVSTREAM_PARSE_HEADERS;
         } else if (bytestream2_peek_byte(&p) == 't') {
             st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
             st->codecpar->codec_id = AV_CODEC_ID_TEXT;
@@ -73,13 +70,11 @@ ogm_header(AVFormatContext *s, int idx)
             acid[4] = 0;
             cid = strtol(acid, NULL, 16);
             st->codecpar->codec_id = ff_codec_get_id(ff_codec_wav_tags, cid);
-            // our parser completely breaks AAC in Ogg
-            if (st->codecpar->codec_id != AV_CODEC_ID_AAC)
-                st->need_parsing = AVSTREAM_PARSE_FULL;
+            st->need_parsing = AVSTREAM_PARSE_FULL;
         }
 
-        size        = bytestream2_get_le32(&p);
-        size        = FFMIN(size, os->psize);
+        bytestream2_skip(&p, 4);    /* useless size field */
+
         time_unit   = bytestream2_get_le64(&p);
         spu         = bytestream2_get_le64(&p);
         if (!time_unit || !spu) {
@@ -100,19 +95,6 @@ ogm_header(AVFormatContext *s, int idx)
             st->codecpar->bit_rate = bytestream2_get_le32(&p) * 8;
             st->codecpar->sample_rate = spu * 10000000 / time_unit;
             avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
-            if (size >= 56 && st->codecpar->codec_id == AV_CODEC_ID_AAC) {
-                bytestream2_skip(&p, 4);
-                size -= 4;
-            }
-            if (size > 52) {
-                size -= 52;
-                if (bytestream2_get_bytes_left(&p) < size)
-                    return AVERROR_INVALIDDATA;
-                av_freep(&st->codecpar->extradata);
-                if (ff_alloc_extradata(st->codecpar, size) < 0)
-                    return AVERROR(ENOMEM);
-                bytestream2_get_buffer(&p, st->codecpar->extradata, st->codecpar->extradata_size);
-            }
         }
     } else if (bytestream2_peek_byte(&p) == 3) {
         bytestream2_skip(&p, 7);
@@ -137,23 +119,15 @@ ogm_dshow_header(AVFormatContext *s, int idx)
     if(*p != 1)
         return 1;
 
-    if (os->psize < 100)
-        return AVERROR_INVALIDDATA;
     t = AV_RL32(p + 96);
 
     if(t == 0x05589f80){
-        if (os->psize < 184)
-            return AVERROR_INVALIDDATA;
-
         st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
         st->codecpar->codec_id = ff_codec_get_id(ff_codec_bmp_tags, AV_RL32(p + 68));
         avpriv_set_pts_info(st, 64, AV_RL64(p + 164), 10000000);
         st->codecpar->width = AV_RL32(p + 176);
         st->codecpar->height = AV_RL32(p + 180);
     } else if(t == 0x05589f81){
-        if (os->psize < 136)
-            return AVERROR_INVALIDDATA;
-
         st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codecpar->codec_id = ff_codec_get_id(ff_codec_wav_tags, AV_RL16(p + 124));
         st->codecpar->channels = AV_RL16(p + 126);
@@ -176,14 +150,11 @@ ogm_packet(AVFormatContext *s, int idx)
         os->pflags |= AV_PKT_FLAG_KEY;
 
     lb = ((*p & 2) << 1) | ((*p >> 6) & 3);
-    if (os->psize < lb + 1)
-        return AVERROR_INVALIDDATA;
-
     os->pstart += lb + 1;
     os->psize -= lb + 1;
 
     while (lb--)
-        os->pduration += (uint64_t)p[lb+1] << (lb*8);
+        os->pduration += p[lb+1] << (lb*8);
 
     return 0;
 }

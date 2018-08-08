@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,7 @@
 #define WINDOW_NAME_SIZE    11
 
 static int xwd_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                            const AVFrame *pict, int *got_packet)
+                            const AVFrame *p, int *got_packet)
 {
     enum AVPixelFormat pix_fmt = avctx->pix_fmt;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmt);
@@ -40,8 +40,6 @@ static int xwd_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     uint32_t header_size;
     int i, out_size, ret;
     uint8_t *ptr, *buf;
-    AVFrame * const p = (AVFrame *)pict;
-    uint32_t pal[256];
 
     pixdepth = av_get_bits_per_pixel(desc);
     if (desc->flags & AV_PIX_FMT_FLAG_BE)
@@ -126,11 +124,6 @@ static int xwd_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         bpad     = 8;
         ncolors  = 256;
         break;
-    case AV_PIX_FMT_GRAY8:
-        bpp      = 8;
-        bpad     = 8;
-        vclass   = XWD_STATIC_GRAY;
-        break;
     case AV_PIX_FMT_MONOWHITE:
         be       = 1;
         bitorder = 1;
@@ -139,7 +132,7 @@ static int xwd_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         vclass   = XWD_STATIC_GRAY;
         break;
     default:
-        av_log(avctx, AV_LOG_ERROR, "unsupported pixel format\n");
+        av_log(avctx, AV_LOG_INFO, "unsupported pixel format\n");
         return AVERROR(EINVAL);
     }
 
@@ -147,12 +140,18 @@ static int xwd_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     header_size = XWD_HEADER_SIZE + WINDOW_NAME_SIZE;
     out_size    = header_size + ncolors * XWD_CMAP_SIZE + avctx->height * lsize;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, out_size, 0)) < 0)
+    if ((ret = ff_alloc_packet(pkt, out_size)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "output buffer too small\n");
         return ret;
+    }
     buf = pkt->data;
 
-    p->key_frame = 1;
-    p->pict_type = AV_PICTURE_TYPE_I;
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->key_frame = 1;
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     bytestream_put_be32(&buf, header_size);
     bytestream_put_be32(&buf, XWD_VERSION);   // file version
@@ -181,17 +180,11 @@ static int xwd_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     bytestream_put_be32(&buf, 0);             // window border width
     bytestream_put_buffer(&buf, WINDOW_NAME, WINDOW_NAME_SIZE);
 
-    if (pix_fmt == AV_PIX_FMT_PAL8) {
-        memcpy(pal, p->data[1], sizeof(pal));
-    } else {
-        avpriv_set_systematic_pal2(pal, pix_fmt);
-    }
-
     for (i = 0; i < ncolors; i++) {
         uint32_t val;
         uint8_t red, green, blue;
 
-        val   = pal[i];
+        val   = AV_RN32A(p->data[1] + i * 4);
         red   = (val >> 16) & 0xFF;
         green = (val >>  8) & 0xFF;
         blue  =  val        & 0xFF;
@@ -240,7 +233,6 @@ AVCodec ff_xwd_encoder = {
                                                  AV_PIX_FMT_RGB4_BYTE,
                                                  AV_PIX_FMT_BGR4_BYTE,
                                                  AV_PIX_FMT_PAL8,
-                                                 AV_PIX_FMT_GRAY8,
                                                  AV_PIX_FMT_MONOWHITE,
                                                  AV_PIX_FMT_NONE },
 };

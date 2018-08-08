@@ -2,20 +2,20 @@
  * xWMA demuxer
  * Copyright (c) 2011 Max Horn
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ static int xwma_read_header(AVFormatContext *s)
     int64_t size;
     int ret = 0;
     uint32_t dpds_table_size = 0;
-    uint32_t *dpds_table = NULL;
+    uint32_t *dpds_table = 0;
     unsigned int tag;
     AVIOContext *pb = s->pb;
     AVStream *st;
@@ -75,48 +75,22 @@ static int xwma_read_header(AVFormatContext *s)
     if (!st)
         return AVERROR(ENOMEM);
 
-    ret = ff_get_wav_header(s, pb, st->codecpar, size, 0);
+    ret = ff_get_wav_header(s, pb, st->codecpar, size);
     if (ret < 0)
         return ret;
     st->need_parsing = AVSTREAM_PARSE_NONE;
 
-    /* XWMA encoder only allows a few channel/sample rate/bitrate combinations,
-     * but some create identical files with fake bitrate (1ch 22050hz at
-     * 20/48/192kbps are all 20kbps, with the exact same codec data).
-     * Decoder needs correct bitrate to work, so it's normalized here. */
-    if (st->codecpar->codec_id == AV_CODEC_ID_WMAV2) {
-        int ch = st->codecpar->channels;
-        int sr = st->codecpar->sample_rate;
-        int br = st->codecpar->bit_rate;
-
-        if (ch == 1) {
-            if (sr == 22050 && (br==48000 || br==192000))
-                br = 20000;
-            else if (sr == 32000 && (br==48000 || br==192000))
-                br = 20000;
-            else if (sr == 44100 && (br==96000 || br==192000))
-                br = 48000;
-        }
-        else if (ch == 2) {
-            if (sr == 22050 && (br==48000 || br==192000))
-                br = 32000;
-            else if (sr == 32000 && (br==192000))
-                br = 48000;
-        }
-
-        st->codecpar->bit_rate = br;
-    }
-
-    /* Normally xWMA can only contain WMAv2 with 1/2 channels,
-     * and WMAPRO with 6 channels. */
-    if (st->codecpar->codec_id != AV_CODEC_ID_WMAV2 &&
-        st->codecpar->codec_id != AV_CODEC_ID_WMAPRO) {
-        avpriv_request_sample(s, "Unexpected codec (tag %s; id %d)",
-                              av_fourcc2str(st->codecpar->codec_tag),
-                              st->codecpar->codec_id);
+    /* All xWMA files I have seen contained WMAv2 data. If there are files
+     * using WMA Pro or some other codec, then we need to figure out the right
+     * extradata for that. Thus, ask the user for feedback, but try to go on
+     * anyway.
+     */
+    if (st->codecpar->codec_id != AV_CODEC_ID_WMAV2) {
+        avpriv_request_sample(s, "Unexpected codec (tag 0x04%"PRIx32"; id %d)",
+                              st->codecpar->codec_tag, st->codecpar->codec_id);
     } else {
-        /* xWMA shouldn't have extradata. But the WMA codecs require it,
-         * so we provide our own fake extradata.
+        /* In all xWMA files I have seen, there is no extradata. But the WMA
+         * codecs require extradata, so we provide our own fake extradata.
          *
          * First, check that there really was no extradata in the header. If
          * there was, then try to use it, after asking the user to provide a
@@ -129,18 +103,12 @@ static int xwma_read_header(AVFormatContext *s)
              */
             avpriv_request_sample(s, "Unexpected extradata (%d bytes)",
                                   st->codecpar->extradata_size);
-        } else if (st->codecpar->codec_id == AV_CODEC_ID_WMAPRO) {
-            if (ff_alloc_extradata(st->codecpar, 18))
-                return AVERROR(ENOMEM);
-
-            memset(st->codecpar->extradata, 0, st->codecpar->extradata_size);
-            st->codecpar->extradata[ 0] = st->codecpar->bits_per_coded_sample;
-            st->codecpar->extradata[14] = 224;
         } else {
-            if (ff_alloc_extradata(st->codecpar, 6))
+            st->codecpar->extradata_size = 6;
+            st->codecpar->extradata      = av_mallocz(6 + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!st->codecpar->extradata)
                 return AVERROR(ENOMEM);
 
-            memset(st->codecpar->extradata, 0, st->codecpar->extradata_size);
             /* setup extradata with our experimentally obtained value */
             st->codecpar->extradata[4] = 31;
         }
@@ -163,7 +131,7 @@ static int xwma_read_header(AVFormatContext *s)
     /* parse the remaining RIFF chunks */
     for (;;) {
         if (pb->eof_reached) {
-            ret = AVERROR_EOF;
+            ret = AVERROR_INVALIDDATA;
             goto fail;
         }
         /* read next chunk tag */
@@ -199,13 +167,13 @@ static int xwma_read_header(AVFormatContext *s)
             if (dpds_table_size == 0 || dpds_table_size >= INT_MAX / 4) {
                 av_log(s, AV_LOG_ERROR,
                        "dpds chunk size %"PRId64" invalid\n", size);
-                return AVERROR_INVALIDDATA;
+                return -1;
             }
 
             /* Allocate some temporary storage to keep the dpds data around.
              * for processing later on.
              */
-            dpds_table = av_malloc_array(dpds_table_size, sizeof(uint32_t));
+            dpds_table = av_malloc(dpds_table_size * sizeof(uint32_t));
             if (!dpds_table) {
                 return AVERROR(ENOMEM);
             }

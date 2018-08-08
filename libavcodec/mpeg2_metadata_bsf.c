@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -188,7 +188,7 @@ static int mpeg2_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = ff_bsf_get_packet(bsf, &in);
     if (err < 0)
-        return err;
+        goto fail;
 
     err = ff_cbs_read_packet(ctx->cbc, frag, in);
     if (err < 0) {
@@ -209,15 +209,15 @@ static int mpeg2_metadata_filter(AVBSFContext *bsf, AVPacket *out)
     }
 
     err = av_packet_copy_props(out, in);
-    if (err < 0)
+    if (err < 0) {
+        av_packet_unref(out);
         goto fail;
+    }
 
     err = 0;
 fail:
     ff_cbs_fragment_uninit(ctx->cbc, frag);
 
-    if (err < 0)
-        av_packet_unref(out);
     av_packet_free(&in);
 
     return err;
@@ -266,28 +266,27 @@ static void mpeg2_metadata_close(AVBSFContext *bsf)
 }
 
 #define OFFSET(x) offsetof(MPEG2MetadataContext, x)
-#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_BSF_PARAM)
 static const AVOption mpeg2_metadata_options[] = {
     { "display_aspect_ratio", "Set display aspect ratio (table 6-3)",
         OFFSET(display_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, 65535, FLAGS },
+        { .i64 = 0 }, 0, 65535 },
 
     { "frame_rate", "Set frame rate",
         OFFSET(frame_rate), AV_OPT_TYPE_RATIONAL,
-        { .dbl = 0.0 }, 0, UINT_MAX, FLAGS },
+        { .i64 = 0 }, 0, UINT_MAX },
 
     { "video_format", "Set video format (table 6-6)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 7, FLAGS },
+        { .i64 = -1 }, -1, 7 },
     { "colour_primaries", "Set colour primaries (table 6-7)",
         OFFSET(colour_primaries), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 255, FLAGS },
+        { .i64 = -1 }, -1, 255 },
     { "transfer_characteristics", "Set transfer characteristics (table 6-8)",
         OFFSET(transfer_characteristics), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 255, FLAGS },
+        { .i64 = -1 }, -1, 255 },
     { "matrix_coefficients", "Set matrix coefficients (table 6-9)",
         OFFSET(matrix_coefficients), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 255, FLAGS },
+        { .i64 = -1 }, -1, 255 },
 
     { NULL }
 };
@@ -296,7 +295,7 @@ static const AVClass mpeg2_metadata_class = {
     .class_name = "mpeg2_metadata_bsf",
     .item_name  = av_default_item_name,
     .option     = mpeg2_metadata_options,
-    .version    = LIBAVUTIL_VERSION_INT,
+    .version    = LIBAVCODEC_VERSION_MAJOR,
 };
 
 static const enum AVCodecID mpeg2_metadata_codec_ids[] = {
