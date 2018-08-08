@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,6 @@
 #include "get_bits.h"
 #include "idctdsp.h"
 #include "intrax8dsp.h"
-#include "wmv2dsp.h"
 #include "mpegpicture.h"
 
 typedef struct IntraX8Context {
@@ -36,8 +35,6 @@ typedef struct IntraX8Context {
     // set by ff_intrax8_common_init
     uint8_t *prediction_table; // 2 * (mb_w * 2)
     ScanTable scantable[3];
-    WMV2DSPContext wdsp;
-    uint8_t idct_permutation[64];
     AVCodecContext *avctx;
     int *block_last_index;  ///< last nonzero coefficient in block
     int16_t (*block)[64];
@@ -99,7 +96,6 @@ void ff_intrax8_common_end(IntraX8Context *w);
 
 /**
  * Decode single IntraX8 frame.
- * lowres decoding is theoretically impossible.
  * @param w pointer to IntraX8Context
  * @param pict the output Picture containing an AVFrame
  * @param gb open bitstream reader
