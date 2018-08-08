@@ -4,20 +4,20 @@
  * Copyright (c) 2007 Björn Axelsson
  * Copyright (c) 2010 Zhentan Feng <spyfeng at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "mms.h"
@@ -94,26 +94,24 @@ int ff_mms_asf_header_parser(MMSContext *mms)
                 }
             }
         } else if (!memcmp(p, ff_asf_stream_header, sizeof(ff_asf_guid))) {
-            if (end - p >= (sizeof(ff_asf_guid) * 3 + 26)) {
-                flags     = AV_RL16(p + sizeof(ff_asf_guid)*3 + 24);
-                stream_id = flags & 0x7F;
-                //The second condition is for checking CS_PKT_STREAM_ID_REQUEST packet size,
-                //we can calculate the packet size by stream_num.
-                //Please see function send_stream_selection_request().
-                if (mms->stream_num < MMS_MAX_STREAMS &&
-                        46 + mms->stream_num * 6 < sizeof(mms->out_buffer)) {
-                    mms->streams = av_fast_realloc(mms->streams,
-                                       &mms->nb_streams_allocated,
-                                       (mms->stream_num + 1) * sizeof(MMSStream));
-                    if (!mms->streams)
-                        return AVERROR(ENOMEM);
-                    mms->streams[mms->stream_num].id = stream_id;
-                    mms->stream_num++;
-                } else {
-                    av_log(NULL, AV_LOG_ERROR,
-                           "Corrupt stream (too many A/V streams)\n");
-                    return AVERROR_INVALIDDATA;
-                }
+            flags     = AV_RL16(p + sizeof(ff_asf_guid)*3 + 24);
+            stream_id = flags & 0x7F;
+            //The second condition is for checking CS_PKT_STREAM_ID_REQUEST packet size,
+            //we can calculate the packet size by stream_num.
+            //Please see function send_stream_selection_request().
+            if (mms->stream_num < MMS_MAX_STREAMS &&
+                    46 + mms->stream_num * 6 < sizeof(mms->out_buffer)) {
+                mms->streams = av_fast_realloc(mms->streams,
+                                   &mms->nb_streams_allocated,
+                                   (mms->stream_num + 1) * sizeof(MMSStream));
+                if (!mms->streams)
+                    return AVERROR(ENOMEM);
+                mms->streams[mms->stream_num].id = stream_id;
+                mms->stream_num++;
+            } else {
+                av_log(NULL, AV_LOG_ERROR,
+                       "Corrupt stream (too many A/V streams)\n");
+                return AVERROR_INVALIDDATA;
             }
         } else if (!memcmp(p, ff_asf_ext_stream_header, sizeof(ff_asf_guid))) {
             if (end - p >= 88) {
@@ -145,12 +143,6 @@ int ff_mms_asf_header_parser(MMSContext *mms)
             }
         } else if (!memcmp(p, ff_asf_head1_guid, sizeof(ff_asf_guid))) {
             chunksize = 46; // see references [2] section 3.4. This should be set 46.
-            if (chunksize > end - p) {
-                av_log(NULL, AV_LOG_ERROR,
-                    "Corrupt stream (header chunksize %"PRId64" is invalid)\n",
-                    chunksize);
-                return AVERROR_INVALIDDATA;
-            }
         }
         p += chunksize;
     }

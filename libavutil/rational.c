@@ -2,20 +2,20 @@
  * rational numbers
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -69,7 +69,6 @@ int av_reduce(int *dst_num, int *dst_den,
         den = next_den;
     }
     av_assert2(av_gcd(a1.num, a1.den) <= 1U);
-    av_assert2(a1.num <= max && a1.den <= max);
 
     *dst_num = sign ? -a1.num : a1.num;
     *dst_den = a1.den;
@@ -106,20 +105,16 @@ AVRational av_sub_q(AVRational b, AVRational c)
 AVRational av_d2q(double d, int max)
 {
     AVRational a;
+#define LOG2  0.69314718055994530941723212145817656807550013436025
     int exponent;
     int64_t den;
     if (isnan(d))
         return (AVRational) { 0,0 };
-    if (fabs(d) > INT_MAX + 3LL)
+    if (isinf(d))
         return (AVRational) { d < 0 ? -1 : 1, 0 };
-    frexp(d, &exponent);
-    exponent = FFMAX(exponent-1, 0);
+    exponent = FFMAX( (int)(log(fabs(d) + 1e-20)/LOG2), 0);
     den = 1LL << (61 - exponent);
-    // (int64_t)rint() and llrint() do not work with gcc on ia64 and sparc64,
-    // see Ticket2713 for affected gcc/glibc versions
-    av_reduce(&a.num, &a.den, floor(d * den + 0.5), den, max);
-    if ((!a.num || !a.den) && d && max>0 && max<INT_MAX)
-        av_reduce(&a.num, &a.den, floor(d * den + 0.5), den, INT_MAX);
+    av_reduce(&a.num, &a.den, (int64_t)(d * den + 0.5), den, max);
 
     return a;
 }
@@ -147,38 +142,4 @@ int av_find_nearest_q_idx(AVRational q, const AVRational* q_list)
             nearest_q_idx = i;
 
     return nearest_q_idx;
-}
-
-uint32_t av_q2intfloat(AVRational q) {
-    int64_t n;
-    int shift;
-    int sign = 0;
-
-    if (q.den < 0) {
-        q.den *= -1;
-        q.num *= -1;
-    }
-    if (q.num < 0) {
-        q.num *= -1;
-        sign = 1;
-    }
-
-    if (!q.num && !q.den) return 0xFFC00000;
-    if (!q.num) return 0;
-    if (!q.den) return 0x7F800000 | (q.num & 0x80000000);
-
-    shift = 23 + av_log2(q.den) - av_log2(q.num);
-    if (shift >= 0) n = av_rescale(q.num, 1LL<<shift, q.den);
-    else            n = av_rescale(q.num, 1, ((int64_t)q.den) << -shift);
-
-    shift -= n >= (1<<24);
-    shift += n <  (1<<23);
-
-    if (shift >= 0) n = av_rescale(q.num, 1LL<<shift, q.den);
-    else            n = av_rescale(q.num, 1, ((int64_t)q.den) << -shift);
-
-    av_assert1(n <  (1<<24));
-    av_assert1(n >= (1<<23));
-
-    return sign<<31 | (150-shift)<<23 | (n - (1<<23));
 }

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,27 +27,7 @@
 #include "libavutil/x86/asm.h"
 #include "config.h"
 
-#if   (defined(__i386) && defined(__clang__) && (__clang_major__<2 || (__clang_major__==2 && __clang_minor__<10)))\
-   || (                  !defined(__clang__) && defined(__llvm__) && __GNUC__==4 && __GNUC_MINOR__==2 && __GNUC_PATCHLEVEL__<=1)\
-   || (defined(__INTEL_COMPILER) && defined(_MSC_VER))
-#       define BROKEN_COMPILER 1
-#else
-#       define BROKEN_COMPILER 0
-#endif
-
 #if HAVE_INLINE_ASM
-
-#ifndef UNCHECKED_BITSTREAM_READER
-#define UNCHECKED_BITSTREAM_READER !CONFIG_SAFE_BITSTREAM_READER
-#endif
-
-#if UNCHECKED_BITSTREAM_READER
-#define END_CHECK(end) ""
-#else
-#define END_CHECK(end) \
-        "cmp    "end"       , %%"FF_REG_c"                              \n\t"\
-        "jge    1f                                                      \n\t"
-#endif
 
 #ifdef BROKEN_RELOCATIONS
 #define TABLES_ARG , "r"(tables)
@@ -93,10 +73,11 @@
         "test   "lowword"   , "lowword"                                 \n\t"\
         "jnz    2f                                                      \n\t"\
         "mov    "byte"      , %%"FF_REG_c"                              \n\t"\
-        END_CHECK(end)\
+        "cmp    "end"       , %%"FF_REG_c"                              \n\t"\
+        "jge    1f                                                      \n\t"\
         "add"FF_OPSIZE" $2  , "byte"                                    \n\t"\
         "1:                                                             \n\t"\
-        "movzwl (%%"FF_REG_c") , "tmp"                                  \n\t"\
+        "movzwl (%%"FF_REG_c"), "tmp"                                   \n\t"\
         "lea    -1("low")   , %%ecx                                     \n\t"\
         "xor    "low"       , %%ecx                                     \n\t"\
         "shr    $15         , %%ecx                                     \n\t"\
@@ -111,8 +92,7 @@
         "2:                                                             \n\t"
 
 #else /* BROKEN_RELOCATIONS */
-#define TABLES_ARG NAMED_CONSTRAINTS_ARRAY_ADD(ff_h264_cabac_tables)
-#define RIP_ARG
+#define TABLES_ARG
 
 #if HAVE_FAST_CMOV
 #define BRANCHLESS_GET_CABAC_UPDATE(ret, low, range, tmp)\
@@ -154,7 +134,8 @@
         "test   "lowword"   , "lowword"                                 \n\t"\
         " jnz   2f                                                      \n\t"\
         "mov    "byte"      , %%"FF_REG_c"                              \n\t"\
-        END_CHECK(end)\
+        "cmp    "end"       , %%"FF_REG_c"                              \n\t"\
+        "jge    1f                                                      \n\t"\
         "add"FF_OPSIZE" $2  , "byte"                                    \n\t"\
         "1:                                                             \n\t"\
         "movzwl (%%"FF_REG_c") , "tmp"                                  \n\t"\
@@ -173,7 +154,8 @@
 
 #endif /* BROKEN_RELOCATIONS */
 
-#if HAVE_7REGS && !BROKEN_COMPILER
+
+#if HAVE_7REGS
 #define get_cabac_inline get_cabac_inline_x86
 static av_always_inline int get_cabac_inline_x86(CABACContext *c,
                                                  uint8_t *const state)
@@ -185,7 +167,6 @@ static av_always_inline int get_cabac_inline_x86(CABACContext *c,
     __asm__ volatile(
         "lea    "MANGLE(ff_h264_cabac_tables)", %0      \n\t"
         : "=&r"(tables)
-        : NAMED_CONSTRAINTS_ARRAY(ff_h264_cabac_tables)
     );
 #endif
 
@@ -197,19 +178,17 @@ static av_always_inline int get_cabac_inline_x86(CABACContext *c,
                              AV_STRINGIFY(H264_LPS_RANGE_OFFSET),
                              AV_STRINGIFY(H264_MLPS_STATE_OFFSET),
                              "%8")
-        : "=&r"(bit), "=&r"(c->low), "=&r"(c->range), "=&q"(tmp)
+        : "=&r"(bit), "+&r"(c->low), "+&r"(c->range), "=&q"(tmp)
         : "r"(state), "r"(c),
           "i"(offsetof(CABACContext, bytestream)),
           "i"(offsetof(CABACContext, bytestream_end))
           TABLES_ARG
-          ,"1"(c->low), "2"(c->range)
         : "%"FF_REG_c, "memory"
     );
     return bit & 1;
 }
-#endif /* HAVE_7REGS && !BROKEN_COMPILER */
+#endif /* HAVE_7REGS */
 
-#if !BROKEN_COMPILER
 #define get_cabac_bypass_sign get_cabac_bypass_sign_x86
 static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
 {
@@ -220,7 +199,7 @@ static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
         "shl             $17, %k1       \n\t"
         "add           %%eax, %%eax     \n\t"
         "sub             %k1, %%eax     \n\t"
-        "cdq                            \n\t"
+        "cltd                           \n\t"
         "and           %%edx, %k1       \n\t"
         "add             %k1, %%eax     \n\t"
         "xor           %%edx, %%ecx     \n\t"
@@ -232,16 +211,10 @@ static av_always_inline int get_cabac_bypass_sign_x86(CABACContext *c, int val)
         "movzwl         (%1), %%edx     \n\t"
         "bswap         %%edx            \n\t"
         "shrl            $15, %%edx     \n\t"
-#if UNCHECKED_BITSTREAM_READER
-        "add              $2, %1        \n\t"
-        "addl          %%edx, %%eax     \n\t"
-        "mov              %1, %c4(%2)   \n\t"
-#else
         "addl          %%edx, %%eax     \n\t"
         "cmp         %c5(%2), %1        \n\t"
         "jge              1f            \n\t"
         "add"FF_OPSIZE"   $2, %c4(%2)   \n\t"
-#endif
         "1:                             \n\t"
         "movl          %%eax, %c3(%2)   \n\t"
 
@@ -267,7 +240,7 @@ static av_always_inline int get_cabac_bypass_x86(CABACContext *c)
         "shl             $17, %k1       \n\t"
         "add           %%eax, %%eax     \n\t"
         "sub             %k1, %%eax     \n\t"
-        "cdq                            \n\t"
+        "cltd                           \n\t"
         "and           %%edx, %k1       \n\t"
         "add             %k1, %%eax     \n\t"
         "inc           %%edx            \n\t"
@@ -295,7 +268,6 @@ static av_always_inline int get_cabac_bypass_x86(CABACContext *c)
     );
     return res;
 }
-#endif /* !BROKEN_COMPILER */
 
 #endif /* HAVE_INLINE_ASM */
 #endif /* AVCODEC_X86_CABAC_H */

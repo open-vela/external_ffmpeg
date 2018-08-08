@@ -4,20 +4,20 @@
  * Copyright (c) 2007 Wolfram Gloger
  * Copyright (c) 2010 Michele Orrù
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -65,10 +65,7 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
     struct concat_data  *data = h->priv_data;
     struct concat_nodes *nodes;
 
-    if (!av_strstart(uri, "concat:", &uri)) {
-        av_log(h, AV_LOG_ERROR, "URL %s lacks prefix\n", uri);
-        return AVERROR(EINVAL);
-    }
+    av_strstart(uri, "concat:", &uri);
 
     for (i = 0, len = 1; uri[i]; i++) {
         if (uri[i] == *AV_CAT_SEPARATOR) {
@@ -97,9 +94,8 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
         uri += len + strspn(uri + len, AV_CAT_SEPARATOR);
 
         /* creating URLContext */
-        err = ffurl_open_whitelist(&uc, node_uri, flags,
-                                   &h->interrupt_callback, NULL, h->protocol_whitelist, h->protocol_blacklist, h);
-        if (err < 0)
+        if ((err = ffurl_open(&uc, node_uri, flags,
+                              &h->interrupt_callback, NULL, h->protocols, h)) < 0)
             break;
 
         /* creating size */
@@ -118,10 +114,9 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
 
     if (err < 0)
         concat_close(h);
-    else if (!(nodes = av_realloc(nodes, data->length * sizeof(*nodes)))) {
+    else if ((err = av_reallocp(&nodes, data->length * sizeof(*nodes))) < 0)
         concat_close(h);
-        err = AVERROR(ENOMEM);
-    } else
+    else
         data->nodes = nodes;
     return err;
 }
@@ -135,20 +130,19 @@ static int concat_read(URLContext *h, unsigned char *buf, int size)
 
     while (size > 0) {
         result = ffurl_read(nodes[i].uc, buf, size);
-        if (result == AVERROR_EOF) {
+        if (result < 0)
+            return total ? total : result;
+        if (!result) {
             if (i + 1 == data->length ||
                 ffurl_seek(nodes[++i].uc, 0, SEEK_SET) < 0)
                 break;
-            result = 0;
         }
-        if (result < 0)
-            return total ? total : result;
         total += result;
         buf   += result;
         size  -= result;
     }
     data->current = i;
-    return total ? total : result;
+    return total;
 }
 
 static int64_t concat_seek(URLContext *h, int64_t pos, int whence)
@@ -194,5 +188,4 @@ const URLProtocol ff_concat_protocol = {
     .url_seek       = concat_seek,
     .url_close      = concat_close,
     .priv_data_size = sizeof(struct concat_data),
-    .default_whitelist = "concat,file,subfile",
 };

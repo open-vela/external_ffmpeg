@@ -2,20 +2,20 @@
  * Apple HTTP Live Streaming Protocol Handler
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,6 @@
 #include "libavutil/avstring.h"
 #include "libavutil/time.h"
 #include "avformat.h"
-#include "avio_internal.h"
 #include "internal.h"
 #include "url.h"
 #include "version.h"
@@ -69,11 +68,19 @@ typedef struct HLSContext {
     int64_t last_load_time;
 } HLSContext;
 
+static int read_chomp_line(AVIOContext *s, char *buf, int maxlen)
+{
+    int len = ff_get_line(s, buf, maxlen);
+    while (len > 0 && av_isspace(buf[len - 1]))
+        buf[--len] = '\0';
+    return len;
+}
+
 static void free_segment_list(HLSContext *s)
 {
     int i;
     for (i = 0; i < s->n_segments; i++)
-        av_freep(&s->segments[i]);
+        av_free(s->segments[i]);
     av_freep(&s->segments);
     s->n_segments = 0;
 }
@@ -82,7 +89,7 @@ static void free_variant_list(HLSContext *s)
 {
     int i;
     for (i = 0; i < s->n_variants; i++)
-        av_freep(&s->variants[i]);
+        av_free(s->variants[i]);
     av_freep(&s->variants);
     s->n_variants = 0;
 }
@@ -109,12 +116,11 @@ static int parse_playlist(URLContext *h, const char *url)
     char line[1024];
     const char *ptr;
 
-    if ((ret = ffio_open_whitelist(&in, url, AVIO_FLAG_READ,
-                                   &h->interrupt_callback, NULL,
-                                   h->protocol_whitelist, h->protocol_blacklist)) < 0)
+    if ((ret = avio_open2(&in, url, AVIO_FLAG_READ,
+                          &h->interrupt_callback, NULL)) < 0)
         return ret;
 
-    ff_get_chomp_line(in, line, sizeof(line));
+    read_chomp_line(in, line, sizeof(line));
     if (strcmp(line, "#EXTM3U")) {
         ret = AVERROR_INVALIDDATA;
         goto fail;
@@ -122,8 +128,8 @@ static int parse_playlist(URLContext *h, const char *url)
 
     free_segment_list(s);
     s->finished = 0;
-    while (!avio_feof(in)) {
-        ff_get_chomp_line(in, line, sizeof(line));
+    while (!in->eof_reached) {
+        read_chomp_line(in, line, sizeof(line));
         if (av_strstart(line, "#EXT-X-STREAM-INF:", &ptr)) {
             struct variant_info info = {{0}};
             is_variant = 1;
@@ -295,11 +301,10 @@ retry:
         }
         goto retry;
     }
-    url = s->segments[s->cur_seq_no - s->start_seq_no]->url;
+    url = s->segments[s->cur_seq_no - s->start_seq_no]->url,
     av_log(h, AV_LOG_DEBUG, "opening %s\n", url);
-    ret = ffurl_open_whitelist(&s->seg_hd, url, AVIO_FLAG_READ,
-                               &h->interrupt_callback, NULL,
-                               h->protocol_whitelist, h->protocol_blacklist, h);
+    ret = ffurl_open(&s->seg_hd, url, AVIO_FLAG_READ,
+                     &h->interrupt_callback, NULL, h->protocols, h);
     if (ret < 0) {
         if (ff_check_interrupt(&h->interrupt_callback))
             return AVERROR_EXIT;
