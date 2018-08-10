@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,28 +29,22 @@
 #include "internal.h"
 #include "vaapi_encode.h"
 
-#define VP9_MAX_QUANT 255
-
 
 typedef struct VAAPIEncodeVP9Context {
-    VAAPIEncodeContext common;
-
-    // User options.
-    int loop_filter_level;
-    int loop_filter_sharpness;
-
-    // Derived settings.
     int q_idx_idr;
     int q_idx_p;
     int q_idx_b;
-
-    // Stream state.
 
     // Reference direction for B-like frames:
     // 0 - most recent P/IDR frame is last.
     // 1 - most recent P frame is golden.
     int last_ref_dir;
 } VAAPIEncodeVP9Context;
+
+typedef struct VAAPIEncodeVP9Options {
+    int loop_filter_level;
+    int loop_filter_sharpness;
+} VAAPIEncodeVP9Options;
 
 
 #define vseq_var(name)     vseq->name, name
@@ -86,8 +80,10 @@ static int vaapi_encode_vp9_init_sequence_params(AVCodecContext *avctx)
 static int vaapi_encode_vp9_init_picture_params(AVCodecContext *avctx,
                                                 VAAPIEncodePicture *pic)
 {
-    VAAPIEncodeVP9Context          *priv = avctx->priv_data;
+    VAAPIEncodeContext              *ctx = avctx->priv_data;
     VAEncPictureParameterBufferVP9 *vpic = pic->codec_picture_params;
+    VAAPIEncodeVP9Context          *priv = ctx->priv_data;
+    VAAPIEncodeVP9Options           *opt = ctx->codec_options;
     int i;
 
     vpic->reconstructed_frame = pic->recon_surface;
@@ -171,8 +167,8 @@ static int vaapi_encode_vp9_init_picture_params(AVCodecContext *avctx,
     vpic->chroma_ac_qindex_delta = 0;
     vpic->chroma_dc_qindex_delta = 0;
 
-    vpic->filter_level    = priv->loop_filter_level;
-    vpic->sharpness_level = priv->loop_filter_sharpness;
+    vpic->filter_level    = opt->loop_filter_level;
+    vpic->sharpness_level = opt->loop_filter_sharpness;
 
     if (avctx->max_b_frames > 0 && pic->type == PICTURE_TYPE_P)
         priv->last_ref_dir = !priv->last_ref_dir;
@@ -182,21 +178,22 @@ static int vaapi_encode_vp9_init_picture_params(AVCodecContext *avctx,
 
 static av_cold int vaapi_encode_vp9_configure(AVCodecContext *avctx)
 {
-    VAAPIEncodeVP9Context *priv = avctx->priv_data;
+    VAAPIEncodeContext     *ctx = avctx->priv_data;
+    VAAPIEncodeVP9Context *priv = ctx->priv_data;
 
-    priv->q_idx_p = av_clip(avctx->global_quality, 0, VP9_MAX_QUANT);
+    priv->q_idx_p = av_clip(avctx->global_quality, 0, 255);
     if (avctx->i_quant_factor > 0.0)
         priv->q_idx_idr = av_clip((avctx->global_quality *
                                    avctx->i_quant_factor +
                                    avctx->i_quant_offset) + 0.5,
-                                  0, VP9_MAX_QUANT);
+                                  0, 255);
     else
         priv->q_idx_idr = priv->q_idx_p;
     if (avctx->b_quant_factor > 0.0)
         priv->q_idx_b = av_clip((avctx->global_quality *
                                  avctx->b_quant_factor +
                                  avctx->b_quant_offset) + 0.5,
-                                0, VP9_MAX_QUANT);
+                                0, 255);
     else
         priv->q_idx_b = priv->q_idx_p;
 
@@ -205,6 +202,8 @@ static av_cold int vaapi_encode_vp9_configure(AVCodecContext *avctx)
 
 static const VAAPIEncodeType vaapi_encode_type_vp9 = {
     .configure             = &vaapi_encode_vp9_configure,
+
+    .priv_data_size        = sizeof(VAAPIEncodeVP9Context),
 
     .sequence_params_size  = sizeof(VAEncSequenceParameterBufferVP9),
     .init_sequence_params  = &vaapi_encode_vp9_init_sequence_params,
@@ -265,7 +264,8 @@ static av_cold int vaapi_encode_vp9_init(AVCodecContext *avctx)
     return ff_vaapi_encode_init(avctx);
 }
 
-#define OFFSET(x) offsetof(VAAPIEncodeVP9Context, x)
+#define OFFSET(x) (offsetof(VAAPIEncodeContext, codec_options_data) + \
+                   offsetof(VAAPIEncodeVP9Options, x))
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
 static const AVOption vaapi_encode_vp9_options[] = {
     { "loop_filter_level", "Loop filter level",
@@ -296,7 +296,8 @@ AVCodec ff_vp9_vaapi_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("VP9 (VAAPI)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_VP9,
-    .priv_data_size = sizeof(VAAPIEncodeVP9Context),
+    .priv_data_size = (sizeof(VAAPIEncodeContext) +
+                       sizeof(VAAPIEncodeVP9Options)),
     .init           = &vaapi_encode_vp9_init,
     .encode2        = &ff_vaapi_encode2,
     .close          = &ff_vaapi_encode_close,

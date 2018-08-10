@@ -4,20 +4,20 @@
  *
  * based upon code from Sebastian Jedruszkiewicz <elf@frogger.rules.pl>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,7 +29,6 @@
 
 #include "avcodec.h"
 #include "blockdsp.h"
-#include "bswapdsp.h"
 #include "idctdsp.h"
 #include "mpeg12.h"
 #include "thread.h"
@@ -37,7 +36,6 @@
 typedef struct MDECContext {
     AVCodecContext *avctx;
     BlockDSPContext bdsp;
-    BswapDSPContext bbdsp;
     IDCTDSPContext idsp;
     ThreadFrame frame;
     GetBitContext gb;
@@ -48,8 +46,7 @@ typedef struct MDECContext {
     int mb_width;
     int mb_height;
     int mb_x, mb_y;
-    DECLARE_ALIGNED(32, int16_t, block)[6][64];
-    DECLARE_ALIGNED(16, uint16_t, quant_matrix)[64];
+    DECLARE_ALIGNED(16, int16_t, block)[6][64];
     uint8_t *bitstream_buffer;
     unsigned int bitstream_buffer_size;
     int block_last_index[6];
@@ -62,7 +59,7 @@ static inline int mdec_decode_block_intra(MDECContext *a, int16_t *block, int n)
     int component;
     RLTable *rl = &ff_rl_mpeg1;
     uint8_t * const scantable = a->scantable.permutated;
-    const uint16_t *quant_matrix = a->quant_matrix;
+    const uint16_t *quant_matrix = ff_mpeg1_default_intra_matrix;
     const int qscale = a->qscale;
 
     /* DC coefficient */
@@ -74,7 +71,7 @@ static inline int mdec_decode_block_intra(MDECContext *a, int16_t *block, int n)
         if (diff >= 0xffff)
             return AVERROR_INVALIDDATA;
         a->last_dc[component] += diff;
-        block[0] = a->last_dc[component] * (1 << 3);
+        block[0] = a->last_dc[component] << 3;
     }
 
     i = 0;
@@ -112,11 +109,11 @@ static inline int mdec_decode_block_intra(MDECContext *a, int16_t *block, int n)
                 j = scantable[i];
                 if (level < 0) {
                     level = -level;
-                    level = (level * (unsigned)qscale * quant_matrix[j]) >> 3;
+                    level = (level * qscale * quant_matrix[j]) >> 3;
                     level = (level - 1) | 1;
                     level = -level;
                 } else {
-                    level = (level * (unsigned)qscale * quant_matrix[j]) >> 3;
+                    level = (level * qscale * quant_matrix[j]) >> 3;
                     level = (level - 1) | 1;
                 }
             }
@@ -174,19 +171,23 @@ static int decode_frame(AVCodecContext *avctx,
     const uint8_t *buf    = avpkt->data;
     int buf_size          = avpkt->size;
     ThreadFrame frame     = { .f = data };
-    int ret;
+    int i, ret;
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     frame.f->pict_type = AV_PICTURE_TYPE_I;
     frame.f->key_frame = 1;
 
-    av_fast_padded_malloc(&a->bitstream_buffer, &a->bitstream_buffer_size, buf_size);
+    av_fast_malloc(&a->bitstream_buffer, &a->bitstream_buffer_size, buf_size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!a->bitstream_buffer)
         return AVERROR(ENOMEM);
-    a->bbdsp.bswap16_buf((uint16_t *)a->bitstream_buffer, (uint16_t *)buf, (buf_size + 1) / 2);
-    if ((ret = init_get_bits8(&a->gb, a->bitstream_buffer, buf_size)) < 0)
-        return ret;
+    for (i = 0; i < buf_size; i += 2) {
+        a->bitstream_buffer[i]     = buf[i + 1];
+        a->bitstream_buffer[i + 1] = buf[i];
+    }
+    init_get_bits(&a->gb, a->bitstream_buffer, buf_size * 8);
 
     /* skip over 4 preamble bytes in stream (typically 0xXX 0xXX 0x00 0x38) */
     skip_bits(&a->gb, 32);
@@ -213,34 +214,26 @@ static int decode_frame(AVCodecContext *avctx,
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     MDECContext * const a = avctx->priv_data;
-    int i;
 
     a->mb_width  = (avctx->coded_width  + 15) / 16;
     a->mb_height = (avctx->coded_height + 15) / 16;
 
     a->avctx           = avctx;
 
-    ff_blockdsp_init(&a->bdsp, avctx);
-    ff_bswapdsp_init(&a->bbdsp);
+    ff_blockdsp_init(&a->bdsp);
     ff_idctdsp_init(&a->idsp, avctx);
     ff_mpeg12_init_vlcs();
     ff_init_scantable(a->idsp.idct_permutation, &a->scantable,
                       ff_zigzag_direct);
 
+    if (avctx->idct_algo == FF_IDCT_AUTO)
+        avctx->idct_algo = FF_IDCT_SIMPLE;
     avctx->pix_fmt  = AV_PIX_FMT_YUVJ420P;
     avctx->color_range = AVCOL_RANGE_JPEG;
-
-    /* init q matrix */
-    for (i = 0; i < 64; i++) {
-        int j = a->idsp.idct_permutation[i];
-
-        a->quant_matrix[j] = ff_mpeg1_default_intra_matrix[i];
-    }
 
     return 0;
 }
 
-#if HAVE_THREADS
 static av_cold int decode_init_thread_copy(AVCodecContext *avctx)
 {
     MDECContext * const a = avctx->priv_data;
@@ -249,7 +242,6 @@ static av_cold int decode_init_thread_copy(AVCodecContext *avctx)
 
     return 0;
 }
-#endif
 
 static av_cold int decode_end(AVCodecContext *avctx)
 {
