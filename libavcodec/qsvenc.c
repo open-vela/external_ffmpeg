@@ -4,20 +4,20 @@
  * copyright (c) 2013 Yukinori Yamazoe
  * copyright (c) 2015 Anton Khirnov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,7 +32,6 @@
 #include "libavutil/log.h"
 #include "libavutil/time.h"
 #include "libavutil/imgutils.h"
-#include "libavcodec/bytestream.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -136,6 +135,9 @@ static void dump_video_param(AVCodecContext *avctx, QSVEncContext *q,
 #if QSV_HAVE_CO2
     mfxExtCodingOption2 *co2 = (mfxExtCodingOption2*)coding_opts[1];
 #endif
+#if QSV_HAVE_CO3 && QSV_HAVE_QVBR
+    mfxExtCodingOption3 *co3 = (mfxExtCodingOption3*)coding_opts[2];
+#endif
 
     av_log(avctx, AV_LOG_VERBOSE, "profile: %s; level: %"PRIu16"\n",
            print_profile(info->CodecProfile), info->CodecLevel);
@@ -188,6 +190,12 @@ static void dump_video_param(AVCodecContext *avctx, QSVEncContext *q,
     } else if (info->RateControlMethod == MFX_RATECONTROL_LA_ICQ) {
         av_log(avctx, AV_LOG_VERBOSE, "ICQQuality: %"PRIu16"; LookAheadDepth: %"PRIu16"\n",
                info->ICQQuality, co2->LookAheadDepth);
+    }
+#endif
+#if QSV_HAVE_QVBR
+    else if (info->RateControlMethod == MFX_RATECONTROL_QVBR) {
+        av_log(avctx, AV_LOG_VERBOSE, "QVBRQuality: %"PRIu16"\n",
+               co3->QVBRQuality);
     }
 #endif
 
@@ -270,7 +278,7 @@ static int select_rc_mode(AVCodecContext *avctx, QSVEncContext *q)
     const char *rc_desc;
     mfxU16      rc_mode;
 
-    int want_la     = q->look_ahead;
+    int want_la     = q->la_depth >= 10;
     int want_qscale = !!(avctx->flags & AV_CODEC_FLAG_QSCALE);
     int want_vcm    = q->vcm;
 
@@ -563,11 +571,11 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 #if QSV_HAVE_LA
     case MFX_RATECONTROL_LA:
         q->param.mfx.TargetKbps  = avctx->bit_rate / 1000;
-        q->extco2.LookAheadDepth = q->look_ahead_depth;
+        q->extco2.LookAheadDepth = q->la_depth;
         break;
 #if QSV_HAVE_ICQ
     case MFX_RATECONTROL_LA_ICQ:
-        q->extco2.LookAheadDepth = q->look_ahead_depth;
+        q->extco2.LookAheadDepth = q->la_depth;
     case MFX_RATECONTROL_ICQ:
         q->param.mfx.ICQQuality  = avctx->global_quality;
         break;
@@ -580,9 +588,6 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     if (avctx->codec_id != AV_CODEC_ID_HEVC) {
         q->extco.Header.BufferId      = MFX_EXTBUFF_CODING_OPTION;
         q->extco.Header.BufferSz      = sizeof(q->extco);
-
-        q->extco.PicTimingSEI         = q->pic_timing_sei ?
-                                        MFX_CODINGOPTION_ON : MFX_CODINGOPTION_UNKNOWN;
 
         if (q->rdo >= 0)
             q->extco.RateDistortionOpt = q->rdo > 0 ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
@@ -642,7 +647,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
 #if QSV_HAVE_LA_DS
-            q->extco2.LookAheadDS = q->look_ahead_downsampling;
+            q->extco2.LookAheadDS = q->la_ds;
 #endif
 
 #if QSV_HAVE_BREF_TYPE
@@ -745,12 +750,21 @@ static int qsv_retrieve_enc_params(AVCodecContext *avctx, QSVEncContext *q)
         .Header.BufferSz = sizeof(co2),
     };
 #endif
+#if QSV_HAVE_CO3
+    mfxExtCodingOption3 co3 = {
+        .Header.BufferId = MFX_EXTBUFF_CODING_OPTION3,
+        .Header.BufferSz = sizeof(co3),
+    };
+#endif
 
     mfxExtBuffer *ext_buffers[] = {
         (mfxExtBuffer*)&extradata,
         (mfxExtBuffer*)&co,
 #if QSV_HAVE_CO2
         (mfxExtBuffer*)&co2,
+#endif
+#if QSV_HAVE_CO3
+        (mfxExtBuffer*)&co3,
 #endif
     };
 
@@ -1009,23 +1023,14 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     return 0;
 }
 
-static void free_encoder_ctrl_payloads(mfxEncodeCtrl* enc_ctrl)
-{
-    if (enc_ctrl) {
-        int i;
-        for (i = 0; i < enc_ctrl->NumPayload && i < QSV_MAX_ENC_PAYLOAD; i++) {
-            av_free(enc_ctrl->Payload[i]);
-        }
-        enc_ctrl->NumPayload = 0;
-    }
-}
-
 static void clear_unused_frames(QSVEncContext *q)
 {
     QSVFrame *cur = q->work_frames;
     while (cur) {
         if (cur->used && !cur->surface.Data.Locked) {
-            free_encoder_ctrl_payloads(&cur->enc_ctrl);
+            if (cur->frame->format == AV_PIX_FMT_QSV) {
+                av_frame_unref(cur->frame);
+            }
             cur->used = 0;
         }
         cur = cur->next;
@@ -1059,11 +1064,6 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
         av_freep(&frame);
         return AVERROR(ENOMEM);
     }
-    frame->enc_ctrl.Payload = av_mallocz(sizeof(mfxPayload*) * QSV_MAX_ENC_PAYLOAD);
-    if (!frame->enc_ctrl.Payload) {
-        av_freep(&frame);
-        return AVERROR(ENOMEM);
-    }
     *last = frame;
 
     *f = frame;
@@ -1073,7 +1073,7 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
 }
 
 static int submit_frame(QSVEncContext *q, const AVFrame *frame,
-                        QSVFrame **new_frame)
+                        mfxFrameSurface1 **surface)
 {
     QSVFrame *qf;
     int ret;
@@ -1146,7 +1146,7 @@ static int submit_frame(QSVEncContext *q, const AVFrame *frame,
 
     qf->surface.Data.TimeStamp = av_rescale_q(frame->pts, q->avctx->time_base, (AVRational){1, 90000});
 
-    *new_frame = qf;
+    *surface = &qf->surface;
 
     return 0;
 }
@@ -1168,27 +1168,17 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
 {
     AVPacket new_pkt = { 0 };
     mfxBitstream *bs;
-#if QSV_VERSION_ATLEAST(1, 26)
-    mfxExtAVCEncodedFrameInfo *enc_info;
-    mfxExtBuffer **enc_buf;
-#endif
 
     mfxFrameSurface1 *surf = NULL;
     mfxSyncPoint *sync     = NULL;
-    QSVFrame *qsv_frame = NULL;
-    mfxEncodeCtrl* enc_ctrl = NULL;
     int ret;
 
     if (frame) {
-        ret = submit_frame(q, frame, &qsv_frame);
+        ret = submit_frame(q, frame, &surf);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "Error submitting the frame for encoding.\n");
             return ret;
         }
-    }
-    if (qsv_frame) {
-        surf = &qsv_frame->surface;
-        enc_ctrl = &qsv_frame->enc_ctrl;
     }
 
     ret = av_new_packet(&new_pkt, q->packet_size);
@@ -1205,45 +1195,17 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
     bs->Data      = new_pkt.data;
     bs->MaxLength = new_pkt.size;
 
-#if QSV_VERSION_ATLEAST(1, 26)
-    if (avctx->codec_id == AV_CODEC_ID_H264) {
-        enc_info = av_mallocz(sizeof(*enc_info));
-        if (!enc_info)
-            return AVERROR(ENOMEM);
-
-        enc_info->Header.BufferId = MFX_EXTBUFF_ENCODED_FRAME_INFO;
-        enc_info->Header.BufferSz = sizeof (*enc_info);
-        bs->NumExtParam = 1;
-        enc_buf = av_mallocz(sizeof(mfxExtBuffer *));
-        if (!enc_buf)
-            return AVERROR(ENOMEM);
-        enc_buf[0] = (mfxExtBuffer *)enc_info;
-
-        bs->ExtParam = enc_buf;
-    }
-#endif
-
-    if (q->set_encode_ctrl_cb) {
-        q->set_encode_ctrl_cb(avctx, frame, &qsv_frame->enc_ctrl);
-    }
-
     sync = av_mallocz(sizeof(*sync));
     if (!sync) {
         av_freep(&bs);
- #if QSV_VERSION_ATLEAST(1, 26)
-        if (avctx->codec_id == AV_CODEC_ID_H264) {
-            av_freep(&enc_info);
-            av_freep(&enc_buf);
-        }
- #endif
         av_packet_unref(&new_pkt);
         return AVERROR(ENOMEM);
     }
 
     do {
-        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, enc_ctrl, surf, bs, sync);
+        ret = MFXVideoENCODE_EncodeFrameAsync(q->session, NULL, surf, bs, sync);
         if (ret == MFX_WRN_DEVICE_BUSY)
-            av_usleep(500);
+            av_usleep(1);
     } while (ret == MFX_WRN_DEVICE_BUSY || ret == MFX_WRN_IN_EXECUTION);
 
     if (ret > 0)
@@ -1252,12 +1214,6 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
     if (ret < 0) {
         av_packet_unref(&new_pkt);
         av_freep(&bs);
-#if QSV_VERSION_ATLEAST(1, 26)
-        if (avctx->codec_id == AV_CODEC_ID_H264) {
-            av_freep(&enc_info);
-            av_freep(&enc_buf);
-        }
-#endif
         av_freep(&sync);
         return (ret == MFX_ERR_MORE_DATA) ?
                0 : ff_qsv_print_error(avctx, ret, "Error during encoding");
@@ -1274,12 +1230,6 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
         av_freep(&sync);
         av_packet_unref(&new_pkt);
         av_freep(&bs);
-#if QSV_VERSION_ATLEAST(1, 26)
-        if (avctx->codec_id == AV_CODEC_ID_H264) {
-            av_freep(&enc_info);
-            av_freep(&enc_buf);
-        }
-#endif
     }
 
     return 0;
@@ -1299,11 +1249,6 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
         AVPacket new_pkt;
         mfxBitstream *bs;
         mfxSyncPoint *sync;
-#if QSV_VERSION_ATLEAST(1, 26)
-        mfxExtAVCEncodedFrameInfo *enc_info;
-        mfxExtBuffer **enc_buf;
-#endif
-        enum AVPictureType pict_type;
 
         av_fifo_generic_read(q->async_fifo, &new_pkt, sizeof(new_pkt), NULL);
         av_fifo_generic_read(q->async_fifo, &sync,    sizeof(sync),    NULL);
@@ -1321,29 +1266,17 @@ int ff_qsv_encode(AVCodecContext *avctx, QSVEncContext *q,
             bs->FrameType & MFX_FRAMETYPE_xIDR)
             new_pkt.flags |= AV_PKT_FLAG_KEY;
 
-        if (bs->FrameType & MFX_FRAMETYPE_I || bs->FrameType & MFX_FRAMETYPE_xI)
-            pict_type = AV_PICTURE_TYPE_I;
-        else if (bs->FrameType & MFX_FRAMETYPE_P || bs->FrameType & MFX_FRAMETYPE_xP)
-            pict_type = AV_PICTURE_TYPE_P;
-        else if (bs->FrameType & MFX_FRAMETYPE_B || bs->FrameType & MFX_FRAMETYPE_xB)
-            pict_type = AV_PICTURE_TYPE_B;
-
 #if FF_API_CODED_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
-        avctx->coded_frame->pict_type = pict_type;
+        if (bs->FrameType & MFX_FRAMETYPE_I || bs->FrameType & MFX_FRAMETYPE_xI)
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+        else if (bs->FrameType & MFX_FRAMETYPE_P || bs->FrameType & MFX_FRAMETYPE_xP)
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_P;
+        else if (bs->FrameType & MFX_FRAMETYPE_B || bs->FrameType & MFX_FRAMETYPE_xB)
+            avctx->coded_frame->pict_type = AV_PICTURE_TYPE_B;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-#if QSV_VERSION_ATLEAST(1, 26)
-        if (avctx->codec_id == AV_CODEC_ID_H264) {
-            enc_buf = bs->ExtParam;
-            enc_info = (mfxExtAVCEncodedFrameInfo *)(*bs->ExtParam);
-            ff_side_data_set_encoder_stats(&new_pkt,
-                enc_info->QP * FF_QP2LAMBDA, NULL, 0, pict_type);
-            av_freep(&enc_info);
-            av_freep(&enc_buf);
-        }
-#endif
         av_freep(&bs);
         av_freep(&sync);
 
@@ -1389,7 +1322,6 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     while (cur) {
         q->work_frames = cur->next;
         av_frame_free(&cur->frame);
-        av_free(cur->enc_ctrl.Payload);
         av_freep(&cur);
         cur = q->work_frames;
     }

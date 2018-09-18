@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,8 +56,6 @@ static const unsigned char vaapi_encode_mjpeg_quant_chrominance[64] = {
 };
 
 typedef struct VAAPIEncodeMJPEGContext {
-    VAAPIEncodeContext common;
-
     int quality;
     int component_subsample_h[3];
     int component_subsample_v[3];
@@ -85,7 +83,8 @@ static av_cold void vaapi_encode_mjpeg_copy_huffman(unsigned char *dst_lengths,
 
 static av_cold void vaapi_encode_mjpeg_init_tables(AVCodecContext *avctx)
 {
-    VAAPIEncodeMJPEGContext          *priv = avctx->priv_data;
+    VAAPIEncodeContext                *ctx = avctx->priv_data;
+    VAAPIEncodeMJPEGContext          *priv = ctx->priv_data;
     VAQMatrixBufferJPEG             *quant = &priv->quant_tables;
     VAHuffmanTableBufferJPEGBaseline *huff = &priv->huffman_tables;
     int i;
@@ -134,9 +133,10 @@ static int vaapi_encode_mjpeg_write_image_header(AVCodecContext *avctx,
                                                  VAAPIEncodeSlice *slice,
                                                  char *data, size_t *data_len)
 {
-    VAAPIEncodeMJPEGContext         *priv = avctx->priv_data;
+    VAAPIEncodeContext               *ctx = avctx->priv_data;
     VAEncPictureParameterBufferJPEG *vpic = pic->codec_picture_params;
     VAEncSliceParameterBufferJPEG *vslice = slice->codec_slice_params;
+    VAAPIEncodeMJPEGContext         *priv = ctx->priv_data;
     PutBitContext pbc;
     int t, i, quant_scale;
 
@@ -242,7 +242,8 @@ static int vaapi_encode_mjpeg_write_extra_buffer(AVCodecContext *avctx,
                                                  int index, int *type,
                                                  char *data, size_t *data_len)
 {
-    VAAPIEncodeMJPEGContext *priv = avctx->priv_data;
+    VAAPIEncodeContext       *ctx = avctx->priv_data;
+    VAAPIEncodeMJPEGContext *priv = ctx->priv_data;
 
     if (index == 0) {
         // Write quantisation tables.
@@ -269,8 +270,9 @@ static int vaapi_encode_mjpeg_write_extra_buffer(AVCodecContext *avctx,
 static int vaapi_encode_mjpeg_init_picture_params(AVCodecContext *avctx,
                                                   VAAPIEncodePicture *pic)
 {
-    VAAPIEncodeMJPEGContext         *priv = avctx->priv_data;
+    VAAPIEncodeContext               *ctx = avctx->priv_data;
     VAEncPictureParameterBufferJPEG *vpic = pic->codec_picture_params;
+    VAAPIEncodeMJPEGContext         *priv = ctx->priv_data;
 
     vpic->reconstructed_picture = pic->recon_surface;
     vpic->coded_buf = pic->output_buffer;
@@ -334,7 +336,7 @@ static int vaapi_encode_mjpeg_init_slice_params(AVCodecContext *avctx,
 static av_cold int vaapi_encode_mjpeg_configure(AVCodecContext *avctx)
 {
     VAAPIEncodeContext       *ctx = avctx->priv_data;
-    VAAPIEncodeMJPEGContext *priv = avctx->priv_data;
+    VAAPIEncodeMJPEGContext *priv = ctx->priv_data;
 
     priv->quality = avctx->global_quality;
     if (priv->quality < 1 || priv->quality > 100) {
@@ -360,6 +362,8 @@ static av_cold int vaapi_encode_mjpeg_configure(AVCodecContext *avctx)
 }
 
 static const VAAPIEncodeType vaapi_encode_type_mjpeg = {
+    .priv_data_size        = sizeof(VAAPIEncodeMJPEGContext),
+
     .configure             = &vaapi_encode_mjpeg_configure,
 
     .picture_params_size   = sizeof(VAEncPictureParameterBufferJPEG),
@@ -413,7 +417,7 @@ AVCodec ff_mjpeg_vaapi_encoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("MJPEG (VAAPI)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MJPEG,
-    .priv_data_size = sizeof(VAAPIEncodeMJPEGContext),
+    .priv_data_size = sizeof(VAAPIEncodeContext),
     .init           = &vaapi_encode_mjpeg_init,
     .encode2        = &ff_vaapi_encode2,
     .close          = &ff_vaapi_encode_close,
