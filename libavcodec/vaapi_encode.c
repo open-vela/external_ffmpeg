@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -343,7 +343,7 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
         if (ctx->codec->init_slice_params) {
             err = ctx->codec->init_slice_params(avctx, pic, slice);
             if (err < 0) {
-                av_log(avctx, AV_LOG_ERROR, "Failed to initalise slice "
+                av_log(avctx, AV_LOG_ERROR, "Failed to initialise slice "
                        "parameters: %d.\n", err);
                 goto fail;
             }
@@ -401,14 +401,14 @@ static int vaapi_encode_issue(AVCodecContext *avctx,
         err = AVERROR(EIO);
         // vaRenderPicture() has been called here, so we should not destroy
         // the parameter buffers unless separate destruction is required.
-        if (HAVE_VAAPI_1 || ctx->hwctx->driver_quirks &
+        if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
             AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS)
             goto fail;
         else
             goto fail_at_end;
     }
 
-    if (HAVE_VAAPI_1 || ctx->hwctx->driver_quirks &
+    if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
         AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS) {
         for (i = 0; i < pic->nb_param_buffers; i++) {
             vas = vaDestroyBuffer(ctx->hwctx->display,
@@ -762,6 +762,8 @@ static int vaapi_encode_truncate_gop(AVCodecContext *avctx)
     VAAPIEncodeContext *ctx = avctx->priv_data;
     VAAPIEncodePicture *pic, *last_pic, *next;
 
+    av_assert0(!ctx->pic_start || ctx->pic_start->input_available);
+
     // Find the last picture we actually have input for.
     for (pic = ctx->pic_start; pic; pic = pic->next) {
         if (!pic->input_available)
@@ -770,8 +772,6 @@ static int vaapi_encode_truncate_gop(AVCodecContext *avctx)
     }
 
     if (pic) {
-        av_assert0(last_pic);
-
         if (last_pic->type == PICTURE_TYPE_B) {
             // Some fixing up is required.  Change the type of this
             // picture to P, then modify preceding B references which
@@ -960,6 +960,20 @@ fail:
     return err;
 }
 
+static av_cold void vaapi_encode_add_global_param(AVCodecContext *avctx,
+                                                  VAEncMiscParameterBuffer *buffer,
+                                                  size_t size)
+{
+    VAAPIEncodeContext *ctx = avctx->priv_data;
+
+    av_assert0(ctx->nb_global_params < MAX_GLOBAL_PARAMS);
+
+    ctx->global_params     [ctx->nb_global_params] = buffer;
+    ctx->global_params_size[ctx->nb_global_params] = size;
+
+    ++ctx->nb_global_params;
+}
+
 static av_cold int vaapi_encode_config_attributes(AVCodecContext *avctx)
 {
     VAAPIEncodeContext *ctx = avctx->priv_data;
@@ -1038,6 +1052,8 @@ static av_cold int vaapi_encode_config_attributes(AVCodecContext *avctx)
             // Unfortunately we have to treat this as "don't know" and hope
             // for the best, because the Intel MJPEG encoder returns this
             // for all the interesting attributes.
+            av_log(avctx, AV_LOG_DEBUG, "Attribute (%d) is not supported.\n",
+                   attr[i].type);
             continue;
         }
         switch (attr[i].type) {
@@ -1094,10 +1110,10 @@ static av_cold int vaapi_encode_config_attributes(AVCodecContext *avctx)
                 goto fail;
             }
             if (avctx->max_b_frames > 0 && ref_l1 < 1) {
-                av_log(avctx, AV_LOG_ERROR, "B frames are not "
-                       "supported (%#x).\n", attr[i].value);
-                err = AVERROR(EINVAL);
-                goto fail;
+                av_log(avctx, AV_LOG_WARNING, "B frames are not "
+                       "supported (%#x) by the underlying driver.\n",
+                       attr[i].value);
+                avctx->max_b_frames = 0;
             }
         }
         break;
@@ -1140,6 +1156,12 @@ static av_cold int vaapi_encode_init_rate_control(AVCodecContext *avctx)
     int hrd_initial_buffer_fullness;
     int fr_num, fr_den;
 
+    if (avctx->bit_rate > INT32_MAX) {
+        av_log(avctx, AV_LOG_ERROR, "Target bitrate of 2^31 bps or "
+               "higher is not supported.\n");
+        return AVERROR(EINVAL);
+    }
+
     if (avctx->rc_buffer_size)
         hrd_buffer_size = avctx->rc_buffer_size;
     else
@@ -1174,20 +1196,16 @@ static av_cold int vaapi_encode_init_rate_control(AVCodecContext *avctx)
         .min_qp            = (avctx->qmin > 0 ? avctx->qmin : 0),
         .basic_unit_size   = 0,
     };
-    ctx->global_params[ctx->nb_global_params] =
-        &ctx->rc_params.misc;
-    ctx->global_params_size[ctx->nb_global_params++] =
-        sizeof(ctx->rc_params);
+    vaapi_encode_add_global_param(avctx, &ctx->rc_params.misc,
+                                  sizeof(ctx->rc_params));
 
     ctx->hrd_params.misc.type = VAEncMiscParameterTypeHRD;
     ctx->hrd_params.hrd = (VAEncMiscParameterHRD) {
         .initial_buffer_fullness = hrd_initial_buffer_fullness,
         .buffer_size             = hrd_buffer_size,
     };
-    ctx->global_params[ctx->nb_global_params] =
-        &ctx->hrd_params.misc;
-    ctx->global_params_size[ctx->nb_global_params++] =
-        sizeof(ctx->hrd_params);
+    vaapi_encode_add_global_param(avctx, &ctx->hrd_params.misc,
+                                  sizeof(ctx->hrd_params));
 
     if (avctx->framerate.num > 0 && avctx->framerate.den > 0)
         av_reduce(&fr_num, &fr_den,
@@ -1200,10 +1218,8 @@ static av_cold int vaapi_encode_init_rate_control(AVCodecContext *avctx)
     ctx->fr_params.fr.framerate = (unsigned int)fr_den << 16 | fr_num;
 
 #if VA_CHECK_VERSION(0, 40, 0)
-    ctx->global_params[ctx->nb_global_params] =
-        &ctx->fr_params.misc;
-    ctx->global_params_size[ctx->nb_global_params++] =
-        sizeof(ctx->fr_params);
+    vaapi_encode_add_global_param(avctx, &ctx->fr_params.misc,
+                                  sizeof(ctx->fr_params));
 #endif
 
     return 0;
@@ -1364,16 +1380,8 @@ av_cold int ff_vaapi_encode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    ctx->codec_options = ctx->codec_options_data;
-
     ctx->va_config  = VA_INVALID_ID;
     ctx->va_context = VA_INVALID_ID;
-
-    ctx->priv_data = av_mallocz(ctx->codec->priv_data_size);
-    if (!ctx->priv_data) {
-        err = AVERROR(ENOMEM);
-        goto fail;
-    }
 
     ctx->input_frames_ref = av_buffer_ref(avctx->hw_frames_ctx);
     if (!ctx->input_frames_ref) {
@@ -1467,10 +1475,8 @@ av_cold int ff_vaapi_encode_init(AVCodecContext *avctx)
             ctx->quality_params.quality.quality_level =
                 avctx->compression_level;
 
-            ctx->global_params[ctx->nb_global_params] =
-                &ctx->quality_params.misc;
-            ctx->global_params_size[ctx->nb_global_params++] =
-                sizeof(ctx->quality_params);
+            vaapi_encode_add_global_param(avctx, &ctx->quality_params.misc,
+                                          sizeof(ctx->quality_params));
         }
 #else
         av_log(avctx, AV_LOG_WARNING, "The encode compression level "
@@ -1574,8 +1580,6 @@ av_cold int ff_vaapi_encode_close(AVCodecContext *avctx)
     av_buffer_unref(&ctx->recon_frames_ref);
     av_buffer_unref(&ctx->input_frames_ref);
     av_buffer_unref(&ctx->device_ref);
-
-    av_freep(&ctx->priv_data);
 
     return 0;
 }
