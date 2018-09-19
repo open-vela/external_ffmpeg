@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Alexandra Hájková
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -87,7 +87,7 @@ void checkasm_check_hevc_idct(void)
 {
     int bit_depth;
 
-    for (bit_depth = 8; bit_depth <= 10; bit_depth++) {
+    for (bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
         HEVCDSPContext h;
 
         ff_hevc_dsp_init(&h, bit_depth);
@@ -95,7 +95,7 @@ void checkasm_check_hevc_idct(void)
     }
     report("idct_dc");
 
-    for (bit_depth = 8; bit_depth <= 10; bit_depth++) {
+    for (bit_depth = 8; bit_depth <= 12; bit_depth += 2) {
         HEVCDSPContext h;
 
         ff_hevc_dsp_init(&h, bit_depth);
