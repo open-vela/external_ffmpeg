@@ -1,28 +1,28 @@
 /*
- * VP9 invisible (alt-ref) frame to superframe merge bitstream filter
+ * Vp9 invisible (alt-ref) frame to superframe merge bitstream filter
  * Copyright (c) 2016 Ronald S. Bultje <rsbultje@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/avassert.h"
 #include "avcodec.h"
-#include "bitstream.h"
 #include "bsf.h"
+#include "get_bits.h"
 
 #define MAX_CACHE 8
 typedef struct VP9BSFContext {
@@ -67,7 +67,8 @@ static int merge_superframe(AVPacket * const *in, int n_in, AVPacket *out)
         ptr += in[n]->size;
     }
 
-#define wloop(mag, wr) do { \
+#define wloop(mag, wr) \
+    do { \
         for (n = 0; n < n_in; n++) { \
             wr; \
             ptr += mag + 1; \
@@ -98,7 +99,7 @@ static int merge_superframe(AVPacket * const *in, int n_in, AVPacket *out)
 
 static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
 {
-    BitstreamContext bc;
+    GetBitContext gb;
     VP9BSFContext *s = ctx->priv_data;
     AVPacket *in;
     int res, invisible, profile, marker, uses_superframe_syntax = 0, n;
@@ -115,21 +116,19 @@ static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
         uses_superframe_syntax = in->size >= idx_sz && in->data[in->size - idx_sz] == marker;
     }
 
-    res = bitstream_init8(&bc, in->data, in->size);
-    if (res < 0)
+    if ((res = init_get_bits8(&gb, in->data, in->size)) < 0)
         goto done;
 
-    bitstream_read(&bc, 2); // frame marker
-    profile  = bitstream_read(&bc, 1);
-    profile |= bitstream_read(&bc, 1) << 1;
-    if (profile == 3)
-        profile += bitstream_read(&bc, 1);
+    get_bits(&gb, 2); // frame marker
+    profile  = get_bits1(&gb);
+    profile |= get_bits1(&gb) << 1;
+    if (profile == 3) profile += get_bits1(&gb);
 
-    if (bitstream_read(&bc, 1)) {
+    if (get_bits1(&gb)) {
         invisible = 0;
     } else {
-        bitstream_read(&bc, 1); // keyframe
-        invisible = !bitstream_read(&bc, 1);
+        get_bits1(&gb); // keyframe
+        invisible = !get_bits1(&gb);
     }
 
     if (uses_superframe_syntax && s->n_cache > 0) {
@@ -148,9 +147,8 @@ static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
         goto done;
     }
 
-    res = av_packet_ref(s->cache[s->n_cache++], in);
-    if (res < 0)
-        goto done;
+    av_packet_move_ref(s->cache[s->n_cache++], in);
+
     if (invisible) {
         res = AVERROR(EAGAIN);
         goto done;
