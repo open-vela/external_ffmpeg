@@ -4,20 +4,20 @@
  *
  * Copyright (c) 2008 Bartlomiej Wolowiec
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,7 +28,7 @@
  *
  * Generic codec information: libavcodec/nellymoserdec.c
  *
- * Some information also from: http://samples.libav.org/A-codecs/Nelly_Moser/ASAO/ASAO.zip
+ * Some information also from: http://samples.mplayerhq.hu/A-codecs/Nelly_Moser/ASAO/ASAO.zip
  *                             (Copyright Joseph Artsimovich and UAB "DKD")
  *
  * for more information about nellymoser format, visit:
@@ -56,7 +56,7 @@
 typedef struct NellyMoserEncodeContext {
     AVCodecContext  *avctx;
     int             last_frame;
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
     FFTContext      mdct_ctx;
     AudioFrameQueue afq;
     DECLARE_ALIGNED(32, float, mdct_out)[NELLY_SAMPLES];
@@ -66,7 +66,7 @@ typedef struct NellyMoserEncodeContext {
     uint8_t         (*path)[OPT_SIZE];
 } NellyMoserEncodeContext;
 
-static float pow_table[POW_TABLE_SIZE];     ///< -pow(2, -i / 2048.0 - 3.0);
+static float pow_table[POW_TABLE_SIZE];     ///< pow(2, -i / 2048.0 - 3.0);
 
 static const uint8_t sf_lut[96] = {
      0,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  3,  3,  3,  4,  4,
@@ -122,12 +122,12 @@ static void apply_mdct(NellyMoserEncodeContext *s)
     float *in1 = s->buf + NELLY_BUF_LEN;
     float *in2 = s->buf + 2 * NELLY_BUF_LEN;
 
-    s->fdsp.vector_fmul        (s->in_buff,                 in0, ff_sine_128, NELLY_BUF_LEN);
-    s->fdsp.vector_fmul_reverse(s->in_buff + NELLY_BUF_LEN, in1, ff_sine_128, NELLY_BUF_LEN);
+    s->fdsp->vector_fmul        (s->in_buff,                 in0, ff_sine_128, NELLY_BUF_LEN);
+    s->fdsp->vector_fmul_reverse(s->in_buff + NELLY_BUF_LEN, in1, ff_sine_128, NELLY_BUF_LEN);
     s->mdct_ctx.mdct_calc(&s->mdct_ctx, s->mdct_out, s->in_buff);
 
-    s->fdsp.vector_fmul        (s->in_buff,                 in1, ff_sine_128, NELLY_BUF_LEN);
-    s->fdsp.vector_fmul_reverse(s->in_buff + NELLY_BUF_LEN, in2, ff_sine_128, NELLY_BUF_LEN);
+    s->fdsp->vector_fmul        (s->in_buff,                 in1, ff_sine_128, NELLY_BUF_LEN);
+    s->fdsp->vector_fmul_reverse(s->in_buff + NELLY_BUF_LEN, in2, ff_sine_128, NELLY_BUF_LEN);
     s->mdct_ctx.mdct_calc(&s->mdct_ctx, s->mdct_out + NELLY_BUF_LEN, s->in_buff);
 }
 
@@ -138,10 +138,11 @@ static av_cold int encode_end(AVCodecContext *avctx)
     ff_mdct_end(&s->mdct_ctx);
 
     if (s->avctx->trellis) {
-        av_free(s->opt);
-        av_free(s->path);
+        av_freep(&s->opt);
+        av_freep(&s->path);
     }
     ff_af_queue_close(&s->afq);
+    av_freep(&s->fdsp);
 
     return 0;
 }
@@ -170,12 +171,26 @@ static av_cold int encode_init(AVCodecContext *avctx)
     s->avctx = avctx;
     if ((ret = ff_mdct_init(&s->mdct_ctx, 8, 0, 32768.0)) < 0)
         goto error;
-    avpriv_float_dsp_init(&s->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!s->fdsp) {
+        ret = AVERROR(ENOMEM);
+        goto error;
+    }
 
     /* Generate overlap window */
-    ff_sine_window_init(ff_sine_128, 128);
+    ff_init_ff_sine_windows(7);
+    /* faster way of doing
     for (i = 0; i < POW_TABLE_SIZE; i++)
-        pow_table[i] = -pow(2, -i / 2048.0 - 3.0 + POW_TABLE_OFFSET);
+       pow_table[i] = 2^(-i / 2048.0 - 3.0 + POW_TABLE_OFFSET); */
+    pow_table[0] = 1;
+    pow_table[1024] = M_SQRT1_2;
+    for (i = 1; i < 513; i++) {
+        double tmp = exp2(-i / 2048.0);
+        pow_table[i] = tmp;
+        pow_table[1024-i] = M_SQRT1_2 / tmp;
+        pow_table[1024+i] = tmp * M_SQRT1_2;
+        pow_table[2048-i] = 0.5 / tmp;
+    }
 
     if (s->avctx->trellis) {
         s->opt  = av_malloc(NELLY_BANDS * OPT_SIZE * sizeof(float  ));
@@ -231,7 +246,7 @@ static void get_exponent_dynamic(NellyMoserEncodeContext *s, float *cand, int *i
     float  (*opt )[OPT_SIZE] = s->opt ;
     uint8_t(*path)[OPT_SIZE] = s->path;
 
-    for (i = 0; i < OPT_SIZE; i++) {
+    for (i = 0; i < NELLY_BANDS * OPT_SIZE; i++) {
         opt[0][i] = INFINITY;
     }
 
@@ -266,7 +281,7 @@ static void get_exponent_dynamic(NellyMoserEncodeContext *s, float *cand, int *i
                 }
             }
         }
-        assert(c); //FIXME
+        av_assert1(c); //FIXME
     }
 
     best_val = INFINITY;
@@ -303,7 +318,7 @@ static void encode_block(NellyMoserEncodeContext *s, unsigned char *output, int 
 
     apply_mdct(s);
 
-    init_put_bits(&pb, output, output_size * 8);
+    init_put_bits(&pb, output, output_size);
 
     i = 0;
     for (band = 0; band < NELLY_BANDS; band++) {
@@ -313,7 +328,7 @@ static void encode_block(NellyMoserEncodeContext *s, unsigned char *output, int 
                        + s->mdct_out[i + NELLY_BUF_LEN] * s->mdct_out[i + NELLY_BUF_LEN];
         }
         cand[band] =
-            log(FFMAX(1.0, coeff_sum / (ff_nelly_band_sizes_table[band] << 7))) * 1024.0 / M_LN2;
+            log2(FFMAX(1.0, coeff_sum / (ff_nelly_band_sizes_table[band] << 7))) * 1024.0;
     }
 
     if (s->avctx->trellis) {
@@ -392,10 +407,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         s->last_frame = 1;
     }
 
-    if ((ret = ff_alloc_packet(avpkt, NELLY_BLOCK_LEN))) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+    if ((ret = ff_alloc_packet2(avctx, avpkt, NELLY_BLOCK_LEN, 0)) < 0)
         return ret;
-    }
     encode_block(s, avpkt->data, avpkt->size);
 
     /* Get the next frame pts/duration */
