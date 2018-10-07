@@ -2,20 +2,20 @@
  * VMware Screen Codec (VMnc) decoder
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -298,8 +298,8 @@ static int decode_hextile(VmncContext *c, uint8_t* dst, GetByteContext *gb,
                     rect_w = (wh >> 4) + 1;
                     rect_h = (wh & 0xF) + 1;
 
-                    if (rect_x + rect_w > bw || rect_y + rect_h > bh) {
-                        av_log(c->avctx, AV_LOG_ERROR, "Invalid subrect\n");
+                    if (rect_x + rect_w > w - i || rect_y + rect_h > h - j) {
+                        av_log(c->avctx, AV_LOG_ERROR, "Rectangle outside picture\n");
                         return AVERROR_INVALIDDATA;
                     }
 
@@ -319,6 +319,8 @@ static void reset_buffers(VmncContext *c)
     av_freep(&c->curmask);
     av_freep(&c->screendta);
     c->cur_w = c->cur_h = 0;
+    c->cur_hx = c->cur_hy = 0;
+
 }
 
 static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
@@ -331,10 +333,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     uint8_t *outptr;
     int dx, dy, w, h, depth, enc, chunks, res, size_left, ret;
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
         return ret;
-    }
 
     bytestream2_init(gb, buf, buf_size);
 
@@ -372,15 +372,29 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     bytestream2_skip(gb, 2);
     chunks = bytestream2_get_be16(gb);
     while (chunks--) {
+        if (bytestream2_get_bytes_left(gb) < 12) {
+            av_log(avctx, AV_LOG_ERROR, "Premature end of data!\n");
+            return -1;
+        }
         dx  = bytestream2_get_be16(gb);
         dy  = bytestream2_get_be16(gb);
         w   = bytestream2_get_be16(gb);
         h   = bytestream2_get_be16(gb);
         enc = bytestream2_get_be32(gb);
+        if ((dx + w > c->width) || (dy + h > c->height)) {
+            av_log(avctx, AV_LOG_ERROR,
+                    "Incorrect frame size: %ix%i+%ix%i of %ix%i\n",
+                    w, h, dx, dy, c->width, c->height);
+            return AVERROR_INVALIDDATA;
+        }
         outptr = c->pic->data[0] + dx * c->bpp2 + dy * c->pic->linesize[0];
         size_left = bytestream2_get_bytes_left(gb);
         switch (enc) {
         case MAGIC_WMVd: // cursor
+            if (w*(int64_t)h*c->bpp2 > INT_MAX/2 - 2) {
+                av_log(avctx, AV_LOG_ERROR, "dimensions too large\n");
+                return AVERROR_INVALIDDATA;
+            }
             if (size_left < 2 + w * h * c->bpp2 * 2) {
                 av_log(avctx, AV_LOG_ERROR,
                        "Premature end of data! (need %i got %i)\n",
@@ -431,18 +445,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             c->pic->pict_type = AV_PICTURE_TYPE_I;
             depth = bytestream2_get_byte(gb);
             if (depth != c->bpp) {
-                av_log(avctx, AV_LOG_WARNING, "Depth mismatch. "
-                       "Container %i bpp / Codec %i bpp\n", c->bpp, depth);
-
-                if (depth != 8 && depth != 16 && depth != 32) {
-                    av_log(avctx, AV_LOG_ERROR,
-                           "Unsupported codec bitdepth %i\n", depth);
-                    return AVERROR_INVALIDDATA;
-                }
-
-                /* reset values */
-                c->bpp  = depth;
-                c->bpp2 = c->bpp / 8;
+                av_log(avctx, AV_LOG_INFO,
+                       "Depth mismatch. Container %i bpp, "
+                       "Frame data: %i bpp\n",
+                       c->bpp, depth);
             }
             bytestream2_skip(gb, 1);
             c->bigendian = bytestream2_get_byte(gb);
@@ -458,12 +464,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             bytestream2_skip(gb, 2);
             break;
         case 0x00000000: // raw rectangle data
-            if ((dx + w > c->width) || (dy + h > c->height)) {
-                av_log(avctx, AV_LOG_ERROR,
-                       "Incorrect frame size: %ix%i+%ix%i of %ix%i\n",
-                       w, h, dx, dy, c->width, c->height);
-                return AVERROR_INVALIDDATA;
-            }
             if (size_left < w * h * c->bpp2) {
                 av_log(avctx, AV_LOG_ERROR,
                        "Premature end of data! (need %i got %i)\n",
@@ -474,12 +474,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                       c->pic->linesize[0]);
             break;
         case 0x00000005: // HexTile encoded rectangle
-            if ((dx + w > c->width) || (dy + h > c->height)) {
-                av_log(avctx, AV_LOG_ERROR,
-                       "Incorrect frame size: %ix%i+%ix%i of %ix%i\n",
-                       w, h, dx, dy, c->width, c->height);
-                return AVERROR_INVALIDDATA;
-            }
             res = decode_hextile(c, outptr, gb, w, h, c->pic->linesize[0]);
             if (res < 0)
                 return res;
@@ -535,7 +529,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->width  = avctx->width;
     c->height = avctx->height;
     c->bpp    = avctx->bits_per_coded_sample;
-    c->bpp2   = c->bpp / 8;
 
     switch (c->bpp) {
     case 8:
@@ -546,14 +539,16 @@ static av_cold int decode_init(AVCodecContext *avctx)
         break;
     case 24:
         /* 24 bits is not technically supported, but some clients might
-         * mistakenly set it -- delay the actual check until decode_frame() */
+         * mistakenly set it, so let's assume they actually meant 32 bits */
+        c->bpp = 32;
     case 32:
-        avctx->pix_fmt = AV_PIX_FMT_RGB32;
+        avctx->pix_fmt = AV_PIX_FMT_0RGB32;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Unsupported bitdepth %i\n", c->bpp);
         return AVERROR_INVALIDDATA;
     }
+    c->bpp2 = c->bpp / 8;
 
     c->pic = av_frame_alloc();
     if (!c->pic)
@@ -568,9 +563,9 @@ static av_cold int decode_end(AVCodecContext *avctx)
 
     av_frame_free(&c->pic);
 
-    av_free(c->curbits);
-    av_free(c->curmask);
-    av_free(c->screendta);
+    av_freep(&c->curbits);
+    av_freep(&c->curmask);
+    av_freep(&c->screendta);
     return 0;
 }
 

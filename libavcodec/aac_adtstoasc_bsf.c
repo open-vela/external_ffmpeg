@@ -2,20 +2,20 @@
  * MPEG-2/4 AAC ADTS to MPEG-4 Audio Specific Configuration bitstream filter
  * Copyright (c) 2009 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,27 +36,26 @@ typedef struct AACBSFContext {
  * This filter creates an MPEG-4 AudioSpecificConfig from an MPEG-2/4
  * ADTS header and removes the ADTS header.
  */
-static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
+static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *pkt)
 {
     AACBSFContext *ctx = bsfc->priv_data;
 
     GetBitContext gb;
     PutBitContext pb;
     AACADTSHeaderInfo hdr;
-    AVPacket *in;
     int ret;
 
-    ret = ff_bsf_get_packet(bsfc, &in);
+    ret = ff_bsf_get_packet_ref(bsfc, pkt);
     if (ret < 0)
         return ret;
 
-    if (in->size < AV_AAC_ADTS_HEADER_SIZE)
+    if (bsfc->par_in->extradata && pkt->size >= 2 && (AV_RB16(pkt->data) >> 4) != 0xfff)
+        return 0;
+
+    if (pkt->size < AV_AAC_ADTS_HEADER_SIZE)
         goto packet_too_small;
 
-    init_get_bits(&gb, in->data, AV_AAC_ADTS_HEADER_SIZE * 8);
-
-    if (bsfc->par_in->extradata && show_bits(&gb, 12) != 0xfff)
-        goto finish;
+    init_get_bits(&gb, pkt->data, AV_AAC_ADTS_HEADER_SIZE * 8);
 
     if (ff_adts_header_parse(&gb, &hdr) < 0) {
         av_log(bsfc, AV_LOG_ERROR, "Error parsing ADTS frame header!\n");
@@ -71,10 +70,10 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
         goto fail;
     }
 
-    in->size -= AV_AAC_ADTS_HEADER_SIZE + 2 * !hdr.crc_absent;
-    if (in->size <= 0)
+    pkt->size -= AV_AAC_ADTS_HEADER_SIZE + 2 * !hdr.crc_absent;
+    if (pkt->size <= 0)
         goto packet_too_small;
-    in->data += AV_AAC_ADTS_HEADER_SIZE + 2 * !hdr.crc_absent;
+    pkt->data += AV_AAC_ADTS_HEADER_SIZE + 2 * !hdr.crc_absent;
 
     if (!ctx->first_frame_done) {
         int            pce_size = 0;
@@ -82,7 +81,7 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
         uint8_t       *extradata;
 
         if (!hdr.chan_config) {
-            init_get_bits(&gb, in->data, in->size * 8);
+            init_get_bits(&gb, pkt->data, pkt->size * 8);
             if (get_bits(&gb, 3) != 5) {
                 avpriv_report_missing_feature(bsfc,
                                               "PCE-based channel configuration "
@@ -94,11 +93,11 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
             init_put_bits(&pb, pce_data, MAX_PCE_SIZE);
             pce_size = ff_copy_pce_data(&pb, &gb) / 8;
             flush_put_bits(&pb);
-            in->size -= get_bits_count(&gb)/8;
-            in->data += get_bits_count(&gb)/8;
+            pkt->size -= get_bits_count(&gb)/8;
+            pkt->data += get_bits_count(&gb)/8;
         }
 
-        extradata = av_packet_new_side_data(in, AV_PKT_DATA_NEW_EXTRADATA,
+        extradata = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA,
                                             2 + pce_size);
         if (!extradata) {
             ret = AVERROR(ENOMEM);
@@ -120,17 +119,13 @@ static int aac_adtstoasc_filter(AVBSFContext *bsfc, AVPacket *out)
         ctx->first_frame_done = 1;
     }
 
-finish:
-    av_packet_move_ref(out, in);
-    av_packet_free(&in);
-
     return 0;
 
 packet_too_small:
     av_log(bsfc, AV_LOG_ERROR, "Input packet too small\n");
     ret = AVERROR_INVALIDDATA;
 fail:
-    av_packet_free(&in);
+    av_packet_unref(pkt);
     return ret;
 }
 

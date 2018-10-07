@@ -2,28 +2,26 @@
  * Copyright (c) 2018 Ronald S. Bultje <rsbultje gmail com>
  * Copyright (c) 2018 James Almer <jamrial gmail com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <dav1d/dav1d.h>
 
 #include "libavutil/avassert.h"
-#include "libavutil/common.h"
-#include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
@@ -109,6 +107,8 @@ static int libdav1d_receive_frame(AVCodecContext *c, AVFrame *frame)
             }
 
             data->m.timestamp = pkt.pts;
+            data->m.offset = pkt.pos;
+            data->m.duration = pkt.duration;
 
             pkt.buf = NULL;
             av_packet_unref(&pkt);
@@ -179,13 +179,16 @@ static int libdav1d_receive_frame(AVCodecContext *c, AVFrame *frame)
     frame->color_range = c->color_range = p->seq_hdr->color_range ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
     // match timestamps and packet size
-    frame->pts = p->m.timestamp;
+    frame->pts = frame->best_effort_timestamp = p->m.timestamp;
 #if FF_API_PKT_PTS
 FF_DISABLE_DEPRECATION_WARNINGS
     frame->pkt_pts = p->m.timestamp;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
     frame->pkt_dts = p->m.timestamp;
+    frame->pkt_pos = p->m.offset;
+    frame->pkt_size = p->m.size;
+    frame->pkt_duration = p->m.duration;
     frame->key_frame = p->frame_hdr->frame_type == DAV1D_FRAME_TYPE_KEY;
 
     switch (p->frame_hdr->frame_type) {
@@ -220,7 +223,7 @@ static av_cold int libdav1d_close(AVCodecContext *c)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption libdav1d_options[] = {
     { "tilethreads", "Tile threads", OFFSET(tile_threads), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, DAV1D_MAX_TILE_THREADS, VD },
-    { "filmgrain", "Apply Film Grain", OFFSET(apply_grain), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VD },
+    { "filmgrain", "Apply Film Grain", OFFSET(apply_grain), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, VD },
     { NULL }
 };
 
