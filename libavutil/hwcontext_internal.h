@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -156,12 +156,21 @@ int ff_hwframe_map_create(AVBufferRef *hwframe_ref,
                                         HWMapDescriptor *hwmap),
                           void *priv);
 
+/**
+ * Replace the current hwmap of dst with the one from src, used for indirect
+ * mappings like VAAPI->(DRM)->OpenCL/Vulkan where a direct interop is missing
+ */
+int ff_hwframe_map_replace(AVFrame *dst, const AVFrame *src);
 
 extern const HWContextType ff_hwcontext_type_cuda;
 extern const HWContextType ff_hwcontext_type_d3d11va;
+extern const HWContextType ff_hwcontext_type_drm;
 extern const HWContextType ff_hwcontext_type_dxva2;
+extern const HWContextType ff_hwcontext_type_opencl;
 extern const HWContextType ff_hwcontext_type_qsv;
 extern const HWContextType ff_hwcontext_type_vaapi;
 extern const HWContextType ff_hwcontext_type_vdpau;
+extern const HWContextType ff_hwcontext_type_videotoolbox;
+extern const HWContextType ff_hwcontext_type_mediacodec;
 
 #endif /* AVUTIL_HWCONTEXT_INTERNAL_H */
