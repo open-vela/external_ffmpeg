@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,36 +23,32 @@
 #include "mathops.h"
 #include "huffyuvdsp.h"
 
-// 0x7f7f7f7f or 0x7f7f7f7f7f7f7f7f or whatever, depending on the cpu's native arithmetic size
-#define pb_7f (~0UL / 255 * 0x7f)
-#define pb_80 (~0UL / 255 * 0x80)
+// 0x00010001 or 0x0001000100010001 or whatever, depending on the cpu's native arithmetic size
+#define pw_1 (ULONG_MAX / UINT16_MAX)
 
-static void add_bytes_c(uint8_t *dst, uint8_t *src, int w)
-{
+static void add_int16_c(uint16_t *dst, const uint16_t *src, unsigned mask, int w){
     long i;
-
-    for (i = 0; i <= w - (int) sizeof(long); i += sizeof(long)) {
-        long a = *(long *) (src + i);
-        long b = *(long *) (dst + i);
-        *(long *) (dst + i) = ((a & pb_7f) + (b & pb_7f)) ^ ((a ^ b) & pb_80);
+    unsigned long pw_lsb = (mask >> 1) * pw_1;
+    unsigned long pw_msb = pw_lsb +  pw_1;
+    for (i = 0; i <= w - (int)sizeof(long)/2; i += sizeof(long)/2) {
+        long a = *(long*)(src+i);
+        long b = *(long*)(dst+i);
+        *(long*)(dst+i) = ((a&pw_lsb) + (b&pw_lsb)) ^ ((a^b)&pw_msb);
     }
-    for (; i < w; i++)
-        dst[i + 0] += src[i + 0];
+    for(; i<w; i++)
+        dst[i] = (dst[i] + src[i]) & mask;
 }
 
-static void add_hfyu_median_pred_c(uint8_t *dst, const uint8_t *src1,
-                                   const uint8_t *diff, int w,
-                                   int *left, int *left_top)
-{
+static void add_hfyu_median_pred_int16_c(uint16_t *dst, const uint16_t *src, const uint16_t *diff, unsigned mask, int w, int *left, int *left_top){
     int i;
-    uint8_t l, lt;
+    uint16_t l, lt;
 
     l  = *left;
     lt = *left_top;
 
-    for (i = 0; i < w; i++) {
-        l      = mid_pred(l, src1[i], (l + src1[i] - lt) & 0xFF) + diff[i];
-        lt     = src1[i];
+    for(i=0; i<w; i++){
+        l  = (mid_pred(l, src[i], (l + src[i] - lt) & mask) + diff[i]) & mask;
+        lt = src[i];
         dst[i] = l;
     }
 
@@ -60,43 +56,11 @@ static void add_hfyu_median_pred_c(uint8_t *dst, const uint8_t *src1,
     *left_top = lt;
 }
 
-static int add_hfyu_left_pred_c(uint8_t *dst, const uint8_t *src, int w,
-                                int acc)
+static void add_hfyu_left_pred_bgr32_c(uint8_t *dst, const uint8_t *src,
+                                       intptr_t w, uint8_t *left)
 {
     int i;
-
-    for (i = 0; i < w - 1; i++) {
-        acc   += src[i];
-        dst[i] = acc;
-        i++;
-        acc   += src[i];
-        dst[i] = acc;
-    }
-
-    for (; i < w; i++) {
-        acc   += src[i];
-        dst[i] = acc;
-    }
-
-    return acc;
-}
-
-#if HAVE_BIGENDIAN
-#define B 3
-#define G 2
-#define R 1
-#define A 0
-#else
-#define B 0
-#define G 1
-#define R 2
-#define A 3
-#endif
-static void add_hfyu_left_pred_bgr32_c(uint8_t *dst, const uint8_t *src,
-                                       int w, int *red, int *green,
-                                       int *blue, int *alpha)
-{
-    int i, r = *red, g = *green, b = *blue, a = *alpha;
+    uint8_t r = left[R], g = left[G], b = left[B], a = left[A];
 
     for (i = 0; i < w; i++) {
         b += src[4 * i + B];
@@ -110,25 +74,18 @@ static void add_hfyu_left_pred_bgr32_c(uint8_t *dst, const uint8_t *src,
         dst[4 * i + A] = a;
     }
 
-    *red   = r;
-    *green = g;
-    *blue  = b;
-    *alpha = a;
+    left[B] = b;
+    left[G] = g;
+    left[R] = r;
+    left[A] = a;
 }
-#undef B
-#undef G
-#undef R
-#undef A
 
-av_cold void ff_huffyuvdsp_init(HuffYUVDSPContext *c)
+av_cold void ff_huffyuvdsp_init(HuffYUVDSPContext *c, enum AVPixelFormat pix_fmt)
 {
-    c->add_bytes                = add_bytes_c;
-    c->add_hfyu_median_pred     = add_hfyu_median_pred_c;
-    c->add_hfyu_left_pred       = add_hfyu_left_pred_c;
+    c->add_int16 = add_int16_c;
+    c->add_hfyu_median_pred_int16 = add_hfyu_median_pred_int16_c;
     c->add_hfyu_left_pred_bgr32 = add_hfyu_left_pred_bgr32_c;
 
-    if (ARCH_PPC)
-        ff_huffyuvdsp_init_ppc(c);
     if (ARCH_X86)
-        ff_huffyuvdsp_init_x86(c);
+        ff_huffyuvdsp_init_x86(c, pix_fmt);
 }
