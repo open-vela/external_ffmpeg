@@ -2,20 +2,20 @@
  * TLS/SSL Protocol
  * Copyright (c) 2018 Thomas Volkert
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,11 +28,12 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/x509_crt.h>
 
+#include "libavutil/parseutils.h"
+
 #include "avformat.h"
 #include "internal.h"
-#include "url.h"
 #include "tls.h"
-#include "libavutil/parseutils.h"
+#include "url.h"
 
 typedef struct TLSContext {
     const AVClass *class;
@@ -97,7 +98,7 @@ static int mbedtls_send(void *ctx, const unsigned char *buf, size_t len)
 
 static int mbedtls_recv(void *ctx, unsigned char *buf, size_t len)
 {
-    URLContext *h = (URLContext*) ctx;
+    URLContext *h = ctx;
     int ret = ffurl_read(h, buf, len);
     if (ret >= 0)
         return ret;
@@ -130,13 +131,13 @@ static void handle_handshake_error(URLContext *h, int ret)
 {
     switch (ret) {
     case MBEDTLS_ERR_SSL_NO_USABLE_CIPHERSUITE:
-        av_log(h, AV_LOG_ERROR, "None of the common ciphersuites is usable. Was the local certificate correctly set?\n");
+        av_log(h, AV_LOG_ERROR, "None of the common ciphersuites is usable. Was the local certificate set correctly?\n");
         break;
     case MBEDTLS_ERR_SSL_FATAL_ALERT_MESSAGE:
-        av_log(h, AV_LOG_ERROR, "A fatal alert message was received from the peer, has the peer a correct certificate?\n");
+        av_log(h, AV_LOG_ERROR, "A fatal alert message was received from the peer. Does the peer have a correct certificate?\n");
         break;
     case MBEDTLS_ERR_SSL_CA_CHAIN_REQUIRED:
-        av_log(h, AV_LOG_ERROR, "No CA chain is set, but required to operate. Was the CA correctly set?\n");
+        av_log(h, AV_LOG_ERROR, "No CA chain is set, but required to operate. Was the CA set correctly?\n");
         break;
     case MBEDTLS_ERR_NET_CONN_RESET:
         av_log(h, AV_LOG_ERROR, "TLS handshake was aborted by peer.\n");
@@ -244,7 +245,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         }
     }
 
-    // set I/O functions to use FFmpeg internal code for transport layer
+    // set I/O functions to use libavformat-internal code for transport layer
     mbedtls_ssl_set_bio(&tls_ctx->ssl_context, shr->tcp, mbedtls_send, mbedtls_recv, NULL);
 
     // ssl handshake
@@ -274,7 +275,7 @@ fail:
     return AVERROR(EIO);
 }
 
-static int handle_tls_error(URLContext *h, const char* func_name, int ret)
+static int handle_tls_error(URLContext *h, const char *func_name, int ret)
 {
     switch (ret) {
     case MBEDTLS_ERR_SSL_WANT_READ:
@@ -327,7 +328,7 @@ static int tls_get_file_handle(URLContext *h)
 
 static const AVOption options[] = {
     TLS_COMMON_OPTIONS(TLSContext, tls_shared), \
-    {"key_password", "Password for the private key file", OFFSET(priv_key_pw),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    { "key_password", "Password for the private key file", OFFSET(priv_key_pw),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
     { NULL }
 };
 
@@ -339,13 +340,13 @@ static const AVClass tls_class = {
 };
 
 const URLProtocol ff_tls_protocol = {
-    .name           = "tls",
-    .url_open2      = tls_open,
-    .url_read       = tls_read,
-    .url_write      = tls_write,
-    .url_close      = tls_close,
+    .name                = "tls",
+    .url_open2           = tls_open,
+    .url_read            = tls_read,
+    .url_write           = tls_write,
+    .url_close           = tls_close,
     .url_get_file_handle = tls_get_file_handle,
-    .priv_data_size = sizeof(TLSContext),
-    .flags          = URL_PROTOCOL_FLAG_NETWORK,
-    .priv_data_class = &tls_class,
+    .priv_data_size      = sizeof(TLSContext),
+    .flags               = URL_PROTOCOL_FLAG_NETWORK,
+    .priv_data_class     = &tls_class,
 };

@@ -3,20 +3,20 @@
  * (c)1997-99 by H. Dietz and R. Fisher
  * Converted to C and improved by Fabrice Bellard.
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,10 +42,10 @@
 #define cpuid(index, eax, ebx, ecx, edx)                        \
     __asm__ volatile (                                          \
         "mov    %%"FF_REG_b", %%"FF_REG_S" \n\t"                \
-        "cpuid                       \n\t"                      \
+        "cpuid                             \n\t"                \
         "xchg   %%"FF_REG_b", %%"FF_REG_S                       \
         : "=a" (eax), "=S" (ebx), "=c" (ecx), "=d" (edx)        \
-        : "0" (index), "2"(0))
+        : "0" (index))
 
 #define xgetbv(index, eax, edx)                                 \
     __asm__ (".byte 0x0f, 0x01, 0xd0" : "=a"(eax), "=d"(edx) : "c" (index))
@@ -97,7 +97,6 @@ int ff_get_cpu_flags_x86(void)
     int max_std_level, max_ext_level, std_caps = 0, ext_caps = 0;
     int family = 0, model = 0;
     union { int i[3]; char c[12]; } vendor;
-    int xcr0_lo = 0, xcr0_hi = 0;
 
     if (!cpuid_test())
         return 0; /* CPUID not supported */
@@ -127,14 +126,12 @@ int ff_get_cpu_flags_x86(void)
             rval |= AV_CPU_FLAG_SSE4;
         if (ecx & 0x00100000 )
             rval |= AV_CPU_FLAG_SSE42;
-        if (ecx & 0x02000000 )
-            rval |= AV_CPU_FLAG_AESNI;
 #if HAVE_AVX
         /* Check OXSAVE and AVX bits */
         if ((ecx & 0x18000000) == 0x18000000) {
             /* Check for OS support */
-            xgetbv(0, xcr0_lo, xcr0_hi);
-            if ((xcr0_lo & 0x6) == 0x6) {
+            xgetbv(0, eax, edx);
+            if ((eax & 0x6) == 0x6) {
                 rval |= AV_CPU_FLAG_AVX;
                 if (ecx & 0x00001000)
                     rval |= AV_CPU_FLAG_FMA3;
@@ -146,15 +143,8 @@ int ff_get_cpu_flags_x86(void)
     if (max_std_level >= 7) {
         cpuid(7, eax, ebx, ecx, edx);
 #if HAVE_AVX2
-        if ((rval & AV_CPU_FLAG_AVX) && (ebx & 0x00000020))
+        if (ebx & 0x00000020)
             rval |= AV_CPU_FLAG_AVX2;
-#if HAVE_AVX512 /* F, CD, BW, DQ, VL */
-        if ((xcr0_lo & 0xe0) == 0xe0) { /* OPMASK/ZMM state */
-            if ((rval & AV_CPU_FLAG_AVX2) && (ebx & 0xd0030000) == 0xd0030000)
-                rval |= AV_CPU_FLAG_AVX512;
-
-        }
-#endif /* HAVE_AVX512 */
 #endif /* HAVE_AVX2 */
         /* BMI1/2 don't need OS support */
         if (ebx & 0x00000008) {
@@ -190,11 +180,13 @@ int ff_get_cpu_flags_x86(void)
 
         /* Similar to the above but for AVX functions on AMD processors.
            This is necessary only for functions using YMM registers on Bulldozer
-           and Jaguar based CPUs as they lack 256-bit execution units. SSE/AVX
-           functions using XMM registers are always faster on them.
+           based CPUs as they lack 256-bit execution units. SSE/AVX functions
+           using XMM registers are always faster on them.
            AV_CPU_FLAG_AVX and AV_CPU_FLAG_AVXSLOW are both set so that AVX is
-           used unless explicitly disabled by checking AV_CPU_FLAG_AVXSLOW. */
-            if ((family == 0x15 || family == 0x16) && (rval & AV_CPU_FLAG_AVX))
+           used unless explicitly disabled by checking AV_CPU_FLAG_AVXSLOW.
+           TODO: Confirm if Excavator is affected or not by this once it's
+                 released, and update the check if necessary. Same for btver2. */
+            if (family == 0x15 && (rval & AV_CPU_FLAG_AVX))
                 rval |= AV_CPU_FLAG_AVXSLOW;
         }
 
@@ -246,27 +238,9 @@ size_t ff_get_cpu_max_align_x86(void)
 {
     int flags = av_get_cpu_flags();
 
-    if (flags & AV_CPU_FLAG_AVX512)
-        return 64;
-    if (flags & (AV_CPU_FLAG_AVX2      |
-                 AV_CPU_FLAG_AVX       |
-                 AV_CPU_FLAG_XOP       |
-                 AV_CPU_FLAG_FMA4      |
-                 AV_CPU_FLAG_FMA3      |
-                 AV_CPU_FLAG_AVXSLOW))
+    if (flags & AV_CPU_FLAG_AVX)
         return 32;
-    if (flags & (AV_CPU_FLAG_AESNI     |
-                 AV_CPU_FLAG_SSE42     |
-                 AV_CPU_FLAG_SSE4      |
-                 AV_CPU_FLAG_SSSE3     |
-                 AV_CPU_FLAG_SSE3      |
-                 AV_CPU_FLAG_SSE2      |
-                 AV_CPU_FLAG_SSE       |
-                 AV_CPU_FLAG_ATOM      |
-                 AV_CPU_FLAG_SSSE3SLOW |
-                 AV_CPU_FLAG_SSE3SLOW  |
-                 AV_CPU_FLAG_SSE2SLOW))
+    if (flags & AV_CPU_FLAG_SSE)
         return 16;
-
     return 8;
 }
