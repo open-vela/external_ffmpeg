@@ -2,20 +2,20 @@
  * Copyright (c) 2018 Ronald S. Bultje <rsbultje gmail com>
  * Copyright (c) 2018 James Almer <jamrial gmail com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,8 +23,6 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/fifo.h"
-#include "libavutil/common.h"
-#include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
@@ -128,7 +126,7 @@ static int libdav1d_receive_frame(AVCodecContext *c, AVFrame *frame)
 
         if (pkt.size) {
             if (!av_fifo_space(dav1d->cache)) {
-                res = av_fifo_realloc2(dav1d->cache, av_fifo_size(dav1d->cache) + 8 * sizeof(pkt));
+                res = av_fifo_grow(dav1d->cache, 8 * sizeof(pkt));
                 if (res < 0) {
                     av_packet_unref(&pkt);
                     return res;
@@ -199,13 +197,16 @@ static int libdav1d_receive_frame(AVCodecContext *c, AVFrame *frame)
     frame->color_range = c->color_range = p.p.fullrange ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
     // match timestamps and packet size
-    frame->pts = pkt.pts;
+    frame->pts = frame->best_effort_timestamp = pkt.pts;
 #if FF_API_PKT_PTS
 FF_DISABLE_DEPRECATION_WARNINGS
     frame->pkt_pts = pkt.pts;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
     frame->pkt_dts = pkt.dts;
+    frame->pkt_pos = pkt.pos;
+    frame->pkt_size = pkt.size;
+    frame->pkt_duration = pkt.duration;
     frame->key_frame = p.p.type == DAV1D_FRAME_TYPE_KEY;
 
     switch (p.p.type) {
@@ -230,7 +231,7 @@ static av_cold int libdav1d_close(AVCodecContext *c)
 {
     Libdav1dContext *dav1d = c->priv_data;
 
-    av_fifo_free(dav1d->cache);
+    av_fifo_freep(&dav1d->cache);
     dav1d_data_unref(&dav1d->data);
     dav1d_close(&dav1d->c);
 
