@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,12 +44,6 @@
 #   define FPU
 #else
 #   define FPU @
-#endif
-
-#if CONFIG_THUMB && defined(__APPLE__)
-#   define TFUNC
-#else
-#   define TFUNC @
 #endif
 
 #if HAVE_AS_ARCH_DIRECTIVE
@@ -104,12 +98,10 @@ FUNC    .endfunc
         .global EXTERN_ASM\name
 ELF     .type   EXTERN_ASM\name, %function
 FUNC    .func   EXTERN_ASM\name
-TFUNC   .thumb_func EXTERN_ASM\name
 EXTERN_ASM\name:
     .else
 ELF     .type   \name, %function
 FUNC    .func   \name
-TFUNC   .thumb_func \name
 \name:
     .endif
 .endm
