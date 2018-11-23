@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,10 +38,6 @@ extern const AVClass ffurl_context_class;
 typedef struct URLContext {
     const AVClass *av_class;    /**< information for av_log(). Set by url_open(). */
     const struct URLProtocol *prot;
-    /**
-     * A NULL-terminated list of protocols usable by the child contexts.
-     */
-    const struct URLProtocol **protocols;
     void *priv_data;
     char *filename;             /**< specified URL */
     int flags;
@@ -49,7 +45,10 @@ typedef struct URLContext {
     int is_streamed;            /**< true if streamed (no seek possible), default = false */
     int is_connected;
     AVIOInterruptCB interrupt_callback;
-    int64_t rw_timeout;         /**< maximum time to wait for (network) read/write operation completion, in microseconds */
+    int64_t rw_timeout;         /**< maximum time to wait for (network) read/write operation completion, in mcs */
+    const char *protocol_whitelist;
+    const char *protocol_blacklist;
+    int min_packet_size;        /**< if non zero, the stream is packetized with this min packet size */
 } URLContext;
 
 typedef struct URLProtocol {
@@ -61,6 +60,8 @@ typedef struct URLProtocol {
      * for those nested protocols.
      */
     int     (*url_open2)(URLContext *h, const char *url, int flags, AVDictionary **options);
+    int     (*url_accept)(URLContext *s, URLContext **c);
+    int     (*url_handshake)(URLContext *c);
 
     /**
      * Read data from the protocol.
@@ -84,11 +85,18 @@ typedef struct URLProtocol {
     int (*url_get_file_handle)(URLContext *h);
     int (*url_get_multi_file_handle)(URLContext *h, int **handles,
                                      int *numhandles);
+    int (*url_get_short_seek)(URLContext *h);
     int (*url_shutdown)(URLContext *h, int flags);
     int priv_data_size;
     const AVClass *priv_data_class;
     int flags;
     int (*url_check)(URLContext *h, int mask);
+    int (*url_open_dir)(URLContext *h);
+    int (*url_read_dir)(URLContext *h, AVIODirEntry **next);
+    int (*url_close_dir)(URLContext *h);
+    int (*url_delete)(URLContext *h);
+    int (*url_move)(URLContext *h_src, URLContext *h_dst);
+    const char *default_whitelist;
 } URLProtocol;
 
 /**
@@ -101,15 +109,11 @@ typedef struct URLProtocol {
  * is to be opened
  * @param int_cb interrupt callback to use for the URLContext, may be
  * NULL
- * @param protocols a NULL-terminate list of protocols available for use by
- *                  this context and its children. The caller must ensure this
- *                  list remains valid until the context is closed.
- * @return 0 in case of success, a negative value corresponding to an
+ * @return >= 0 in case of success, a negative value corresponding to an
  * AVERROR code in case of failure
  */
 int ffurl_alloc(URLContext **puc, const char *filename, int flags,
-                const AVIOInterruptCB *int_cb,
-                const URLProtocol **protocols);
+                const AVIOInterruptCB *int_cb);
 
 /**
  * Connect an URLContext that has been allocated by ffurl_alloc
@@ -134,17 +138,41 @@ int ffurl_connect(URLContext *uc, AVDictionary **options);
  * @param options  A dictionary filled with protocol-private options. On return
  * this parameter will be destroyed and replaced with a dict containing options
  * that were not found. May be NULL.
- * @param protocols a NULL-terminate list of protocols available for use by
- *                  this context and its children. The caller must ensure this
- *                  list remains valid until the context is closed.
  * @param parent An enclosing URLContext, whose generic options should
  *               be applied to this URLContext as well.
- * @return 0 in case of success, a negative value corresponding to an
+ * @return >= 0 in case of success, a negative value corresponding to an
  * AVERROR code in case of failure
  */
-int ffurl_open(URLContext **puc, const char *filename, int flags,
+int ffurl_open_whitelist(URLContext **puc, const char *filename, int flags,
                const AVIOInterruptCB *int_cb, AVDictionary **options,
-               const URLProtocol **protocols, URLContext *parent);
+               const char *whitelist, const char* blacklist,
+               URLContext *parent);
+
+int ffurl_open(URLContext **puc, const char *filename, int flags,
+               const AVIOInterruptCB *int_cb, AVDictionary **options);
+
+/**
+ * Accept an URLContext c on an URLContext s
+ *
+ * @param  s server context
+ * @param  c client context, must be unallocated.
+ * @return >= 0 on success, ff_neterrno() on failure.
+ */
+int ffurl_accept(URLContext *s, URLContext **c);
+
+/**
+ * Perform one step of the protocol handshake to accept a new client.
+ * See avio_handshake() for details.
+ * Implementations should try to return decreasing values.
+ * If the protocol uses an underlying protocol, the underlying handshake is
+ * usually the first step, and the return value can be:
+ * (largest value for this protocol) + (return value from other protocol)
+ *
+ * @param  c the client context
+ * @return >= 0 on success or a negative value corresponding
+ *         to an AVERROR code on failure
+ */
+int ffurl_handshake(URLContext *c);
 
 /**
  * Read up to size bytes from the resource accessed by h, and store
@@ -192,11 +220,12 @@ int64_t ffurl_seek(URLContext *h, int64_t pos, int whence);
 
 /**
  * Close the resource accessed by the URLContext h, and free the
- * memory used by it.
+ * memory used by it. Also set the URLContext pointer to NULL.
  *
  * @return a negative value if an error condition occurred, 0
  * otherwise
  */
+int ffurl_closep(URLContext **h);
 int ffurl_close(URLContext *h);
 
 /**
@@ -220,6 +249,13 @@ int ffurl_get_file_handle(URLContext *h);
  * @return 0 on success or <0 on error.
  */
 int ffurl_get_multi_file_handle(URLContext *h, int **handles, int *numhandles);
+
+/**
+ * Return the current short seek threshold value for this URL.
+ *
+ * @return threshold (>0) on success or <=0 on error.
+ */
+int ffurl_get_short_seek(URLContext *h);
 
 /**
  * Signal the URLContext that we are done reading or writing the stream.
@@ -268,7 +304,7 @@ int ff_url_join(char *str, int size, const char *proto,
                 const char *authorization, const char *hostname,
                 int port, const char *fmt, ...) av_printf_format(7, 8);
 
-/*
+/**
  * Convert a relative url into an absolute url, given a base url.
  *
  * @param buf the buffer where output absolute url is written
@@ -278,6 +314,13 @@ int ff_url_join(char *str, int size, const char *proto,
  */
 void ff_make_absolute_url(char *buf, int size, const char *base,
                           const char *rel);
+
+/**
+ * Allocate directory entry with default values.
+ *
+ * @return entry or NULL on error
+ */
+AVIODirEntry *ff_alloc_dir_entry(void);
 
 const AVClass *ff_urlcontext_child_class_next(const AVClass *prev);
 

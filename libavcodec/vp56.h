@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2006  Aurelien Jacobs <aurel@gnuage.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -75,12 +75,12 @@ typedef void (*VP56ParseVectorAdjustment)(VP56Context *s,
 typedef void (*VP56Filter)(VP56Context *s, uint8_t *dst, uint8_t *src,
                            int offset1, int offset2, ptrdiff_t stride,
                            VP56mv mv, int mask, int select, int luma);
-typedef void (*VP56ParseCoeff)(VP56Context *s);
+typedef int  (*VP56ParseCoeff)(VP56Context *s);
 typedef void (*VP56DefaultModelsInit)(VP56Context *s);
 typedef void (*VP56ParseVectorModels)(VP56Context *s);
 typedef int  (*VP56ParseCoeffModels)(VP56Context *s);
 typedef int  (*VP56ParseHeader)(VP56Context *s, const uint8_t *buf,
-                                int buf_size, int *golden_frame);
+                                int buf_size);
 
 typedef struct VP56RangeCoder {
     int high;
@@ -105,6 +105,7 @@ typedef struct VP56Macroblock {
 typedef struct VP56Model {
     uint8_t coeff_reorder[64];       /* used in vp6 only */
     uint8_t coeff_index_to_pos[64];  /* used in vp6 only */
+    uint8_t coeff_index_to_idct_selector[64]; /* used in vp6 only */
     uint8_t vector_sig[2];           /* delta sign */
     uint8_t vector_dct[2];           /* delta coding types */
     uint8_t vector_pdi[2][2];        /* predefined delta init */
@@ -136,6 +137,7 @@ struct vp56_context {
     int sub_version;
 
     /* frame info */
+    int golden_frame;
     int plane_width[4];
     int plane_height[4];
     int mb_width;   /* number of horizontal MB */
@@ -156,6 +158,7 @@ struct vp56_context {
     VP56mb mb_type;
     VP56Macroblock *macroblocks;
     DECLARE_ALIGNED(16, int16_t, block_coeff)[6][64];
+    int idct_selector[6];
 
     /* motion vectors */
     VP56mv mv[6];  /* vectors for each block in MB */
@@ -169,6 +172,7 @@ struct vp56_context {
     int filter_mode;
     int max_vector_length;
     int sample_variance_threshold;
+    DECLARE_ALIGNED(8, int, bounding_values_array)[256];
 
     uint8_t coeff_ctx[4][64];              /* used in vp5 only */
     uint8_t coeff_ctx_last[4];             /* used in vp5 only */
@@ -190,8 +194,11 @@ struct vp56_context {
     VP56ParseCoeffModels parse_coeff_models;
     VP56ParseHeader parse_header;
 
+    /* for "slice" parallelism between YUV and A */
+    VP56Context *alpha_context;
+
     VP56Model *modelp;
-    VP56Model models[2];
+    VP56Model model;
 
     /* huffman decoding */
     int use_huffman;
@@ -200,11 +207,17 @@ struct vp56_context {
     VLC runv_vlc[2];
     VLC ract_vlc[2][3][6];
     unsigned int nb_null[2][2];       /* number of consecutive NULL DC/AC */
+
+    int have_undamaged_frame;
+    int discard_frame;
 };
 
 
 int ff_vp56_init(AVCodecContext *avctx, int flip, int has_alpha);
+int ff_vp56_init_context(AVCodecContext *avctx, VP56Context *s,
+                          int flip, int has_alpha);
 int ff_vp56_free(AVCodecContext *avctx);
+int ff_vp56_free_context(VP56Context *s);
 void ff_vp56_init_dequant(VP56Context *s, int quantizer);
 int ff_vp56_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                          AVPacket *avpkt);
@@ -215,7 +228,15 @@ int ff_vp56_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
  */
 
 extern const uint8_t ff_vp56_norm_shift[256];
-void ff_vp56_init_range_decoder(VP56RangeCoder *c, const uint8_t *buf, int buf_size);
+int ff_vp56_init_range_decoder(VP56RangeCoder *c, const uint8_t *buf, int buf_size);
+
+/**
+ * vp5689 returns 1 if the end of the stream has been reached, 0 otherwise.
+ */
+static av_always_inline int vpX_rac_is_end(VP56RangeCoder *c)
+{
+    return c->end <= c->buffer && c->bits >= 0;
+}
 
 static av_always_inline unsigned int vp56_rac_renorm(VP56RangeCoder *c)
 {
@@ -357,7 +378,7 @@ int vp56_rac_get_tree(VP56RangeCoder *c,
                       const uint8_t *probs)
 {
     while (tree->val > 0) {
-        if (vp56_rac_get_prob(c, probs[tree->prob_idx]))
+        if (vp56_rac_get_prob_branchy(c, probs[tree->prob_idx]))
             tree += tree->val;
         else
             tree++;
@@ -365,29 +386,18 @@ int vp56_rac_get_tree(VP56RangeCoder *c,
     return -tree->val;
 }
 
-/**
- * This is identical to vp8_rac_get_tree except for the possibility of starting
- * on a node other than the root node, needed for coeff decode where this is
- * used to save a bit after a 0 token (by disallowing EOB to immediately follow.)
- */
-static av_always_inline
-int vp8_rac_get_tree_with_offset(VP56RangeCoder *c, const int8_t (*tree)[2],
-                                 const uint8_t *probs, int i)
+// how probabilities are associated with decisions is different I think
+// well, the new scheme fits in the old but this way has one fewer branches per decision
+static av_always_inline int vp8_rac_get_tree(VP56RangeCoder *c, const int8_t (*tree)[2],
+                                   const uint8_t *probs)
 {
+    int i = 0;
+
     do {
         i = tree[i][vp56_rac_get_prob(c, probs[i])];
     } while (i > 0);
 
     return -i;
-}
-
-// how probabilities are associated with decisions is different I think
-// well, the new scheme fits in the old but this way has one fewer branches per decision
-static av_always_inline
-int vp8_rac_get_tree(VP56RangeCoder *c, const int8_t (*tree)[2],
-                     const uint8_t *probs)
-{
-    return vp8_rac_get_tree_with_offset(c, tree, probs, 0);
 }
 
 // DCTextra

@@ -2,20 +2,20 @@
  * Creative Voice File demuxer.
  * Copyright (c) 2006  Aurelien Jacobs <aurel@gnuage.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,7 +23,7 @@
 #include "voc.h"
 #include "internal.h"
 
-static int voc_probe(AVProbeData *p)
+static int voc_probe(const AVProbeData *p)
 {
     int version, check;
 
@@ -68,6 +68,36 @@ static int voc_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ff_voc_get_packet(s, pkt, s->streams[0], 0);
 }
 
+static int voc_read_seek(AVFormatContext *s, int stream_index,
+                         int64_t timestamp, int flags)
+{
+    VocDecContext *voc = s->priv_data;
+    AVStream *st;
+    int index;
+
+    if (s->nb_streams < 1) {
+        av_log(s, AV_LOG_ERROR, "cannot seek while no stream was found yet\n");
+        return AVERROR(EINVAL);
+    }
+
+    st = s->streams[stream_index];
+    index = av_index_search_timestamp(st, timestamp, flags);
+
+    if (index >= 0 && index < st->nb_index_entries - 1) {
+        AVIndexEntry *e = &st->index_entries[index];
+        avio_seek(s->pb, e->pos, SEEK_SET);
+        voc->pts = e->timestamp;
+        voc->remaining_size = e->size;
+        return 0;
+    } else if (st->nb_index_entries && st->index_entries[0].timestamp <= timestamp) {
+        AVIndexEntry *e = &st->index_entries[st->nb_index_entries - 1];
+        // prepare context for seek_frame_generic()
+        voc->pts = e->timestamp;
+        voc->remaining_size = e->size;
+    }
+    return -1;
+}
+
 AVInputFormat ff_voc_demuxer = {
     .name           = "voc",
     .long_name      = NULL_IF_CONFIG_SMALL("Creative Voice"),
@@ -75,5 +105,6 @@ AVInputFormat ff_voc_demuxer = {
     .read_probe     = voc_probe,
     .read_header    = voc_read_header,
     .read_packet    = voc_read_packet,
+    .read_seek      = voc_read_seek,
     .codec_tag      = (const AVCodecTag* const []){ ff_voc_codec_tags, 0 },
 };

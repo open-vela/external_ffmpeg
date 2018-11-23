@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Kieran Kunhya
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,8 +23,11 @@
 
 #include <stdint.h>
 
+#include "libavutil/avassert.h"
+
 #include "avcodec.h"
-#include "bitstream.h"
+#include "bytestream.h"
+#include "get_bits.h"
 #include "vlc.h"
 
 #define VLC_BITS       9
@@ -66,6 +69,12 @@ typedef struct Plane {
     SubBand band[DWT_LEVELS][4];
 } Plane;
 
+typedef struct Peak {
+    int level;
+    int offset;
+    GetByteContext base;
+} Peak;
+
 typedef struct CFHDContext {
     AVCodecContext *avctx;
 
@@ -75,12 +84,13 @@ typedef struct CFHDContext {
     CFHD_RL_VLC_ELEM table_18_rl_vlc[4572];
     VLC vlc_18;
 
-    BitstreamContext bc;
+    GetBitContext gb;
 
     int coded_width;
     int coded_height;
     int cropped_height;
     enum AVPixelFormat coded_format;
+    int progressive;
 
     int a_width;
     int a_height;
@@ -96,12 +106,14 @@ typedef struct CFHDContext {
     int pshift;
 
     int codebook;
+    int difference_coding;
     int subband_num;
     int level;
     int subband_num_actual;
 
     uint8_t prescale_shift[3];
     Plane plane[4];
+    Peak peak;
 } CFHDContext;
 
 int ff_cfhd_init_vlcs(CFHDContext *s);

@@ -1,20 +1,20 @@
 /*
  * Duck TrueMotion 2.0 Real Time decoder
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,11 +29,11 @@
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
-#include "bitstream.h"
+#include "get_bits.h"
 #include "internal.h"
 
 typedef struct TrueMotion2RTContext {
-    BitstreamContext bc;
+    GetBitContext gb;
     int delta_size;
     int hscale;
 } TrueMotion2RTContext;
@@ -56,7 +56,7 @@ static const int16_t *const delta_tabs[] = {
 
 /* Returns the number of bytes consumed from the bytestream, or
  * AVERROR_INVALIDDATA if there was an error while decoding the header. */
-static int truemotion2rt_decode_header(AVCodecContext *avctx, AVPacket *avpkt)
+static int truemotion2rt_decode_header(AVCodecContext *avctx, const AVPacket *avpkt)
 {
     TrueMotion2RTContext *s = avctx->priv_data;
     int header_size;
@@ -107,7 +107,7 @@ static int truemotion2rt_decode_frame(AVCodecContext *avctx, void *data,
 {
     TrueMotion2RTContext *s = avctx->priv_data;
     AVFrame * const p = data;
-    BitstreamContext *bc = &s->bc;
+    GetBitContext *gb = &s->gb;
     uint8_t *dst;
     int x, y, delta_mode;
     int ret;
@@ -116,7 +116,10 @@ static int truemotion2rt_decode_frame(AVCodecContext *avctx, void *data,
     if (ret < 0)
         return ret;
 
-    ret = bitstream_init8(bc, avpkt->data + ret, avpkt->size - ret);
+    if ((avctx->width + s->hscale - 1)/ s->hscale * avctx->height * s->delta_size > avpkt->size * 8LL * 4)
+        return AVERROR_INVALIDDATA;
+
+    ret = init_get_bits8(gb, avpkt->data + ret, avpkt->size - ret);
     if (ret < 0)
         return ret;
 
@@ -124,13 +127,13 @@ static int truemotion2rt_decode_frame(AVCodecContext *avctx, void *data,
     if (ret < 0)
         return ret;
 
-    bitstream_skip(bc, 32);
+    skip_bits(gb, 32);
     delta_mode = s->delta_size - 2;
     dst = p->data[0];
     for (y = 0; y < avctx->height; y++) {
         int diff = 0;
         for (x = 0; x < avctx->width; x += s->hscale) {
-            diff  += delta_tabs[delta_mode][bitstream_read(bc, s->delta_size)];
+            diff  += delta_tabs[delta_mode][get_bits(gb, s->delta_size)];
             dst[x] = av_clip_uint8((y ? dst[x - p->linesize[0]] : 0) + diff);
         }
         dst += p->linesize[0];
@@ -156,7 +159,7 @@ static int truemotion2rt_decode_frame(AVCodecContext *avctx, void *data,
     for (y = 0; y < avctx->height >> 2; y++) {
         int diff = 0;
         for (x = 0; x < avctx->width >> 2; x += s->hscale) {
-            diff  += delta_tabs[delta_mode][bitstream_read(bc, s->delta_size)];
+            diff  += delta_tabs[delta_mode][get_bits(gb, s->delta_size)];
             dst[x] = av_clip_uint8((y ? dst[x - p->linesize[1]] : 128) + diff);
         }
         dst += p->linesize[1];
@@ -182,7 +185,7 @@ static int truemotion2rt_decode_frame(AVCodecContext *avctx, void *data,
     for (y = 0; y < avctx->height >> 2; y++) {
         int diff = 0;
         for (x = 0; x < avctx->width >> 2; x += s->hscale) {
-            diff  += delta_tabs[delta_mode][bitstream_read(bc, s->delta_size)];
+            diff  += delta_tabs[delta_mode][get_bits(gb, s->delta_size)];
             dst[x] = av_clip_uint8((y ? dst[x - p->linesize[2]] : 128) + diff);
         }
         dst += p->linesize[2];

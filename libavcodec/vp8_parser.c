@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,14 +28,17 @@ static int parse(AVCodecParserContext *s,
     unsigned int frame_type;
     unsigned int profile;
 
+    *poutbuf      = buf;
+    *poutbuf_size = buf_size;
+
     if (buf_size < 3)
-        return AVERROR_INVALIDDATA;
+        return buf_size;
 
     frame_type = buf[0] & 1;
     profile    = (buf[0] >> 1) & 7;
     if (profile > 3) {
         av_log(avctx, AV_LOG_ERROR, "Invalid profile %u.\n", profile);
-        return AVERROR_INVALIDDATA;
+        return buf_size;
     }
 
     avctx->profile = profile;
@@ -50,12 +53,12 @@ static int parse(AVCodecParserContext *s,
         unsigned int width, height;
 
         if (buf_size < 10)
-            return AVERROR_INVALIDDATA;
+            return buf_size;
 
         sync_code = AV_RL24(buf + 3);
         if (sync_code != 0x2a019d) {
             av_log(avctx, AV_LOG_ERROR, "Invalid sync code %06x.\n", sync_code);
-            return AVERROR_INVALIDDATA;
+            return buf_size;
         }
 
         width  = AV_RL16(buf + 6) & 0x3fff;
@@ -67,8 +70,6 @@ static int parse(AVCodecParserContext *s,
         s->coded_height = FFALIGN(height, 16);
     }
 
-    *poutbuf      = buf;
-    *poutbuf_size = buf_size;
     return buf_size;
 }
 
