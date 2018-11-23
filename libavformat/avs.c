@@ -2,21 +2,27 @@
  * AVS demuxer.
  * Copyright (c) 2006  Aurelien Jacobs <aurel@gnuage.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/**
+ * @file
+ * Argonaut Games' Creature Shock demuxer
+ * @see http://wiki.multimedia.cx/index.php?title=AVS
  */
 
 #include "avformat.h"
@@ -44,7 +50,7 @@ typedef enum avs_block_type {
     AVS_GAME_DATA = 0x04,
 } AvsBlockType;
 
-static int avs_probe(AVProbeData * p)
+static int avs_probe(const AVProbeData * p)
 {
     const uint8_t *d;
 
@@ -52,7 +58,7 @@ static int avs_probe(AVProbeData * p)
     if (d[0] == 'w' && d[1] == 'W' && d[2] == 0x10 && d[3] == 0)
         /* Ensure the buffer probe scores higher than the extension probe.
          * This avoids problems with misdetection as AviSynth scripts. */
-        return AVPROBE_SCORE_EXTENSION + 1;
+        return AVPROBE_SCORE_EXTENSION + 5;
 
     return 0;
 }
@@ -190,6 +196,9 @@ static int avs_read_packet(AVFormatContext * s, AVPacket * pkt)
                     avs->st_video->codecpar->height = avs->height;
                     avs->st_video->codecpar->bits_per_coded_sample=avs->bits_per_sample;
                     avs->st_video->nb_frames = avs->nb_frames;
+#if FF_API_R_FRAME_RATE
+                    avs->st_video->r_frame_rate =
+#endif
                     avs->st_video->avg_frame_rate = (AVRational){avs->fps, 1};
                 }
                 return avs_read_video_packet(s, pkt, type, sub_type, size,
@@ -222,7 +231,7 @@ static int avs_read_close(AVFormatContext * s)
 
 AVInputFormat ff_avs_demuxer = {
     .name           = "avs",
-    .long_name      = NULL_IF_CONFIG_SMALL("AVS"),
+    .long_name      = NULL_IF_CONFIG_SMALL("Argonaut Games Creature Shock"),
     .priv_data_size = sizeof(AvsFormat),
     .read_probe     = avs_probe,
     .read_header    = avs_read_header,

@@ -2,20 +2,20 @@
  * Common code for the RTP depacketization of MPEG-1/2 formats.
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@ static int mpeg_parse_packet(AVFormatContext *ctx, PayloadContext *data,
     return 0;
 }
 
-RTPDynamicProtocolHandler ff_mpeg_audio_dynamic_handler = {
+const RTPDynamicProtocolHandler ff_mpeg_audio_dynamic_handler = {
     .codec_type        = AVMEDIA_TYPE_AUDIO,
     .codec_id          = AV_CODEC_ID_MP3,
     .need_parsing      = AVSTREAM_PARSE_FULL,
@@ -56,7 +56,7 @@ RTPDynamicProtocolHandler ff_mpeg_audio_dynamic_handler = {
     .static_payload_id = 14,
 };
 
-RTPDynamicProtocolHandler ff_mpeg_video_dynamic_handler = {
+const RTPDynamicProtocolHandler ff_mpeg_video_dynamic_handler = {
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_MPEG2VIDEO,
     .need_parsing      = AVSTREAM_PARSE_FULL,

@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,8 @@
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
+#include "av1.h"
+#include "av1_parse.h"
 #include "bsf.h"
 #include "h2645_parse.h"
 #include "h264.h"
@@ -35,6 +37,9 @@ typedef struct ExtractExtradataContext {
 
     int (*extract)(AVBSFContext *ctx, AVPacket *pkt,
                    uint8_t **data, int *size);
+
+    /* AV1 specifc fields */
+    AV1Packet av1_pkt;
 
     /* H264/HEVC specifc fields */
     H2645Packet h2645_pkt;
@@ -49,6 +54,80 @@ static int val_in_array(const int *arr, int len, int val)
     for (i = 0; i < len; i++)
         if (arr[i] == val)
             return 1;
+    return 0;
+}
+
+static int extract_extradata_av1(AVBSFContext *ctx, AVPacket *pkt,
+                                 uint8_t **data, int *size)
+{
+    static const int extradata_obu_types[] = {
+        AV1_OBU_SEQUENCE_HEADER, AV1_OBU_METADATA,
+    };
+    ExtractExtradataContext *s = ctx->priv_data;
+
+    int extradata_size = 0, filtered_size = 0;
+    int nb_extradata_obu_types = FF_ARRAY_ELEMS(extradata_obu_types);
+    int i, has_seq = 0, ret = 0;
+
+    ret = ff_av1_packet_split(&s->av1_pkt, pkt->data, pkt->size, ctx);
+    if (ret < 0)
+        return ret;
+
+    for (i = 0; i < s->av1_pkt.nb_obus; i++) {
+        AV1OBU *obu = &s->av1_pkt.obus[i];
+        if (val_in_array(extradata_obu_types, nb_extradata_obu_types, obu->type)) {
+            extradata_size += obu->raw_size;
+            if (obu->type == AV1_OBU_SEQUENCE_HEADER)
+                has_seq = 1;
+        } else if (s->remove) {
+            filtered_size += obu->raw_size;
+        }
+    }
+
+    if (extradata_size && has_seq) {
+        AVBufferRef *filtered_buf;
+        uint8_t *extradata, *filtered_data;
+
+        if (s->remove) {
+            filtered_buf = av_buffer_alloc(filtered_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!filtered_buf) {
+                return AVERROR(ENOMEM);
+            }
+            memset(filtered_buf->data + filtered_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+
+            filtered_data = filtered_buf->data;
+        }
+
+        extradata = av_malloc(extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!extradata) {
+            av_buffer_unref(&filtered_buf);
+            return AVERROR(ENOMEM);
+        }
+        memset(extradata + extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+
+        *data = extradata;
+        *size = extradata_size;
+
+        for (i = 0; i < s->av1_pkt.nb_obus; i++) {
+            AV1OBU *obu = &s->av1_pkt.obus[i];
+            if (val_in_array(extradata_obu_types, nb_extradata_obu_types,
+                             obu->type)) {
+                memcpy(extradata, obu->raw_data, obu->raw_size);
+                extradata += obu->raw_size;
+            } else if (s->remove) {
+                memcpy(filtered_data, obu->raw_data, obu->raw_size);
+                filtered_data += obu->raw_size;
+            }
+        }
+
+        if (s->remove) {
+            av_buffer_unref(&pkt->buf);
+            pkt->buf  = filtered_buf;
+            pkt->data = filtered_buf->data;
+            pkt->size = filtered_size;
+        }
+    }
+
     return 0;
 }
 
@@ -78,7 +157,7 @@ static int extract_extradata_h2645(AVBSFContext *ctx, AVPacket *pkt,
     }
 
     ret = ff_h2645_packet_split(&s->h2645_pkt, pkt->data, pkt->size,
-                                ctx, 0, 0, ctx->par_in->codec_id);
+                                ctx, 0, 0, ctx->par_in->codec_id, 1, 0);
     if (ret < 0)
         return ret;
 
@@ -152,19 +231,17 @@ static int extract_extradata_vc1(AVBSFContext *ctx, AVPacket *pkt,
                                  uint8_t **data, int *size)
 {
     ExtractExtradataContext *s = ctx->priv_data;
+    const uint8_t *ptr = pkt->data, *end = pkt->data + pkt->size;
     uint32_t state = UINT32_MAX;
     int has_extradata = 0, extradata_size = 0;
-    int i;
 
-    for (i = 0; i < pkt->size; i++) {
-        state = (state << 8) | pkt->data[i];
-        if (IS_MARKER(state)) {
-            if (state == VC1_CODE_SEQHDR || state == VC1_CODE_ENTRYPOINT) {
-                has_extradata = 1;
-            } else if (has_extradata) {
-                extradata_size = i - 3;
-                break;
-            }
+    while (ptr < end) {
+        ptr = avpriv_find_start_code(ptr, end, &state);
+        if (state == VC1_CODE_SEQHDR || state == VC1_CODE_ENTRYPOINT) {
+            has_extradata = 1;
+        } else if (has_extradata && IS_MARKER(state)) {
+            extradata_size = ptr - 4 - pkt->data;
+            break;
         }
     }
 
@@ -186,21 +263,50 @@ static int extract_extradata_vc1(AVBSFContext *ctx, AVPacket *pkt,
     return 0;
 }
 
-static int extract_extradata_mpeg124(AVBSFContext *ctx, AVPacket *pkt,
+static int extract_extradata_mpeg12(AVBSFContext *ctx, AVPacket *pkt,
                                      uint8_t **data, int *size)
 {
     ExtractExtradataContext *s = ctx->priv_data;
-    int is_mpeg12 = ctx->par_in->codec_id == AV_CODEC_ID_MPEG1VIDEO ||
-                    ctx->par_in->codec_id == AV_CODEC_ID_MPEG2VIDEO;
     uint32_t state = UINT32_MAX;
-    int i;
+    int i, found = 0;
 
     for (i = 0; i < pkt->size; i++) {
         state = (state << 8) | pkt->data[i];
-        if ((is_mpeg12 && state != 0x1B3 && state != 0x1B5 && state < 0x200 && state >= 0x100) ||
-            (!is_mpeg12 && (state == 0x1B3 || state == 0x1B6))) {
+        if (state == 0x1B3)
+            found = 1;
+        else if (found && state != 0x1B5 && state < 0x200 && state >= 0x100) {
             if (i > 3) {
                 *size = i - 3;
+                *data = av_malloc(*size + AV_INPUT_BUFFER_PADDING_SIZE);
+                if (!*data)
+                    return AVERROR(ENOMEM);
+
+                memcpy(*data, pkt->data, *size);
+                memset(*data + *size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+
+                if (s->remove) {
+                    pkt->data += *size;
+                    pkt->size -= *size;
+                }
+            }
+            break;
+        }
+    }
+    return 0;
+}
+
+static int extract_extradata_mpeg4(AVBSFContext *ctx, AVPacket *pkt,
+                                   uint8_t **data, int *size)
+{
+    ExtractExtradataContext *s = ctx->priv_data;
+    const uint8_t *ptr = pkt->data, *end = pkt->data + pkt->size;
+    uint32_t state = UINT32_MAX;
+
+    while (ptr < end) {
+        ptr = avpriv_find_start_code(ptr, end, &state);
+        if (state == 0x1B3 || state == 0x1B6) {
+            if (ptr - pkt->data > 4) {
+                *size = ptr - 4 - pkt->data;
                 *data = av_malloc(*size + AV_INPUT_BUFFER_PADDING_SIZE);
                 if (!*data)
                     return AVERROR(ENOMEM);
@@ -224,12 +330,14 @@ static const struct {
     int (*extract)(AVBSFContext *ctx, AVPacket *pkt,
                    uint8_t **data, int *size);
 } extract_tab[] = {
-    { AV_CODEC_ID_CAVS,       extract_extradata_mpeg124 },
+    { AV_CODEC_ID_AV1,        extract_extradata_av1     },
+    { AV_CODEC_ID_AVS2,       extract_extradata_mpeg4   },
+    { AV_CODEC_ID_CAVS,       extract_extradata_mpeg4   },
     { AV_CODEC_ID_H264,       extract_extradata_h2645   },
     { AV_CODEC_ID_HEVC,       extract_extradata_h2645   },
-    { AV_CODEC_ID_MPEG1VIDEO, extract_extradata_mpeg124 },
-    { AV_CODEC_ID_MPEG2VIDEO, extract_extradata_mpeg124 },
-    { AV_CODEC_ID_MPEG4,      extract_extradata_mpeg124 },
+    { AV_CODEC_ID_MPEG1VIDEO, extract_extradata_mpeg12  },
+    { AV_CODEC_ID_MPEG2VIDEO, extract_extradata_mpeg12  },
+    { AV_CODEC_ID_MPEG4,      extract_extradata_mpeg4   },
     { AV_CODEC_ID_VC1,        extract_extradata_vc1     },
 };
 
@@ -284,10 +392,13 @@ fail:
 static void extract_extradata_close(AVBSFContext *ctx)
 {
     ExtractExtradataContext *s = ctx->priv_data;
+    ff_av1_packet_uninit(&s->av1_pkt);
     ff_h2645_packet_uninit(&s->h2645_pkt);
 }
 
 static const enum AVCodecID codec_ids[] = {
+    AV_CODEC_ID_AV1,
+    AV_CODEC_ID_AVS2,
     AV_CODEC_ID_CAVS,
     AV_CODEC_ID_H264,
     AV_CODEC_ID_HEVC,
@@ -299,9 +410,10 @@ static const enum AVCodecID codec_ids[] = {
 };
 
 #define OFFSET(x) offsetof(ExtractExtradataContext, x)
+#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_BSF_PARAM)
 static const AVOption options[] = {
     { "remove", "remove the extradata from the bitstream", OFFSET(remove), AV_OPT_TYPE_INT,
-        { .i64 = 0 }, 0, 1 },
+        { .i64 = 0 }, 0, 1, FLAGS },
     { NULL },
 };
 
