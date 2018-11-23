@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -239,7 +239,7 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = ff_bsf_get_packet(bsf, &in);
     if (err < 0)
-        goto fail;
+        return err;
 
     err = ff_cbs_read_packet(ctx->cbc, au, in);
     if (err < 0) {
@@ -322,8 +322,10 @@ static int h265_metadata_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(ctx->cbc, au);
+    ff_cbs_fragment_reset(ctx->cbc, au);
 
+    if (err < 0)
+        av_packet_unref(out);
     av_packet_free(&in);
 
     return err;
@@ -368,70 +370,76 @@ static int h265_metadata_init(AVBSFContext *bsf)
 
     err = 0;
 fail:
-    ff_cbs_fragment_uninit(ctx->cbc, au);
+    ff_cbs_fragment_reset(ctx->cbc, au);
     return err;
 }
 
 static void h265_metadata_close(AVBSFContext *bsf)
 {
     H265MetadataContext *ctx = bsf->priv_data;
+
+    ff_cbs_fragment_free(ctx->cbc, &ctx->access_unit);
     ff_cbs_close(&ctx->cbc);
 }
 
 #define OFFSET(x) offsetof(H265MetadataContext, x)
+#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_BSF_PARAM)
 static const AVOption h265_metadata_options[] = {
     { "aud", "Access Unit Delimiter NAL units",
         OFFSET(aud), AV_OPT_TYPE_INT,
-        { .i64 = PASS }, PASS, REMOVE, 0, "aud" },
-    { "pass",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PASS   }, .unit = "aud" },
-    { "insert", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = INSERT }, .unit = "aud" },
-    { "remove", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = REMOVE }, .unit = "aud" },
+        { .i64 = PASS }, PASS, REMOVE, FLAGS, "aud" },
+    { "pass",   NULL, 0, AV_OPT_TYPE_CONST,
+        { .i64 = PASS   }, .flags = FLAGS, .unit = "aud" },
+    { "insert", NULL, 0, AV_OPT_TYPE_CONST,
+        { .i64 = INSERT }, .flags = FLAGS, .unit = "aud" },
+    { "remove", NULL, 0, AV_OPT_TYPE_CONST,
+        { .i64 = REMOVE }, .flags = FLAGS, .unit = "aud" },
 
     { "sample_aspect_ratio", "Set sample aspect ratio (table E-1)",
         OFFSET(sample_aspect_ratio), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, 65535 },
+        { .dbl = 0.0 }, 0, 65535, FLAGS },
 
     { "video_format", "Set video format (table E-2)",
         OFFSET(video_format), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 7 },
+        { .i64 = -1 }, -1, 7, FLAGS },
     { "video_full_range_flag", "Set video full range flag",
         OFFSET(video_full_range_flag), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 1 },
+        { .i64 = -1 }, -1, 1, FLAGS },
     { "colour_primaries", "Set colour primaries (table E-3)",
         OFFSET(colour_primaries), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 255 },
+        { .i64 = -1 }, -1, 255, FLAGS },
     { "transfer_characteristics", "Set transfer characteristics (table E-4)",
         OFFSET(transfer_characteristics), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 255 },
+        { .i64 = -1 }, -1, 255, FLAGS },
     { "matrix_coefficients", "Set matrix coefficients (table E-5)",
         OFFSET(matrix_coefficients), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 255 },
+        { .i64 = -1 }, -1, 255, FLAGS },
 
     { "chroma_sample_loc_type", "Set chroma sample location type (figure E-1)",
         OFFSET(chroma_sample_loc_type), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, 6 },
+        { .i64 = -1 }, -1, 6, FLAGS },
 
     { "tick_rate",
         "Set VPS and VUI tick rate (num_units_in_tick / time_scale)",
         OFFSET(tick_rate), AV_OPT_TYPE_RATIONAL,
-        { .i64 = 0 }, 0, UINT_MAX },
+        { .dbl = 0.0 }, 0, UINT_MAX, FLAGS },
     { "num_ticks_poc_diff_one",
         "Set VPS and VUI number of ticks per POC increment",
         OFFSET(num_ticks_poc_diff_one), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, INT_MAX },
+        { .i64 = -1 }, -1, INT_MAX, FLAGS },
 
     { "crop_left", "Set left border crop offset",
         OFFSET(crop_left), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, HEVC_MAX_WIDTH },
+        { .i64 = -1 }, -1, HEVC_MAX_WIDTH, FLAGS },
     { "crop_right", "Set right border crop offset",
         OFFSET(crop_right), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, HEVC_MAX_WIDTH },
+        { .i64 = -1 }, -1, HEVC_MAX_WIDTH, FLAGS },
     { "crop_top", "Set top border crop offset",
         OFFSET(crop_top), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, HEVC_MAX_HEIGHT },
+        { .i64 = -1 }, -1, HEVC_MAX_HEIGHT, FLAGS },
     { "crop_bottom", "Set bottom border crop offset",
         OFFSET(crop_bottom), AV_OPT_TYPE_INT,
-        { .i64 = -1 }, -1, HEVC_MAX_HEIGHT },
+        { .i64 = -1 }, -1, HEVC_MAX_HEIGHT, FLAGS },
 
     { NULL }
 };
@@ -440,7 +448,7 @@ static const AVClass h265_metadata_class = {
     .class_name = "h265_metadata_bsf",
     .item_name  = av_default_item_name,
     .option     = h265_metadata_options,
-    .version    = LIBAVCODEC_VERSION_MAJOR,
+    .version    = LIBAVUTIL_VERSION_INT,
 };
 
 static const enum AVCodecID h265_metadata_codec_ids[] = {
