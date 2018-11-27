@@ -2,20 +2,20 @@
  * Packed Animation File video decoder
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,15 +26,24 @@
 #include "copy_block.h"
 #include "internal.h"
 
+
 static const uint8_t block_sequences[16][8] = {
-    { 0, 0, 0, 0, 0, 0, 0, 0 }, { 2, 0, 0, 0, 0, 0, 0, 0 },
-    { 5, 7, 0, 0, 0, 0, 0, 0 }, { 5, 0, 0, 0, 0, 0, 0, 0 },
-    { 6, 0, 0, 0, 0, 0, 0, 0 }, { 5, 7, 5, 7, 0, 0, 0, 0 },
-    { 5, 7, 5, 0, 0, 0, 0, 0 }, { 5, 7, 6, 0, 0, 0, 0, 0 },
-    { 5, 5, 0, 0, 0, 0, 0, 0 }, { 3, 0, 0, 0, 0, 0, 0, 0 },
-    { 6, 6, 0, 0, 0, 0, 0, 0 }, { 2, 4, 0, 0, 0, 0, 0, 0 },
-    { 2, 4, 5, 7, 0, 0, 0, 0 }, { 2, 4, 5, 0, 0, 0, 0, 0 },
-    { 2, 4, 6, 0, 0, 0, 0, 0 }, { 2, 4, 5, 7, 5, 7, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 2, 0, 0, 0, 0, 0, 0, 0 },
+    { 5, 7, 0, 0, 0, 0, 0, 0 },
+    { 5, 0, 0, 0, 0, 0, 0, 0 },
+    { 6, 0, 0, 0, 0, 0, 0, 0 },
+    { 5, 7, 5, 7, 0, 0, 0, 0 },
+    { 5, 7, 5, 0, 0, 0, 0, 0 },
+    { 5, 7, 6, 0, 0, 0, 0, 0 },
+    { 5, 5, 0, 0, 0, 0, 0, 0 },
+    { 3, 0, 0, 0, 0, 0, 0, 0 },
+    { 6, 6, 0, 0, 0, 0, 0, 0 },
+    { 2, 4, 0, 0, 0, 0, 0, 0 },
+    { 2, 4, 5, 7, 0, 0, 0, 0 },
+    { 2, 4, 5, 0, 0, 0, 0, 0 },
+    { 2, 4, 6, 0, 0, 0, 0, 0 },
+    { 2, 4, 5, 7, 5, 7, 0, 0 },
 };
 
 typedef struct PAFVideoDecContext {
@@ -69,6 +78,7 @@ static av_cold int paf_video_init(AVCodecContext *avctx)
 {
     PAFVideoDecContext *c = avctx->priv_data;
     int i;
+    int ret;
 
     c->width  = avctx->width;
     c->height = avctx->height;
@@ -81,6 +91,9 @@ static av_cold int paf_video_init(AVCodecContext *avctx)
     }
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
+    ret = av_image_check_size2(avctx->width, FFALIGN(avctx->height, 256), avctx->max_pixels, avctx->pix_fmt, 0, avctx);
+    if (ret < 0)
+        return ret;
 
     c->pic = av_frame_alloc();
     if (!c->pic)
@@ -156,9 +169,11 @@ static int decode_0(PAFVideoDecContext *c, uint8_t *pkt, uint8_t code)
     i = bytestream2_get_byte(&c->gb);
     if (i) {
         if (code & 0x10) {
-            int pos = bytestream2_tell(&c->gb) & 3;
-            if (pos)
-                bytestream2_skip(&c->gb, 4 - pos);
+            int align;
+
+            align = bytestream2_tell(&c->gb) & 3;
+            if (align)
+                bytestream2_skip(&c->gb, 4 - align);
         }
         do {
             int page, val, x, y;
@@ -170,6 +185,8 @@ static int decode_0(PAFVideoDecContext *c, uint8_t *pkt, uint8_t code)
             dend   = c->frame[page] + c->frame_size;
             offset = (x & 0x7F) * 2;
             j      = bytestream2_get_le16(&c->gb) + offset;
+            if (bytestream2_get_bytes_left(&c->gb) < (j - offset) * 16)
+                return AVERROR_INVALIDDATA;
             do {
                 offset++;
                 if (dst + 3 * c->width + 4 > dend)
@@ -187,7 +204,8 @@ static int decode_0(PAFVideoDecContext *c, uint8_t *pkt, uint8_t code)
     do {
         set_src_position(c, &src, &send);
         if ((src + 3 * c->width + 4 > send) ||
-            (dst + 3 * c->width + 4 > dend))
+            (dst + 3 * c->width + 4 > dend) ||
+            bytestream2_get_bytes_left(&c->gb) < 4)
             return AVERROR_INVALIDDATA;
         copy_block4(dst, src, c->width, c->width, 4);
         i++;
@@ -256,12 +274,20 @@ static int paf_video_decode(AVCodecContext *avctx, void *data,
     uint8_t code, *dst, *end;
     int i, frame, ret;
 
-    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
-        return ret;
+    if (pkt->size < 2)
+        return AVERROR_INVALIDDATA;
 
     bytestream2_init(&c->gb, pkt->data, pkt->size);
 
     code = bytestream2_get_byte(&c->gb);
+    if ((code & 0xF) > 4 || (code & 0xF) == 3) {
+        avpriv_request_sample(avctx, "unknown/invalid code");
+        return AVERROR_INVALIDDATA;
+    }
+
+    if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
+        return ret;
+
     if (code & 0x20) {  // frame is keyframe
         for (i = 0; i < 4; i++)
             memset(c->frame[i], 0, c->frame_size);
@@ -356,8 +382,7 @@ static int paf_video_decode(AVCodecContext *avctx, void *data,
         }
         break;
     default:
-        avpriv_request_sample(avctx, "unknown/invalid code");
-        return AVERROR_INVALIDDATA;
+        av_assert0(0);
     }
 
     av_image_copy_plane(c->pic->data[0], c->pic->linesize[0],

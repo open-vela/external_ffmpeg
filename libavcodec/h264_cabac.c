@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... cabac decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,9 +26,11 @@
  */
 
 #define CABAC(h) 1
+#define UNCHECKED_BITSTREAM_READER 1
 #define INT_BIT (CHAR_BIT * sizeof(int))
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/timer.h"
 #include "config.h"
 #include "cabac.h"
@@ -43,8 +45,6 @@
 #if ARCH_X86
 #include "x86/h264_cabac.c"
 #endif
-
-#include <assert.h>
 
 /* Cabac pre state table */
 
@@ -1283,7 +1283,7 @@ void ff_h264_init_cabac_states(const H264Context *h, H264SliceContext *sl)
 
 static int decode_cabac_field_decoding_flag(const H264Context *h, H264SliceContext *sl)
 {
-    const long mbb_xy = sl->mb_xy - 2L*h->mb_stride;
+    const int mbb_xy = sl->mb_xy - 2*h->mb_stride;
 
     unsigned long ctx = 0;
 
@@ -1500,7 +1500,7 @@ static int decode_cabac_mb_mvd(H264SliceContext *sl, int ctxbase, int amvd, int 
     int mvd;
 
     if(!get_cabac(&sl->cabac, &sl->cabac_state[ctxbase+((amvd-3)>>(INT_BIT-1))+((amvd-33)>>(INT_BIT-1))+2])){
-//    if(!get_cabac(&h->cabac, &h->cabac_state[ctxbase+(amvd>2)+(amvd>32)])){
+//    if(!get_cabac(&sl->cabac, &sl->cabac_state[ctxbase+(amvd>2)+(amvd>32)])){
         *mvda= 0;
         return 0;
     }
@@ -1539,8 +1539,12 @@ static int decode_cabac_mb_mvd(H264SliceContext *sl, int ctxbase, int amvd, int 
     int amvd1 = sl->mvd_cache[list][scan8[n] - 1][1] +\
                 sl->mvd_cache[list][scan8[n] - 8][1];\
 \
-    mx += decode_cabac_mb_mvd(sl, 40, amvd0, &mpx);\
-    my += decode_cabac_mb_mvd(sl, 47, amvd1, &mpy);\
+    int mxd = decode_cabac_mb_mvd(sl, 40, amvd0, &mpx);\
+    int myd = decode_cabac_mb_mvd(sl, 47, amvd1, &mpy);\
+    if (mxd == INT_MIN || myd == INT_MIN) \
+        return AVERROR_INVALIDDATA; \
+    mx += mxd;\
+    my += myd;\
 }
 
 static av_always_inline int get_cabac_cbf_ctx(H264SliceContext *sl,
@@ -1639,7 +1643,9 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
     cc.range     = sl->cabac.range;
     cc.low       = sl->cabac.low;
     cc.bytestream= sl->cabac.bytestream;
+#if !UNCHECKED_BITSTREAM_READER || ARCH_AARCH64
     cc.bytestream_end = sl->cabac.bytestream_end;
+#endif
 #else
 #define CC &sl->cabac
 #endif
@@ -1688,7 +1694,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
         }
 #endif
     }
-    assert(coeff_count > 0);
+    av_assert2(coeff_count > 0);
 
     if( is_dc ) {
         if( cat == 3 )
@@ -1700,7 +1706,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
         if( max_coeff == 64 )
             fill_rectangle(&sl->non_zero_count_cache[scan8[n]], 2, 2, 8, coeff_count, 1);
         else {
-            assert( cat == 1 || cat ==  2 || cat ==  4 || cat == 7 || cat == 8 || cat == 11 || cat == 12 );
+            av_assert2( cat == 1 || cat ==  2 || cat ==  4 || cat == 7 || cat == 8 || cat == 11 || cat == 12 );
             sl->non_zero_count_cache[scan8[n]] = coeff_count;
         }
     }
@@ -1719,7 +1725,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
                 ((type*)block)[j] = (get_cabac_bypass_sign( CC, -qmul[j]) + 32) >> 6; \
             } \
         } else { \
-            int coeff_abs = 2; \
+            unsigned coeff_abs = 2; \
             ctx = coeff_abs_levelgt1_ctx[is_dc && chroma422][node_ctx] + abs_level_m1_ctx_base; \
             node_ctx = coeff_abs_level_transition[1][node_ctx]; \
 \
@@ -1729,7 +1735,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
 \
             if( coeff_abs >= 15 ) { \
                 int j = 0; \
-                while (get_cabac_bypass(CC) && j < 30) { \
+                while (get_cabac_bypass(CC) && j < 16+7) { \
                     j++; \
                 } \
 \
@@ -1737,7 +1743,7 @@ decode_cabac_residual_internal(const H264Context *h, H264SliceContext *sl,
                 while( j-- ) { \
                     coeff_abs += coeff_abs + get_cabac_bypass( CC ); \
                 } \
-                coeff_abs+= 14; \
+                coeff_abs+= 14U; \
             } \
 \
             if( is_dc ) { \
@@ -1910,12 +1916,13 @@ int ff_h264_decode_mb_cabac(const H264Context *h, H264SliceContext *sl)
     const SPS *sps = h->ps.sps;
     int mb_xy;
     int mb_type, partition_count, cbp = 0;
-    int dct8x8_allowed= h->ps.pps->transform_8x8_mode;
-    int decode_chroma = sps->chroma_format_idc == 1 || sps->chroma_format_idc == 2;
+    int dct8x8_allowed = h->ps.pps->transform_8x8_mode;
+    const int decode_chroma = sps->chroma_format_idc == 1 || sps->chroma_format_idc == 2;
     const int pixel_shift = h->pixel_shift;
 
     mb_xy = sl->mb_xy = sl->mb_x + sl->mb_y*h->mb_stride;
 
+    ff_tlog(h->avctx, "pic:%d mb:%d/%d\n", h->poc.frame_num, sl->mb_x, sl->mb_y);
     if (sl->slice_type_nos != AV_PICTURE_TYPE_I) {
         int skip;
         /* a skipped mb needs the aff flag from the following mb */
@@ -1954,7 +1961,7 @@ int ff_h264_decode_mb_cabac(const H264Context *h, H264SliceContext *sl)
 
     if (sl->slice_type_nos == AV_PICTURE_TYPE_B) {
         int ctx = 0;
-        assert(sl->slice_type_nos == AV_PICTURE_TYPE_B);
+        av_assert2(sl->slice_type_nos == AV_PICTURE_TYPE_B);
 
         if (!IS_DIRECT(sl->left_type[LTOP] - 1))
             ctx++;
@@ -2007,7 +2014,7 @@ int ff_h264_decode_mb_cabac(const H264Context *h, H264SliceContext *sl)
         mb_type = decode_cabac_intra_mb_type(sl, 3, 1);
         if (sl->slice_type == AV_PICTURE_TYPE_SI && mb_type)
             mb_type--;
-        assert(sl->slice_type_nos == AV_PICTURE_TYPE_I);
+        av_assert2(sl->slice_type_nos == AV_PICTURE_TYPE_I);
 decode_intra_mb:
         partition_count = 0;
         cbp                      = ff_h264_i_mb_type_info[mb_type].cbp;
@@ -2023,6 +2030,7 @@ decode_intra_mb:
         const int mb_size = ff_h264_mb_sizes[sps->chroma_format_idc] *
                             sps->bit_depth_luma >> 3;
         const uint8_t *ptr;
+        int ret;
 
         // We assume these blocks are very rare so we do not optimize it.
         // FIXME The two following lines get the bitstream position in the cabac
@@ -2039,7 +2047,9 @@ decode_intra_mb:
         sl->intra_pcm_ptr = ptr;
         ptr += mb_size;
 
-        ff_init_cabac_decoder(&sl->cabac, ptr, sl->cabac.bytestream_end - ptr);
+        ret = ff_init_cabac_decoder(&sl->cabac, ptr, sl->cabac.bytestream_end - ptr);
+        if (ret < 0)
+            return ret;
 
         // All blocks are present
         h->cbp_table[mb_xy] = 0xf7ef;
@@ -2070,7 +2080,7 @@ decode_intra_mb:
                     int pred = pred_intra_mode(h, sl, i);
                     sl->intra4x4_pred_mode_cache[scan8[i]] = decode_cabac_mb_intra4x4_pred_mode(sl, pred);
 
-                    ff_dlog(h->avctx, "i4x4 pred=%d mode=%d\n", pred,
+                    ff_tlog(h->avctx, "i4x4 pred=%d mode=%d\n", pred,
                             sl->intra4x4_pred_mode_cache[scan8[i]]);
                 }
             }
@@ -2125,10 +2135,10 @@ decode_intra_mb:
                 for( i = 0; i < 4; i++ ) {
                     if(IS_DIRECT(sl->sub_mb_type[i])) continue;
                     if(IS_DIR(sl->sub_mb_type[i], 0, list)){
-                        int rc = sl->ref_count[list] << MB_MBAFF(sl);
+                        unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
                         if (rc > 1) {
                             ref[list][i] = decode_cabac_mb_ref(sl, list, 4 * i);
-                            if (ref[list][i] >= (unsigned) rc) {
+                            if (ref[list][i] >= rc) {
                                 av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref[list][i], rc);
                                 return -1;
                             }
@@ -2211,10 +2221,11 @@ decode_intra_mb:
         if(IS_16X16(mb_type)){
             for (list = 0; list < sl->list_count; list++) {
                 if(IS_DIR(mb_type, 0, list)){
-                    int ref, rc = sl->ref_count[list] << MB_MBAFF(sl);
+                    int ref;
+                    unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
                     if (rc > 1) {
                         ref= decode_cabac_mb_ref(sl, list, 0);
-                        if (ref >= (unsigned) rc) {
+                        if (ref >= rc) {
                             av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
                             return -1;
                         }
@@ -2239,10 +2250,11 @@ decode_intra_mb:
             for (list = 0; list < sl->list_count; list++) {
                     for(i=0; i<2; i++){
                         if(IS_DIR(mb_type, i, list)){
-                            int ref, rc = sl->ref_count[list] << MB_MBAFF(sl);
+                            int ref;
+                            unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
                             if (rc > 1) {
                                 ref= decode_cabac_mb_ref(sl, list, 8 * i);
-                                if (ref >= (unsigned) rc) {
+                                if (ref >= rc) {
                                     av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
                                     return -1;
                                 }
@@ -2270,14 +2282,15 @@ decode_intra_mb:
                 }
             }
         }else{
-            assert(IS_8X16(mb_type));
+            av_assert2(IS_8X16(mb_type));
             for (list = 0; list < sl->list_count; list++) {
                     for(i=0; i<2; i++){
                         if(IS_DIR(mb_type, i, list)){ //FIXME optimize
-                            int ref, rc = sl->ref_count[list] << MB_MBAFF(sl);
+                            int ref;
+                            unsigned rc = sl->ref_count[list] << MB_MBAFF(sl);
                             if (rc > 1) {
                                 ref = decode_cabac_mb_ref(sl, list, 4 * i);
-                                if (ref >= (unsigned) rc) {
+                                if (ref >= rc) {
                                     av_log(h->avctx, AV_LOG_ERROR, "Reference %d >= %d\n", ref, rc);
                                     return -1;
                                 }
@@ -2316,6 +2329,11 @@ decode_intra_mb:
         cbp  = decode_cabac_mb_cbp_luma(sl);
         if(decode_chroma)
             cbp |= decode_cabac_mb_cbp_chroma(sl) << 4;
+    } else {
+        if (!decode_chroma && cbp>15) {
+            av_log(h->avctx, AV_LOG_ERROR, "gray chroma\n");
+            return AVERROR_INVALIDDATA;
+        }
     }
 
     h->cbp_table[mb_xy] = sl->cbp = cbp;
