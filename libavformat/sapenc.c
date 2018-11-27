@@ -2,20 +2,20 @@
  * Session Announcement Protocol (RFC 2974) muxer
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,8 +37,6 @@ struct SAPState {
     int         ann_size;
     URLContext *ann_fd;
     int64_t     last_time;
-
-    const URLProtocol **protocols;
 };
 
 static int sap_write_close(AVFormatContext *s)
@@ -51,7 +49,7 @@ static int sap_write_close(AVFormatContext *s)
         if (!rtpctx)
             continue;
         av_write_trailer(rtpctx);
-        avio_close(rtpctx->pb);
+        avio_closep(&rtpctx->pb);
         avformat_free_context(rtpctx);
         s->streams[i]->priv_data = NULL;
     }
@@ -60,8 +58,6 @@ static int sap_write_close(AVFormatContext *s)
         sap->ann[0] |= 4; /* Session deletion*/
         ffurl_write(sap->ann_fd, sap->ann, sap->ann_size);
     }
-
-    av_freep(&sap->protocols);
 
     av_freep(&sap->ann);
     if (sap->ann_fd)
@@ -88,7 +84,7 @@ static int sap_write_header(AVFormatContext *s)
 
     /* extract hostname and port */
     av_url_split(NULL, 0, NULL, 0, host, sizeof(host), &base_port,
-                 path, sizeof(path), s->filename);
+                 path, sizeof(path), s->url);
     if (base_port < 0)
         base_port = 5004;
 
@@ -138,29 +134,25 @@ static int sap_write_header(AVFormatContext *s)
         freeaddrinfo(ai);
     }
 
-    sap->protocols = ffurl_get_protocols(s->protocol_whitelist,
-                                         s->protocol_blacklist);
-    if (!sap->protocols) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
-
-    contexts = av_mallocz(sizeof(AVFormatContext*) * s->nb_streams);
+    contexts = av_mallocz_array(s->nb_streams, sizeof(AVFormatContext*));
     if (!contexts) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
 
-    s->start_time_realtime = av_gettime();
+    if (s->start_time_realtime == 0  ||  s->start_time_realtime == AV_NOPTS_VALUE)
+        s->start_time_realtime = av_gettime();
     for (i = 0; i < s->nb_streams; i++) {
         URLContext *fd;
+        char *new_url;
 
         ff_url_join(url, sizeof(url), "rtp", NULL, host, base_port,
                     "?ttl=%d", ttl);
         if (!same_port)
             base_port += 2;
-        ret = ffurl_open(&fd, url, AVIO_FLAG_WRITE, &s->interrupt_callback, NULL,
-                         sap->protocols, NULL);
+        ret = ffurl_open_whitelist(&fd, url, AVIO_FLAG_WRITE,
+                                   &s->interrupt_callback, NULL,
+                                   s->protocol_whitelist, s->protocol_blacklist, NULL);
         if (ret) {
             ret = AVERROR(EIO);
             goto fail;
@@ -170,7 +162,12 @@ static int sap_write_header(AVFormatContext *s)
             goto fail;
         s->streams[i]->priv_data = contexts[i];
         s->streams[i]->time_base = contexts[i]->streams[0]->time_base;
-        av_strlcpy(contexts[i]->filename, url, sizeof(contexts[i]->filename));
+        new_url = av_strdup(url);
+        if (!new_url) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+        ff_format_set_url(contexts[i], new_url);
     }
 
     if (s->nb_streams > 0 && title)
@@ -178,8 +175,9 @@ static int sap_write_header(AVFormatContext *s)
 
     ff_url_join(url, sizeof(url), "udp", NULL, announce_addr, port,
                 "?ttl=%d&connect=1", ttl);
-    ret = ffurl_open(&sap->ann_fd, url, AVIO_FLAG_WRITE,
-                     &s->interrupt_callback, NULL, sap->protocols, NULL);
+    ret = ffurl_open_whitelist(&sap->ann_fd, url, AVIO_FLAG_WRITE,
+                               &s->interrupt_callback, NULL,
+                               s->protocol_whitelist, s->protocol_blacklist, NULL);
     if (ret) {
         ret = AVERROR(EIO);
         goto fail;
@@ -267,7 +265,7 @@ static int sap_write_packet(AVFormatContext *s, AVPacket *pkt)
         sap->last_time = now;
     }
     rtpctx = s->streams[pkt->stream_index]->priv_data;
-    return ff_write_chained(rtpctx, 0, pkt, s);
+    return ff_write_chained(rtpctx, 0, pkt, s, 0);
 }
 
 AVOutputFormat ff_sap_muxer = {

@@ -2,20 +2,20 @@
  * Microsoft Video-1 Decoder
  * Copyright (C) 2003 The FFmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,10 +62,15 @@ static av_cold int msvideo1_decode_init(AVCodecContext *avctx)
 
     s->avctx = avctx;
 
+    if (avctx->width < 4 || avctx->height < 4)
+        return AVERROR_INVALIDDATA;
+
     /* figure out the colorspace based on the presence of a palette */
     if (s->avctx->bits_per_coded_sample == 8) {
         s->mode_8bit = 1;
         avctx->pix_fmt = AV_PIX_FMT_PAL8;
+        if (avctx->extradata_size >= AVPALETTE_SIZE)
+            memcpy(s->pal, avctx->extradata, AVPALETTE_SIZE);
     } else {
         s->mode_8bit = 0;
         avctx->pix_fmt = AV_PIX_FMT_RGB555;
@@ -299,17 +304,24 @@ static int msvideo1_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
-        return ret;
+    // Discard frame if its smaller than the minimum frame size
+    if (buf_size < (avctx->width/4) * (avctx->height/4) / 512) {
+        av_log(avctx, AV_LOG_ERROR, "Packet is too small\n");
+        return AVERROR_INVALIDDATA;
     }
 
-    if (s->mode_8bit) {
-        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+        return ret;
 
-        if (pal) {
+    if (s->mode_8bit) {
+        int size;
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
+
+        if (pal && size == AVPALETTE_SIZE) {
             memcpy(s->pal, pal, AVPALETTE_SIZE);
             s->frame->palette_has_changed = 1;
+        } else if (pal) {
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
     }
 

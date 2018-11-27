@@ -3,20 +3,20 @@
  *
  * copyright (c) 2010 Laurent Aimar
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,6 +43,8 @@ DEFINE_GUID(ff_DXVA2_ModeVC1_D,          0x1b81beA3, 0xa0c7,0x11d3,0xb9,0x84,0x0
 DEFINE_GUID(ff_DXVA2_ModeVC1_D2010,      0x1b81beA4, 0xa0c7,0x11d3,0xb9,0x84,0x00,0xc0,0x4f,0x2e,0x73,0xc5);
 DEFINE_GUID(ff_DXVA2_ModeHEVC_VLD_Main,  0x5b11d51b, 0x2f4c,0x4452,0xbc,0xc3,0x09,0xf2,0xa1,0x16,0x0c,0xc0);
 DEFINE_GUID(ff_DXVA2_ModeHEVC_VLD_Main10,0x107af0e0, 0xef1a,0x4d19,0xab,0xa8,0x67,0xa1,0x63,0x07,0x3d,0x13);
+DEFINE_GUID(ff_DXVA2_ModeVP9_VLD_Profile0,0x463707f8,0xa1d0,0x4585,0x87,0x6d,0x83,0xaa,0x6d,0x60,0xb8,0x9e);
+DEFINE_GUID(ff_DXVA2_ModeVP9_VLD_10bit_Profile2,0xa4c749ef,0x6ecf,0x48aa,0x84,0x48,0x50,0xa7,0xa1,0x16,0x5f,0xf7);
 DEFINE_GUID(ff_DXVA2_NoEncrypt,          0x1b81beD0, 0xa0c7,0x11d3,0xb9,0x84,0x00,0xc0,0x4f,0x2e,0x73,0xc5);
 DEFINE_GUID(ff_GUID_NULL,                0x00000000, 0x0000,0x0000,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00);
 DEFINE_GUID(ff_IID_IDirectXVideoDecoderService, 0xfc51a551,0xd5e7,0x11d9,0xaf,0x55,0x00,0x05,0x4e,0x43,0xff,0x02);
@@ -66,6 +68,10 @@ static const int prof_hevc_main[]    = {FF_PROFILE_HEVC_MAIN,
                                         FF_PROFILE_UNKNOWN};
 static const int prof_hevc_main10[]  = {FF_PROFILE_HEVC_MAIN_10,
                                         FF_PROFILE_UNKNOWN};
+static const int prof_vp9_profile0[] = {FF_PROFILE_VP9_0,
+                                        FF_PROFILE_UNKNOWN};
+static const int prof_vp9_profile2[] = {FF_PROFILE_VP9_2,
+                                        FF_PROFILE_UNKNOWN};
 
 static const dxva_mode dxva_modes[] = {
     /* MPEG-2 */
@@ -87,6 +93,10 @@ static const dxva_mode dxva_modes[] = {
     /* HEVC/H.265 */
     { &ff_DXVA2_ModeHEVC_VLD_Main10, AV_CODEC_ID_HEVC, prof_hevc_main10 },
     { &ff_DXVA2_ModeHEVC_VLD_Main,   AV_CODEC_ID_HEVC, prof_hevc_main },
+
+    /* VP8/9 */
+    { &ff_DXVA2_ModeVP9_VLD_Profile0,       AV_CODEC_ID_VP9, prof_vp9_profile0 },
+    { &ff_DXVA2_ModeVP9_VLD_10bit_Profile2, AV_CODEC_ID_VP9, prof_vp9_profile2 },
 
     { NULL,                          0 },
 };
@@ -142,7 +152,7 @@ static int dxva_get_decoder_configuration(AVCodecContext *avctx,
 }
 
 #if CONFIG_D3D11VA
-static int d3d11va_validate_output(void *service, GUID guid, void *surface_format)
+static int d3d11va_validate_output(void *service, GUID guid, const void *surface_format)
 {
     HRESULT hr;
     BOOL is_supported = FALSE;
@@ -155,7 +165,7 @@ static int d3d11va_validate_output(void *service, GUID guid, void *surface_forma
 #endif
 
 #if CONFIG_DXVA2
-static int dxva2_validate_output(void *decoder_service, GUID guid, void *surface_format)
+static int dxva2_validate_output(void *decoder_service, GUID guid, const void *surface_format)
 {
     HRESULT hr;
     int ret = 0;
@@ -605,6 +615,8 @@ int ff_dxva2_common_frame_params(AVCodecContext *avctx,
     /* add surfaces based on number of possible refs */
     if (avctx->codec_id == AV_CODEC_ID_H264 || avctx->codec_id == AV_CODEC_ID_HEVC)
         num_surfaces += 16;
+    else if (avctx->codec_id == AV_CODEC_ID_VP9)
+        num_surfaces += 8;
     else
         num_surfaces += 2;
 
@@ -785,7 +797,7 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
     void     *dxva_data;
     unsigned dxva_size;
     int      result;
-    HRESULT hr;
+    HRESULT hr = 0;
 
 #if CONFIG_D3D11VA
     if (ff_dxva2_is_d3d11(avctx))
@@ -880,7 +892,7 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
 #if CONFIG_DXVA2
     DXVA2_DecodeBufferDesc          buffer2[4];
 #endif
-    DECODER_BUFFER_DESC             *buffer,*buffer_slice;
+    DECODER_BUFFER_DESC             *buffer = NULL, *buffer_slice = NULL;
     int result, runs = 0;
     HRESULT hr;
     unsigned type;
