@@ -2,20 +2,20 @@
  * Digital Speech Standard - Standard Play mode (DSS SP) audio decoder.
  * Copyright (C) 2014 Oleksij Rempel <linux@rempel-privat.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,7 @@
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
-#include "bitstream.h"
+#include "get_bits.h"
 #include "internal.h"
 
 #define SUBFRAMES 4
@@ -33,7 +33,7 @@
 
 #define DSS_SP_FRAME_SIZE        42
 #define DSS_SP_SAMPLE_COUNT     (66 * SUBFRAMES)
-#define DSS_SP_FORMULA(a, b, c) ((((a) << 15) + (b) * (c)) + 0x4000) >> 15
+#define DSS_SP_FORMULA(a, b, c) ((int)((((a) * (1 << 15)) + (b) * (unsigned)(c)) + 0x4000) >> 15)
 
 typedef struct DssSpSubframe {
     int16_t gain;
@@ -50,6 +50,7 @@ typedef struct DssSpFrame {
 } DssSpFrame;
 
 typedef struct DssSpContext {
+    AVCodecContext *avctx;
     int32_t excitation[288 + 6];
     int32_t history[187];
     DssSpFrame fparam;
@@ -296,13 +297,14 @@ static av_cold int dss_sp_decode_init(AVCodecContext *avctx)
 
     memset(p->history, 0, sizeof(p->history));
     p->pulse_dec_mode = 1;
+    p->avctx          = avctx;
 
     return 0;
 }
 
 static void dss_sp_unpack_coeffs(DssSpContext *p, const uint8_t *src)
 {
-    BitstreamContext bc;
+    GetBitContext gb;
     DssSpFrame *fparam = &p->fparam;
     int i;
     int subframe_idx;
@@ -315,24 +317,24 @@ static void dss_sp_unpack_coeffs(DssSpContext *p, const uint8_t *src)
         p->bits[i + 1] = src[i];
     }
 
-    bitstream_init8(&bc, p->bits, DSS_SP_FRAME_SIZE);
+    init_get_bits(&gb, p->bits, DSS_SP_FRAME_SIZE * 8);
 
     for (i = 0; i < 2; i++)
-        fparam->filter_idx[i] = bitstream_read(&bc, 5);
+        fparam->filter_idx[i] = get_bits(&gb, 5);
     for (; i < 8; i++)
-        fparam->filter_idx[i] = bitstream_read(&bc, 4);
+        fparam->filter_idx[i] = get_bits(&gb, 4);
     for (; i < 14; i++)
-        fparam->filter_idx[i] = bitstream_read(&bc, 3);
+        fparam->filter_idx[i] = get_bits(&gb, 3);
 
     for (subframe_idx = 0; subframe_idx < 4; subframe_idx++) {
-        fparam->sf_adaptive_gain[subframe_idx] = bitstream_read(&bc, 5);
+        fparam->sf_adaptive_gain[subframe_idx] = get_bits(&gb, 5);
 
-        fparam->sf[subframe_idx].combined_pulse_pos = bitstream_read(&bc, 31);
+        fparam->sf[subframe_idx].combined_pulse_pos = get_bits_long(&gb, 31);
 
-        fparam->sf[subframe_idx].gain = bitstream_read(&bc, 6);
+        fparam->sf[subframe_idx].gain = get_bits(&gb, 6);
 
         for (i = 0; i < 7; i++)
-            fparam->sf[subframe_idx].pulse_val[i] = bitstream_read(&bc, 3);
+            fparam->sf[subframe_idx].pulse_val[i] = get_bits(&gb, 3);
     }
 
     for (subframe_idx = 0; subframe_idx < 4; subframe_idx++) {
@@ -378,7 +380,7 @@ static void dss_sp_unpack_coeffs(DssSpContext *p, const uint8_t *src)
                 if (C72_binomials[index] <= combined_pulse_pos) {
                     combined_pulse_pos -= C72_binomials[index];
 
-                    fparam->sf[subframe_idx].pulse_pos[(index ^ 7) - 1] = i;
+                    fparam->sf[subframe_idx].pulse_pos[6 - index] = i;
 
                     if (!index)
                         break;
@@ -394,16 +396,21 @@ static void dss_sp_unpack_coeffs(DssSpContext *p, const uint8_t *src)
         }
     }
 
-    combined_pitch = bitstream_read(&bc, 24);
+    combined_pitch = get_bits(&gb, 24);
 
     fparam->pitch_lag[0] = (combined_pitch % 151) + 36;
 
     combined_pitch /= 151;
 
-    for (i = 1; i < SUBFRAMES; i++) {
+    for (i = 1; i < SUBFRAMES - 1; i++) {
         fparam->pitch_lag[i] = combined_pitch % 48;
         combined_pitch      /= 48;
     }
+    if (combined_pitch > 47) {
+        av_log (p->avctx, AV_LOG_WARNING, "combined_pitch was too large\n");
+        combined_pitch = 0;
+    }
+    fparam->pitch_lag[i] = combined_pitch;
 
     pitch_lag = fparam->pitch_lag[0];
     for (i = 1; i < SUBFRAMES; i++) {
@@ -492,7 +499,7 @@ static void dss_sp_scale_vector(int32_t *vec, int bits, int size)
             vec[i] = vec[i] >> -bits;
     else
         for (i = 0; i < size; i++)
-            vec[i] = vec[i] << bits;
+            vec[i] = vec[i] * (1 << bits);
 }
 
 static void dss_sp_update_buf(int32_t *hist, int32_t *vector)
@@ -517,12 +524,12 @@ static void dss_sp_shift_sq_sub(const int32_t *filter_buf,
         tmp = dst[a] * filter_buf[0];
 
         for (i = 14; i > 0; i--)
-            tmp -= error_buf[i] * filter_buf[i];
+            tmp -= error_buf[i] * (unsigned)filter_buf[i];
 
         for (i = 14; i > 0; i--)
             error_buf[i] = error_buf[i - 1];
 
-        tmp = (tmp + 4096) >> 13;
+        tmp = (int)(tmp + 4096U) >> 13;
 
         error_buf[1] = tmp;
 
@@ -754,10 +761,8 @@ static int dss_sp_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     frame->nb_samples = DSS_SP_SAMPLE_COUNT;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed.\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     out = (int16_t *)frame->data[0];
 

@@ -1,26 +1,26 @@
 /*
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /*
  * To create a simple file for smooth streaming:
- * avconv <normal input/transcoding options> -movflags frag_keyframe foo.ismv
+ * ffmpeg <normal input/transcoding options> -movflags frag_keyframe foo.ismv
  * ismindex -n foo foo.ismv
  * This step creates foo.ism and foo.ismc that is required by IIS for
  * serving it.
@@ -342,8 +342,9 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
     }
     fieldlength = avio_rb32(f);
     track->chunks  = avio_rb32(f);
-    track->offsets = av_mallocz(sizeof(*track->offsets) * track->chunks);
+    track->offsets = av_mallocz_array(track->chunks, sizeof(*track->offsets));
     if (!track->offsets) {
+        track->chunks = 0;
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -372,7 +373,7 @@ static int read_tfra(struct Tracks *tracks, int start_index, AVIOContext *f)
                                                      track->duration -
                                                      track->offsets[track->chunks - 1].time;
     }
-    // Now try and read the actual durations from the trun sample data.
+    // Now try to read the actual durations from the trun sample data.
     for (i = 0; i < track->chunks; i++) {
         int64_t duration = read_moof_duration(f, track->offsets[i].offset);
         if (duration > 0 && llabs(duration - track->offsets[i].duration) > 3) {
@@ -452,10 +453,11 @@ fail:
 
 static int get_private_data(struct Track *track, AVCodecParameters *codecpar)
 {
-    track->codec_private_size = codecpar->extradata_size;
+    track->codec_private_size = 0;
     track->codec_private      = av_mallocz(codecpar->extradata_size);
     if (!track->codec_private)
         return AVERROR(ENOMEM);
+    track->codec_private_size = codecpar->extradata_size;
     memcpy(track->codec_private, codecpar->extradata, codecpar->extradata_size);
     return 0;
 }
@@ -534,8 +536,9 @@ static int handle_file(struct Tracks *tracks, const char *file, int split,
             err = AVERROR(ENOMEM);
             goto fail;
         }
-        temp = av_realloc(tracks->tracks,
-                          sizeof(*tracks->tracks) * (tracks->nb_tracks + 1));
+        temp = av_realloc_array(tracks->tracks,
+                                tracks->nb_tracks + 1,
+                                sizeof(*tracks->tracks));
         if (!temp) {
             av_free(track);
             err = AVERROR(ENOMEM);
@@ -787,8 +790,6 @@ int main(int argc, char **argv)
     char output_prefix_buf[2048];
     int split = 0, ismf = 0, i;
     struct Tracks tracks = { 0, .video_track = -1, .audio_track = -1 };
-
-    av_register_all();
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-n")) {

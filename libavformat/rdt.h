@@ -2,20 +2,20 @@
  * Realmedia RTSP (RDT) definitions
  * Copyright (c) 2007 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -41,7 +41,7 @@ typedef struct RDTDemuxContext RDTDemuxContext;
 RDTDemuxContext *ff_rdt_parse_open(AVFormatContext *ic,
                                    int first_stream_of_set_idx,
                                    void *priv_data,
-                                   RTPDynamicProtocolHandler *handler);
+                                   const RTPDynamicProtocolHandler *handler);
 void ff_rdt_parse_close(RDTDemuxContext *s);
 
 /**
@@ -58,11 +58,6 @@ void ff_rdt_parse_close(RDTDemuxContext *s);
  */
 void ff_rdt_calc_response_and_checksum(char response[41], char chksum[9],
                                        const char *challenge);
-
-/**
- * Register RDT-related dynamic payload handlers with our cache.
- */
-void ff_register_rdt_dynamic_payload_handlers(void);
 
 /**
  * Add subscription information to Subscribe parameter string.

@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,6 +48,7 @@ struct CodedBitstreamType;
  * H.264 / AVC: nal_unit_type
  * H.265 / HEVC: nal_unit_type
  * MPEG-2: start code value (without prefix)
+ * VP9: unused, set to zero (every unit is a frame)
  */
 typedef uint32_t CodedBitstreamUnitType;
 
@@ -84,8 +85,9 @@ typedef struct CodedBitstreamUnit {
      */
     size_t   data_bit_padding;
     /**
-     * If data is reference counted, a reference to the buffer containing
-     * data.  Null if data is not reference counted.
+     * A reference to the buffer containing data.
+     *
+     * Must be set if data is not NULL.
      */
     AVBufferRef *data_ref;
 
@@ -130,8 +132,9 @@ typedef struct CodedBitstreamFragment {
      */
     size_t data_bit_padding;
     /**
-     * If data is reference counted, a reference to the buffer containing
-     * data.  Null if data is not reference counted.
+     * A reference to the buffer containing data.
+     *
+     * Must be set if data is not NULL.
      */
     AVBufferRef *data_ref;
 
@@ -199,6 +202,14 @@ typedef struct CodedBitstreamContext {
      */
     int trace_level;
 } CodedBitstreamContext;
+
+
+/**
+ * Table of all supported codec IDs.
+ *
+ * Terminated by AV_CODEC_ID_NONE.
+ */
+extern const enum AVCodecID ff_cbs_all_codec_ids[];
 
 
 /**

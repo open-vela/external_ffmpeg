@@ -2,20 +2,20 @@
  * RTP H.264 Protocol (RFC3984)
  * Copyright (c) 2006 Ryan Martell
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -166,6 +166,10 @@ static int sdp_parse_fmtp_config_h264(AVFormatContext *s,
             parse_profile_level_id(s, h264_data, value);
     } else if (!strcmp(attr, "sprop-parameter-sets")) {
         int ret;
+        if (*value == 0 || value[strlen(value) - 1] == ',') {
+            av_log(s, AV_LOG_WARNING, "Missing PPS in sprop-parameter-sets, ignoring\n");
+            return 0;
+        }
         par->extradata_size = 0;
         av_freep(&par->extradata);
         ret = ff_h264_parse_sprop_parameter_sets(s, &par->extradata,
@@ -199,7 +203,7 @@ void ff_h264_parse_framesize(AVCodecParameters *par, const char *p)
     par->height  = atoi(p + 1); // skip the -
 }
 
-int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, AVPacket *pkt,
+int ff_h264_handle_aggregated_packet(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
                                      const uint8_t *buf, int len,
                                      int skip_between, int *nal_counters,
                                      int nal_mask)
@@ -278,7 +282,7 @@ int ff_h264_handle_frag_packet(AVPacket *pkt, const uint8_t *buf, int len,
     return 0;
 }
 
-static int h264_handle_packet_fu_a(AVFormatContext *ctx, AVPacket *pkt,
+static int h264_handle_packet_fu_a(AVFormatContext *ctx, PayloadContext *data, AVPacket *pkt,
                                    const uint8_t *buf, int len,
                                    int *nal_counters, int nal_mask)
 {
@@ -339,7 +343,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         // consume the STAP-A NAL
         buf++;
         len--;
-        result = ff_h264_handle_aggregated_packet(ctx, pkt, buf, len, 0,
+        result = ff_h264_handle_aggregated_packet(ctx, data, pkt, buf, len, 0,
                                                   NAL_COUNTERS, NAL_MASK);
         break;
 
@@ -352,7 +356,7 @@ static int h264_handle_packet(AVFormatContext *ctx, PayloadContext *data,
         break;
 
     case 28:                   // FU-A (fragmented nal)
-        result = h264_handle_packet_fu_a(ctx, pkt, buf, len,
+        result = h264_handle_packet_fu_a(ctx, data, pkt, buf, len,
                                          NAL_COUNTERS, NAL_MASK);
         break;
 
@@ -404,7 +408,7 @@ static int parse_h264_sdp_line(AVFormatContext *s, int st_index,
     return 0;
 }
 
-RTPDynamicProtocolHandler ff_h264_dynamic_handler = {
+const RTPDynamicProtocolHandler ff_h264_dynamic_handler = {
     .enc_name         = "H264",
     .codec_type       = AVMEDIA_TYPE_VIDEO,
     .codec_id         = AV_CODEC_ID_H264,
