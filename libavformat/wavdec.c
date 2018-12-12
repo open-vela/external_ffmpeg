@@ -33,6 +33,7 @@
 #include "avformat.h"
 #include "avio.h"
 #include "avio_internal.h"
+#include "id3v2.h"
 #include "internal.h"
 #include "metadata.h"
 #include "pcm.h"
@@ -309,6 +310,18 @@ static int wav_read_header(AVFormatContext *s)
             case MKTAG('I', 'N', 'F', 'O'):
                 if ((ret = ff_read_riff_info(s, size - 4)) < 0)
                     return ret;
+            }
+            break;
+        case MKTAG('I', 'D', '3', ' '):
+        case MKTAG('i', 'd', '3', ' '): {
+            ID3v2ExtraMeta *id3v2_extra_meta = NULL;
+            ff_id3v2_read_dict(pb, &s->internal->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
+            if (id3v2_extra_meta) {
+                ff_id3v2_parse_apic(s, &id3v2_extra_meta);
+                ff_id3v2_parse_chapters(s, &id3v2_extra_meta);
+                ff_id3v2_parse_priv(s, &id3v2_extra_meta);
+            }
+            ff_id3v2_free_extra_meta(&id3v2_extra_meta);
             }
             break;
         }
