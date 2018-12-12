@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2002 The Libav Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,7 +30,7 @@
 #include "wmv2.h"
 
 
-static void parse_mb_skip(Wmv2Context *w)
+static int parse_mb_skip(Wmv2Context *w)
 {
     int mb_x, mb_y;
     MpegEncContext *const s = &w->s;
@@ -45,6 +45,8 @@ static void parse_mb_skip(Wmv2Context *w)
                     MB_TYPE_16x16 | MB_TYPE_L0;
         break;
     case SKIP_TYPE_MPEG:
+        if (get_bits_left(&s->gb) < s->mb_height * s->mb_width)
+            return AVERROR_INVALIDDATA;
         for (mb_y = 0; mb_y < s->mb_height; mb_y++)
             for (mb_x = 0; mb_x < s->mb_width; mb_x++)
                 mb_type[mb_y * s->mb_stride + mb_x] =
@@ -52,6 +54,8 @@ static void parse_mb_skip(Wmv2Context *w)
         break;
     case SKIP_TYPE_ROW:
         for (mb_y = 0; mb_y < s->mb_height; mb_y++) {
+            if (get_bits_left(&s->gb) < 1)
+                return AVERROR_INVALIDDATA;
             if (get_bits1(&s->gb)) {
                 for (mb_x = 0; mb_x < s->mb_width; mb_x++)
                     mb_type[mb_y * s->mb_stride + mb_x] =
@@ -65,6 +69,8 @@ static void parse_mb_skip(Wmv2Context *w)
         break;
     case SKIP_TYPE_COL:
         for (mb_x = 0; mb_x < s->mb_width; mb_x++) {
+            if (get_bits_left(&s->gb) < 1)
+                return AVERROR_INVALIDDATA;
             if (get_bits1(&s->gb)) {
                 for (mb_y = 0; mb_y < s->mb_height; mb_y++)
                     mb_type[mb_y * s->mb_stride + mb_x] =
@@ -77,6 +83,7 @@ static void parse_mb_skip(Wmv2Context *w)
         }
         break;
     }
+    return 0;
 }
 
 static int decode_ext_header(Wmv2Context *w)
@@ -108,7 +115,7 @@ static int decode_ext_header(Wmv2Context *w)
 
     if (s->avctx->debug & FF_DEBUG_PICT_INFO)
         av_log(s->avctx, AV_LOG_DEBUG,
-               "fps:%d, br:%d, qpbit:%d, abt_flag:%d, j_type_bit:%d, "
+               "fps:%d, br:%"PRId64", qpbit:%d, abt_flag:%d, j_type_bit:%d, "
                "tl_mv_flag:%d, mbrl_bit:%d, code:%d, loop_filter:%d, "
                "slices:%d\n",
                fps, s->bit_rate, w->mspel_bit, w->abt_flag, w->j_type_bit,
@@ -133,6 +140,21 @@ int ff_wmv2_decode_picture_header(MpegEncContext *s)
     s->chroma_qscale = s->qscale = get_bits(&s->gb, 5);
     if (s->qscale <= 0)
         return AVERROR_INVALIDDATA;
+
+    if (s->pict_type != AV_PICTURE_TYPE_I && show_bits(&s->gb, 1)) {
+        GetBitContext gb = s->gb;
+        int skip_type = get_bits(&gb, 2);
+        int run = skip_type == SKIP_TYPE_COL ? s->mb_width : s->mb_height;
+
+        while (run > 0) {
+            int block = FFMIN(run, 25);
+            if (get_bits(&gb, block) + 1 != 1<<block)
+                break;
+            run -= block;
+        }
+        if (!run)
+            return FRAME_SKIPPED;
+    }
 
     return 0;
 }
@@ -159,6 +181,14 @@ int ff_wmv2_decode_secondary_picture_header(MpegEncContext *s)
             }
 
             s->dc_table_index = get_bits1(&s->gb);
+
+            // at minimum one bit per macroblock is required at least in a valid frame,
+            // we discard frames much smaller than this. Frames smaller than 1/8 of the
+            // smallest "black/skip" frame generally contain not much recoverable content
+            // while at the same time they have the highest computational requirements
+            // per byte
+            if (get_bits_left(&s->gb) * 8LL < (s->width+15)/16 * ((s->height+15)/16))
+                return AVERROR_INVALIDDATA;
         }
         s->inter_intra_pred = 0;
         s->no_rounding      = 1;
@@ -170,20 +200,14 @@ int ff_wmv2_decode_secondary_picture_header(MpegEncContext *s)
         }
     } else {
         int cbp_index;
+        int ret;
         w->j_type = 0;
 
-        parse_mb_skip(w);
+        ret = parse_mb_skip(w);
+        if (ret < 0)
+            return ret;
         cbp_index = decode012(&s->gb);
-        if (s->qscale <= 10) {
-            int map[3]         = { 0, 2, 1 };
-            w->cbp_table_index = map[cbp_index];
-        } else if (s->qscale <= 20) {
-            int map[3]         = { 1, 0, 2 };
-            w->cbp_table_index = map[cbp_index];
-        } else {
-            int map[3]         = {2,1,0};
-            w->cbp_table_index = map[cbp_index];
-        }
+        w->cbp_table_index = wmv2_get_cbp_table_index(s, cbp_index);
 
         if (w->mspel_bit)
             s->mspel = get_bits1(&s->gb);
@@ -368,6 +392,8 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
             w->hshift      = 0;
             return 0;
         }
+        if (get_bits_left(&s->gb) <= 0)
+            return AVERROR_INVALIDDATA;
 
         code = get_vlc2(&s->gb, ff_mb_non_intra_vlc[w->cbp_table_index].table,
                         MB_NON_INTRA_VLC_BITS, 3);
@@ -378,6 +404,8 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
         cbp = code & 0x3f;
     } else {
         s->mb_intra = 1;
+        if (get_bits_left(&s->gb) <= 0)
+            return AVERROR_INVALIDDATA;
         code = get_vlc2(&s->gb, ff_msmp4_mb_i_vlc.table, MB_INTRA_VLC_BITS, 2);
         if (code < 0) {
             av_log(s->avctx, AV_LOG_ERROR,
