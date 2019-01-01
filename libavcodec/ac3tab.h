@@ -2,20 +2,20 @@
  * AC-3 tables
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,12 +27,6 @@
 #include "libavutil/internal.h"
 #include "ac3.h"
 #include "internal.h"
-
-#if CONFIG_HARDCODED_TABLES
-#   define HCONST const
-#else
-#   define HCONST
-#endif
 
 extern const uint16_t ff_ac3_frame_size_tab[38][3];
 extern const uint8_t  ff_ac3_channels_tab[8];
@@ -55,7 +49,9 @@ extern const int16_t  ff_ac3_floor_tab[8];
 extern const uint16_t ff_ac3_fast_gain_tab[8];
 extern const uint16_t ff_eac3_default_chmap[8];
 extern const uint8_t  ff_ac3_band_start_tab[AC3_CRITICAL_BANDS+1];
-extern HCONST uint8_t ff_ac3_bin_to_band_tab[253];
+extern const uint8_t  ff_ac3_bin_to_band_tab[253];
+extern const uint64_t ff_eac3_custom_channel_map_locations[16][2];
+
 
 /** Custom channel map locations bitmask
  *  Other channels described in documentation:

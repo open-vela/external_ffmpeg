@@ -4,20 +4,20 @@
  * copyright (c) 2013 Luca Barbato
  * copyright (c) 2015 Anton Khirnov <anton@khirnov.net>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -352,7 +352,7 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
         ret = MFXVideoDECODE_DecodeFrameAsync(q->session, avpkt->size ? &bs : NULL,
                                               insurf, &outsurf, sync);
         if (ret == MFX_WRN_DEVICE_BUSY)
-            av_usleep(1);
+            av_usleep(500);
 
     } while (ret == MFX_WRN_DEVICE_BUSY || ret == MFX_ERR_MORE_SURFACE);
 
@@ -372,6 +372,8 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
         ++q->zero_consume_run;
         if (q->zero_consume_run > 1)
             ff_qsv_print_warning(avctx, ret, "A decode call did not consume any data");
+    } else if (!*sync && bs.DataOffset) {
+        ++q->buffered_count;
     } else {
         q->zero_consume_run = 0;
     }
@@ -499,15 +501,7 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
         if (!q->avctx_internal)
             return AVERROR(ENOMEM);
 
-        if (avctx->extradata) {
-            q->avctx_internal->extradata = av_mallocz(avctx->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-            if (!q->avctx_internal->extradata)
-                return AVERROR(ENOMEM);
-
-            memcpy(q->avctx_internal->extradata, avctx->extradata,
-                   avctx->extradata_size);
-            q->avctx_internal->extradata_size = avctx->extradata_size;
-        }
+        q->avctx_internal->codec_id = avctx->codec_id;
 
         q->parser = av_parser_init(avctx->codec_id);
         if (!q->parser)
@@ -536,6 +530,16 @@ int ff_qsv_process_data(AVCodecContext *avctx, QSVContext *q,
                                            AV_PIX_FMT_NONE,
                                            AV_PIX_FMT_NONE };
         enum AVPixelFormat qsv_format;
+        AVPacket zero_pkt = {0};
+
+        if (q->buffered_count) {
+            q->reinit_flag = 1;
+            /* decode zero-size pkt to flush the buffered pkt before reinit */
+            q->buffered_count--;
+            return qsv_decode(avctx, q, frame, got_frame, &zero_pkt);
+        }
+
+        q->reinit_flag = 0;
 
         qsv_format = ff_qsv_map_pixfmt(q->parser->format, &q->fourcc);
         if (qsv_format < 0) {

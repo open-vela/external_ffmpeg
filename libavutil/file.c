@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -85,6 +85,11 @@ int av_file_map(const char *filename, uint8_t **bufptr, size_t *size,
     }
     *size = off_size;
 
+    if (!*size) {
+        *bufptr = NULL;
+        goto out;
+    }
+
 #if HAVE_MMAP
     ptr = mmap(NULL, *size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (ptr == MAP_FAILED) {
@@ -126,12 +131,15 @@ int av_file_map(const char *filename, uint8_t **bufptr, size_t *size,
     read(fd, *bufptr, *size);
 #endif
 
+out:
     close(fd);
     return 0;
 }
 
 void av_file_unmap(uint8_t *bufptr, size_t size)
 {
+    if (!size)
+        return;
 #if HAVE_MMAP
     munmap(bufptr, size);
 #elif HAVE_MAPVIEWOFFILE
@@ -139,4 +147,8 @@ void av_file_unmap(uint8_t *bufptr, size_t size)
 #else
     av_free(bufptr);
 #endif
+}
+
+int av_tempfile(const char *prefix, char **filename, int log_offset, void *log_ctx) {
+    return avpriv_tempfile(prefix, filename, log_offset, log_ctx);
 }
