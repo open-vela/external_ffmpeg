@@ -8,20 +8,20 @@
  * aspecting, new decode_frame mechanism and apple mjpeg-b support
  *                                  by Alex Beregszaszi
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,6 @@
 #include "jpegtables.h"
 #include "mjpegenc_common.h"
 #include "mjpeg.h"
-#include "mjpegenc.h"
 
 typedef struct LJpegEncContext {
     AVClass *class;
@@ -48,8 +47,8 @@ typedef struct LJpegEncContext {
     ScanTable scantable;
     uint16_t matrix[64];
 
-    int vsample[3];
-    int hsample[3];
+    int vsample[4];
+    int hsample[4];
 
     uint16_t huff_code_dc_luminance[12];
     uint16_t huff_code_dc_chrominance[12];
@@ -68,7 +67,7 @@ static int ljpeg_encode_bgr(AVCodecContext *avctx, PutBitContext *pb,
     const int height      = frame->height;
     const int linesize    = frame->linesize[0];
     uint16_t (*buffer)[4] = s->scratch;
-    int left[3], top[3], topleft[3];
+    int left[4], top[4], topleft[4];
     int x, y, i;
 
 #if FF_API_PRIVATE_OPT
@@ -78,27 +77,35 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < 4; i++)
         buffer[0][i] = 1 << (9 - 1);
 
     for (y = 0; y < height; y++) {
         const int modified_predictor = y ? s->pred : 1;
         uint8_t *ptr = frame->data[0] + (linesize * y);
 
-        if (pb->buf_end - pb->buf - (put_bits_count(pb) >> 3) < width * 3 * 3) {
+        if (pb->buf_end - pb->buf - (put_bits_count(pb) >> 3) < width * 4 * 4) {
             av_log(avctx, AV_LOG_ERROR, "encoded frame too large\n");
             return -1;
         }
 
-        for (i = 0; i < 3; i++)
+        for (i = 0; i < 4; i++)
             top[i]= left[i]= topleft[i]= buffer[0][i];
 
         for (x = 0; x < width; x++) {
-            buffer[x][1] =  ptr[3 * x + 0] -     ptr[3 * x + 1] + 0x100;
-            buffer[x][2] =  ptr[3 * x + 2] -     ptr[3 * x + 1] + 0x100;
-            buffer[x][0] = (ptr[3 * x + 0] + 2 * ptr[3 * x + 1] + ptr[3 * x + 2]) >> 2;
+            if(avctx->pix_fmt == AV_PIX_FMT_BGR24){
+                buffer[x][1] =  ptr[3 * x + 0] -     ptr[3 * x + 1] + 0x100;
+                buffer[x][2] =  ptr[3 * x + 2] -     ptr[3 * x + 1] + 0x100;
+                buffer[x][0] = (ptr[3 * x + 0] + 2 * ptr[3 * x + 1] + ptr[3 * x + 2]) >> 2;
+            }else{
+                buffer[x][1] =  ptr[4 * x + 0] -     ptr[4 * x + 1] + 0x100;
+                buffer[x][2] =  ptr[4 * x + 2] -     ptr[4 * x + 1] + 0x100;
+                buffer[x][0] = (ptr[4 * x + 0] + 2 * ptr[4 * x + 1] + ptr[4 * x + 2]) >> 2;
+                if (avctx->pix_fmt == AV_PIX_FMT_BGRA)
+                    buffer[x][3] =  ptr[4 * x + 3];
+            }
 
-            for (i = 0; i < 3; i++) {
+            for (i = 0; i < 3 + (avctx->pix_fmt == AV_PIX_FMT_BGRA); i++) {
                 int pred, diff;
 
                 PREDICT(pred, topleft[i], top[i], left[i], modified_predictor);
@@ -110,7 +117,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
                 diff       = ((left[i] - pred + 0x100) & 0x1FF) - 0x100;
 
-                if (i == 0)
+                if (i == 0 || i == 3)
                     ff_mjpeg_encode_dc(pb, diff, s->huff_size_dc_luminance, s->huff_code_dc_luminance); //FIXME ugly
                 else
                     ff_mjpeg_encode_dc(pb, diff, s->huff_size_dc_chrominance, s->huff_code_dc_chrominance);
@@ -227,25 +234,29 @@ static int ljpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int max_pkt_size = AV_INPUT_BUFFER_MIN_SIZE;
     int ret, header_bits;
 
-    if (avctx->pix_fmt == AV_PIX_FMT_BGR24)
-        max_pkt_size += width * height * 3 * 3;
+    if(    avctx->pix_fmt == AV_PIX_FMT_BGR0
+        || avctx->pix_fmt == AV_PIX_FMT_BGR24)
+        max_pkt_size += width * height * 3 * 4;
+    else if(avctx->pix_fmt == AV_PIX_FMT_BGRA)
+        max_pkt_size += width * height * 4 * 4;
     else {
         max_pkt_size += mb_width * mb_height * 3 * 4
                         * s->hsample[0] * s->vsample[0];
     }
-    if ((ret = ff_alloc_packet(pkt, max_pkt_size)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting output packet of size %d.\n", max_pkt_size);
+
+    if ((ret = ff_alloc_packet2(avctx, pkt, max_pkt_size, 0)) < 0)
         return ret;
-    }
 
     init_put_bits(&pb, pkt->data, pkt->size);
 
     ff_mjpeg_encode_picture_header(avctx, &pb, &s->scantable,
-                                   s->pred, s->matrix);
+                                   s->pred, s->matrix, s->matrix);
 
     header_bits = put_bits_count(&pb);
 
-    if (avctx->pix_fmt == AV_PIX_FMT_BGR24)
+    if(    avctx->pix_fmt == AV_PIX_FMT_BGR0
+        || avctx->pix_fmt == AV_PIX_FMT_BGRA
+        || avctx->pix_fmt == AV_PIX_FMT_BGR24)
         ret = ljpeg_encode_bgr(avctx, &pb, pict);
     else
         ret = ljpeg_encode_yuv(avctx, &pb, pict);
@@ -254,6 +265,7 @@ static int ljpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     emms_c();
 
+    ff_mjpeg_escape_FF(&pb, header_bits >> 3);
     ff_mjpeg_encode_picture_trailer(&pb, header_bits);
 
     flush_put_bits(&pb);
@@ -276,7 +288,6 @@ static av_cold int ljpeg_encode_close(AVCodecContext *avctx)
 static av_cold int ljpeg_encode_init(AVCodecContext *avctx)
 {
     LJpegEncContext *s = avctx->priv_data;
-    int chroma_v_shift, chroma_h_shift;
 
     if ((avctx->pix_fmt == AV_PIX_FMT_YUV420P ||
          avctx->pix_fmt == AV_PIX_FMT_YUV422P ||
@@ -297,26 +308,14 @@ FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
     s->scratch = av_malloc_array(avctx->width + 1, sizeof(*s->scratch));
+    if (!s->scratch)
+        goto fail;
 
     ff_idctdsp_init(&s->idsp, avctx);
     ff_init_scantable(s->idsp.idct_permutation, &s->scantable,
                       ff_zigzag_direct);
 
-    av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &chroma_h_shift,
-                                     &chroma_v_shift);
-
-    if (avctx->pix_fmt   == AV_PIX_FMT_BGR24) {
-        s->vsample[0] = s->hsample[0] =
-        s->vsample[1] = s->hsample[1] =
-        s->vsample[2] = s->hsample[2] = 1;
-    } else {
-        s->vsample[0] = 2;
-        s->vsample[1] = 2 >> chroma_v_shift;
-        s->vsample[2] = 2 >> chroma_v_shift;
-        s->hsample[0] = 2;
-        s->hsample[1] = 2 >> chroma_h_shift;
-        s->hsample[2] = 2 >> chroma_h_shift;
-    }
+    ff_mjpeg_init_hvsample(avctx, s->hsample, s->vsample);
 
     ff_mjpeg_build_huffman_codes(s->huff_size_dc_luminance,
                                  s->huff_code_dc_luminance,
@@ -328,6 +327,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
                                  avpriv_mjpeg_val_dc);
 
     return 0;
+fail:
+    ljpeg_encode_close(avctx);
+    return AVERROR(ENOMEM);
 }
 
 #define OFFSET(x) offsetof(LJpegEncContext, x)
@@ -358,12 +360,10 @@ AVCodec ff_ljpeg_encoder = {
     .init           = ljpeg_encode_init,
     .encode2        = ljpeg_encode_frame,
     .close          = ljpeg_encode_close,
-    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVJ420P,
-                                                    AV_PIX_FMT_YUVJ422P,
-                                                    AV_PIX_FMT_YUVJ444P,
-                                                    AV_PIX_FMT_BGR24,
-                                                    AV_PIX_FMT_YUV420P,
-                                                    AV_PIX_FMT_YUV422P,
-                                                    AV_PIX_FMT_YUV444P,
-                                                    AV_PIX_FMT_NONE },
+    .capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
+    .pix_fmts       = (const enum AVPixelFormat[]){
+        AV_PIX_FMT_BGR24   , AV_PIX_FMT_BGRA    , AV_PIX_FMT_BGR0,
+        AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ422P,
+        AV_PIX_FMT_YUV420P , AV_PIX_FMT_YUV444P , AV_PIX_FMT_YUV422P,
+        AV_PIX_FMT_NONE},
 };
