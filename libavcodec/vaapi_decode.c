@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -189,23 +189,19 @@ int ff_vaapi_decode_issue(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "Failed to end picture decode "
                "issue: %d (%s).\n", vas, vaErrorStr(vas));
         err = AVERROR(EIO);
-        if (HAVE_VAAPI_1 || ctx->hwctx->driver_quirks &
+        if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
             AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS)
             goto fail;
         else
             goto fail_at_end;
     }
 
-    if (HAVE_VAAPI_1 || ctx->hwctx->driver_quirks &
+    if (CONFIG_VAAPI_1 || ctx->hwctx->driver_quirks &
         AV_VAAPI_DRIVER_QUIRK_RENDER_PARAM_BUFFERS)
         ff_vaapi_decode_destroy_buffers(avctx, pic);
 
-    pic->nb_param_buffers = 0;
-    pic->nb_slices        = 0;
-    pic->slices_allocated = 0;
-    av_freep(&pic->slice_buffers);
-
-    return 0;
+    err = 0;
+    goto exit;
 
 fail_with_picture:
     vas = vaEndPicture(ctx->hwctx->display, ctx->va_context);
@@ -216,6 +212,12 @@ fail_with_picture:
 fail:
     ff_vaapi_decode_destroy_buffers(avctx, pic);
 fail_at_end:
+exit:
+    pic->nb_param_buffers = 0;
+    pic->nb_slices        = 0;
+    pic->slices_allocated = 0;
+    av_freep(&pic->slice_buffers);
+
     return err;
 }
 
@@ -228,6 +230,132 @@ int ff_vaapi_decode_cancel(AVCodecContext *avctx,
     pic->nb_slices        = 0;
     pic->slices_allocated = 0;
     av_freep(&pic->slice_buffers);
+
+    return 0;
+}
+
+static const struct {
+    uint32_t fourcc;
+    enum AVPixelFormat pix_fmt;
+} vaapi_format_map[] = {
+#define MAP(va, av) { VA_FOURCC_ ## va, AV_PIX_FMT_ ## av }
+    // 4:0:0
+    MAP(Y800, GRAY8),
+    // 4:2:0
+    MAP(NV12, NV12),
+    MAP(YV12, YUV420P),
+    MAP(IYUV, YUV420P),
+#ifdef VA_FOURCC_I420
+    MAP(I420, YUV420P),
+#endif
+    MAP(IMC3, YUV420P),
+    // 4:1:1
+    MAP(411P, YUV411P),
+    // 4:2:2
+    MAP(422H, YUV422P),
+#ifdef VA_FOURCC_YV16
+    MAP(YV16, YUV422P),
+#endif
+    // 4:4:0
+    MAP(422V, YUV440P),
+    // 4:4:4
+    MAP(444P, YUV444P),
+    // 4:2:0 10-bit
+#ifdef VA_FOURCC_P010
+    MAP(P010, P010),
+#endif
+#ifdef VA_FOURCC_I010
+    MAP(I010, YUV420P10),
+#endif
+#undef MAP
+};
+
+static int vaapi_decode_find_best_format(AVCodecContext *avctx,
+                                         AVHWDeviceContext *device,
+                                         VAConfigID config_id,
+                                         AVHWFramesContext *frames)
+{
+    AVVAAPIDeviceContext *hwctx = device->hwctx;
+    VAStatus vas;
+    VASurfaceAttrib *attr;
+    enum AVPixelFormat source_format, best_format, format;
+    uint32_t best_fourcc, fourcc;
+    int i, j, nb_attr;
+
+    source_format = avctx->sw_pix_fmt;
+    av_assert0(source_format != AV_PIX_FMT_NONE);
+
+    vas = vaQuerySurfaceAttributes(hwctx->display, config_id,
+                                   NULL, &nb_attr);
+    if (vas != VA_STATUS_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to query surface attributes: "
+               "%d (%s).\n", vas, vaErrorStr(vas));
+        return AVERROR(ENOSYS);
+    }
+
+    attr = av_malloc_array(nb_attr, sizeof(*attr));
+    if (!attr)
+        return AVERROR(ENOMEM);
+
+    vas = vaQuerySurfaceAttributes(hwctx->display, config_id,
+                                   attr, &nb_attr);
+    if (vas != VA_STATUS_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to query surface attributes: "
+               "%d (%s).\n", vas, vaErrorStr(vas));
+        av_freep(&attr);
+        return AVERROR(ENOSYS);
+    }
+
+    best_format = AV_PIX_FMT_NONE;
+
+    for (i = 0; i < nb_attr; i++) {
+        if (attr[i].type != VASurfaceAttribPixelFormat)
+            continue;
+
+        fourcc = attr[i].value.value.i;
+        for (j = 0; j < FF_ARRAY_ELEMS(vaapi_format_map); j++) {
+            if (fourcc == vaapi_format_map[j].fourcc)
+                break;
+        }
+        if (j >= FF_ARRAY_ELEMS(vaapi_format_map)) {
+            av_log(avctx, AV_LOG_DEBUG, "Ignoring unknown format %#x.\n",
+                   fourcc);
+            continue;
+        }
+        format = vaapi_format_map[j].pix_fmt;
+        av_log(avctx, AV_LOG_DEBUG, "Considering format %#x -> %s.\n",
+               fourcc, av_get_pix_fmt_name(format));
+
+        best_format = av_find_best_pix_fmt_of_2(format, best_format,
+                                                source_format, 0, NULL);
+        if (format == best_format)
+            best_fourcc = fourcc;
+    }
+
+    av_freep(&attr);
+
+    if (best_format == AV_PIX_FMT_NONE) {
+        av_log(avctx, AV_LOG_ERROR, "No usable formats for decoding!\n");
+        return AVERROR(EINVAL);
+    }
+
+    av_log(avctx, AV_LOG_DEBUG, "Picked %s (%#x) as best match for %s.\n",
+           av_get_pix_fmt_name(best_format), best_fourcc,
+           av_get_pix_fmt_name(source_format));
+
+    frames->sw_format = best_format;
+    if (avctx->internal->hwaccel_priv_data) {
+        VAAPIDecodeContext    *ctx = avctx->internal->hwaccel_priv_data;
+        AVVAAPIFramesContext *avfc = frames->hwctx;
+
+        ctx->pixel_format_attribute = (VASurfaceAttrib) {
+            .type          = VASurfaceAttribPixelFormat,
+            .value.value.i = best_fourcc,
+        };
+
+        avfc->attributes    = &ctx->pixel_format_attribute;
+        avfc->nb_attributes = 1;
+    }
 
     return 0;
 }
@@ -253,6 +381,8 @@ static const struct {
     MAP(HEVC,        HEVC_MAIN,       HEVCMain    ),
     MAP(HEVC,        HEVC_MAIN_10,    HEVCMain10  ),
 #endif
+    MAP(MJPEG,       MJPEG_HUFFMAN_BASELINE_DCT,
+                                      JPEGBaseline),
     MAP(WMV3,        VC1_SIMPLE,      VC1Simple   ),
     MAP(WMV3,        VC1_MAIN,        VC1Main     ),
     MAP(WMV3,        VC1_COMPLEX,     VC1Advanced ),
@@ -261,11 +391,12 @@ static const struct {
     MAP(VC1,         VC1_MAIN,        VC1Main     ),
     MAP(VC1,         VC1_COMPLEX,     VC1Advanced ),
     MAP(VC1,         VC1_ADVANCED,    VC1Advanced ),
-#if VA_CHECK_VERSION(0, 35, 0)
     MAP(VP8,         UNKNOWN,       VP8Version0_3 ),
-#endif
 #if VA_CHECK_VERSION(0, 38, 0)
     MAP(VP9,         VP9_0,           VP9Profile0 ),
+#endif
+#if VA_CHECK_VERSION(0, 39, 0)
+    MAP(VP9,         VP9_2,           VP9Profile2 ),
 #endif
 #undef MAP
 };
@@ -286,7 +417,6 @@ static int vaapi_decode_make_config(AVCodecContext *avctx,
     const AVCodecDescriptor *codec_desc;
     VAProfile *profile_list = NULL, matched_va_profile;
     int profile_count, exact_match, matched_ff_profile;
-    const AVPixFmtDescriptor *sw_desc, *desc;
 
     AVHWDeviceContext    *device = (AVHWDeviceContext*)device_ref->data;
     AVVAAPIDeviceContext *hwctx = device->hwctx;
@@ -414,27 +544,10 @@ static int vaapi_decode_make_config(AVCodecContext *avctx,
         frames->width = avctx->coded_width;
         frames->height = avctx->coded_height;
 
-        // Find the first format in the list which matches the expected
-        // bit depth and subsampling.  If none are found (this can happen
-        // when 10-bit streams are decoded to 8-bit surfaces, for example)
-        // then just take the first format on the list.
-        frames->sw_format = constraints->valid_sw_formats[0];
-        sw_desc = av_pix_fmt_desc_get(avctx->sw_pix_fmt);
-        for (i = 0; constraints->valid_sw_formats[i] != AV_PIX_FMT_NONE; i++) {
-            desc = av_pix_fmt_desc_get(constraints->valid_sw_formats[i]);
-            if (desc->nb_components != sw_desc->nb_components ||
-                desc->log2_chroma_w != sw_desc->log2_chroma_w ||
-                desc->log2_chroma_h != sw_desc->log2_chroma_h)
-                continue;
-            for (j = 0; j < desc->nb_components; j++) {
-                if (desc->comp[j].depth != sw_desc->comp[j].depth)
-                    break;
-            }
-            if (j < desc->nb_components)
-                continue;
-            frames->sw_format = constraints->valid_sw_formats[i];
-            break;
-        }
+        err = vaapi_decode_find_best_format(avctx, device,
+                                            *va_config, frames);
+        if (err < 0)
+            goto fail;
 
         frames->initial_pool_size = 1;
         // Add per-codec number of surfaces used for storing reference frames.
@@ -503,7 +616,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
     ctx->va_config  = VA_INVALID_ID;
     ctx->va_context = VA_INVALID_ID;
 
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
     if (avctx->hwaccel_context) {
         av_log(avctx, AV_LOG_WARNING, "Using deprecated struct "
                "vaapi_context in decode.\n");
@@ -533,7 +646,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
     }
 #endif
 
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
     if (ctx->have_old_context) {
         ctx->va_config  = ctx->old_context->config_id;
         ctx->va_context = ctx->old_context->context_id;
@@ -572,7 +685,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
 
     av_log(avctx, AV_LOG_DEBUG, "Decode context initialised: "
            "%#x/%#x.\n", ctx->va_config, ctx->va_context);
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
     }
 #endif
 
@@ -588,7 +701,7 @@ int ff_vaapi_decode_uninit(AVCodecContext *avctx)
     VAAPIDecodeContext *ctx = avctx->internal->hwaccel_priv_data;
     VAStatus vas;
 
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
     if (ctx->have_old_context) {
         av_buffer_unref(&ctx->device_ref);
     } else {
@@ -611,7 +724,7 @@ int ff_vaapi_decode_uninit(AVCodecContext *avctx)
         }
     }
 
-#if FF_API_VAAPI_CONTEXT
+#if FF_API_STRUCT_VAAPI_CONTEXT
     }
 #endif
 
