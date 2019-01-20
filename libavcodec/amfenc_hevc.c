@@ -1,25 +1,20 @@
 /*
- * AMD AMF support
- * Copyright (C) 2017 Luca Barbato
- * Copyright (C) 2017 Mikhail Mironov <mikhail.mironov@amd.com>
+ * This file is part of FFmpeg.
  *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
 
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
@@ -58,10 +53,10 @@ static const AVOption options[] = {
     { "6.1",            "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_LEVEL_6_1 }, 0, 0, VE, "level" },
     { "6.2",            "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_LEVEL_6_2 }, 0, 0, VE, "level" },
 
-    { "quality_preset",        "Set the encoding quality",                 OFFSET(quality),      AV_OPT_TYPE_INT,   { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED }, AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_QUALITY, AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED, VE, "quality_preset" },
-    { "balanced",       "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_BALANCED }, 0, 0, VE, "quality_preset" },
-    { "speed",          "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED    }, 0, 0, VE, "quality_preset" },
-    { "quality",        "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_QUALITY  }, 0, 0, VE, "quality_preset" },
+    { "quality",        "Set the encoding quality",                 OFFSET(quality),      AV_OPT_TYPE_INT,   { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED }, AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_QUALITY, AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED, VE, "quality" },
+    { "balanced",       "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_BALANCED }, 0, 0, VE, "quality" },
+    { "speed",          "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_SPEED    }, 0, 0, VE, "quality" },
+    { "quality",        "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_QUALITY_PRESET_QUALITY  }, 0, 0, VE, "quality" },
 
     { "rc",             "Set the rate control mode",            OFFSET(rate_control_mode), AV_OPT_TYPE_INT, { .i64 = AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_METHOD_UNKNOWN }, AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_METHOD_UNKNOWN, AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_METHOD_CBR, VE, "rc" },
     { "cqp",            "Constant Quantization Parameter",      0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_RATE_CONTROL_METHOD_CONSTANT_QP             }, 0, 0, VE, "rc" },
@@ -75,10 +70,10 @@ static const AVOption options[] = {
     { "idr",            "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_HEADER_INSERTION_MODE_IDR_ALIGNED }, 0, 0, VE, "hdrmode" },
 
     { "gops_per_idr",    "GOPs per IDR 0-no IDR will be inserted",  OFFSET(gops_per_idr),  AV_OPT_TYPE_INT,  { .i64 = 60 },  0, INT_MAX, VE },
-    { "preanalysis",    "Enable preanalysis",                       OFFSET(preanalysis),   AV_OPT_TYPE_INT, { .i64 = 0  },  0, 1, VE},
-    { "vbaq",           "Enable VBAQ",                              OFFSET(enable_vbaq),   AV_OPT_TYPE_INT, { .i64 = 0  },  0, 1, VE},
-    { "enforce_hrd",    "Enforce HRD",                              OFFSET(enforce_hrd),   AV_OPT_TYPE_INT, { .i64 = 0  },  0, 1, VE},
-    { "filler_data",    "Filler Data Enable",                       OFFSET(filler_data),   AV_OPT_TYPE_INT, { .i64 = 0  },  0, 1, VE},
+    { "preanalysis",    "Enable preanalysis",                       OFFSET(preanalysis),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
+    { "vbaq",           "Enable VBAQ",                              OFFSET(enable_vbaq),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
+    { "enforce_hrd",    "Enforce HRD",                              OFFSET(enforce_hrd),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
+    { "filler_data",    "Filler Data Enable",                       OFFSET(filler_data),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
     { "max_au_size",    "Maximum Access Unit Size for rate control (in bits)", OFFSET(max_au_size),   AV_OPT_TYPE_INT,{ .i64 = 0 }, 0, INT_MAX, VE},
     { "min_qp_i",       "min quantization parameter for I-frame",   OFFSET(min_qp_i),      AV_OPT_TYPE_INT, { .i64 = -1  }, -1, 51, VE },
     { "max_qp_i",       "max quantization parameter for I-frame",   OFFSET(max_qp_i),      AV_OPT_TYPE_INT, { .i64 = -1  }, -1, 51, VE },
@@ -86,14 +81,13 @@ static const AVOption options[] = {
     { "max_qp_p",       "max quantization parameter for P-frame",   OFFSET(max_qp_p),      AV_OPT_TYPE_INT, { .i64 = -1  }, -1, 51, VE },
     { "qp_p",           "quantization parameter for P-frame",       OFFSET(qp_p),          AV_OPT_TYPE_INT, { .i64 = -1  }, -1, 51, VE },
     { "qp_i",           "quantization parameter for I-frame",       OFFSET(qp_i),          AV_OPT_TYPE_INT, { .i64 = -1  }, -1, 51, VE },
-    { "skip_frame",     "Rate Control Based Frame Skip",            OFFSET(skip_frame),    AV_OPT_TYPE_INT,{ .i64 = 0   },  0, 1, VE },
-    { "me_half_pel",    "Enable ME Half Pixel",                     OFFSET(me_half_pel),   AV_OPT_TYPE_INT,{ .i64 = 1   },  0, 1, VE },
-    { "me_quarter_pel", "Enable ME Quarter Pixel ",                 OFFSET(me_quarter_pel),AV_OPT_TYPE_INT,{ .i64 = 1   },  0, 1, VE },
+    { "skip_frame",     "Rate Control Based Frame Skip",            OFFSET(skip_frame),    AV_OPT_TYPE_BOOL,{ .i64 = 0   },  0, 1, VE },
+    { "me_half_pel",    "Enable ME Half Pixel",                     OFFSET(me_half_pel),   AV_OPT_TYPE_BOOL,{ .i64 = 1   },  0, 1, VE },
+    { "me_quarter_pel", "Enable ME Quarter Pixel ",                 OFFSET(me_quarter_pel),AV_OPT_TYPE_BOOL,{ .i64 = 1   },  0, 1, VE },
 
-    { "aud",            "Inserts AU Delimiter NAL unit",            OFFSET(aud)           ,AV_OPT_TYPE_INT,{ .i64 = 0 }, 0, 1, VE },
+    { "aud",            "Inserts AU Delimiter NAL unit",            OFFSET(aud)           ,AV_OPT_TYPE_BOOL,{ .i64 = 0 }, 0, 1, VE },
 
-    AMF_COMMON_OPTIONS,
-
+    { "log_to_dbg",     "Enable AMF logging to debug output",   OFFSET(log_to_dbg), AV_OPT_TYPE_BOOL,{ .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
 

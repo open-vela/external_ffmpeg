@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -20,6 +20,7 @@
 #define AVCODEC_ERROR_RESILIENCE_H
 
 #include <stdint.h>
+#include <stdatomic.h>
 
 #include "avcodec.h"
 #include "me_cmp.h"
@@ -60,7 +61,8 @@ typedef struct ERContext {
     ptrdiff_t mb_stride;
     ptrdiff_t b8_stride;
 
-    int error_count, error_occurred;
+    atomic_int error_count;
+    int error_occurred;
     uint8_t *error_status_table;
     uint8_t *er_temp_buffer;
     int16_t *dc_val[3];
@@ -71,6 +73,9 @@ typedef struct ERContext {
     ERPicture cur_pic;
     ERPicture last_pic;
     ERPicture next_pic;
+
+    AVBufferRef *ref_index_buf[2];
+    AVBufferRef *motion_val_buf[2];
 
     uint16_t pp_time;
     uint16_t pb_time;
