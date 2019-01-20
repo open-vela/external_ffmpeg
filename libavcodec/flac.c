@@ -2,29 +2,28 @@
  * FLAC common code
  * Copyright (c) 2009 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/log.h"
-
-#include "bitstream.h"
 #include "bytestream.h"
+#include "get_bits.h"
 #include "flac.h"
 #include "flacdata.h"
 
@@ -41,33 +40,33 @@ static const uint64_t flac_channel_layouts[8] = {
     AV_CH_LAYOUT_7POINT1
 };
 
-static int64_t get_utf8(BitstreamContext *bc)
+static int64_t get_utf8(GetBitContext *gb)
 {
     int64_t val;
-    GET_UTF8(val, bitstream_read(bc, 8), return -1;)
+    GET_UTF8(val, get_bits(gb, 8), return -1;)
     return val;
 }
 
-int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
+int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
                                 FLACFrameInfo *fi, int log_level_offset)
 {
     int bs_code, sr_code, bps_code;
 
     /* frame sync code */
-    if ((bitstream_read(bc, 15) & 0x7FFF) != 0x7FFC) {
+    if ((get_bits(gb, 15) & 0x7FFF) != 0x7FFC) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset, "invalid sync code\n");
         return AVERROR_INVALIDDATA;
     }
 
     /* variable block size stream code */
-    fi->is_var_size = bitstream_read_bit(bc);
+    fi->is_var_size = get_bits1(gb);
 
     /* block size and sample rate codes */
-    bs_code = bitstream_read(bc, 4);
-    sr_code = bitstream_read(bc, 4);
+    bs_code = get_bits(gb, 4);
+    sr_code = get_bits(gb, 4);
 
     /* channels and decorrelation */
-    fi->ch_mode = bitstream_read(bc, 4);
+    fi->ch_mode = get_bits(gb, 4);
     if (fi->ch_mode < FLAC_MAX_CHANNELS) {
         fi->channels = fi->ch_mode + 1;
         fi->ch_mode = FLAC_CHMODE_INDEPENDENT;
@@ -81,7 +80,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
     }
 
     /* bits per sample */
-    bps_code = bitstream_read(bc, 3);
+    bps_code = get_bits(gb, 3);
     if (bps_code == 3 || bps_code == 7) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "invalid sample size code (%d)\n",
@@ -91,14 +90,14 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
     fi->bps = sample_size_table[bps_code];
 
     /* reserved bit */
-    if (bitstream_read_bit(bc)) {
+    if (get_bits1(gb)) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "broken stream, invalid padding\n");
         return AVERROR_INVALIDDATA;
     }
 
     /* sample or frame count */
-    fi->frame_or_sample_num = get_utf8(bc);
+    fi->frame_or_sample_num = get_utf8(gb);
     if (fi->frame_or_sample_num < 0) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "sample/frame number invalid; utf8 fscked\n");
@@ -111,9 +110,9 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
                "reserved blocksize code: 0\n");
         return AVERROR_INVALIDDATA;
     } else if (bs_code == 6) {
-        fi->blocksize = bitstream_read(bc, 8) + 1;
+        fi->blocksize = get_bits(gb, 8) + 1;
     } else if (bs_code == 7) {
-        fi->blocksize = bitstream_read(bc, 16) + 1;
+        fi->blocksize = get_bits(gb, 16) + 1;
     } else {
         fi->blocksize = ff_flac_blocksize_table[bs_code];
     }
@@ -122,11 +121,11 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
     if (sr_code < 12) {
         fi->samplerate = ff_flac_sample_rate_table[sr_code];
     } else if (sr_code == 12) {
-        fi->samplerate = bitstream_read(bc, 8) * 1000;
+        fi->samplerate = get_bits(gb, 8) * 1000;
     } else if (sr_code == 13) {
-        fi->samplerate = bitstream_read(bc, 16);
+        fi->samplerate = get_bits(gb, 16);
     } else if (sr_code == 14) {
-        fi->samplerate = bitstream_read(bc, 16) * 10;
+        fi->samplerate = get_bits(gb, 16) * 10;
     } else {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "illegal sample rate code %d\n",
@@ -135,9 +134,9 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, BitstreamContext *bc,
     }
 
     /* header CRC-8 check */
-    bitstream_skip(bc, 8);
-    if (av_crc(av_crc_get_table(AV_CRC_8_ATM), 0, bc->buffer,
-               bitstream_tell(bc) / 8)) {
+    skip_bits(gb, 8);
+    if (av_crc(av_crc_get_table(AV_CRC_8_ATM), 0, gb->buffer,
+               get_bits_count(gb)/8)) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "header crc mismatch\n");
         return AVERROR_INVALIDDATA;
@@ -202,25 +201,33 @@ void ff_flac_set_channel_layout(AVCodecContext *avctx)
         avctx->channel_layout = 0;
 }
 
-void ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
+int ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
                               const uint8_t *buffer)
 {
-    BitstreamContext bc;
-    bitstream_init8(&bc, buffer, FLAC_STREAMINFO_SIZE);
+    GetBitContext gb;
+    init_get_bits(&gb, buffer, FLAC_STREAMINFO_SIZE*8);
 
-    bitstream_skip(&bc, 16); /* skip min blocksize */
-    s->max_blocksize = bitstream_read(&bc, 16);
+    skip_bits(&gb, 16); /* skip min blocksize */
+    s->max_blocksize = get_bits(&gb, 16);
     if (s->max_blocksize < FLAC_MIN_BLOCKSIZE) {
         av_log(avctx, AV_LOG_WARNING, "invalid max blocksize: %d\n",
                s->max_blocksize);
         s->max_blocksize = 16;
+        return AVERROR_INVALIDDATA;
     }
 
-    bitstream_skip(&bc, 24); /* skip min frame size */
-    s->max_framesize = bitstream_read(&bc, 24);
-    s->samplerate    = bitstream_read(&bc, 20);
-    s->channels      = bitstream_read(&bc, 3) + 1;
-    s->bps           = bitstream_read(&bc, 5) + 1;
+    skip_bits(&gb, 24); /* skip min frame size */
+    s->max_framesize = get_bits_long(&gb, 24);
+
+    s->samplerate = get_bits_long(&gb, 20);
+    s->channels = get_bits(&gb, 3) + 1;
+    s->bps = get_bits(&gb, 5) + 1;
+
+    if (s->bps < 4) {
+        av_log(avctx, AV_LOG_ERROR, "invalid bps: %d\n", s->bps);
+        s->bps = 16;
+        return AVERROR_INVALIDDATA;
+    }
 
     avctx->channels = s->channels;
     avctx->sample_rate = s->samplerate;
@@ -230,24 +237,10 @@ void ff_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
         av_get_channel_layout_nb_channels(avctx->channel_layout) != avctx->channels)
         ff_flac_set_channel_layout(avctx);
 
-    s->samples  = bitstream_read(&bc, 32) << 4;
-    s->samples |= bitstream_read(&bc, 4);
+    s->samples = get_bits64(&gb, 36);
 
-    bitstream_skip(&bc, 64); /* md5 sum */
-    bitstream_skip(&bc, 64); /* md5 sum */
-}
+    skip_bits_long(&gb, 64); /* md5 sum */
+    skip_bits_long(&gb, 64); /* md5 sum */
 
-#if LIBAVCODEC_VERSION_MAJOR < 57
-void avpriv_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
-                              const uint8_t *buffer)
-{
-    ff_flac_parse_streaminfo(avctx, s, buffer);
+    return 0;
 }
-
-int avpriv_flac_is_extradata_valid(AVCodecContext *avctx,
-                               enum FLACExtradataFormat *format,
-                               uint8_t **streaminfo_start)
-{
-    return ff_flac_is_extradata_valid(avctx, format, streaminfo_start);
-}
-#endif

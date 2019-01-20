@@ -3,20 +3,20 @@
  * Copyright (c) 2007 Justin Ruggles
  * Copyright (c) 2009 Peter Ross
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -71,7 +71,7 @@ static int read_desc_chunk(AVFormatContext *s)
     /* parse format description */
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codecpar->sample_rate = av_int2double(avio_rb64(pb));
-    st->codecpar->codec_tag   = avio_rb32(pb);
+    st->codecpar->codec_tag   = avio_rl32(pb);
     flags = avio_rb32(pb);
     caf->bytes_per_packet  = avio_rb32(pb);
     st->codecpar->block_align = caf->bytes_per_packet;
@@ -88,7 +88,7 @@ static int read_desc_chunk(AVFormatContext *s)
     }
 
     /* determine codec */
-    if (st->codecpar->codec_tag == MKBETAG('l','p','c','m'))
+    if (st->codecpar->codec_tag == MKTAG('l','p','c','m'))
         st->codecpar->codec_id = ff_mov_get_lpcm_codec_id(st->codecpar->bits_per_coded_sample, (flags ^ 0x2) | 0x4);
     else
         st->codecpar->codec_id = ff_codec_get_id(ff_codec_caf_tags, st->codecpar->codec_tag);
@@ -129,10 +129,13 @@ static int read_kuki_chunk(AVFormatContext *s, int64_t size)
             avio_skip(pb, size);
             return AVERROR_INVALIDDATA;
         }
-        avio_read(pb, preamble, ALAC_PREAMBLE);
+        if (avio_read(pb, preamble, ALAC_PREAMBLE) != ALAC_PREAMBLE) {
+            av_log(s, AV_LOG_ERROR, "failed to read preamble\n");
+            return AVERROR_INVALIDDATA;
+        }
 
-        st->codecpar->extradata = av_mallocz(ALAC_HEADER + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!st->codecpar->extradata)
+        av_freep(&st->codecpar->extradata);
+        if (ff_alloc_extradata(st->codecpar, ALAC_HEADER))
             return AVERROR(ENOMEM);
 
         /* For the old style cookie, we skip 12 bytes, then read 36 bytes.
@@ -145,17 +148,24 @@ static int read_kuki_chunk(AVFormatContext *s, int64_t size)
                 av_freep(&st->codecpar->extradata);
                 return AVERROR_INVALIDDATA;
             }
-            avio_read(pb, st->codecpar->extradata, ALAC_HEADER);
+            if (avio_read(pb, st->codecpar->extradata, ALAC_HEADER) != ALAC_HEADER) {
+                av_log(s, AV_LOG_ERROR, "failed to read kuki header\n");
+                av_freep(&st->codecpar->extradata);
+                return AVERROR_INVALIDDATA;
+            }
             avio_skip(pb, size - ALAC_PREAMBLE - ALAC_HEADER);
         } else {
             AV_WB32(st->codecpar->extradata, 36);
             memcpy(&st->codecpar->extradata[4], "alac", 4);
             AV_WB32(&st->codecpar->extradata[8], 0);
             memcpy(&st->codecpar->extradata[12], preamble, 12);
-            avio_read(pb, &st->codecpar->extradata[24], ALAC_NEW_KUKI - 12);
+            if (avio_read(pb, &st->codecpar->extradata[24], ALAC_NEW_KUKI - 12) != ALAC_NEW_KUKI - 12) {
+                av_log(s, AV_LOG_ERROR, "failed to read new kuki header\n");
+                av_freep(&st->codecpar->extradata);
+                return AVERROR_INVALIDDATA;
+            }
             avio_skip(pb, size - ALAC_NEW_KUKI);
         }
-        st->codecpar->extradata_size = ALAC_HEADER;
     } else if (st->codecpar->codec_id == AV_CODEC_ID_OPUS) {
         // The data layout for Opus is currently unknown, so we do not export
         // extradata at all. Multichannel streams are not supported.
@@ -165,11 +175,9 @@ static int read_kuki_chunk(AVFormatContext *s, int64_t size)
         }
         avio_skip(pb, size);
     } else {
-        st->codecpar->extradata = av_mallocz(size + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!st->codecpar->extradata)
+        av_freep(&st->codecpar->extradata);
+        if (ff_get_extradata(s, st->codecpar, pb, size) < 0)
             return AVERROR(ENOMEM);
-        avio_read(pb, st->codecpar->extradata, size);
-        st->codecpar->extradata_size = size;
     }
 
     return 0;
@@ -217,10 +225,10 @@ static void read_info_chunk(AVFormatContext *s, int64_t size)
     AVIOContext *pb = s->pb;
     unsigned int i;
     unsigned int nb_entries = avio_rb32(pb);
-    for (i = 0; i < nb_entries; i++) {
+    for (i = 0; i < nb_entries && !avio_feof(pb); i++) {
         char key[32];
         char value[1024];
-        avio_get_str(pb, INT_MAX, key,   sizeof(key));
+        avio_get_str(pb, INT_MAX, key, sizeof(key));
         avio_get_str(pb, INT_MAX, value, sizeof(value));
         av_dict_set(&s->metadata, key, value, 0);
     }
@@ -233,7 +241,7 @@ static int read_header(AVFormatContext *s)
     AVStream *st;
     uint32_t tag = 0;
     int found_data, ret;
-    int64_t size;
+    int64_t size, pos;
 
     avio_skip(pb, 8); /* magic, version, file flags */
 
@@ -253,7 +261,7 @@ static int read_header(AVFormatContext *s)
 
     /* parse each chunk */
     found_data = 0;
-    while (!pb->eof_reached) {
+    while (!avio_feof(pb)) {
 
         /* stop at data chunk if seeking is not supported or
            data chunk size is unknown */
@@ -262,7 +270,8 @@ static int read_header(AVFormatContext *s)
 
         tag  = avio_rb32(pb);
         size = avio_rb64(pb);
-        if (pb->eof_reached)
+        pos  = avio_tell(pb);
+        if (avio_feof(pb))
             break;
 
         switch (tag) {
@@ -297,16 +306,19 @@ static int read_header(AVFormatContext *s)
             break;
 
         default:
-#define _(x) ((x) >= ' ' ? (x) : ' ')
             av_log(s, AV_LOG_WARNING,
-                   "skipping CAF chunk: %08"PRIX32" (%"PRIu32"%"PRIu32"%"PRIu32"%"PRIu32")\n",
-                tag, _(tag>>24), _((tag>>16)&0xFF), _((tag>>8)&0xFF), _(tag&0xFF));
-#undef _
+                   "skipping CAF chunk: %08"PRIX32" (%s), size %"PRId64"\n",
+                   tag, av_fourcc2str(av_bswap32(tag)), size);
         case MKBETAG('f','r','e','e'):
             if (size < 0)
                 return AVERROR_INVALIDDATA;
-            avio_skip(pb, size);
             break;
+        }
+
+        if (size > 0) {
+            if (pos > INT64_MAX - size)
+                return AVERROR_INVALIDDATA;
+            avio_skip(pb, FFMAX(0, pos + size - avio_tell(pb)));
         }
     }
 
@@ -316,9 +328,14 @@ static int read_header(AVFormatContext *s)
     if (caf->bytes_per_packet > 0 && caf->frames_per_packet > 0) {
         if (caf->data_size > 0)
             st->nb_frames = (caf->data_size / caf->bytes_per_packet) * caf->frames_per_packet;
-    } else if (st->nb_index_entries) {
-        st->codecpar->bit_rate = st->codecpar->sample_rate * caf->data_size * 8 /
-                              st->duration;
+    } else if (st->nb_index_entries && st->duration > 0) {
+        if (st->codecpar->sample_rate && caf->data_size / st->duration > INT64_MAX / st->codecpar->sample_rate / 8) {
+            av_log(s, AV_LOG_ERROR, "Overflow during bit rate calculation %d * 8 * %"PRId64"\n",
+                   st->codecpar->sample_rate, caf->data_size / st->duration);
+            return AVERROR_INVALIDDATA;
+        }
+        st->codecpar->bit_rate = st->codecpar->sample_rate * 8LL *
+                                 (caf->data_size / st->duration);
     } else {
         av_log(s, AV_LOG_ERROR, "Missing packet table. It is required when "
                                 "block size or frame size are variable.\n");
@@ -345,13 +362,15 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     int res, pkt_size = 0, pkt_frames = 0;
     int64_t left      = CAF_MAX_PKT_SIZE;
 
-    if (pb->eof_reached)
-        return AVERROR(EIO);
+    if (avio_feof(pb))
+        return AVERROR_EOF;
 
     /* don't read past end of data chunk */
     if (caf->data_size > 0) {
         left = (caf->data_start + caf->data_size) - avio_tell(pb);
-        if (left <= 0)
+        if (!left)
+            return AVERROR_EOF;
+        if (left < 0)
             return AVERROR(EIO);
     }
 
@@ -402,7 +421,7 @@ static int read_seek(AVFormatContext *s, int stream_index,
 
     if (caf->frames_per_packet > 0 && caf->bytes_per_packet > 0) {
         /* calculate new byte position based on target frame position */
-        pos = caf->bytes_per_packet * timestamp / caf->frames_per_packet;
+        pos = caf->bytes_per_packet * (timestamp / caf->frames_per_packet);
         if (caf->data_size > 0)
             pos = FFMIN(pos, caf->data_size);
         packet_cnt = pos / caf->bytes_per_packet;
