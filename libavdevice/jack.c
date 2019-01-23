@@ -3,20 +3,20 @@
  * Copyright (c) 2009 Samalyse
  * Author: Olivier Guilyardi <olivier samalyse com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,6 @@
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 #include "timefilter.h"
-#include "avdevice.h"
 
 /**
  * Size of the internal FIFO buffers as a number of audio packets
@@ -149,9 +148,10 @@ static int start_jack(AVFormatContext *context)
     JackData *self = context->priv_data;
     jack_status_t status;
     int i, test;
+    double o, period;
 
-    /* Register as a JACK client, using the context url as client name. */
-    self->client = jack_client_open(context->url, JackNullOption, &status);
+    /* Register as a JACK client, using the context filename as client name. */
+    self->client = jack_client_open(context->filename, JackNullOption, &status);
     if (!self->client) {
         av_log(context, AV_LOG_ERROR, "Unable to register as a JACK client\n");
         return AVERROR(EIO);
@@ -160,7 +160,7 @@ static int start_jack(AVFormatContext *context)
     sem_init(&self->packet_count, 0, 0);
 
     self->sample_rate = jack_get_sample_rate(self->client);
-    self->ports       = av_malloc_array(self->nports, sizeof(*self->ports));
+    self->ports       = av_malloc(self->nports * sizeof(*self->ports));
     if (!self->ports)
         return AVERROR(ENOMEM);
     self->buffer_size = jack_get_buffer_size(self->client);
@@ -174,7 +174,7 @@ static int start_jack(AVFormatContext *context)
                                             JackPortIsInput, 0);
         if (!self->ports[i]) {
             av_log(context, AV_LOG_ERROR, "Unable to register port %s:%s\n",
-                   context->url, str);
+                   context->filename, str);
             jack_client_close(self->client);
             return AVERROR(EIO);
         }
@@ -186,16 +186,18 @@ static int start_jack(AVFormatContext *context)
     jack_set_xrun_callback(self->client, xrun_callback, self);
 
     /* Create time filter */
-    self->timefilter  = ff_timefilter_new (1.0 / self->sample_rate, self->buffer_size, 1.5);
+    period            = (double) self->buffer_size / self->sample_rate;
+    o                 = 2 * M_PI * 1.5 * period; /// bandwidth: 1.5Hz
+    self->timefilter  = ff_timefilter_new (1.0 / self->sample_rate, sqrt(2 * o), o * o);
     if (!self->timefilter) {
         jack_client_close(self->client);
         return AVERROR(ENOMEM);
     }
 
     /* Create FIFO buffers */
-    self->filled_pkts = av_fifo_alloc_array(FIFO_PACKETS_NUM, sizeof(AVPacket));
+    self->filled_pkts = av_fifo_alloc(FIFO_PACKETS_NUM * sizeof(AVPacket));
     /* New packets FIFO with one extra packet for safety against underruns */
-    self->new_pkts    = av_fifo_alloc_array((FIFO_PACKETS_NUM + 1), sizeof(AVPacket));
+    self->new_pkts    = av_fifo_alloc((FIFO_PACKETS_NUM + 1) * sizeof(AVPacket));
     if (!self->new_pkts) {
         jack_client_close(self->client);
         return AVERROR(ENOMEM);
@@ -209,14 +211,14 @@ static int start_jack(AVFormatContext *context)
 
 }
 
-static void free_pkt_fifo(AVFifoBuffer **fifo)
+static void free_pkt_fifo(AVFifoBuffer *fifo)
 {
     AVPacket pkt;
-    while (av_fifo_size(*fifo)) {
-        av_fifo_generic_read(*fifo, &pkt, sizeof(pkt), NULL);
+    while (av_fifo_size(fifo)) {
+        av_fifo_generic_read(fifo, &pkt, sizeof(pkt), NULL);
         av_packet_unref(&pkt);
     }
-    av_fifo_freep(fifo);
+    av_fifo_free(fifo);
 }
 
 static void stop_jack(JackData *self)
@@ -227,8 +229,8 @@ static void stop_jack(JackData *self)
         jack_client_close(self->client);
     }
     sem_destroy(&self->packet_count);
-    free_pkt_fifo(&self->new_pkts);
-    free_pkt_fifo(&self->filled_pkts);
+    free_pkt_fifo(self->new_pkts);
+    free_pkt_fifo(self->filled_pkts);
     av_freep(&self->ports);
     ff_timefilter_destroy(self->timefilter);
 }
@@ -339,7 +341,6 @@ static const AVClass jack_indev_class = {
     .item_name      = av_default_item_name,
     .option         = options,
     .version        = LIBAVUTIL_VERSION_INT,
-    .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
 };
 
 AVInputFormat ff_jack_demuxer = {

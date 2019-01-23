@@ -2,20 +2,20 @@
 ;* MMX/SSE2-optimized functions for the RV30 and RV40 decoders
 ;* Copyright (C) 2012 Christophe Gisquet <christophe.gisquet@gmail.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -64,7 +64,6 @@ rv34_idct dc
 rv34_idct dc_noround
 
 ; ff_rv34_idct_dc_add_mmx(uint8_t *dst, int stride, int dc);
-%if ARCH_X86_32
 INIT_MMX mmx
 cglobal rv34_idct_dc_add, 3, 3
     ; calculate DC
@@ -98,7 +97,6 @@ cglobal rv34_idct_dc_add, 3, 3
     movh       [r2], m4
     movh       [r2+r1], m5
     RET
-%endif
 
 ; Load coeffs and perform row transform
 ; Output: coeffs in mm[0467], rounder in mm5
@@ -169,7 +167,7 @@ cglobal rv34_idct_add, 3,3,0, d, s, b
     ret
 
 ; ff_rv34_idct_dc_add_sse4(uint8_t *dst, int stride, int dc);
-%macro RV34_IDCT_DC_ADD 0
+INIT_XMM sse4
 cglobal rv34_idct_dc_add, 3, 3, 6
     ; load data
     IDCT_DC_ROUND r2
@@ -192,22 +190,7 @@ cglobal rv34_idct_dc_add, 3, 3, 6
     paddw      m4, m0
     packuswb   m2, m4
     movd      [r0], m2
-%if cpuflag(sse4)
     pextrd [r0+r1], m2, 1
     pextrd    [r2], m2, 2
     pextrd [r2+r1], m2, 3
-%else
-    psrldq     m2, 4
-    movd   [r0+r1], m2
-    psrldq     m2, 4
-    movd      [r2], m2
-    psrldq     m2, 4
-    movd   [r2+r1], m2
-%endif
     RET
-%endmacro
-
-INIT_XMM sse2
-RV34_IDCT_DC_ADD
-INIT_XMM sse4
-RV34_IDCT_DC_ADD
