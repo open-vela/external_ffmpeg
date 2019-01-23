@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,7 +36,6 @@
 
 #define MAX_SPS_COUNT          32
 #define MAX_PPS_COUNT         256
-#define MAX_LOG2_MAX_FRAME_NUM    (12 + 4)
 
 /**
  * Sequence parameter set
@@ -99,8 +98,6 @@ typedef struct SPS {
     int bit_depth_chroma;                 ///< bit_depth_chroma_minus8 + 8
     int residual_color_transform_flag;    ///< residual_colour_transform_flag
     int constraint_set_flags;             ///< constraint_set[0-3]_flag
-    uint8_t data[4096];
-    size_t data_size;
 } SPS;
 
 /**
@@ -124,10 +121,8 @@ typedef struct PPS {
     int transform_8x8_mode;         ///< transform_8x8_mode_flag
     uint8_t scaling_matrix4[6][16];
     uint8_t scaling_matrix8[6][64];
-    uint8_t chroma_qp_table[2][QP_MAX_NUM+1];  ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
+    uint8_t chroma_qp_table[2][64]; ///< pre-scaled (with chroma_qp_index_offset) version of qp_table
     int chroma_qp_diff;
-    uint8_t data[4096];
-    size_t data_size;
 
     uint32_t dequant4_buffer[6][QP_MAX_NUM + 1][16];
     uint32_t dequant8_buffer[6][QP_MAX_NUM + 1][64];
@@ -139,28 +134,22 @@ typedef struct H264ParamSets {
     AVBufferRef *sps_list[MAX_SPS_COUNT];
     AVBufferRef *pps_list[MAX_PPS_COUNT];
 
-    AVBufferRef *pps_ref;
-    AVBufferRef *sps_ref;
     /* currently active parameters sets */
     const PPS *pps;
-    const SPS *sps;
+    // FIXME this should properly be const
+    SPS *sps;
 } H264ParamSets;
 
 /**
  * Decode SPS
  */
 int ff_h264_decode_seq_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
-                                     H264ParamSets *ps, int ignore_truncation);
+                                     H264ParamSets *ps);
 
 /**
  * Decode PPS
  */
 int ff_h264_decode_picture_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
                                          H264ParamSets *ps, int bit_length);
-
-/**
- * Uninit H264 param sets structure.
- */
-void ff_h264_ps_uninit(H264ParamSets *ps);
 
 #endif /* AVCODEC_H264_PS_H */

@@ -3,20 +3,20 @@
  *
  * Copyright (C) 2008-2009 Splitted-Desktop Systems
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -157,14 +157,25 @@ static int vaapi_mpeg4_decode_slice(AVCodecContext *avctx, const uint8_t *buffer
     VASliceParameterBufferMPEG4 slice_param;
     int err;
 
+    /* video_plane_with_short_video_header() contains all GOBs
+     * in-order, and this is what VA API (Intel backend) expects: only
+     * a single slice param. So fake macroblock_number for Libav so
+     * that we don't call vaapi_mpeg4_decode_slice() again
+     */
+    if (avctx->codec->id == AV_CODEC_ID_H263)
+        size = s->gb.buffer_end - buffer;
+
     slice_param = (VASliceParameterBufferMPEG4) {
         .slice_data_size   = size,
         .slice_data_offset = 0,
         .slice_data_flag   = VA_SLICE_DATA_FLAG_ALL,
         .macroblock_offset = get_bits_count(&s->gb) % 8,
-        .macroblock_number = 0,
+        .macroblock_number = s->mb_y * s->mb_width + s->mb_x,
         .quant_scale       = s->qscale,
     };
+
+    if (avctx->codec->id == AV_CODEC_ID_H263)
+        s->mb_y = s->mb_height;
 
     err = ff_vaapi_decode_make_slice_buffer(avctx, pic,
                                             &slice_param, sizeof(slice_param),
