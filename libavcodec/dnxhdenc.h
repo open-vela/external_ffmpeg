@@ -4,20 +4,20 @@
  *
  * VC-3 encoder funded by the British Broadcasting Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,9 +47,6 @@ typedef struct DNXHDEncContext {
     MpegEncContext m; ///< Used for quantization dsp functions
 
     int cid;
-    int profile;
-    int bit_depth;
-    int is_444;
     const CIDEntry *cid_table;
     uint8_t *msip; ///< Macroblock Scan Indexes Payload
     uint32_t *slice_size;
@@ -63,10 +60,6 @@ typedef struct DNXHDEncContext {
     unsigned dct_uv_offset;
     unsigned block_width_l2;
 
-    int frame_size;
-    int coding_unit_size;
-    int data_offset;
-
     int interlaced;
     int cur_field;
 
@@ -74,9 +67,7 @@ typedef struct DNXHDEncContext {
     unsigned min_padding;
     int intra_quant_bias;
 
-    DECLARE_ALIGNED(32, int16_t, blocks)[12][64];
-    DECLARE_ALIGNED(16, uint8_t, edge_buf_y)[512]; // has to hold 16x16 uint16 when depth=10
-    DECLARE_ALIGNED(16, uint8_t, edge_buf_uv)[2][512]; // has to hold 16x16 uint16_t when depth=10
+    DECLARE_ALIGNED(16, int16_t, blocks)[8][64];
 
     int      (*qmatrix_c)     [64];
     int      (*qmatrix_l)     [64];
@@ -86,8 +77,6 @@ typedef struct DNXHDEncContext {
     unsigned frame_bits;
     uint8_t *src[3];
 
-    uint32_t *orig_vlc_codes;
-    uint8_t  *orig_vlc_bits;
     uint32_t *vlc_codes;
     uint8_t  *vlc_bits;
     uint16_t *run_codes;
@@ -98,14 +87,15 @@ typedef struct DNXHDEncContext {
     unsigned qscale;
     unsigned lambda;
 
+    unsigned thread_size;
+
     uint16_t *mb_bits;
     uint8_t  *mb_qscale;
 
     RCCMPEntry *mb_cmp;
-    RCCMPEntry *mb_cmp_tmp;
-    RCEntry    *mb_rc;
+    RCEntry   (*mb_rc)[8160];
 
-    void (*get_pixels_8x4_sym)(int16_t *av_restrict /* align 16 */ block,
+    void (*get_pixels_8x4_sym)(int16_t *restrict /* align 16 */ block,
                                const uint8_t *pixels, ptrdiff_t line_size);
 } DNXHDEncContext;
 
