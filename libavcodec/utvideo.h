@@ -2,20 +2,20 @@
  * Common Ut Video header
  * Copyright (c) 2011 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,9 +30,8 @@
 #include "libavutil/common.h"
 #include "avcodec.h"
 #include "bswapdsp.h"
-#include "utvideodsp.h"
-#include "lossless_videodsp.h"
-#include "lossless_videoencdsp.h"
+#include "huffyuvdsp.h"
+#include "huffyuvencdsp.h"
 
 enum {
     PRED_NONE = 0,
@@ -58,37 +57,32 @@ enum {
     UTVIDEO_RGBA = MKTAG(0x00, 0x00, 0x02, 0x18),
     UTVIDEO_420  = MKTAG('Y', 'V', '1', '2'),
     UTVIDEO_422  = MKTAG('Y', 'U', 'Y', '2'),
-    UTVIDEO_444  = MKTAG('Y', 'V', '2', '4'),
 };
 
 /* Mapping of libavcodec prediction modes to Ut Video's */
 extern const int ff_ut_pred_order[5];
 
+/* Order of RGB(A) planes in Ut Video */
+extern const int ff_ut_rgb_order[4];
+
 typedef struct UtvideoContext {
     const AVClass *class;
     AVCodecContext *avctx;
-    UTVideoDSPContext utdsp;
     BswapDSPContext bdsp;
-    LLVidDSPContext llviddsp;
-    LLVidEncDSPContext llvidencdsp;
+    HuffYUVDSPContext hdspdec;
+    HuffYUVEncDSPContext hdsp;
 
-    uint32_t frame_info_size, flags, frame_info, offset;
+    uint32_t frame_info_size, flags, frame_info;
     int      planes;
     int      slices;
     int      compression;
     int      interlaced;
     int      frame_pred;
     int      pro;
-    int      pack;
 
     ptrdiff_t slice_stride;
     uint8_t *slice_bits, *slice_buffer[4];
     int      slice_bits_size;
-
-    const uint8_t *packed_stream[4][256];
-    size_t packed_stream_size[4][256];
-    const uint8_t *control_stream[4][256];
-    size_t control_stream_size[4][256];
 } UtvideoContext;
 
 typedef struct HuffEntry {

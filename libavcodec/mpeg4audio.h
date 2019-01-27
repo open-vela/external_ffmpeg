@@ -2,20 +2,20 @@
  * MPEG-4 Audio common header
  * Copyright (c) 2008 Baptiste Coudurier <baptiste.coudurier@free.fr>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -49,17 +49,7 @@ extern av_export_avcodec const int avpriv_mpeg4audio_sample_rates[16];
 extern const uint8_t ff_mpeg4audio_channels[8];
 
 /**
- * Parse MPEG-4 systems extradata from a potentially unaligned GetBitContext to retrieve audio configuration.
- * @param[in] c        MPEG4AudioConfig structure to fill.
- * @param[in] gb       Extradata from container.
- * @param[in] sync_extension look for a sync extension after config if true.
- * @return On error -1 is returned, on success AudioSpecificConfig bit index in extradata.
- */
-int ff_mpeg4audio_get_config_gb(MPEG4AudioConfig *c, GetBitContext *gb,
-                                int sync_extension);
-
-/**
- * Parse MPEG-4 systems extradata from a raw buffer to retrieve audio configuration.
+ * Parse MPEG-4 systems extradata to retrieve audio configuration.
  * @param[in] c        MPEG4AudioConfig structure to fill.
  * @param[in] buf      Extradata from container.
  * @param[in] bit_size Extradata size in bits.
@@ -116,7 +106,7 @@ enum AudioObjectType {
     AOT_USAC,                  ///< N                       Unified Speech and Audio Coding
 };
 
-#define MAX_PCE_SIZE 320 ///<Maximum size of a PCE including the 3-bit ID_PCE
+#define MAX_PCE_SIZE 304 ///<Maximum size of a PCE including the 3-bit ID_PCE
                          ///<marker and the comment
 
 static av_always_inline unsigned int ff_pce_copy_bits(PutBitContext *pb,
