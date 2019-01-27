@@ -2,20 +2,20 @@
  * Realmedia RTSP protocol (RDT) support.
  * Copyright (c) 2007 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,8 @@
  * @brief Realmedia RTSP protocol (RDT) support
  * @author Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  */
+
+#include "libavcodec/bitstream.h"
 
 #include "avformat.h"
 #include "libavutil/avstring.h"
@@ -34,7 +36,6 @@
 #include "rm.h"
 #include "internal.h"
 #include "avio_internal.h"
-#include "libavcodec/get_bits.h"
 
 struct RDTDemuxContext {
     AVFormatContext *ic; /**< the containing (RTSP) demux context */
@@ -53,7 +54,7 @@ struct RDTDemuxContext {
 
 RDTDemuxContext *
 ff_rdt_parse_open(AVFormatContext *ic, int first_stream_of_set_idx,
-                  void *priv_data, const RTPDynamicProtocolHandler *handler)
+                  void *priv_data, RTPDynamicProtocolHandler *handler)
 {
     RDTDemuxContext *s = av_mallocz(sizeof(RDTDemuxContext));
     if (!s)
@@ -176,7 +177,7 @@ rdt_load_mdpr (PayloadContext *rdt, AVStream *st, int rule_nr)
         size = rdt->mlti_data_size;
         avio_seek(&pb, 0, SEEK_SET);
     }
-    if (ff_rm_read_mdpr_codecdata(rdt->rmctx, &pb, st, rdt->rmst[st->index], size, NULL) < 0)
+    if (ff_rm_read_mdpr_codecdata(rdt->rmctx, &pb, st, rdt->rmst[st->index], size) < 0)
         return -1;
 
     return 0;
@@ -191,7 +192,7 @@ ff_rdt_parse_header(const uint8_t *buf, int len,
                     int *pset_id, int *pseq_no, int *pstream_id,
                     int *pis_keyframe, uint32_t *ptimestamp)
 {
-    GetBitContext gb;
+    BitstreamContext bc;
     int consumed = 0, set_id, seq_no, stream_id, is_keyframe,
         len_included, need_reliable;
     uint32_t timestamp;
@@ -261,24 +262,24 @@ ff_rdt_parse_header(const uint8_t *buf, int len,
      * [2] http://www.wireshark.org/docs/dfref/r/rdt.html and
      *     http://anonsvn.wireshark.org/viewvc/trunk/epan/dissectors/packet-rdt.c
      */
-    init_get_bits(&gb, buf, len << 3);
-    len_included  = get_bits1(&gb);
-    need_reliable = get_bits1(&gb);
-    set_id        = get_bits(&gb, 5);
-    skip_bits(&gb, 1);
-    seq_no        = get_bits(&gb, 16);
+    bitstream_init8(&bc, buf, len);
+    len_included  = bitstream_read_bit(&bc);
+    need_reliable = bitstream_read_bit(&bc);
+    set_id        = bitstream_read(&bc, 5);
+    bitstream_skip(&bc, 1);
+    seq_no        = bitstream_read(&bc, 16);
     if (len_included)
-        skip_bits(&gb, 16);
-    skip_bits(&gb, 2);
-    stream_id     = get_bits(&gb, 5);
-    is_keyframe   = !get_bits1(&gb);
-    timestamp     = get_bits_long(&gb, 32);
+        bitstream_skip(&bc, 16);
+    bitstream_skip(&bc, 2);
+    stream_id     = bitstream_read(&bc, 5);
+    is_keyframe   = !bitstream_read_bit(&bc);
+    timestamp     = bitstream_read(&bc, 32);
     if (set_id == 0x1f)
-        set_id    = get_bits(&gb, 16);
+        set_id    = bitstream_read(&bc, 16);
     if (need_reliable)
-        skip_bits(&gb, 16);
+        bitstream_skip(&bc, 16);
     if (stream_id == 0x1f)
-        stream_id = get_bits(&gb, 16);
+        stream_id = bitstream_read(&bc, 16);
 
     if (pset_id)      *pset_id      = set_id;
     if (pseq_no)      *pseq_no      = seq_no;
@@ -286,7 +287,7 @@ ff_rdt_parse_header(const uint8_t *buf, int len,
     if (pis_keyframe) *pis_keyframe = is_keyframe;
     if (ptimestamp)   *ptimestamp   = timestamp;
 
-    return consumed + (get_bits_count(&gb) >> 3);
+    return consumed + (bitstream_tell(&bc) >> 3);
 }
 
 /**< return 0 on packet, no more left, 1 on packet, 1 on partial packet... */
@@ -301,7 +302,7 @@ rdt_parse_packet (AVFormatContext *ctx, PayloadContext *rdt, AVStream *st,
     if (rdt->audio_pkt_cnt == 0) {
         int pos, rmflags;
 
-        ffio_init_context(&pb, (uint8_t *)buf, len, 0, NULL, NULL, NULL, NULL);
+        ffio_init_context(&pb, buf, len, 0, NULL, NULL, NULL, NULL);
         rmflags = (flags & RTP_FLAG_KEY) ? 2 : 0;
         res = ff_rm_parse_packet (rdt->rmctx, &pb, st, rdt->rmst[st->index], len, pkt,
                                   &seq, rmflags, *timestamp);
@@ -448,7 +449,7 @@ real_parse_asm_rule(AVStream *st, const char *p, const char *end)
 {
     do {
         /* can be either averagebandwidth= or AverageBandwidth= */
-        if (sscanf(p, " %*1[Aa]verage%*1[Bb]andwidth=%"SCNd64, &st->codecpar->bit_rate) == 1)
+        if (sscanf(p, " %*1[Aa]verage%*1[Bb]andwidth=%d", &st->codecpar->bit_rate) == 1)
             break;
         if (!(p = strchr(p, ',')) || p > end)
             p = end;
@@ -521,19 +522,8 @@ ff_real_parse_sdp_a_line (AVFormatContext *s, int stream_index,
         real_parse_asm_rulebook(s, s->streams[stream_index], p);
 }
 
-
-
 static av_cold int rdt_init(AVFormatContext *s, int st_index, PayloadContext *rdt)
 {
-    int ret;
-
-    rdt->rmctx = avformat_alloc_context();
-    if (!rdt->rmctx)
-        return AVERROR(ENOMEM);
-
-    if ((ret = ff_copy_whiteblacklists(rdt->rmctx, s)) < 0)
-        return ret;
-
     return avformat_open_input(&rdt->rmctx, "", &ff_rdt_demuxer, NULL);
 }
 
@@ -554,7 +544,7 @@ rdt_close_context (PayloadContext *rdt)
 }
 
 #define RDT_HANDLER(n, s, t) \
-RTPDynamicProtocolHandler ff_rdt_ ## n ## _handler = { \
+static RTPDynamicProtocolHandler rdt_ ## n ## _handler = { \
     .enc_name         = s, \
     .codec_type       = t, \
     .codec_id         = AV_CODEC_ID_NONE, \
@@ -570,3 +560,10 @@ RDT_HANDLER(live_audio, "x-pn-multirate-realaudio-live", AVMEDIA_TYPE_AUDIO);
 RDT_HANDLER(video,      "x-pn-realvideo",                AVMEDIA_TYPE_VIDEO);
 RDT_HANDLER(audio,      "x-pn-realaudio",                AVMEDIA_TYPE_AUDIO);
 
+void ff_register_rdt_dynamic_payload_handlers(void)
+{
+    ff_register_dynamic_payload_handler(&rdt_video_handler);
+    ff_register_dynamic_payload_handler(&rdt_audio_handler);
+    ff_register_dynamic_payload_handler(&rdt_live_video_handler);
+    ff_register_dynamic_payload_handler(&rdt_live_audio_handler);
+}
