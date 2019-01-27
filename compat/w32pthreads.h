@@ -4,20 +4,20 @@
  * Authors: Steven Walters <kemuri9@gmail.com>
  *          Pegasys Inc. <http://www.pegasys-inc.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,8 +26,8 @@
  * w32threads to pthreads wrapper
  */
 
-#ifndef COMPAT_W32PTHREADS_H
-#define COMPAT_W32PTHREADS_H
+#ifndef LIBAV_COMPAT_W32PTHREADS_H
+#define LIBAV_COMPAT_W32PTHREADS_H
 
 /* Build up a pthread-like API using underlying Windows API. Have only static
  * methods so as to not conflict with a potentially linked in pthread-win32
@@ -40,7 +40,6 @@
 #include <process.h>
 
 #include "libavutil/attributes.h"
-#include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
@@ -51,7 +50,7 @@ typedef struct pthread_t {
     void *ret;
 } pthread_t;
 
-/* use light weight mutex/condition variable API for Windows Vista and later */
+/* use lightweight mutex/condition variable API for Windows Vista and later */
 typedef SRWLOCK pthread_mutex_t;
 typedef CONDITION_VARIABLE pthread_cond_t;
 
@@ -63,7 +62,7 @@ typedef CONDITION_VARIABLE pthread_cond_t;
 
 static av_unused unsigned __stdcall attribute_align_arg win32thread_worker(void *arg)
 {
-    pthread_t *h = (pthread_t*)arg;
+    pthread_t *h = arg;
     h->ret = h->func(h->arg);
     return 0;
 }
@@ -73,29 +72,19 @@ static av_unused int pthread_create(pthread_t *thread, const void *unused_attr,
 {
     thread->func   = start_routine;
     thread->arg    = arg;
-#if HAVE_WINRT
-    thread->handle = (void*)CreateThread(NULL, 0, win32thread_worker, thread,
-                                           0, NULL);
-#else
     thread->handle = (void*)_beginthreadex(NULL, 0, win32thread_worker, thread,
                                            0, NULL);
-#endif
     return !thread->handle;
 }
 
-static av_unused int pthread_join(pthread_t thread, void **value_ptr)
+static av_unused void pthread_join(pthread_t thread, void **value_ptr)
 {
     DWORD ret = WaitForSingleObject(thread.handle, INFINITE);
-    if (ret != WAIT_OBJECT_0) {
-        if (ret == WAIT_ABANDONED)
-            return EINVAL;
-        else
-            return EDEADLK;
-    }
+    if (ret != WAIT_OBJECT_0)
+        return;
     if (value_ptr)
         *value_ptr = thread.ret;
     CloseHandle(thread.handle);
-    return 0;
 }
 
 static inline int pthread_mutex_init(pthread_mutex_t *m, void* attr)
@@ -119,6 +108,7 @@ static inline int pthread_mutex_unlock(pthread_mutex_t *m)
     return 0;
 }
 
+
 typedef INIT_ONCE pthread_once_t;
 #define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
 
@@ -132,22 +122,20 @@ static av_unused int pthread_once(pthread_once_t *once_control, void (*init_rout
     return 0;
 }
 
-static inline int pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
+static inline void pthread_cond_init(pthread_cond_t *cond, const void *unused_attr)
 {
     InitializeConditionVariable(cond);
-    return 0;
 }
 
 /* native condition variables do not destroy */
-static inline int pthread_cond_destroy(pthread_cond_t *cond)
+static inline void pthread_cond_destroy(pthread_cond_t *cond)
 {
-    return 0;
+    return;
 }
 
-static inline int pthread_cond_broadcast(pthread_cond_t *cond)
+static inline void pthread_cond_broadcast(pthread_cond_t *cond)
 {
     WakeAllConditionVariable(cond);
-    return 0;
 }
 
 static inline int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
@@ -156,10 +144,9 @@ static inline int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex
     return 0;
 }
 
-static inline int pthread_cond_signal(pthread_cond_t *cond)
+static inline void pthread_cond_signal(pthread_cond_t *cond)
 {
     WakeConditionVariable(cond);
-    return 0;
 }
 
-#endif /* COMPAT_W32PTHREADS_H */
+#endif /* LIBAV_COMPAT_W32PTHREADS_H */
