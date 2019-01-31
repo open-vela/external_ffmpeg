@@ -1,23 +1,21 @@
 /*
- * Copyright (c) 2001 Fabrice Bellard
+ * copyright (c) 2001 Fabrice Bellard
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * This file is part of Libav.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * Libav is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * Libav is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with Libav; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /**
@@ -31,7 +29,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <libavcodec/avcodec.h>
+#include "libavcodec/avcodec.h"
+
+#include "libavutil/common.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/mathematics.h"
 
 #define INBUF_SIZE 4096
 
@@ -41,10 +43,10 @@ static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
     FILE *f;
     int i;
 
-    f = fopen(filename,"w");
-    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
-    for (i = 0; i < ysize; i++)
-        fwrite(buf + i * wrap, 1, xsize, f);
+    f=fopen(filename,"w");
+    fprintf(f,"P5\n%d %d\n%d\n",xsize,ysize,255);
+    for(i=0;i<ysize;i++)
+        fwrite(buf + i * wrap,1,xsize,f);
     fclose(f);
 }
 
@@ -74,7 +76,7 @@ static void decode(AVCodecContext *dec_ctx, AVFrame *frame, AVPacket *pkt,
 
         /* the picture is allocated by the decoder. no need to
            free it */
-        snprintf(buf, sizeof(buf), "%s-%d", filename, dec_ctx->frame_number);
+        snprintf(buf, sizeof(buf), filename, dec_ctx->frame_number);
         pgm_save(frame->data[0], frame->linesize[0],
                  frame->width, frame->height, buf);
     }
@@ -87,7 +89,7 @@ int main(int argc, char **argv)
     AVCodecParserContext *parser;
     AVCodecContext *c= NULL;
     FILE *f;
-    AVFrame *frame;
+    AVFrame *picture;
     uint8_t inbuf[INBUF_SIZE + AV_INPUT_BUFFER_PADDING_SIZE];
     uint8_t *data;
     size_t   data_size;
@@ -101,6 +103,8 @@ int main(int argc, char **argv)
     filename    = argv[1];
     outfilename = argv[2];
 
+    avcodec_register_all();
+
     pkt = av_packet_alloc();
     if (!pkt)
         exit(1);
@@ -111,7 +115,7 @@ int main(int argc, char **argv)
     /* find the MPEG-1 video decoder */
     codec = avcodec_find_decoder(AV_CODEC_ID_MPEG1VIDEO);
     if (!codec) {
-        fprintf(stderr, "Codec not found\n");
+        fprintf(stderr, "codec not found\n");
         exit(1);
     }
 
@@ -122,10 +126,7 @@ int main(int argc, char **argv)
     }
 
     c = avcodec_alloc_context3(codec);
-    if (!c) {
-        fprintf(stderr, "Could not allocate video codec context\n");
-        exit(1);
-    }
+    picture = av_frame_alloc();
 
     /* For some codecs, such as msmpeg4 and mpeg4, width and height
        MUST be initialized there because this information is not
@@ -133,19 +134,13 @@ int main(int argc, char **argv)
 
     /* open it */
     if (avcodec_open2(c, codec, NULL) < 0) {
-        fprintf(stderr, "Could not open codec\n");
+        fprintf(stderr, "could not open codec\n");
         exit(1);
     }
 
     f = fopen(filename, "rb");
     if (!f) {
-        fprintf(stderr, "Could not open %s\n", filename);
-        exit(1);
-    }
-
-    frame = av_frame_alloc();
-    if (!frame) {
-        fprintf(stderr, "Could not allocate video frame\n");
+        fprintf(stderr, "could not open %s\n", filename);
         exit(1);
     }
 
@@ -168,18 +163,18 @@ int main(int argc, char **argv)
             data_size -= ret;
 
             if (pkt->size)
-                decode(c, frame, pkt, outfilename);
+                decode(c, picture, pkt, outfilename);
         }
     }
 
     /* flush the decoder */
-    decode(c, frame, NULL, outfilename);
+    decode(c, picture, NULL, outfilename);
 
     fclose(f);
 
     av_parser_close(parser);
     avcodec_free_context(&c);
-    av_frame_free(&frame);
+    av_frame_free(&picture);
     av_packet_free(&pkt);
 
     return 0;

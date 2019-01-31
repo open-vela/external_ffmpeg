@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -170,9 +170,9 @@ static av_always_inline int scaleforsame(VC1Context *v, int i, int n /* MV */,
     n >>= hpel;
     if (v->s.pict_type != AV_PICTURE_TYPE_B || v->second_field || !dir) {
         if (dim)
-            n = scaleforsame_y(v, i, n, dir) * (1 << hpel);
+            n = scaleforsame_y(v, i, n, dir) << hpel;
         else
-            n = scaleforsame_x(v, n, dir) * (1 << hpel);
+            n = scaleforsame_x(v, n, dir) << hpel;
         return n;
     }
     brfd      = FFMIN(v->brfd, 3);
@@ -202,7 +202,7 @@ static av_always_inline int scaleforopp(VC1Context *v, int n /* MV */,
         refdist = dir ? v->brfd : v->frfd;
     scaleopp = ff_vc1_field_mvpred_scales[dir ^ v->second_field][0][refdist];
 
-    n = (n * scaleopp >> 8) * (1 << hpel);
+    n = (n * scaleopp >> 8) << hpel;
     return n;
 }
 
@@ -231,10 +231,8 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
     else
         mixedmv_pic = 0;
     /* scale MV difference to be quad-pel */
-    if (!s->quarter_sample) {
-        dmv_x *= 2;
-        dmv_y *= 2;
-    }
+    dmv_x <<= 1 - s->quarter_sample;
+    dmv_y <<= 1 - s->quarter_sample;
 
     wrap = s->b8_stride;
     xy   = s->block_index[n];
@@ -254,7 +252,7 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
             v->luma_mv[s->mb_x][0] = v->luma_mv[s->mb_x][1] = 0;
             s->current_picture.motion_val[1][xy + 1 + v->blocks_off][0]        = 0;
             s->current_picture.motion_val[1][xy + 1 + v->blocks_off][1]        = 0;
-            s->current_picture.motion_val[1][xy + wrap + v->blocks_off][0]     = 0;
+            s->current_picture.motion_val[1][xy + wrap][0]                     = 0;
             s->current_picture.motion_val[1][xy + wrap + v->blocks_off][1]     = 0;
             s->current_picture.motion_val[1][xy + wrap + 1 + v->blocks_off][0] = 0;
             s->current_picture.motion_val[1][xy + wrap + 1 + v->blocks_off][1] = 0;
@@ -262,23 +260,18 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
         return;
     }
 
-    a_valid = !s->first_slice_line || (n == 2 || n == 3);
-    b_valid = a_valid;
-    c_valid = s->mb_x || (n == 1 || n == 3);
+    C = s->current_picture.motion_val[dir][xy -    1 + v->blocks_off];
+    A = s->current_picture.motion_val[dir][xy - wrap + v->blocks_off];
     if (mv1) {
         if (v->field_mode && mixedmv_pic)
             off = (s->mb_x == (s->mb_width - 1)) ? -2 : 2;
         else
             off = (s->mb_x == (s->mb_width - 1)) ? -1 : 2;
-        b_valid = b_valid && s->mb_width > 1;
     } else {
         //in 4-MV mode different blocks have different B predictor position
         switch (n) {
         case 0:
-            if (v->res_rtm_flag)
-                off = s->mb_x ? -1 : 1;
-            else
-                off = s->mb_x ? -1 : 2 * s->mb_width - wrap - 1;
+            off = (s->mb_x > 0) ? -1 : 1;
             break;
         case 1:
             off = (s->mb_x == (s->mb_width - 1)) ? -1 : 1;
@@ -289,10 +282,12 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
         case 3:
             off = -1;
         }
-        if (v->field_mode && s->mb_width == 1)
-            b_valid = b_valid && c_valid;
     }
+    B = s->current_picture.motion_val[dir][xy - wrap + off + v->blocks_off];
 
+    a_valid = !s->first_slice_line || (n == 2 || n == 3);
+    b_valid = a_valid && (s->mb_width > 1);
+    c_valid = s->mb_x || (n == 1 || n == 3);
     if (v->field_mode) {
         a_valid = a_valid && !is_intra[xy - wrap];
         b_valid = b_valid && !is_intra[xy - wrap + off];
@@ -300,7 +295,6 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
     }
 
     if (a_valid) {
-        A = s->current_picture.motion_val[dir][xy - wrap + v->blocks_off];
         a_f = v->mv_f[dir][xy - wrap + v->blocks_off];
         num_oppfield  += a_f;
         num_samefield += 1 - a_f;
@@ -311,7 +305,6 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
         a_f = 0;
     }
     if (b_valid) {
-        B = s->current_picture.motion_val[dir][xy - wrap + off + v->blocks_off];
         b_f = v->mv_f[dir][xy - wrap + off + v->blocks_off];
         num_oppfield  += b_f;
         num_samefield += 1 - b_f;
@@ -322,7 +315,6 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
         b_f = 0;
     }
     if (c_valid) {
-        C = s->current_picture.motion_val[dir][xy - 1 + v->blocks_off];
         c_f = v->mv_f[dir][xy - 1 + v->blocks_off];
         num_oppfield  += c_f;
         num_samefield += 1 - c_f;
@@ -347,8 +339,6 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
     } else
         opposite = 0;
     if (opposite) {
-        v->mv_f[dir][xy + v->blocks_off] = 1;
-        v->ref_field_type[dir] = !v->cur_field_type;
         if (a_valid && !a_f) {
             field_predA[0] = scaleforopp(v, field_predA[0], 0, dir);
             field_predA[1] = scaleforopp(v, field_predA[1], 1, dir);
@@ -361,9 +351,9 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
             field_predC[0] = scaleforopp(v, field_predC[0], 0, dir);
             field_predC[1] = scaleforopp(v, field_predC[1], 1, dir);
         }
+        v->mv_f[dir][xy + v->blocks_off] = 1;
+        v->ref_field_type[dir] = !v->cur_field_type;
     } else {
-        v->mv_f[dir][xy + v->blocks_off] = 0;
-        v->ref_field_type[dir] = v->cur_field_type;
         if (a_valid && a_f) {
             field_predA[0] = scaleforsame(v, n, field_predA[0], 0, dir);
             field_predA[1] = scaleforsame(v, n, field_predA[1], 1, dir);
@@ -376,6 +366,8 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
             field_predC[0] = scaleforsame(v, n, field_predC[0], 0, dir);
             field_predC[1] = scaleforsame(v, n, field_predC[1], 1, dir);
         }
+        v->mv_f[dir][xy + v->blocks_off] = 0;
+        v->ref_field_type[dir] = v->cur_field_type;
     }
 
     if (a_valid) {
@@ -400,13 +392,17 @@ void ff_vc1_pred_mv(VC1Context *v, int n, int dmv_x, int dmv_y,
     /* Pullback MV as specified in 8.3.5.3.4 */
     if (!v->field_mode) {
         int qx, qy, X, Y;
-        int MV = mv1 ? -60 : -28;
         qx = (s->mb_x << 6) + ((n == 1 || n == 3) ? 32 : 0);
         qy = (s->mb_y << 6) + ((n == 2 || n == 3) ? 32 : 0);
         X  = (s->mb_width  << 6) - 4;
         Y  = (s->mb_height << 6) - 4;
-        if (qx + px < MV) px = MV - qx;
-        if (qy + py < MV) py = MV - qy;
+        if (mv1) {
+            if (qx + px < -60) px = -60 - qx;
+            if (qy + py < -60) py = -60 - qy;
+        } else {
+            if (qx + px < -28) px = -28 - qx;
+            if (qy + py < -28) py = -28 - qy;
+        }
         if (qx + px > X) px = X - qx;
         if (qy + py > Y) py = Y - qy;
     }
@@ -606,9 +602,9 @@ void ff_vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 px = mid_pred(A[0], B[0], C[0]);
                 py = mid_pred(A[1], B[1], C[1]);
             } else if (total_valid) {
-                if      (a_valid) { px = A[0]; py = A[1]; }
-                else if (b_valid) { px = B[0]; py = B[1]; }
-                else              { px = C[0]; py = C[1]; }
+                if (a_valid) { px = A[0]; py = A[1]; }
+                if (b_valid) { px = B[0]; py = B[1]; }
+                if (c_valid) { px = C[0]; py = C[1]; }
             }
         }
     } else {
@@ -648,8 +644,7 @@ void ff_vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 } else if (!field_b && b_valid) {
                     px = B[0];
                     py = B[1];
-                } else /*if (c_valid)*/ {
-                    av_assert1(c_valid);
+                } else if (c_valid) {
                     px = C[0];
                     py = C[1];
                 }
@@ -657,8 +652,7 @@ void ff_vc1_pred_mv_intfr(VC1Context *v, int n, int dmv_x, int dmv_y,
                 if (field_a && a_valid) {
                     px = A[0];
                     py = A[1];
-                } else /*if (field_b && b_valid)*/ {
-                    av_assert1(field_b && b_valid);
+                } else if (field_b && b_valid) {
                     px = B[0];
                     py = B[1];
                 }
@@ -698,31 +692,25 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
     int r_x, r_y;
     const uint8_t *is_intra = v->mb_type[0];
 
-    av_assert0(!v->field_mode);
-
     r_x = v->range_x;
     r_y = v->range_y;
     /* scale MV difference to be quad-pel */
-    if (!s->quarter_sample) {
-        dmv_x[0] *= 2;
-        dmv_y[0] *= 2;
-        dmv_x[1] *= 2;
-        dmv_y[1] *= 2;
-    }
+    dmv_x[0] <<= 1 - s->quarter_sample;
+    dmv_y[0] <<= 1 - s->quarter_sample;
+    dmv_x[1] <<= 1 - s->quarter_sample;
+    dmv_y[1] <<= 1 - s->quarter_sample;
 
     wrap = s->b8_stride;
     xy = s->block_index[0];
 
     if (s->mb_intra) {
-        s->current_picture.motion_val[0][xy][0] =
-        s->current_picture.motion_val[0][xy][1] =
-        s->current_picture.motion_val[1][xy][0] =
-        s->current_picture.motion_val[1][xy][1] = 0;
+        s->current_picture.motion_val[0][xy + v->blocks_off][0] =
+        s->current_picture.motion_val[0][xy + v->blocks_off][1] =
+        s->current_picture.motion_val[1][xy + v->blocks_off][0] =
+        s->current_picture.motion_val[1][xy + v->blocks_off][1] = 0;
         return;
     }
-        if (direct && s->next_picture_ptr->field_picture)
-            av_log(s->avctx, AV_LOG_WARNING, "Mixed frame/field direct mode not supported\n");
-
+    if (!v->field_mode) {
         s->mv[0][0][0] = scale_mv(s->next_picture.motion_val[1][xy][0], v->bfraction, 0, s->quarter_sample);
         s->mv[0][0][1] = scale_mv(s->next_picture.motion_val[1][xy][1], v->bfraction, 0, s->quarter_sample);
         s->mv[1][0][0] = scale_mv(s->next_picture.motion_val[1][xy][0], v->bfraction, 1, s->quarter_sample);
@@ -733,11 +721,12 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
         s->mv[0][0][1] = av_clip(s->mv[0][0][1], -60 - (s->mb_y << 6), (s->mb_height << 6) - 4 - (s->mb_y << 6));
         s->mv[1][0][0] = av_clip(s->mv[1][0][0], -60 - (s->mb_x << 6), (s->mb_width  << 6) - 4 - (s->mb_x << 6));
         s->mv[1][0][1] = av_clip(s->mv[1][0][1], -60 - (s->mb_y << 6), (s->mb_height << 6) - 4 - (s->mb_y << 6));
+    }
     if (direct) {
-        s->current_picture.motion_val[0][xy][0] = s->mv[0][0][0];
-        s->current_picture.motion_val[0][xy][1] = s->mv[0][0][1];
-        s->current_picture.motion_val[1][xy][0] = s->mv[1][0][0];
-        s->current_picture.motion_val[1][xy][1] = s->mv[1][0][1];
+        s->current_picture.motion_val[0][xy + v->blocks_off][0] = s->mv[0][0][0];
+        s->current_picture.motion_val[0][xy + v->blocks_off][1] = s->mv[0][0][1];
+        s->current_picture.motion_val[1][xy + v->blocks_off][0] = s->mv[1][0][0];
+        s->current_picture.motion_val[1][xy + v->blocks_off][1] = s->mv[1][0][1];
         return;
     }
 
@@ -765,16 +754,25 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
         /* Pullback MV as specified in 8.3.5.3.4 */
         {
             int qx, qy, X, Y;
-            int sh = v->profile < PROFILE_ADVANCED ? 5 : 6;
-            int MV = 4 - (1 << sh);
-            qx = (s->mb_x << sh);
-            qy = (s->mb_y << sh);
-            X  = (s->mb_width  << sh) - 4;
-            Y  = (s->mb_height << sh) - 4;
-            if (qx + px < MV) px = MV - qx;
-            if (qy + py < MV) py = MV - qy;
-            if (qx + px > X) px = X - qx;
-            if (qy + py > Y) py = Y - qy;
+            if (v->profile < PROFILE_ADVANCED) {
+                qx = (s->mb_x << 5);
+                qy = (s->mb_y << 5);
+                X  = (s->mb_width  << 5) - 4;
+                Y  = (s->mb_height << 5) - 4;
+                if (qx + px < -28) px = -28 - qx;
+                if (qy + py < -28) py = -28 - qy;
+                if (qx + px > X) px = X - qx;
+                if (qy + py > Y) py = Y - qy;
+            } else {
+                qx = (s->mb_x << 6);
+                qy = (s->mb_y << 6);
+                X  = (s->mb_width  << 6) - 4;
+                Y  = (s->mb_height << 6) - 4;
+                if (qx + px < -60) px = -60 - qx;
+                if (qy + py < -60) py = -60 - qy;
+                if (qx + px > X) px = X - qx;
+                if (qy + py > Y) py = Y - qy;
+            }
         }
         /* Calculate hybrid prediction as specified in 8.3.5.3.5 */
         if (0 && !s->first_slice_line && s->mb_x) {
@@ -835,16 +833,25 @@ void ff_vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
         /* Pullback MV as specified in 8.3.5.3.4 */
         {
             int qx, qy, X, Y;
-            int sh = v->profile < PROFILE_ADVANCED ? 5 : 6;
-            int MV = 4 - (1 << sh);
-            qx = (s->mb_x << sh);
-            qy = (s->mb_y << sh);
-            X  = (s->mb_width  << sh) - 4;
-            Y  = (s->mb_height << sh) - 4;
-            if (qx + px < MV) px = MV - qx;
-            if (qy + py < MV) py = MV - qy;
-            if (qx + px > X) px = X - qx;
-            if (qy + py > Y) py = Y - qy;
+            if (v->profile < PROFILE_ADVANCED) {
+                qx = (s->mb_x << 5);
+                qy = (s->mb_y << 5);
+                X  = (s->mb_width  << 5) - 4;
+                Y  = (s->mb_height << 5) - 4;
+                if (qx + px < -28) px = -28 - qx;
+                if (qy + py < -28) py = -28 - qy;
+                if (qx + px > X) px = X - qx;
+                if (qy + py > Y) py = Y - qy;
+            } else {
+                qx = (s->mb_x << 6);
+                qy = (s->mb_y << 6);
+                X  = (s->mb_width  << 6) - 4;
+                Y  = (s->mb_height << 6) - 4;
+                if (qx + px < -60) px = -60 - qx;
+                if (qy + py < -60) py = -60 - qy;
+                if (qx + px > X) px = X - qx;
+                if (qy + py > Y) py = Y - qy;
+            }
         }
         /* Calculate hybrid prediction as specified in 8.3.5.3.5 */
         if (0 && !s->first_slice_line && s->mb_x) {

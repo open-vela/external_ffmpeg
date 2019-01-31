@@ -2,20 +2,20 @@
  * On2 VP8 parser for Ogg
  * Copyright (C) 2013 James Almer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -82,11 +82,7 @@ static uint64_t vp8_gptopts(AVFormatContext *s, int idx,
     struct ogg *ogg = s->priv_data;
     struct ogg_stream *os = ogg->streams + idx;
 
-    int invcnt    = !((granule >> 30) & 3);
-    // If page granule is that of an invisible vp8 frame, its pts will be
-    // that of the end of the next visible frame. We subtract 1 for those
-    // to prevent messing up pts calculations.
-    uint64_t pts  = (granule >> 32) - invcnt;
+    uint64_t pts  = (granule >> 32);
     uint32_t dist = (granule >>  3) & 0x07ffffff;
 
     if (!dist)
@@ -125,7 +121,7 @@ static int vp8_packet(AVFormatContext *s, int idx)
         os->lastdts = vp8_gptopts(s, idx, os->granule, NULL) - duration;
         if(s->streams[idx]->start_time == AV_NOPTS_VALUE) {
             s->streams[idx]->start_time = os->lastpts;
-            if (s->streams[idx]->duration && s->streams[idx]->duration != AV_NOPTS_VALUE)
+            if (s->streams[idx]->duration)
                 s->streams[idx]->duration -= s->streams[idx]->start_time;
         }
     }
