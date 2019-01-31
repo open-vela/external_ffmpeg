@@ -3,20 +3,20 @@
  * Copyright (c) 2012 Andrew D'Addesio
  * Copyright (c) 2013-2014 Mozilla Corporation
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,15 +40,15 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 
-#include "libswresample/swresample.h"
+#include "libavresample/avresample.h"
 
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
+#include "celp_filters.h"
+#include "fft.h"
 #include "internal.h"
 #include "mathops.h"
 #include "opus.h"
-#include "opustab.h"
-#include "opus_celt.h"
 
 static const uint16_t silk_frame_duration_ms[16] = {
     10, 20, 40, 60,
@@ -64,6 +64,8 @@ static const int silk_resample_delay[] = {
     4, 8, 11, 11, 11
 };
 
+static const uint8_t celt_band_end[] = { 13, 17, 17, 19, 21 };
+
 static int get_silk_samplerate(int config)
 {
     if (config < 4)
@@ -71,6 +73,32 @@ static int get_silk_samplerate(int config)
     else if (config < 8)
         return 12000;
     return 16000;
+}
+
+/**
+ * Range decoder
+ */
+static int opus_rc_init(OpusRangeCoder *rc, const uint8_t *data, int size)
+{
+    int ret = bitstream_init8(&rc->bc, data, size);
+    if (ret < 0)
+        return ret;
+
+    rc->range = 128;
+    rc->value = 127 - bitstream_read(&rc->bc, 7);
+    rc->total_read_bits = 9;
+    opus_rc_normalize(rc);
+
+    return 0;
+}
+
+static void opus_raw_init(OpusRangeCoder *rc, const uint8_t *rightend,
+                          unsigned int bytes)
+{
+    rc->rb.position = rightend;
+    rc->rb.bytes    = bytes;
+    rc->rb.cachelen = 0;
+    rc->rb.cacheval = 0;
 }
 
 static void opus_fade(float *out,
@@ -86,9 +114,9 @@ static int opus_flush_resample(OpusStreamContext *s, int nb_samples)
 {
     int celt_size = av_audio_fifo_size(s->celt_delay);
     int ret, i;
-    ret = swr_convert(s->swr,
-                      (uint8_t**)s->out, nb_samples,
-                      NULL, 0);
+
+    ret = avresample_convert(s->avr, (uint8_t**)s->out, s->out_size, nb_samples,
+                             NULL, 0, 0);
     if (ret < 0)
         return ret;
     else if (ret != nb_samples) {
@@ -127,20 +155,19 @@ static int opus_flush_resample(OpusStreamContext *s, int nb_samples)
 
 static int opus_init_resample(OpusStreamContext *s)
 {
-    static const float delay[16] = { 0.0 };
-    const uint8_t *delayptr[2] = { (uint8_t*)delay, (uint8_t*)delay };
+    float delay[16] = { 0.0 };
+    uint8_t *delayptr[2] = { (uint8_t*)delay, (uint8_t*)delay };
     int ret;
 
-    av_opt_set_int(s->swr, "in_sample_rate", s->silk_samplerate, 0);
-    ret = swr_init(s->swr);
+    av_opt_set_int(s->avr, "in_sample_rate", s->silk_samplerate, 0);
+    ret = avresample_open(s->avr);
     if (ret < 0) {
         av_log(s->avctx, AV_LOG_ERROR, "Error opening the resampler.\n");
         return ret;
     }
 
-    ret = swr_convert(s->swr,
-                      NULL, 0,
-                      delayptr, silk_resample_delay[s->packet.bandwidth]);
+    ret = avresample_convert(s->avr, NULL, 0, 0, delayptr, sizeof(delay),
+                             silk_resample_delay[s->packet.bandwidth]);
     if (ret < 0) {
         av_log(s->avctx, AV_LOG_ERROR,
                "Error feeding initial silence to the resampler.\n");
@@ -152,15 +179,22 @@ static int opus_init_resample(OpusStreamContext *s)
 
 static int opus_decode_redundancy(OpusStreamContext *s, const uint8_t *data, int size)
 {
-    int ret = ff_opus_rc_dec_init(&s->redundancy_rc, data, size);
+    int ret;
+    enum OpusBandwidth bw = s->packet.bandwidth;
+
+    if (s->packet.mode == OPUS_MODE_SILK &&
+        bw == OPUS_BANDWIDTH_MEDIUMBAND)
+        bw = OPUS_BANDWIDTH_WIDEBAND;
+
+    ret = opus_rc_init(&s->redundancy_rc, data, size);
     if (ret < 0)
         goto fail;
-    ff_opus_rc_dec_raw_init(&s->redundancy_rc, data + size, size);
+    opus_raw_init(&s->redundancy_rc, data + size, size);
 
     ret = ff_celt_decode_frame(s->celt, &s->redundancy_rc,
                                s->redundancy_output,
                                s->packet.stereo + 1, 240,
-                               0, ff_celt_band_end[s->packet.bandwidth]);
+                               0, celt_band_end[s->packet.bandwidth]);
     if (ret < 0)
         goto fail;
 
@@ -178,13 +212,13 @@ static int opus_decode_frame(OpusStreamContext *s, const uint8_t *data, int size
     int ret, i, consumed;
     int delayed_samples = s->delayed_samples;
 
-    ret = ff_opus_rc_dec_init(&s->rc, data, size);
+    ret = opus_rc_init(&s->rc, data, size);
     if (ret < 0)
         return ret;
 
     /* decode the silk frame */
     if (s->packet.mode == OPUS_MODE_SILK || s->packet.mode == OPUS_MODE_HYBRID) {
-        if (!swr_is_initialized(s->swr)) {
+        if (!avresample_is_open(s->avr)) {
             ret = opus_init_resample(s);
             if (ret < 0)
                 return ret;
@@ -198,14 +232,16 @@ static int opus_decode_frame(OpusStreamContext *s, const uint8_t *data, int size
             av_log(s->avctx, AV_LOG_ERROR, "Error decoding a SILK frame.\n");
             return samples;
         }
-        samples = swr_convert(s->swr,
-                              (uint8_t**)s->out, s->packet.frame_duration,
-                              (const uint8_t**)s->silk_output, samples);
+
+        samples = avresample_convert(s->avr, (uint8_t**)s->out, s->out_size,
+                                     s->packet.frame_duration,
+                                     (uint8_t**)s->silk_output,
+                                     sizeof(s->silk_buf[0]),
+                                     samples);
         if (samples < 0) {
             av_log(s->avctx, AV_LOG_ERROR, "Error resampling SILK data.\n");
             return samples;
         }
-        av_assert2((samples & 7) == 0);
         s->delayed_samples += s->packet.frame_duration - samples;
     } else
         ff_silk_flush(s->silk);
@@ -213,15 +249,15 @@ static int opus_decode_frame(OpusStreamContext *s, const uint8_t *data, int size
     // decode redundancy information
     consumed = opus_rc_tell(&s->rc);
     if (s->packet.mode == OPUS_MODE_HYBRID && consumed + 37 <= size * 8)
-        redundancy = ff_opus_rc_dec_log(&s->rc, 12);
+        redundancy = opus_rc_p2model(&s->rc, 12);
     else if (s->packet.mode == OPUS_MODE_SILK && consumed + 17 <= size * 8)
         redundancy = 1;
 
     if (redundancy) {
-        redundancy_pos = ff_opus_rc_dec_log(&s->rc, 1);
+        redundancy_pos = opus_rc_p2model(&s->rc, 1);
 
         if (s->packet.mode == OPUS_MODE_HYBRID)
-            redundancy_size = ff_opus_rc_dec_uint(&s->rc, 256) + 2;
+            redundancy_size = opus_rc_unimodel(&s->rc, 256) + 2;
         else
             redundancy_size = size - (consumed + 7) / 8;
         size -= redundancy_size;
@@ -265,13 +301,13 @@ static int opus_decode_frame(OpusStreamContext *s, const uint8_t *data, int size
             }
         }
 
-        ff_opus_rc_dec_raw_init(&s->rc, data + size, size);
+        opus_raw_init(&s->rc, data + size, size);
 
         ret = ff_celt_decode_frame(s->celt, &s->rc, dst,
                                    s->packet.stereo + 1,
                                    s->packet.frame_duration,
                                    (s->packet.mode == OPUS_MODE_HYBRID) ? 17 : 0,
-                                   ff_celt_band_end[s->packet.bandwidth]);
+                                   celt_band_end[s->packet.bandwidth]);
         if (ret < 0)
             return ret;
 
@@ -343,10 +379,10 @@ static int opus_decode_subpacket(OpusStreamContext *s,
     s->out_size = out_size;
 
     /* check if we need to flush the resampler */
-    if (swr_is_initialized(s->swr)) {
+    if (avresample_is_open(s->avr)) {
         if (buf) {
             int64_t cur_samplerate;
-            av_opt_get_int(s->swr, "in_sample_rate", 0, &cur_samplerate);
+            av_opt_get_int(s->avr, "in_sample_rate", 0, &cur_samplerate);
             flush_needed = (s->packet.mode == OPUS_MODE_CELT) || (cur_samplerate != s->silk_samplerate);
         } else {
             flush_needed = !!s->delayed_samples;
@@ -375,7 +411,7 @@ static int opus_decode_subpacket(OpusStreamContext *s,
             av_log(s->avctx, AV_LOG_ERROR, "Error flushing the resampler.\n");
             return ret;
         }
-        swr_close(s->swr);
+        avresample_close(s->avr);
         output_samples += s->delayed_samples;
         s->delayed_samples = 0;
 
@@ -425,11 +461,8 @@ static int opus_decode_packet(AVCodecContext *avctx, void *data,
 
     /* calculate the number of delayed samples */
     for (i = 0; i < c->nb_streams; i++) {
-        OpusStreamContext *s = &c->streams[i];
-        s->out[0] =
-        s->out[1] = NULL;
         delayed_samples = FFMAX(delayed_samples,
-                                s->delayed_samples + av_audio_fifo_size(c->sync_buffers[i]));
+                                c->streams[i].delayed_samples + av_audio_fifo_size(c->sync_buffers[i]));
     }
 
     /* decode the header of the first sub-packet to find out the sample count */
@@ -454,8 +487,10 @@ static int opus_decode_packet(AVCodecContext *avctx, void *data,
 
     /* setup the data buffers */
     ret = ff_get_buffer(avctx, frame, 0);
-    if (ret < 0)
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     frame->nb_samples = 0;
 
     memset(c->out, 0, c->nb_streams * 2 * sizeof(*c->out));
@@ -553,7 +588,7 @@ static int opus_decode_packet(AVCodecContext *avctx, void *data,
         }
 
         if (c->gain_i && decoded_samples > 0) {
-            c->fdsp->vector_fmul_scalar((float*)frame->extended_data[i],
+            c->fdsp.vector_fmul_scalar((float*)frame->extended_data[i],
                                        (float*)frame->extended_data[i],
                                        c->gain, FFALIGN(decoded_samples, 8));
         }
@@ -578,7 +613,7 @@ static av_cold void opus_decode_flush(AVCodecContext *ctx)
 
         if (s->celt_delay)
             av_audio_fifo_drain(s->celt_delay, av_audio_fifo_size(s->celt_delay));
-        swr_close(s->swr);
+        avresample_close(s->avr);
 
         av_audio_fifo_drain(c->sync_buffers[i], av_audio_fifo_size(c->sync_buffers[i]));
 
@@ -602,7 +637,7 @@ static av_cold int opus_decode_close(AVCodecContext *avctx)
         s->out_dummy_allocated_size = 0;
 
         av_audio_fifo_free(s->celt_delay);
-        swr_free(&s->swr);
+        avresample_free(&s->avr);
     }
 
     av_freep(&c->streams);
@@ -619,7 +654,6 @@ static av_cold int opus_decode_close(AVCodecContext *avctx)
     c->nb_streams = 0;
 
     av_freep(&c->channel_maps);
-    av_freep(&c->fdsp);
 
     return 0;
 }
@@ -632,16 +666,12 @@ static av_cold int opus_decode_init(AVCodecContext *avctx)
     avctx->sample_fmt  = AV_SAMPLE_FMT_FLTP;
     avctx->sample_rate = 48000;
 
-    c->fdsp = avpriv_float_dsp_alloc(0);
-    if (!c->fdsp)
-        return AVERROR(ENOMEM);
+    avpriv_float_dsp_init(&c->fdsp, 0);
 
     /* find out the channel configuration */
     ret = ff_opus_parse_extradata(avctx, c);
-    if (ret < 0) {
-        av_freep(&c->fdsp);
+    if (ret < 0)
         return ret;
-    }
 
     /* allocate and init each independent decoder */
     c->streams = av_mallocz_array(c->nb_streams, sizeof(*c->streams));
@@ -669,25 +699,24 @@ static av_cold int opus_decode_init(AVCodecContext *avctx)
             s->redundancy_output[j] = s->redundancy_buf[j];
         }
 
-        s->fdsp = c->fdsp;
+        s->fdsp = &c->fdsp;
 
-        s->swr =swr_alloc();
-        if (!s->swr)
+        s->avr = avresample_alloc_context();
+        if (!s->avr)
             goto fail;
 
         layout = (s->output_channels == 1) ? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO;
-        av_opt_set_int(s->swr, "in_sample_fmt",      avctx->sample_fmt,  0);
-        av_opt_set_int(s->swr, "out_sample_fmt",     avctx->sample_fmt,  0);
-        av_opt_set_int(s->swr, "in_channel_layout",  layout,             0);
-        av_opt_set_int(s->swr, "out_channel_layout", layout,             0);
-        av_opt_set_int(s->swr, "out_sample_rate",    avctx->sample_rate, 0);
-        av_opt_set_int(s->swr, "filter_size",        16,                 0);
+        av_opt_set_int(s->avr, "in_sample_fmt",      avctx->sample_fmt,  0);
+        av_opt_set_int(s->avr, "out_sample_fmt",     avctx->sample_fmt,  0);
+        av_opt_set_int(s->avr, "in_channel_layout",  layout,             0);
+        av_opt_set_int(s->avr, "out_channel_layout", layout,             0);
+        av_opt_set_int(s->avr, "out_sample_rate",    avctx->sample_rate, 0);
 
         ret = ff_silk_init(avctx, &s->silk, s->output_channels);
         if (ret < 0)
             goto fail;
 
-        ret = ff_celt_init(avctx, &s->celt, s->output_channels, c->apply_phase_inv);
+        ret = ff_celt_init(avctx, &s->celt, s->output_channels);
         if (ret < 0)
             goto fail;
 
@@ -712,24 +741,9 @@ fail:
     return ret;
 }
 
-#define OFFSET(x) offsetof(OpusContext, x)
-#define AD AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM
-static const AVOption opus_options[] = {
-    { "apply_phase_inv", "Apply intensity stereo phase inversion", OFFSET(apply_phase_inv), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, AD },
-    { NULL },
-};
-
-static const AVClass opus_class = {
-    .class_name = "Opus Decoder",
-    .item_name  = av_default_item_name,
-    .option     = opus_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
-
 AVCodec ff_opus_decoder = {
     .name            = "opus",
     .long_name       = NULL_IF_CONFIG_SMALL("Opus"),
-    .priv_class      = &opus_class,
     .type            = AVMEDIA_TYPE_AUDIO,
     .id              = AV_CODEC_ID_OPUS,
     .priv_data_size  = sizeof(OpusContext),

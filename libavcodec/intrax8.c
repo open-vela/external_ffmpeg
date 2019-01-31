@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,7 +21,6 @@
  * @brief IntraX8 (J-Frame) subdecoder, used by WMV2 and VC-1
  */
 
-#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "get_bits.h"
 #include "idctdsp.h"
@@ -116,7 +115,7 @@ static av_cold int x8_vlc_init(void)
 #undef init_or_vlc
 
     if (offset != sizeof(table) / sizeof(VLC_TYPE) / 2) {
-        av_log(NULL, AV_LOG_ERROR, "table size %"SIZE_SPECIFIER" does not match needed %i\n",
+        av_log(NULL, AV_LOG_ERROR, "table size %zd does not match needed %i\n",
                sizeof(table) / sizeof(VLC_TYPE) / 2, offset);
         return AVERROR_INVALIDDATA;
     }
@@ -135,7 +134,7 @@ static inline void x8_select_ac_table(IntraX8Context *const w, int mode)
 {
     int table_index;
 
-    av_assert2(mode < 4);
+    assert(mode < 4);
 
     if (w->j_ac_vlc[mode])
         return;
@@ -143,7 +142,8 @@ static inline void x8_select_ac_table(IntraX8Context *const w, int mode)
     table_index       = get_bits(w->gb, 3);
     // 2 modes use same tables
     w->j_ac_vlc[mode] = &j_ac_vlc[w->quant < 13][mode >> 1][table_index];
-    av_assert2(w->j_ac_vlc[mode]);
+
+    assert(w->j_ac_vlc[mode]);
 }
 
 static inline int x8_get_orient_vlc(IntraX8Context *w)
@@ -152,6 +152,8 @@ static inline int x8_get_orient_vlc(IntraX8Context *w)
         int table_index = get_bits(w->gb, 1 + (w->quant < 13));
         w->j_orient_vlc = &j_orient_vlc[w->quant < 13][table_index];
     }
+    assert(w->j_orient_vlc);
+    assert(w->j_orient_vlc->table);
 
     return get_vlc2(w->gb, w->j_orient_vlc->table, OR_VLC_BITS, OR_VLC_MTD);
 }
@@ -288,12 +290,14 @@ static int x8_get_dc_rlf(IntraX8Context *const w, const int mode,
 {
     int i, e, c;
 
-    av_assert2(mode < 3);
+    assert(mode < 3);
     if (!w->j_dc_vlc[mode]) {
         int table_index = get_bits(w->gb, 3);
         // 4 modes, same table
         w->j_dc_vlc[mode] = &j_dc_vlc[w->quant < 13][table_index];
     }
+    assert(w->j_dc_vlc);
+    assert(w->j_dc_vlc[mode]->table);
 
     i = get_vlc2(w->gb, w->j_dc_vlc[mode]->table, DC_VLC_BITS, DC_VLC_MTD);
 
@@ -350,7 +354,7 @@ static int x8_setup_spatial_predictor(IntraX8Context *const w, const int chroma)
     if (chroma)
         return 0;
 
-    av_assert2(w->orient < 3);
+    assert(w->orient < 3);
     if (range < 2 * w->quant) {
         if ((w->edges & 3) == 0) {
             if (w->orient == 1)
@@ -370,9 +374,9 @@ static int x8_setup_spatial_predictor(IntraX8Context *const w, const int chroma)
         w->raw_orient = x8_get_orient_vlc(w);
         if (w->raw_orient < 0)
             return -1;
-        av_assert2(w->raw_orient < 12);
-        av_assert2(w->orient < 3);
-        w->orient=prediction_table[w->orient][w->raw_orient];
+        assert(w->raw_orient < 12);
+        assert(w->orient < 3);
+        w->orient = prediction_table[w->orient][w->raw_orient];
     }
     return 0;
 }
@@ -476,7 +480,7 @@ static void x8_ac_compensation(IntraX8Context *const w, const int direction,
                                const int dc_level)
 {
     int t;
-#define B(x,y)  w->block[0][w->idct_permutation[(x) + (y) * 8]]
+#define B(x, y) w->block[0][w->idsp.idct_permutation[(x) + (y) * 8]]
 #define T(x)  ((x) * dc_level + 0x8000) >> 16;
     switch (direction) {
     case 0:
@@ -574,7 +578,7 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
     int use_quant_matrix;
     int sign;
 
-    av_assert2(w->orient < 12);
+    assert(w->orient < 12);
     w->bdsp.clear_block(w->block[0]);
 
     if (chroma)
@@ -686,7 +690,7 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
                                                w->frame->linesize[!!chroma]);
     }
     if (!zeros_only)
-        w->wdsp.idct_add(w->dest[chroma],
+        w->idsp.idct_add(w->dest[chroma],
                          w->frame->linesize[!!chroma],
                          w->block[0]);
 
@@ -747,20 +751,15 @@ av_cold int ff_intrax8_common_init(AVCodecContext *avctx,
     if (!w->prediction_table)
         return AVERROR(ENOMEM);
 
-    ff_wmv2dsp_init(&w->wdsp);
-
-    ff_init_scantable_permutation(w->idct_permutation,
-                                  w->wdsp.idct_perm);
-
-    ff_init_scantable(w->idct_permutation, &w->scantable[0],
+    ff_init_scantable(w->idsp.idct_permutation, &w->scantable[0],
                       ff_wmv1_scantable[0]);
-    ff_init_scantable(w->idct_permutation, &w->scantable[1],
+    ff_init_scantable(w->idsp.idct_permutation, &w->scantable[1],
                       ff_wmv1_scantable[2]);
-    ff_init_scantable(w->idct_permutation, &w->scantable[2],
+    ff_init_scantable(w->idsp.idct_permutation, &w->scantable[2],
                       ff_wmv1_scantable[3]);
 
     ff_intrax8dsp_init(&w->dsp);
-    ff_blockdsp_init(&w->bdsp, avctx);
+    ff_blockdsp_init(&w->bdsp);
 
     return 0;
 }

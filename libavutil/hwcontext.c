@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,16 +35,10 @@ static const HWContextType * const hw_table[] = {
 #if CONFIG_D3D11VA
     &ff_hwcontext_type_d3d11va,
 #endif
-#if CONFIG_LIBDRM
-    &ff_hwcontext_type_drm,
-#endif
 #if CONFIG_DXVA2
     &ff_hwcontext_type_dxva2,
 #endif
-#if CONFIG_OPENCL
-    &ff_hwcontext_type_opencl,
-#endif
-#if CONFIG_QSV
+#if CONFIG_LIBMFX
     &ff_hwcontext_type_qsv,
 #endif
 #if CONFIG_VAAPI
@@ -53,26 +47,16 @@ static const HWContextType * const hw_table[] = {
 #if CONFIG_VDPAU
     &ff_hwcontext_type_vdpau,
 #endif
-#if CONFIG_VIDEOTOOLBOX
-    &ff_hwcontext_type_videotoolbox,
-#endif
-#if CONFIG_MEDIACODEC
-    &ff_hwcontext_type_mediacodec,
-#endif
     NULL,
 };
 
 static const char *const hw_type_names[] = {
     [AV_HWDEVICE_TYPE_CUDA]   = "cuda",
-    [AV_HWDEVICE_TYPE_DRM]    = "drm",
     [AV_HWDEVICE_TYPE_DXVA2]  = "dxva2",
     [AV_HWDEVICE_TYPE_D3D11VA] = "d3d11va",
-    [AV_HWDEVICE_TYPE_OPENCL] = "opencl",
     [AV_HWDEVICE_TYPE_QSV]    = "qsv",
     [AV_HWDEVICE_TYPE_VAAPI]  = "vaapi",
     [AV_HWDEVICE_TYPE_VDPAU]  = "vdpau",
-    [AV_HWDEVICE_TYPE_VIDEOTOOLBOX] = "videotoolbox",
-    [AV_HWDEVICE_TYPE_MEDIACODEC] = "mediacodec",
 };
 
 enum AVHWDeviceType av_hwdevice_find_type_by_name(const char *name)
@@ -245,7 +229,7 @@ AVBufferRef *av_hwframe_ctx_alloc(AVBufferRef *device_ref_in)
     AVHWDeviceContext *device_ctx = (AVHWDeviceContext*)device_ref_in->data;
     const HWContextType  *hw_type = device_ctx->internal->hw_type;
     AVHWFramesContext *ctx;
-    AVBufferRef *buf, *device_ref = NULL;
+    AVBufferRef *buf, *device_ref = NULL;;
 
     ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
@@ -646,9 +630,6 @@ int av_hwdevice_ctx_create_derived(AVBufferRef **dst_ref_ptr,
                     ret = AVERROR(ENOMEM);
                     goto fail;
                 }
-                ret = av_hwdevice_ctx_init(dst_ref);
-                if (ret < 0)
-                    goto fail;
                 goto done;
             }
             if (ret != AVERROR(ENOSYS))
@@ -661,6 +642,10 @@ int av_hwdevice_ctx_create_derived(AVBufferRef **dst_ref_ptr,
     goto fail;
 
 done:
+    ret = av_hwdevice_ctx_init(dst_ref);
+    if (ret < 0)
+        goto fail;
+
     *dst_ref_ptr = dst_ref;
     return 0;
 
@@ -869,11 +854,4 @@ fail:
         av_buffer_unref(&dst->internal->source_frames);
     av_buffer_unref(&dst_ref);
     return ret;
-}
-
-int ff_hwframe_map_replace(AVFrame *dst, const AVFrame *src)
-{
-    HWMapDescriptor *hwmap = (HWMapDescriptor*)dst->buf[0]->data;
-    av_frame_unref(hwmap->source);
-    return av_frame_ref(hwmap->source, src);
 }

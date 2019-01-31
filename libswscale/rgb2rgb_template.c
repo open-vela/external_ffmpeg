@@ -7,20 +7,20 @@
  * palette & YUV & runtime CPU stuff by Michael (michaelni@gmx.at)
  * lot of big-endian byte order fixes by Alex Beregszaszi
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -240,6 +240,27 @@ static inline void rgb24to15_c(const uint8_t *src, uint8_t *dst, int src_size)
     }
 }
 
+/*
+ * I use less accurate approximation here by simply left-shifting the input
+ * value and filling the low order bits with zeroes. This method improves PNG
+ * compression but this scheme cannot reproduce white exactly, since it does
+ * not generate an all-ones maximum value; the net effect is to darken the
+ * image slightly.
+ *
+ * The better method should be "left bit replication":
+ *
+ *  4 3 2 1 0
+ *  ---------
+ *  1 1 0 1 1
+ *
+ *  7 6 5 4 3  2 1 0
+ *  ----------------
+ *  1 1 0 1 1  1 1 0
+ *  |=======|  |===|
+ *      |      leftmost bits repeated to fill open bits
+ *      |
+ *  original bits
+ */
 static inline void rgb15tobgr24_c(const uint8_t *src, uint8_t *dst,
                                   int src_size)
 {
@@ -249,9 +270,9 @@ static inline void rgb15tobgr24_c(const uint8_t *src, uint8_t *dst,
 
     while (s < end) {
         register uint16_t bgr = *s++;
-        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
-        *d++ = ((bgr&0x03E0)>>2) | ((bgr&0x03E0)>> 7);
-        *d++ = ((bgr&0x7C00)>>7) | ((bgr&0x7C00)>>12);
+        *d++ = (bgr & 0x1F)   << 3;
+        *d++ = (bgr & 0x3E0)  >> 2;
+        *d++ = (bgr & 0x7C00) >> 7;
     }
 }
 
@@ -264,9 +285,9 @@ static inline void rgb16tobgr24_c(const uint8_t *src, uint8_t *dst,
 
     while (s < end) {
         register uint16_t bgr = *s++;
-        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
-        *d++ = ((bgr&0x07E0)>>3) | ((bgr&0x07E0)>> 9);
-        *d++ = ((bgr&0xF800)>>8) | ((bgr&0xF800)>>13);
+        *d++ = (bgr & 0x1F)   << 3;
+        *d++ = (bgr & 0x7E0)  >> 3;
+        *d++ = (bgr & 0xF800) >> 8;
     }
 }
 
@@ -280,13 +301,13 @@ static inline void rgb15to32_c(const uint8_t *src, uint8_t *dst, int src_size)
         register uint16_t bgr = *s++;
 #if HAVE_BIGENDIAN
         *d++ = 255;
-        *d++ = ((bgr&0x7C00)>>7) | ((bgr&0x7C00)>>12);
-        *d++ = ((bgr&0x03E0)>>2) | ((bgr&0x03E0)>> 7);
-        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
+        *d++ = (bgr & 0x7C00) >> 7;
+        *d++ = (bgr & 0x3E0)  >> 2;
+        *d++ = (bgr & 0x1F)   << 3;
 #else
-        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
-        *d++ = ((bgr&0x03E0)>>2) | ((bgr&0x03E0)>> 7);
-        *d++ = ((bgr&0x7C00)>>7) | ((bgr&0x7C00)>>12);
+        *d++ = (bgr & 0x1F)   << 3;
+        *d++ = (bgr & 0x3E0)  >> 2;
+        *d++ = (bgr & 0x7C00) >> 7;
         *d++ = 255;
 #endif
     }
@@ -302,13 +323,13 @@ static inline void rgb16to32_c(const uint8_t *src, uint8_t *dst, int src_size)
         register uint16_t bgr = *s++;
 #if HAVE_BIGENDIAN
         *d++ = 255;
-        *d++ = ((bgr&0xF800)>>8) | ((bgr&0xF800)>>13);
-        *d++ = ((bgr&0x07E0)>>3) | ((bgr&0x07E0)>> 9);
-        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
+        *d++ = (bgr & 0xF800) >> 8;
+        *d++ = (bgr & 0x7E0)  >> 3;
+        *d++ = (bgr & 0x1F)   << 3;
 #else
-        *d++ = ((bgr&0x001F)<<3) | ((bgr&0x001F)>> 2);
-        *d++ = ((bgr&0x07E0)>>3) | ((bgr&0x07E0)>> 9);
-        *d++ = ((bgr&0xF800)>>8) | ((bgr&0xF800)>>13);
+        *d++ = (bgr & 0x1F)   << 3;
+        *d++ = (bgr & 0x7E0)  >> 3;
+        *d++ = (bgr & 0xF800) >> 8;
         *d++ = 255;
 #endif
     }
@@ -322,45 +343,11 @@ static inline void shuffle_bytes_2103_c(const uint8_t *src, uint8_t *dst,
     uint8_t *d       = dst - idx;
 
     for (; idx < 15; idx += 4) {
-        register unsigned v   = *(const uint32_t *)&s[idx], g = v & 0xff00ff00;
+        register int v        = *(const uint32_t *)&s[idx], g = v & 0xff00ff00;
         v                    &= 0xff00ff;
         *(uint32_t *)&d[idx]  = (v >> 16) + g + (v << 16);
     }
 }
-
-static inline void shuffle_bytes_0321_c(const uint8_t *src, uint8_t *dst,
-                                        int src_size)
-{
-    int idx          = 15  - src_size;
-    const uint8_t *s = src - idx;
-    uint8_t *d       = dst - idx;
-
-    for (; idx < 15; idx += 4) {
-        register unsigned v   = *(const uint32_t *)&s[idx], g = v & 0x00ff00ff;
-        v                    &= 0xff00ff00;
-        *(uint32_t *)&d[idx]  = (v >> 16) + g + (v << 16);
-    }
-}
-
-#if !HAVE_BIGENDIAN
-#define DEFINE_SHUFFLE_BYTES(name, a, b, c, d)                          \
-static void shuffle_bytes_##name (const uint8_t *src,                   \
-                                        uint8_t *dst, int src_size)     \
-{                                                                       \
-    int i;                                                              \
-                                                                        \
-    for (i = 0; i < src_size; i += 4) {                                 \
-        dst[i + 0] = src[i + a];                                        \
-        dst[i + 1] = src[i + b];                                        \
-        dst[i + 2] = src[i + c];                                        \
-        dst[i + 3] = src[i + d];                                        \
-    }                                                                   \
-}
-
-DEFINE_SHUFFLE_BYTES(1230_c, 1, 2, 3, 0)
-DEFINE_SHUFFLE_BYTES(3012_c, 3, 0, 1, 2)
-DEFINE_SHUFFLE_BYTES(3210_c, 3, 2, 1, 0)
-#endif
 
 static inline void rgb24tobgr24_c(const uint8_t *src, uint8_t *dst, int src_size)
 {
@@ -648,13 +635,10 @@ static inline void uyvytoyv12_c(const uint8_t *src, uint8_t *ydst,
  * others are ignored in the C version.
  * FIXME: Write HQ version.
  */
-void ff_rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
+void rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
                    uint8_t *vdst, int width, int height, int lumStride,
-                   int chromStride, int srcStride, int32_t *rgb2yuv)
+                   int chromStride, int srcStride)
 {
-    int32_t ry = rgb2yuv[RY_IDX], gy = rgb2yuv[GY_IDX], by = rgb2yuv[BY_IDX];
-    int32_t ru = rgb2yuv[RU_IDX], gu = rgb2yuv[GU_IDX], bu = rgb2yuv[BU_IDX];
-    int32_t rv = rgb2yuv[RV_IDX], gv = rgb2yuv[GV_IDX], bv = rgb2yuv[BV_IDX];
     int y;
     const int chromWidth = width >> 1;
 
@@ -665,9 +649,9 @@ void ff_rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
             unsigned int g = src[6 * i + 1];
             unsigned int r = src[6 * i + 2];
 
-            unsigned int Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) +  16;
-            unsigned int V = ((rv * r + gv * g + bv * b) >> RGB2YUV_SHIFT) + 128;
-            unsigned int U = ((ru * r + gu * g + bu * b) >> RGB2YUV_SHIFT) + 128;
+            unsigned int Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) +  16;
+            unsigned int V = ((RV * r + GV * g + BV * b) >> RGB2YUV_SHIFT) + 128;
+            unsigned int U = ((RU * r + GU * g + BU * b) >> RGB2YUV_SHIFT) + 128;
 
             udst[i]     = U;
             vdst[i]     = V;
@@ -677,21 +661,18 @@ void ff_rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
             g = src[6 * i + 4];
             r = src[6 * i + 5];
 
-            Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) + 16;
+            Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) + 16;
             ydst[2 * i + 1] = Y;
         }
         ydst += lumStride;
         src  += srcStride;
-
-        if (y+1 == height)
-            break;
 
         for (i = 0; i < chromWidth; i++) {
             unsigned int b = src[6 * i + 0];
             unsigned int g = src[6 * i + 1];
             unsigned int r = src[6 * i + 2];
 
-            unsigned int Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) + 16;
+            unsigned int Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) + 16;
 
             ydst[2 * i] = Y;
 
@@ -699,7 +680,7 @@ void ff_rgb24toyv12_c(const uint8_t *src, uint8_t *ydst, uint8_t *udst,
             g = src[6 * i + 4];
             r = src[6 * i + 5];
 
-            Y = ((ry * r + gy * g + by * b) >> RGB2YUV_SHIFT) + 16;
+            Y = ((RY * r + GY * g + BY * b) >> RGB2YUV_SHIFT) + 16;
             ydst[2 * i + 1] = Y;
         }
         udst += chromStride;
@@ -963,16 +944,7 @@ static av_cold void rgb2rgb_init_c(void)
     rgb24to15          = rgb24to15_c;
     rgb24to16          = rgb24to16_c;
     rgb24tobgr24       = rgb24tobgr24_c;
-#if HAVE_BIGENDIAN
-    shuffle_bytes_0321 = shuffle_bytes_2103_c;
-    shuffle_bytes_2103 = shuffle_bytes_0321_c;
-#else
-    shuffle_bytes_0321 = shuffle_bytes_0321_c;
     shuffle_bytes_2103 = shuffle_bytes_2103_c;
-    shuffle_bytes_1230 = shuffle_bytes_1230_c;
-    shuffle_bytes_3012 = shuffle_bytes_3012_c;
-    shuffle_bytes_3210 = shuffle_bytes_3210_c;
-#endif
     rgb32tobgr16       = rgb32tobgr16_c;
     rgb32tobgr15       = rgb32tobgr15_c;
     yv12toyuy2         = yv12toyuy2_c;
@@ -981,7 +953,7 @@ static av_cold void rgb2rgb_init_c(void)
     yuv422ptouyvy      = yuv422ptouyvy_c;
     yuy2toyv12         = yuy2toyv12_c;
     planar2x           = planar2x_c;
-    ff_rgb24toyv12     = ff_rgb24toyv12_c;
+    rgb24toyv12        = rgb24toyv12_c;
     interleaveBytes    = interleaveBytes_c;
     deinterleaveBytes  = deinterleaveBytes_c;
     vu9_to_vu12        = vu9_to_vu12_c;

@@ -13,7 +13,4 @@ OBJS = audio_convert.o                                                  \
        resample.o                                                       \
        utils.o                                                          \
 
-# Windows resource file
-SLIBOBJS-$(HAVE_GNU_WINDRES) += avresampleres.o
-
 TESTPROGS = avresample
