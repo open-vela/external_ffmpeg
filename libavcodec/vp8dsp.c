@@ -3,20 +3,20 @@
  * Copyright (C) 2010 Ronald S. Bultje
  * Copyright (C) 2014 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,7 +26,6 @@
  */
 
 #include "libavutil/common.h"
-#include "libavutil/intreadwrite.h"
 
 #include "mathops.h"
 #include "vp8dsp.h"
@@ -53,8 +52,7 @@ static void name ## _idct_dc_add4y_c(uint8_t *dst, int16_t block[4][16],      \
 #if CONFIG_VP7_DECODER
 static void vp7_luma_dc_wht_c(int16_t block[4][4][16], int16_t dc[16])
 {
-    int i;
-    unsigned a1, b1, c1, d1;
+    int i, a1, b1, c1, d1;
     int16_t tmp[16];
 
     for (i = 0; i < 4; i++) {
@@ -62,10 +60,10 @@ static void vp7_luma_dc_wht_c(int16_t block[4][4][16], int16_t dc[16])
         b1 = (dc[i * 4 + 0] - dc[i * 4 + 2]) * 23170;
         c1 = dc[i * 4 + 1] * 12540 - dc[i * 4 + 3] * 30274;
         d1 = dc[i * 4 + 1] * 30274 + dc[i * 4 + 3] * 12540;
-        tmp[i * 4 + 0] = (int)(a1 + d1) >> 14;
-        tmp[i * 4 + 3] = (int)(a1 - d1) >> 14;
-        tmp[i * 4 + 1] = (int)(b1 + c1) >> 14;
-        tmp[i * 4 + 2] = (int)(b1 - c1) >> 14;
+        tmp[i * 4 + 0] = (a1 + d1) >> 14;
+        tmp[i * 4 + 3] = (a1 - d1) >> 14;
+        tmp[i * 4 + 1] = (b1 + c1) >> 14;
+        tmp[i * 4 + 2] = (b1 - c1) >> 14;
     }
 
     for (i = 0; i < 4; i++) {
@@ -73,11 +71,14 @@ static void vp7_luma_dc_wht_c(int16_t block[4][4][16], int16_t dc[16])
         b1 = (tmp[i + 0] - tmp[i + 8]) * 23170;
         c1 = tmp[i + 4] * 12540 - tmp[i + 12] * 30274;
         d1 = tmp[i + 4] * 30274 + tmp[i + 12] * 12540;
-        AV_ZERO64(dc + i * 4);
-        block[0][i][0] = (int)(a1 + d1 + 0x20000) >> 18;
-        block[3][i][0] = (int)(a1 - d1 + 0x20000) >> 18;
-        block[1][i][0] = (int)(b1 + c1 + 0x20000) >> 18;
-        block[2][i][0] = (int)(b1 - c1 + 0x20000) >> 18;
+        dc[i * 4 + 0] = 0;
+        dc[i * 4 + 1] = 0;
+        dc[i * 4 + 2] = 0;
+        dc[i * 4 + 3] = 0;
+        block[0][i][0] = (a1 + d1 + 0x20000) >> 18;
+        block[3][i][0] = (a1 - d1 + 0x20000) >> 18;
+        block[1][i][0] = (b1 + c1 + 0x20000) >> 18;
+        block[2][i][0] = (b1 - c1 + 0x20000) >> 18;
     }
 }
 
@@ -96,8 +97,7 @@ static void vp7_luma_dc_wht_dc_c(int16_t block[4][4][16], int16_t dc[16])
 
 static void vp7_idct_add_c(uint8_t *dst, int16_t block[16], ptrdiff_t stride)
 {
-    int i;
-    unsigned a1, b1, c1, d1;
+    int i, a1, b1, c1, d1;
     int16_t tmp[16];
 
     for (i = 0; i < 4; i++) {
@@ -105,11 +105,14 @@ static void vp7_idct_add_c(uint8_t *dst, int16_t block[16], ptrdiff_t stride)
         b1 = (block[i * 4 + 0] - block[i * 4 + 2]) * 23170;
         c1 = block[i * 4 + 1] * 12540 - block[i * 4 + 3] * 30274;
         d1 = block[i * 4 + 1] * 30274 + block[i * 4 + 3] * 12540;
-        AV_ZERO64(block + i * 4);
-        tmp[i * 4 + 0] = (int)(a1 + d1) >> 14;
-        tmp[i * 4 + 3] = (int)(a1 - d1) >> 14;
-        tmp[i * 4 + 1] = (int)(b1 + c1) >> 14;
-        tmp[i * 4 + 2] = (int)(b1 - c1) >> 14;
+        block[i * 4 + 0] = 0;
+        block[i * 4 + 1] = 0;
+        block[i * 4 + 2] = 0;
+        block[i * 4 + 3] = 0;
+        tmp[i * 4 + 0] = (a1 + d1) >> 14;
+        tmp[i * 4 + 3] = (a1 - d1) >> 14;
+        tmp[i * 4 + 1] = (b1 + c1) >> 14;
+        tmp[i * 4 + 2] = (b1 - c1) >> 14;
     }
 
     for (i = 0; i < 4; i++) {
@@ -118,13 +121,13 @@ static void vp7_idct_add_c(uint8_t *dst, int16_t block[16], ptrdiff_t stride)
         c1 = tmp[i + 4] * 12540 - tmp[i + 12] * 30274;
         d1 = tmp[i + 4] * 30274 + tmp[i + 12] * 12540;
         dst[0 * stride + i] = av_clip_uint8(dst[0 * stride + i] +
-                                            ((int)(a1 + d1 + 0x20000) >> 18));
+                                            ((a1 + d1 + 0x20000) >> 18));
         dst[3 * stride + i] = av_clip_uint8(dst[3 * stride + i] +
-                                            ((int)(a1 - d1 + 0x20000) >> 18));
+                                            ((a1 - d1 + 0x20000) >> 18));
         dst[1 * stride + i] = av_clip_uint8(dst[1 * stride + i] +
-                                            ((int)(b1 + c1 + 0x20000) >> 18));
+                                            ((b1 + c1 + 0x20000) >> 18));
         dst[2 * stride + i] = av_clip_uint8(dst[2 * stride + i] +
-                                            ((int)(b1 - c1 + 0x20000) >> 18));
+                                            ((b1 - c1 + 0x20000) >> 18));
     }
 }
 
@@ -168,7 +171,10 @@ static void vp8_luma_dc_wht_c(int16_t block[4][4][16], int16_t dc[16])
         t1 = dc[i * 4 + 1] + dc[i * 4 + 2];
         t2 = dc[i * 4 + 1] - dc[i * 4 + 2];
         t3 = dc[i * 4 + 0] - dc[i * 4 + 3] + 3; // rounding
-        AV_ZERO64(dc + i * 4);
+        dc[i * 4 + 0] = 0;
+        dc[i * 4 + 1] = 0;
+        dc[i * 4 + 2] = 0;
+        dc[i * 4 + 3] = 0;
 
         block[i][0][0] = (t0 + t1) >> 3;
         block[i][1][0] = (t3 + t2) >> 3;
@@ -256,7 +262,7 @@ MK_IDCT_DC_ADD4_C(vp8)
     int av_unused q2 = p[ 2 * stride];                                        \
     int av_unused q3 = p[ 3 * stride];
 
-#define clip_int8(n) (cm[(n) + 0x80] - 0x80)
+#define clip_int8(n) (cm[n + 0x80] - 0x80)
 
 static av_always_inline void filter_common(uint8_t *p, ptrdiff_t stride,
                                            int is4tap, int is_vp7)
@@ -673,14 +679,14 @@ av_cold void ff_vp78dsp_init(VP8DSPContext *dsp)
     VP78_BILINEAR_MC_FUNC(1, 8);
     VP78_BILINEAR_MC_FUNC(2, 4);
 
+    if (ARCH_AARCH64)
+        ff_vp78dsp_init_aarch64(dsp);
     if (ARCH_ARM)
         ff_vp78dsp_init_arm(dsp);
     if (ARCH_PPC)
         ff_vp78dsp_init_ppc(dsp);
     if (ARCH_X86)
         ff_vp78dsp_init_x86(dsp);
-    if (ARCH_AARCH64)
-        ff_vp78dsp_init_aarch64(dsp);
 }
 
 #if CONFIG_VP7_DECODER
@@ -735,13 +741,11 @@ av_cold void ff_vp8dsp_init(VP8DSPContext *dsp)
     dsp->vp8_v_loop_filter_simple = vp8_v_loop_filter_simple_c;
     dsp->vp8_h_loop_filter_simple = vp8_h_loop_filter_simple_c;
 
+    if (ARCH_AARCH64)
+        ff_vp8dsp_init_aarch64(dsp);
     if (ARCH_ARM)
         ff_vp8dsp_init_arm(dsp);
     if (ARCH_X86)
         ff_vp8dsp_init_x86(dsp);
-    if (ARCH_MIPS)
-        ff_vp8dsp_init_mips(dsp);
-    if (ARCH_AARCH64)
-        ff_vp8dsp_init_aarch64(dsp);
 }
 #endif /* CONFIG_VP8_DECODER */
