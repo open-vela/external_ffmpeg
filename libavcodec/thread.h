@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008 Alexander Strange <astrange@ithinksw.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,7 +33,7 @@
 
 typedef struct ThreadFrame {
     AVFrame *f;
-    AVCodecContext *owner[2];
+    AVCodecContext *owner;
     // progress->data is an array of 2 ints holding progress for top/bottom
     // fields
     AVBufferRef *progress;
@@ -97,16 +97,6 @@ void ff_thread_report_progress(ThreadFrame *f, int progress, int field);
 void ff_thread_await_progress(ThreadFrame *f, int progress, int field);
 
 /**
- * Wrapper around get_format() for frame-multithreaded codecs.
- * Call this function instead of avctx->get_format().
- * Cannot be called after the codec has called ff_thread_finish_setup().
- *
- * @param avctx The current context.
- * @param fmt The list of available formats.
- */
-enum AVPixelFormat ff_thread_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmt);
-
-/**
  * Wrapper around get_buffer() for frame-multithreaded codecs.
  * Call this function instead of ff_get_buffer(f).
  * Cannot be called after the codec has called ff_thread_finish_setup().
@@ -132,13 +122,6 @@ void ff_thread_release_buffer(AVCodecContext *avctx, ThreadFrame *f);
 int ff_thread_ref_frame(ThreadFrame *dst, ThreadFrame *src);
 
 int ff_thread_init(AVCodecContext *s);
-int ff_slice_thread_execute_with_mainfunc(AVCodecContext *avctx,
-        int (*action_func2)(AVCodecContext *c, void *arg, int jobnr, int threadnr),
-        int (*main_func)(AVCodecContext *c), void *arg, int *ret, int job_count);
 void ff_thread_free(AVCodecContext *s);
-int ff_alloc_entries(AVCodecContext *avctx, int count);
-void ff_reset_entries(AVCodecContext *avctx);
-void ff_thread_report_progress2(AVCodecContext *avctx, int field, int thread, int n);
-void ff_thread_await_progress2(AVCodecContext *avctx,  int field, int thread, int shift);
 
 #endif /* AVCODEC_THREAD_H */

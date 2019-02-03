@@ -6,35 +6,38 @@
  * Copyright (C) 2010 Fiona Glaser
  * Copyright (C) 2012 Daniel Kang
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef AVCODEC_VP8_H
 #define AVCODEC_VP8_H
 
-#include <stdatomic.h>
-
 #include "libavutil/buffer.h"
-#include "libavutil/thread.h"
 
 #include "h264pred.h"
 #include "thread.h"
 #include "vp56.h"
 #include "vp8dsp.h"
+
+#if HAVE_PTHREADS
+#   include <pthread.h>
+#elif HAVE_W32THREADS
+#   include "compat/w32pthreads.h"
+#endif
 
 #define VP8_MAX_QUANT 127
 
@@ -93,16 +96,6 @@ typedef struct VP8Macroblock {
     VP56mv bmv[16];
 } VP8Macroblock;
 
-typedef struct VP8intmv {
-    int x;
-    int y;
-} VP8intmv;
-
-typedef struct VP8mvbounds {
-    VP8intmv mv_min;
-    VP8intmv mv_max;
-} VP8mvbounds;
-
 typedef struct VP8ThreadData {
     DECLARE_ALIGNED(16, int16_t, block)[6][4][16];
     DECLARE_ALIGNED(16, int16_t, block_dc)[16];
@@ -126,13 +119,12 @@ typedef struct VP8ThreadData {
     pthread_mutex_t lock;
     pthread_cond_t cond;
 #endif
-    atomic_int thread_mb_pos; // (mb_y << 16) | (mb_x & 0xFFFF)
-    atomic_int wait_mb_pos; // What the current thread is waiting on.
+    int thread_mb_pos; // (mb_y << 16) | (mb_x & 0xFFFF)
+    int wait_mb_pos; // What the current thread is waiting on.
 
 #define EDGE_EMU_LINESIZE 32
     DECLARE_ALIGNED(16, uint8_t, edge_emu_buffer)[21 * EDGE_EMU_LINESIZE];
     VP8FilterStrength *filter_strength;
-    VP8mvbounds mv_bounds;
 } VP8ThreadData;
 
 typedef struct VP8Frame {
@@ -164,7 +156,8 @@ typedef struct VP8Context {
     uint8_t deblock_filter;
     uint8_t mbskip_enabled;
     uint8_t profile;
-    VP8mvbounds mv_bounds;
+    VP56mv mv_min;
+    VP56mv mv_max;
 
     int8_t sign_bias[4]; ///< one state [0, 1] per ref frame type
     int ref_count[3];
@@ -314,11 +307,6 @@ typedef struct VP8Context {
      * 1 -> Macroblocks for entire frame allocated (sliced thread).
      */
     int mb_layout;
-
-    int (*decode_mb_row_no_filter)(AVCodecContext *avctx, void *tdata, int jobnr, int threadnr);
-    void (*filter_mb_row)(AVCodecContext *avctx, void *tdata, int jobnr, int threadnr);
-
-    int vp7;
 
     /**
      * Fade bit present in bitstream (VP7)

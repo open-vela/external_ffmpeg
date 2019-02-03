@@ -2,20 +2,20 @@
  * Microsoft RTP/ASF support.
  * Copyright (c) 2008 Ronald S. Bultje
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
  * @author Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/base64.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
@@ -54,7 +53,6 @@ static int rtp_asf_fix_header(uint8_t *buf, int len)
     p += sizeof(ff_asf_guid) + 14;
     do {
         uint64_t chunksize = AV_RL64(p + sizeof(ff_asf_guid));
-        int skip = 6 * 8 + 3 * 4 + sizeof(ff_asf_guid) * 2;
         if (memcmp(p, ff_asf_file_header, sizeof(ff_asf_guid))) {
             if (chunksize > end - p)
                 return -1;
@@ -62,11 +60,9 @@ static int rtp_asf_fix_header(uint8_t *buf, int len)
             continue;
         }
 
-        if (end - p < 8 + skip)
-            break;
         /* skip most of the file header, to min_pktsize */
-        p += skip;
-        if (AV_RL32(p) == AV_RL32(p + 4)) {
+        p += 6 * 8 + 3 * 4 + sizeof(ff_asf_guid) * 2;
+        if (p + 8 <= end && AV_RL32(p) == AV_RL32(p + 4)) {
             /* and set that to zero */
             AV_WL32(p, 0);
             return 0;
@@ -101,12 +97,11 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
 {
     int ret = 0;
     if (av_strstart(p, "pgmpu:data:application/vnd.ms.wms-hdr.asfv1;base64,", &p)) {
-        AVIOContext pb = { 0 };
+        AVIOContext pb;
         RTSPState *rt = s->priv_data;
         AVDictionary *opts = NULL;
         int len = strlen(p) * 6 / 8;
         char *buf = av_mallocz(len);
-        AVInputFormat *iformat;
 
         if (!buf)
             return AVERROR(ENOMEM);
@@ -119,10 +114,6 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
         if (rt->asf_ctx) {
             avformat_close_input(&rt->asf_ctx);
         }
-
-        if (!(iformat = av_find_input_format("asf")))
-            return AVERROR_DEMUXER_NOT_FOUND;
-
         rt->asf_ctx = avformat_alloc_context();
         if (!rt->asf_ctx) {
             av_free(buf);
@@ -130,21 +121,15 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
         }
         rt->asf_ctx->pb      = &pb;
         av_dict_set(&opts, "no_resync_search", "1", 0);
-
-        if ((ret = ff_copy_whiteblacklists(rt->asf_ctx, s)) < 0) {
-            av_dict_free(&opts);
-            return ret;
-        }
-
-        ret = avformat_open_input(&rt->asf_ctx, "", iformat, &opts);
+        ret = avformat_open_input(&rt->asf_ctx, "", &ff_asf_demuxer, &opts);
         av_dict_free(&opts);
         if (ret < 0) {
-            av_free(pb.buffer);
+            av_free(buf);
             return ret;
         }
         av_dict_copy(&s->metadata, rt->asf_ctx->metadata, 0);
         rt->asf_pb_pos = avio_tell(&pb);
-        av_free(pb.buffer);
+        av_free(buf);
         rt->asf_ctx->pb = NULL;
     }
     return ret;
@@ -209,7 +194,7 @@ static int asfrtp_parse_packet(AVFormatContext *s, PayloadContext *asf,
 
         av_freep(&asf->buf);
 
-        ffio_init_context(pb, (uint8_t *)buf, len, 0, NULL, NULL, NULL, NULL);
+        ffio_init_context(pb, buf, len, 0, NULL, NULL, NULL, NULL);
 
         while (avio_tell(pb) + 4 < len) {
             int start_off = avio_tell(pb);
@@ -300,7 +285,7 @@ static void asfrtp_close_context(PayloadContext *asf)
 }
 
 #define RTP_ASF_HANDLER(n, s, t) \
-const RTPDynamicProtocolHandler ff_ms_rtp_ ## n ## _handler = { \
+RTPDynamicProtocolHandler ff_ms_rtp_ ## n ## _handler = { \
     .enc_name         = s, \
     .codec_type       = t, \
     .codec_id         = AV_CODEC_ID_NONE, \
