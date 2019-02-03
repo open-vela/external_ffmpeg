@@ -2,20 +2,20 @@
  * TechSmith Camtasia decoder
  * Copyright (c) 2004 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,6 @@
 typedef struct TsccContext {
 
     AVCodecContext *avctx;
-    AVFrame *frame;
 
     // Bits per pixel
     int bpp;
@@ -67,20 +66,12 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     CamtasiaContext * const c = avctx->priv_data;
-    AVFrame *frame = c->frame;
+    AVFrame *frame = data;
     int ret;
-    int palette_has_changed = 0;
 
-    if (c->avctx->pix_fmt == AV_PIX_FMT_PAL8) {
-        int size;
-        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
-
-        if (pal && size == AVPALETTE_SIZE) {
-            palette_has_changed = 1;
-            memcpy(c->pal, pal, AVPALETTE_SIZE);
-        } else if (pal) {
-            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
-        }
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0){
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+        return ret;
     }
 
     ret = inflateReset(&c->zstream);
@@ -94,17 +85,11 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     c->zstream.avail_out = c->decomp_size;
     ret = inflate(&c->zstream, Z_FINISH);
     // Z_DATA_ERROR means empty picture
-    if (ret == Z_DATA_ERROR && !palette_has_changed) {
-        return buf_size;
-    }
-
     if ((ret != Z_OK) && (ret != Z_STREAM_END) && (ret != Z_DATA_ERROR)) {
         av_log(avctx, AV_LOG_ERROR, "Inflate error: %d\n", ret);
         return AVERROR_UNKNOWN;
     }
 
-    if ((ret = ff_reget_buffer(avctx, frame)) < 0)
-        return ret;
 
     if (ret != Z_DATA_ERROR) {
         bytestream2_init(&c->gb, c->decomp_buf,
@@ -114,12 +99,15 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     /* make the palette available on the way out */
     if (c->avctx->pix_fmt == AV_PIX_FMT_PAL8) {
-        frame->palette_has_changed = palette_has_changed;
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
+
+        if (pal) {
+            frame->palette_has_changed = 1;
+            memcpy(c->pal, pal, AVPALETTE_SIZE);
+        }
         memcpy(frame->data[1], c->pal, AVPALETTE_SIZE);
     }
 
-    if ((ret = av_frame_ref(data, frame)) < 0)
-        return ret;
     *got_frame      = 1;
 
     /* always report that the buffer was completely consumed */
@@ -143,9 +131,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
     case 24:
              avctx->pix_fmt = AV_PIX_FMT_BGR24;
              break;
-    case 32: avctx->pix_fmt = AV_PIX_FMT_0RGB32; break;
+    case 32: avctx->pix_fmt = AV_PIX_FMT_RGB32; break;
     default: av_log(avctx, AV_LOG_ERROR, "Camtasia error: unknown depth %i bpp\n", avctx->bits_per_coded_sample);
-             return AVERROR_PATCHWELCOME;
+             return AVERROR_INVALIDDATA;
     }
     c->bpp = avctx->bits_per_coded_sample;
     // buffer size for RLE 'best' case when 2-byte code precedes each pixel and there may be padding after it too
@@ -168,10 +156,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR_UNKNOWN;
     }
 
-    c->frame = av_frame_alloc();
-    if (!c->frame)
-        return AVERROR(ENOMEM);
-
     return 0;
 }
 
@@ -180,7 +164,6 @@ static av_cold int decode_end(AVCodecContext *avctx)
     CamtasiaContext * const c = avctx->priv_data;
 
     av_freep(&c->decomp_buf);
-    av_frame_free(&c->frame);
 
     inflateEnd(&c->zstream);
 
@@ -197,5 +180,4 @@ AVCodec ff_tscc_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

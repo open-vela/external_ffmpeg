@@ -2,20 +2,20 @@
  * gsm 06.10 decoder
  * Copyright (c) 2010 Reimar Döffinger <Reimar.Doeffinger@gmx.de>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,8 +25,9 @@
  */
 
 #include "libavutil/channel_layout.h"
+
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 #include "msgsmdec.h"
 
@@ -67,7 +68,7 @@ static int gsm_decode_frame(AVCodecContext *avctx, void *data,
 {
     AVFrame *frame = data;
     int res;
-    GetBitContext gb;
+    BitstreamContext bc;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     int16_t *samples;
@@ -79,16 +80,18 @@ static int gsm_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = avctx->frame_size;
-    if ((res = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((res = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return res;
+    }
     samples = (int16_t *)frame->data[0];
 
     switch (avctx->codec_id) {
     case AV_CODEC_ID_GSM:
-        init_get_bits(&gb, buf, buf_size * 8);
-        if (get_bits(&gb, 4) != 0xd)
+        bitstream_init8(&bc, buf, buf_size);
+        if (bitstream_read(&bc, 4) != 0xd)
             av_log(avctx, AV_LOG_WARNING, "Missing GSM magic!\n");
-        res = gsm_decode_block(avctx, samples, &gb, GSM_13000);
+        res = gsm_decode_block(avctx, samples, &bc, GSM_13000);
         if (res < 0)
             return res;
         break;
@@ -110,7 +113,6 @@ static void gsm_flush(AVCodecContext *avctx)
     memset(s, 0, sizeof(*s));
 }
 
-#if CONFIG_GSM_DECODER
 AVCodec ff_gsm_decoder = {
     .name           = "gsm",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM"),
@@ -122,8 +124,7 @@ AVCodec ff_gsm_decoder = {
     .flush          = gsm_flush,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
-#endif
-#if CONFIG_GSM_MS_DECODER
+
 AVCodec ff_gsm_ms_decoder = {
     .name           = "gsm_ms",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM Microsoft variant"),
@@ -135,4 +136,3 @@ AVCodec ff_gsm_ms_decoder = {
     .flush          = gsm_flush,
     .capabilities   = AV_CODEC_CAP_DR1,
 };
-#endif

@@ -2,20 +2,20 @@
  * Matroska constants
  * Copyright (c) 2003-2004 The FFmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -78,13 +78,8 @@
 #define MATROSKA_ID_TRACKNUMBER 0xD7
 #define MATROSKA_ID_TRACKUID   0x73C5
 #define MATROSKA_ID_TRACKTYPE  0x83
-#define MATROSKA_ID_TRACKVIDEO     0xE0
-#define MATROSKA_ID_TRACKAUDIO     0xE1
-#define MATROSKA_ID_TRACKOPERATION 0xE2
-#define MATROSKA_ID_TRACKCOMBINEPLANES 0xE3
-#define MATROSKA_ID_TRACKPLANE         0xE4
-#define MATROSKA_ID_TRACKPLANEUID      0xE5
-#define MATROSKA_ID_TRACKPLANETYPE     0xE6
+#define MATROSKA_ID_TRACKAUDIO 0xE1
+#define MATROSKA_ID_TRACKVIDEO 0xE0
 #define MATROSKA_ID_CODECID    0x86
 #define MATROSKA_ID_CODECPRIVATE 0x63A2
 #define MATROSKA_ID_CODECNAME  0x258688
@@ -92,7 +87,6 @@
 #define MATROSKA_ID_CODECDOWNLOADURL 0x26B240
 #define MATROSKA_ID_CODECDECODEALL 0xAA
 #define MATROSKA_ID_CODECDELAY 0x56AA
-#define MATROSKA_ID_SEEKPREROLL 0x56BB
 #define MATROSKA_ID_TRACKNAME  0x536E
 #define MATROSKA_ID_TRACKLANGUAGE 0x22B59C
 #define MATROSKA_ID_TRACKFLAGENABLED 0xB9
@@ -121,37 +115,8 @@
 #define MATROSKA_ID_VIDEOFLAGINTERLACED 0x9A
 #define MATROSKA_ID_VIDEOFIELDORDER 0x9D
 #define MATROSKA_ID_VIDEOSTEREOMODE 0x53B8
-#define MATROSKA_ID_VIDEOALPHAMODE 0x53C0
 #define MATROSKA_ID_VIDEOASPECTRATIO 0x54B3
 #define MATROSKA_ID_VIDEOCOLORSPACE 0x2EB524
-#define MATROSKA_ID_VIDEOCOLOR 0x55B0
-
-#define MATROSKA_ID_VIDEOCOLORMATRIXCOEFF 0x55B1
-#define MATROSKA_ID_VIDEOCOLORBITSPERCHANNEL 0x55B2
-#define MATROSKA_ID_VIDEOCOLORCHROMASUBHORZ 0x55B3
-#define MATROSKA_ID_VIDEOCOLORCHROMASUBVERT 0x55B4
-#define MATROSKA_ID_VIDEOCOLORCBSUBHORZ 0x55B5
-#define MATROSKA_ID_VIDEOCOLORCBSUBVERT 0x55B6
-#define MATROSKA_ID_VIDEOCOLORCHROMASITINGHORZ 0x55B7
-#define MATROSKA_ID_VIDEOCOLORCHROMASITINGVERT 0x55B8
-#define MATROSKA_ID_VIDEOCOLORRANGE 0x55B9
-#define MATROSKA_ID_VIDEOCOLORTRANSFERCHARACTERISTICS 0x55BA
-
-#define MATROSKA_ID_VIDEOCOLORPRIMARIES 0x55BB
-#define MATROSKA_ID_VIDEOCOLORMAXCLL 0x55BC
-#define MATROSKA_ID_VIDEOCOLORMAXFALL 0x55BD
-
-#define MATROSKA_ID_VIDEOCOLORMASTERINGMETA 0x55D0
-#define MATROSKA_ID_VIDEOCOLOR_RX 0x55D1
-#define MATROSKA_ID_VIDEOCOLOR_RY 0x55D2
-#define MATROSKA_ID_VIDEOCOLOR_GX 0x55D3
-#define MATROSKA_ID_VIDEOCOLOR_GY 0x55D4
-#define MATROSKA_ID_VIDEOCOLOR_BX 0x55D5
-#define MATROSKA_ID_VIDEOCOLOR_BY 0x55D6
-#define MATROSKA_ID_VIDEOCOLOR_WHITEX 0x55D7
-#define MATROSKA_ID_VIDEOCOLOR_WHITEY 0x55D8
-#define MATROSKA_ID_VIDEOCOLOR_LUMINANCEMAX 0x55D9
-#define MATROSKA_ID_VIDEOCOLOR_LUMINANCEMIN 0x55DA
 
 #define MATROSKA_ID_VIDEOPROJECTION 0x7670
 #define MATROSKA_ID_VIDEOPROJECTIONTYPE 0x7671
@@ -175,15 +140,6 @@
 #define MATROSKA_ID_ENCODINGCOMPALGO 0x4254
 #define MATROSKA_ID_ENCODINGCOMPSETTINGS 0x4255
 
-#define MATROSKA_ID_ENCODINGENCRYPTION 0x5035
-#define MATROSKA_ID_ENCODINGENCAESSETTINGS 0x47E7
-#define MATROSKA_ID_ENCODINGENCALGO 0x47E1
-#define MATROSKA_ID_ENCODINGENCKEYID 0x47E2
-#define MATROSKA_ID_ENCODINGSIGALGO 0x47E5
-#define MATROSKA_ID_ENCODINGSIGHASHALGO 0x47E6
-#define MATROSKA_ID_ENCODINGSIGKEYID 0x47E4
-#define MATROSKA_ID_ENCODINGSIGNATURE 0x47E3
-
 /* ID in the cues master */
 #define MATROSKA_ID_POINTENTRY 0xBB
 
@@ -194,8 +150,6 @@
 /* IDs in the cuetrackposition master */
 #define MATROSKA_ID_CUETRACK   0xF7
 #define MATROSKA_ID_CUECLUSTERPOSITION 0xF1
-#define MATROSKA_ID_CUERELATIVEPOSITION 0xF0
-#define MATROSKA_ID_CUEDURATION 0xB2
 #define MATROSKA_ID_CUEBLOCKNUMBER 0x5378
 
 /* IDs in the tags master */
@@ -225,10 +179,6 @@
 #define MATROSKA_ID_CLUSTERPOSITION 0xA7
 #define MATROSKA_ID_CLUSTERPREVSIZE 0xAB
 #define MATROSKA_ID_BLOCKGROUP 0xA0
-#define MATROSKA_ID_BLOCKADDITIONS 0x75A1
-#define MATROSKA_ID_BLOCKMORE 0xA6
-#define MATROSKA_ID_BLOCKADDID 0xEE
-#define MATROSKA_ID_BLOCKADDITIONAL 0xA5
 #define MATROSKA_ID_SIMPLEBLOCK 0xA3
 
 /* IDs in the blockgroup master */
@@ -236,7 +186,6 @@
 #define MATROSKA_ID_BLOCKDURATION 0x9B
 #define MATROSKA_ID_BLOCKREFERENCE 0xFB
 #define MATROSKA_ID_CODECSTATE 0xA4
-#define MATROSKA_ID_DISCARDPADDING 0x75A2
 
 /* IDs in the attachments master */
 #define MATROSKA_ID_ATTACHEDFILE        0x61A7
@@ -254,7 +203,6 @@
 #define MATROSKA_ID_CHAPTERDISPLAY      0x80
 #define MATROSKA_ID_CHAPSTRING          0x85
 #define MATROSKA_ID_CHAPLANG            0x437C
-#define MATROSKA_ID_CHAPCOUNTRY         0x437E
 #define MATROSKA_ID_EDITIONUID          0x45BC
 #define MATROSKA_ID_EDITIONFLAGHIDDEN   0x45BD
 #define MATROSKA_ID_EDITIONFLAGDEFAULT  0x45DB
@@ -272,7 +220,6 @@ typedef enum {
   MATROSKA_TRACK_TYPE_LOGO     = 0x10,
   MATROSKA_TRACK_TYPE_SUBTITLE = 0x11,
   MATROSKA_TRACK_TYPE_CONTROL  = 0x20,
-  MATROSKA_TRACK_TYPE_METADATA = 0x21,
 } MatroskaTrackType;
 
 typedef enum {
@@ -317,28 +264,6 @@ typedef enum {
 } MatroskaVideoStereoModeType;
 
 typedef enum {
-  MATROSKA_VIDEO_DISPLAYUNIT_PIXELS      = 0,
-  MATROSKA_VIDEO_DISPLAYUNIT_CENTIMETERS = 1,
-  MATROSKA_VIDEO_DISPLAYUNIT_INCHES      = 2,
-  MATROSKA_VIDEO_DISPLAYUNIT_DAR         = 3,
-  MATROSKA_VIDEO_DISPLAYUNIT_UNKNOWN     = 4,
-} MatroskaVideoDisplayUnit;
-
-typedef enum {
-  MATROSKA_COLOUR_CHROMASITINGHORZ_UNDETERMINED     = 0,
-  MATROSKA_COLOUR_CHROMASITINGHORZ_LEFT             = 1,
-  MATROSKA_COLOUR_CHROMASITINGHORZ_HALF             = 2,
-  MATROSKA_COLOUR_CHROMASITINGHORZ_NB
-} MatroskaColourChromaSitingHorz;
-
-typedef enum {
-  MATROSKA_COLOUR_CHROMASITINGVERT_UNDETERMINED     = 0,
-  MATROSKA_COLOUR_CHROMASITINGVERT_TOP              = 1,
-  MATROSKA_COLOUR_CHROMASITINGVERT_HALF             = 2,
-  MATROSKA_COLOUR_CHROMASITINGVERT_NB
-} MatroskaColourChromaSitingVert;
-
-typedef enum {
   MATROSKA_VIDEO_PROJECTION_TYPE_RECTANGULAR        = 0,
   MATROSKA_VIDEO_PROJECTION_TYPE_EQUIRECTANGULAR    = 1,
   MATROSKA_VIDEO_PROJECTION_TYPE_CUBEMAP            = 2,
@@ -350,34 +275,17 @@ typedef enum {
  */
 
 typedef struct CodecTags{
-    char str[22];
+    char str[20];
     enum AVCodecID id;
 }CodecTags;
 
 /* max. depth in the EBML tree structure */
 #define EBML_MAX_DEPTH 16
 
-#define MATROSKA_VIDEO_STEREO_PLANE_COUNT  3
-
 extern const CodecTags ff_mkv_codec_tags[];
-extern const CodecTags ff_webm_codec_tags[];
 extern const CodecMime ff_mkv_mime_tags[];
 extern const CodecMime ff_mkv_image_mime_tags[];
 extern const AVMetadataConv ff_mkv_metadata_conv[];
-extern const char * const ff_matroska_video_stereo_mode[MATROSKA_VIDEO_STEREOMODE_TYPE_NB];
-extern const char * const ff_matroska_video_stereo_plane[MATROSKA_VIDEO_STEREO_PLANE_COUNT];
-
-/* AVStream Metadata tag keys for WebM Dash Manifest */
-#define INITIALIZATION_RANGE "webm_dash_manifest_initialization_range"
-#define CUES_START "webm_dash_manifest_cues_start"
-#define CUES_END "webm_dash_manifest_cues_end"
-#define FILENAME "webm_dash_manifest_file_name"
-#define BANDWIDTH "webm_dash_manifest_bandwidth"
-#define DURATION "webm_dash_manifest_duration"
-#define CLUSTER_KEYFRAME "webm_dash_manifest_cluster_keyframe"
-#define CUE_TIMESTAMPS "webm_dash_manifest_cue_timestamps"
-#define TRACK_NUMBER "webm_dash_manifest_track_number"
-#define CODEC_PRIVATE_SIZE "webm_dash_manifest_codec_priv_size"
 
 int ff_mkv_stereo3d_conv(AVStream *st, MatroskaVideoStereoModeType stereo_mode);
 
