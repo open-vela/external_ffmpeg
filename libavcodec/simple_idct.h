@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2001 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,29 +31,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void ff_simple_idct_put_int16_8bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_add_int16_8bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_int16_8bit(int16_t *block);
+void ff_simple_idct_put_8(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
+void ff_simple_idct_add_8(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
+void ff_simple_idct_8(int16_t *block);
 
-void ff_simple_idct_put_int16_10bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_add_int16_10bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_int16_10bit(int16_t *block);
-
-void ff_simple_idct_put_int32_10bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_add_int32_10bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_int32_10bit(int16_t *block);
-
-void ff_simple_idct_put_int16_12bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_add_int16_12bit(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
-void ff_simple_idct_int16_12bit(int16_t *block);
-
+void ff_simple_idct_put_10(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
+void ff_simple_idct_add_10(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
+void ff_simple_idct_10(int16_t *block);
 /**
- * Special version of ff_simple_idct_int16_10bit() which does dequantization
+ * Special version of ff_simple_idct_10() which does dequantization
  * and scales by a factor of 2 more between the two IDCTs to account
  * for larger scale of input coefficients.
  */
-void ff_prores_idct_10(int16_t *block, const int16_t *qmat);
-void ff_prores_idct_12(int16_t *block, const int16_t *qmat);
+void ff_prores_idct(int16_t *block, const int16_t *qmat);
 
 void ff_simple_idct248_put(uint8_t *dest, ptrdiff_t line_size, int16_t *block);
 
