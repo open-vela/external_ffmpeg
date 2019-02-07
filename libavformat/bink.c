@@ -3,20 +3,20 @@
  * Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
  * Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,7 +45,6 @@ enum BinkAudFlags {
 #define BINK_MAX_AUDIO_TRACKS   256
 #define BINK_MAX_WIDTH          7680
 #define BINK_MAX_HEIGHT         4800
-#define SMUSH_BLOCK_SIZE        512
 
 typedef struct BinkDemuxContext {
     uint32_t file_size;
@@ -56,28 +55,19 @@ typedef struct BinkDemuxContext {
     int64_t audio_pts[BINK_MAX_AUDIO_TRACKS];
 
     uint32_t remain_packet_size;
-    int smush_size;
 } BinkDemuxContext;
 
 static int probe(AVProbeData *p)
 {
     const uint8_t *b = p->buf;
-    int smush = AV_RN32(p->buf) == AV_RN32("SMUS");
 
-    do {
-        if (((b[0] == 'B' && b[1] == 'I' && b[2] == 'K' && /* Bink 1 */
-             (b[3] == 'b' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' || b[3] == 'i' ||
-              b[3] == 'k')) ||
-             (b[0] == 'K' && b[1] == 'B' && b[2] == '2' && /* Bink 2 */
-             (b[3] == 'a' || b[3] == 'd' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' ||
-              b[3] == 'i' || b[3] == 'j' || b[3] == 'k'))) &&
-            AV_RL32(b+8) > 0 &&  // num_frames
-            AV_RL32(b+20) > 0 && AV_RL32(b+20) <= BINK_MAX_WIDTH &&
-            AV_RL32(b+24) > 0 && AV_RL32(b+24) <= BINK_MAX_HEIGHT &&
-            AV_RL32(b+28) > 0 && AV_RL32(b+32) > 0)  // fps num,den
-            return AVPROBE_SCORE_MAX;
-        b += SMUSH_BLOCK_SIZE;
-    } while (smush && b < p->buf + p->buf_size - 32);
+    if ( b[0] == 'B' && b[1] == 'I' && b[2] == 'K' &&
+        (b[3] == 'b' || b[3] == 'f' || b[3] == 'g' || b[3] == 'h' || b[3] == 'i') &&
+        AV_RL32(b+8) > 0 &&  // num_frames
+        AV_RL32(b+20) > 0 && AV_RL32(b+20) <= BINK_MAX_WIDTH &&
+        AV_RL32(b+24) > 0 && AV_RL32(b+24) <= BINK_MAX_HEIGHT &&
+        AV_RL32(b+28) > 0 && AV_RL32(b+32) > 0)  // fps num,den
+        return AVPROBE_SCORE_MAX;
     return 0;
 }
 
@@ -91,26 +81,12 @@ static int read_header(AVFormatContext *s)
     uint32_t pos, next_pos;
     uint16_t flags;
     int keyframe;
-    int ret;
-    uint32_t signature;
-    uint8_t revision;
 
     vst = avformat_new_stream(s, NULL);
     if (!vst)
         return AVERROR(ENOMEM);
 
     vst->codecpar->codec_tag = avio_rl32(pb);
-    if (vst->codecpar->codec_tag == AV_RL32("SMUS")) {
-        do {
-            bink->smush_size += SMUSH_BLOCK_SIZE;
-            avio_skip(pb, SMUSH_BLOCK_SIZE - 4);
-            vst->codecpar->codec_tag = avio_rl32(pb);
-        } while (!avio_feof(pb) && (vst->codecpar->codec_tag & 0xFFFFFF) != AV_RL32("BIK"));
-        if (avio_feof(pb)) {
-            av_log(s, AV_LOG_ERROR, "invalid SMUSH header: BIK not found\n");
-            return AVERROR_INVALIDDATA;
-        }
-    }
 
     bink->file_size = avio_rl32(pb) + 8;
     vst->duration   = avio_rl32(pb);
@@ -144,14 +120,11 @@ static int read_header(AVFormatContext *s)
 
     vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
     vst->codecpar->codec_id   = AV_CODEC_ID_BINKVIDEO;
-
-    if ((vst->codecpar->codec_tag & 0xFFFFFF) == MKTAG('K', 'B', '2', 0)) {
-        av_log(s, AV_LOG_WARNING, "Bink 2 video is not implemented\n");
-        vst->codecpar->codec_id = AV_CODEC_ID_NONE;
-    }
-
-    if (ff_get_extradata(s, vst->codecpar, pb, 4) < 0)
+    vst->codecpar->extradata  = av_mallocz(4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!vst->codecpar->extradata)
         return AVERROR(ENOMEM);
+    vst->codecpar->extradata_size = 4;
+    avio_read(pb, vst->codecpar->extradata, 4);
 
     bink->num_audio_tracks = avio_rl32(pb);
 
@@ -162,15 +135,8 @@ static int read_header(AVFormatContext *s)
         return AVERROR(EIO);
     }
 
-    signature = (vst->codecpar->codec_tag & 0xFFFFFF);
-    revision = ((vst->codecpar->codec_tag >> 24) % 0xFF);
-
-    if ((signature == AV_RL32("BIK") && (revision == 'k')) ||
-        (signature == AV_RL32("KB2") && (revision == 'i' || revision == 'j' || revision == 'k')))
-        avio_skip(pb, 4); /* unknown new field */
-
     if (bink->num_audio_tracks) {
-        avio_skip(pb, 4 * bink->num_audio_tracks); /* max decoded size */
+        avio_skip(pb, 4 * bink->num_audio_tracks);
 
         for (i = 0; i < bink->num_audio_tracks; i++) {
             ast = avformat_new_stream(s, NULL);
@@ -190,8 +156,10 @@ static int read_header(AVFormatContext *s)
                 ast->codecpar->channels       = 1;
                 ast->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
             }
-            if (ff_alloc_extradata(ast->codecpar, 4))
+            ast->codecpar->extradata = av_mallocz(4 + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!ast->codecpar->extradata)
                 return AVERROR(ENOMEM);
+            ast->codecpar->extradata_size = 4;
             AV_WL32(ast->codecpar->extradata, vst->codecpar->codec_tag);
         }
 
@@ -217,15 +185,11 @@ static int read_header(AVFormatContext *s)
             av_log(s, AV_LOG_ERROR, "invalid frame index table\n");
             return AVERROR(EIO);
         }
-        if ((ret = av_add_index_entry(vst, pos, i, next_pos - pos, 0,
-                                      keyframe ? AVINDEX_KEYFRAME : 0)) < 0)
-            return ret;
+        av_add_index_entry(vst, pos, i, next_pos - pos, 0,
+                           keyframe ? AVINDEX_KEYFRAME : 0);
     }
 
-    if (vst->index_entries)
-        avio_seek(pb, vst->index_entries[0].pos + bink->smush_size, SEEK_SET);
-    else
-        avio_skip(pb, 4);
+    avio_skip(pb, 4);
 
     bink->current_track = -1;
     return 0;
@@ -242,7 +206,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
         AVStream *st = s->streams[0]; // stream 0 is video stream with index
 
         if (bink->video_pts >= st->duration)
-            return AVERROR_EOF;
+            return AVERROR(EIO);
 
         index_entry = av_index_search_timestamp(st, bink->video_pts,
                                                 AVSEEK_FLAG_ANY);
@@ -307,7 +271,7 @@ static int read_seek(AVFormatContext *s, int stream_index, int64_t timestamp, in
         return -1;
 
     /* seek to the first frame */
-    if (avio_seek(s->pb, vst->index_entries[0].pos + bink->smush_size, SEEK_SET) < 0)
+    if (avio_seek(s->pb, vst->index_entries[0].pos, SEEK_SET) < 0)
         return -1;
 
     bink->video_pts = 0;
@@ -324,5 +288,4 @@ AVInputFormat ff_bink_demuxer = {
     .read_header    = read_header,
     .read_packet    = read_packet,
     .read_seek      = read_seek,
-    .flags          = AVFMT_SHOW_IDS,
 };

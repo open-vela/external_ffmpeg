@@ -2,20 +2,20 @@
  * Microsoft RLE video decoder
  * Copyright (C) 2003 The FFmpeg project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -35,7 +35,6 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "msrledec.h"
-#include "libavutil/imgutils.h"
 
 typedef struct MsrleContext {
     AVCodecContext *avctx;
@@ -51,14 +50,10 @@ typedef struct MsrleContext {
 static av_cold int msrle_decode_init(AVCodecContext *avctx)
 {
     MsrleContext *s = avctx->priv_data;
-    int i;
 
     s->avctx = avctx;
 
     switch (avctx->bits_per_coded_sample) {
-    case 1:
-        avctx->pix_fmt = AV_PIX_FMT_MONOWHITE;
-        break;
     case 4:
     case 8:
         avctx->pix_fmt = AV_PIX_FMT_PAL8;
@@ -74,10 +69,6 @@ static av_cold int msrle_decode_init(AVCodecContext *avctx)
     s->frame = av_frame_alloc();
     if (!s->frame)
         return AVERROR(ENOMEM);
-
-    if (avctx->extradata_size >= 4)
-        for (i = 0; i < FFMIN(avctx->extradata_size, AVPALETTE_SIZE)/4; i++)
-            s->pal[i] = 0xFFU<<24 | AV_RL32(avctx->extradata+4*i);
 
     return 0;
 }
@@ -95,35 +86,29 @@ static int msrle_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
-    if (buf_size < 2) //Minimally a end of picture code should be there
-        return AVERROR_INVALIDDATA;
-
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
-    if (avctx->bits_per_coded_sample > 1 && avctx->bits_per_coded_sample <= 8) {
-        int size;
-        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
+    if (avctx->bits_per_coded_sample <= 8) {
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
 
-        if (pal && size == AVPALETTE_SIZE) {
+        if (pal) {
             s->frame->palette_has_changed = 1;
             memcpy(s->pal, pal, AVPALETTE_SIZE);
-        } else if (pal) {
-            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
+
         /* make the palette available */
         memcpy(s->frame->data[1], s->pal, AVPALETTE_SIZE);
     }
 
     /* FIXME how to correctly detect RLE ??? */
     if (avctx->height * istride == avpkt->size) { /* assume uncompressed */
-        int linesize = av_image_get_linesize(avctx->pix_fmt, avctx->width, 0);
+        int linesize = avctx->width * avctx->bits_per_coded_sample / 8;
         uint8_t *ptr = s->frame->data[0];
         uint8_t *buf = avpkt->data + (avctx->height-1)*istride;
         int i, j;
-
-        if (linesize < 0)
-            return linesize;
 
         for (i = 0; i < avctx->height; i++) {
             if (avctx->bits_per_coded_sample == 4) {

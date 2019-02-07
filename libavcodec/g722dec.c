@@ -5,20 +5,20 @@
  * Copyright (c) 2009 Kenan Gillet
  * Copyright (c) 2010 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,8 +36,9 @@
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
+
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "g722.h"
 #include "internal.h"
 
@@ -92,25 +93,25 @@ static int g722_decode_frame(AVCodecContext *avctx, void *data,
     int j, ret;
     const int skip = 8 - c->bits_per_codeword;
     const int16_t *quantizer_table = low_inv_quants[skip];
-    GetBitContext gb;
+    BitstreamContext bc;
 
     /* get output buffer */
     frame->nb_samples = avpkt->size * 2;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     out_buf = (int16_t *)frame->data[0];
 
-    ret = init_get_bits8(&gb, avpkt->data, avpkt->size);
-    if (ret < 0)
-        return ret;
+    bitstream_init8(&bc, avpkt->data, avpkt->size);
 
     for (j = 0; j < avpkt->size; j++) {
         int ilow, ihigh, rlow, rhigh, dhigh;
         int xout[2];
 
-        ihigh = get_bits(&gb, 2);
-        ilow = get_bits(&gb, 6 - skip);
-        skip_bits(&gb, skip);
+        ihigh = bitstream_read(&bc, 2);
+        ilow  = bitstream_read(&bc, 6 - skip);
+        bitstream_skip(&bc, skip);
 
         rlow = av_clip_intp2((c->band[0].scale_factor * quantizer_table[ilow] >> 10)
                       + c->band[0].s_predictor, 14);

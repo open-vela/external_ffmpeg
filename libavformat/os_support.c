@@ -3,20 +3,20 @@
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  * copyright (c) 2002 Francois Revol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -43,11 +43,10 @@
 
 #include "network.h"
 
-#if !HAVE_GETADDRINFO
 #if !HAVE_INET_ATON
 #include <stdlib.h>
 
-static int inet_aton(const char *str, struct in_addr *add)
+int ff_inet_aton(const char *str, struct in_addr *add)
 {
     unsigned int add1 = 0, add2 = 0, add3 = 0, add4 = 0;
 
@@ -61,8 +60,14 @@ static int inet_aton(const char *str, struct in_addr *add)
 
     return 1;
 }
+#else
+int ff_inet_aton(const char *str, struct in_addr *add)
+{
+    return inet_aton(str, add);
+}
 #endif /* !HAVE_INET_ATON */
 
+#if !HAVE_GETADDRINFO
 int ff_getaddrinfo(const char *node, const char *service,
                    const struct addrinfo *hints, struct addrinfo **res)
 {
@@ -77,7 +82,7 @@ int ff_getaddrinfo(const char *node, const char *service,
     sin->sin_family = AF_INET;
 
     if (node) {
-        if (!inet_aton(node, &sin->sin_addr)) {
+        if (!ff_inet_aton(node, &sin->sin_addr)) {
             if (hints && (hints->ai_flags & AI_NUMERICHOST)) {
                 av_free(sin);
                 return EAI_FAIL;
@@ -133,9 +138,9 @@ int ff_getaddrinfo(const char *node, const char *service,
 
 void ff_freeaddrinfo(struct addrinfo *res)
 {
-    av_freep(&res->ai_canonname);
-    av_freep(&res->ai_addr);
-    av_freep(&res);
+    av_free(res->ai_canonname);
+    av_free(res->ai_addr);
+    av_free(res);
 }
 
 int ff_getnameinfo(const struct sockaddr *sa, int salen,

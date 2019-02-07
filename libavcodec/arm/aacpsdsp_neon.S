@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Mans Rullgard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -232,11 +232,12 @@ endfunc
 function ff_ps_stereo_interpolate_neon, export=1
         vld1.32         {q0},     [r2]
         vld1.32         {q14},    [r3]
+        vadd.f32        q15, q14, q14
         mov             r2,  r0
         mov             r3,  r1
         ldr             r12, [sp]
         vadd.f32        q1,  q0,  q14
-        vadd.f32        q0,  q1,  q14
+        vadd.f32        q0,  q0,  q15
         vld1.32         {q2},     [r0,:64]!
         vld1.32         {q3},     [r1,:64]!
         subs            r12, r12, #1
@@ -250,10 +251,8 @@ function ff_ps_stereo_interpolate_neon, export=1
         vmla.f32        d17, d7,  d1[0]
         vmla.f32        d18, d6,  d3[1]
         vmla.f32        d19, d7,  d1[1]
-        vadd.f32        q1,  q1,  q14
-        vadd.f32        q0,  q0,  q14
-        vadd.f32        q1,  q1,  q14
-        vadd.f32        q0,  q0,  q14
+        vadd.f32        q1,  q1,  q15
+        vadd.f32        q0,  q0,  q15
         vld1.32         {q2},     [r0,:64]!
         vld1.32         {q3},     [r1,:64]!
         vst1.32         {q8},     [r2,:64]!

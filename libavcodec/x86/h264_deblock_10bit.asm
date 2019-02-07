@@ -7,32 +7,34 @@
 ;*          Loren Merritt <lorenm@u.washington.edu>
 ;*          Fiona Glaser <fiona@x264.com>
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
 %include "libavutil/x86/x86util.asm"
+
+SECTION_RODATA
+
+pw_pixel_max: times 8 dw ((1 << 10)-1)
 
 SECTION .text
 
 cextern pw_2
 cextern pw_3
 cextern pw_4
-cextern pw_1023
-%define pw_pixel_max pw_1023
 
 ; out: %4 = |%1-%2|-%3
 ; clobbers: %5
@@ -160,6 +162,7 @@ cglobal deblock_v_luma_10, 5,5,8*(mmsize/16)
     %define ms2 [rsp+mmsize*2]
     %define am  [rsp+mmsize*3]
     %define bm  [rsp+mmsize*4]
+    movsxdifnidn  r1, r1d
     SUB        rsp, pad
     shl        r2d, 2
     shl        r3d, 2
@@ -217,6 +220,7 @@ cglobal deblock_h_luma_10, 5,6,8*(mmsize/16)
     %define p2m [rsp+mmsize*4]
     %define am  [rsp+mmsize*5]
     %define bm  [rsp+mmsize*6]
+    movsxdifnidn  r1, r1d
     SUB        rsp, pad
     shl        r2d, 2
     shl        r3d, 2
@@ -347,6 +351,7 @@ cglobal deblock_v_luma_10, 5,5,15
     %define mask0 m7
     %define mask1 m10
     %define mask2 m11
+    movsxdifnidn  r1, r1d
     shl        r2d, 2
     shl        r3d, 2
     LOAD_AB    m12, m13, r2d, r3d
@@ -375,6 +380,7 @@ cglobal deblock_v_luma_10, 5,5,15
     REP_RET
 
 cglobal deblock_h_luma_10, 5,7,15
+    movsxdifnidn  r1, r1d
     shl        r2d, 2
     shl        r3d, 2
     LOAD_AB    m12, m13, r2d, r3d
@@ -416,10 +422,8 @@ cglobal deblock_h_luma_10, 5,7,15
 
 INIT_XMM sse2
 DEBLOCK_LUMA_64
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA_64
-%endif
 %endif
 
 %macro SWAPMOVA 2
@@ -492,6 +496,7 @@ DEBLOCK_LUMA_64
     CAT_XDEFINE t, i, [rsp+mmsize*(i-4)]
     %assign i i+1
 %endrep
+    movsxdifnidn  r1, r1d
     SUB    rsp, pad
 %endmacro
 
@@ -615,6 +620,7 @@ cglobal deblock_v_luma_intra_10, 4,7,16
     %define q2 m13
     %define aa m5
     %define bb m14
+    movsxdifnidn  r1, r1d
     lea     r4, [r1*4]
     lea     r5, [r1*3] ; 3*stride
     neg     r4
@@ -668,6 +674,7 @@ cglobal deblock_h_luma_intra_10, 4,7,16
     %define p3 m4
     %define spill [rsp]
     %assign pad 24-(stack_offset&15)
+    movsxdifnidn  r1, r1d
     SUB     rsp, pad
     lea     r4, [r1*4]
     lea     r5, [r1*3] ; 3*stride
@@ -715,10 +722,8 @@ cglobal deblock_h_luma_intra_10, 4,7,16
 
 INIT_XMM sse2
 DEBLOCK_LUMA_INTRA_64
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA_INTRA_64
-%endif
 
 %endif
 
@@ -804,11 +809,9 @@ DEBLOCK_LUMA_INTRA
 INIT_XMM sse2
 DEBLOCK_LUMA
 DEBLOCK_LUMA_INTRA
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_LUMA
 DEBLOCK_LUMA_INTRA
-%endif
 %endif
 
 ; in: %1=p0, %2=q0, %3=p1, %4=q1, %5=mask, %6=tmp, %7=tmp
@@ -843,83 +846,6 @@ DEBLOCK_LUMA_INTRA
     mova [r0+2*r1], m2
 %endmacro
 
-; in: 8 rows of 4 words in %4..%11
-; out: 4 rows of 8 words in m0..m3
-%macro TRANSPOSE4x8W_LOAD 8
-    movq             m0, %1
-    movq             m2, %2
-    movq             m1, %3
-    movq             m3, %4
-
-    punpcklwd        m0, m2
-    punpcklwd        m1, m3
-    punpckhdq        m2, m0, m1
-    punpckldq        m0, m1
-
-    movq             m4, %5
-    movq             m6, %6
-    movq             m5, %7
-    movq             m3, %8
-
-    punpcklwd        m4, m6
-    punpcklwd        m5, m3
-    punpckhdq        m6, m4, m5
-    punpckldq        m4, m5
-
-    punpckhqdq       m1, m0, m4
-    punpcklqdq       m0, m4
-    punpckhqdq       m3, m2, m6
-    punpcklqdq       m2, m6
-%endmacro
-
-; in: 4 rows of 8 words in m0..m3
-; out: 8 rows of 4 words in %1..%8
-%macro TRANSPOSE8x4W_STORE 8
-    TRANSPOSE4x4W     0, 1, 2, 3, 4
-    movq             %1, m0
-    movhps           %2, m0
-    movq             %3, m1
-    movhps           %4, m1
-    movq             %5, m2
-    movhps           %6, m2
-    movq             %7, m3
-    movhps           %8, m3
-%endmacro
-
-; %1 = base + 3*stride
-; %2 = 3*stride (unused on mmx)
-; %3, %4 = place to store p1 and q1 values
-%macro CHROMA_H_LOAD 4
-    %if mmsize == 8
-        movq m0, [pix_q - 4]
-        movq m1, [pix_q +   stride_q - 4]
-        movq m2, [pix_q + 2*stride_q - 4]
-        movq m3, [%1 - 4]
-        TRANSPOSE4x4W 0, 1, 2, 3, 4
-    %else
-        TRANSPOSE4x8W_LOAD PASS8ROWS(pix_q-4, %1-4, stride_q, %2)
-    %endif
-    mova %3, m0
-    mova %4, m3
-%endmacro
-
-; %1 = base + 3*stride
-; %2 = 3*stride (unused on mmx)
-; %3, %4 = place to load p1 and q1 values
-%macro CHROMA_H_STORE 4
-    mova m0, %3
-    mova m3, %4
-    %if mmsize == 8
-        TRANSPOSE4x4W 0, 1, 2, 3, 4
-        movq [pix_q - 4],              m0
-        movq [pix_q +   stride_q - 4], m1
-        movq [pix_q + 2*stride_q - 4], m2
-        movq [%1 - 4],                 m3
-    %else
-        TRANSPOSE8x4W_STORE PASS8ROWS(pix_q-4, %1-4, stride_q, %2)
-    %endif
-%endmacro
-
 %macro CHROMA_V_LOAD_TC 2
     movd        %1, [%2]
     punpcklbw   %1, %1
@@ -933,6 +859,7 @@ DEBLOCK_LUMA_INTRA
 ;                             int8_t *tc0)
 ;-----------------------------------------------------------------------------
 cglobal deblock_v_chroma_10, 5,7-(mmsize/16),8*(mmsize/16)
+    movsxdifnidn  r1, r1d
     mov         r5, r0
     sub         r0, r1
     sub         r0, r1
@@ -968,6 +895,7 @@ cglobal deblock_v_chroma_10, 5,7-(mmsize/16),8*(mmsize/16)
 ;                                   int beta)
 ;-----------------------------------------------------------------------------
 cglobal deblock_v_chroma_intra_10, 4,6-(mmsize/16),8*(mmsize/16)
+    movsxdifnidn  r1, r1d
     mov         r4, r0
     sub         r0, r1
     sub         r0, r1
@@ -991,81 +919,6 @@ cglobal deblock_v_chroma_intra_10, 4,6-(mmsize/16),8*(mmsize/16)
 %else
     RET
 %endif
-
-;-----------------------------------------------------------------------------
-; void ff_deblock_h_chroma_10(uint16_t *pix, int stride, int alpha, int beta,
-;                             int8_t *tc0)
-;-----------------------------------------------------------------------------
-cglobal deblock_h_chroma_10, 5, 7, 8, 0-2*mmsize, pix_, stride_, alpha_, beta_, tc0_
-    shl alpha_d,  2
-    shl beta_d,   2
-    mov r5,       pix_q
-    lea r6,      [3*stride_q]
-    add r5,       r6
-%if mmsize == 8
-    mov r6d,      2
-    .loop:
-%endif
-
-        CHROMA_H_LOAD r5, r6, [rsp], [rsp + mmsize]
-        LOAD_AB          m4,  m5, alpha_d, beta_d
-        LOAD_MASK        m0,  m1, m2, m3, m4, m5, m7, m6, m4
-        pxor             m4,  m4
-        CHROMA_V_LOAD_TC m6,  tc0_q
-        psubw            m6, [pw_3]
-        pmaxsw           m6,  m4
-        pand             m7,  m6
-        DEBLOCK_P0_Q0    m1,  m2, m0, m3, m7, m5, m6
-        CHROMA_H_STORE r5, r6, [rsp], [rsp + mmsize]
-
-%if mmsize == 8
-        lea pix_q, [pix_q + 4*stride_q]
-        lea r5,    [r5 + 4*stride_q]
-        add tc0_q,  2
-        dec r6d
-    jg .loop
-%endif
-RET
-
-;-----------------------------------------------------------------------------
-; void ff_deblock_h_chroma422_10(uint16_t *pix, int stride, int alpha, int beta,
-;                                int8_t *tc0)
-;-----------------------------------------------------------------------------
-cglobal deblock_h_chroma422_10, 5, 7, 8, 0-3*mmsize, pix_, stride_, alpha_, beta_, tc0_
-    shl alpha_d,  2
-    shl beta_d,   2
-
-    movd m0, [tc0_q]
-    punpcklbw m0, m0
-    psraw m0, 6
-    movq [rsp], m0
-
-    mov r5,       pix_q
-    lea r6,      [3*stride_q]
-    add r5,       r6
-
-    mov r4, -8
-    .loop:
-
-        CHROMA_H_LOAD r5, r6, [rsp + 1*mmsize], [rsp + 2*mmsize]
-        LOAD_AB          m4,  m5, alpha_d, beta_d
-        LOAD_MASK        m0,  m1, m2, m3, m4, m5, m7, m6, m4
-        pxor             m4,  m4
-        movd             m6, [rsp + r4 + 8]
-        punpcklwd        m6,  m6
-        punpcklwd        m6,  m6
-        psubw            m6, [pw_3]
-        pmaxsw           m6,  m4
-        pand             m7,  m6
-        DEBLOCK_P0_Q0    m1,  m2, m0, m3, m7, m5, m6
-        CHROMA_H_STORE r5, r6, [rsp + 1*mmsize], [rsp + 2*mmsize]
-
-        lea pix_q, [pix_q + (mmsize/2)*stride_q]
-        lea r5,    [r5 +    (mmsize/2)*stride_q]
-        add r4, (mmsize/4)
-    jl .loop
-RET
-
 %endmacro
 
 %if ARCH_X86_64 == 0
@@ -1074,7 +927,5 @@ DEBLOCK_CHROMA
 %endif
 INIT_XMM sse2
 DEBLOCK_CHROMA
-%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 DEBLOCK_CHROMA
-%endif

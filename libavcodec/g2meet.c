@@ -3,20 +3,20 @@
  * Copyright (c) 2012 Konstantin Shishkov
  * Copyright (c) 2013 Maxim Poliakovski
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,18 +28,18 @@
 #include <inttypes.h>
 #include <zlib.h>
 
-#include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
+#include "bitstream.h"
 #include "blockdsp.h"
 #include "bytestream.h"
 #include "elsdec.h"
-#include "get_bits.h"
 #include "idctdsp.h"
 #include "internal.h"
 #include "jpegtables.h"
 #include "mjpeg.h"
+#include "vlc.h"
 
 #define EPIC_PIX_STACK_SIZE 1024
 #define EPIC_PIX_STACK_MAX  (EPIC_PIX_STACK_SIZE - 1)
@@ -123,7 +123,7 @@ typedef struct JPGContext {
 
     VLC        dc_vlc[2], ac_vlc[2];
     int        prev_dc[3];
-    DECLARE_ALIGNED(32, int16_t, block)[6][64];
+    DECLARE_ALIGNED(16, int16_t, block)[6][64];
 
     uint8_t    *buf;
 } JPGContext;
@@ -200,7 +200,7 @@ static av_cold int jpg_init(AVCodecContext *avctx, JPGContext *c)
     if (ret)
         return ret;
 
-    ff_blockdsp_init(&c->bdsp, avctx);
+    ff_blockdsp_init(&c->bdsp);
     ff_idctdsp_init(&c->idsp, avctx);
     ff_init_scantable(c->idsp.idct_permutation, &c->scantable,
                       ff_zigzag_direct);
@@ -237,7 +237,7 @@ static void jpg_unescape(const uint8_t *src, int src_size,
     *dst_size = dst - dst_start;
 }
 
-static int jpg_decode_block(JPGContext *c, GetBitContext *gb,
+static int jpg_decode_block(JPGContext *c, BitstreamContext *bc,
                             int plane, int16_t *block)
 {
     int dc, val, pos;
@@ -245,18 +245,18 @@ static int jpg_decode_block(JPGContext *c, GetBitContext *gb,
     const uint8_t *qmat = is_chroma ? chroma_quant : luma_quant;
 
     c->bdsp.clear_block(block);
-    dc = get_vlc2(gb, c->dc_vlc[is_chroma].table, 9, 3);
+    dc = bitstream_read_vlc(bc, c->dc_vlc[is_chroma].table, 9, 3);
     if (dc < 0)
         return AVERROR_INVALIDDATA;
     if (dc)
-        dc = get_xbits(gb, dc);
+        dc = bitstream_read_xbits(bc, dc);
     dc                = dc * qmat[0] + c->prev_dc[plane];
     block[0]          = dc;
     c->prev_dc[plane] = dc;
 
     pos = 0;
     while (pos < 63) {
-        val = get_vlc2(gb, c->ac_vlc[is_chroma].table, 9, 3);
+        val = bitstream_read_vlc(bc, c->ac_vlc[is_chroma].table, 9, 3);
         if (val < 0)
             return AVERROR_INVALIDDATA;
         pos += val >> 4;
@@ -266,7 +266,7 @@ static int jpg_decode_block(JPGContext *c, GetBitContext *gb,
         if (val) {
             int nbits = val;
 
-            val                                 = get_xbits(gb, nbits);
+            val                                 = bitstream_read_xbits(bc, nbits);
             val                                *= qmat[ff_zigzag_direct[pos]];
             block[c->scantable.permutated[pos]] = val;
         }
@@ -287,7 +287,7 @@ static int jpg_decode_data(JPGContext *c, int width, int height,
                            const uint8_t *mask, int mask_stride, int num_mbs,
                            int swapuv)
 {
-    GetBitContext gb;
+    BitstreamContext bc;
     int mb_w, mb_h, mb_x, mb_y, i, j;
     int bx, by;
     int unesc_size;
@@ -299,8 +299,7 @@ static int jpg_decode_data(JPGContext *c, int width, int height,
         return ret;
     jpg_unescape(src, src_size, c->buf, &unesc_size);
     memset(c->buf + unesc_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
-    if((ret = init_get_bits8(&gb, c->buf, unesc_size)) < 0)
-        return ret;
+    bitstream_init8(&bc, c->buf, unesc_size);
 
     width = FFALIGN(width, 16);
     mb_w  =  width        >> 4;
@@ -327,14 +326,14 @@ static int jpg_decode_data(JPGContext *c, int width, int height,
                     if (mask && !mask[mb_x * 2 + i + j * mask_stride])
                         continue;
                     num_mbs--;
-                    if ((ret = jpg_decode_block(c, &gb, 0,
+                    if ((ret = jpg_decode_block(c, &bc, 0,
                                                 c->block[i + j * 2])) != 0)
                         return ret;
                     c->idsp.idct(c->block[i + j * 2]);
                 }
             }
             for (i = 1; i < 3; i++) {
-                if ((ret = jpg_decode_block(c, &gb, i, c->block[i + 3])) != 0)
+                if ((ret = jpg_decode_block(c, &bc, i, c->block[i + 3])) != 0)
                     return ret;
                 c->idsp.idct(c->block[i + 3]);
             }
@@ -556,11 +555,6 @@ static uint32_t epic_decode_pixel_pred(ePICContext *dc, int x, int y,
         B     = ((pred >> B_shift) & 0xFF) - TOSIGNED(delta);
     }
 
-    if (R<0 || G<0 || B<0 || R > 255 || G > 255 || B > 255) {
-        avpriv_request_sample(NULL, "RGB %d %d %d is out of range\n", R, G, B);
-        return 0;
-    }
-
     return (R << R_shift) | (G << G_shift) | (B << B_shift);
 }
 
@@ -632,8 +626,6 @@ static int epic_decode_run_length(ePICContext *dc, int x, int y, int tile_width,
               (NN  != N)  << 1 |
               (NNW != NW);
         WWneW = ff_els_decode_bit(&dc->els_ctx, &dc->W_ctx_rung[idx]);
-        if (WWneW < 0)
-            return WWneW;
     }
 
     if (WWneW)
@@ -840,13 +832,10 @@ static int epic_decode_tile(ePICContext *dc, uint8_t *out, int tile_height,
                 if (y < 2 || x < 2 || x == tile_width - 1) {
                     run       = 1;
                     got_pixel = epic_handle_edges(dc, x, y, curr_row, above_row, &pix);
-                } else {
+                } else
                     got_pixel = epic_decode_run_length(dc, x, y, tile_width,
                                                        curr_row, above_row,
                                                        above2_row, &pix, &run);
-                    if (got_pixel < 0)
-                        return got_pixel;
-                }
 
                 if (!got_pixel && !epic_predict_from_NW_NE(dc, x, y, run,
                                                            tile_width, curr_row,
@@ -901,7 +890,7 @@ static int epic_jb_decode_tile(G2MContext *c, int tile_x, int tile_y,
     }
 
     if (src_size < els_dsize) {
-        av_log(avctx, AV_LOG_ERROR, "ePIC: data too short, needed %"SIZE_SPECIFIER", got %"SIZE_SPECIFIER"\n",
+        av_log(avctx, AV_LOG_ERROR, "ePIC: data too short, needed %zu, got %zu\n",
                els_dsize, src_size);
         return AVERROR_INVALIDDATA;
     }
@@ -927,7 +916,6 @@ static int epic_jb_decode_tile(G2MContext *c, int tile_x, int tile_y,
         if (c->ec.els_ctx.err != 0) {
             av_log(avctx, AV_LOG_ERROR,
                    "ePIC: couldn't decode transparency pixel!\n");
-            ff_els_decoder_uninit(&c->ec.unsigned_rung);
             return AVERROR_INVALIDDATA;
         }
 
@@ -1018,19 +1006,17 @@ static int epic_jb_decode_tile(G2MContext *c, int tile_x, int tile_y,
     return 0;
 }
 
-static int kempf_restore_buf(const uint8_t *src, int len,
+static void kempf_restore_buf(const uint8_t *src, int len,
                               uint8_t *dst, int stride,
                               const uint8_t *jpeg_tile, int tile_stride,
                               int width, int height,
                               const uint8_t *pal, int npal, int tidx)
 {
-    GetBitContext gb;
+    BitstreamContext bc;
     int i, j, nb, col;
-    int ret;
     int align_width = FFALIGN(width, 16);
 
-    if ((ret = init_get_bits8(&gb, src, len)) < 0)
-        return ret;
+    bitstream_init8(&bc, src, len);
 
     if (npal <= 2)       nb = 1;
     else if (npal <= 4)  nb = 2;
@@ -1038,19 +1024,17 @@ static int kempf_restore_buf(const uint8_t *src, int len,
     else                 nb = 8;
 
     for (j = 0; j < height; j++, dst += stride, jpeg_tile += tile_stride) {
-        if (get_bits(&gb, 8))
+        if (bitstream_read(&bc, 8))
             continue;
         for (i = 0; i < width; i++) {
-            col = get_bits(&gb, nb);
+            col = bitstream_read(&bc, nb);
             if (col != tidx)
                 memcpy(dst + i * 3, pal + col * 3, 3);
             else
                 memcpy(dst + i * 3, jpeg_tile + i * 3, 3);
         }
-        skip_bits_long(&gb, nb * (align_width - width));
+        bitstream_skip(&bc, nb * (align_width - width));
     }
-
-    return 0;
 }
 
 static int kempf_decode_tile(G2MContext *c, int tile_x, int tile_y,
@@ -1094,8 +1078,6 @@ static int kempf_decode_tile(G2MContext *c, int tile_x, int tile_y,
         src += 3;
     }
     npal = *src++ + 1;
-    if (src_end - src < npal * 3)
-        return AVERROR_INVALIDDATA;
     memcpy(pal, src, npal * 3);
     src += npal * 3;
     if (sub_type != 2) {
@@ -1112,7 +1094,7 @@ static int kempf_decode_tile(G2MContext *c, int tile_x, int tile_y,
     zsize = (src[0] << 8) | src[1];
     src  += 2;
 
-    if (src_end - src < zsize + (sub_type != 2))
+    if (src_end - src < zsize)
         return AVERROR_INVALIDDATA;
 
     ret = uncompress(c->kempf_buf, &dlen, src, zsize);
@@ -1134,8 +1116,6 @@ static int kempf_decode_tile(G2MContext *c, int tile_x, int tile_y,
     for (i = 0; i < (FFALIGN(height, 16) >> 4); i++) {
         for (j = 0; j < (FFALIGN(width, 16) >> 4); j++) {
             if (!bits) {
-                if (src >= src_end)
-                    return AVERROR_INVALIDDATA;
                 bitbuf = *src++;
                 bits   = 8;
             }
@@ -1169,10 +1149,10 @@ static int g2m_init_buffers(G2MContext *c)
     int aligned_height;
 
     if (!c->framebuf || c->old_width < c->width || c->old_height < c->height) {
-        c->framebuf_stride = FFALIGN(c->width + 15, 16) * 3;
-        aligned_height     = c->height + 15;
+        c->framebuf_stride = FFALIGN(c->width * 3, 16);
+        aligned_height     = FFALIGN(c->height,    16);
         av_free(c->framebuf);
-        c->framebuf = av_mallocz_array(c->framebuf_stride, aligned_height);
+        c->framebuf = av_mallocz(c->framebuf_stride * aligned_height);
         if (!c->framebuf)
             return AVERROR(ENOMEM);
     }
@@ -1180,15 +1160,14 @@ static int g2m_init_buffers(G2MContext *c)
         (c->compression == 2 && !c->epic_buf_base) ||
         c->old_tile_w < c->tile_width ||
         c->old_tile_h < c->tile_height) {
-        c->tile_stride     = FFALIGN(c->tile_width, 16) * 3;
+        c->tile_stride     = FFALIGN(c->tile_width * 3, 16);
         c->epic_buf_stride = FFALIGN(c->tile_width * 4, 16);
         aligned_height     = FFALIGN(c->tile_height,    16);
-        av_freep(&c->synth_tile);
-        av_freep(&c->jpeg_tile);
-        av_freep(&c->kempf_buf);
-        av_freep(&c->kempf_flags);
-        av_freep(&c->epic_buf_base);
-        c->epic_buf    = NULL;
+        av_free(c->synth_tile);
+        av_free(c->jpeg_tile);
+        av_free(c->kempf_buf);
+        av_free(c->kempf_flags);
+        av_free(c->epic_buf_base);
         c->synth_tile  = av_mallocz(c->tile_stride      * aligned_height);
         c->jpeg_tile   = av_mallocz(c->tile_stride      * aligned_height);
         c->kempf_buf   = av_mallocz((c->tile_width + 1) * aligned_height +
@@ -1225,7 +1204,7 @@ static int g2m_load_cursor(AVCodecContext *avctx, G2MContext *c,
     cursor_hot_y = bytestream2_get_byte(gb);
     cursor_fmt   = bytestream2_get_byte(gb);
 
-    cursor_stride = FFALIGN(cursor_w, cursor_fmt==1 ? 32 : 1) * 4;
+    cursor_stride = FFALIGN(cursor_w, 32) * 4;
 
     if (cursor_w < 1 || cursor_w > 256 ||
         cursor_h < 1 || cursor_h > 256) {
@@ -1275,6 +1254,7 @@ static int g2m_load_cursor(AVCodecContext *avctx, G2MContext *c,
                     bits <<= 1;
                 }
             }
+            dst += c->cursor_stride - c->cursor_w * 4;
         }
 
         dst = c->cursor;
@@ -1306,6 +1286,7 @@ static int g2m_load_cursor(AVCodecContext *avctx, G2MContext *c,
                     bits <<= 1;
                 }
             }
+            dst += c->cursor_stride - c->cursor_w * 4;
         }
         break;
     case 32: // full colour
@@ -1319,6 +1300,7 @@ static int g2m_load_cursor(AVCodecContext *avctx, G2MContext *c,
                 *dst++ = val >> 16;
                 *dst++ = val >> 24;
             }
+            dst += c->cursor_stride - c->cursor_w * 4;
         }
         break;
     default:
@@ -1356,16 +1338,14 @@ static void g2m_paint_cursor(G2MContext *c, uint8_t *dst, int stride)
     } else {
         dst    +=  x * 3;
     }
-
-    if (y < 0)
-        h      +=  y;
-    if (w < 0 || h < 0)
-        return;
     if (y < 0) {
+        h      +=  y;
         cursor += -y * c->cursor_stride;
     } else {
         dst    +=  y * stride;
     }
+    if (w < 0 || h < 0)
+        return;
 
     for (j = 0; j < h; j++) {
         for (i = 0; i < w; i++) {
@@ -1423,7 +1403,6 @@ static int g2m_decode_frame(AVCodecContext *avctx, void *data,
         }
         switch (chunk_type) {
         case DISPLAY_INFO:
-            got_header =
             c->got_header = 0;
             if (chunk_size < 21) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid display info size %"PRIu32"\n",
@@ -1442,22 +1421,18 @@ static int g2m_decode_frame(AVCodecContext *avctx, void *data,
             if (c->width != avctx->width || c->height != avctx->height) {
                 ret = ff_set_dimensions(avctx, c->width, c->height);
                 if (ret < 0)
-                    goto header_fail;
+                    return ret;
             }
             c->compression = bytestream2_get_be32(&bc);
             if (c->compression != 2 && c->compression != 3) {
                 avpriv_report_missing_feature(avctx, "Compression method %d",
                                               c->compression);
-                ret = AVERROR_PATCHWELCOME;
-                goto header_fail;
+                return AVERROR_PATCHWELCOME;
             }
             c->tile_width  = bytestream2_get_be32(&bc);
             c->tile_height = bytestream2_get_be32(&bc);
-            if (c->tile_width <= 0 || c->tile_height <= 0 ||
-                ((c->tile_width | c->tile_height) & 0xF) ||
-                c->tile_width * (uint64_t)c->tile_height >= INT_MAX / 4 ||
-                av_image_check_size2(c->tile_width, c->tile_height, avctx->max_pixels, avctx->pix_fmt, 0, avctx) < 0
-            ) {
+            if (!c->tile_width || !c->tile_height ||
+                ((c->tile_width | c->tile_height) & 0xF)) {
                 av_log(avctx, AV_LOG_ERROR,
                        "Invalid tile dimensions %dx%d\n",
                        c->tile_width, c->tile_height);
@@ -1472,8 +1447,7 @@ static int g2m_decode_frame(AVCodecContext *avctx, void *data,
                     (chunk_size - 21) < 16) {
                     av_log(avctx, AV_LOG_ERROR,
                            "Display info: missing bitmasks!\n");
-                    ret = AVERROR_INVALIDDATA;
-                    goto header_fail;
+                    return AVERROR_INVALIDDATA;
                 }
                 r_mask = bytestream2_get_be32(&bc);
                 g_mask = bytestream2_get_be32(&bc);
@@ -1482,13 +1456,11 @@ static int g2m_decode_frame(AVCodecContext *avctx, void *data,
                     avpriv_report_missing_feature(avctx,
                                                   "Bitmasks: R=%"PRIX32", G=%"PRIX32", B=%"PRIX32,
                                                   r_mask, g_mask, b_mask);
-                    ret = AVERROR_PATCHWELCOME;
-                    goto header_fail;
+                    return AVERROR_PATCHWELCOME;
                 }
             } else {
                 avpriv_request_sample(avctx, "bpp=%d", c->bpp);
-                ret = AVERROR_PATCHWELCOME;
-                goto header_fail;
+                return AVERROR_PATCHWELCOME;
             }
             if (g2m_init_buffers(c)) {
                 ret = AVERROR(ENOMEM);
@@ -1565,9 +1537,11 @@ static int g2m_decode_frame(AVCodecContext *avctx, void *data,
     if (got_header)
         c->got_header = 1;
 
-    if (c->width && c->height && c->framebuf) {
-        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0)
+    if (c->width && c->height) {
+        if ((ret = ff_get_buffer(avctx, pic, 0)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
 
         pic->key_frame = got_header;
         pic->pict_type = got_header ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
@@ -1588,8 +1562,6 @@ header_fail:
     c->height  = 0;
     c->tiles_x =
     c->tiles_y = 0;
-    c->tile_width =
-    c->tile_height = 0;
     return ret;
 }
 
@@ -1620,7 +1592,6 @@ static av_cold int g2m_decode_end(AVCodecContext *avctx)
     jpg_free_context(&c->jc);
 
     av_freep(&c->epic_buf_base);
-    c->epic_buf = NULL;
     av_freep(&c->kempf_buf);
     av_freep(&c->kempf_flags);
     av_freep(&c->synth_tile);

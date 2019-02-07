@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Mans Rullgard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -336,11 +336,11 @@ function ff_sbr_hf_apply_noise_0_neon, export=1
         vld1.32         {d0},     [r0,:64]
         vld1.32         {d6},     [lr,:64]
         vld1.32         {d2[]},   [r1,:32]!
-        vld1.32         {d18[]},  [r2,:32]!
+        vld1.32         {d3[]},   [r2,:32]!
         vceq.f32        d4,  d2,  #0
         veor            d2,  d2,  d3
         vmov            d1,  d0
-        vmla.f32        d0,  d6,  d18
+        vmla.f32        d0,  d6,  d3
         vadd.f32        s2,  s2,  s4
         vbif            d0,  d1,  d4
         vst1.32         {d0},     [r0,:64]!
