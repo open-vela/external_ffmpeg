@@ -3,20 +3,20 @@
  * Copyright (C) 2011 Konstantin Shishkov
  * based on work by Mike Melanson
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -72,7 +72,7 @@ static av_cold int xan_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     s->scratch_buffer = av_malloc(s->buffer_size + 130);
     if (!s->scratch_buffer) {
-        xan_decode_end(avctx);
+        av_freep(&s->y_buffer);
         return AVERROR(ENOMEM);
     }
 
@@ -223,18 +223,16 @@ static int xan_decode_chroma(AVCodecContext *avctx, unsigned chroma_off)
     if (mode) {
         for (j = 0; j < avctx->height >> 1; j++) {
             for (i = 0; i < avctx->width >> 1; i++) {
-                if (src_end - src < 1)
-                    return 0;
                 val = *src++;
-                if (val) {
-                    if (val >= table_size)
-                        return AVERROR_INVALIDDATA;
+                if (val && val < table_size) {
                     val  = AV_RL16(table + (val << 1));
                     uval = (val >> 3) & 0xF8;
                     vval = (val >> 8) & 0xF8;
                     U[i] = uval | (uval >> 5);
                     V[i] = vval | (vval >> 5);
                 }
+                if (src == src_end)
+                    return 0;
             }
             U += s->pic->linesize[1];
             V += s->pic->linesize[2];
@@ -249,12 +247,8 @@ static int xan_decode_chroma(AVCodecContext *avctx, unsigned chroma_off)
 
         for (j = 0; j < avctx->height >> 2; j++) {
             for (i = 0; i < avctx->width >> 1; i += 2) {
-                if (src_end - src < 1)
-                    return 0;
                 val = *src++;
-                if (val) {
-                    if (val >= table_size)
-                        return AVERROR_INVALIDDATA;
+                if (val && val < table_size) {
                     val  = AV_RL16(table + (val << 1));
                     uval = (val >> 3) & 0xF8;
                     vval = (val >> 8) & 0xF8;
@@ -293,7 +287,7 @@ static int xan_decode_frame_type0(AVCodecContext *avctx)
     if ((ret = xan_decode_chroma(avctx, chroma_off)) != 0)
         return ret;
 
-    if (corr_off >= bytestream2_size(&s->gb)) {
+    if (corr_off >= (s->gb.buffer_end - s->gb.buffer_start)) {
         av_log(avctx, AV_LOG_WARNING, "Ignoring invalid correction block position\n");
         corr_off = 0;
     }
@@ -338,9 +332,6 @@ static int xan_decode_frame_type0(AVCodecContext *avctx)
         dec_size = xan_unpack(s, s->scratch_buffer, s->buffer_size / 2);
         if (dec_size < 0)
             dec_size = 0;
-        else
-            dec_size = FFMIN(dec_size, s->buffer_size/2 - 1);
-
         for (i = 0; i < dec_size; i++)
             s->y_buffer[i*2+1] = (s->y_buffer[i*2+1] + (s->scratch_buffer[i] << 1)) & 0x3F;
     }
@@ -410,8 +401,10 @@ static int xan_decode_frame(AVCodecContext *avctx,
     int ftype;
     int ret;
 
-    if ((ret = ff_reget_buffer(avctx, s->pic)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->pic))) {
+        av_log(s->avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     bytestream2_init(&s->gb, avpkt->data, avpkt->size);
     ftype = bytestream2_get_le32(&s->gb);

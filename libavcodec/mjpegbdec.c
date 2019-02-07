@@ -2,20 +2,20 @@
  * Apple MJPEG-B decoder
  * Copyright (c) 2002 Alex Beregszaszi
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,6 @@ static int mjpegb_decode_frame(AVCodecContext *avctx,
 
     buf_ptr = buf;
     buf_end = buf + buf_size;
-    s->got_picture = 0;
 
 read_header:
     /* reset on every SOI */
@@ -70,7 +69,8 @@ read_header:
 
     skip_bits(&hgb, 32); /* reserved zeros */
 
-    if (get_bits_long(&hgb, 32) != MKBETAG('m','j','p','g')) {
+    if (get_bits_long(&hgb, 32) != MKBETAG('m','j','p','g'))
+    {
         av_log(avctx, AV_LOG_WARNING, "not mjpeg-b (bad fourcc)\n");
         return AVERROR_INVALIDDATA;
     }
@@ -84,17 +84,19 @@ read_header:
 
     dqt_offs = read_offs(avctx, &hgb, buf_end - buf_ptr, "dqt is %d and size is %d\n");
     av_log(avctx, AV_LOG_DEBUG, "dqt offs: 0x%"PRIx32"\n", dqt_offs);
-    if (dqt_offs) {
+    if (dqt_offs)
+    {
         init_get_bits(&s->gb, buf_ptr+dqt_offs, (buf_end - (buf_ptr+dqt_offs))*8);
         s->start_code = DQT;
-        ret = ff_mjpeg_decode_dqt(s);
-        if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
-            return ret;
+        if (ff_mjpeg_decode_dqt(s) < 0 &&
+            (avctx->err_recognition & AV_EF_EXPLODE))
+          return AVERROR_INVALIDDATA;
     }
 
     dht_offs = read_offs(avctx, &hgb, buf_end - buf_ptr, "dht is %d and size is %d\n");
     av_log(avctx, AV_LOG_DEBUG, "dht offs: 0x%"PRIx32"\n", dht_offs);
-    if (dht_offs) {
+    if (dht_offs)
+    {
         init_get_bits(&s->gb, buf_ptr+dht_offs, (buf_end - (buf_ptr+dht_offs))*8);
         s->start_code = DHT;
         ff_mjpeg_decode_dht(s);
@@ -102,42 +104,41 @@ read_header:
 
     sof_offs = read_offs(avctx, &hgb, buf_end - buf_ptr, "sof is %d and size is %d\n");
     av_log(avctx, AV_LOG_DEBUG, "sof offs: 0x%"PRIx32"\n", sof_offs);
-    if (sof_offs) {
+    if (sof_offs)
+    {
         init_get_bits(&s->gb, buf_ptr+sof_offs, (buf_end - (buf_ptr+sof_offs))*8);
         s->start_code = SOF0;
-        if ((ret = ff_mjpeg_decode_sof(s)) < 0)
-            return ret;
+        if (ff_mjpeg_decode_sof(s) < 0)
+            return -1;
     }
 
     sos_offs = read_offs(avctx, &hgb, buf_end - buf_ptr, "sos is %d and size is %d\n");
     av_log(avctx, AV_LOG_DEBUG, "sos offs: 0x%"PRIx32"\n", sos_offs);
     sod_offs = read_offs(avctx, &hgb, buf_end - buf_ptr, "sof is %d and size is %d\n");
     av_log(avctx, AV_LOG_DEBUG, "sod offs: 0x%"PRIx32"\n", sod_offs);
-    if (sos_offs) {
+    if (sos_offs)
+    {
         init_get_bits(&s->gb, buf_ptr + sos_offs,
                       8 * FFMIN(field_size, buf_end - buf_ptr - sos_offs));
         s->mjpb_skiptosod = (sod_offs - sos_offs - show_bits(&s->gb, 16));
         s->start_code = SOS;
-        ret = ff_mjpeg_decode_sos(s, NULL, 0, NULL);
-        if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
-            return ret;
+        if (ff_mjpeg_decode_sos(s, NULL, NULL) < 0 &&
+            (avctx->err_recognition & AV_EF_EXPLODE))
+          return AVERROR_INVALIDDATA;
     }
 
     if (s->interlaced) {
         s->bottom_field ^= 1;
         /* if not bottom field, do not output image yet */
-        if (s->bottom_field != s->interlace_polarity && second_field_offs) {
+        if (s->bottom_field != s->interlace_polarity && second_field_offs)
+        {
             buf_ptr = buf + second_field_offs;
+            second_field_offs = 0;
             goto read_header;
-        }
+            }
     }
 
     //XXX FIXME factorize, this looks very similar to the EOI code
-
-    if(!s->got_picture) {
-        av_log(avctx, AV_LOG_WARNING, "no picture\n");
-        return buf_size;
-    }
 
     if ((ret = av_frame_ref(data, s->picture_ptr)) < 0)
         return ret;
@@ -161,6 +162,5 @@ AVCodec ff_mjpegb_decoder = {
     .close          = ff_mjpeg_decode_end,
     .decode         = mjpegb_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .max_lowres     = 3,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
