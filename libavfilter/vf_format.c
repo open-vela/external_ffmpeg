@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2007 Bobby Bingham
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -58,7 +58,6 @@ static av_cold int init(AVFilterContext *ctx)
     char *cur, *sep;
     int nb_formats = 1;
     int i;
-    int ret;
 
     if (!s->pix_fmts) {
         av_log(ctx, AV_LOG_ERROR, "Empty output format string.\n");
@@ -84,8 +83,11 @@ static av_cold int init(AVFilterContext *ctx)
         if (sep)
             *sep++ = 0;
 
-        if ((ret = ff_parse_pixel_format(&s->formats[i], cur, ctx)) < 0)
-            return ret;
+        s->formats[i] = av_get_pix_fmt(cur);
+        if (s->formats[i] == AV_PIX_FMT_NONE) {
+            av_log(ctx, AV_LOG_ERROR, "Unknown pixel format: %s\n", cur);
+            return AVERROR(EINVAL);
+        }
 
         cur = sep;
     }
@@ -94,7 +96,7 @@ static av_cold int init(AVFilterContext *ctx)
     if (!strcmp(ctx->filter->name, "noformat")) {
         const AVPixFmtDescriptor *desc = NULL;
         enum AVPixelFormat *formats_allowed;
-        int nb_formats_lavu = 0, nb_formats_allowed = 0;
+        int nb_formats_lavu = 0, nb_formats_allowed = 0;;
 
         /* count the formats known to lavu */
         while ((desc = av_pix_fmt_desc_next(desc)))
@@ -134,20 +136,24 @@ static int query_formats(AVFilterContext *ctx)
     if (!formats)
         return AVERROR(ENOMEM);
 
-    return ff_set_common_formats(ctx, formats);
+    ff_set_common_formats(ctx, formats);
+    return 0;
 }
 
 
 #define OFFSET(x) offsetof(FormatContext, x)
 static const AVOption options[] = {
-    { "pix_fmts", "A '|'-separated list of pixel formats", OFFSET(pix_fmts), AV_OPT_TYPE_STRING, .flags = AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM },
-    { NULL }
+    { "pix_fmts", "A '|'-separated list of pixel formats", OFFSET(pix_fmts), AV_OPT_TYPE_STRING, .flags = AV_OPT_FLAG_VIDEO_PARAM },
+    { NULL },
 };
 
 #if CONFIG_FORMAT_FILTER
-
-#define format_options options
-AVFILTER_DEFINE_CLASS(format);
+static const AVClass format_class = {
+    .class_name = "format",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_format_inputs[] = {
     {
@@ -167,26 +173,29 @@ static const AVFilterPad avfilter_vf_format_outputs[] = {
 };
 
 AVFilter ff_vf_format = {
-    .name          = "format",
-    .description   = NULL_IF_CONFIG_SMALL("Convert the input video to one of the specified pixel formats."),
+    .name      = "format",
+    .description = NULL_IF_CONFIG_SMALL("Convert the input video to one of the specified pixel formats."),
 
-    .init          = init,
-    .uninit        = uninit,
+    .init      = init,
+    .uninit    = uninit,
 
     .query_formats = query_formats,
 
-    .priv_size     = sizeof(FormatContext),
-    .priv_class    = &format_class,
+    .priv_size = sizeof(FormatContext),
+    .priv_class = &format_class,
 
-    .inputs        = avfilter_vf_format_inputs,
-    .outputs       = avfilter_vf_format_outputs,
+    .inputs    = avfilter_vf_format_inputs,
+    .outputs   = avfilter_vf_format_outputs,
 };
 #endif /* CONFIG_FORMAT_FILTER */
 
 #if CONFIG_NOFORMAT_FILTER
-
-#define noformat_options options
-AVFILTER_DEFINE_CLASS(noformat);
+static const AVClass noformat_class = {
+    .class_name = "noformat",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad avfilter_vf_noformat_inputs[] = {
     {
@@ -206,18 +215,18 @@ static const AVFilterPad avfilter_vf_noformat_outputs[] = {
 };
 
 AVFilter ff_vf_noformat = {
-    .name          = "noformat",
-    .description   = NULL_IF_CONFIG_SMALL("Force libavfilter not to use any of the specified pixel formats for the input to the next filter."),
+    .name      = "noformat",
+    .description = NULL_IF_CONFIG_SMALL("Force libavfilter not to use any of the specified pixel formats for the input to the next filter."),
 
-    .init          = init,
-    .uninit        = uninit,
+    .init      = init,
+    .uninit    = uninit,
 
     .query_formats = query_formats,
 
-    .priv_size     = sizeof(FormatContext),
-    .priv_class    = &noformat_class,
+    .priv_size = sizeof(FormatContext),
+    .priv_class = &noformat_class,
 
-    .inputs        = avfilter_vf_noformat_inputs,
-    .outputs       = avfilter_vf_noformat_outputs,
+    .inputs    = avfilter_vf_noformat_inputs,
+    .outputs   = avfilter_vf_noformat_outputs,
 };
 #endif /* CONFIG_NOFORMAT_FILTER */

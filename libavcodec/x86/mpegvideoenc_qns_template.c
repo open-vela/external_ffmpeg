@@ -5,26 +5,26 @@
  * MMX optimization by Michael Niedermayer <michaelni@gmx.at>
  * 3DNow! and SSSE3 optimization by Zuxy Meng <zuxy.meng@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <assert.h>
 #include <stdint.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/x86/asm.h"
 
@@ -36,7 +36,7 @@ static int DEF(try_8x8basis)(int16_t rem[64], int16_t weight[64], int16_t basis[
 {
     x86_reg i=0;
 
-    av_assert2(FFABS(scale) < MAX_ABS);
+    assert(FFABS(scale) < MAX_ABS);
     scale<<= 16 + SCALE_OFFSET - BASIS_SHIFT + RECON_SHIFT;
 
     SET_RND(mm6);
