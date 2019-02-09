@@ -1,20 +1,20 @@
 /*
  * generic encoding-related code
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,26 +26,53 @@
 #include "libavutil/samplefmt.h"
 
 #include "avcodec.h"
+#include "frame_thread_encoder.h"
 #include "internal.h"
 
-int ff_alloc_packet(AVPacket *avpkt, int size)
+int ff_alloc_packet2(AVCodecContext *avctx, AVPacket *avpkt, int64_t size, int64_t min_size)
 {
-    if (size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
+    if (avpkt->size < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid negative user packet size %d\n", avpkt->size);
         return AVERROR(EINVAL);
+    }
+    if (size < 0 || size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid minimum required packet size %"PRId64" (max allowed is %d)\n",
+               size, INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE);
+        return AVERROR(EINVAL);
+    }
+
+    if (avctx && 2*min_size < size) { // FIXME The factor needs to be finetuned
+        av_assert0(!avpkt->data || avpkt->data != avctx->internal->byte_buffer);
+        if (!avpkt->data || avpkt->size < size) {
+            av_fast_padded_malloc(&avctx->internal->byte_buffer, &avctx->internal->byte_buffer_size, size);
+            avpkt->data = avctx->internal->byte_buffer;
+            avpkt->size = avctx->internal->byte_buffer_size;
+        }
+    }
 
     if (avpkt->data) {
         AVBufferRef *buf = avpkt->buf;
 
-        if (avpkt->size < size)
+        if (avpkt->size < size) {
+            av_log(avctx, AV_LOG_ERROR, "User packet is too small (%d < %"PRId64")\n", avpkt->size, size);
             return AVERROR(EINVAL);
+        }
 
         av_init_packet(avpkt);
         avpkt->buf      = buf;
         avpkt->size     = size;
         return 0;
     } else {
-        return av_new_packet(avpkt, size);
+        int ret = av_new_packet(avpkt, size);
+        if (ret < 0)
+            av_log(avctx, AV_LOG_ERROR, "Failed to allocate packet of size %"PRId64"\n", size);
+        return ret;
     }
+}
+
+int ff_alloc_packet(AVPacket *avpkt, int size)
+{
+    return ff_alloc_packet2(NULL, avpkt, size, 0);
 }
 
 /**
@@ -61,6 +88,7 @@ static int pad_last_frame(AVCodecContext *s, AVFrame **dst, const AVFrame *src)
 
     frame->format         = src->format;
     frame->channel_layout = src->channel_layout;
+    frame->channels       = src->channels;
     frame->nb_samples     = s->frame_size;
     ret = av_frame_get_buffer(frame, 32);
     if (ret < 0)
@@ -92,10 +120,11 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
                                               const AVFrame *frame,
                                               int *got_packet_ptr)
 {
-    AVFrame tmp;
+    AVFrame *extended_frame = NULL;
     AVFrame *padded_frame = NULL;
     int ret;
-    int user_packet = !!avpkt->data;
+    AVPacket user_pkt = *avpkt;
+    int needs_realloc = !user_pkt.data;
 
     *got_packet_ptr = 0;
 
@@ -106,7 +135,6 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
 
     if (!(avctx->codec->capabilities & AV_CODEC_CAP_DELAY) && !frame) {
         av_packet_unref(avpkt);
-        av_init_packet(avpkt);
         return 0;
     }
 
@@ -121,9 +149,13 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
         }
         av_log(avctx, AV_LOG_WARNING, "extended_data is not set.\n");
 
-        tmp = *frame;
-        tmp.extended_data = tmp.data;
-        frame = &tmp;
+        extended_frame = av_frame_alloc();
+        if (!extended_frame)
+            return AVERROR(ENOMEM);
+
+        memcpy(extended_frame, frame, sizeof(AVFrame));
+        extended_frame->extended_data = extended_frame->data;
+        frame = extended_frame;
     }
 
     /* extract audio service type metadata */
@@ -136,25 +168,31 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
     /* check for valid frame size */
     if (frame) {
         if (avctx->codec->capabilities & AV_CODEC_CAP_SMALL_LAST_FRAME) {
-            if (frame->nb_samples > avctx->frame_size)
-                return AVERROR(EINVAL);
+            if (frame->nb_samples > avctx->frame_size) {
+                av_log(avctx, AV_LOG_ERROR, "more samples than frame size (avcodec_encode_audio2)\n");
+                ret = AVERROR(EINVAL);
+                goto end;
+            }
         } else if (!(avctx->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE)) {
             if (frame->nb_samples < avctx->frame_size &&
                 !avctx->internal->last_audio_frame) {
                 ret = pad_last_frame(avctx, &padded_frame, frame);
                 if (ret < 0)
-                    return ret;
+                    goto end;
 
                 frame = padded_frame;
                 avctx->internal->last_audio_frame = 1;
             }
 
             if (frame->nb_samples != avctx->frame_size) {
+                av_log(avctx, AV_LOG_ERROR, "nb_samples (%d) != frame_size (%d) (avcodec_encode_audio2)\n", frame->nb_samples, avctx->frame_size);
                 ret = AVERROR(EINVAL);
                 goto end;
             }
         }
     }
+
+    av_assert0(avctx->codec->encode2);
 
     ret = avctx->codec->encode2(avctx, avpkt, frame, got_packet_ptr);
     if (!ret) {
@@ -170,19 +208,38 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
         } else {
             avpkt->size = 0;
         }
+    }
+    if (avpkt->data && avpkt->data == avctx->internal->byte_buffer) {
+        needs_realloc = 0;
+        if (user_pkt.data) {
+            if (user_pkt.size >= avpkt->size) {
+                memcpy(user_pkt.data, avpkt->data, avpkt->size);
+            } else {
+                av_log(avctx, AV_LOG_ERROR, "Provided packet is too small, needs to be %d\n", avpkt->size);
+                avpkt->size = user_pkt.size;
+                ret = -1;
+            }
+            avpkt->buf      = user_pkt.buf;
+            avpkt->data     = user_pkt.data;
+        } else if (!avpkt->buf) {
+            ret = av_packet_make_refcounted(avpkt);
+            if (ret < 0)
+                goto end;
+        }
+    }
 
-        if (!user_packet && avpkt->size) {
-            ret = av_buffer_realloc(&avpkt->buf, avpkt->size);
+    if (!ret) {
+        if (needs_realloc && avpkt->data) {
+            ret = av_buffer_realloc(&avpkt->buf, avpkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
             if (ret >= 0)
                 avpkt->data = avpkt->buf->data;
         }
-
-        avctx->frame_number++;
+        if (frame)
+            avctx->frame_number++;
     }
 
     if (ret < 0 || !*got_packet_ptr) {
         av_packet_unref(avpkt);
-        av_init_packet(avpkt);
         goto end;
     }
 
@@ -193,6 +250,7 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
 
 end:
     av_frame_free(&padded_frame);
+    av_free(extended_frame);
 
     return ret;
 }
@@ -203,7 +261,8 @@ int attribute_align_arg avcodec_encode_video2(AVCodecContext *avctx,
                                               int *got_packet_ptr)
 {
     int ret;
-    int user_packet = !!avpkt->data;
+    AVPacket user_pkt = *avpkt;
+    int needs_realloc = !user_pkt.data;
 
     *got_packet_ptr = 0;
 
@@ -212,38 +271,71 @@ int attribute_align_arg avcodec_encode_video2(AVCodecContext *avctx,
         return AVERROR(ENOSYS);
     }
 
+    if(CONFIG_FRAME_THREAD_ENCODER &&
+       avctx->internal->frame_thread_encoder && (avctx->active_thread_type&FF_THREAD_FRAME))
+        return ff_thread_video_encode_frame(avctx, avpkt, frame, got_packet_ptr);
+
+    if ((avctx->flags&AV_CODEC_FLAG_PASS1) && avctx->stats_out)
+        avctx->stats_out[0] = '\0';
+
     if (!(avctx->codec->capabilities & AV_CODEC_CAP_DELAY) && !frame) {
         av_packet_unref(avpkt);
-        av_init_packet(avpkt);
-        avpkt->size = 0;
         return 0;
     }
 
-    if (av_image_check_size(avctx->width, avctx->height, 0, avctx))
+    if (av_image_check_size2(avctx->width, avctx->height, avctx->max_pixels, AV_PIX_FMT_NONE, 0, avctx))
         return AVERROR(EINVAL);
+
+    if (frame && frame->format == AV_PIX_FMT_NONE)
+        av_log(avctx, AV_LOG_WARNING, "AVFrame.format is not set\n");
+    if (frame && (frame->width == 0 || frame->height == 0))
+        av_log(avctx, AV_LOG_WARNING, "AVFrame.width or height is not set\n");
 
     av_assert0(avctx->codec->encode2);
 
     ret = avctx->codec->encode2(avctx, avpkt, frame, got_packet_ptr);
+    av_assert0(ret <= 0);
+
+    emms_c();
+
+    if (avpkt->data && avpkt->data == avctx->internal->byte_buffer) {
+        needs_realloc = 0;
+        if (user_pkt.data) {
+            if (user_pkt.size >= avpkt->size) {
+                memcpy(user_pkt.data, avpkt->data, avpkt->size);
+            } else {
+                av_log(avctx, AV_LOG_ERROR, "Provided packet is too small, needs to be %d\n", avpkt->size);
+                avpkt->size = user_pkt.size;
+                ret = -1;
+            }
+            avpkt->buf      = user_pkt.buf;
+            avpkt->data     = user_pkt.data;
+        } else if (!avpkt->buf) {
+            ret = av_packet_make_refcounted(avpkt);
+            if (ret < 0)
+                return ret;
+        }
+    }
+
     if (!ret) {
         if (!*got_packet_ptr)
             avpkt->size = 0;
         else if (!(avctx->codec->capabilities & AV_CODEC_CAP_DELAY))
             avpkt->pts = avpkt->dts = frame->pts;
 
-        if (!user_packet && avpkt->size) {
-            ret = av_buffer_realloc(&avpkt->buf, avpkt->size);
+        if (needs_realloc && avpkt->data) {
+            ret = av_buffer_realloc(&avpkt->buf, avpkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
             if (ret >= 0)
                 avpkt->data = avpkt->buf->data;
         }
 
-        avctx->frame_number++;
+        if (frame)
+            avctx->frame_number++;
     }
 
     if (ret < 0 || !*got_packet_ptr)
         av_packet_unref(avpkt);
 
-    emms_c();
     return ret;
 }
 
@@ -255,8 +347,7 @@ int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size,
         av_log(avctx, AV_LOG_ERROR, "start_display_time must be 0.\n");
         return -1;
     }
-    if (sub->num_rects == 0 || !sub->rects)
-        return -1;
+
     ret = avctx->codec->encode_sub(avctx, buf, buf_size, sub);
     avctx->frame_number++;
     return ret;
