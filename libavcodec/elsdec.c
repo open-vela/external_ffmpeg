@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2013 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -271,7 +271,7 @@ void ff_els_decoder_init(ElsDecCtx *ctx, const uint8_t *in, size_t data_size)
 
 void ff_els_decoder_uninit(ElsUnsignedRung *rung)
 {
-    av_free(rung->rem_rung_list);
+    av_freep(&rung->rem_rung_list);
 }
 
 static int els_import_byte(ElsDecCtx *ctx)
@@ -391,12 +391,10 @@ unsigned ff_els_decode_unsigned(ElsDecCtx *ctx, ElsUnsignedRung *ur)
                 if (ur->rung_list_size <= (ur->avail_index + 2) * sizeof(ElsRungNode)) {
                     // remember rung_node position
                     ptrdiff_t pos     = rung_node - ur->rem_rung_list;
-                    ur->rem_rung_list = av_realloc(ur->rem_rung_list,
+                    ctx->err = av_reallocp(&ur->rem_rung_list,
                                                    ur->rung_list_size +
                                                    RUNG_SPACE);
-                    if (!ur->rem_rung_list) {
-                        av_free(ur->rem_rung_list);
-                        ctx->err = AVERROR(ENOMEM);
+                    if (ctx->err < 0) {
                         return 0;
                     }
                     memset((uint8_t *) ur->rem_rung_list + ur->rung_list_size, 0,

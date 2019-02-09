@@ -1,27 +1,28 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include "libavutil/timer.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "libavutil/libm.h"
-#include "libavutil/timer.h"
 #include "libavutil/eval.h"
 
 static const double const_values[] = {
@@ -108,35 +109,73 @@ int main(int argc, char **argv)
         "not(0)",
         "6.0206dB",
         "-3.0103dB",
+        "pow(0,1.23)",
+        "pow(PI,1.23)",
+        "PI^1.23",
+        "pow(-1,1.23)",
+        "if(1, 2)",
+        "if(1, 1, 2)",
+        "if(0, 1, 2)",
+        "ifnot(0, 23)",
+        "ifnot(1, NaN) + if(0, 1)",
+        "ifnot(1, 1, 2)",
+        "ifnot(0, 1, 2)",
+        "taylor(1, 1)",
+        "taylor(eq(mod(ld(1),4),1)-eq(mod(ld(1),4),3), PI/2, 1)",
+        "root(sin(ld(0))-1, 2)",
+        "root(sin(ld(0))+6+sin(ld(0)/12)-log(ld(0)), 100)",
+        "7000000B*random(0)",
+        "squish(2)",
+        "gauss(0.1)",
+        "hypot(4,3)",
+        "gcd(30,55)*print(min(9,1))",
+        "bitor(42, 12)",
+        "bitand(42, 12)",
+        "bitand(NAN, 1)",
+        "between(10, -3, 10)",
+        "between(-4, -2, -1)",
+        "between(1,2)",
+        "clip(0, 2, 1)",
+        "clip(0/0, 1, 2)",
+        "clip(0, 0/0, 1)",
         NULL
     };
+    int ret;
 
     for (expr = exprs; *expr; expr++) {
         printf("Evaluating '%s'\n", *expr);
-        av_expr_parse_and_eval(&d, *expr,
+        ret = av_expr_parse_and_eval(&d, *expr,
                                const_names, const_values,
                                NULL, NULL, NULL, NULL, NULL, 0, NULL);
         if (isnan(d))
             printf("'%s' -> nan\n\n", *expr);
         else
             printf("'%s' -> %f\n\n", *expr, d);
+        if (ret < 0)
+            printf("av_expr_parse_and_eval failed\n");
     }
 
-    av_expr_parse_and_eval(&d, "1+(5-2)^(3-1)+1/2+sin(PI)-max(-2.2,-3.1)",
+    ret = av_expr_parse_and_eval(&d, "1+(5-2)^(3-1)+1/2+sin(PI)-max(-2.2,-3.1)",
                            const_names, const_values,
                            NULL, NULL, NULL, NULL, NULL, 0, NULL);
     printf("%f == 12.7\n", d);
-    av_expr_parse_and_eval(&d, "80G/80Gi",
+    if (ret < 0)
+        printf("av_expr_parse_and_eval failed\n");
+    ret = av_expr_parse_and_eval(&d, "80G/80Gi",
                            const_names, const_values,
                            NULL, NULL, NULL, NULL, NULL, 0, NULL);
     printf("%f == 0.931322575\n", d);
+    if (ret < 0)
+        printf("av_expr_parse_and_eval failed\n");
 
     if (argc > 1 && !strcmp(argv[1], "-t")) {
         for (i = 0; i < 1050; i++) {
             START_TIMER;
-            av_expr_parse_and_eval(&d, "1+(5-2)^(3-1)+1/2+sin(PI)-max(-2.2,-3.1)",
+            ret = av_expr_parse_and_eval(&d, "1+(5-2)^(3-1)+1/2+sin(PI)-max(-2.2,-3.1)",
                                    const_names, const_values,
                                    NULL, NULL, NULL, NULL, NULL, 0, NULL);
+            if (ret < 0)
+                printf("av_expr_parse_and_eval failed\n");
             STOP_TIMER("av_expr_parse_and_eval");
         }
     }

@@ -2,20 +2,20 @@
  * Quicktime Video (RPZA) Video Decoder
  * Copyright (C) 2003 The FFmpeg project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -73,13 +73,12 @@ typedef struct RpzaContext {
 static int rpza_decode_stream(RpzaContext *s)
 {
     int width = s->avctx->width;
-    int stride = s->frame->linesize[0] / 2;
-    int row_inc = stride - 4;
+    int stride, row_inc, ret;
     int chunk_size;
     uint16_t colorA = 0, colorB;
     uint16_t color4[4];
     uint16_t ta, tb;
-    uint16_t *pixels = (uint16_t *)s->frame->data[0];
+    uint16_t *pixels;
 
     int row_ptr = 0;
     int pixel_ptr = 0;
@@ -96,11 +95,24 @@ static int rpza_decode_stream(RpzaContext *s)
     chunk_size = bytestream2_get_be32(&s->gb) & 0x00FFFFFF;
 
     /* If length mismatch use size from MOV file and try to decode anyway */
-    if (chunk_size != bytestream2_get_bytes_left(&s->gb) - 4)
-        av_log(s->avctx, AV_LOG_WARNING, "MOV chunk size != encoded chunk size\n");
+    if (chunk_size != bytestream2_get_bytes_left(&s->gb) + 4)
+        av_log(s->avctx, AV_LOG_WARNING,
+               "MOV chunk size %d != encoded chunk size %d\n",
+               chunk_size,
+               bytestream2_get_bytes_left(&s->gb) + 4
+              );
 
     /* Number of 4x4 blocks in frame. */
     total_blocks = ((s->avctx->width + 3) / 4) * ((s->avctx->height + 3) / 4);
+
+    if (total_blocks / 32 > bytestream2_get_bytes_left(&s->gb))
+        return AVERROR_INVALIDDATA;
+
+    if ((ret = ff_reget_buffer(s->avctx, s->frame)) < 0)
+        return ret;
+    pixels = (uint16_t *)s->frame->data[0];
+    stride = s->frame->linesize[0] / 2;
+    row_inc = stride - 4;
 
     /* Process chunk data */
     while (bytestream2_get_bytes_left(&s->gb)) {
@@ -251,11 +263,6 @@ static int rpza_decode_frame(AVCodecContext *avctx,
     int ret;
 
     bytestream2_init(&s->gb, avpkt->data, avpkt->size);
-
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
-        return ret;
-    }
 
     ret = rpza_decode_stream(s);
     if (ret < 0)

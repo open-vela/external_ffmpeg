@@ -2,20 +2,20 @@
  * Zip Motion Blocks Video (ZMBV) encoder
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,7 @@ typedef struct ZmbvEncContext {
     int keyint, curfrm;
     z_stream zstream;
 
-    int score_tab[256];
+    int score_tab[ZMBV_BLOCK * ZMBV_BLOCK + 1];
 } ZmbvEncContext;
 
 
@@ -69,20 +69,26 @@ static inline int block_cmp(ZmbvEncContext *c, uint8_t *src, int stride,
 {
     int sum = 0;
     int i, j;
-    uint8_t histogram[256] = {0};
+    uint16_t histogram[256] = {0};
 
-    *xored = 0;
+    /* Build frequency histogram of byte values for src[] ^ src2[] */
     for(j = 0; j < bh; j++){
         for(i = 0; i < bw; i++){
             int t = src[i] ^ src2[i];
             histogram[t]++;
-            *xored |= t;
         }
         src += stride;
         src2 += stride2;
     }
 
-    for(i = 1; i < 256; i++)
+    /* If not all the xored values were 0, then the blocks are different */
+    *xored = (histogram[0] < bw * bh);
+
+    /* Exit early if blocks are equal */
+    if (!*xored) return 0;
+
+    /* Sum the entropy of all values */
+    for(i = 0; i < 256; i++)
         sum += c->score_tab[histogram[i]];
 
     return sum;
@@ -233,10 +239,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
     }
 
     pkt_size = c->zstream.total_out + 1 + 6*keyframe;
-    if ((ret = ff_alloc_packet(pkt, pkt_size)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Error getting packet of size %d.\n", pkt_size);
+    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size, 0)) < 0)
         return ret;
-    }
     buf = pkt->data;
 
     fl = (keyframe ? ZMBV_KEYFRAME : 0) | (chpal ? ZMBV_DELTAPAL : 0);
@@ -280,8 +284,12 @@ static av_cold int encode_init(AVCodecContext *avctx)
     int i;
     int lvl = 9;
 
-    for(i=1; i<256; i++)
-        c->score_tab[i] = -i * log(i / (double)(ZMBV_BLOCK * ZMBV_BLOCK)) * (256 / M_LN2);
+    /* Entropy-based score tables for comparing blocks.
+     * Suitable for blocks up to (ZMBV_BLOCK * ZMBV_BLOCK) bytes.
+     * Scores are nonnegative, lower is better.
+     */
+    for(i = 1; i <= ZMBV_BLOCK * ZMBV_BLOCK; i++)
+        c->score_tab[i] = -i * log2(i / (double)(ZMBV_BLOCK * ZMBV_BLOCK)) * 256;
 
     c->avctx = avctx;
 

@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Rob Clark <rob@ti.com>
  * Copyright (c) 2011 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -773,6 +773,23 @@ endfunc
         vqrshrun.s16    \d1, q14, #7
 .endm
 
+.macro  vp8_epel8_v6    d0,  s0,  s1,  s2,  s3,  s4,  s5
+        vmovl.u8        q10, \s2
+        vmovl.u8        q11, \s3
+        vmovl.u8        q9,  \s1
+        vmovl.u8        q12, \s4
+        vmovl.u8        q8,  \s0
+        vmovl.u8        q13, \s5
+        vmul.u16        q10, q10, d0[2]
+        vmul.u16        q11, q11, d0[3]
+        vmls.u16        q10, q9,  d0[1]
+        vmls.u16        q11, q12, d1[0]
+        vmla.u16        q10, q8,  d0[0]
+        vmla.u16        q11, q13, d1[1]
+        vqadd.s16       q11, q10, q11
+        vqrshrun.s16    \d0, q11, #7
+.endm
+
 .macro  vp8_epel8_v6_y2 d0, d1, s0, s1, s2, s3, s4, s5, s6
         vmovl.u8        q10, \s0
         vmovl.u8        q11, \s3
@@ -892,12 +909,12 @@ function ff_put_vp8_epel16_h6v6_neon, export=1
         sub             r2,  r2,  r3,  lsl #1
         sub             r2,  r2,  #2
         push            {r4,lr}
-        vpush           {d8-d15}
+        vpush           {d8-d9}
 
         @ first pass (horizontal):
-        ldr             r4,  [sp, #64+8+4]          @ mx
+        ldr             r4,  [sp, #28]          @ mx
         movrel          lr,  subpel_filters-16
-        ldr             r12, [sp, #64+8+0]          @ h
+        ldr             r12, [sp, #24]          @ h
         add             r4,  lr,  r4, lsl #4
         sub             sp,  sp,  #336+16
         vld1.16         {q0},     [r4,:128]
@@ -914,9 +931,9 @@ function ff_put_vp8_epel16_h6v6_neon, export=1
         bne             1b
 
         @ second pass (vertical):
-        ldr             r4,  [sp, #336+16+64+8+8]   @ my
+        ldr             r4,  [sp, #336+16+32]   @ my
         movrel          lr,  subpel_filters-16
-        ldr             r12, [sp, #336+16+64+8+0]   @ h
+        ldr             r12, [sp, #336+16+24]   @ h
         add             r4,  lr,  r4, lsl #4
         add             lr,  sp,  #15
         vld1.16         {q0},     [r4,:128]
@@ -924,20 +941,18 @@ function ff_put_vp8_epel16_h6v6_neon, export=1
 2:
         vld1.8          {d2-d5},  [lr,:128]!
         vld1.8          {d6-d9},  [lr,:128]!
-        vld1.8          {d10-d13},[lr,:128]!
-        vld1.8          {d14-d15},[lr,:128]
-        sub             lr,  lr,  #64
+        vld1.8          {d28-d31},[lr,:128]
+        sub             lr,  lr,  #48
 
-        vp8_epel8_v6_y2 d2,  d4,  d2,  d4,  d6,  d8,  d10, d12, d14
-        vp8_epel8_v6_y2 d3,  d5,  d3,  d5,  d7,  d9,  d11, d13, d15
+        vp8_epel8_v6    d2, d2, d4, d6, d8, d28, d30
+        vp8_epel8_v6    d3, d3, d5, d7, d9, d29, d31
 
         vst1.8          {d2-d3}, [r0,:128], r1
-        vst1.8          {d4-d5}, [r0,:128], r1
-        subs            r12, r12, #2
+        subs            r12, r12, #1
         bne             2b
 
         add             sp,  sp,  #336+16
-        vpop            {d8-d15}
+        vpop            {d8-d9}
         pop             {r4,pc}
 endfunc
 
