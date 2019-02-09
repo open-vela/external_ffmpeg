@@ -2,20 +2,20 @@
  * SMJPEG muxer
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,6 +46,7 @@ static int smjpeg_write_header(AVFormatContext *s)
     avio_wb32(pb, 0);
     avio_wb32(pb, 0);
 
+    ff_standardize_creation_time(s);
     while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX))) {
         avio_wl32(pb, SMJPEG_TXT);
         avio_wb32(pb, strlen(t->key) + strlen(t->value) + 3);
@@ -66,7 +67,7 @@ static int smjpeg_write_header(AVFormatContext *s)
             avio_wl32(pb, SMJPEG_SND);
             avio_wb32(pb, 8);
             avio_wb16(pb, par->sample_rate);
-            avio_w8(pb, av_get_bits_per_sample(par->codec_id));
+            avio_w8(pb, par->bits_per_coded_sample);
             avio_w8(pb, par->channels);
             avio_wl32(pb, tag);
             avpriv_set_pts_info(st, 32, 1, 1000);

@@ -1,20 +1,20 @@
 /*
  * HEVC Supplementary Enhancement Information messages
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,6 +52,7 @@ typedef enum {
     HEVC_SEI_TYPE_DECODED_PICTURE_HASH                 = 132,
     HEVC_SEI_TYPE_SCALABLE_NESTING                     = 133,
     HEVC_SEI_TYPE_REGION_REFRESH_INFO                  = 134,
+    HEVC_SEI_TYPE_TIME_CODE                            = 136,
     HEVC_SEI_TYPE_MASTERING_DISPLAY_INFO               = 137,
     HEVC_SEI_TYPE_CONTENT_LIGHT_LEVEL_INFO             = 144,
     HEVC_SEI_TYPE_ALTERNATIVE_TRANSFER_CHARACTERISTICS = 147,
@@ -76,6 +77,29 @@ typedef struct HEVCSEIDisplayOrientation {
     int hflip, vflip;
 } HEVCSEIDisplayOrientation;
 
+typedef struct HEVCSEIPictureTiming {
+    int picture_struct;
+} HEVCSEIPictureTiming;
+
+typedef struct HEVCSEIA53Caption {
+    int a53_caption_size;
+    uint8_t *a53_caption;
+} HEVCSEIA53Caption;
+
+typedef struct HEVCSEIMasteringDisplay {
+    int present;
+    uint16_t display_primaries[3][2];
+    uint16_t white_point[2];
+    uint32_t max_luminance;
+    uint32_t min_luminance;
+} HEVCSEIMasteringDisplay;
+
+typedef struct HEVCSEIContentLight {
+    int present;
+    uint16_t max_content_light_level;
+    uint16_t max_pic_average_light_level;
+} HEVCSEIContentLight;
+
 typedef struct HEVCSEIAlternativeTransfer {
     int present;
     int preferred_transfer_characteristics;
@@ -85,10 +109,26 @@ typedef struct HEVCSEI {
     HEVCSEIPictureHash picture_hash;
     HEVCSEIFramePacking frame_packing;
     HEVCSEIDisplayOrientation display_orientation;
+    HEVCSEIPictureTiming picture_timing;
+    HEVCSEIA53Caption a53_caption;
+    HEVCSEIMasteringDisplay mastering_display;
+    HEVCSEIContentLight content_light;
+    int active_seq_parameter_set_id;
     HEVCSEIAlternativeTransfer alternative_transfer;
 } HEVCSEI;
 
+struct HEVCParamSets;
+
 int ff_hevc_decode_nal_sei(GetBitContext *gb, void *logctx, HEVCSEI *s,
-                           int type);
+                           const struct HEVCParamSets *ps, int type);
+
+/**
+ * Reset SEI values that are stored on the Context.
+ * e.g. Caption data that was extracted during NAL
+ * parsing.
+ *
+ * @param s HEVCContext.
+ */
+void ff_hevc_reset_sei(HEVCSEI *s);
 
 #endif /* AVCODEC_HEVC_SEI_H */

@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -54,34 +54,32 @@ static void print(AVTreeNode *t, int depth)
         av_log(NULL, AV_LOG_ERROR, "NULL\n");
 }
 
-static int cmp(void *a, const void *b)
+static int cmp(const void *a, const void *b)
 {
-    return (uint8_t *) a - (const uint8_t *) b;
+    return (const uint8_t *) a - (const uint8_t *) b;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     int i;
+    void *k;
     AVTreeNode *root = NULL, *node = NULL;
     AVLFG prng;
+    int log_level = argc <= 1 ? AV_LOG_INFO : atoi(argv[1]);
+
+    av_log_set_level(log_level);
 
     av_lfg_init(&prng, 1);
 
     for (i = 0; i < 10000; i++) {
-        AVTreeNode *node2 = NULL;
         intptr_t j = av_lfg_get(&prng) % 86294;
-        void *ret, *jj = (void *)(j + 1);
-
-        while (ret = av_tree_find(root, jj, cmp, NULL)) {
-            j  = av_lfg_get(&prng) % 86294;
-            jj = (void *)(j + 1);
-        }
 
         if (check(root) > 999) {
             av_log(NULL, AV_LOG_ERROR, "FATAL error %d\n", i);
             print(root, 0);
             return 1;
         }
+        av_log(NULL, AV_LOG_DEBUG, "inserting %4d\n", (int)j);
 
         if (!node)
             node = av_tree_node_alloc();
@@ -89,20 +87,20 @@ int main(void)
             av_log(NULL, AV_LOG_ERROR, "Memory allocation failure.\n");
             return 1;
         }
-        av_tree_insert(&root, jj, cmp, &node);
+        av_tree_insert(&root, (void *)(j + 1), cmp, &node);
 
-        while (ret = av_tree_find(root, jj, cmp, NULL)) {
-            j  = av_lfg_get(&prng) % 86294;
-            jj = (void *)(j + 1);
+        j = av_lfg_get(&prng) % 86294;
+        {
+            AVTreeNode *node2 = NULL;
+            av_log(NULL, AV_LOG_DEBUG, "removing %4d\n", (int)j);
+            av_tree_insert(&root, (void *)(j + 1), cmp, &node2);
+            k = av_tree_find(root, (void *)(j + 1), cmp, NULL);
+            if (k)
+                av_log(NULL, AV_LOG_ERROR, "removal failure %d\n", i);
+            av_free(node2);
         }
-
-        ret = av_tree_insert(&root, jj, cmp, &node2);
-        if (ret != jj)
-            av_tree_destroy(node2);
-        ret = av_tree_find(root, jj, cmp, NULL);
-        if (ret)
-            av_log(NULL, AV_LOG_ERROR, "removal failure %d\n", i);
     }
+    av_free(node);
 
     av_tree_destroy(root);
 

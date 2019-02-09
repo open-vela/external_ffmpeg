@@ -1,5 +1,12 @@
 /aviocat
+/ffbisect
+/bisect.need
+/crypto_bench
 /cws2fws
+/fourcc2pixfmt
+/ffescape
+/ffeval
+/ffhash
 /graph2dot
 /ismindex
 /pktdumper
@@ -7,3 +14,6 @@
 /qt-faststart
 /sidxindex
 /trasher
+/seek_print
+/uncoded_frame
+/zmqsend
