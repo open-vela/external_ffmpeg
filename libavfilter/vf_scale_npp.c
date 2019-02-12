@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,18 +27,20 @@
 
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
-#include "libavutil/eval.h"
 #include "libavutil/hwcontext.h"
-#include "libavutil/hwcontext_cuda.h"
+#include "libavutil/hwcontext_cuda_internal.h"
+#include "libavutil/cuda_check.h"
 #include "libavutil/internal.h"
-#include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
+#include "scale.h"
 #include "video.h"
+
+#define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, device_hwctx->internal->cuda_dl, x)
 
 static const enum AVPixelFormat supported_formats[] = {
     AV_PIX_FMT_YUV420P,
@@ -48,32 +50,6 @@ static const enum AVPixelFormat supported_formats[] = {
 
 static const enum AVPixelFormat deinterleaved_formats[][2] = {
     { AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P },
-};
-
-static const char *const var_names[] = {
-    "PI",
-    "PHI",
-    "E",
-    "in_w",   "iw",
-    "in_h",   "ih",
-    "out_w",  "ow",
-    "out_h",  "oh",
-    "a", "dar",
-    "sar",
-    NULL
-};
-
-enum var_name {
-    VAR_PI,
-    VAR_PHI,
-    VAR_E,
-    VAR_IN_W,   VAR_IW,
-    VAR_IN_H,   VAR_IH,
-    VAR_OUT_W,  VAR_OW,
-    VAR_OUT_H,  VAR_OH,
-    VAR_A, VAR_DAR,
-    VAR_SAR,
-    VARS_NB
 };
 
 enum ScaleStage {
@@ -169,11 +145,9 @@ static int nppscale_query_formats(AVFilterContext *ctx)
     static const enum AVPixelFormat pixel_formats[] = {
         AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE,
     };
-    AVFilterFormats *pix_fmts  = ff_make_format_list(pixel_formats);
+    AVFilterFormats *pix_fmts = ff_make_format_list(pixel_formats);
 
-    ff_set_common_formats(ctx, pix_fmts);
-
-    return 0;
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static int init_stage(NPPScaleStageContext *stage, AVBufferRef *device_ctx)
@@ -294,8 +268,20 @@ static int init_processing_chain(AVFilterContext *ctx, int in_width, int in_heig
 
     /* figure out which stages need to be done */
     if (in_width != out_width || in_height != out_height ||
-        in_deinterleaved_format != out_deinterleaved_format)
+        in_deinterleaved_format != out_deinterleaved_format) {
         s->stages[STAGE_RESIZE].stage_needed = 1;
+
+        if (s->interp_algo == NPPI_INTER_SUPER &&
+            (out_width > in_width && out_height > in_height)) {
+            s->interp_algo = NPPI_INTER_LANCZOS;
+            av_log(ctx, AV_LOG_WARNING, "super-sampling not supported for output dimensions, using lanczos instead.\n");
+        }
+        if (s->interp_algo == NPPI_INTER_SUPER &&
+            !(out_width < in_width && out_height < in_height)) {
+            s->interp_algo = NPPI_INTER_CUBIC;
+            av_log(ctx, AV_LOG_WARNING, "super-sampling not supported for output dimensions, using cubic instead.\n");
+        }
+    }
 
     if (!s->stages[STAGE_RESIZE].stage_needed && in_format == out_format)
         s->passthrough = 1;
@@ -351,64 +337,18 @@ static int nppscale_config_props(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
     AVFilterLink *inlink = outlink->src->inputs[0];
-    NPPScaleContext  *s = ctx->priv;
-    int64_t w, h;
-    double var_values[VARS_NB], res;
-    char *expr;
+    NPPScaleContext *s = ctx->priv;
+    int w, h;
     int ret;
 
-    var_values[VAR_PI]    = M_PI;
-    var_values[VAR_PHI]   = M_PHI;
-    var_values[VAR_E]     = M_E;
-    var_values[VAR_IN_W]  = var_values[VAR_IW] = inlink->w;
-    var_values[VAR_IN_H]  = var_values[VAR_IH] = inlink->h;
-    var_values[VAR_OUT_W] = var_values[VAR_OW] = NAN;
-    var_values[VAR_OUT_H] = var_values[VAR_OH] = NAN;
-    var_values[VAR_A]     = (double) inlink->w / inlink->h;
-    var_values[VAR_SAR]   = inlink->sample_aspect_ratio.num ?
-        (double) inlink->sample_aspect_ratio.num / inlink->sample_aspect_ratio.den : 1;
-    var_values[VAR_DAR]   = var_values[VAR_A] * var_values[VAR_SAR];
-
-    /* evaluate width and height */
-    av_expr_parse_and_eval(&res, (expr = s->w_expr),
-                           var_names, var_values,
-                           NULL, NULL, NULL, NULL, NULL, 0, ctx);
-    s->w = var_values[VAR_OUT_W] = var_values[VAR_OW] = res;
-    if ((ret = av_expr_parse_and_eval(&res, (expr = s->h_expr),
-                                      var_names, var_values,
-                                      NULL, NULL, NULL, NULL, NULL, 0, ctx)) < 0)
+    if ((ret = ff_scale_eval_dimensions(s,
+                                        s->w_expr, s->h_expr,
+                                        inlink, outlink,
+                                        &w, &h)) < 0)
         goto fail;
-    s->h = var_values[VAR_OUT_H] = var_values[VAR_OH] = res;
-    /* evaluate again the width, as it may depend on the output height */
-    if ((ret = av_expr_parse_and_eval(&res, (expr = s->w_expr),
-                                      var_names, var_values,
-                                      NULL, NULL, NULL, NULL, NULL, 0, ctx)) < 0)
-        goto fail;
-    s->w = res;
 
-    w = s->w;
-    h = s->h;
-
-    /* sanity check params */
-    if (w <  -1 || h <  -1) {
-        av_log(ctx, AV_LOG_ERROR, "Size values less than -1 are not acceptable.\n");
-        return AVERROR(EINVAL);
-    }
-    if (w == -1 && h == -1)
-        s->w = s->h = 0;
-
-    if (!(w = s->w))
-        w = inlink->w;
-    if (!(h = s->h))
-        h = inlink->h;
-    if (w == -1)
-        w = av_rescale(h, inlink->w, inlink->h);
-    if (h == -1)
-        h = av_rescale(w, inlink->h, inlink->w);
-
-    if (w > INT_MAX || h > INT_MAX ||
-        (h * inlink->w) > INT_MAX  ||
-        (w * inlink->h) > INT_MAX)
+    if (((int64_t)h * inlink->w) > INT_MAX  ||
+        ((int64_t)w * inlink->h) > INT_MAX)
         av_log(ctx, AV_LOG_ERROR, "Rescaled value for width or height is too big.\n");
 
     outlink->w = w;
@@ -431,8 +371,6 @@ static int nppscale_config_props(AVFilterLink *outlink)
     return 0;
 
 fail:
-    av_log(NULL, AV_LOG_ERROR,
-           "Error when evaluating the expression '%s'\n", expr);
     return ret;
 }
 
@@ -467,7 +405,7 @@ static int nppscale_resize(AVFilterContext *ctx, NPPScaleStageContext *stage,
     NppStatus err;
     int i;
 
-    for (i = 0; i < FF_ARRAY_ELEMS(in->data) && in->data[i]; i++) {
+    for (i = 0; i < FF_ARRAY_ELEMS(stage->planes_in) && i < FF_ARRAY_ELEMS(in->data) && in->data[i]; i++) {
         int iw = stage->planes_in[i].width;
         int ih = stage->planes_in[i].height;
         int ow = stage->planes_out[i].width;
@@ -563,7 +501,6 @@ static int nppscale_filter_frame(AVFilterLink *link, AVFrame *in)
     AVCUDADeviceContext *device_hwctx = frames_ctx->device_ctx->hwctx;
 
     AVFrame *out = NULL;
-    CUresult err;
     CUcontext dummy;
     int ret = 0;
 
@@ -576,22 +513,20 @@ static int nppscale_filter_frame(AVFilterLink *link, AVFrame *in)
         goto fail;
     }
 
+    ret = CHECK_CU(device_hwctx->internal->cuda_dl->cuCtxPushCurrent(device_hwctx->cuda_ctx));
+    if (ret < 0)
+        goto fail;
+
+    ret = nppscale_scale(ctx, out, in);
+
+    CHECK_CU(device_hwctx->internal->cuda_dl->cuCtxPopCurrent(&dummy));
+    if (ret < 0)
+        goto fail;
+
     av_reduce(&out->sample_aspect_ratio.num, &out->sample_aspect_ratio.den,
               (int64_t)in->sample_aspect_ratio.num * outlink->h * link->w,
               (int64_t)in->sample_aspect_ratio.den * outlink->w * link->h,
               INT_MAX);
-
-    err = cuCtxPushCurrent(device_hwctx->cuda_ctx);
-    if (err != CUDA_SUCCESS) {
-        ret = AVERROR_UNKNOWN;
-        goto fail;
-    }
-
-    ret = nppscale_scale(ctx, out, in);
-
-    cuCtxPopCurrent(&dummy);
-    if (ret < 0)
-        goto fail;
 
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
@@ -602,7 +537,7 @@ fail:
 }
 
 #define OFFSET(x) offsetof(NPPScaleContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption options[] = {
     { "w",      "Output video width",  OFFSET(w_expr),     AV_OPT_TYPE_STRING, { .str = "iw"   }, .flags = FLAGS },
     { "h",      "Output video height", OFFSET(h_expr),     AV_OPT_TYPE_STRING, { .str = "ih"   }, .flags = FLAGS },
