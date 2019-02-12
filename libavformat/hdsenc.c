@@ -2,20 +2,20 @@
  * Live HDS fragmenter
  * Copyright (c) 2013 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +26,7 @@
 #endif
 
 #include "avformat.h"
+#include "avio_internal.h"
 #include "internal.h"
 #include "os_support.h"
 
@@ -147,12 +148,12 @@ static void hds_free(AVFormatContext *s)
             avio_context_free(&os->ctx->pb);
         if (os->ctx)
             avformat_free_context(os->ctx);
-        av_free(os->metadata);
+        av_freep(&os->metadata);
         for (j = 0; j < os->nb_extra_packets; j++)
-            av_free(os->extra_packets[j]);
+            av_freep(&os->extra_packets[j]);
         for (j = 0; j < os->nb_fragments; j++)
-            av_free(os->fragments[j]);
-        av_free(os->fragments);
+            av_freep(&os->fragments[j]);
+        av_freep(&os->fragments);
     }
     av_freep(&c->streams);
 }
@@ -163,13 +164,13 @@ static int write_manifest(AVFormatContext *s, int final)
     AVIOContext *out;
     char filename[1024], temp_filename[1024];
     int ret, i;
-    float duration = 0;
+    double duration = 0;
 
     if (c->nb_streams > 0)
         duration = c->streams[0].last_ts * av_q2d(s->streams[0]->time_base);
 
-    snprintf(filename, sizeof(filename), "%s/index.f4m", s->filename);
-    snprintf(temp_filename, sizeof(temp_filename), "%s/index.f4m.tmp", s->filename);
+    snprintf(filename, sizeof(filename), "%s/index.f4m", s->url);
+    snprintf(temp_filename, sizeof(temp_filename), "%s/index.f4m.tmp", s->url);
     ret = s->io_open(s, &out, temp_filename, AVIO_FLAG_WRITE, NULL);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", temp_filename);
@@ -177,7 +178,7 @@ static int write_manifest(AVFormatContext *s, int final)
     }
     avio_printf(out, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
     avio_printf(out, "<manifest xmlns=\"http://ns.adobe.com/f4m/1.0\">\n");
-    avio_printf(out, "\t<id>%s</id>\n", av_basename(s->filename));
+    avio_printf(out, "\t<id>%s</id>\n", av_basename(s->url));
     avio_printf(out, "\t<streamType>%s</streamType>\n",
                      final ? "recorded" : "live");
     avio_printf(out, "\t<deliveryType>streaming</deliveryType>\n");
@@ -202,7 +203,7 @@ static int write_manifest(AVFormatContext *s, int final)
     avio_printf(out, "</manifest>\n");
     avio_flush(out);
     ff_format_io_close(s, &out);
-    return ff_rename(temp_filename, filename);
+    return ff_rename(temp_filename, filename, s);
 }
 
 static void update_size(AVIOContext *out, int64_t pos)
@@ -235,9 +236,9 @@ static int write_abst(AVFormatContext *s, OutputStream *os, int final)
         cur_media_time = os->fragments[os->nb_fragments - 1]->start_time;
 
     snprintf(filename, sizeof(filename),
-             "%s/stream%d.abst", s->filename, index);
+             "%s/stream%d.abst", s->url, index);
     snprintf(temp_filename, sizeof(temp_filename),
-             "%s/stream%d.abst.tmp", s->filename, index);
+             "%s/stream%d.abst.tmp", s->url, index);
     ret = s->io_open(s, &out, temp_filename, AVIO_FLAG_WRITE, NULL);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", temp_filename);
@@ -282,7 +283,7 @@ static int write_abst(AVFormatContext *s, OutputStream *os, int final)
     update_size(out, afrt_pos);
     update_size(out, 0);
     ff_format_io_close(s, &out);
-    return ff_rename(temp_filename, filename);
+    return ff_rename(temp_filename, filename, s);
 }
 
 static int init_file(AVFormatContext *s, OutputStream *os, int64_t start_ts)
@@ -316,8 +317,9 @@ static int hds_write_header(AVFormatContext *s)
     int ret = 0, i;
     AVOutputFormat *oformat;
 
-    if (mkdir(s->filename, 0777) == -1 && errno != EEXIST) {
+    if (mkdir(s->url, 0777) == -1 && errno != EEXIST) {
         ret = AVERROR(errno);
+        av_log(s, AV_LOG_ERROR , "Failed to create directory %s\n", s->url);
         goto fail;
     }
 
@@ -327,7 +329,7 @@ static int hds_write_header(AVFormatContext *s)
         goto fail;
     }
 
-    c->streams = av_mallocz(sizeof(*c->streams) * s->nb_streams);
+    c->streams = av_mallocz_array(s->nb_streams, sizeof(*c->streams));
     if (!c->streams) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -372,6 +374,7 @@ static int hds_write_header(AVFormatContext *s)
             os->ctx = ctx;
             ctx->oformat = oformat;
             ctx->interrupt_callback = s->interrupt_callback;
+            ctx->flags = s->flags;
 
             ctx->pb = avio_alloc_context(os->iobuf, sizeof(os->iobuf),
                                          AVIO_FLAG_WRITE, os,
@@ -409,7 +412,7 @@ static int hds_write_header(AVFormatContext *s)
             s->streams[os->first_stream + j]->time_base = os->ctx->streams[j]->time_base;
 
         snprintf(os->temp_filename, sizeof(os->temp_filename),
-                 "%s/stream%d_temp", s->filename, i);
+                 "%s/stream%d_temp", s->url, i);
         ret = init_file(s, os, 0);
         if (ret < 0)
             goto fail;
@@ -417,7 +420,6 @@ static int hds_write_header(AVFormatContext *s)
         if (!os->has_video && c->min_frag_duration <= 0) {
             av_log(s, AV_LOG_WARNING,
                    "No video stream in output stream %d and no min frag duration set\n", i);
-            ret = AVERROR(EINVAL);
         }
         os->fragment_index = 1;
         write_abst(s, os, 0);
@@ -474,8 +476,8 @@ static int hds_flush(AVFormatContext *s, OutputStream *os, int final,
     close_file(s, os);
 
     snprintf(target_filename, sizeof(target_filename),
-             "%s/stream%dSeg1-Frag%d", s->filename, index, os->fragment_index);
-    ret = ff_rename(os->temp_filename, target_filename);
+             "%s/stream%dSeg1-Frag%d", s->url, index, os->fragment_index);
+    ret = ff_rename(os->temp_filename, target_filename, s);
     if (ret < 0)
         return ret;
     add_fragment(os, target_filename, os->frag_start_ts, end_ts - os->frag_start_ts);
@@ -493,7 +495,7 @@ static int hds_flush(AVFormatContext *s, OutputStream *os, int final,
         if (remove > 0) {
             for (i = 0; i < remove; i++) {
                 unlink(os->fragments[i]->file);
-                av_free(os->fragments[i]);
+                av_freep(&os->fragments[i]);
             }
             os->nb_fragments -= remove;
             memmove(os->fragments, os->fragments + remove,
@@ -511,7 +513,7 @@ static int hds_write_packet(AVFormatContext *s, AVPacket *pkt)
     HDSContext *c = s->priv_data;
     AVStream *st = s->streams[pkt->stream_index];
     OutputStream *os = &c->streams[s->streams[pkt->stream_index]->id];
-    int64_t end_dts = os->fragment_index * (int64_t) c->min_frag_duration;
+    int64_t end_dts = os->fragment_index * (int64_t)c->min_frag_duration;
     int ret;
 
     if (st->first_dts == AV_NOPTS_VALUE)
@@ -533,7 +535,7 @@ static int hds_write_packet(AVFormatContext *s, AVPacket *pkt)
     os->last_ts = pkt->dts;
 
     os->packets_written++;
-    return ff_write_chained(os->ctx, pkt->stream_index - os->first_stream, pkt, s);
+    return ff_write_chained(os->ctx, pkt->stream_index - os->first_stream, pkt, s, 0);
 }
 
 static int hds_write_trailer(AVFormatContext *s)
@@ -547,13 +549,13 @@ static int hds_write_trailer(AVFormatContext *s)
 
     if (c->remove_at_exit) {
         char filename[1024];
-        snprintf(filename, sizeof(filename), "%s/index.f4m", s->filename);
+        snprintf(filename, sizeof(filename), "%s/index.f4m", s->url);
         unlink(filename);
         for (i = 0; i < c->nb_streams; i++) {
-            snprintf(filename, sizeof(filename), "%s/stream%d.abst", s->filename, i);
+            snprintf(filename, sizeof(filename), "%s/stream%d.abst", s->url, i);
             unlink(filename);
         }
-        rmdir(s->filename);
+        rmdir(s->url);
     }
 
     hds_free(s);
@@ -566,7 +568,7 @@ static const AVOption options[] = {
     { "window_size", "number of fragments kept in the manifest", OFFSET(window_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, E },
     { "extra_window_size", "number of fragments kept outside of the manifest before removing from disk", OFFSET(extra_window_size), AV_OPT_TYPE_INT, { .i64 = 5 }, 0, INT_MAX, E },
     { "min_frag_duration", "minimum fragment duration (in microseconds)", OFFSET(min_frag_duration), AV_OPT_TYPE_INT64, { .i64 = 10000000 }, 0, INT_MAX, E },
-    { "remove_at_exit", "remove all fragments when finished", OFFSET(remove_at_exit), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, E },
+    { "remove_at_exit", "remove all fragments when finished", OFFSET(remove_at_exit), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
     { NULL },
 };
 

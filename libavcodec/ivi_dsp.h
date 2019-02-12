@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009-2011 Maxim Poliakovski
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -65,6 +65,10 @@ void ff_ivi_recompose_haar(const IVIPlaneDesc *plane, uint8_t *dst,
  *                        (this array must be filled by caller)
  */
 void ff_ivi_inverse_haar_8x8(const int32_t *in, int16_t *out, ptrdiff_t pitch,
+                             const uint8_t *flags);
+void ff_ivi_inverse_haar_8x1(const int32_t *in, int16_t *out, uint32_t pitch,
+                             const uint8_t *flags);
+void ff_ivi_inverse_haar_1x8(const int32_t *in, int16_t *out, uint32_t pitch,
                              const uint8_t *flags);
 
 /**
