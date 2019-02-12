@@ -2,26 +2,27 @@
  * MDCT/IMDCT transforms
  * Copyright (c) 2002 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdlib.h>
 #include <string.h>
 #include "libavutil/common.h"
+#include "libavutil/libm.h"
 #include "libavutil/mathematics.h"
 #include "fft.h"
 #include "fft-internal.h"
@@ -32,9 +33,13 @@
  */
 
 #if FFT_FLOAT
-#   define RSCALE(x) (x)
+#   define RSCALE(x, y) ((x) + (y))
 #else
-#   define RSCALE(x) ((x) >> 1)
+#if FFT_FIXED_32
+#   define RSCALE(x, y) ((int)((x) + (unsigned)(y) + 32) >> 6)
+#else /* FFT_FIXED_32 */
+#   define RSCALE(x, y) ((int)((x) + (unsigned)(y)) >> 1)
+#endif /* FFT_FIXED_32 */
 #endif
 
 /**
@@ -56,27 +61,7 @@ av_cold int ff_mdct_init(FFTContext *s, int nbits, int inverse, double scale)
     if (ff_fft_init(s, s->mdct_bits - 2, inverse) < 0)
         goto fail;
 
-    s->imdct_calc  = ff_imdct_calc_c;
-    s->imdct_half  = ff_imdct_half_c;
-    s->mdct_calc   = ff_mdct_calc_c;
-
-#if FFT_FLOAT
-    if (ARCH_AARCH64)
-        ff_mdct_init_aarch64(s);
-    if (ARCH_ARM)
-        ff_mdct_init_arm(s);
-    if (ARCH_PPC)
-        ff_mdct_init_ppc(s);
-    if (ARCH_X86)
-        ff_mdct_init_x86(s);
-    s->mdct_calcw  = s->mdct_calc;
-#else
-    s->mdct_calcw  = ff_mdct_calcw_c;
-    if (ARCH_ARM)
-        ff_mdct_fixed_init_arm(s);
-#endif
-
-    s->tcos = av_malloc(n/2 * sizeof(FFTSample));
+    s->tcos = av_malloc_array(n/2, sizeof(FFTSample));
     if (!s->tcos)
         goto fail;
 
@@ -97,8 +82,13 @@ av_cold int ff_mdct_init(FFTContext *s, int nbits, int inverse, double scale)
     scale = sqrt(fabs(scale));
     for(i=0;i<n4;i++) {
         alpha = 2 * M_PI * (i + theta) / n;
+#if FFT_FIXED_32
+        s->tcos[i*tstep] = lrint(-cos(alpha) * 2147483648.0);
+        s->tsin[i*tstep] = lrint(-sin(alpha) * 2147483648.0);
+#else
         s->tcos[i*tstep] = FIX15(-cos(alpha) * scale);
         s->tsin[i*tstep] = FIX15(-sin(alpha) * scale);
+#endif
     }
     return 0;
  fail:
@@ -191,13 +181,13 @@ void ff_mdct_calc_c(FFTContext *s, FFTSample *out, const FFTSample *input)
 
     /* pre rotation */
     for(i=0;i<n8;i++) {
-        re = RSCALE(-input[2*i+n3] - input[n3-1-2*i]);
-        im = RSCALE(-input[n4+2*i] + input[n4-1-2*i]);
+        re = RSCALE(-input[2*i+n3], - input[n3-1-2*i]);
+        im = RSCALE(-input[n4+2*i], + input[n4-1-2*i]);
         j = revtab[i];
         CMUL(x[j].re, x[j].im, re, im, -tcos[i], tsin[i]);
 
-        re = RSCALE( input[2*i]    - input[n2-1-2*i]);
-        im = RSCALE(-input[n2+2*i] - input[ n-1-2*i]);
+        re = RSCALE( input[2*i]   , - input[n2-1-2*i]);
+        im = RSCALE(-input[n2+2*i], - input[ n-1-2*i]);
         j = revtab[n8 + i];
         CMUL(x[j].re, x[j].im, re, im, -tcos[n8 + i], tsin[n8 + i]);
     }

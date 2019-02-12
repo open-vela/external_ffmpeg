@@ -102,6 +102,7 @@ typedef struct strip_info {
 } strip_info;
 
 typedef struct CinepakEncContext {
+    const AVClass *class;
     AVCodecContext *avctx;
     unsigned char *pict_bufs[4], *strip_buf, *frame_buf;
     AVFrame *last_frame;
@@ -133,7 +134,7 @@ static const AVOption options[] = {
     { "max_extra_cb_iterations", "Max extra codebook recalculation passes, more is better and slower",
       OFFSET(max_extra_cb_iterations),  AV_OPT_TYPE_INT, { .i64 =          2 },          0, INT_MAX,                 VE },
     { "skip_empty_cb",           "Avoid wasting bytes, ignore vintage MacOS decoder",
-      OFFSET(skip_empty_cb),            AV_OPT_TYPE_INT, { .i64 =          0 },          0, 1,                       VE },
+      OFFSET(skip_empty_cb),            AV_OPT_TYPE_BOOL, { .i64 =         0 },          0, 1,                       VE },
     { "max_strips",              "Limit strips/frame, vintage compatible is 1..3, otherwise the more the better",
       OFFSET(max_max_strips),           AV_OPT_TYPE_INT, { .i64 =          3 }, MIN_STRIPS, MAX_STRIPS,              VE },
     { "min_strips",              "Enforce min strips/frame, more is worse and faster, must be <= max_strips",
@@ -775,8 +776,8 @@ static int quantize(CinepakEncContext *s, int h, uint8_t *data[4],
     if (i < size)
         size = i;
 
-    ff_init_elbg(s->codebook_input, entry_size, i, codebook, size, 1, s->codebook_closest, &s->randctx);
-    ff_do_elbg(s->codebook_input, entry_size, i, codebook, size, 1, s->codebook_closest, &s->randctx);
+    avpriv_init_elbg(s->codebook_input, entry_size, i, codebook, size, 1, s->codebook_closest, &s->randctx);
+    avpriv_do_elbg(s->codebook_input, entry_size, i, codebook, size, 1, s->codebook_closest, &s->randctx);
 
     // set up vq_data, which contains a single MB
     vq_data[0]     = vq_pict_buf;
@@ -1155,7 +1156,7 @@ static int cinepak_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     s->lambda = frame->quality ? frame->quality - 1 : 2 * FF_LAMBDA_SCALE;
 
-    if ((ret = ff_alloc_packet(pkt, s->frame_buf_size)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, s->frame_buf_size, 0)) < 0)
         return ret;
     ret       = rd_frame(s, frame, (s->curframe == 0), pkt->data, s->frame_buf_size);
     pkt->size = ret;

@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2017 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -53,7 +53,7 @@ typedef struct FMVCContext {
 
 static int decode_type2(GetByteContext *gb, PutByteContext *pb)
 {
-    unsigned repeat = 0, first = 1, opcode;
+    unsigned repeat = 0, first = 1, opcode = 0;
     int i, len, pos;
 
     while (bytestream2_get_bytes_left(gb) > 0) {
@@ -288,7 +288,7 @@ static int decode_type2(GetByteContext *gb, PutByteContext *pb)
 
 static int decode_type1(GetByteContext *gb, PutByteContext *pb)
 {
-    unsigned opcode, len;
+    unsigned opcode = 0, len;
     int high = 0;
     int i, pos;
 
@@ -436,7 +436,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         for (y = 0; y < avctx->height; y++) {
             memcpy(dst, src, avctx->width * s->bpp);
             dst -= frame->linesize[0];
-            src += avctx->width * s->bpp;
+            src += s->stride * 4;
         }
     } else {
         unsigned block, nb_blocks;
@@ -460,7 +460,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             int start = 0;
 
             offset = bytestream2_get_le16(gb);
-            if (offset > s->nb_blocks)
+            if (offset >= s->nb_blocks)
                 return AVERROR_INVALIDDATA;
 
             size = bytestream2_get_le16(gb);
@@ -514,7 +514,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         for (y = 0; y < avctx->height; y++) {
             memcpy(ddst, ssrc, avctx->width * s->bpp);
             ddst -= frame->linesize[0];
-            ssrc += avctx->width * s->bpp;
+            ssrc += s->stride * 4;
         }
     }
 
@@ -530,7 +530,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     switch (avctx->bits_per_coded_sample) {
     case 16:
-        avctx->pix_fmt = AV_PIX_FMT_RGB555;
+        avctx->pix_fmt = AV_PIX_FMT_RGB555LE;
         break;
     case 24:
         avctx->pix_fmt = AV_PIX_FMT_BGR24;
@@ -570,7 +570,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->nb_blocks = s->xb * s->yb;
     if (!s->nb_blocks)
         return AVERROR_INVALIDDATA;
-    s->blocks    = av_mallocz(s->nb_blocks * sizeof(*s->blocks));
+    s->blocks    = av_calloc(s->nb_blocks, sizeof(*s->blocks));
     if (!s->blocks)
         return AVERROR(ENOMEM);
 
@@ -602,8 +602,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->bpp          = avctx->bits_per_coded_sample >> 3;
     s->buffer_size  = avctx->width * avctx->height * 4;
     s->pbuffer_size = avctx->width * avctx->height * 4;
-    s->buffer       = av_malloc(s->buffer_size);
-    s->pbuffer      = av_malloc(s->pbuffer_size);
+    s->buffer       = av_mallocz(s->buffer_size);
+    s->pbuffer      = av_mallocz(s->pbuffer_size);
     if (!s->buffer || !s->pbuffer)
         return AVERROR(ENOMEM);
 

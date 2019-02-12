@@ -2,20 +2,20 @@
  * G.723.1 compatible encoder
  * Copyright (c) Mohamed Naufal <naufal22@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -42,7 +42,8 @@
 
 static av_cold int g723_1_encode_init(AVCodecContext *avctx)
 {
-    G723_1_Context *p = avctx->priv_data;
+    G723_1_Context *s = avctx->priv_data;
+    G723_1_ChannelContext *p = &s->ch[0];
 
     if (avctx->sample_rate != 8000) {
         av_log(avctx, AV_LOG_ERROR, "Only 8000Hz sample rate supported\n");
@@ -83,7 +84,7 @@ static void highpass_filter(int16_t *buf, int16_t *fir, int *iir)
     for (i = 0; i < FRAME_LEN; i++) {
         *iir   = (buf[i] << 15) + ((-*fir) << 15) + MULL2(*iir, 0x7f00);
         *fir   = buf[i];
-        buf[i] = av_clipl_int32((int64_t) *iir + (1 << 15)) >> 16;
+        buf[i] = av_clipl_int32((int64_t)*iir + (1 << 15)) >> 16;
     }
 }
 
@@ -386,7 +387,7 @@ static void iir_filter(int16_t *fir_coef, int16_t *iir_coef,
  * @param flt_coef filter coefficients
  * @param unq_lpc  unquantized lpc vector
  */
-static void perceptual_filter(G723_1_Context *p, int16_t *flt_coef,
+static void perceptual_filter(G723_1_ChannelContext *p, int16_t *flt_coef,
                               int16_t *unq_lpc, int16_t *buf)
 {
     int16_t vector[FRAME_LEN + LPC_ORDER];
@@ -635,7 +636,7 @@ static void synth_percept_filter(int16_t *qnt_lpc, int16_t *perf_lpc,
  * @param buf   input signal
  * @param index the current subframe index
  */
-static void acb_search(G723_1_Context *p, int16_t *residual,
+static void acb_search(G723_1_ChannelContext *p, int16_t *residual,
                        int16_t *impulse_resp, const int16_t *buf,
                        int index)
 {
@@ -963,7 +964,7 @@ static void pack_fcb_param(G723_1_Subframe *subfrm, FCBParam *optim,
  * @param buf          target vector
  * @param impulse_resp impulse response of the combined filter
  */
-static void fcb_search(G723_1_Context *p, int16_t *impulse_resp,
+static void fcb_search(G723_1_ChannelContext *p, int16_t *impulse_resp,
                        int16_t *buf, int index)
 {
     FCBParam optim;
@@ -995,7 +996,7 @@ static void fcb_search(G723_1_Context *p, int16_t *impulse_resp,
  * @param frame output buffer
  * @param size  size of the buffer
  */
-static int pack_bitstream(G723_1_Context *p, AVPacket *avpkt)
+static int pack_bitstream(G723_1_ChannelContext *p, AVPacket *avpkt)
 {
     PutBitContext pb;
     int info_bits = 0;
@@ -1056,7 +1057,8 @@ static int pack_bitstream(G723_1_Context *p, AVPacket *avpkt)
 static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                                const AVFrame *frame, int *got_packet_ptr)
 {
-    G723_1_Context *p = avctx->priv_data;
+    G723_1_Context *s = avctx->priv_data;
+    G723_1_ChannelContext *p = &s->ch[0];
     int16_t unq_lpc[LPC_ORDER * SUBFRAMES];
     int16_t qnt_lpc[LPC_ORDER * SUBFRAMES];
     int16_t cur_lsp[LPC_ORDER];
@@ -1149,7 +1151,7 @@ static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         acb_search(p, residual, impulse_resp, in, i);
         ff_g723_1_gen_acb_excitation(residual, p->prev_excitation,
                                      p->pitch_lag[i >> 1], &p->subframe[i],
-                                     RATE_6300);
+                                     p->cur_rate);
         sub_acb_contrib(residual, impulse_resp, in);
 
         fcb_search(p, impulse_resp, in, i);
@@ -1181,13 +1183,18 @@ static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     av_free(start);
 
-    ret = ff_alloc_packet(avpkt, 24);
-    if (ret < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, 24, 0)) < 0)
         return ret;
 
     *got_packet_ptr = 1;
-    return pack_bitstream(p, avpkt);
+    avpkt->size = pack_bitstream(p, avpkt);
+    return 0;
 }
+
+static const AVCodecDefault defaults[] = {
+    { "b", "6300" },
+    { NULL },
+};
 
 AVCodec ff_g723_1_encoder = {
     .name           = "g723_1",
@@ -1197,6 +1204,7 @@ AVCodec ff_g723_1_encoder = {
     .priv_data_size = sizeof(G723_1_Context),
     .init           = g723_1_encode_init,
     .encode2        = g723_1_encode_frame,
+    .defaults       = defaults,
     .sample_fmts    = (const enum AVSampleFormat[]) {
         AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE
     },
