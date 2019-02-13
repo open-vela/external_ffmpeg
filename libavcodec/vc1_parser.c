@@ -3,20 +3,20 @@
  * Copyright (c) 2006-2007 Konstantin Shishkov
  * Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,7 @@
 #include "parser.h"
 #include "vc1.h"
 #include "get_bits.h"
+#include "internal.h"
 
 /** The maximum number of bytes of a sequence, entry point or
  *  frame header whose values we pay any attention to */
@@ -63,9 +64,10 @@ static void vc1_extract_header(AVCodecParserContext *s, AVCodecContext *avctx,
     /* Parse the header we just finished unescaping */
     VC1ParseContext *vpc = s->priv_data;
     GetBitContext gb;
+    int ret;
     vpc->v.s.avctx = avctx;
     vpc->v.parse_only = 1;
-    init_get_bits(&gb, buf, buf_size * 8);
+    init_get_bits8(&gb, buf, buf_size);
     switch (vpc->prev_start_code) {
     case VC1_CODE_SEQHDR & 0xFF:
         ff_vc1_decode_sequence_header(avctx, &vpc->v, &gb);
@@ -75,9 +77,12 @@ static void vc1_extract_header(AVCodecParserContext *s, AVCodecContext *avctx,
         break;
     case VC1_CODE_FRAME & 0xFF:
         if(vpc->v.profile < PROFILE_ADVANCED)
-            ff_vc1_parse_frame_header    (&vpc->v, &gb);
+            ret = ff_vc1_parse_frame_header    (&vpc->v, &gb);
         else
-            ff_vc1_parse_frame_header_adv(&vpc->v, &gb);
+            ret = ff_vc1_parse_frame_header_adv(&vpc->v, &gb);
+
+        if (ret < 0)
+            break;
 
         /* keep AV_PICTURE_TYPE_BI internal to VC1 */
         if (vpc->v.s.pict_type == AV_PICTURE_TYPE_BI)
@@ -108,6 +113,8 @@ static void vc1_extract_header(AVCodecParserContext *s, AVCodecContext *avctx,
 
         break;
     }
+    if (avctx->framerate.num)
+        avctx->time_base = av_inv_q(av_mul_q(avctx->framerate, (AVRational){avctx->ticks_per_frame, 1}));
     s->format = vpc->v.chromaformat == 1 ? AV_PIX_FMT_YUV420P
                                          : AV_PIX_FMT_NONE;
     if (avctx->width && avctx->height) {
@@ -241,7 +248,7 @@ static int vc1_parse(AVCodecParserContext *s,
      * the start code we've already seen, or cause extra bytes to be
      * inserted at the start of the unescaped buffer. */
     vpc->bytes_to_skip = 4;
-    if (next < 0 && start_code_found)
+    if (next < 0 && next != END_NOT_FOUND)
         vpc->bytes_to_skip += next;
 
     *poutbuf = buf;
@@ -252,20 +259,18 @@ static int vc1_parse(AVCodecParserContext *s,
 static int vc1_split(AVCodecContext *avctx,
                            const uint8_t *buf, int buf_size)
 {
-    int i;
-    uint32_t state= -1;
-    int charged=0;
+    uint32_t state = -1;
+    int charged = 0;
+    const uint8_t *ptr = buf, *end = buf + buf_size;
 
-    for(i=0; i<buf_size; i++){
-        state= (state<<8) | buf[i];
-        if(IS_MARKER(state)){
-            if(state == VC1_CODE_SEQHDR || state == VC1_CODE_ENTRYPOINT){
-                charged=1;
-            }else if(charged){
-                return i-3;
-            }
-        }
+    while (ptr < end) {
+        ptr = avpriv_find_start_code(ptr, end, &state);
+        if (state == VC1_CODE_SEQHDR || state == VC1_CODE_ENTRYPOINT) {
+            charged = 1;
+        } else if (charged && IS_MARKER(state))
+            return ptr - 4 - buf;
     }
+
     return 0;
 }
 
@@ -273,6 +278,7 @@ static av_cold int vc1_parse_init(AVCodecParserContext *s)
 {
     VC1ParseContext *vpc = s->priv_data;
     vpc->v.s.slice_context_count = 1;
+    vpc->v.first_pic_header_flag = 1;
     vpc->prev_start_code = 0;
     vpc->bytes_to_skip = 0;
     vpc->unesc_index = 0;

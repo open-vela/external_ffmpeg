@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -20,8 +20,8 @@
 #define AVCODEC_CBS_INTERNAL_H
 
 #include "avcodec.h"
-#include "bitstream.h"
 #include "cbs.h"
+#include "get_bits.h"
 #include "put_bits.h"
 
 
@@ -63,26 +63,35 @@ typedef struct CodedBitstreamType {
 void ff_cbs_trace_header(CodedBitstreamContext *ctx,
                          const char *name);
 
-void ff_cbs_trace_syntax_element(CodedBitstreamContext *ctx,
-                                 int position, const char *name,
+void ff_cbs_trace_syntax_element(CodedBitstreamContext *ctx, int position,
+                                 const char *name, const int *subscripts,
                                  const char *bitstring, int64_t value);
 
 
 // Helper functions for read/write of common bitstream elements, including
 // generation of trace output.
 
-int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, BitstreamContext *bc,
-                         int width, const char *name, uint32_t *write_to,
+int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
+                         int width, const char *name,
+                         const int *subscripts, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max);
 
 int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
-                          int width, const char *name, uint32_t value,
+                          int width, const char *name,
+                          const int *subscripts, uint32_t value,
                           uint32_t range_min, uint32_t range_max);
 
+// The largest value representable in N bits, suitable for use as
+// range_max in the above functions.
+#define MAX_UINT_BITS(length) ((UINT64_C(1) << (length)) - 1)
 
+
+extern const CodedBitstreamType ff_cbs_type_av1;
 extern const CodedBitstreamType ff_cbs_type_h264;
 extern const CodedBitstreamType ff_cbs_type_h265;
+extern const CodedBitstreamType ff_cbs_type_jpeg;
 extern const CodedBitstreamType ff_cbs_type_mpeg2;
+extern const CodedBitstreamType ff_cbs_type_vp9;
 
 
 #endif /* AVCODEC_CBS_INTERNAL_H */
