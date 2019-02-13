@@ -1,20 +1,20 @@
 /*
  * HEVC shared code
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -22,7 +22,8 @@
 #define AVCODEC_HEVC_H
 
 /**
- * Table 7-3: NAL unit type codes
+ * Table 7-1 – NAL unit type codes and NAL unit type classes in
+ * T-REC-H.265-201802
  */
 enum HEVCNALUnitType {
     HEVC_NAL_TRAIL_N    = 0,
@@ -66,6 +67,29 @@ enum HEVCNALUnitType {
     HEVC_NAL_FD_NUT     = 38,
     HEVC_NAL_SEI_PREFIX = 39,
     HEVC_NAL_SEI_SUFFIX = 40,
+    HEVC_NAL_RSV_NVCL41 = 41,
+    HEVC_NAL_RSV_NVCL42 = 42,
+    HEVC_NAL_RSV_NVCL43 = 43,
+    HEVC_NAL_RSV_NVCL44 = 44,
+    HEVC_NAL_RSV_NVCL45 = 45,
+    HEVC_NAL_RSV_NVCL46 = 46,
+    HEVC_NAL_RSV_NVCL47 = 47,
+    HEVC_NAL_UNSPEC48   = 48,
+    HEVC_NAL_UNSPEC49   = 49,
+    HEVC_NAL_UNSPEC50   = 50,
+    HEVC_NAL_UNSPEC51   = 51,
+    HEVC_NAL_UNSPEC52   = 52,
+    HEVC_NAL_UNSPEC53   = 53,
+    HEVC_NAL_UNSPEC54   = 54,
+    HEVC_NAL_UNSPEC55   = 55,
+    HEVC_NAL_UNSPEC56   = 56,
+    HEVC_NAL_UNSPEC57   = 57,
+    HEVC_NAL_UNSPEC58   = 58,
+    HEVC_NAL_UNSPEC59   = 59,
+    HEVC_NAL_UNSPEC60   = 60,
+    HEVC_NAL_UNSPEC61   = 61,
+    HEVC_NAL_UNSPEC62   = 62,
+    HEVC_NAL_UNSPEC63   = 63,
 };
 
 enum HEVCSliceType {
@@ -118,6 +142,9 @@ enum {
     HEVC_MAX_TILE_ROWS    = 22,
     // A.4.1: table A.6 allows at most 20 tile columns for any level.
     HEVC_MAX_TILE_COLUMNS = 20,
+
+    // A.4.2: table A.6 allows at most 600 slice segments for any level.
+    HEVC_MAX_SLICE_SEGMENTS = 600,
 
     // 7.4.7.1: in the worst case (tiles_enabled_flag and
     // entropy_coding_sync_enabled_flag are both set), entry points can be

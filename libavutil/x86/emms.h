@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -21,6 +21,7 @@
 
 #include "config.h"
 #include "libavutil/attributes.h"
+#include "libavutil/cpu.h"
 
 void avpriv_emms_asm(void);
 
@@ -30,10 +31,19 @@ void avpriv_emms_asm(void);
  * Empty mmx state.
  * this must be called between any dsp function and float/double code.
  * for example sin(); dsp->idct_put(); emms_c(); cos()
+ * Note, *alloc() and *free() also use float code in some libc implementations
+ * thus this also applies to them or any function using them.
  */
 static av_always_inline void emms_c(void)
 {
-    __asm__ volatile ("emms" ::: "memory");
+/* Some inlined functions may also use mmx instructions regardless of
+ * runtime cpuflags. With that in mind, we unconditionally empty the
+ * mmx state if the target cpu chosen at configure time supports it.
+ */
+#if !defined(__MMX__)
+    if(av_get_cpu_flags() & AV_CPU_FLAG_MMX)
+#endif
+        __asm__ volatile ("emms" ::: "memory");
 }
 #elif HAVE_MMX && HAVE_MM_EMPTY
 #   include <mmintrin.h>

@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 2012 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,11 +26,12 @@
 #include "hmac.h"
 #include "md5.h"
 #include "sha.h"
+#include "sha512.h"
 #include "mem.h"
 #include "version.h"
 
-#define MAX_HASHLEN 32
-#define MAX_BLOCKLEN 64
+#define MAX_HASHLEN 64
+#define MAX_BLOCKLEN 128
 
 typedef void (*hmac_final)(void *ctx, uint8_t *dst);
 #if FF_API_CRYPTO_SIZE_T
@@ -56,9 +57,17 @@ static av_cold void sha ## bits ##_init(void *ctx) \
     av_sha_init(ctx, bits);                        \
 }
 
+#define DEFINE_SHA512(bits)                        \
+static av_cold void sha ## bits ##_init(void *ctx) \
+{                                                  \
+    av_sha512_init(ctx, bits);                     \
+}
+
 DEFINE_SHA(160)
 DEFINE_SHA(224)
 DEFINE_SHA(256)
+DEFINE_SHA512(384)
+DEFINE_SHA512(512)
 
 AVHMAC *av_hmac_alloc(enum AVHMACType type)
 {
@@ -98,6 +107,22 @@ AVHMAC *av_hmac_alloc(enum AVHMACType type)
         c->final    = (hmac_final) av_sha_final;
         c->hash     = av_sha_alloc();
         break;
+    case AV_HMAC_SHA384:
+        c->blocklen = 128;
+        c->hashlen  = 48;
+        c->init     = sha384_init;
+        c->update   = (hmac_update) av_sha512_update;
+        c->final    = (hmac_final) av_sha512_final;
+        c->hash     = av_sha512_alloc();
+        break;
+    case AV_HMAC_SHA512:
+        c->blocklen = 128;
+        c->hashlen  = 64;
+        c->init     = sha512_init;
+        c->update   = (hmac_update) av_sha512_update;
+        c->final    = (hmac_final) av_sha512_final;
+        c->hash     = av_sha512_alloc();
+        break;
     default:
         av_free(c);
         return NULL;
@@ -113,7 +138,7 @@ void av_hmac_free(AVHMAC *c)
 {
     if (!c)
         return;
-    av_free(c->hash);
+    av_freep(&c->hash);
     av_free(c);
 }
 
