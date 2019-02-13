@@ -2,20 +2,20 @@
  * audio encoder psychoacoustic model
  * Copyright (C) 2008 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,6 +29,21 @@
 /** maximum number of channels */
 #define PSY_MAX_CHANS 20
 
+/* cutoff for VBR is purposely increased, since LP filtering actually
+ * hinders VBR performance rather than the opposite
+ */
+#define AAC_CUTOFF_FROM_BITRATE(bit_rate,channels,sample_rate) (bit_rate ? FFMIN3(FFMIN3( \
+    FFMAX(bit_rate/channels/5, bit_rate/channels*15/32 - 5500), \
+    3000 + bit_rate/channels/4, \
+    12000 + bit_rate/channels/16), \
+    22000, \
+    sample_rate / 2): (sample_rate / 2))
+#define AAC_CUTOFF(s) ( \
+    (s->flags & AV_CODEC_FLAG_QSCALE) \
+    ? s->sample_rate / 2 \
+    : AAC_CUTOFF_FROM_BITRATE(s->bit_rate, s->channels, s->sample_rate) \
+)
+
 /**
  * single band psychoacoustic information
  */
@@ -36,8 +51,7 @@ typedef struct FFPsyBand {
     int   bits;
     float energy;
     float threshold;
-    float distortion;
-    float perceptual_weight;
+    float spread;    /* Energy spread over the band */
 } FFPsyBand;
 
 /**
@@ -65,6 +79,7 @@ typedef struct FFPsyWindowInfo {
     int window_shape;                 ///< window shape (sine/KBD/whatever)
     int num_windows;                  ///< number of windows in a frame
     int grouping[8];                  ///< window grouping (for e.g. AAC)
+    float clipping[8];                ///< maximum absolute normalized intensity in the given window for clip avoidance
     int *window_sizes;                ///< sequence of window sizes inside one frame (for eg. WMA)
 } FFPsyWindowInfo;
 
@@ -78,6 +93,7 @@ typedef struct FFPsyContext {
     FFPsyChannel      *ch;            ///< single channel information
     FFPsyChannelGroup *group;         ///< channel group information
     int num_groups;                   ///< number of channel groups
+    int cutoff;                       ///< lowpass frequency cutoff for analysis
 
     uint8_t **bands;                  ///< scalefactor band sizes for possible frame sizes
     int     *num_bands;               ///< number of scalefactor bands for possible frame sizes
@@ -86,6 +102,7 @@ typedef struct FFPsyContext {
     struct {
         int size;                     ///< size of the bitresevoir in bits
         int bits;                     ///< number of bits used in the bitresevoir
+        int alloc;                    ///< number of bits allocated by the psy, or -1 if no allocation was done
     } bitres;
 
     void* model_priv_data;            ///< psychoacoustic model implementation private data
