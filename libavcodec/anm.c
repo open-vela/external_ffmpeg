@@ -2,20 +2,20 @@
  * Deluxe Paint Animation decoder
  * Copyright (c) 2009 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -47,14 +47,12 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     bytestream2_init(&s->gb, avctx->extradata, avctx->extradata_size);
-    if (bytestream2_get_bytes_left(&s->gb) < 16 * 8 + 4 * 256) {
-        av_frame_free(&s->frame);
+    if (bytestream2_get_bytes_left(&s->gb) < 16 * 8 + 4 * 256)
         return AVERROR_INVALIDDATA;
-    }
 
     bytestream2_skipu(&s->gb, 16 * 8);
     for (i = 0; i < 256; i++)
-        s->palette[i] = (0xFFU << 24) | bytestream2_get_le32u(&s->gb);
+        s->palette[i] = bytestream2_get_le32u(&s->gb);
 
     return 0;
 }
@@ -119,8 +117,10 @@ static int decode_frame(AVCodecContext *avctx,
     uint8_t *dst, *dst_end;
     int count, ret;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0){
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     dst     = s->frame->data[0];
     dst_end = s->frame->data[0] + s->frame->linesize[0]*avctx->height;
 
@@ -128,11 +128,11 @@ static int decode_frame(AVCodecContext *avctx,
 
     if (bytestream2_get_byte(&s->gb) != 0x42) {
         avpriv_request_sample(avctx, "Unknown record type");
-        return AVERROR_INVALIDDATA;
+        return buf_size;
     }
     if (bytestream2_get_byte(&s->gb)) {
         avpriv_request_sample(avctx, "Padding bytes");
-        return AVERROR_PATCHWELCOME;
+        return buf_size;
     }
     bytestream2_skip(&s->gb, 2);
 

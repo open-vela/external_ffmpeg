@@ -4,20 +4,20 @@
  *
  * Copyright (c) 2008 NVIDIA
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,9 +30,6 @@
 #include "vc1.h"
 #include "vdpau.h"
 #include "vdpau_internal.h"
-
-// XXX: at the time of adding this ifdefery, av_assert* wasn't use outside.
-// When dropping it, make sure other av_assert* were not added since then.
 
 /**
  * @addtogroup VDPAU_Decoding
@@ -63,13 +60,6 @@ static int vdpau_error(VdpStatus status)
         return AVERROR(EINVAL);
     }
 }
-
-AVVDPAUContext *av_alloc_vdpaucontext(void)
-{
-    return av_vdpau_alloc_context();
-}
-
-MAKE_ACCESSORS(AVVDPAUContext, vdpau_hwaccel, AVVDPAU_Render2, render2)
 
 int av_vdpau_get_surface_parameters(AVCodecContext *avctx,
                                     VdpChromaType *type,
@@ -138,8 +128,6 @@ int ff_vdpau_common_init(AVCodecContext *avctx, VdpDecoderProfile profile,
     VdpVideoSurfaceQueryCapabilities *surface_query_caps;
     VdpDecoderQueryCapabilities *decoder_query_caps;
     VdpDecoderCreate *create;
-    VdpGetInformationString *info;
-    const char *info_string;
     void *func;
     VdpStatus status;
     VdpBool supported;
@@ -194,27 +182,6 @@ int ff_vdpau_common_init(AVCodecContext *avctx, VdpDecoderProfile profile,
 
     if (level < 0)
         return AVERROR(ENOTSUP);
-
-    status = vdctx->get_proc_address(vdctx->device,
-                                     VDP_FUNC_ID_GET_INFORMATION_STRING,
-                                     &func);
-    if (status != VDP_STATUS_OK)
-        return vdpau_error(status);
-    else
-        info = func;
-
-    status = info(&info_string);
-    if (status != VDP_STATUS_OK)
-        return vdpau_error(status);
-    if (avctx->codec_id == AV_CODEC_ID_HEVC && strncmp(info_string, "NVIDIA ", 7) == 0 &&
-        !(avctx->hwaccel_flags & AV_HWACCEL_FLAG_ALLOW_PROFILE_MISMATCH)) {
-        int driver_version = 0;
-        sscanf(info_string, "NVIDIA VDPAU Driver Shared Library  %d", &driver_version);
-        if (driver_version < 410) {
-            av_log(avctx, AV_LOG_VERBOSE, "HEVC with NVIDIA VDPAU drivers is buggy, skipping.\n");
-            return AVERROR(ENOTSUP);
-        }
-    }
 
     status = vdctx->get_proc_address(vdctx->device,
                                      VDP_FUNC_ID_VIDEO_SURFACE_QUERY_CAPABILITIES,
@@ -333,7 +300,6 @@ int ff_vdpau_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
                               struct vdpau_picture_context *pic_ctx)
 {
     VDPAUContext *vdctx = avctx->internal->hwaccel_priv_data;
-    AVVDPAUContext *hwctx = avctx->hwaccel_context;
     VdpVideoSurface surf = ff_vdpau_get_surface_id(frame);
     VdpStatus status;
     int val;
@@ -342,16 +308,11 @@ int ff_vdpau_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
     if (val < 0)
         return val;
 
-    if (hwctx && !hwctx->render && hwctx->render2) {
-        status = hwctx->render2(avctx, frame, (void *)&pic_ctx->info,
-                                pic_ctx->bitstream_buffers_used, pic_ctx->bitstream_buffers);
-    } else
     status = vdctx->render(vdctx->decoder, surf, &pic_ctx->info,
                            pic_ctx->bitstream_buffers_used,
                            pic_ctx->bitstream_buffers);
 
     av_freep(&pic_ctx->bitstream_buffers);
-
     return vdpau_error(status);
 }
 
@@ -444,7 +405,7 @@ do {                                       \
 
 AVVDPAUContext *av_vdpau_alloc_context(void)
 {
-    return av_mallocz(sizeof(VDPAUHWContext));
+    return av_mallocz(sizeof(AVVDPAUContext));
 }
 
 int av_vdpau_bind_context(AVCodecContext *avctx, VdpDevice device,

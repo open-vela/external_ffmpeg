@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -74,12 +74,11 @@ static void MCFUNC(hl_motion)(const H264Context *h, H264SliceContext *sl,
     const int mb_xy   = sl->mb_xy;
     const int mb_type = h->cur_pic.mb_type[mb_xy];
 
-    av_assert2(IS_INTER(mb_type));
+    assert(IS_INTER(mb_type));
 
     if (HAVE_THREADS && (h->avctx->active_thread_type & FF_THREAD_FRAME))
         await_references(h, sl);
-    if (USES_LIST(mb_type, 0))
-        prefetch_motion(h, sl, 0, PIXEL_SHIFT, CHROMA_IDC);
+    prefetch_motion(h, sl, 0, PIXEL_SHIFT, CHROMA_IDC);
 
     if (IS_16X16(mb_type)) {
         mc_part(h, sl, 0, 1, 16, 0, dest_y, dest_cb, dest_cr, 0, 0,
@@ -107,7 +106,7 @@ static void MCFUNC(hl_motion)(const H264Context *h, H264SliceContext *sl,
     } else {
         int i;
 
-        av_assert2(IS_8X8(mb_type));
+        assert(IS_8X8(mb_type));
 
         for (i = 0; i < 4; i++) {
             const int sub_mb_type = sl->sub_mb_type[i];
@@ -145,7 +144,7 @@ static void MCFUNC(hl_motion)(const H264Context *h, H264SliceContext *sl,
                         IS_DIR(sub_mb_type, 0, 0), IS_DIR(sub_mb_type, 0, 1));
             } else {
                 int j;
-                av_assert2(IS_SUB_4X4(sub_mb_type));
+                assert(IS_SUB_4X4(sub_mb_type));
                 for (j = 0; j < 4; j++) {
                     int sub_x_offset = x_offset + 2 * (j & 1);
                     int sub_y_offset = y_offset + (j & 2);
@@ -159,7 +158,6 @@ static void MCFUNC(hl_motion)(const H264Context *h, H264SliceContext *sl,
         }
     }
 
-    if (USES_LIST(mb_type, 1))
-        prefetch_motion(h, sl, 1, PIXEL_SHIFT, CHROMA_IDC);
+    prefetch_motion(h, sl, 1, PIXEL_SHIFT, CHROMA_IDC);
 }
 

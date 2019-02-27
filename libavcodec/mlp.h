@@ -2,20 +2,20 @@
  * MLP codec common header file
  * Copyright (c) 2007-2008 Ian Caulfield
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -76,9 +76,6 @@ typedef struct FilterParams {
     uint8_t     shift; ///< Right shift to apply to output of filter.
 
     int32_t     state[MAX_FIR_ORDER];
-
-    int coeff_bits;
-    int coeff_shift;
 } FilterParams;
 
 /** sample data coding information */
@@ -98,43 +95,6 @@ typedef struct ChannelParams {
  *  00 or 01, but have different codes starting with 1.
  */
 extern const uint8_t ff_mlp_huffman_tables[3][18][2];
-
-typedef struct {
-    uint8_t channel_occupancy;
-    uint8_t group1_channels;
-    uint8_t group2_channels;
-    uint8_t summary_info;
-} ChannelInformation;
-
-/** Tables defining channel information.
- *
- *  Possible channel arrangements are:
- *
- *  (Group 1)   C
- *  (Group 1)   L,  R
- *  (Group 1)   Lf, Rf          /  (Group 2)   S
- *  (Group 1)   Lf, Rf          /  (Group 2)   Ls, Rs
- *  (Group 1)   Lf, Rf          /  (Group 2)   LFE
- *  (Group 1)   Lf, Rf          /  (Group 2)   LFE, S
- *  (Group 1)   Lf, Rf          /  (Group 2)   LFE, Ls, Rs
- *  (Group 1)   Lf, Rf          /  (Group 2)   C
- *  (Group 1)   Lf, Rf          /  (Group 2)   C, S
- *  (Group 1)   Lf, Rf          /  (Group 2)   C, Ls, Rs
- *  (Group 1)   Lf, Rf          /  (Group 2)   C, LFE
- *  (Group 1)   Lf, Rf          /  (Group 2)   C, LFE, S
- *  (Group 1)   Lf, Rf          /  (Group 2)   C, LFE, Ls,  Rs
- *  (Group 1)   Lf, Rf  C       /  (Group 2)   S
- *  (Group 1)   Lf, Rf  C       /  (Group 2)   Ls, Rs
- *  (Group 1)   Lf, Rf  C       /  (Group 2)   LFE
- *  (Group 1)   Lf, Rf  C       /  (Group 2)   LFE, S
- *  (Group 1)   Lf, Rf  C       /  (Group 2)   LFE, Ls, Rs
- *  (Group 1)   Lf, Rf  Ls  Rs  /  (Group 2)   LFE
- *  (Group 1)   Lf, Rf  Ls  Rs  /  (Group 2)   C
- *  (Group 1)   Lf, Rf, Ls, Rs  /  (Group 2)   C, LFE
- */
-extern const ChannelInformation ff_mlp_ch_info[21];
-
-extern const uint64_t ff_mlp_channel_layouts[12];
 
 /** MLP uses checksums that seem to be based on the standard CRC algorithm, but
  *  are not (in implementation terms, the table lookup and XOR are reversed).
