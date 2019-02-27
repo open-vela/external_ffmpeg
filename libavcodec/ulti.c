@@ -2,20 +2,20 @@
  * IBM Ultimotion Video Decoder
  * Copyright (C) 2004 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,8 +50,6 @@ static av_cold int ulti_decode_init(AVCodecContext *avctx)
     s->width = avctx->width;
     s->height = avctx->height;
     s->blocks = (s->width / 8) * (s->height / 8);
-    if (s->blocks == 0)
-        return AVERROR_INVALIDDATA;
     avctx->pix_fmt = AV_PIX_FMT_YUV410P;
     s->ulti_codebook = ulti_codebook;
 
@@ -62,8 +60,7 @@ static av_cold int ulti_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static av_cold int ulti_decode_end(AVCodecContext *avctx)
-{
+static av_cold int ulti_decode_end(AVCodecContext *avctx){
     UltimotionDecodeContext *s = avctx->priv_data;
 
     av_frame_free(&s->frame);
@@ -230,8 +227,10 @@ static int ulti_decode_frame(AVCodecContext *avctx,
     int skip;
     int tmp;
 
-    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     bytestream2_init(&s->gb, buf, buf_size);
 

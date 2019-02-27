@@ -5,20 +5,20 @@
 ;* Copyright (c) 2010 Loren Merritt
 ;* Copyright (c) 2010 Ronald S. Bultje
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or
+;* Libav is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with FFmpeg; if not, write to the Free Software
+;* License along with Libav; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
@@ -267,43 +267,6 @@ cglobal pred16x16_tm_vp8_8, 2,6,6
     dec         r5d
     jg .loop
     REP_RET
-
-%if HAVE_AVX2_EXTERNAL
-INIT_YMM avx2
-cglobal pred16x16_tm_vp8_8, 2, 4, 5, dst, stride, stride3, iteration
-    sub                       dstq, strideq
-    pmovzxbw                    m0, [dstq]
-    vpbroadcastb               xm1, [r0-1]
-    pmovzxbw                    m1, xm1
-    psubw                       m0, m1
-    mov                 iterationd, 4
-    lea                   stride3q, [strideq*3]
-.loop:
-    vpbroadcastb               xm1, [dstq+strideq*1-1]
-    vpbroadcastb               xm2, [dstq+strideq*2-1]
-    vpbroadcastb               xm3, [dstq+stride3q-1]
-    vpbroadcastb               xm4, [dstq+strideq*4-1]
-    pmovzxbw                    m1, xm1
-    pmovzxbw                    m2, xm2
-    pmovzxbw                    m3, xm3
-    pmovzxbw                    m4, xm4
-    paddw                       m1, m0
-    paddw                       m2, m0
-    paddw                       m3, m0
-    paddw                       m4, m0
-    vpackuswb                   m1, m1, m2
-    vpackuswb                   m3, m3, m4
-    vpermq                      m1, m1, q3120
-    vpermq                      m3, m3, q3120
-    movdqa        [dstq+strideq*1], xm1
-    vextracti128  [dstq+strideq*2], m1, 1
-    movdqa       [dstq+stride3q*1], xm3
-    vextracti128  [dstq+strideq*4], m3, 1
-    lea                       dstq, [dstq+strideq*4]
-    dec                 iterationd
-    jg .loop
-    REP_RET
-%endif
 
 ;-----------------------------------------------------------------------------
 ; void ff_pred16x16_plane_*_8(uint8_t *src, ptrdiff_t stride)
@@ -2535,7 +2498,10 @@ cglobal pred4x4_tm_vp8_8, 3,3
     pshufb     mm3, mm6
     pshufb     mm4, mm6
     pshufb     mm5, mm6
-    psubw      mm0, mm7
+    psubw      mm2, mm7
+    psubw      mm3, mm7
+    psubw      mm4, mm7
+    psubw      mm5, mm7
     paddw      mm2, mm0
     paddw      mm3, mm0
     paddw      mm4, mm0
