@@ -3,20 +3,20 @@
  * Copyright (c) 2004 Roman Shaposhnik
  * Copyright (c) 2008 Alessandro Sappia
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -48,7 +48,7 @@ typedef struct dc1394_data {
     int stream_index;
 } dc1394_data;
 
-static const struct dc1394_frame_format {
+struct dc1394_frame_format {
     int width;
     int height;
     enum AVPixelFormat pix_fmt;
@@ -61,7 +61,7 @@ static const struct dc1394_frame_format {
     { 0, 0, 0, 0 } /* gotta be the last one */
 };
 
-static const struct dc1394_frame_rate {
+struct dc1394_frame_rate {
     int frame_rate;
     int frame_rate_id;
 } dc1394_frame_rates[] = {
@@ -90,17 +90,16 @@ static const AVClass libdc1394_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
 
 static inline int dc1394_read_common(AVFormatContext *c,
-                                     const struct dc1394_frame_format **select_fmt, const struct dc1394_frame_rate **select_fps)
+                                     struct dc1394_frame_format **select_fmt, struct dc1394_frame_rate **select_fps)
 {
     dc1394_data* dc1394 = c->priv_data;
     AVStream* vst;
-    const struct dc1394_frame_format *fmt;
-    const struct dc1394_frame_rate *fps;
+    struct dc1394_frame_format *fmt;
+    struct dc1394_frame_rate *fps;
     enum AVPixelFormat pix_fmt;
     int width, height;
     AVRational framerate;
@@ -169,8 +168,8 @@ static int dc1394_read_header(AVFormatContext *c)
     dc1394_data* dc1394 = c->priv_data;
     dc1394camera_list_t *list;
     int res, i;
-    const struct dc1394_frame_format *fmt = NULL;
-    const struct dc1394_frame_rate *fps = NULL;
+    struct dc1394_frame_format *fmt = NULL;
+    struct dc1394_frame_rate *fps = NULL;
 
     if (dc1394_read_common(c, &fmt, &fps) != 0)
        return -1;
@@ -190,14 +189,6 @@ static int dc1394_read_header(AVFormatContext *c)
 
     /* FIXME: To select a specific camera I need to search in list its guid */
     dc1394->camera = dc1394_camera_new (dc1394->d, list->ids[0].guid);
-
-    if (!dc1394->camera) {
-         av_log(c, AV_LOG_ERROR, "Unable to open camera with guid 0x%"PRIx64"\n",
-                list->ids[0].guid);
-         dc1394_camera_free_list(list);
-         goto out;
-    }
-
     if (list->num > 1) {
         av_log(c, AV_LOG_INFO, "Working with the first camera found\n");
     }

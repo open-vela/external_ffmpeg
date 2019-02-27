@@ -2,20 +2,20 @@
  * RV30/40 decoder common data
  * Copyright (c) 2007 Mike Melanson, Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,14 +24,13 @@
  * RV30/40 decoder common data
  */
 
-#include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 
 #include "avcodec.h"
 #include "error_resilience.h"
+#include "golomb_legacy.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
-#include "golomb.h"
 #include "internal.h"
 #include "mathops.h"
 #include "mpeg_er.h"
@@ -404,8 +403,7 @@ static int rv34_decode_inter_mb_header(RV34DecContext *r, int8_t *intra_types)
             r->mb_type[mb_pos] = RV34_MB_B_DIRECT;
     }
     r->is16 = !!IS_INTRA16x16(s->current_picture_ptr->mb_type[mb_pos]);
-    if (rv34_decode_mv(r, r->block_type) < 0)
-        return -1;
+    rv34_decode_mv(r, r->block_type);
     if(r->block_type == RV34_MB_SKIP){
         fill_rectangle(intra_types, 4, 4, r->intra_types_stride, 0, sizeof(intra_types[0]));
         return 0;
@@ -512,7 +510,7 @@ static void rv34_pred_mv(RV34DecContext *r, int block_type, int subblock_no, int
     }
 }
 
-#define GET_PTS_DIFF(a, b) (((a) - (b) + 8192) & 0x1FFF)
+#define GET_PTS_DIFF(a, b) ((a - b + 8192) & 0x1FFF)
 
 /**
  * Calculate motion vector component that should be added for direct blocks.
@@ -521,7 +519,7 @@ static int calc_add_mv(RV34DecContext *r, int dir, int val)
 {
     int mul = dir ? -r->mv_weight2 : r->mv_weight1;
 
-    return (int)(val * (SUINT)mul + 0x2000) >> 14;
+    return (val * mul + 0x2000) >> 14;
 }
 
 /**
@@ -674,7 +672,6 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     int dxy, mx, my, umx, umy, lx, ly, uvmx, uvmy, src_x, src_y, uvsrc_x, uvsrc_y;
     int mv_pos = s->mb_x * 2 + s->mb_y * 2 * s->b8_stride + mv_off;
     int is16x16 = 1;
-    int emu = 0;
 
     if(thirdpel){
         int chroma_mx, chroma_my;
@@ -726,14 +723,24 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     if(s->h_edge_pos - (width << 3) < 6 || s->v_edge_pos - (height << 3) < 6 ||
        (unsigned)(src_x - !!lx*2) > s->h_edge_pos - !!lx*2 - (width <<3) - 4 ||
        (unsigned)(src_y - !!ly*2) > s->v_edge_pos - !!ly*2 - (height<<3) - 4) {
+        uint8_t *uvbuf = s->sc.edge_emu_buffer + 22 * s->linesize;
+
         srcY -= 2 + 2*s->linesize;
         s->vdsp.emulated_edge_mc(s->sc.edge_emu_buffer, srcY,
                                  s->linesize, s->linesize,
                                  (width << 3) + 6, (height << 3) + 6,
-                                 src_x - 2, src_y - 2,
-                                 s->h_edge_pos, s->v_edge_pos);
+                            src_x - 2, src_y - 2, s->h_edge_pos, s->v_edge_pos);
         srcY = s->sc.edge_emu_buffer + 2 + 2*s->linesize;
-        emu = 1;
+        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+                                 s->uvlinesize,s->uvlinesize,
+                                 (width << 2) + 1, (height << 2) + 1,
+                            uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, s->v_edge_pos >> 1);
+        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
+                                 s->uvlinesize, s->uvlinesize,
+                                 (width << 2) + 1, (height << 2) + 1,
+                            uvsrc_x, uvsrc_y, s->h_edge_pos >> 1, s->v_edge_pos >> 1);
+        srcU = uvbuf;
+        srcV = uvbuf + 16;
     }
     if(!weighted){
         Y = s->dest[0] + xoff      + yoff     *s->linesize;
@@ -756,24 +763,6 @@ static inline void rv34_mc(RV34DecContext *r, const int block_type,
     }
     is16x16 = (block_type != RV34_MB_P_8x8) && (block_type != RV34_MB_P_16x8) && (block_type != RV34_MB_P_8x16);
     qpel_mc[!is16x16][dxy](Y, srcY, s->linesize);
-    if (emu) {
-        uint8_t *uvbuf = s->sc.edge_emu_buffer;
-
-        s->vdsp.emulated_edge_mc(uvbuf, srcU,
-                                 s->uvlinesize, s->uvlinesize,
-                                 (width << 2) + 1, (height << 2) + 1,
-                                 uvsrc_x, uvsrc_y,
-                                 s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        srcU = uvbuf;
-        uvbuf += 9*s->uvlinesize;
-
-        s->vdsp.emulated_edge_mc(uvbuf, srcV,
-                                 s->uvlinesize, s->uvlinesize,
-                                 (width << 2) + 1, (height << 2) + 1,
-                                 uvsrc_x, uvsrc_y,
-                                 s->h_edge_pos >> 1, s->v_edge_pos >> 1);
-        srcV = uvbuf;
-    }
     chroma_mc[2-width]   (U, srcU, s->uvlinesize, height*4, uvmx, uvmy);
     chroma_mc[2-width]   (V, srcV, s->uvlinesize, height*4, uvmx, uvmy);
 }
@@ -867,11 +856,6 @@ static int rv34_decode_mv(RV34DecContext *r, int block_type)
     for(i = 0; i < num_mvs[block_type]; i++){
         r->dmv[i][0] = get_interleaved_se_golomb(gb);
         r->dmv[i][1] = get_interleaved_se_golomb(gb);
-        if (r->dmv[i][0] == INVALID_VLC ||
-            r->dmv[i][1] == INVALID_VLC) {
-            r->dmv[i][0] = r->dmv[i][1] = 0;
-            return AVERROR_INVALIDDATA;
-        }
     }
     switch(block_type){
     case RV34_MB_TYPE_INTRA:
@@ -1355,7 +1339,7 @@ static int check_slice_end(RV34DecContext *r, MpegEncContext *s)
     if(r->s.mb_skip_run > 1)
         return 0;
     bits = get_bits_left(&s->gb);
-    if(bits <= 0 || (bits < 8 && !show_bits(&s->gb, bits)))
+    if(bits < 0 || (bits < 8 && !show_bits(&s->gb, bits)))
         return 1;
     return 0;
 }
@@ -1377,11 +1361,11 @@ static int rv34_decoder_alloc(RV34DecContext *r)
 {
     r->intra_types_stride = r->s.mb_width * 4 + 4;
 
-    r->cbp_chroma       = av_mallocz(r->s.mb_stride * r->s.mb_height *
+    r->cbp_chroma       = av_malloc(r->s.mb_stride * r->s.mb_height *
                                     sizeof(*r->cbp_chroma));
-    r->cbp_luma         = av_mallocz(r->s.mb_stride * r->s.mb_height *
+    r->cbp_luma         = av_malloc(r->s.mb_stride * r->s.mb_height *
                                     sizeof(*r->cbp_luma));
-    r->deblock_coefs    = av_mallocz(r->s.mb_stride * r->s.mb_height *
+    r->deblock_coefs    = av_malloc(r->s.mb_stride * r->s.mb_height *
                                     sizeof(*r->deblock_coefs));
     r->intra_types_hist = av_malloc(r->intra_types_stride * 4 * 2 *
                                     sizeof(*r->intra_types_hist));
@@ -1424,10 +1408,6 @@ static int rv34_decode_slice(RV34DecContext *r, int end, const uint8_t* buf, int
     slice_type = r->si.type ? r->si.type : AV_PICTURE_TYPE_I;
     if (slice_type != s->pict_type) {
         av_log(s->avctx, AV_LOG_ERROR, "Slice type mismatch\n");
-        return AVERROR_INVALIDDATA;
-    }
-    if (s->width != r->si.width || s->height != r->si.height) {
-        av_log(s->avctx, AV_LOG_ERROR, "Size mismatch\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -1496,9 +1476,14 @@ av_cold int ff_rv34_decode_init(AVCodecContext *avctx)
     int ret;
 
     ff_mpv_decode_defaults(s);
-    ff_mpv_decode_init(s, avctx);
+    s->avctx      = avctx;
     s->out_format = FMT_H263;
+    s->codec_id   = avctx->codec_id;
 
+    s->width  = avctx->width;
+    s->height = avctx->height;
+
+    r->s.avctx = avctx;
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
     avctx->has_b_frames = 1;
     s->low_delay = 0;
@@ -1540,14 +1525,7 @@ int ff_rv34_decode_init_thread_copy(AVCodecContext *avctx)
 
     if (avctx->internal->is_copy) {
         r->tmp_b_block_base = NULL;
-        r->cbp_chroma       = NULL;
-        r->cbp_luma         = NULL;
-        r->deblock_coefs    = NULL;
-        r->intra_types_hist = NULL;
-        r->mb_type          = NULL;
-
         ff_mpv_idct_init(&r->s);
-
         if ((err = ff_mpv_common_init(&r->s)) < 0)
             return err;
         if ((err = rv34_decoder_alloc(r)) < 0) {
@@ -1585,19 +1563,16 @@ int ff_rv34_decode_update_thread_context(AVCodecContext *dst, const AVCodecConte
 
     // Do no call ff_mpeg_update_thread_context on a partially initialized
     // decoder context.
-    if (!s1->context_initialized)
+    if (!s1->linesize)
         return 0;
 
     return ff_mpeg_update_thread_context(dst, src);
 }
 
-static int get_slice_offset(AVCodecContext *avctx, const uint8_t *buf, int n, int slice_count, int buf_size)
+static int get_slice_offset(AVCodecContext *avctx, const uint8_t *buf, int n)
 {
-    if (n < slice_count) {
-        if(avctx->slice_count) return avctx->slice_offset[n];
-        else                   return AV_RL32(buf + n*8 - 4) == 1 ? AV_RL32(buf + n*8) :  AV_RB32(buf + n*8);
-    } else
-        return buf_size;
+    if(avctx->slice_count) return avctx->slice_offset[n];
+    else                   return AV_RL32(buf + n*8 - 4) == 1 ? AV_RL32(buf + n*8) :  AV_RB32(buf + n*8);
 }
 
 static int finish_frame(AVCodecContext *avctx, AVFrame *pict)
@@ -1616,28 +1591,16 @@ static int finish_frame(AVCodecContext *avctx, AVFrame *pict)
     if (s->pict_type == AV_PICTURE_TYPE_B || s->low_delay) {
         if ((ret = av_frame_ref(pict, s->current_picture_ptr->f)) < 0)
             return ret;
-        ff_print_debug_info(s, s->current_picture_ptr, pict);
-        ff_mpv_export_qp_table(s, pict, s->current_picture_ptr, FF_QSCALE_TYPE_MPEG1);
+        ff_print_debug_info(s, s->current_picture_ptr);
         got_picture = 1;
     } else if (s->last_picture_ptr) {
         if ((ret = av_frame_ref(pict, s->last_picture_ptr->f)) < 0)
             return ret;
-        ff_print_debug_info(s, s->last_picture_ptr, pict);
-        ff_mpv_export_qp_table(s, pict, s->last_picture_ptr, FF_QSCALE_TYPE_MPEG1);
+        ff_print_debug_info(s, s->last_picture_ptr);
         got_picture = 1;
     }
 
     return got_picture;
-}
-
-static AVRational update_sar(int old_w, int old_h, AVRational sar, int new_w, int new_h)
-{
-    // attempt to keep aspect during typical resolution switches
-    if (!sar.num)
-        sar = (AVRational){1, 1};
-
-    sar = av_mul_q(sar, av_mul_q((AVRational){new_h, new_w}, (AVRational){old_w, old_h}));
-    return sar;
 }
 
 int ff_rv34_decode_frame(AVCodecContext *avctx,
@@ -1654,8 +1617,6 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
     int slice_count;
     const uint8_t *slices_hdr = NULL;
     int last = 0;
-    int faulty_b = 0;
-    int offset;
 
     /* no supplementary picture */
     if (buf_size == 0) {
@@ -1678,13 +1639,13 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
     }else
         slice_count = avctx->slice_count;
 
-    offset = get_slice_offset(avctx, slices_hdr, 0, slice_count, buf_size);
     //parse first slice header to check whether this frame can be decoded
-    if(offset < 0 || offset > buf_size){
+    if(get_slice_offset(avctx, slices_hdr, 0) < 0 ||
+       get_slice_offset(avctx, slices_hdr, 0) > buf_size){
         av_log(avctx, AV_LOG_ERROR, "Slice offset is invalid\n");
         return AVERROR_INVALIDDATA;
     }
-    init_get_bits(&s->gb, buf+offset, (buf_size-offset)*8);
+    init_get_bits(&s->gb, buf+get_slice_offset(avctx, slices_hdr, 0), (buf_size-get_slice_offset(avctx, slices_hdr, 0))*8);
     if(r->parse_slice_header(r, &r->s.gb, &si) < 0 || si.start){
         av_log(avctx, AV_LOG_ERROR, "First slice header is incorrect\n");
         return AVERROR_INVALIDDATA;
@@ -1693,7 +1654,7 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
         si.type == AV_PICTURE_TYPE_B) {
         av_log(avctx, AV_LOG_ERROR, "Invalid decoder state: B-frame without "
                "reference data.\n");
-        faulty_b = 1;
+        return AVERROR_INVALIDDATA;
     }
     if(   (avctx->skip_frame >= AVDISCARD_NONREF && si.type==AV_PICTURE_TYPE_B)
        || (avctx->skip_frame >= AVDISCARD_NONKEY && si.type!=AV_PICTURE_TYPE_I)
@@ -1702,8 +1663,8 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
 
     /* first slice */
     if (si.start == 0) {
-        if (s->mb_num_left > 0 && s->current_picture_ptr) {
-            av_log(avctx, AV_LOG_ERROR, "New frame but still %d MB left.\n",
+        if (s->mb_num_left > 0) {
+            av_log(avctx, AV_LOG_ERROR, "New frame but still %d MB left.",
                    s->mb_num_left);
             ff_er_frame_end(&s->er);
             ff_mpv_frame_end(s);
@@ -1715,12 +1676,6 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
             av_log(s->avctx, AV_LOG_WARNING, "Changing dimensions to %dx%d\n",
                    si.width, si.height);
 
-            if (av_image_check_size(si.width, si.height, 0, s->avctx))
-                return AVERROR_INVALIDDATA;
-
-            s->avctx->sample_aspect_ratio = update_sar(
-                s->width, s->height, s->avctx->sample_aspect_ratio,
-                si.width, si.height);
             s->width  = si.width;
             s->height = si.height;
 
@@ -1733,8 +1688,6 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
             if ((err = rv34_decoder_realloc(r)) < 0)
                 return err;
         }
-        if (faulty_b)
-            return AVERROR_INVALIDDATA;
         s->pict_type = si.type ? si.type : AV_PICTURE_TYPE_I;
         if (ff_mpv_frame_start(s, s->avctx) < 0)
             return -1;
@@ -1764,9 +1717,6 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
                 r->mv_weight1 = r->mv_weight2 = r->weight1 = r->weight2 = 8192;
                 r->scaled_weight = 0;
             }else{
-                if (FFMAX(dist0, dist1) > refdist)
-                    av_log(avctx, AV_LOG_TRACE, "distance overflow\n");
-
                 r->mv_weight1 = (dist0 << 14) / refdist;
                 r->mv_weight2 = (dist1 << 14) / refdist;
                 if((r->mv_weight1|r->mv_weight2) & 511){
@@ -1790,32 +1740,40 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
     }
 
     for(i = 0; i < slice_count; i++){
-        int offset  = get_slice_offset(avctx, slices_hdr, i  , slice_count, buf_size);
-        int offset1 = get_slice_offset(avctx, slices_hdr, i+1, slice_count, buf_size);
+        int offset = get_slice_offset(avctx, slices_hdr, i);
         int size;
+        if(i+1 == slice_count)
+            size = buf_size - offset;
+        else
+            size = get_slice_offset(avctx, slices_hdr, i+1) - offset;
 
-        if(offset < 0 || offset > offset1 || offset1 > buf_size){
+        if(offset < 0 || offset > buf_size){
             av_log(avctx, AV_LOG_ERROR, "Slice offset is invalid\n");
             break;
         }
-        size = offset1 - offset;
 
         r->si.end = s->mb_width * s->mb_height;
         s->mb_num_left = r->s.mb_x + r->s.mb_y*r->s.mb_width - r->si.start;
 
         if(i+1 < slice_count){
-            int offset2 = get_slice_offset(avctx, slices_hdr, i+2, slice_count, buf_size);
-            if (offset2 < offset1 || offset2 > buf_size) {
+            if (get_slice_offset(avctx, slices_hdr, i+1) < 0 ||
+                get_slice_offset(avctx, slices_hdr, i+1) > buf_size) {
                 av_log(avctx, AV_LOG_ERROR, "Slice offset is invalid\n");
                 break;
             }
-            init_get_bits(&s->gb, buf+offset1, (buf_size-offset1)*8);
+            init_get_bits(&s->gb, buf+get_slice_offset(avctx, slices_hdr, i+1), (buf_size-get_slice_offset(avctx, slices_hdr, i+1))*8);
             if(r->parse_slice_header(r, &r->s.gb, &si) < 0){
-                size = offset2 - offset;
+                if(i+2 < slice_count)
+                    size = get_slice_offset(avctx, slices_hdr, i+2) - offset;
+                else
+                    size = buf_size - offset;
             }else
                 r->si.end = si.start;
         }
-        av_assert0 (size >= 0 && size <= buf_size - offset);
+        if (size < 0 || size > buf_size - offset) {
+            av_log(avctx, AV_LOG_ERROR, "Slice size is invalid\n");
+            break;
+        }
         last = rv34_decode_slice(r, r->si.end, buf + offset, size);
         if(last)
             break;
