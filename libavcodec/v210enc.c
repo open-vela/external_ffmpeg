@@ -4,20 +4,20 @@
  * Copyright (C) 2009 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2009 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -110,6 +110,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     ff_v210enc_init(s);
 
+    avctx->bits_per_coded_sample = 20;
+    avctx->bit_rate = ff_guess_coded_bitrate(avctx) * 16 / 15;
+
     return 0;
 }
 
@@ -120,10 +123,11 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int aligned_width = ((avctx->width + 47) / 48) * 48;
     int stride = aligned_width * 8 / 3;
     int line_padding = stride - ((avctx->width * 8 + 11) / 12) * 4;
+    AVFrameSideData *side_data;
     int h, w, ret;
     uint8_t *dst;
 
-    ret = ff_alloc_packet(pkt, avctx->height * stride);
+    ret = ff_alloc_packet2(avctx, pkt, avctx->height * stride, avctx->height * stride);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
         return ret;
@@ -228,6 +232,22 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             u += pic->linesize[1] - avctx->width / 2;
             v += pic->linesize[2] - avctx->width / 2;
         }
+    }
+
+    side_data = av_frame_get_side_data(pic, AV_FRAME_DATA_A53_CC);
+    if (side_data && side_data->size) {
+        uint8_t *buf = av_packet_new_side_data(pkt, AV_PKT_DATA_A53_CC, side_data->size);
+        if (!buf)
+            return AVERROR(ENOMEM);
+        memcpy(buf, side_data->data, side_data->size);
+    }
+
+    side_data = av_frame_get_side_data(pic, AV_FRAME_DATA_AFD);
+    if (side_data && side_data->size) {
+        uint8_t *buf = av_packet_new_side_data(pkt, AV_PKT_DATA_AFD, side_data->size);
+        if (!buf)
+            return AVERROR(ENOMEM);
+        memcpy(buf, side_data->data, side_data->size);
     }
 
     pkt->flags |= AV_PKT_FLAG_KEY;

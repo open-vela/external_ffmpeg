@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2012 Paul B Mahol
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,6 +39,7 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     uint32_t pixformat, pixdepth, bunit, bitorder, bpad;
     uint32_t rgb[3];
     uint8_t *ptr;
+    int width, height;
     GetByteContext gb;
 
     if (buf_size < XWD_HEADER_SIZE)
@@ -60,8 +61,8 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
 
     pixformat     = bytestream2_get_be32u(&gb);
     pixdepth      = bytestream2_get_be32u(&gb);
-    avctx->width  = bytestream2_get_be32u(&gb);
-    avctx->height = bytestream2_get_be32u(&gb);
+    width         = bytestream2_get_be32u(&gb);
+    height        = bytestream2_get_be32u(&gb);
     xoffset       = bytestream2_get_be32u(&gb);
     be            = bytestream2_get_be32u(&gb);
     bunit         = bytestream2_get_be32u(&gb);
@@ -76,6 +77,9 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     bytestream2_skipu(&gb, 8);
     ncolors       = bytestream2_get_be32u(&gb);
     bytestream2_skipu(&gb, header_size - (XWD_HEADER_SIZE - 20));
+
+    if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
+        return ret;
 
     av_log(avctx, AV_LOG_DEBUG,
            "pixformat %"PRIu32", pixdepth %"PRIu32", bunit %"PRIu32", bitorder %"PRIu32", bpad %"PRIu32"\n",
@@ -155,12 +159,13 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     switch (vclass) {
     case XWD_STATIC_GRAY:
     case XWD_GRAY_SCALE:
-        if (bpp != 1 && bpp != 8 || bpp != pixdepth)
+        if (bpp != 1 && bpp != 8)
             return AVERROR_INVALIDDATA;
-        if (pixdepth == 1)
+        if (bpp == 1 && pixdepth == 1) {
             avctx->pix_fmt = AV_PIX_FMT_MONOWHITE;
-        else if (pixdepth == 8)
+        } else if (bpp == 8 && pixdepth == 8) {
             avctx->pix_fmt = AV_PIX_FMT_GRAY8;
+        }
         break;
     case XWD_STATIC_COLOR:
     case XWD_PSEUDO_COLOR:
@@ -206,10 +211,8 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_PATCHWELCOME;
     }
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
 
     p->key_frame = 1;
     p->pict_type = AV_PICTURE_TYPE_I;
@@ -228,7 +231,7 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
             blue   = bytestream2_get_byteu(&gb);
             bytestream2_skipu(&gb, 3); // skip bitmask flag and padding
 
-            dst[i] = red << 16 | green << 8 | blue;
+            dst[i] = 0xFFU << 24 | red << 16 | green << 8 | blue;
         }
     }
 

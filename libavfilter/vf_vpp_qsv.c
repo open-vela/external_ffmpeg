@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -38,7 +38,7 @@
 #include "qsvvpp.h"
 
 #define OFFSET(x) offsetof(VPPContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM)
 
 /* number of video enhancement filters */
 #define ENH_FILTERS_COUNT (5)
@@ -341,9 +341,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
     VPPContext       *vpp = inlink->dst->priv;
     AVFilterLink     *outlink = ctx->outputs[0];
 
-    if (vpp->qsv)
+    if (vpp->qsv) {
         ret = ff_qsvvpp_filter_frame(vpp->qsv, inlink, picref);
-    else {
+        av_frame_free(&picref);
+    } else {
         if (picref->pts != AV_NOPTS_VALUE)
             picref->pts = av_rescale_q(picref->pts, inlink->time_base, outlink->time_base);
         ret = ff_filter_frame(outlink, picref);
@@ -354,6 +355,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    int ret;
     AVFilterFormats *in_fmts, *out_fmts;
     static const enum AVPixelFormat in_pix_fmts[] = {
         AV_PIX_FMT_YUV420P,
@@ -371,8 +373,12 @@ static int query_formats(AVFilterContext *ctx)
 
     in_fmts  = ff_make_format_list(in_pix_fmts);
     out_fmts = ff_make_format_list(out_pix_fmts);
-    ff_formats_ref(in_fmts, &ctx->inputs[0]->out_formats);
-    ff_formats_ref(out_fmts, &ctx->outputs[0]->in_formats);
+    ret = ff_formats_ref(in_fmts, &ctx->inputs[0]->out_formats);
+    if (ret < 0)
+        return ret;
+    ret = ff_formats_ref(out_fmts, &ctx->outputs[0]->in_formats);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }

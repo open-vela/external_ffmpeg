@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,12 +27,15 @@
 typedef enum {
     H264_SEI_TYPE_BUFFERING_PERIOD       = 0,   ///< buffering period (H.264, D.1.1)
     H264_SEI_TYPE_PIC_TIMING             = 1,   ///< picture timing
+    H264_SEI_TYPE_PAN_SCAN_RECT          = 2,   ///< pan-scan rectangle
     H264_SEI_TYPE_FILLER_PAYLOAD         = 3,   ///< filler data
     H264_SEI_TYPE_USER_DATA_REGISTERED   = 4,   ///< registered user data as specified by Rec. ITU-T T.35
     H264_SEI_TYPE_USER_DATA_UNREGISTERED = 5,   ///< unregistered user data
     H264_SEI_TYPE_RECOVERY_POINT         = 6,   ///< recovery point (frame # to decoder sync)
     H264_SEI_TYPE_FRAME_PACKING          = 45,  ///< frame packing arrangement
     H264_SEI_TYPE_DISPLAY_ORIENTATION    = 47,  ///< display orientation
+    H264_SEI_TYPE_GREEN_METADATA         = 56,  ///< GreenMPEG information
+    H264_SEI_TYPE_MASTERING_DISPLAY_COLOUR_VOLUME = 137,  ///< mastering display properties
     H264_SEI_TYPE_ALTERNATIVE_TRANSFER   = 147, ///< alternative transfer
 } H264_SEI_Type;
 
@@ -50,6 +53,30 @@ typedef enum {
     H264_SEI_PIC_STRUCT_FRAME_DOUBLING    = 7, ///<  7: %frame doubling
     H264_SEI_PIC_STRUCT_FRAME_TRIPLING    = 8  ///<  8: %frame tripling
 } H264_SEI_PicStructType;
+
+/**
+ * frame_packing_arrangement types
+ */
+typedef enum {
+    H264_SEI_FPA_TYPE_CHECKERBOARD        = 0,
+    H264_SEI_FPA_TYPE_INTERLEAVE_COLUMN   = 1,
+    H264_SEI_FPA_TYPE_INTERLEAVE_ROW      = 2,
+    H264_SEI_FPA_TYPE_SIDE_BY_SIDE        = 3,
+    H264_SEI_FPA_TYPE_TOP_BOTTOM          = 4,
+    H264_SEI_FPA_TYPE_INTERLEAVE_TEMPORAL = 5,
+    H264_SEI_FPA_TYPE_2D                  = 6,
+} H264_SEI_FpaType;
+
+typedef struct H264SEITimeCode {
+    /* When not continuously receiving full timecodes, we have to reference
+       the previous timecode received */
+    int full;
+    int frame;
+    int seconds;
+    int minutes;
+    int hours;
+    int dropframe;
+} H264SEITimeCode;
 
 typedef struct H264SEIPictureTiming {
     int present;
@@ -71,6 +98,16 @@ typedef struct H264SEIPictureTiming {
      * cpb_removal_delay in picture timing SEI message, see H.264 C.1.2
      */
     int cpb_removal_delay;
+
+    /**
+     * Maximum three timecodes in a pic_timing SEI.
+     */
+    H264SEITimeCode timecode[3];
+
+    /**
+     * Number of timecode in use
+     */
+    int timecode_cnt;
 } H264SEIPictureTiming;
 
 typedef struct H264SEIAFD {
@@ -79,8 +116,7 @@ typedef struct H264SEIAFD {
 } H264SEIAFD;
 
 typedef struct H264SEIA53Caption {
-    int a53_caption_size;
-    uint8_t *a53_caption;
+    AVBufferRef *buf_ref;
 } H264SEIA53Caption;
 
 typedef struct H264SEIUnregistered {
@@ -105,9 +141,12 @@ typedef struct H264SEIBufferingPeriod {
 
 typedef struct H264SEIFramePacking {
     int present;
-    int arrangement_type;
+    int arrangement_id;
+    int arrangement_cancel_flag;  ///< is previous arrangement canceled, -1 if never received
+    H264_SEI_FpaType arrangement_type;
+    int arrangement_repetition_period;
     int content_interpretation_type;
-    int quincunx_subsampling;
+    int quincunx_sampling_flag;
     int current_frame_is_frame0_flag;
 } H264SEIFramePacking;
 
@@ -116,6 +155,19 @@ typedef struct H264SEIDisplayOrientation {
     int anticlockwise_rotation;
     int hflip, vflip;
 } H264SEIDisplayOrientation;
+
+typedef struct H264SEIGreenMetaData {
+    uint8_t green_metadata_type;
+    uint8_t period_type;
+    uint16_t num_seconds;
+    uint16_t num_pictures;
+    uint8_t percent_non_zero_macroblocks;
+    uint8_t percent_intra_coded_macroblocks;
+    uint8_t percent_six_tap_filtering;
+    uint8_t percent_alpha_point_deblocking_instance;
+    uint8_t xsd_metric_type;
+    uint16_t xsd_metric_value;
+} H264SEIGreenMetaData;
 
 typedef struct H264SEIAlternativeTransfer {
     int present;
@@ -131,6 +183,7 @@ typedef struct H264SEIContext {
     H264SEIBufferingPeriod buffering_period;
     H264SEIFramePacking frame_packing;
     H264SEIDisplayOrientation display_orientation;
+    H264SEIGreenMetaData green_metadata;
     H264SEIAlternativeTransfer alternative_transfer;
 } H264SEIContext;
 
@@ -143,5 +196,10 @@ int ff_h264_sei_decode(H264SEIContext *h, GetBitContext *gb,
  * Reset SEI values at the beginning of the frame.
  */
 void ff_h264_sei_uninit(H264SEIContext *h);
+
+/**
+ * Get stereo_mode string from the h264 frame_packing_arrangement
+ */
+const char *ff_h264_sei_stereo_mode(const H264SEIFramePacking *h);
 
 #endif /* AVCODEC_H264_SEI_H */
