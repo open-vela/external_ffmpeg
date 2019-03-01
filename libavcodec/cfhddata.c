@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2015 Kieran Kunhya
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,14 @@
 #include "libavutil/attributes.h"
 
 #include "cfhd.h"
+
+/* some special codewords, not sure what they all mean */
+#define TABLE_9_BAND_END1 0x1C7859Eh
+#define TABLE_9_BAND_END_LEN1 25
+#define TABLE_9_BAND_END2 0x38F0B3Fh
+#define TABLE_9_BAND_END_LEN2 26
+#define TABLE_9_BAND_END3 0x38F0B3Eh
+#define TABLE_9_BAND_END_LEN3 26
 
 #define NB_VLC_TABLE_9   (71 + 3)
 #define NB_VLC_TABLE_18 (263 + 1)
@@ -265,73 +273,99 @@ static const uint8_t table_18_vlc_level[NB_VLC_TABLE_18] = {
     220,  195,  161,  231,  173,  226,  116,  255,
 };
 
-static int init_vlc_signed(VLC *vlc, CFHD_RL_VLC_ELEM table_rl_vlc[],
-                           unsigned bound,
-                           const uint32_t table_vlc_bits[],
-                           const uint8_t table_vlc_len[],
-                           const uint16_t table_vlc_run[],
-                           const uint8_t table_vlc_level[])
+av_cold int ff_cfhd_init_vlcs(CFHDContext *s)
 {
-    uint32_t  vlc_bits[NB_VLC_TABLE_18 * 2];
-    uint8_t    vlc_len[NB_VLC_TABLE_18 * 2];
-    uint16_t   vlc_run[NB_VLC_TABLE_18 * 2];
-    int16_t  vlc_level[NB_VLC_TABLE_18 * 2];
-    unsigned i, j;
-    int ret;
+    int i, j, ret = 0;
+    uint32_t new_cfhd_vlc_bits[NB_VLC_TABLE_18 * 2];
+    uint8_t  new_cfhd_vlc_len[NB_VLC_TABLE_18 * 2];
+    uint16_t new_cfhd_vlc_run[NB_VLC_TABLE_18 * 2];
+    int16_t  new_cfhd_vlc_level[NB_VLC_TABLE_18 * 2];
 
-    for (i = 0, j = 0; i < bound; i++, j++) {
-        vlc_bits[j]  = table_vlc_bits[i];
-        vlc_len[j]   = table_vlc_len[i];
-        vlc_run[j]   = table_vlc_run[i];
-        vlc_level[j] = table_vlc_level[i];
+    /** Similar to dv.c, generate signed VLC tables **/
+
+    /* Table 9 */
+    for (i = 0, j = 0; i < NB_VLC_TABLE_9; i++, j++) {
+        new_cfhd_vlc_bits[j]  = table_9_vlc_bits[i];
+        new_cfhd_vlc_len[j]   = table_9_vlc_len[i];
+        new_cfhd_vlc_run[j]   = table_9_vlc_run[i];
+        new_cfhd_vlc_level[j] = table_9_vlc_level[i];
 
         /* Don't include the zero level nor escape bits */
-        if (table_vlc_level[i] &&
-            vlc_bits[j] != table_vlc_bits[bound - 1]) {
-            vlc_bits[j] <<= 1;
-            vlc_len[j]++;
+        if (table_9_vlc_level[i] &&
+            new_cfhd_vlc_bits[j] != table_9_vlc_bits[NB_VLC_TABLE_9-1]) {
+            new_cfhd_vlc_bits[j] <<= 1;
+            new_cfhd_vlc_len[j]++;
             j++;
-            vlc_bits[j]  = (table_vlc_bits[i] << 1) | 1;
-            vlc_len[j]   =  table_vlc_len[i] + 1;
-            vlc_run[j]   =  table_vlc_run[i];
-            vlc_level[j] = -table_vlc_level[i];
+            new_cfhd_vlc_bits[j]  = (table_9_vlc_bits[i] << 1) | 1;
+            new_cfhd_vlc_len[j]   =  table_9_vlc_len[i] + 1;
+            new_cfhd_vlc_run[j]   =  table_9_vlc_run[i];
+            new_cfhd_vlc_level[j] = -table_9_vlc_level[i];
         }
     }
 
-    if ((ret = init_vlc(vlc, VLC_BITS, j, vlc_len, 1, 1, vlc_bits, 4, 4, 0)) < 0)
+    ret = init_vlc(&s->vlc_9, VLC_BITS, j, new_cfhd_vlc_len,
+                   1, 1, new_cfhd_vlc_bits, 4, 4, 0);
+    if (ret < 0)
         return ret;
-
-    for (i = 0; i < (*vlc).table_size; i++) {
-        int code = (*vlc).table[i][0];
-        int len  = (*vlc).table[i][1];
+    for (i = 0; i < s->vlc_9.table_size; i++) {
+        int code = s->vlc_9.table[i][0];
+        int len  = s->vlc_9.table[i][1];
         int level, run;
 
         if (len < 0) { // more bits needed
             run   = 0;
             level = code;
         } else {
-            run   = vlc_run[code];
-            level = vlc_level[code];
+            run   = new_cfhd_vlc_run[code];
+            level = new_cfhd_vlc_level[code];
         }
-        table_rl_vlc[i].len   = len;
-        table_rl_vlc[i].level = level;
-        table_rl_vlc[i].run   = run;
+        s->table_9_rl_vlc[i].len   = len;
+        s->table_9_rl_vlc[i].level = level;
+        s->table_9_rl_vlc[i].run   = run;
     }
 
-    return 0;
-}
+    /* Table 18 */
+    for (i = 0, j = 0; i < NB_VLC_TABLE_18; i++, j++) {
+        new_cfhd_vlc_bits[j]  = table_18_vlc_bits[i];
+        new_cfhd_vlc_len[j]   = table_18_vlc_len[i];
+        new_cfhd_vlc_run[j]   = table_18_vlc_run[i];
+        new_cfhd_vlc_level[j] = table_18_vlc_level[i];
 
-av_cold int ff_cfhd_init_vlcs(CFHDContext *s)
-{
-    /** Similar to dv.c, generate signed VLC tables **/
+        /* Don't include the zero level nor escape bits */
+        if (table_18_vlc_level[i] &&
+            new_cfhd_vlc_bits[j] != table_18_vlc_bits[NB_VLC_TABLE_18-1]) {
+            new_cfhd_vlc_bits[j] <<= 1;
+            new_cfhd_vlc_len[j]++;
+            j++;
+            new_cfhd_vlc_bits[j]  = (table_18_vlc_bits[i] << 1) | 1;
+            new_cfhd_vlc_len[j]   =  table_18_vlc_len[i] + 1;
+            new_cfhd_vlc_run[j]   =  table_18_vlc_run[i];
+            new_cfhd_vlc_level[j] = -table_18_vlc_level[i];
+        }
+    }
 
-    int ret = init_vlc_signed(&s->vlc_9, s->table_9_rl_vlc, NB_VLC_TABLE_9,
-                              table_9_vlc_bits, table_9_vlc_len,
-                              table_9_vlc_run, table_9_vlc_level);
+    ret = init_vlc(&s->vlc_18, VLC_BITS, j, new_cfhd_vlc_len,
+                   1, 1, new_cfhd_vlc_bits, 4, 4, 0);
     if (ret < 0)
         return ret;
+    av_assert0(s->vlc_18.table_size == 4572);
 
-    return init_vlc_signed(&s->vlc_18, s->table_18_rl_vlc, NB_VLC_TABLE_18,
-                           table_18_vlc_bits, table_18_vlc_len,
-                           table_18_vlc_run, table_18_vlc_level);
+    for (i = 0; i < s->vlc_18.table_size; i++) {
+        int code = s->vlc_18.table[i][0];
+        int len  = s->vlc_18.table[i][1];
+        int level, run;
+
+        if (len < 0) { // more bits needed
+            run   = 0;
+            level = code;
+        } else {
+            run   = new_cfhd_vlc_run[code];
+            level = new_cfhd_vlc_level[code];
+        }
+        s->table_18_rl_vlc[i].len   = len;
+        s->table_18_rl_vlc[i].level = level;
+        s->table_18_rl_vlc[i].run   = run;
+    }
+
+    return ret;
 }

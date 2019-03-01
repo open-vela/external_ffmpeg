@@ -4,20 +4,20 @@
  * copyright (c) 2006 Konstantin Shishkov
  * (c) 2005 anonymous, Alex Beregszaszi, Michael Niedermayer
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -61,7 +61,7 @@ const uint8_t ff_vc1_mbmode_intfrp[2][15][4] = {
         { MV_PMODE_INTFR_1MV      , 1, 0, 1 },
         { MV_PMODE_INTFR_2MV_FIELD, 0, 0, 1 },
         { MV_PMODE_INTFR_2MV_FIELD, 1, 0, 1 },
-        { MV_PMODE_INTFR_2MV_FIELD, 0, 0, 0 },
+        { MV_PMODE_INTFR_2MV_FIELD, 1, 0, 0 },
         { MV_PMODE_INTFR_INTRA    , 0, 0, 0 }
     },
     {
@@ -73,13 +73,13 @@ const uint8_t ff_vc1_mbmode_intfrp[2][15][4] = {
         { MV_PMODE_INTFR_1MV      , 1, 0, 1 },
         { MV_PMODE_INTFR_2MV_FIELD, 0, 0, 1 },
         { MV_PMODE_INTFR_2MV_FIELD, 1, 0, 1 },
-        { MV_PMODE_INTFR_2MV_FIELD, 0, 0, 0 },
+        { MV_PMODE_INTFR_2MV_FIELD, 1, 0, 0 },
         { MV_PMODE_INTFR_4MV      , 0, 0, 1 },
         { MV_PMODE_INTFR_4MV      , 1, 0, 1 },
         { MV_PMODE_INTFR_4MV      , 0, 0, 0 },
         { MV_PMODE_INTFR_4MV_FIELD, 0, 0, 1 },
         { MV_PMODE_INTFR_4MV_FIELD, 1, 0, 1 },
-        { MV_PMODE_INTFR_4MV_FIELD, 0, 0, 0 },
+        { MV_PMODE_INTFR_4MV_FIELD, 1, 0, 0 },
         { MV_PMODE_INTFR_INTRA    , 0, 0, 0 }
     }
 };
@@ -1019,21 +1019,21 @@ const uint8_t ff_vc1_mv_diff_bits[4][73] = {
 /* DC differentials low+hi-mo, p217 are the same as in msmpeg4data .h */
 
 /* Table 232 */
-const int8_t ff_vc1_simple_progressive_4x4_zz [16] = {
+const uint8_t ff_vc1_simple_progressive_4x4_zz [16] = {
      0,     8,    16,     1,
      9,    24,    17,     2,
     10,    18,    25,     3,
     11,    26,    19,    27
 };
 
-const int8_t ff_vc1_adv_progressive_8x4_zz [32] = { /* Table 233 */
+const uint8_t ff_vc1_adv_progressive_8x4_zz [32] = { /* Table 233 */
      0,     8,     1,    16,     2,     9,    10,     3,
     24,    17,     4,    11,    18,    12,     5,    19,
     25,    13,    20,    26,    27,     6,    21,    28,
     14,    22,    29,     7,    30,    15,    23,    31
 };
 
-const int8_t ff_vc1_adv_progressive_4x8_zz [32] = { /* Table 234 */
+const uint8_t ff_vc1_adv_progressive_4x8_zz [32] = { /* Table 234 */
      0,     1,     8,     2,
      9,    16,    17,    24,
     10,    32,    25,    18,
@@ -1044,7 +1044,7 @@ const int8_t ff_vc1_adv_progressive_4x8_zz [32] = { /* Table 234 */
     35,    43,    51,    59
 };
 
-const int8_t ff_vc1_adv_interlaced_8x8_zz [64] = { /* Table 235 */
+const uint8_t ff_vc1_adv_interlaced_8x8_zz [64] = { /* Table 235 */
      0,     8,     1,    16,    24,     9,     2,    32,
     40,    48,    56,    17,    10,     3,    25,    18,
     11,     4,    33,    41,    49,    57,    26,    34,
@@ -1055,14 +1055,14 @@ const int8_t ff_vc1_adv_interlaced_8x8_zz [64] = { /* Table 235 */
     61,    62,    54,    46,    39,    47,    55,    63
 };
 
-const int8_t ff_vc1_adv_interlaced_8x4_zz [32] = { /* Table 236 */
+const uint8_t ff_vc1_adv_interlaced_8x4_zz [32] = { /* Table 236 */
      0,     8,    16,    24,     1,     9,     2,    17,
     25,    10,     3,    18,    26,     4,    11,    19,
     12,     5,    13,    20,    27,     6,    21,    28,
     14,    22,    29,     7,    30,    15,    23,    31
 };
 
-const int8_t ff_vc1_adv_interlaced_4x8_zz [32] = { /* Table 237 */
+const uint8_t ff_vc1_adv_interlaced_4x8_zz [32] = { /* Table 237 */
      0,     1,     2,     8,
     16,     9,    24,    17,
     10,     3,    32,    40,
@@ -1073,7 +1073,7 @@ const int8_t ff_vc1_adv_interlaced_4x8_zz [32] = { /* Table 237 */
     35,    43,    51,    59
 };
 
-const int8_t ff_vc1_adv_interlaced_4x4_zz [16] = { /* Table 238 */
+const uint8_t ff_vc1_adv_interlaced_4x4_zz [16] = { /* Table 238 */
      0,     8,    16,    24,
      1,     9,    17,     2,
     25,    10,    18,     3,
@@ -1090,7 +1090,7 @@ const int32_t ff_vc1_dqscale[63] = {
      0x1F08,  0x1E1E,  0x1D42,  0x1C72, 0x1BAD, 0x1AF3, 0x1A42, 0x199A,
      0x18FA,  0x1862,  0x17D0,  0x1746, 0x16C1, 0x1643, 0x15CA, 0x1555,
      0x14E6,  0x147B,  0x1414,  0x13B1, 0x1352, 0x12F7, 0x129E, 0x1249,
-     0x11F7,  0x11A8,  0x115B,  0x1111, 0x10C9, 0x1084, 0x1000
+     0x11F7,  0x11A8,  0x115B,  0x1111, 0x10C9, 0x1084, 0x1041
 };
 
 /* P Interlaced field picture MV predictor scaling values (Table 114) */

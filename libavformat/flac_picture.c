@@ -1,23 +1,27 @@
 /*
  * Raw FLAC picture parser
+ * Copyright (c) 2001 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/avassert.h"
+#include "libavutil/intreadwrite.h"
+#include "libavcodec/png.h"
 #include "avformat.h"
 #include "flac_picture.h"
 #include "id3v2.h"
@@ -32,7 +36,8 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     AVIOContext *pb = NULL;
     AVStream *st;
     int width, height, ret = 0;
-    unsigned int type, len;
+    int len;
+    unsigned int type;
 
     pb = avio_alloc_context(buf, buf_size, 0, NULL, NULL, NULL, NULL);
     if (!pb)
@@ -43,15 +48,14 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     if (type >= FF_ARRAY_ELEMS(ff_id3v2_picture_types)) {
         av_log(s, AV_LOG_ERROR, "Invalid picture type: %d.\n", type);
         if (s->error_recognition & AV_EF_EXPLODE) {
-            ret = AVERROR_INVALIDDATA;
-            goto fail;
+            RETURN_ERROR(AVERROR_INVALIDDATA);
         }
         type = 0;
     }
 
     /* picture mimetype */
     len = avio_rb32(pb);
-    if (!len || len >= 64 ||
+    if (len <= 0 || len >= 64 ||
         avio_read(pb, mimetype, FFMIN(len, sizeof(mimetype) - 1)) != len) {
         av_log(s, AV_LOG_ERROR, "Could not read mimetype from an attached "
                "picture.\n");
@@ -59,6 +63,7 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
             ret = AVERROR_INVALIDDATA;
         goto fail;
     }
+    av_assert0(len < sizeof(mimetype));
     mimetype[len] = 0;
 
     while (mime->id != AV_CODEC_ID_NONE) {
@@ -80,8 +85,7 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     len = avio_rb32(pb);
     if (len > 0) {
         if (!(desc = av_malloc(len + 1))) {
-            ret = AVERROR(ENOMEM);
-            goto fail;
+            RETURN_ERROR(AVERROR(ENOMEM));
         }
 
         if (avio_read(pb, desc, len) != len) {
@@ -100,16 +104,16 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
 
     /* picture data */
     len = avio_rb32(pb);
-    if (!len) {
+    if (len <= 0) {
         av_log(s, AV_LOG_ERROR, "Invalid attached picture size: %d.\n", len);
         if (s->error_recognition & AV_EF_EXPLODE)
             ret = AVERROR_INVALIDDATA;
         goto fail;
     }
-    if (!(data = av_buffer_alloc(len))) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
+    if (!(data = av_buffer_alloc(len + AV_INPUT_BUFFER_PADDING_SIZE))) {
+        RETURN_ERROR(AVERROR(ENOMEM));
     }
+    memset(data->data + len, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     if (avio_read(pb, data->data, len) != len) {
         av_log(s, AV_LOG_ERROR, "Error reading attached picture data.\n");
         if (s->error_recognition & AV_EF_EXPLODE)
@@ -117,10 +121,12 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
         goto fail;
     }
 
+    if (AV_RB64(data->data) == PNGSIG)
+        id = AV_CODEC_ID_PNG;
+
     st = avformat_new_stream(s, NULL);
     if (!st) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
+        RETURN_ERROR(AVERROR(ENOMEM));
     }
 
     av_init_packet(&st->attached_pic);

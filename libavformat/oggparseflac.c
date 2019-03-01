@@ -1,28 +1,26 @@
 /*
  *    Copyright (C) 2005  Matthieu CASTET
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <stdlib.h>
-
-#include "libavcodec/bitstream.h"
+#include "libavcodec/get_bits.h"
 #include "libavcodec/flac.h"
-
 #include "avformat.h"
 #include "internal.h"
 #include "oggdec.h"
@@ -35,38 +33,37 @@ flac_header (AVFormatContext * s, int idx)
     struct ogg *ogg = s->priv_data;
     struct ogg_stream *os = ogg->streams + idx;
     AVStream *st = s->streams[idx];
-    BitstreamContext bc;
+    GetBitContext gb;
     int mdt;
 
     if (os->buf[os->pstart] == 0xff)
         return 0;
 
-    bitstream_init8(&bc, os->buf + os->pstart, os->psize);
-    bitstream_skip(&bc, 1); /* metadata_last */
-    mdt = bitstream_read(&bc, 7);
+    init_get_bits(&gb, os->buf + os->pstart, os->psize*8);
+    skip_bits1(&gb); /* metadata_last */
+    mdt = get_bits(&gb, 7);
 
     if (mdt == OGG_FLAC_METADATA_TYPE_STREAMINFO) {
         uint8_t *streaminfo_start = os->buf + os->pstart + 5 + 4 + 4 + 4;
         uint32_t samplerate;
 
-        bitstream_skip(&bc, 4 * 8); /* "FLAC" */
-        if (bitstream_read(&bc, 8) != 1) /* unsupported major version */
+        skip_bits_long(&gb, 4*8); /* "FLAC" */
+        if(get_bits(&gb, 8) != 1) /* unsupported major version */
             return -1;
-        bitstream_skip(&bc, 8 + 16); /* minor version + header count */
-        bitstream_skip(&bc, 4 * 8); /* "fLaC" */
+        skip_bits_long(&gb, 8 + 16); /* minor version + header count */
+        skip_bits_long(&gb, 4*8); /* "fLaC" */
 
         /* METADATA_BLOCK_HEADER */
-        if (bitstream_read(&bc, 32) != FLAC_STREAMINFO_SIZE)
+        if (get_bits_long(&gb, 32) != FLAC_STREAMINFO_SIZE)
             return -1;
 
         st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codecpar->codec_id = AV_CODEC_ID_FLAC;
         st->need_parsing = AVSTREAM_PARSE_HEADERS;
 
-        st->codecpar->extradata =
-            av_malloc(FLAC_STREAMINFO_SIZE + AV_INPUT_BUFFER_PADDING_SIZE);
-        memcpy(st->codecpar->extradata, streaminfo_start, FLAC_STREAMINFO_SIZE);
-        st->codecpar->extradata_size = FLAC_STREAMINFO_SIZE;
+        if (ff_alloc_extradata(st->codecpar, FLAC_STREAMINFO_SIZE) < 0)
+            return AVERROR(ENOMEM);
+        memcpy(st->codecpar->extradata, streaminfo_start, st->codecpar->extradata_size);
 
         samplerate = AV_RB24(st->codecpar->extradata + 10) >> 4;
         if (!samplerate)
@@ -83,11 +80,49 @@ flac_header (AVFormatContext * s, int idx)
 static int
 old_flac_header (AVFormatContext * s, int idx)
 {
+    struct ogg *ogg = s->priv_data;
     AVStream *st = s->streams[idx];
+    struct ogg_stream *os = ogg->streams + idx;
+    AVCodecParserContext *parser = av_parser_init(AV_CODEC_ID_FLAC);
+    AVCodecContext *avctx;
+    int size, ret;
+    uint8_t *data;
+
+    if (!parser)
+        return -1;
+
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id = AV_CODEC_ID_FLAC;
 
-    return 0;
+    avctx = avcodec_alloc_context3(NULL);
+    if (!avctx) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    ret = avcodec_parameters_to_context(avctx, st->codecpar);
+    if (ret < 0)
+        goto fail;
+
+    parser->flags = PARSER_FLAG_COMPLETE_FRAMES;
+    av_parser_parse2(parser, avctx,
+                     &data, &size, os->buf + os->pstart, os->psize,
+                     AV_NOPTS_VALUE, AV_NOPTS_VALUE, -1);
+
+    av_parser_close(parser);
+
+    if (avctx->sample_rate) {
+        avpriv_set_pts_info(st, 64, 1, avctx->sample_rate);
+        avcodec_free_context(&avctx);
+        return 0;
+    }
+
+    avcodec_free_context(&avctx);
+    return 1;
+fail:
+    av_parser_close(parser);
+    avcodec_free_context(&avctx);
+    return ret;
 }
 
 const struct ogg_codec ff_flac_codec = {

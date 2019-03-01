@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Alexandra Hájková
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or modify
+ * FFmpeg is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with Libav; if not, write to the Free Software Foundation, Inc.,
+ * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -45,10 +45,10 @@
 static void check_add_res(HEVCDSPContext h, int bit_depth)
 {
     int i;
-    LOCAL_ALIGNED(32, int16_t, res0, [32 * 32]);
-    LOCAL_ALIGNED(32, int16_t, res1, [32 * 32]);
-    LOCAL_ALIGNED(32, uint8_t, dst0, [32 * 32 * 2]);
-    LOCAL_ALIGNED(32, uint8_t, dst1, [32 * 32 * 2]);
+    LOCAL_ALIGNED_32(int16_t, res0, [32 * 32]);
+    LOCAL_ALIGNED_32(int16_t, res1, [32 * 32]);
+    LOCAL_ALIGNED_32(uint8_t, dst0, [32 * 32 * 2]);
+    LOCAL_ALIGNED_32(uint8_t, dst1, [32 * 32 * 2]);
 
     for (i = 2; i <= 5; i++) {
         int block_size = 1 << i;
@@ -59,7 +59,7 @@ static void check_add_res(HEVCDSPContext h, int bit_depth)
         randomize_buffers(res0, size);
         randomize_buffers2(dst0, size);
         memcpy(res1, res0, sizeof(*res0) * size);
-        memcpy(dst1, dst0, size);
+        memcpy(dst1, dst0, sizeof(int16_t) * size);
 
         if (check_func(h.add_residual[i - 2], "hevc_add_res_%dx%d_%d", block_size, block_size, bit_depth)) {
             call_ref(dst0, res0, stride);

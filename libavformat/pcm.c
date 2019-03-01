@@ -2,20 +2,20 @@
  * PCM common functions
  * Copyright (c) 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,6 +23,31 @@
 #include "avformat.h"
 #include "internal.h"
 #include "pcm.h"
+
+#define RAW_SAMPLES     1024
+
+int ff_pcm_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    AVCodecParameters *par = s->streams[0]->codecpar;
+    int ret, size;
+
+    if (par->block_align <= 0)
+        return AVERROR(EINVAL);
+
+    /*
+     * Compute read size to complete a read every 62ms.
+     * Clamp to RAW_SAMPLES if larger.
+     */
+    size = FFMAX(par->sample_rate/25, 1);
+    size = FFMIN(size, RAW_SAMPLES) * par->block_align;
+
+    ret = av_get_packet(s->pb, pkt, size);
+
+    pkt->flags &= ~AV_PKT_FLAG_CORRUPT;
+    pkt->stream_index = 0;
+
+    return ret;
+}
 
 int ff_pcm_read_seek(AVFormatContext *s,
                      int stream_index, int64_t timestamp, int flags)

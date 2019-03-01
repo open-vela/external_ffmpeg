@@ -2,20 +2,20 @@
  * Range coder
  * Copyright (c) 2004 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
@@ -57,6 +58,11 @@ av_cold void ff_init_range_decoder(RangeCoder *c, const uint8_t *buf,
 
     c->low         = AV_RB16(c->bytestream);
     c->bytestream += 2;
+    c->overread    = 0;
+    if (c->low >= 0xFF00) {
+        c->low = 0xFF00;
+        c->bytestream_end = c->bytestream;
+    }
 }
 
 void ff_build_rac_states(RangeCoder *c, int factor, int max_p)
@@ -100,16 +106,37 @@ void ff_build_rac_states(RangeCoder *c, int factor, int max_p)
 }
 
 /* Return the number of bytes written. */
-int ff_rac_terminate(RangeCoder *c)
+int ff_rac_terminate(RangeCoder *c, int version)
 {
+    if (version == 1)
+        put_rac(c, (uint8_t[]) { 129 }, 0);
     c->range = 0xFF;
     c->low  += 0xFF;
     renorm_encoder(c);
     c->range = 0xFF;
     renorm_encoder(c);
 
-    assert(c->low == 0);
-    assert(c->range >= 0x100);
+    av_assert1(c->low   == 0);
+    av_assert1(c->range >= 0x100);
 
     return c->bytestream - c->bytestream_start;
+}
+
+int ff_rac_check_termination(RangeCoder *c, int version)
+{
+    if (version == 1) {
+        RangeCoder tmp = *c;
+        get_rac(c, (uint8_t[]) { 129 });
+
+        if (c->bytestream == tmp.bytestream && c->bytestream > c->bytestream_start)
+            tmp.low -= *--tmp.bytestream;
+        tmp.bytestream_end = tmp.bytestream;
+
+        if (get_rac(&tmp, (uint8_t[]) { 129 }))
+            return AVERROR_INVALIDDATA;
+    } else {
+        if (c->bytestream_end != c->bytestream)
+            return AVERROR_INVALIDDATA;
+    }
+    return 0;
 }
