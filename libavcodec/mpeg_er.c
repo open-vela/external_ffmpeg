@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,6 +24,7 @@ static void set_erpic(ERPicture *dst, Picture *src)
 {
     int i;
 
+    memset(dst, 0, sizeof(*dst));
     if (!src) {
         dst->f  = NULL;
         dst->tf = NULL;
@@ -70,12 +71,15 @@ static void mpeg_er_decode_mb(void *opaque, int ref, int mv_dir, int mv_type,
     s->mb_skipped = mb_skipped;
     s->mb_x       = mb_x;
     s->mb_y       = mb_y;
+    s->mcsel      = 0;
     memcpy(s->mv, mv, sizeof(*mv));
 
     ff_init_block_index(s);
     ff_update_block_index(s);
 
     s->bdsp.clear_blocks(s->block[0]);
+    if (!s->chroma_y_shift)
+        s->bdsp.clear_blocks(s->block[6]);
 
     s->dest[0] = s->current_picture.f->data[0] +
                  s->mb_y * 16 * s->linesize +
@@ -90,7 +94,7 @@ static void mpeg_er_decode_mb(void *opaque, int ref, int mv_dir, int mv_type,
     if (ref)
         av_log(s->avctx, AV_LOG_DEBUG,
                "Interlaced error concealment is not fully implemented\n");
-    ff_mpv_decode_mb(s, s->block);
+    ff_mpv_reconstruct_mb(s, s->block);
 }
 
 int ff_mpeg_er_init(MpegEncContext *s)
@@ -108,7 +112,7 @@ int ff_mpeg_er_init(MpegEncContext *s)
     er->mb_stride   = s->mb_stride;
     er->b8_stride   = s->b8_stride;
 
-    er->er_temp_buffer     = av_malloc(s->mb_height * s->mb_stride);
+    er->er_temp_buffer     = av_malloc(s->mb_height * s->mb_stride * (4*sizeof(int) + 1));
     er->error_status_table = av_mallocz(mb_array_size);
     if (!er->er_temp_buffer || !er->error_status_table)
         goto fail;

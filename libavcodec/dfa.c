@@ -3,20 +3,20 @@
  * Copyright (c) 2011 Konstantin Shishkov
  * based on work by Vladimir "VAG" Gneushev
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,6 +26,7 @@
 #include "bytestream.h"
 #include "internal.h"
 
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem.h"
 
@@ -37,12 +38,13 @@ typedef struct DfaContext {
 static av_cold int dfa_decode_init(AVCodecContext *avctx)
 {
     DfaContext *s = avctx->priv_data;
-    int ret;
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
-    if ((ret = av_image_check_size(avctx->width, avctx->height, 0, avctx)) < 0)
-        return ret;
+    if (!avctx->width || !avctx->height || FFMAX(avctx->width, avctx->height) >= (1<<16))
+        return AVERROR_INVALIDDATA;
+
+    av_assert0(av_image_check_size(avctx->width, avctx->height, 0, avctx) >= 0);
 
     s->frame_buf = av_mallocz(avctx->width * avctx->height);
     if (!s->frame_buf)
@@ -65,11 +67,14 @@ static int decode_tsw1(GetByteContext *gb, uint8_t *frame, int width, int height
     const uint8_t *frame_start = frame;
     const uint8_t *frame_end   = frame + width * height;
     int mask = 0x10000, bitbuf = 0;
-    int v, count, segments;
+    int v, count;
+    unsigned segments;
     unsigned offset;
 
     segments = bytestream2_get_le32(gb);
     offset   = bytestream2_get_le32(gb);
+    if (segments == 0 && offset == frame_end - frame)
+        return 0; // skip frame
     if (frame_end - frame <= offset)
         return AVERROR_INVALIDDATA;
     frame += offset;
@@ -247,13 +252,16 @@ static int decode_wdlt(GetByteContext *gb, uint8_t *frame, int width, int height
         segments = bytestream2_get_le16u(gb);
         while ((segments & 0xC000) == 0xC000) {
             unsigned skip_lines = -(int16_t)segments;
-            unsigned delta = -((int16_t)segments * width);
+            int64_t delta = -((int16_t)segments * (int64_t)width);
             if (frame_end - frame <= delta || y + lines + skip_lines > height)
                 return AVERROR_INVALIDDATA;
             frame    += delta;
             y        += skip_lines;
             segments = bytestream2_get_le16(gb);
         }
+
+        if (frame_end <= frame)
+            return AVERROR_INVALIDDATA;
         if (segments & 0x8000) {
             frame[width - 1] = segments & 0xFF;
             segments = bytestream2_get_le16(gb);
@@ -291,7 +299,7 @@ static int decode_wdlt(GetByteContext *gb, uint8_t *frame, int width, int height
 static int decode_tdlt(GetByteContext *gb, uint8_t *frame, int width, int height)
 {
     const uint8_t *frame_end = frame + width * height;
-    int segments = bytestream2_get_le32(gb);
+    uint32_t segments = bytestream2_get_le32(gb);
     int skip, copy;
 
     while (segments--) {
@@ -340,11 +348,10 @@ static int dfa_decode_frame(AVCodecContext *avctx,
     uint8_t *dst;
     int ret;
     int i, pal_elems;
+    int version = avctx->extradata_size==2 ? AV_RL16(avctx->extradata) : 0;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0))) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     bytestream2_init(&gb, avpkt->data, avpkt->size);
     while (bytestream2_get_bytes_left(&gb) > 0) {
@@ -357,7 +364,7 @@ static int dfa_decode_frame(AVCodecContext *avctx,
             pal_elems = FFMIN(chunk_size / 3, 256);
             for (i = 0; i < pal_elems; i++) {
                 s->pal[i] = bytestream2_get_be24(&gb) << 2;
-                s->pal[i] |= (s->pal[i] >> 6) & 0x333;
+                s->pal[i] |= 0xFFU << 24 | (s->pal[i] >> 6) & 0x30303;
             }
             frame->palette_has_changed = 1;
         } else if (chunk_type <= 9) {
@@ -377,9 +384,17 @@ static int dfa_decode_frame(AVCodecContext *avctx,
     buf = s->frame_buf;
     dst = frame->data[0];
     for (i = 0; i < avctx->height; i++) {
-        memcpy(dst, buf, avctx->width);
+        if(version == 0x100) {
+            int j;
+            for(j = 0; j < avctx->width; j++) {
+                dst[j] = buf[ (i&3)*(avctx->width /4) + (j/4) +
+                             ((j&3)*(avctx->height/4) + (i/4))*avctx->width];
+            }
+        } else {
+            memcpy(dst, buf, avctx->width);
+            buf += avctx->width;
+        }
         dst += frame->linesize[0];
-        buf += avctx->width;
     }
     memcpy(frame->data[1], s->pal, sizeof(s->pal));
 
