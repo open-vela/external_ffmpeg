@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,15 +33,9 @@
 
 #if HAVE_INLINE_ASM
 
-#if ARCH_X86_64
-#define REG64 "r"
-#else
-#define REG64 "m"
-#endif
-
 //FIXME use some macros to avoid duplicating get_cabac (cannot be done yet
 //as that would make optimization work hard)
-#if HAVE_7REGS && !BROKEN_COMPILER
+#if HAVE_7REGS
 #define decode_significance decode_significance_x86
 static int decode_significance_x86(CABACContext *c, int max_coeff,
                                    uint8_t *significant_coeff_ctx_base,
@@ -58,7 +52,6 @@ static int decode_significance_x86(CABACContext *c, int max_coeff,
     __asm__ volatile(
         "lea   "MANGLE(ff_h264_cabac_tables)", %0      \n\t"
         : "=&r"(tables)
-        : NAMED_CONSTRAINTS_ARRAY(ff_h264_cabac_tables)
     );
 #endif
 
@@ -134,7 +127,6 @@ static int decode_significance_8x8_x86(CABACContext *c,
     __asm__ volatile(
         "lea    "MANGLE(ff_h264_cabac_tables)", %0      \n\t"
         : "=&r"(tables)
-        : NAMED_CONSTRAINTS_ARRAY(ff_h264_cabac_tables)
     );
 #endif
 
@@ -143,7 +135,7 @@ static int decode_significance_8x8_x86(CABACContext *c,
         "3:                                     \n\t"
 
         "mov %10, %0                            \n\t"
-        "movzb (%0, %6), %6                     \n\t"
+        "movzbl (%0, %6), %k6                   \n\t"
         "add %9, %6                             \n\t"
 
         BRANCHLESS_GET_CABAC("%4", "%q4", "(%6)", "%3", "%w3",
@@ -154,14 +146,14 @@ static int decode_significance_8x8_x86(CABACContext *c,
                              AV_STRINGIFY(H264_MLPS_STATE_OFFSET),
                              "%15")
 
-        "mov %1, %6                             \n\t"
+        "mov %1, %k6                            \n\t"
         "test $1, %4                            \n\t"
         " jz 4f                                 \n\t"
 
 #ifdef BROKEN_RELOCATIONS
-        "movzb %c14(%15, %q6), %6\n\t"
+        "movzbl %c14(%15, %q6), %k6\n\t"
 #else
-        "movzb "MANGLE(ff_h264_cabac_tables)"+%c14(%6), %6\n\t"
+        "movzbl "MANGLE(ff_h264_cabac_tables)"+%c14(%k6), %k6\n\t"
 #endif
         "add %11, %6                            \n\t"
 
@@ -174,8 +166,8 @@ static int decode_significance_8x8_x86(CABACContext *c,
                              "%15")
 
         "mov %2, %0                             \n\t"
-        "mov %1, %6                             \n\t"
-        "mov %k6, (%0)                          \n\t"
+        "mov %1, %k6                            \n\t"
+        "movl %k6, (%0)                         \n\t"
 
         "test $1, %4                            \n\t"
         " jnz 5f                                \n\t"
@@ -183,19 +175,19 @@ static int decode_significance_8x8_x86(CABACContext *c,
         "add"FF_OPSIZE"  $4, %2                 \n\t"
 
         "4:                                     \n\t"
-        "add $1, %6                             \n\t"
-        "mov %6, %1                             \n\t"
-        "cmp $63, %6                            \n\t"
+        "addl $1, %k6                           \n\t"
+        "mov %k6, %1                            \n\t"
+        "cmpl $63, %k6                          \n\t"
         " jb 3b                                 \n\t"
         "mov %2, %0                             \n\t"
-        "mov %k6, (%0)                          \n\t"
+        "movl %k6, (%0)                         \n\t"
         "5:                                     \n\t"
         "addl %8, %k0                           \n\t"
         "shr $2, %k0                            \n\t"
-        : "=&q"(coeff_count), "+"REG64(last), "+"REG64(index), "+&r"(c->low),
+        : "=&q"(coeff_count), "+m"(last), "+m"(index), "+&r"(c->low),
           "=&r"(bit), "+&r"(c->range), "=&r"(state)
         : "r"(c), "m"(minusindex), "m"(significant_coeff_ctx_base),
-          REG64(sig_off), REG64(last_coeff_ctx_base),
+          "m"(sig_off), "m"(last_coeff_ctx_base),
           "i"(offsetof(CABACContext, bytestream)),
           "i"(offsetof(CABACContext, bytestream_end)),
           "i"(H264_LAST_COEFF_FLAG_OFFSET_8x8_OFFSET) TABLES_ARG
@@ -203,6 +195,6 @@ static int decode_significance_8x8_x86(CABACContext *c,
     );
     return coeff_count;
 }
-#endif /* HAVE_7REGS && BROKEN_COMPILER */
+#endif /* HAVE_7REGS && !defined(BROKEN_RELOCATIONS) */
 
 #endif /* HAVE_INLINE_ASM */

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2001, 2002 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,7 +27,7 @@
 #include "mpegaudiodsp.h"
 #include "mpegaudio.h"
 
-#if USE_FLOATS
+#if CONFIG_FLOAT
 #define RENAME(n) n##_float
 
 static inline float round_sample(float *sum)
@@ -63,8 +63,8 @@ static inline int round_sample(int64_t *sum)
 #   define MACS(rt, ra, rb) MAC64(rt, ra, rb)
 #   define MLSS(rt, ra, rb) MLS64(rt, ra, rb)
 #   define MULH3(x, y, s) MULH((s)*(x), y)
-#   define MULLx(x, y, s) MULL((int)(x),(y),s)
-#   define SHR(a,b)       (((int)(a))>>(b))
+#   define MULLx(x, y, s) MULL(x,y,s)
+#   define SHR(a,b)       ((a)>>(b))
 #   define FIXR(a)        ((int)((a) * FRAC_ONE + 0.5))
 #   define FIXHR(a)       ((int)((a) * (1LL<<32) + 0.5))
 #endif
@@ -125,7 +125,7 @@ void RENAME(ff_mpadsp_apply_window)(MPA_INT *synth_buf, MPA_INT *window,
     register const MPA_INT *w, *w2, *p;
     int j;
     OUT_INT *samples2;
-#if USE_FLOATS
+#if CONFIG_FLOAT
     float sum, sum2;
 #else
     int64_t sum, sum2;
@@ -200,7 +200,7 @@ av_cold void RENAME(ff_mpa_synth_init)(MPA_INT *window)
     for(i=0;i<257;i++) {
         INTFLOAT v;
         v = ff_mpa_enwindow[i];
-#if USE_FLOATS
+#if CONFIG_FLOAT
         v *= 1.0 / (1LL<<(16 + FRAC_BITS));
 #endif
         window[i] = v;
@@ -243,7 +243,7 @@ av_cold void RENAME(ff_init_mpadsp_tabs)(void)
                 else if (i <  18) d = 1;
             }
             //merge last stage of imdct into the window coefficients
-            d *= 0.5 * IMDCT_SCALAR / cos(M_PI * (2 * i + 19) / 72);
+            d *= 0.5 / cos(M_PI * (2 * i + 19) / 72);
 
             if (j == 2)
                 RENAME(ff_mdct_win)[j][i/3] = FIXHR((d / (1<<5)));
@@ -300,11 +300,11 @@ static const INTFLOAT icos36h[9] = {
 };
 
 /* using Lee like decomposition followed by hand coded 9 points DCT */
-static void imdct36(INTFLOAT *out, INTFLOAT *buf, SUINTFLOAT *in, INTFLOAT *win)
+static void imdct36(INTFLOAT *out, INTFLOAT *buf, INTFLOAT *in, INTFLOAT *win)
 {
     int i, j;
-    SUINTFLOAT t0, t1, t2, t3, s0, s1, s2, s3;
-    SUINTFLOAT tmp[18], *tmp1, *in1;
+    INTFLOAT t0, t1, t2, t3, s0, s1, s2, s3;
+    INTFLOAT tmp[18], *tmp1, *in1;
 
     for (i = 17; i >= 1; i--)
         in[i] += in[i-1];
@@ -398,4 +398,3 @@ void RENAME(ff_imdct36_blocks)(INTFLOAT *out, INTFLOAT *buf, INTFLOAT *in,
         out++;
     }
 }
-

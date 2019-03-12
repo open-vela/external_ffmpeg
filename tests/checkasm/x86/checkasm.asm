@@ -3,14 +3,14 @@
 ;* Copyright (c) 2008 Loren Merritt
 ;* Copyright (c) 2012 Henrik Gramner
 ;*
-;* This file is part of FFmpeg.
+;* This file is part of Libav.
 ;*
-;* FFmpeg is free software; you can redistribute it and/or modify
+;* Libav is free software; you can redistribute it and/or modify
 ;* it under the terms of the GNU General Public License as published by
 ;* the Free Software Foundation; either version 2 of the License, or
 ;* (at your option) any later version.
 ;*
-;* FFmpeg is distributed in the hope that it will be useful,
+;* Libav is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;* GNU General Public License for more details.
@@ -169,15 +169,15 @@ cglobal checked_call%1, 2,15,16,max_args*8+8
     jz .clobber_ok
     report_fail error_message
 .clobber_ok:
-%ifidn %1, _emms
-    emms
-%elifnidn %1, _float
+%ifnid %1, _emms
     fstenv [rsp]
     cmp  word [rsp + 8], 0xffff
     je   .emms_ok
     report_fail error_message_emms
     emms
 .emms_ok:
+%else
+    emms
 %endif
     RET
 %endmacro
@@ -223,15 +223,15 @@ cglobal checked_call%1, 1,7
     jz .clobber_ok
     report_fail error_message
 .clobber_ok:
-%ifidn %1, _emms
-    emms
-%elifnidn %1, _float
+%ifnid %1, _emms
     fstenv [esp]
     cmp  word [esp + 8], 0xffff
     je   .emms_ok
     report_fail error_message_emms
     emms
 .emms_ok:
+%else
+    emms
 %endif
     add  esp, max_args*4
     REP_RET
@@ -241,4 +241,3 @@ cglobal checked_call%1, 1,7
 
 CHECKED_CALL
 CHECKED_CALL _emms
-CHECKED_CALL _float

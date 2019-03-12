@@ -3,20 +3,20 @@
  * Copyright (c) 2006 Benjamin Larsson
  * Copyright (c) 2010 Mohamed Naufal Basheer
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,7 @@
  * @param b 16 bit multiplier
  */
 #define MULL2(a, b) \
-        ((((a) >> 16) * (b) * 2) + (((a) & 0xffff) * (b) >> 15))
+        ((((a) >> 16) * (b) << 1) + (((a) & 0xffff) * (b) >> 15))
 
 /**
  * G723.1 frame types
@@ -116,7 +116,9 @@ typedef struct FCBParam {
     int pulse_sign[PULSE_MAX];
 } FCBParam;
 
-typedef struct G723_1_ChannelContext {
+typedef struct g723_1_context {
+    AVClass *class;
+
     G723_1_Subframe subframe[4];
     enum FrameType cur_frame_type;
     enum FrameType past_frame_type;
@@ -140,8 +142,9 @@ typedef struct G723_1_ChannelContext {
     int sid_gain;
     int cur_gain;
     int reflection_coef;
-    int pf_gain;                 ///< formant postfilter
-                                 ///< gain scaling unit memory
+    int pf_gain;
+    int postfilter;
+
     int16_t audio[FRAME_LEN + LPC_ORDER + PITCH_MAX + 4];
 
     /* encoder */
@@ -154,13 +157,6 @@ typedef struct G723_1_ChannelContext {
     int16_t perf_iir_mem[LPC_ORDER];       ///< and iir memories
 
     int16_t harmonic_mem[PITCH_MAX];
-} G723_1_ChannelContext;
-
-typedef struct G723_1_Context {
-    AVClass *class;
-    int postfilter;
-
-    G723_1_ChannelContext ch[2];
 } G723_1_Context;
 
 
@@ -219,27 +215,16 @@ void ff_g723_1_lsp_interpolate(int16_t *lpc, int16_t *cur_lsp,
 void ff_g723_1_inverse_quant(int16_t *cur_lsp, int16_t *prev_lsp,
                              uint8_t *lsp_index, int bad_frame);
 
+
 static const uint8_t frame_size[4] = { 24, 20, 4, 1 };
 
-/**
- * Postfilter gain weighting factors scaled by 2^15
- */
-static const int16_t ppf_gain_weight[2] = {0x1800, 0x2000};
+/* Postfilter gain weighting factors scaled by 2^15 */
+static const int16_t ppf_gain_weight[2] = { 0x1800, 0x2000 };
 
-/**
- * LSP DC component
- */
+/* LSP DC component */
 static const int16_t dc_lsp[LPC_ORDER] = {
-    0x0c3b,
-    0x1271,
-    0x1e0a,
-    0x2a36,
-    0x3630,
-    0x406f,
-    0x4d28,
-    0x56f4,
-    0x638c,
-    0x6c46
+    0x0c3b, 0x1271, 0x1e0a, 0x2a36, 0x3630,
+    0x406f, 0x4d28, 0x56f4, 0x638c, 0x6c46
 };
 
 /* Cosine table scaled by 2^14 */
@@ -311,9 +296,7 @@ static const int16_t cos_tab[COS_TBL_SIZE + 1] = {
     16384
 };
 
-/**
- *  LSP VQ tables
- */
+/* LSP VQ tables */
 static const int16_t lsp_band0[LSP_CB_SIZE][3] = {
     {    0,      0,      0}, { -270,  -1372,  -1032}, { -541,  -1650,  -1382},
     { -723,  -2011,  -2213}, { -941,  -1122,  -1942}, { -780,  -1145,  -2454},
@@ -623,12 +606,12 @@ static const int16_t lsp_band2[LSP_CB_SIZE][4] = {
     { 3633,   2336,   2408,   1453}, { 2923,   3517,   2567,   1318},
 };
 
-/**
+/*
  * Used for the coding/decoding of the pulses positions
  * for the MP-MLQ codebook
  */
 static const int32_t combinatorial_table[PULSE_MAX][SUBFRAME_LEN/GRID_SIZE] = {
-    {118755, 98280, 80730,  65780, 53130,
+    {118755, 98280, 80730, 65780L, 53130,
       42504, 33649, 26334,  20349, 15504,
       11628,  8568,  6188,   4368,  3003,
        2002,  1287,   792,    462,   252,
@@ -717,14 +700,10 @@ static const int16_t pitch_contrib[340] = {
     -2, 25144,  0, 17998
 };
 
-/**
- * Number of non-zero pulses in the MP-MLQ excitation
- */
+/* Number of non-zero pulses in the MP-MLQ excitation */
 static const int8_t pulses[4] = {6, 5, 6, 5};
 
-/**
- * Size of the MP-MLQ fixed excitation codebooks
- */
+/* Size of the MP-MLQ fixed excitation codebooks */
 static const int32_t max_pos[4] = {593775, 142506, 593775, 142506};
 
 static const int16_t fixed_cb_gain[GAIN_LEVELS] = {
@@ -1377,15 +1356,14 @@ static const int16_t adaptive_cb_gain170[170 * 20] = {
     -4534,  -2487,  -3932,  -4166,  -2113,  -3341,  -3540,  -3070
 };
 
-/**
- * 0.65^i (Zero part) and 0.75^i (Pole part) scaled by 2^15
- */
+/* 0.65^i (Zero part) and 0.75^i (Pole part) scaled by 2^15 */
 static const int16_t postfilter_tbl[2][LPC_ORDER] = {
     /* Zero */
-    {21299, 13844,  8999,  5849, 3802, 2471, 1606, 1044,  679,  441},
+    { 21299, 13844,  8999,  5849, 3802, 2471, 1606, 1044,  679,  441 },
     /* Pole */
-    {24576, 18432, 13824, 10368, 7776, 5832, 4374, 3281, 2460, 1845}
+    { 24576, 18432, 13824, 10368, 7776, 5832, 4374, 3281, 2460, 1845 }
 };
+
 
 /**
  * Hamming window coefficients scaled by 2^15

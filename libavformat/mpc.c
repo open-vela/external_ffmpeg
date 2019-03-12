@@ -2,20 +2,20 @@
  * Musepack demuxer
  * Copyright (c) 2006 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -45,7 +45,7 @@ typedef struct MPCContext {
     int frames_noted;
 } MPCContext;
 
-static int mpc_probe(const AVProbeData *p)
+static int mpc_probe(AVProbeData *p)
 {
     const uint8_t *d = p->buf;
     if (d[0] == 'M' && d[1] == 'P' && d[2] == '+' && (d[3] == 0x17 || d[3] == 0x7))
@@ -95,8 +95,9 @@ static int mpc_read_header(AVFormatContext *s)
     st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
     st->codecpar->bits_per_coded_sample = 16;
 
-    if (ff_get_extradata(s, st->codecpar, s->pb, 16) < 0)
-        return AVERROR(ENOMEM);
+    st->codecpar->extradata_size = 16;
+    st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size+AV_INPUT_BUFFER_PADDING_SIZE);
+    avio_read(s->pb, st->codecpar->extradata, 16);
     st->codecpar->sample_rate = mpc_rate[st->codecpar->extradata[2] & 3];
     avpriv_set_pts_info(st, 32, MPC_FRAMESIZE, st->codecpar->sample_rate);
     /* scan for seekpoints */
@@ -152,7 +153,7 @@ static int mpc_read_packet(AVFormatContext *s, AVPacket *pkt)
     }
     c->curbits = (curbits + size2) & 0x1F;
 
-    if ((ret = av_new_packet(pkt, size + 4)) < 0)
+    if ((ret = av_new_packet(pkt, size)) < 0)
         return ret;
 
     pkt->data[0] = curbits;
@@ -195,11 +196,11 @@ static int mpc_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
     MPCContext *c = s->priv_data;
     AVPacket pkt1, *pkt = &pkt1;
     int ret;
-    int index = av_index_search_timestamp(st, FFMAX(timestamp - DELAY_FRAMES, 0), flags);
+    int index = av_index_search_timestamp(st, timestamp - DELAY_FRAMES, flags);
     uint32_t lastframe;
 
     /* if found, seek there */
-    if (index >= 0 && st->index_entries[st->nb_index_entries-1].timestamp >= timestamp - DELAY_FRAMES){
+    if (index >= 0){
         c->curframe = st->index_entries[index].pos;
         return 0;
     }

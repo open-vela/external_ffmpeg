@@ -2,20 +2,20 @@
  * Silicon Graphics Movie demuxer
  * Copyright (c) 2012 Peter Ross
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,7 +46,7 @@ typedef struct MvContext {
 
 #define AUDIO_FORMAT_SIGNED 401
 
-static int mv_probe(const AVProbeData *p)
+static int mv_probe(AVProbeData *p)
 {
     if (AV_RB32(p->buf) == MKBETAG('M', 'O', 'V', 'I') &&
         AV_RB16(p->buf + 4) < 3)
@@ -57,12 +57,7 @@ static int mv_probe(const AVProbeData *p)
 static char *var_read_string(AVIOContext *pb, int size)
 {
     int n;
-    char *str;
-
-    if (size < 0 || size == INT_MAX)
-        return NULL;
-
-    str = av_malloc(size + 1);
+    char *str = av_malloc(size + 1);
     if (!str)
         return NULL;
     n = avio_get_str(pb, size, str, size + 1);
@@ -223,13 +218,11 @@ static int parse_video_var(AVFormatContext *avctx, AVStream *st,
     return 0;
 }
 
-static int read_table(AVFormatContext *avctx, AVStream *st,
+static void read_table(AVFormatContext *avctx, AVStream *st,
                        int (*parse)(AVFormatContext *avctx, AVStream *st,
                                     const char *name, int size))
 {
-    unsigned count;
-    int i;
-
+    int count, i;
     AVIOContext *pb = avctx->pb;
     avio_skip(pb, 4);
     count = avio_rb32(pb);
@@ -237,23 +230,14 @@ static int read_table(AVFormatContext *avctx, AVStream *st,
     for (i = 0; i < count; i++) {
         char name[17];
         int size;
-
-        if (avio_feof(pb))
-            return AVERROR_EOF;
-
         avio_read(pb, name, 16);
         name[sizeof(name) - 1] = 0;
         size = avio_rb32(pb);
-        if (size < 0) {
-            av_log(avctx, AV_LOG_ERROR, "entry size %d is invalid\n", size);
-            return AVERROR_INVALIDDATA;
-        }
         if (parse(avctx, st, name, size) < 0) {
             avpriv_request_sample(avctx, "Variable %s", name);
             avio_skip(pb, size);
         }
     }
-    return 0;
 }
 
 static void read_index(AVIOContext *pb, AVStream *st)
@@ -277,9 +261,8 @@ static int mv_read_header(AVFormatContext *avctx)
 {
     MvContext *mv = avctx->priv_data;
     AVIOContext *pb = avctx->pb;
-    AVStream *ast = NULL, *vst = NULL; //initialization to suppress warning
+    AVStream *ast = NULL, *vst = NULL;
     int version, i;
-    int ret;
 
     avio_skip(pb, 4);
 
@@ -323,10 +306,6 @@ static int mv_read_header(AVFormatContext *avctx)
         ast->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
         ast->nb_frames          = vst->nb_frames;
         ast->codecpar->sample_rate = avio_rb32(pb);
-        if (ast->codecpar->sample_rate <= 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid sample rate %d\n", ast->codecpar->sample_rate);
-            return AVERROR_INVALIDDATA;
-        }
         avpriv_set_pts_info(ast, 33, 1, ast->codecpar->sample_rate);
         if (set_channels(avctx, ast, avio_rb32(pb)) < 0)
             return AVERROR_INVALIDDATA;
@@ -348,8 +327,6 @@ static int mv_read_header(AVFormatContext *avctx)
             uint32_t pos   = avio_rb32(pb);
             uint32_t asize = avio_rb32(pb);
             uint32_t vsize = avio_rb32(pb);
-            if (avio_feof(pb))
-                return AVERROR_INVALIDDATA;
             avio_skip(pb, 8);
             av_add_index_entry(ast, pos, timestamp, asize, 0, AVINDEX_KEYFRAME);
             av_add_index_entry(vst, pos + asize, i, vsize, 0, AVINDEX_KEYFRAME);
@@ -358,8 +335,7 @@ static int mv_read_header(AVFormatContext *avctx)
     } else if (!version && avio_rb16(pb) == 3) {
         avio_skip(pb, 4);
 
-        if ((ret = read_table(avctx, NULL, parse_global_var)) < 0)
-            return ret;
+        read_table(avctx, NULL, parse_global_var);
 
         if (mv->nb_audio_tracks > 1) {
             avpriv_request_sample(avctx, "Multiple audio streams support");
@@ -369,8 +345,7 @@ static int mv_read_header(AVFormatContext *avctx)
             if (!ast)
                 return AVERROR(ENOMEM);
             ast->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-            if ((read_table(avctx, ast, parse_audio_var)) < 0)
-                return ret;
+            read_table(avctx, ast, parse_audio_var);
             if (mv->acompression == 100 &&
                 mv->aformat == AUDIO_FORMAT_SIGNED &&
                 ast->codecpar->bits_per_coded_sample == 16) {
@@ -396,8 +371,7 @@ static int mv_read_header(AVFormatContext *avctx)
             if (!vst)
                 return AVERROR(ENOMEM);
             vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-            if ((ret = read_table(avctx, vst, parse_video_var))<0)
-                return ret;
+            read_table(avctx, vst, parse_video_var);
         }
 
         if (mv->nb_audio_tracks)
@@ -420,7 +394,7 @@ static int mv_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     AVStream *st = avctx->streams[mv->stream_index];
     const AVIndexEntry *index;
     int frame = mv->frame[mv->stream_index];
-    int64_t ret;
+    int ret;
     uint64_t pos;
 
     if (frame < st->nb_index_entries) {

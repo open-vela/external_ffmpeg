@@ -2,20 +2,20 @@
  * Vidvox Hap utility functions
  * Copyright (C) 2015 Tom Butterworth <bangnoise@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -52,26 +52,4 @@ av_cold void ff_hap_free_context(HapContext *ctx)
     av_freep(&ctx->tex_buf);
     av_freep(&ctx->chunks);
     av_freep(&ctx->chunk_results);
-}
-
-int ff_hap_parse_section_header(GetByteContext *gbc, int *section_size,
-                                enum HapSectionType *section_type)
-{
-    if (bytestream2_get_bytes_left(gbc) < 4)
-        return AVERROR_INVALIDDATA;
-
-    *section_size = bytestream2_get_le24(gbc);
-    *section_type = bytestream2_get_byte(gbc);
-
-    if (*section_size == 0) {
-        if (bytestream2_get_bytes_left(gbc) < 4)
-            return AVERROR_INVALIDDATA;
-
-        *section_size = bytestream2_get_le32(gbc);
-    }
-
-    if (*section_size > bytestream2_get_bytes_left(gbc) || *section_size < 0)
-        return AVERROR_INVALIDDATA;
-    else
-        return 0;
 }

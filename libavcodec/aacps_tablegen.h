@@ -3,25 +3,25 @@
  *
  * Copyright (c) 2010 Alex Converse <alex.converse@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_AACPS_TABLEGEN_H
-#define AVCODEC_AACPS_TABLEGEN_H
+#ifndef AACPS_TABLEGEN_H
+#define AACPS_TABLEGEN_H
 
 #include <math.h>
 #include <stdint.h>
@@ -70,7 +70,7 @@ static const float g2_Q4[] = {
      0.16486303567403f,  0.23279856662996f, 0.25f
 };
 
-static av_cold void make_filters_from_proto(float (*filter)[8][2], const float *proto, int bands)
+static void make_filters_from_proto(float (*filter)[8][2], const float *proto, int bands)
 {
     int q, n;
     for (q = 0; q < bands; q++) {
@@ -82,7 +82,7 @@ static av_cold void make_filters_from_proto(float (*filter)[8][2], const float *
     }
 }
 
-static av_cold void ps_tableinit(void)
+static void ps_tableinit(void)
 {
     static const float ipdopd_sin[] = { 0, M_SQRT1_2, 1,  M_SQRT1_2,  0, -M_SQRT1_2, -1, -M_SQRT1_2 };
     static const float ipdopd_cos[] = { 1, M_SQRT1_2, 0, -M_SQRT1_2, -1, -M_SQRT1_2,  0,  M_SQRT1_2 };
@@ -136,7 +136,7 @@ static av_cold void ps_tableinit(void)
                 float pd2_im = ipdopd_sin[pd2];
                 float re_smooth = 0.25f * pd0_re + 0.5f * pd1_re + pd2_re;
                 float im_smooth = 0.25f * pd0_im + 0.5f * pd1_im + pd2_im;
-                float pd_mag = 1 / hypot(im_smooth, re_smooth);
+                float pd_mag = 1 / sqrt(im_smooth * im_smooth + re_smooth * re_smooth);
                 pd_re_smooth[pd0*64+pd1*8+pd2] = re_smooth * pd_mag;
                 pd_im_smooth[pd0*64+pd1*8+pd2] = im_smooth * pd_mag;
             }
@@ -214,4 +214,4 @@ static av_cold void ps_tableinit(void)
 }
 #endif /* CONFIG_HARDCODED_TABLES */
 
-#endif /* AVCODEC_AACPS_TABLEGEN_H */
+#endif /* AACPS_TABLEGEN_H */
