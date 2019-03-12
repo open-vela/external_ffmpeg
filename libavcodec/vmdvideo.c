@@ -1,21 +1,20 @@
 /*
  * Sierra VMD video decoder
- * Copyright (c) 2004 The FFmpeg Project
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -63,7 +62,7 @@ typedef struct VmdVideoContext {
 #define QUEUE_SIZE 0x1000
 #define QUEUE_MASK 0x0FFF
 
-static int lz_unpack(const unsigned char *src, int src_len,
+static void lz_unpack(const unsigned char *src, int src_len,
                       unsigned char *dest, int dest_len)
 {
     unsigned char *d;
@@ -84,9 +83,9 @@ static int lz_unpack(const unsigned char *src, int src_len,
     dataleft = bytestream2_get_le32(&gb);
     memset(queue, 0x20, QUEUE_SIZE);
     if (bytestream2_get_bytes_left(&gb) < 4)
-        return AVERROR_INVALIDDATA;
+        return;
     if (bytestream2_peek_le32(&gb) == 0x56781234) {
-        bytestream2_skipu(&gb, 4);
+        bytestream2_get_le32(&gb);
         qpos = 0x111;
         speclen = 0xF + 3;
     } else {
@@ -97,8 +96,8 @@ static int lz_unpack(const unsigned char *src, int src_len,
     while (dataleft > 0 && bytestream2_get_bytes_left(&gb) > 0) {
         tag = bytestream2_get_byteu(&gb);
         if ((tag == 0xFF) && (dataleft > 8)) {
-            if (d_end - d < 8 || bytestream2_get_bytes_left(&gb) < 8)
-                return AVERROR_INVALIDDATA;
+            if (d + 8 > d_end || bytestream2_get_bytes_left(&gb) < 8)
+                return;
             for (i = 0; i < 8; i++) {
                 queue[qpos++] = *d++ = bytestream2_get_byteu(&gb);
                 qpos &= QUEUE_MASK;
@@ -109,9 +108,9 @@ static int lz_unpack(const unsigned char *src, int src_len,
                 if (dataleft == 0)
                     break;
                 if (tag & 0x01) {
-                    if (d_end - d < 1 || bytestream2_get_bytes_left(&gb) < 1)
-                        return AVERROR_INVALIDDATA;
-                    queue[qpos++] = *d++ = bytestream2_get_byteu(&gb);
+                    if (d + 1 > d_end || bytestream2_get_bytes_left(&gb) < 1)
+                        return;
+                    queue[qpos++] = *d++ = bytestream2_get_byte(&gb);
                     qpos &= QUEUE_MASK;
                     dataleft--;
                 } else {
@@ -121,8 +120,8 @@ static int lz_unpack(const unsigned char *src, int src_len,
                     if (chainlen == speclen) {
                         chainlen = bytestream2_get_byte(&gb) + 0xF + 3;
                     }
-                    if (d_end - d < chainlen)
-                        return AVERROR_INVALIDDATA;
+                    if (d + chainlen > d_end)
+                        return;
                     for (j = 0; j < chainlen; j++) {
                         *d = queue[chainofs++ & QUEUE_MASK];
                         queue[qpos++] = *d++;
@@ -134,10 +133,10 @@ static int lz_unpack(const unsigned char *src, int src_len,
             }
         }
     }
-    return d - dest;
 }
+
 static int rle_unpack(const unsigned char *src, unsigned char *dest,
-                      int src_count, int src_size, int dest_len)
+    int src_count, int src_size, int dest_len)
 {
     unsigned char *pd;
     int i, l, used = 0;
@@ -160,12 +159,12 @@ static int rle_unpack(const unsigned char *src, unsigned char *dest,
         l = bytestream2_get_byteu(&gb);
         if (l & 0x80) {
             l = (l & 0x7F) * 2;
-            if (dest_end - pd < l || bytestream2_get_bytes_left(&gb) < l)
+            if (pd + l > dest_end || bytestream2_get_bytes_left(&gb) < l)
                 return bytestream2_tell(&gb);
-            bytestream2_get_bufferu(&gb, pd, l);
+            bytestream2_get_buffer(&gb, pd, l);
             pd += l;
         } else {
-            if (dest_end - pd < 2*l || bytestream2_get_bytes_left(&gb) < 2)
+            if (pd + l > dest_end || bytestream2_get_bytes_left(&gb) < 2)
                 return bytestream2_tell(&gb);
             run_val = bytestream2_get_ne16(&gb);
             for (i = 0; i < l; i++) {
@@ -201,16 +200,6 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
     frame_y = AV_RL16(&s->buf[8]);
     frame_width = AV_RL16(&s->buf[10]) - frame_x + 1;
     frame_height = AV_RL16(&s->buf[12]) - frame_y + 1;
-
-    if ((frame_width == s->avctx->width && frame_height == s->avctx->height) &&
-        (frame_x || frame_y)) {
-
-        s->x_off = frame_x;
-        s->y_off = frame_y;
-    }
-    frame_x -= s->x_off;
-    frame_y -= s->y_off;
-
     if (frame_x < 0 || frame_width < 0 ||
         frame_x >= s->avctx->width ||
         frame_width > s->avctx->width ||
@@ -229,6 +218,15 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
                frame_x, frame_width);
         return AVERROR_INVALIDDATA;
     }
+
+    if ((frame_width == s->avctx->width && frame_height == s->avctx->height) &&
+        (frame_x || frame_y)) {
+
+        s->x_off = frame_x;
+        s->y_off = frame_y;
+    }
+    frame_x -= s->x_off;
+    frame_y -= s->y_off;
 
     /* if only a certain region will be updated, copy the entire previous
      * frame before the decode */
@@ -250,13 +248,13 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
                 r = bytestream2_get_byteu(&gb) * 4;
                 g = bytestream2_get_byteu(&gb) * 4;
                 b = bytestream2_get_byteu(&gb) * 4;
-                palette32[i] = 0xFFU << 24 | (r << 16) | (g << 8) | (b);
-                palette32[i] |= palette32[i] >> 6 & 0x30303;
+                palette32[i] = (r << 16) | (g << 8) | (b);
             }
         } else {
             av_log(s->avctx, AV_LOG_ERROR, "Incomplete palette\n");
             return AVERROR_INVALIDDATA;
         }
+        s->size -= PALETTE_COUNT * 3 + 2;
     }
 
     if (!s->size)
@@ -267,18 +265,15 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
         return AVERROR_INVALIDDATA;
     meth = bytestream2_get_byteu(&gb);
     if (meth & 0x80) {
-        int size;
         if (!s->unpack_buffer_size) {
             av_log(s->avctx, AV_LOG_ERROR,
                    "Trying to unpack LZ-compressed frame with no LZ buffer\n");
             return AVERROR_INVALIDDATA;
         }
-        size = lz_unpack(gb.buffer, bytestream2_get_bytes_left(&gb),
-                         s->unpack_buffer, s->unpack_buffer_size);
-        if (size < 0)
-            return size;
+        lz_unpack(gb.buffer, bytestream2_get_bytes_left(&gb),
+                  s->unpack_buffer, s->unpack_buffer_size);
         meth &= 0x7F;
-        bytestream2_init(&gb, s->unpack_buffer, size);
+        bytestream2_init(&gb, s->unpack_buffer, s->unpack_buffer_size);
     }
 
     dp = &frame->data[0][frame_y * frame->linesize[0] + frame_x];
@@ -294,7 +289,7 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
                     if (ofs + len > frame_width ||
                         bytestream2_get_bytes_left(&gb) < len)
                         return AVERROR_INVALIDDATA;
-                    bytestream2_get_bufferu(&gb, &dp[ofs], len);
+                    bytestream2_get_buffer(&gb, &dp[ofs], len);
                     ofs += len;
                 } else {
                     /* interframe pixel copy */
@@ -306,7 +301,7 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
             } while (ofs < frame_width);
             if (ofs > frame_width) {
                 av_log(s->avctx, AV_LOG_ERROR,
-                       "offset > width (%d > %d)\n",
+                       "VMD video: offset > width (%d > %d)\n",
                        ofs, frame_width);
                 return AVERROR_INVALIDDATA;
             }
@@ -339,9 +334,6 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
                         ofs += slen;
                         bytestream2_skip(&gb, len);
                     } else {
-                        if (ofs + len > frame_width ||
-                            bytestream2_get_bytes_left(&gb) < len)
-                            return AVERROR_INVALIDDATA;
                         bytestream2_get_buffer(&gb, &dp[ofs], len);
                         ofs += len;
                     }
@@ -355,7 +347,7 @@ static int vmd_decode(VmdVideoContext *s, AVFrame *frame)
             } while (ofs < frame_width);
             if (ofs > frame_width) {
                 av_log(s->avctx, AV_LOG_ERROR,
-                       "offset > width (%d > %d)\n",
+                       "VMD video: offset > width (%d > %d)\n",
                        ofs, frame_width);
                 return AVERROR_INVALIDDATA;
             }
@@ -372,8 +364,7 @@ static av_cold int vmdvideo_decode_end(AVCodecContext *avctx)
     VmdVideoContext *s = avctx->priv_data;
 
     av_frame_free(&s->prev_frame);
-    av_freep(&s->unpack_buffer);
-    s->unpack_buffer_size = 0;
+    av_free(s->unpack_buffer);
 
     return 0;
 }
@@ -393,9 +384,9 @@ static av_cold int vmdvideo_decode_init(AVCodecContext *avctx)
 
     /* make sure the VMD header made it */
     if (s->avctx->extradata_size != VMD_HEADER_SIZE) {
-        av_log(s->avctx, AV_LOG_ERROR, "expected extradata size of %d\n",
+        av_log(s->avctx, AV_LOG_ERROR, "VMD video: expected extradata size of %d\n",
             VMD_HEADER_SIZE);
-        return AVERROR_INVALIDDATA;
+        return -1;
     }
     vmd_header = (unsigned char *)avctx->extradata;
 
@@ -413,8 +404,7 @@ static av_cold int vmdvideo_decode_init(AVCodecContext *avctx)
         r = raw_palette[palette_index++] * 4;
         g = raw_palette[palette_index++] * 4;
         b = raw_palette[palette_index++] * 4;
-        palette32[i] = 0xFFU << 24 | (r << 16) | (g << 8) | (b);
-        palette32[i] |= palette32[i] >> 6 & 0x30303;
+        palette32[i] = (r << 16) | (g << 8) | (b);
     }
 
     s->prev_frame = av_frame_alloc();
@@ -442,8 +432,10 @@ static int vmdvideo_decode_frame(AVCodecContext *avctx,
     if (buf_size < 16)
         return AVERROR_INVALIDDATA;
 
-    if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0) {
+        av_log(s->avctx, AV_LOG_ERROR, "VMD Video: get_buffer() failed\n");
         return ret;
+    }
 
     if ((ret = vmd_decode(s, frame)) < 0)
         return ret;

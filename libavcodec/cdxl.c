@@ -2,41 +2,33 @@
  * CDXL video decoder
  * Copyright (c) 2011-2012 Paul B Mahol
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-/**
- * @file
- * Commodore CDXL video decoder
- * @author Paul B Mahol
- */
-
-#define UNCHECKED_BITSTREAM_READER 1
-
 #include "libavutil/intreadwrite.h"
 #include "libavutil/imgutils.h"
+
 #include "avcodec.h"
-#include "bytestream.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 
 #define BIT_PLANAR   0x00
-#define CHUNKY       0x20
-#define BYTE_PLANAR  0x40
+#define BYTE_PLANAR  0x20
+#define CHUNKY       0x40
 #define BIT_LINE     0x80
 #define BYTE_LINE    0xC0
 
@@ -72,50 +64,37 @@ static void import_palette(CDXLVideoContext *c, uint32_t *new_palette)
         unsigned r   = ((rgb >> 8) & 0xF) * 0x11;
         unsigned g   = ((rgb >> 4) & 0xF) * 0x11;
         unsigned b   =  (rgb       & 0xF) * 0x11;
-        AV_WN32(&new_palette[i], (0xFFU << 24) | (r << 16) | (g << 8) | b);
+        AV_WN32(&new_palette[i], (r << 16) | (g << 8) | b);
     }
 }
 
 static void bitplanar2chunky(CDXLVideoContext *c, int linesize, uint8_t *out)
 {
-    GetBitContext gb;
+    BitstreamContext bc;
     int x, y, plane;
 
-    if (init_get_bits8(&gb, c->video, c->video_size) < 0)
-        return;
+    bitstream_init8(&bc, c->video, c->video_size);
     for (plane = 0; plane < c->bpp; plane++) {
         for (y = 0; y < c->avctx->height; y++) {
             for (x = 0; x < c->avctx->width; x++)
-                out[linesize * y + x] |= get_bits1(&gb) << plane;
-            skip_bits(&gb, c->padded_bits);
+                out[linesize * y + x] |= bitstream_read_bit(&bc) << plane;
+            bitstream_skip(&bc, c->padded_bits);
         }
     }
 }
 
 static void bitline2chunky(CDXLVideoContext *c, int linesize, uint8_t *out)
 {
-    GetBitContext  gb;
+    BitstreamContext bc;
     int x, y, plane;
 
-    if (init_get_bits8(&gb, c->video, c->video_size) < 0)
-        return;
+    bitstream_init8(&bc, c->video, c->video_size);
     for (y = 0; y < c->avctx->height; y++) {
         for (plane = 0; plane < c->bpp; plane++) {
             for (x = 0; x < c->avctx->width; x++)
-                out[linesize * y + x] |= get_bits1(&gb) << plane;
-            skip_bits(&gb, c->padded_bits);
+                out[linesize * y + x] |= bitstream_read_bit(&bc) << plane;
+            bitstream_skip(&bc, c->padded_bits);
         }
-    }
-}
-
-static void chunky2chunky(CDXLVideoContext *c, int linesize, uint8_t *out)
-{
-    GetByteContext gb;
-    int y;
-
-    bytestream2_init(&gb, c->video, c->video_size);
-    for (y = 0; y < c->avctx->height; y++) {
-        bytestream2_get_buffer(&gb, out + linesize * y, c->avctx->width * 3);
     }
 }
 
@@ -130,9 +109,6 @@ static void import_format(CDXLVideoContext *c, int linesize, uint8_t *out)
     case BIT_LINE:
         bitline2chunky(c, linesize, out);
         break;
-    case CHUNKY:
-        chunky2chunky(c, linesize, out);
-        break;
     }
 }
 
@@ -140,13 +116,7 @@ static void cdxl_decode_rgb(CDXLVideoContext *c, AVFrame *frame)
 {
     uint32_t *new_palette = (uint32_t *)frame->data[1];
 
-    memset(frame->data[1], 0, AVPALETTE_SIZE);
     import_palette(c, new_palette);
-    import_format(c, frame->linesize[0], frame->data[0]);
-}
-
-static void cdxl_decode_raw(CDXLVideoContext *c, AVFrame *frame)
-{
     import_format(c, frame->linesize[0], frame->data[0]);
 }
 
@@ -262,7 +232,7 @@ static int cdxl_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     if (c->bpp < 1)
         return AVERROR_INVALIDDATA;
-    if (c->format != BIT_PLANAR && c->format != BIT_LINE && c->format != CHUNKY) {
+    if (c->format != BIT_PLANAR && c->format != BIT_LINE) {
         avpriv_request_sample(avctx, "Pixel format 0x%0x", c->format);
         return AVERROR_PATCHWELCOME;
     }
@@ -270,30 +240,26 @@ static int cdxl_decode_frame(AVCodecContext *avctx, void *data,
     if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
         return ret;
 
-    if (c->format == CHUNKY)
-        aligned_width = avctx->width;
-    else
-        aligned_width = FFALIGN(c->avctx->width, 16);
+    aligned_width = FFALIGN(c->avctx->width, 16);
     c->padded_bits  = aligned_width - c->avctx->width;
-    if (c->video_size < aligned_width * avctx->height * (int64_t)c->bpp / 8)
+    if (c->video_size < aligned_width * avctx->height * c->bpp / 8)
         return AVERROR_INVALIDDATA;
-    if (!encoding && c->palette_size && c->bpp <= 8 && c->format != CHUNKY) {
+    if (!encoding && c->palette_size && c->bpp <= 8) {
         avctx->pix_fmt = AV_PIX_FMT_PAL8;
-    } else if (encoding == 1 && (c->bpp == 6 || c->bpp == 8) && c->format != CHUNKY) {
+    } else if (encoding == 1 && (c->bpp == 6 || c->bpp == 8)) {
         if (c->palette_size != (1 << (c->bpp - 1)))
             return AVERROR_INVALIDDATA;
         avctx->pix_fmt = AV_PIX_FMT_BGR24;
-    } else if (!encoding && c->bpp == 24 && c->format == CHUNKY &&
-               !c->palette_size) {
-        avctx->pix_fmt = AV_PIX_FMT_RGB24;
     } else {
-        avpriv_request_sample(avctx, "Encoding %d, bpp %d and format 0x%x",
-                              encoding, c->bpp, c->format);
+        avpriv_request_sample(avctx, "Encoding %d and bpp %d",
+                              encoding, c->bpp);
         return AVERROR_PATCHWELCOME;
     }
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
     p->pict_type = AV_PICTURE_TYPE_I;
 
     if (encoding) {
@@ -305,10 +271,8 @@ static int cdxl_decode_frame(AVCodecContext *avctx, void *data,
             cdxl_decode_ham8(c, p);
         else
             cdxl_decode_ham6(c, p);
-    } else if (avctx->pix_fmt == AV_PIX_FMT_PAL8) {
-        cdxl_decode_rgb(c, p);
     } else {
-        cdxl_decode_raw(c, p);
+        cdxl_decode_rgb(c, p);
     }
     *got_frame = 1;
 
@@ -319,7 +283,7 @@ static av_cold int cdxl_decode_end(AVCodecContext *avctx)
 {
     CDXLVideoContext *c = avctx->priv_data;
 
-    av_freep(&c->new_video);
+    av_free(c->new_video);
 
     return 0;
 }

@@ -2,20 +2,20 @@
  * Microsoft Screen 1 (aka Windows Media Video V7 Screen) decoder
  * Copyright (c) 2012 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,7 @@ typedef struct MSS1Context {
     SliceContext   sc;
 } MSS1Context;
 
-static void arith_normalise(ArithCoder *c)
+static void arith1_normalise(ArithCoder *c)
 {
     for (;;) {
         if (c->high >= 0x8000) {
@@ -60,7 +60,7 @@ static void arith_normalise(ArithCoder *c)
     }
 }
 
-ARITH_GET_BIT(arith)
+ARITH_GET_BIT(1)
 
 static int arith_get_bits(ArithCoder *c, int bits)
 {
@@ -71,7 +71,7 @@ static int arith_get_bits(ArithCoder *c, int bits)
     c->high   = ((prob + range) >> bits) + c->low - 1;
     c->low   += prob >> bits;
 
-    arith_normalise(c);
+    arith1_normalise(c);
 
     return val;
 }
@@ -85,12 +85,12 @@ static int arith_get_number(ArithCoder *c, int mod_val)
     c->high   = (prob + range) / mod_val + c->low - 1;
     c->low   += prob / mod_val;
 
-    arith_normalise(c);
+    arith1_normalise(c);
 
     return val;
 }
 
-static int arith_get_prob(ArithCoder *c, int16_t *probs)
+static int arith1_get_prob(ArithCoder *c, int16_t *probs)
 {
     int range = c->high - c->low + 1;
     int val   = ((c->value - c->low + 1) * probs[0] - 1) / range;
@@ -105,7 +105,7 @@ static int arith_get_prob(ArithCoder *c, int16_t *probs)
     return sym;
 }
 
-ARITH_GET_MODEL_SYM(arith)
+ARITH_GET_MODEL_SYM(1)
 
 static void arith_init(ArithCoder *c, GetBitContext *gb)
 {
@@ -113,7 +113,7 @@ static void arith_init(ArithCoder *c, GetBitContext *gb)
     c->high          = 0xFFFF;
     c->value         = get_bits(gb, 16);
     c->gbc.gb        = gb;
-    c->get_model_sym = arith_get_model_sym;
+    c->get_model_sym = arith1_get_model_sym;
     c->get_number    = arith_get_number;
 }
 
@@ -130,7 +130,7 @@ static int decode_pal(MSS12Context *ctx, ArithCoder *acoder)
         r = arith_get_bits(acoder, 8);
         g = arith_get_bits(acoder, 8);
         b = arith_get_bits(acoder, 8);
-        *pal++ = (0xFFU << 24) | (r << 16) | (g << 8) | b;
+        *pal++ = (r << 16) | (g << 8) | b;
     }
 
     return !!ncol;
@@ -139,6 +139,8 @@ static int decode_pal(MSS12Context *ctx, ArithCoder *acoder)
 static int mss1_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                              AVPacket *avpkt)
 {
+    const uint8_t *buf = avpkt->data;
+    int buf_size = avpkt->size;
     MSS1Context *ctx = avctx->priv_data;
     MSS12Context *c = &ctx->ctx;
     GetBitContext gb;
@@ -146,17 +148,17 @@ static int mss1_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     int pal_changed = 0;
     int ret;
 
-    if ((ret = init_get_bits8(&gb, avpkt->data, avpkt->size)) < 0)
-        return ret;
-
+    init_get_bits(&gb, buf, buf_size * 8);
     arith_init(&acoder, &gb);
 
-    if ((ret = ff_reget_buffer(avctx, ctx->pic)) < 0)
+    if ((ret = ff_reget_buffer(avctx, ctx->pic)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     c->pal_pic    =  ctx->pic->data[0] + ctx->pic->linesize[0] * (avctx->height - 1);
     c->pal_stride = -ctx->pic->linesize[0];
-    c->keyframe   = !arith_get_bit(&acoder);
+    c->keyframe   = !arith1_get_bit(&acoder);
     if (c->keyframe) {
         c->corrupted = 0;
         ff_mss12_slicecontext_reset(&ctx->sc);
@@ -182,7 +184,7 @@ static int mss1_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     *got_frame      = 1;
 
     /* always report that the buffer was completely consumed */
-    return avpkt->size;
+    return buf_size;
 }
 
 static av_cold int mss1_decode_init(AVCodecContext *avctx)
@@ -197,8 +199,6 @@ static av_cold int mss1_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     ret = ff_mss12_decode_init(&c->ctx, 0, &c->sc, NULL);
-    if (ret < 0)
-        av_frame_free(&c->pic);
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 

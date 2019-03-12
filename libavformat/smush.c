@@ -2,20 +2,20 @@
  * LucasArts Smush demuxer
  * Copyright (c) 2006 Cyril Zorin
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,7 +31,7 @@ typedef struct SMUSHContext {
     int video_stream_index;
 } SMUSHContext;
 
-static int smush_read_probe(const AVProbeData *p)
+static int smush_read_probe(AVProbeData *p)
 {
     if (((AV_RL32(p->buf)     == MKTAG('S', 'A', 'N', 'M') &&
           AV_RL32(p->buf + 8) == MKTAG('S', 'H', 'D', 'R')) ||
@@ -102,7 +102,7 @@ static int smush_read_header(AVFormatContext *ctx)
         while (!got_audio && ((read + 8) < size)) {
             uint32_t sig, chunk_size;
 
-            if (avio_feof(pb))
+            if (pb->eof_reached)
                 return AVERROR_EOF;
 
             sig        = avio_rb32(pb);
@@ -157,7 +157,11 @@ static int smush_read_header(AVFormatContext *ctx)
     vst->codecpar->height     = height;
 
     if (!smush->version) {
-        if (ff_alloc_extradata(vst->codecpar, 1024 + 2))
+        av_free(vst->codecpar->extradata);
+        vst->codecpar->extradata_size = 1024 + 2;
+        vst->codecpar->extradata = av_malloc(vst->codecpar->extradata_size +
+                                             AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!vst->codecpar->extradata)
             return AVERROR(ENOMEM);
 
         AV_WL16(vst->codecpar->extradata, subversion);
@@ -195,7 +199,7 @@ static int smush_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     while (!done) {
         uint32_t sig, size;
 
-        if (avio_feof(pb))
+        if (pb->eof_reached)
             return AVERROR_EOF;
 
         sig  = avio_rb32(pb);

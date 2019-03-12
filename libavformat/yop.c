@@ -5,20 +5,20 @@
  * derived from the code by
  * Copyright (C) 2009 Thomas P. Higdon <thomas.p.higdon@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,18 +36,13 @@ typedef struct yop_dec_context {
     int palette_size;
 } YopDecContext;
 
-static int yop_probe(const AVProbeData *probe_packet)
+static int yop_probe(AVProbeData *probe_packet)
 {
     if (AV_RB16(probe_packet->buf) == AV_RB16("YO")  &&
-        probe_packet->buf[2]<10                      &&
-        probe_packet->buf[3]<10                      &&
         probe_packet->buf[6]                         &&
         probe_packet->buf[7]                         &&
         !(probe_packet->buf[8] & 1)                  &&
-        !(probe_packet->buf[10] & 1)                 &&
-        AV_RL16(probe_packet->buf + 12 + 6) >= 920    &&
-        AV_RL16(probe_packet->buf + 12 + 6) < probe_packet->buf[12] * 3 + 4 + probe_packet->buf[7] * 2048
-    )
+        !(probe_packet->buf[10] & 1))
         return AVPROBE_SCORE_MAX * 3 / 4;
 
     return 0;
@@ -65,8 +60,14 @@ static int yop_read_header(AVFormatContext *s)
 
     audio_stream = avformat_new_stream(s, NULL);
     video_stream = avformat_new_stream(s, NULL);
-    if (!audio_stream || !video_stream)
+
+    // Extra data that will be passed to the decoder
+
+    video_stream->codecpar->extradata = av_mallocz(8 + AV_INPUT_BUFFER_PADDING_SIZE);
+
+    if (!video_stream->codecpar->extradata)
         return AVERROR(ENOMEM);
+    video_stream->codecpar->extradata_size = 8;
 
     // Audio
     audio_par                 = audio_stream->codecpar;
@@ -90,14 +91,12 @@ static int yop_read_header(AVFormatContext *s)
 
     video_stream->sample_aspect_ratio = (AVRational){1, 2};
 
-    ret = ff_get_extradata(s, video_par, pb, 8);
-    if (ret < 0)
-        return ret;
+    ret = avio_read(pb, video_par->extradata, 8);
+    if (ret < 8)
+        return ret < 0 ? ret : AVERROR_EOF;
 
     yop->palette_size       = video_par->extradata[0] * 3 + 4;
     yop->audio_block_length = AV_RL16(video_par->extradata + 6);
-
-    video_par->bit_rate     = 8 * (yop->frame_size - yop->audio_block_length) * frame_rate;
 
     // 1840 samples per frame, 1 nibble per sample; hence 1840/2 = 920
     if (yop->audio_block_length < 920 ||
