@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... direct mb/block decoding
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,22 +39,12 @@ static int get_scale_factor(H264SliceContext *sl,
                             int poc, int poc1, int i)
 {
     int poc0 = sl->ref_list[0][i].poc;
-    int64_t pocdiff = poc1 - (int64_t)poc0;
-    int td = av_clip_int8(pocdiff);
-
-    if (pocdiff != (int)pocdiff)
-        avpriv_request_sample(sl->h264->avctx, "pocdiff overflow\n");
-
+    int td = av_clip_int8(poc1 - poc0);
     if (td == 0 || sl->ref_list[0][i].parent->long_ref) {
         return 256;
     } else {
-        int64_t pocdiff0 = poc - (int64_t)poc0;
-        int tb = av_clip_int8(pocdiff0);
+        int tb = av_clip_int8(poc - poc0);
         int tx = (16384 + (FFABS(td) >> 1)) / td;
-
-        if (pocdiff0 != (int)pocdiff0)
-            av_log(sl->h264->avctx, AV_LOG_DEBUG, "pocdiff0 overflow\n");
-
         return av_clip_intp2((tb * tx + 32) >> 6, 10);
     }
 }
@@ -138,11 +128,7 @@ void ff_h264_direct_ref_list_init(const H264Context *const h, H264SliceContext *
         memcpy(cur->ref_poc[1],   cur->ref_poc[0],   sizeof(cur->ref_poc[0]));
     }
 
-    if (h->current_slice == 0) {
-        cur->mbaff = FRAME_MBAFF(h);
-    } else {
-        av_assert0(cur->mbaff == FRAME_MBAFF(h));
-    }
+    cur->mbaff = FRAME_MBAFF(h);
 
     sl->col_fieldoff = 0;
 
@@ -152,12 +138,8 @@ void ff_h264_direct_ref_list_init(const H264Context *const h, H264SliceContext *
     if (h->picture_structure == PICT_FRAME) {
         int cur_poc  = h->cur_pic_ptr->poc;
         int *col_poc = sl->ref_list[1][0].parent->field_poc;
-        if (col_poc[0] == INT_MAX && col_poc[1] == INT_MAX) {
-            av_log(h->avctx, AV_LOG_ERROR, "co located POCs unavailable\n");
-            sl->col_parity = 1;
-        } else
-            sl->col_parity = (FFABS(col_poc[0] - (int64_t)cur_poc) >=
-                              FFABS(col_poc[1] - (int64_t)cur_poc));
+        sl->col_parity = (FFABS(col_poc[0] - cur_poc) >=
+                          FFABS(col_poc[1] - cur_poc));
         ref1sidx =
         sidx     = sl->col_parity;
     // FL -> FL & differ parity
@@ -256,7 +238,6 @@ static void pred_spatial_direct_motion(const H264Context *const h, H264SliceCont
                 else
                     mv[list] = AV_RN32A(C);
             }
-            av_assert2(ref[list] < (sl->ref_count[list] << !!FRAME_MBAFF(h)));
         } else {
             int mask = ~(MB_TYPE_L0 << (2 * list));
             mv[list]  = 0;
@@ -342,8 +323,8 @@ single_col:
 
     await_reference_mb_row(h, &sl->ref_list[1][0], mb_y);
 
-    l1mv0  = (void*)&sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
-    l1mv1  = (void*)&sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
+    l1mv0  = &sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
+    l1mv1  = &sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
     l1ref0 = &sl->ref_list[1][0].parent->ref_index[0][4 * mb_xy];
     l1ref1 = &sl->ref_list[1][0].parent->ref_index[1][4 * mb_xy];
     if (!b8_stride) {
@@ -566,8 +547,8 @@ single_col:
 
     await_reference_mb_row(h, &sl->ref_list[1][0], mb_y);
 
-    l1mv0  = (void*)&sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
-    l1mv1  = (void*)&sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
+    l1mv0  = &sl->ref_list[1][0].parent->motion_val[0][h->mb2b_xy[mb_xy]];
+    l1mv1  = &sl->ref_list[1][0].parent->motion_val[1][h->mb2b_xy[mb_xy]];
     l1ref0 = &sl->ref_list[1][0].parent->ref_index[0][4 * mb_xy];
     l1ref1 = &sl->ref_list[1][0].parent->ref_index[1][4 * mb_xy];
     if (!b8_stride) {
@@ -628,7 +609,7 @@ single_col:
 
                 {
                     const int16_t *mv_col = l1mv[x8 * 3 + y8 * b4_stride];
-                    int my_col            = (mv_col[1] * (1 << y_shift)) / 2;
+                    int my_col            = (mv_col[1] << y_shift) / 2;
                     int mx                = (scale * mv_col[0] + 128) >> 8;
                     int my                = (scale * my_col    + 128) >> 8;
                     fill_rectangle(&sl->mv_cache[0][scan8[i8 * 4]], 2, 2, 8,

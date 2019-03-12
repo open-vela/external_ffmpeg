@@ -2,20 +2,20 @@
  * RL2 Format Demuxer
  * Copyright (c) 2008 Sascha Sommer (saschasommer@freenet.de)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -55,7 +55,7 @@ typedef struct Rl2DemuxContext {
  * @param p probe buffer
  * @return 0 when the probe buffer does not contain rl2 data, > 0 otherwise
  */
-static int rl2_probe(const AVProbeData *p)
+static int rl2_probe(AVProbeData *p)
 {
 
     if(AV_RB32(&p->buf[0]) != FORM_TAG)
@@ -109,6 +109,10 @@ static av_cold int rl2_read_header(AVFormatContext *s)
     rate = avio_rl16(pb);
     channels = avio_rl16(pb);
     def_sound_size = avio_rl16(pb);
+    if (!channels || channels > 42) {
+        av_log(s, AV_LOG_ERROR, "Invalid number of channels: %d\n", channels);
+        return AVERROR_INVALIDDATA;
+    }
 
     /** setup video stream */
     st = avformat_new_stream(s, NULL);
@@ -127,16 +131,17 @@ static av_cold int rl2_read_header(AVFormatContext *s)
     if(signature == RLV3_TAG && back_size > 0)
         st->codecpar->extradata_size += back_size;
 
-    if(ff_get_extradata(s, st->codecpar, pb, st->codecpar->extradata_size) < 0)
+    st->codecpar->extradata = av_mallocz(st->codecpar->extradata_size +
+                                         AV_INPUT_BUFFER_PADDING_SIZE);
+    if(!st->codecpar->extradata)
         return AVERROR(ENOMEM);
+
+    if(avio_read(pb,st->codecpar->extradata,st->codecpar->extradata_size) !=
+       st->codecpar->extradata_size)
+        return AVERROR(EIO);
 
     /** setup audio stream if present */
     if(sound_rate){
-        if (!channels || channels > 42) {
-            av_log(s, AV_LOG_ERROR, "Invalid number of channels: %d\n", channels);
-            return AVERROR_INVALIDDATA;
-        }
-
         pts_num = def_sound_size;
         pts_den = rate;
 
@@ -170,21 +175,12 @@ static av_cold int rl2_read_header(AVFormatContext *s)
     }
 
     /** read offset and size tables */
-    for(i=0; i < frame_count;i++) {
-        if (avio_feof(pb))
-            return AVERROR_INVALIDDATA;
+    for(i=0; i < frame_count;i++)
         chunk_size[i] = avio_rl32(pb);
-    }
-    for(i=0; i < frame_count;i++) {
-        if (avio_feof(pb))
-            return AVERROR_INVALIDDATA;
+    for(i=0; i < frame_count;i++)
         chunk_offset[i] = avio_rl32(pb);
-    }
-    for(i=0; i < frame_count;i++) {
-        if (avio_feof(pb))
-            return AVERROR_INVALIDDATA;
+    for(i=0; i < frame_count;i++)
         audio_size[i] = avio_rl32(pb) & 0xFFFF;
-    }
 
     /** build the sample index */
     for(i=0;i<frame_count;i++){
@@ -239,7 +235,7 @@ static int rl2_read_packet(AVFormatContext *s,
     }
 
     if(stream_id == -1)
-        return AVERROR_EOF;
+        return AVERROR(EIO);
 
     ++rl2->index_pos[stream_id];
 

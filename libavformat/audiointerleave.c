@@ -3,20 +3,20 @@
  *
  * Copyright (c) 2009 Baptiste Coudurier <baptiste dot coudurier at gmail dot com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,7 +34,7 @@ void ff_audio_interleave_close(AVFormatContext *s)
         AudioInterleaveContext *aic = st->priv_data;
 
         if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-            av_fifo_freep(&aic->fifo);
+            av_fifo_free(aic->fifo);
     }
 }
 
@@ -45,12 +45,8 @@ int ff_audio_interleave_init(AVFormatContext *s,
     int i;
 
     if (!samples_per_frame)
-        return AVERROR(EINVAL);
+        return -1;
 
-    if (!time_base.num) {
-        av_log(s, AV_LOG_ERROR, "timebase not set for audio interleave\n");
-        return AVERROR(EINVAL);
-    }
     for (i = 0; i < s->nb_streams; i++) {
         AVStream *st = s->streams[i];
         AudioInterleaveContext *aic = st->priv_data;
@@ -60,15 +56,14 @@ int ff_audio_interleave_init(AVFormatContext *s,
                                 av_get_bits_per_sample(st->codecpar->codec_id)) / 8;
             if (!aic->sample_size) {
                 av_log(s, AV_LOG_ERROR, "could not compute sample size\n");
-                return AVERROR(EINVAL);
+                return -1;
             }
             aic->samples_per_frame = samples_per_frame;
             aic->samples = aic->samples_per_frame;
             aic->time_base = time_base;
 
             aic->fifo_size = 100* *aic->samples;
-            if (!(aic->fifo= av_fifo_alloc_array(100, *aic->samples)))
-                return AVERROR(ENOMEM);
+            aic->fifo= av_fifo_alloc(100 * *aic->samples);
         }
     }
 
@@ -81,18 +76,14 @@ static int interleave_new_audio_packet(AVFormatContext *s, AVPacket *pkt,
     AVStream *st = s->streams[stream_index];
     AudioInterleaveContext *aic = st->priv_data;
     int ret;
-    int frame_size = *aic->samples * aic->sample_size;
-    int size = FFMIN(av_fifo_size(aic->fifo), frame_size);
+    int size = FFMIN(av_fifo_size(aic->fifo), *aic->samples * aic->sample_size);
     if (!size || (!flush && size == av_fifo_size(aic->fifo)))
         return 0;
 
-    ret = av_new_packet(pkt, frame_size);
+    ret = av_new_packet(pkt, size);
     if (ret < 0)
         return ret;
     av_fifo_generic_read(aic->fifo, pkt->data, size, NULL);
-
-    if (size < pkt->size)
-        memset(pkt->data + size, 0, pkt->size - size);
 
     pkt->dts = pkt->pts = aic->dts;
     pkt->duration = av_rescale_q(*aic->samples, st->time_base, aic->time_base);
@@ -103,7 +94,7 @@ static int interleave_new_audio_packet(AVFormatContext *s, AVPacket *pkt,
     if (!*aic->samples)
         aic->samples = aic->samples_per_frame;
 
-    return pkt->size;
+    return size;
 }
 
 int ff_audio_rechunk_interleave(AVFormatContext *s, AVPacket *out, AVPacket *pkt, int flush,
@@ -119,7 +110,7 @@ int ff_audio_rechunk_interleave(AVFormatContext *s, AVPacket *out, AVPacket *pkt
             unsigned new_size = av_fifo_size(aic->fifo) + pkt->size;
             if (new_size > aic->fifo_size) {
                 if (av_fifo_realloc2(aic->fifo, new_size) < 0)
-                    return AVERROR(ENOMEM);
+                    return -1;
                 aic->fifo_size = new_size;
             }
             av_fifo_generic_write(aic->fifo, pkt->data, pkt->size, NULL);
@@ -137,12 +128,9 @@ int ff_audio_rechunk_interleave(AVFormatContext *s, AVPacket *out, AVPacket *pkt
         AVStream *st = s->streams[i];
         if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
             AVPacket new_pkt = { 0 };
-            while ((ret = interleave_new_audio_packet(s, &new_pkt, i, flush)) > 0) {
+            while (interleave_new_audio_packet(s, &new_pkt, i, flush))
                 if ((ret = ff_interleave_add_packet(s, &new_pkt, compare_ts)) < 0)
                     return ret;
-            }
-            if (ret < 0)
-                return ret;
         }
     }
 

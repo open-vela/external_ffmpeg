@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2007 Luca Barbato <lu_zero@gentoo.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,9 +29,9 @@
 
 #include "libavcodec/svq1enc.h"
 
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
 static int ssd_int8_vs_int16_altivec(const int8_t *pix1, const int16_t *pix2,
-                                     intptr_t size)
+                                     int size)
 {
     int i, size16 = size >> 4;
     vector signed char vpix1;
@@ -69,14 +69,14 @@ static int ssd_int8_vs_int16_altivec(const int8_t *pix1, const int16_t *pix2,
 
     return u.score[3];
 }
-#endif /* HAVE_ALTIVEC */
+#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
 
 av_cold void ff_svq1enc_init_ppc(SVQ1EncContext *c)
 {
-#if HAVE_ALTIVEC
+#if HAVE_ALTIVEC && HAVE_BIGENDIAN
     if (!PPC_ALTIVEC(av_get_cpu_flags()))
         return;
 
     c->ssd_int8_vs_int16 = ssd_int8_vs_int16_altivec;
-#endif /* HAVE_ALTIVEC */
+#endif /* HAVE_ALTIVEC && HAVE_BIGENDIAN */
 }

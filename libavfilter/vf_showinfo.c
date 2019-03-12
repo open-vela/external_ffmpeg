@@ -1,19 +1,19 @@
 /*
  * Copyright (c) 2011 Stefano Sabatini
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,31 +28,17 @@
 #include "libavutil/display.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
-#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/spherical.h"
 #include "libavutil/stereo3d.h"
-#include "libavutil/timestamp.h"
-#include "libavutil/timecode.h"
 
 #include "avfilter.h"
 #include "internal.h"
 #include "video.h"
 
 typedef struct ShowInfoContext {
-    const AVClass *class;
-    int calculate_checksums;
+    unsigned int frame;
 } ShowInfoContext;
-
-#define OFFSET(x) offsetof(ShowInfoContext, x)
-#define VF AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
-
-static const AVOption showinfo_options[] = {
-    { "checksum", "calculate checksums", OFFSET(calculate_checksums), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, VF },
-    { NULL }
-};
-
-AVFILTER_DEFINE_CLASS(showinfo);
 
 static void dump_spherical(AVFilterContext *ctx, AVFrame *frame, AVFrameSideData *sd)
 {
@@ -85,9 +71,7 @@ static void dump_spherical(AVFilterContext *ctx, AVFrame *frame, AVFrameSideData
         size_t l, t, r, b;
         av_spherical_tile_bounds(spherical, frame->width, frame->height,
                                  &l, &t, &r, &b);
-        av_log(ctx, AV_LOG_INFO,
-               "[%"SIZE_SPECIFIER", %"SIZE_SPECIFIER", %"SIZE_SPECIFIER", %"SIZE_SPECIFIER"] ",
-               l, t, r, b);
+        av_log(ctx, AV_LOG_INFO, "[%zu, %zu, %zu, %zu] ", l, t, r, b);
     } else if (spherical->projection == AV_SPHERICAL_CUBEMAP) {
         av_log(ctx, AV_LOG_INFO, "[pad %"PRIu32"] ", spherical->padding);
     }
@@ -111,107 +95,42 @@ static void dump_stereo3d(AVFilterContext *ctx, AVFrameSideData *sd)
         av_log(ctx, AV_LOG_INFO, " (inverted)");
 }
 
-static void dump_color_property(AVFilterContext *ctx, AVFrame *frame)
-{
-    const char *color_range_str     = av_color_range_name(frame->color_range);
-    const char *colorspace_str      = av_color_space_name(frame->colorspace);
-    const char *color_primaries_str = av_color_primaries_name(frame->color_primaries);
-    const char *color_trc_str       = av_color_transfer_name(frame->color_trc);
-
-    if (!color_range_str || frame->color_range == AVCOL_RANGE_UNSPECIFIED) {
-        av_log(ctx, AV_LOG_INFO, "color_range:unknown");
-    } else {
-        av_log(ctx, AV_LOG_INFO, "color_range:%s", color_range_str);
-    }
-
-    if (!colorspace_str || frame->colorspace == AVCOL_SPC_UNSPECIFIED) {
-        av_log(ctx, AV_LOG_INFO, " color_space:unknown");
-    } else {
-        av_log(ctx, AV_LOG_INFO, " color_space:%s", colorspace_str);
-    }
-
-    if (!color_primaries_str || frame->color_primaries == AVCOL_PRI_UNSPECIFIED) {
-        av_log(ctx, AV_LOG_INFO, " color_primaries:unknown");
-    } else {
-        av_log(ctx, AV_LOG_INFO, " color_primaries:%s", color_primaries_str);
-    }
-
-    if (!color_trc_str || frame->color_trc == AVCOL_TRC_UNSPECIFIED) {
-        av_log(ctx, AV_LOG_INFO, " color_trc:unknown");
-    } else {
-        av_log(ctx, AV_LOG_INFO, " color_trc:%s", color_trc_str);
-    }
-    av_log(ctx, AV_LOG_INFO, "\n");
-}
-
-static void update_sample_stats(const uint8_t *src, int len, int64_t *sum, int64_t *sum2)
-{
-    int i;
-
-    for (i = 0; i < len; i++) {
-        *sum += src[i];
-        *sum2 += src[i] * src[i];
-    }
-}
-
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
-    ShowInfoContext *s = ctx->priv;
+    ShowInfoContext *showinfo = ctx->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
     uint32_t plane_checksum[4] = {0}, checksum = 0;
-    int64_t sum[4] = {0}, sum2[4] = {0};
-    int32_t pixelcount[4] = {0};
     int i, plane, vsub = desc->log2_chroma_h;
 
-    for (plane = 0; plane < 4 && s->calculate_checksums && frame->data[plane] && frame->linesize[plane]; plane++) {
+    for (plane = 0; frame->data[plane] && plane < 4; plane++) {
         uint8_t *data = frame->data[plane];
-        int h = plane == 1 || plane == 2 ? AV_CEIL_RSHIFT(inlink->h, vsub) : inlink->h;
+        int h = plane == 1 || plane == 2 ? inlink->h >> vsub : inlink->h;
         int linesize = av_image_get_linesize(frame->format, frame->width, plane);
-
         if (linesize < 0)
             return linesize;
 
         for (i = 0; i < h; i++) {
             plane_checksum[plane] = av_adler32_update(plane_checksum[plane], data, linesize);
             checksum = av_adler32_update(checksum, data, linesize);
-
-            update_sample_stats(data, linesize, sum+plane, sum2+plane);
-            pixelcount[plane] += linesize;
             data += frame->linesize[plane];
         }
     }
 
     av_log(ctx, AV_LOG_INFO,
-           "n:%4"PRId64" pts:%7s pts_time:%-7s pos:%9"PRId64" "
-           "fmt:%s sar:%d/%d s:%dx%d i:%c iskey:%d type:%c ",
-           inlink->frame_count_out,
-           av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base), frame->pkt_pos,
+           "n:%d pts:%"PRId64" pts_time:%f "
+           "fmt:%s sar:%d/%d s:%dx%d i:%c iskey:%d type:%c "
+           "checksum:%"PRIu32" plane_checksum:[%"PRIu32" %"PRIu32" %"PRIu32" %"PRIu32"]\n",
+           showinfo->frame,
+           frame->pts, frame->pts * av_q2d(inlink->time_base),
            desc->name,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
            frame->width, frame->height,
            !frame->interlaced_frame ? 'P' :         /* Progressive  */
            frame->top_field_first   ? 'T' : 'B',    /* Top / Bottom */
            frame->key_frame,
-           av_get_picture_type_char(frame->pict_type));
-
-    if (s->calculate_checksums) {
-        av_log(ctx, AV_LOG_INFO,
-               "checksum:%08"PRIX32" plane_checksum:[%08"PRIX32,
-               checksum, plane_checksum[0]);
-
-        for (plane = 1; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++)
-            av_log(ctx, AV_LOG_INFO, " %08"PRIX32, plane_checksum[plane]);
-        av_log(ctx, AV_LOG_INFO, "] mean:[");
-        for (plane = 0; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++)
-            av_log(ctx, AV_LOG_INFO, "%"PRId64" ", (sum[plane] + pixelcount[plane]/2) / pixelcount[plane]);
-        av_log(ctx, AV_LOG_INFO, "\b] stdev:[");
-        for (plane = 0; plane < 4 && frame->data[plane] && frame->linesize[plane]; plane++)
-            av_log(ctx, AV_LOG_INFO, "%3.1f ",
-                   sqrt((sum2[plane] - sum[plane]*(double)sum[plane]/pixelcount[plane])/pixelcount[plane]));
-        av_log(ctx, AV_LOG_INFO, "\b]");
-    }
-    av_log(ctx, AV_LOG_INFO, "\n");
+           av_get_picture_type_char(frame->pict_type),
+           checksum, plane_checksum[0], plane_checksum[1], plane_checksum[2], plane_checksum[3]);
 
     for (i = 0; i < frame->nb_side_data; i++) {
         AVFrameSideData *sd = frame->side_data[i];
@@ -230,15 +149,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         case AV_FRAME_DATA_STEREO3D:
             dump_stereo3d(ctx, sd);
             break;
-        case AV_FRAME_DATA_S12M_TIMECODE: {
-            uint32_t *tc = (uint32_t*)sd->data;
-            for (int j = 1; j <= tc[0]; j++) {
-                char tcbuf[AV_TIMECODE_STR_SIZE];
-                av_timecode_make_smpte_tc_string(tcbuf, tc[j], 0);
-                av_log(ctx, AV_LOG_INFO, "timecode - %s%s", tcbuf, j != tc[0] ? ", " : "");
-            }
-            break;
-        }
         case AV_FRAME_DATA_DISPLAYMATRIX:
             av_log(ctx, AV_LOG_INFO, "displaymatrix: rotation of %.2f degrees",
                    av_display_rotation_get((int32_t *)sd->data));
@@ -255,8 +165,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         av_log(ctx, AV_LOG_INFO, "\n");
     }
 
-    dump_color_property(ctx, frame);
-
+    showinfo->frame++;
     return ff_filter_frame(inlink->dst->outputs[0], frame);
 }
 
@@ -287,6 +196,7 @@ static const AVFilterPad avfilter_vf_showinfo_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
         .filter_frame     = filter_frame,
         .config_props     = config_props_in,
     },
@@ -305,8 +215,10 @@ static const AVFilterPad avfilter_vf_showinfo_outputs[] = {
 AVFilter ff_vf_showinfo = {
     .name        = "showinfo",
     .description = NULL_IF_CONFIG_SMALL("Show textual information for each video frame."),
-    .inputs      = avfilter_vf_showinfo_inputs,
-    .outputs     = avfilter_vf_showinfo_outputs,
-    .priv_size   = sizeof(ShowInfoContext),
-    .priv_class  = &showinfo_class,
+
+    .priv_size = sizeof(ShowInfoContext),
+
+    .inputs    = avfilter_vf_showinfo_inputs,
+
+    .outputs   = avfilter_vf_showinfo_outputs,
 };

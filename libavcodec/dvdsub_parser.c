@@ -2,20 +2,20 @@
  * DVD subtitle decoding
  * Copyright (c) 2005 Fabrice Bellard
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,24 +44,14 @@ static int dvdsub_parse(AVCodecParserContext *s,
 {
     DVDSubParseContext *pc = s->priv_data;
 
-    *poutbuf      = buf;
-    *poutbuf_size = buf_size;
-
     if (pc->packet_index == 0) {
-        if (buf_size < 2 || AV_RB16(buf) && buf_size < 6) {
-            if (buf_size)
-                av_log(avctx, AV_LOG_DEBUG, "Parser input %d too small\n", buf_size);
-            return buf_size;
-        }
+        if (buf_size < 2)
+            return 0;
         pc->packet_len = AV_RB16(buf);
         if (pc->packet_len == 0) /* HD-DVD subpicture packet */
             pc->packet_len = AV_RB32(buf+2);
         av_freep(&pc->packet);
-        if ((unsigned)pc->packet_len > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE) {
-            av_log(avctx, AV_LOG_ERROR, "packet length %d is invalid\n", pc->packet_len);
-            return buf_size;
-        }
-        pc->packet = av_malloc(pc->packet_len + AV_INPUT_BUFFER_PADDING_SIZE);
+        pc->packet = av_malloc(pc->packet_len);
     }
     if (pc->packet) {
         if (pc->packet_index + buf_size <= pc->packet_len) {

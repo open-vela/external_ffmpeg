@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2008 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -237,6 +237,7 @@ function ff_h264_h_loop_filter_chroma_neon, export=1
         h264_loop_filter_start
 
         sub             r0,  r0,  #2
+h_loop_filter_chroma420:
         vld1.32         {d18[0]}, [r0], r1
         vld1.32         {d16[0]}, [r0], r1
         vld1.32         {d0[0]},  [r0], r1
@@ -269,6 +270,24 @@ function ff_h264_h_loop_filter_chroma_neon, export=1
         vst1.32         {d2[1]},  [r0], r1
 
         bx              lr
+endfunc
+
+function ff_h264_h_loop_filter_chroma422_neon, export=1
+        h264_loop_filter_start
+        push            {r4, lr}
+        add             r4,  r0,  r1
+        add             r1,  r1,  r1
+        sub             r0,  r0,  #2
+
+        bl              h_loop_filter_chroma420
+
+        ldr             r12, [sp, #8]
+        ldr             r12, [r12]
+        vmov.32         d24[0], r12
+        sub             r0,  r4,  #2
+
+        bl              h_loop_filter_chroma420
+        pop             {r4, pc}
 endfunc
 
 @ Biweighted prediction
