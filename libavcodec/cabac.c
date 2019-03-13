@@ -2,20 +2,20 @@
  * H.26L/H.264/AVC/JVT/14496-10/... encoder/decoder
  * Copyright (c) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -27,11 +27,12 @@
 #include <string.h>
 
 #include "libavutil/common.h"
+#include "libavutil/timer.h"
 
 #include "cabac.h"
 #include "cabac_functions.h"
 
-const uint8_t ff_h264_cabac_tables[512 + 4*2*64 + 4*64 + 63] = {
+DECLARE_ASM_ALIGNED(1, const uint8_t, ff_h264_cabac_tables)[512 + 4*2*64 + 4*64 + 63] = {
     9,8,7,7,6,6,6,6,5,5,5,5,5,5,5,5,
     4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
     3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
@@ -160,7 +161,20 @@ const uint8_t ff_h264_cabac_tables[512 + 4*2*64 + 4*64 + 63] = {
 /**
  * @param buf_size size of buf in bits
  */
-void ff_init_cabac_decoder(CABACContext *c, const uint8_t *buf, int buf_size){
+void ff_init_cabac_encoder(CABACContext *c, uint8_t *buf, int buf_size){
+    init_put_bits(&c->pb, buf, buf_size);
+
+    c->low= 0;
+    c->range= 0x1FE;
+    c->outstanding_count= 0;
+    c->pb.bit_left++; //avoids firstBitFlag
+}
+
+/**
+ *
+ * @param buf_size size of buf in bits
+ */
+int ff_init_cabac_decoder(CABACContext *c, const uint8_t *buf, int buf_size){
     c->bytestream_start=
     c->bytestream= buf;
     c->bytestream_end= buf + buf_size;
@@ -168,9 +182,21 @@ void ff_init_cabac_decoder(CABACContext *c, const uint8_t *buf, int buf_size){
 #if CABAC_BITS == 16
     c->low =  (*c->bytestream++)<<18;
     c->low+=  (*c->bytestream++)<<10;
+    // Keep our fetches on a 2-byte boundary as this should avoid ever having to
+    // do unaligned loads if the compiler (or asm) optimises the double byte
+    // load into a single instruction
+    if(((uintptr_t)c->bytestream & 1) == 0) {
+        c->low += (1 << 9);
+    }
+    else {
+        c->low += ((*c->bytestream++) << 2) + 2;
+    }
 #else
     c->low =  (*c->bytestream++)<<10;
-#endif
     c->low+= ((*c->bytestream++)<<2) + 2;
+#endif
     c->range= 0x1FE;
+    if ((c->range<<(CABAC_BITS+1)) < c->low)
+        return AVERROR_INVALIDDATA;
+    return 0;
 }

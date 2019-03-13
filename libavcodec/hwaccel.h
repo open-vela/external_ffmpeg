@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -64,17 +64,21 @@ typedef struct AVCodecHWConfigInternal {
         .hwaccel         = NULL, \
     }
 
-#define HWACCEL_CUVID(codec) \
-    HW_CONFIG_HWACCEL(1, 1, 0, CUDA,         CUDA,         ff_ ## codec ## _cuvid_hwaccel)
 #define HWACCEL_DXVA2(codec) \
     HW_CONFIG_HWACCEL(1, 1, 1, DXVA2_VLD,    DXVA2,        ff_ ## codec ## _dxva2_hwaccel)
 #define HWACCEL_D3D11VA2(codec) \
     HW_CONFIG_HWACCEL(1, 1, 0, D3D11,        D3D11VA,      ff_ ## codec ## _d3d11va2_hwaccel)
+#define HWACCEL_NVDEC(codec) \
+    HW_CONFIG_HWACCEL(1, 1, 0, CUDA,         CUDA,         ff_ ## codec ## _nvdec_hwaccel)
 #define HWACCEL_VAAPI(codec) \
     HW_CONFIG_HWACCEL(1, 1, 1, VAAPI,        VAAPI,        ff_ ## codec ## _vaapi_hwaccel)
 #define HWACCEL_VDPAU(codec) \
     HW_CONFIG_HWACCEL(1, 1, 1, VDPAU,        VDPAU,        ff_ ## codec ## _vdpau_hwaccel)
+#define HWACCEL_VIDEOTOOLBOX(codec) \
+    HW_CONFIG_HWACCEL(1, 1, 1, VIDEOTOOLBOX, VIDEOTOOLBOX, ff_ ## codec ## _videotoolbox_hwaccel)
 #define HWACCEL_D3D11VA(codec) \
     HW_CONFIG_HWACCEL(0, 0, 1, D3D11VA_VLD,  NONE,         ff_ ## codec ## _d3d11va_hwaccel)
+#define HWACCEL_XVMC(codec) \
+    HW_CONFIG_HWACCEL(0, 0, 1, XVMC,         NONE,         ff_ ## codec ## _xvmc_hwaccel)
 
 #endif /* AVCODEC_HWACCEL_H */

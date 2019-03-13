@@ -1,25 +1,20 @@
 /*
- * AMD AMF support
- * Copyright (C) 2017 Luca Barbato
- * Copyright (C) 2017 Mikhail Mironov <mikhail.mironov@amd.com>
- *
- * This file is part of Libav.
- *
- * Libav is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * Libav is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
-
+* This file is part of FFmpeg.
+*
+* FFmpeg is free software; you can redistribute it and/or
+* modify it under the terms of the GNU Lesser General Public
+* License as published by the Free Software Foundation; either
+* version 2.1 of the License, or (at your option) any later version.
+*
+* FFmpeg is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+* Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public
+* License along with FFmpeg; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+*/
 
 #ifndef AVCODEC_AMFENC_H
 #define AVCODEC_AMFENC_H
@@ -31,7 +26,6 @@
 
 #include "libavutil/fifo.h"
 
-#include "config.h"
 #include "avcodec.h"
 
 
@@ -78,10 +72,10 @@ typedef struct AmfContext {
 
     // shift dts back by max_b_frames in timing
     AVFifoBuffer       *timestamp_list;
-    int64_t             timestamp_last;
     int64_t             dts_delay;
 
-    // common encoder options
+    // common encoder option options
+
     int                 log_to_dbg;
 
     // Static options, have to be set before Init() call
@@ -152,8 +146,5 @@ extern const enum AVPixelFormat ff_amf_pix_fmts[];
         av_log(avctx, AV_LOG_ERROR, __VA_ARGS__); \
         return ret_value; \
     }
-
-#define AMF_COMMON_OPTIONS \
-    { "log_to_dbg",     "Enable AMF logging to debug output",   OFFSET(log_to_dbg), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE } \
 
 #endif //AVCODEC_AMFENC_H

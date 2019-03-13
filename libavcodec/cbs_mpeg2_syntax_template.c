@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -44,13 +44,13 @@ static int FUNC(sequence_header)(CodedBitstreamContext *ctx, RWContext *rw,
     ui(1, load_intra_quantiser_matrix);
     if (current->load_intra_quantiser_matrix) {
         for (i = 0; i < 64; i++)
-            ui(8, intra_quantiser_matrix[i]);
+            uis(8, intra_quantiser_matrix[i], 1, i);
     }
 
     ui(1, load_non_intra_quantiser_matrix);
     if (current->load_non_intra_quantiser_matrix) {
         for (i = 0; i < 64; i++)
-            ui(8, non_intra_quantiser_matrix[i]);
+            uis(8, non_intra_quantiser_matrix[i], 1, i);
     }
 
     return 0;
@@ -67,11 +67,11 @@ static int FUNC(user_data)(CodedBitstreamContext *ctx, RWContext *rw,
     ui(8, user_data_start_code);
 
 #ifdef READ
-    k = bitstream_bits_left(rw);
+    k = get_bits_left(rw);
     av_assert0(k % 8 == 0);
     current->user_data_length = k /= 8;
     if (k > 0) {
-        current->user_data_ref = av_buffer_alloc(k);
+        current->user_data_ref = av_buffer_allocz(k + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!current->user_data_ref)
             return AVERROR(ENOMEM);
         current->user_data = current->user_data_ref->data;
@@ -79,7 +79,7 @@ static int FUNC(user_data)(CodedBitstreamContext *ctx, RWContext *rw,
 #endif
 
     for (k = 0; k < current->user_data_length; k++)
-        xui(8, user_data, current->user_data[k]);
+        xui(8, user_data, current->user_data[k], 0);
 
     return 0;
 }
@@ -250,25 +250,25 @@ static int FUNC(quant_matrix_extension)(CodedBitstreamContext *ctx, RWContext *r
     ui(1, load_intra_quantiser_matrix);
     if (current->load_intra_quantiser_matrix) {
         for (i = 0; i < 64; i++)
-            ui(8, intra_quantiser_matrix[i]);
+            uis(8, intra_quantiser_matrix[i], 1, i);
     }
 
     ui(1, load_non_intra_quantiser_matrix);
     if (current->load_non_intra_quantiser_matrix) {
         for (i = 0; i < 64; i++)
-            ui(8, non_intra_quantiser_matrix[i]);
+            uis(8, non_intra_quantiser_matrix[i], 1, i);
     }
 
     ui(1, load_chroma_intra_quantiser_matrix);
     if (current->load_chroma_intra_quantiser_matrix) {
         for (i = 0; i < 64; i++)
-            ui(8, intra_quantiser_matrix[i]);
+            uis(8, intra_quantiser_matrix[i], 1, i);
     }
 
     ui(1, load_chroma_non_intra_quantiser_matrix);
     if (current->load_chroma_non_intra_quantiser_matrix) {
         for (i = 0; i < 64; i++)
-            ui(8, chroma_non_intra_quantiser_matrix[i]);
+            uis(8, chroma_non_intra_quantiser_matrix[i], 1, i);
     }
 
     return 0;
@@ -353,11 +353,11 @@ static int FUNC(slice_header)(CodedBitstreamContext *ctx, RWContext *rw,
         {
             size_t k;
 #ifdef READ
-            BitstreamContext start;
+            GetBitContext start;
             uint8_t bit;
             start = *rw;
             for (k = 0; nextbits(1, 1, bit); k++)
-                bitstream_skip(rw, 8);
+                skip_bits(rw, 8);
             current->extra_information_length = k;
             if (k > 0) {
                 *rw = start;
@@ -366,15 +366,16 @@ static int FUNC(slice_header)(CodedBitstreamContext *ctx, RWContext *rw,
                 if (!current->extra_information)
                     return AVERROR(ENOMEM);
                 for (k = 0; k < current->extra_information_length; k++) {
-                    xui(1, extra_bit_slice, bit);
-                    xui(8, extra_information_slice,
-                        current->extra_information[k]);
+                    xui(1, extra_bit_slice, bit, 0);
+                    xui(8, extra_information_slice[k],
+                        current->extra_information[k], 1, k);
                 }
             }
 #else
             for (k = 0; k < current->extra_information_length; k++) {
-                xui(1, extra_bit_slice, 1);
-                xui(8, extra_information_slice, current->extra_information[k]);
+                xui(1, extra_bit_slice, 1, 0);
+                xui(8, extra_information_slice[k],
+                    current->extra_information[k], 1, k);
             }
 #endif
         }

@@ -22,8 +22,8 @@
 
 /**
  * @file
- * @example metadata.c
  * Shows how the metadata API can be used in application programs.
+ * @example metadata.c
  */
 
 #include <stdio.h>
@@ -44,13 +44,17 @@ int main (int argc, char **argv)
         return 1;
     }
 
-    av_register_all();
     if ((ret = avformat_open_input(&fmt_ctx, argv[1], NULL, NULL)))
         return ret;
+
+    if ((ret = avformat_find_stream_info(fmt_ctx, NULL)) < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Cannot find stream information\n");
+        return ret;
+    }
 
     while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
         printf("%s=%s\n", tag->key, tag->value);
 
-    avformat_free_context(fmt_ctx);
+    avformat_close_input(&fmt_ctx);
     return 0;
 }

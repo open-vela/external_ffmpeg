@@ -5,20 +5,20 @@
  * Copyright (c) 2011 Andreas Öman
  * Copyright (c) 2011 - 2012 Mashiat Sarker Shakkhar
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,9 +28,10 @@
 #include "libavutil/avassert.h"
 
 #include "avcodec.h"
-#include "bitstream.h"
 #include "internal.h"
+#include "get_bits.h"
 #include "put_bits.h"
+#include "lossless_audiodsp.h"
 #include "wma.h"
 #include "wma_common.h"
 
@@ -46,6 +47,7 @@
 #define WMALL_BLOCK_MAX_SIZE (1 << WMALL_BLOCK_MAX_BITS)    ///< maximum block size
 #define WMALL_BLOCK_SIZES    (WMALL_BLOCK_MAX_BITS - WMALL_BLOCK_MIN_BITS + 1) ///< possible block sizes
 
+#define WMALL_COEFF_PAD_SIZE   16                       ///< pad coef buffers with 0 for use with SIMD
 
 /**
  * @brief frame-specific decoder context for a single channel
@@ -69,7 +71,9 @@ typedef struct WmallDecodeCtx {
     /* generic decoder variables */
     AVCodecContext  *avctx;
     AVFrame         *frame;
-    uint8_t         frame_data[MAX_FRAMESIZE + AV_INPUT_BUFFER_PADDING_SIZE];  ///< compressed frame data
+    LLAudDSPContext dsp;                           ///< accelerated DSP functions
+    uint8_t         *frame_data;                    ///< compressed frame data
+    int             max_frame_size;                 ///< max bitstream size
     PutBitContext   pb;                             ///< context for filling the frame_data buffer
 
     /* frame size dependent frame information (set during initialization) */
@@ -87,7 +91,7 @@ typedef struct WmallDecodeCtx {
     uint16_t        min_samples_per_subframe;
 
     /* packet decode state */
-    BitstreamContext pbc;                           ///< bitstream reader context for the packet
+    GetBitContext   pgb;                            ///< bitstream reader context for the packet
     int             next_packet_start;              ///< start offset of the next WMA packet in the demuxer packet
     uint8_t         packet_offset;                  ///< offset to the frame in the packet
     uint8_t         packet_sequence_number;         ///< current packet number
@@ -99,7 +103,7 @@ typedef struct WmallDecodeCtx {
 
     /* frame decode state */
     uint32_t        frame_num;                      ///< current frame number (not used for decoding)
-    BitstreamContext bc;                            ///< bitstream reader context
+    GetBitContext   gb;                             ///< bitstream reader context
     int             buf_bit_size;                   ///< buffer size in bits
     int16_t         *samples_16[WMALL_MAX_CHANNELS]; ///< current sample buffer pointer (16-bit)
     int32_t         *samples_32[WMALL_MAX_CHANNELS]; ///< current sample buffer pointer (24-bit)
@@ -124,15 +128,15 @@ typedef struct WmallDecodeCtx {
 
     int8_t  acfilter_order;
     int8_t  acfilter_scaling;
-    int64_t acfilter_coeffs[16];
-    int     acfilter_prevvalues[2][16];
+    int16_t acfilter_coeffs[16];
+    int     acfilter_prevvalues[WMALL_MAX_CHANNELS][16];
 
     int8_t  mclms_order;
     int8_t  mclms_scaling;
     int16_t mclms_coeffs[WMALL_MAX_CHANNELS * WMALL_MAX_CHANNELS * 32];
     int16_t mclms_coeffs_cur[WMALL_MAX_CHANNELS * WMALL_MAX_CHANNELS];
-    int16_t mclms_prevvalues[WMALL_MAX_CHANNELS * 2 * 32];
-    int16_t mclms_updates[WMALL_MAX_CHANNELS * 2 * 32];
+    int32_t mclms_prevvalues[WMALL_MAX_CHANNELS * 2 * 32];
+    int32_t mclms_updates[WMALL_MAX_CHANNELS * 2 * 32];
     int     mclms_recent;
 
     int     movave_scaling;
@@ -143,35 +147,35 @@ typedef struct WmallDecodeCtx {
         int scaling;
         int coefsend;
         int bitsend;
-        int16_t coefs[MAX_ORDER];
-        int16_t lms_prevvalues[MAX_ORDER * 2];
-        int16_t lms_updates[MAX_ORDER * 2];
+        DECLARE_ALIGNED(16, int16_t, coefs)[MAX_ORDER + WMALL_COEFF_PAD_SIZE/sizeof(int16_t)];
+        DECLARE_ALIGNED(16, int32_t, lms_prevvalues)[MAX_ORDER * 2 + WMALL_COEFF_PAD_SIZE/sizeof(int16_t)];
+        DECLARE_ALIGNED(16, int16_t, lms_updates)[MAX_ORDER * 2 + WMALL_COEFF_PAD_SIZE/sizeof(int16_t)];
         int recent;
-    } cdlms[2][9];
+    } cdlms[WMALL_MAX_CHANNELS][9];
 
-    int cdlms_ttl[2];
+    int cdlms_ttl[WMALL_MAX_CHANNELS];
 
     int bV3RTM;
 
-    int is_channel_coded[2];
-    int update_speed[2];
+    int is_channel_coded[WMALL_MAX_CHANNELS];
+    int update_speed[WMALL_MAX_CHANNELS];
 
-    int transient[2];
-    int transient_pos[2];
+    int transient[WMALL_MAX_CHANNELS];
+    int transient_pos[WMALL_MAX_CHANNELS];
     int seekable_tile;
 
-    int ave_sum[2];
+    int ave_sum[WMALL_MAX_CHANNELS];
 
-    int channel_residues[2][WMALL_BLOCK_MAX_SIZE];
+    int channel_residues[WMALL_MAX_CHANNELS][WMALL_BLOCK_MAX_SIZE];
 
-    int lpc_coefs[2][40];
+    int lpc_coefs[WMALL_MAX_CHANNELS][40];
     int lpc_order;
     int lpc_scaling;
     int lpc_intbits;
-
-    int channel_coeffs[2][WMALL_BLOCK_MAX_SIZE];
 } WmallDecodeCtx;
 
+/** Get sign of integer (1 for positive, -1 for negative and 0 for zero) */
+#define WMASIGN(x) (((x) > 0) - ((x) < 0))
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
@@ -180,8 +184,19 @@ static av_cold int decode_init(AVCodecContext *avctx)
     unsigned int channel_mask;
     int i, log2_max_num_subframes;
 
+    if (!avctx->block_align) {
+        av_log(avctx, AV_LOG_ERROR, "block_align is not set\n");
+        return AVERROR(EINVAL);
+    }
+
+    s->max_frame_size = MAX_FRAMESIZE * avctx->channels;
+    s->frame_data = av_mallocz(s->max_frame_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!s->frame_data)
+        return AVERROR(ENOMEM);
+
     s->avctx = avctx;
-    init_put_bits(&s->pb, s->frame_data, MAX_FRAMESIZE);
+    ff_llauddsp_init(&s->dsp);
+    init_put_bits(&s->pb, s->frame_data, s->max_frame_size);
 
     if (avctx->extradata_size >= 18) {
         s->decode_flags    = AV_RL16(edata_ptr + 14);
@@ -191,8 +206,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
             avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
         else if (s->bits_per_sample == 24) {
             avctx->sample_fmt = AV_SAMPLE_FMT_S32P;
-            avpriv_report_missing_feature(avctx, "Bit-depth higher than 16");
-            return AVERROR_PATCHWELCOME;
+            avctx->bits_per_raw_sample = 24;
         } else {
             av_log(avctx, AV_LOG_ERROR, "Unknown bit-depth: %"PRIu8"\n",
                    s->bits_per_sample);
@@ -286,7 +300,7 @@ static int decode_subframe_length(WmallDecodeCtx *s, int offset)
         return s->min_samples_per_subframe;
 
     len             = av_log2(s->max_num_subframes - 1) + 1;
-    frame_len_ratio = bitstream_read(&s->bc, len);
+    frame_len_ratio = get_bits(&s->gb, len);
     subframe_len    = s->min_samples_per_subframe * (frame_len_ratio + 1);
 
     /* sanity check the length */
@@ -332,7 +346,7 @@ static int decode_tilehdr(WmallDecodeCtx *s)
     for (c = 0; c < s->num_channels; c++)
         s->channel[c].num_subframes = 0;
 
-    tile_aligned = bitstream_read_bit(&s->bc);
+    tile_aligned = get_bits1(&s->gb);
     if (s->max_num_subframes == 1 || tile_aligned)
         fixed_channel_layout = 1;
 
@@ -345,11 +359,11 @@ static int decode_tilehdr(WmallDecodeCtx *s)
             if (num_samples[c] == min_channel_len) {
                 if (fixed_channel_layout || channels_for_cur_subframe == 1 ||
                    (min_channel_len == s->samples_per_frame - s->min_samples_per_subframe)) {
-                    contains_subframe[c] = in_use = 1;
+                    contains_subframe[c] = 1;
                 } else {
-                    if (bitstream_read_bit(&s->bc))
-                        contains_subframe[c] = in_use = 1;
+                    contains_subframe[c] = get_bits1(&s->gb);
                 }
+                in_use |= contains_subframe[c];
             } else
                 contains_subframe[c] = 0;
         }
@@ -407,32 +421,32 @@ static int decode_tilehdr(WmallDecodeCtx *s)
 static void decode_ac_filter(WmallDecodeCtx *s)
 {
     int i;
-    s->acfilter_order   = bitstream_read(&s->bc, 4) + 1;
-    s->acfilter_scaling = bitstream_read(&s->bc, 4);
+    s->acfilter_order   = get_bits(&s->gb, 4) + 1;
+    s->acfilter_scaling = get_bits(&s->gb, 4);
 
     for (i = 0; i < s->acfilter_order; i++)
-        s->acfilter_coeffs[i] = bitstream_read(&s->bc, s->acfilter_scaling) + 1;
+        s->acfilter_coeffs[i] = get_bitsz(&s->gb, s->acfilter_scaling) + 1;
 }
 
 static void decode_mclms(WmallDecodeCtx *s)
 {
-    s->mclms_order   = (bitstream_read(&s->bc, 4) + 1) * 2;
-    s->mclms_scaling =  bitstream_read(&s->bc, 4);
-    if (bitstream_read_bit(&s->bc)) {
+    s->mclms_order   = (get_bits(&s->gb, 4) + 1) * 2;
+    s->mclms_scaling = get_bits(&s->gb, 4);
+    if (get_bits1(&s->gb)) {
         int i, send_coef_bits;
         int cbits = av_log2(s->mclms_scaling + 1);
         if (1 << cbits < s->mclms_scaling + 1)
             cbits++;
 
-        send_coef_bits = bitstream_read(&s->bc, cbits) + 2;
+        send_coef_bits = get_bitsz(&s->gb, cbits) + 2;
 
         for (i = 0; i < s->mclms_order * s->num_channels * s->num_channels; i++)
-            s->mclms_coeffs[i] = bitstream_read(&s->bc, send_coef_bits);
+            s->mclms_coeffs[i] = get_bits(&s->gb, send_coef_bits);
 
         for (i = 0; i < s->num_channels; i++) {
             int c;
             for (c = 0; c < i; c++)
-                s->mclms_coeffs_cur[i * s->num_channels + c] = bitstream_read(&s->bc, send_coef_bits);
+                s->mclms_coeffs_cur[i * s->num_channels + c] = get_bits(&s->gb, send_coef_bits);
         }
     }
 }
@@ -440,12 +454,12 @@ static void decode_mclms(WmallDecodeCtx *s)
 static int decode_cdlms(WmallDecodeCtx *s)
 {
     int c, i;
-    int cdlms_send_coef = bitstream_read_bit(&s->bc);
+    int cdlms_send_coef = get_bits1(&s->gb);
 
     for (c = 0; c < s->num_channels; c++) {
-        s->cdlms_ttl[c] = bitstream_read(&s->bc, 3) + 1;
+        s->cdlms_ttl[c] = get_bits(&s->gb, 3) + 1;
         for (i = 0; i < s->cdlms_ttl[c]; i++) {
-            s->cdlms[c][i].order = (bitstream_read(&s->bc, 7) + 1) * 8;
+            s->cdlms[c][i].order = (get_bits(&s->gb, 7) + 1) * 8;
             if (s->cdlms[c][i].order > MAX_ORDER) {
                 av_log(s->avctx, AV_LOG_ERROR,
                        "Order[%d][%d] %d > max (%d), not supported\n",
@@ -453,10 +467,17 @@ static int decode_cdlms(WmallDecodeCtx *s)
                 s->cdlms[0][0].order = 0;
                 return AVERROR_INVALIDDATA;
             }
+            if(s->cdlms[c][i].order & 8 && s->bits_per_sample == 16) {
+                static int warned;
+                if(!warned)
+                    avpriv_request_sample(s->avctx, "CDLMS of order %d",
+                                          s->cdlms[c][i].order);
+                warned = 1;
+            }
         }
 
         for (i = 0; i < s->cdlms_ttl[c]; i++)
-            s->cdlms[c][i].scaling = bitstream_read(&s->bc, 4);
+            s->cdlms[c][i].scaling = get_bits(&s->gb, 4);
 
         if (cdlms_send_coef) {
             for (i = 0; i < s->cdlms_ttl[c]; i++) {
@@ -464,20 +485,24 @@ static int decode_cdlms(WmallDecodeCtx *s)
                 cbits = av_log2(s->cdlms[c][i].order);
                 if ((1 << cbits) < s->cdlms[c][i].order)
                     cbits++;
-                s->cdlms[c][i].coefsend = bitstream_read(&s->bc, cbits) + 1;
+                s->cdlms[c][i].coefsend = get_bits(&s->gb, cbits) + 1;
 
                 cbits = av_log2(s->cdlms[c][i].scaling + 1);
                 if ((1 << cbits) < s->cdlms[c][i].scaling + 1)
                     cbits++;
 
-                s->cdlms[c][i].bitsend = bitstream_read(&s->bc, cbits) + 2;
+                s->cdlms[c][i].bitsend = get_bitsz(&s->gb, cbits) + 2;
                 shift_l = 32 - s->cdlms[c][i].bitsend;
                 shift_r = 32 - s->cdlms[c][i].scaling - 2;
                 for (j = 0; j < s->cdlms[c][i].coefsend; j++)
                     s->cdlms[c][i].coefs[j] =
-                        (bitstream_read(&s->bc, s->cdlms[c][i].bitsend) << shift_l) >> shift_r;
+                        (get_bits(&s->gb, s->cdlms[c][i].bitsend) << shift_l) >> shift_r;
             }
         }
+
+        for (i = 0; i < s->cdlms_ttl[c]; i++)
+            memset(s->cdlms[c][i].coefs + s->cdlms[c][i].order,
+                   0, WMALL_COEFF_PAD_SIZE);
     }
 
     return 0;
@@ -487,9 +512,9 @@ static int decode_channel_residues(WmallDecodeCtx *s, int ch, int tile_size)
 {
     int i = 0;
     unsigned int ave_mean;
-    s->transient[ch] = bitstream_read_bit(&s->bc);
+    s->transient[ch] = get_bits1(&s->gb);
     if (s->transient[ch]) {
-        s->transient_pos[ch] = bitstream_read(&s->bc, av_log2(tile_size));
+        s->transient_pos[ch] = get_bits(&s->gb, av_log2(tile_size));
         if (s->transient_pos[ch])
             s->transient[ch] = 0;
         s->channel[ch].transient_counter =
@@ -498,43 +523,40 @@ static int decode_channel_residues(WmallDecodeCtx *s, int ch, int tile_size)
         s->transient[ch] = 1;
 
     if (s->seekable_tile) {
-        ave_mean = bitstream_read(&s->bc, s->bits_per_sample);
+        ave_mean = get_bits(&s->gb, s->bits_per_sample);
         s->ave_sum[ch] = ave_mean << (s->movave_scaling + 1);
     }
 
     if (s->seekable_tile) {
         if (s->do_inter_ch_decorr)
-            s->channel_residues[ch][0] = bitstream_read_signed(&s->bc, s->bits_per_sample + 1);
+            s->channel_residues[ch][0] = get_sbits_long(&s->gb, s->bits_per_sample + 1);
         else
-            s->channel_residues[ch][0] = bitstream_read_signed(&s->bc, s->bits_per_sample);
+            s->channel_residues[ch][0] = get_sbits_long(&s->gb, s->bits_per_sample);
         i++;
     }
     for (; i < tile_size; i++) {
         int quo = 0, rem, rem_bits, residue;
-        while (bitstream_read_bit(&s->bc)) {
+        while(get_bits1(&s->gb)) {
             quo++;
-            if (bitstream_bits_left(&s->bc) <= 0)
+            if (get_bits_left(&s->gb) <= 0)
                 return -1;
         }
         if (quo >= 32)
-            quo += bitstream_read(&s->bc, bitstream_read(&s->bc, 5) + 1);
+            quo += get_bits_long(&s->gb, get_bits(&s->gb, 5) + 1);
 
         ave_mean = (s->ave_sum[ch] + (1 << s->movave_scaling)) >> (s->movave_scaling + 1);
         if (ave_mean <= 1)
             residue = quo;
         else {
             rem_bits = av_ceil_log2(ave_mean);
-            rem      = rem_bits ? bitstream_read(&s->bc, rem_bits) : 0;
+            rem      = get_bits_long(&s->gb, rem_bits);
             residue  = (quo << rem_bits) + rem;
         }
 
         s->ave_sum[ch] = residue + s->ave_sum[ch] -
                          (s->ave_sum[ch] >> s->movave_scaling);
 
-        if (residue & 1)
-            residue = -(residue >> 1) - 1;
-        else
-            residue = residue >> 1;
+        residue = (residue >> 1) ^ -(residue & 1);
         s->channel_residues[ch][i] = residue;
     }
 
@@ -545,13 +567,13 @@ static int decode_channel_residues(WmallDecodeCtx *s, int ch, int tile_size)
 static void decode_lpc(WmallDecodeCtx *s)
 {
     int ch, i, cbits;
-    s->lpc_order   = bitstream_read(&s->bc, 5) + 1;
-    s->lpc_scaling = bitstream_read(&s->bc, 4);
-    s->lpc_intbits = bitstream_read(&s->bc, 3) + 1;
+    s->lpc_order   = get_bits(&s->gb, 5) + 1;
+    s->lpc_scaling = get_bits(&s->gb, 4);
+    s->lpc_intbits = get_bits(&s->gb, 3) + 1;
     cbits = s->lpc_scaling + s->lpc_intbits;
     for (ch = 0; ch < s->num_channels; ch++)
         for (i = 0; i < s->lpc_order; i++)
-            s->lpc_coefs[ch][i] = bitstream_read_signed(&s->bc, cbits);
+            s->lpc_coefs[ch][i] = get_sbits(&s->gb, cbits);
 }
 
 static void clear_codec_buffers(WmallDecodeCtx *s)
@@ -611,47 +633,31 @@ static void mclms_update(WmallDecodeCtx *s, int icoef, int *pred)
             for (i = 0; i < order * num_channels; i++)
                 s->mclms_coeffs[i + ich * order * num_channels] +=
                     s->mclms_updates[s->mclms_recent + i];
-            for (j = 0; j < ich; j++) {
-                if (s->channel_residues[j][icoef] > 0)
-                    s->mclms_coeffs_cur[ich * num_channels + j] += 1;
-                else if (s->channel_residues[j][icoef] < 0)
-                    s->mclms_coeffs_cur[ich * num_channels + j] -= 1;
-            }
+            for (j = 0; j < ich; j++)
+                s->mclms_coeffs_cur[ich * num_channels + j] += WMASIGN(s->channel_residues[j][icoef]);
         } else if (pred_error < 0) {
             for (i = 0; i < order * num_channels; i++)
                 s->mclms_coeffs[i + ich * order * num_channels] -=
                     s->mclms_updates[s->mclms_recent + i];
-            for (j = 0; j < ich; j++) {
-                if (s->channel_residues[j][icoef] > 0)
-                    s->mclms_coeffs_cur[ich * num_channels + j] -= 1;
-                else if (s->channel_residues[j][icoef] < 0)
-                    s->mclms_coeffs_cur[ich * num_channels + j] += 1;
-            }
+            for (j = 0; j < ich; j++)
+                s->mclms_coeffs_cur[ich * num_channels + j] -= WMASIGN(s->channel_residues[j][icoef]);
         }
     }
 
     for (ich = num_channels - 1; ich >= 0; ich--) {
         s->mclms_recent--;
-        s->mclms_prevvalues[s->mclms_recent] = s->channel_residues[ich][icoef];
-        if (s->channel_residues[ich][icoef] > range - 1)
-            s->mclms_prevvalues[s->mclms_recent] = range - 1;
-        else if (s->channel_residues[ich][icoef] < -range)
-            s->mclms_prevvalues[s->mclms_recent] = -range;
-
-        s->mclms_updates[s->mclms_recent] = 0;
-        if (s->channel_residues[ich][icoef] > 0)
-            s->mclms_updates[s->mclms_recent] = 1;
-        else if (s->channel_residues[ich][icoef] < 0)
-            s->mclms_updates[s->mclms_recent] = -1;
+        s->mclms_prevvalues[s->mclms_recent] = av_clip(s->channel_residues[ich][icoef],
+            -range, range - 1);
+        s->mclms_updates[s->mclms_recent] = WMASIGN(s->channel_residues[ich][icoef]);
     }
 
     if (s->mclms_recent == 0) {
         memcpy(&s->mclms_prevvalues[order * num_channels],
                s->mclms_prevvalues,
-               2 * order * num_channels);
+               sizeof(int32_t) * order * num_channels);
         memcpy(&s->mclms_updates[order * num_channels],
                s->mclms_updates,
-               2 * order * num_channels);
+               sizeof(int32_t) * order * num_channels);
         s->mclms_recent = num_channels * order;
     }
 }
@@ -667,10 +673,10 @@ static void mclms_predict(WmallDecodeCtx *s, int icoef, int *pred)
         if (!s->is_channel_coded[ich])
             continue;
         for (i = 0; i < order * num_channels; i++)
-            pred[ich] += s->mclms_prevvalues[i + s->mclms_recent] *
+            pred[ich] += (uint32_t)s->mclms_prevvalues[i + s->mclms_recent] *
                          s->mclms_coeffs[i + order * num_channels * ich];
         for (i = 0; i < ich; i++)
-            pred[ich] += s->channel_residues[i][icoef] *
+            pred[ich] += (uint32_t)s->channel_residues[i][icoef] *
                          s->mclms_coeffs_cur[i + num_channels * ich];
         pred[ich] += 1 << s->mclms_scaling - 1;
         pred[ich] >>= s->mclms_scaling;
@@ -685,60 +691,6 @@ static void revert_mclms(WmallDecodeCtx *s, int tile_size)
         mclms_predict(s, icoef, pred);
         mclms_update(s, icoef, pred);
     }
-}
-
-static int lms_predict(WmallDecodeCtx *s, int ich, int ilms)
-{
-    int pred = 0, icoef;
-    int recent = s->cdlms[ich][ilms].recent;
-
-    for (icoef = 0; icoef < s->cdlms[ich][ilms].order; icoef++)
-        pred += s->cdlms[ich][ilms].coefs[icoef] *
-                s->cdlms[ich][ilms].lms_prevvalues[icoef + recent];
-
-    return pred;
-}
-
-static void lms_update(WmallDecodeCtx *s, int ich, int ilms,
-                       int input, int residue)
-{
-    int icoef;
-    int recent = s->cdlms[ich][ilms].recent;
-    int range  = 1 << s->bits_per_sample - 1;
-
-    if (residue < 0) {
-        for (icoef = 0; icoef < s->cdlms[ich][ilms].order; icoef++)
-            s->cdlms[ich][ilms].coefs[icoef] -=
-                s->cdlms[ich][ilms].lms_updates[icoef + recent];
-    } else if (residue > 0) {
-        for (icoef = 0; icoef < s->cdlms[ich][ilms].order; icoef++)
-            s->cdlms[ich][ilms].coefs[icoef] +=
-                s->cdlms[ich][ilms].lms_updates[icoef + recent];
-    }
-
-    if (recent)
-        recent--;
-    else {
-        memcpy(&s->cdlms[ich][ilms].lms_prevvalues[s->cdlms[ich][ilms].order],
-               s->cdlms[ich][ilms].lms_prevvalues,
-               2 * s->cdlms[ich][ilms].order);
-        memcpy(&s->cdlms[ich][ilms].lms_updates[s->cdlms[ich][ilms].order],
-               s->cdlms[ich][ilms].lms_updates,
-               2 * s->cdlms[ich][ilms].order);
-        recent = s->cdlms[ich][ilms].order - 1;
-    }
-
-    s->cdlms[ich][ilms].lms_prevvalues[recent] = av_clip(input, -range, range - 1);
-    if (!input)
-        s->cdlms[ich][ilms].lms_updates[recent] = 0;
-    else if (input < 0)
-        s->cdlms[ich][ilms].lms_updates[recent] = -s->update_speed[ich];
-    else
-        s->cdlms[ich][ilms].lms_updates[recent] = s->update_speed[ich];
-
-    s->cdlms[ich][ilms].lms_updates[recent + (s->cdlms[ich][ilms].order >> 4)] >>= 2;
-    s->cdlms[ich][ilms].lms_updates[recent + (s->cdlms[ich][ilms].order >> 3)] >>= 1;
-    s->cdlms[ich][ilms].recent = recent;
 }
 
 static void use_high_update_speed(WmallDecodeCtx *s, int ich)
@@ -776,23 +728,62 @@ static void use_normal_update_speed(WmallDecodeCtx *s, int ich)
     s->update_speed[ich] = 8;
 }
 
-static void revert_cdlms(WmallDecodeCtx *s, int ch,
-                         int coef_begin, int coef_end)
-{
-    int icoef, pred, ilms, num_lms, residue, input;
-
-    num_lms = s->cdlms_ttl[ch];
-    for (ilms = num_lms - 1; ilms >= 0; ilms--) {
-        for (icoef = coef_begin; icoef < coef_end; icoef++) {
-            pred = 1 << (s->cdlms[ch][ilms].scaling - 1);
-            residue = s->channel_residues[ch][icoef];
-            pred += lms_predict(s, ch, ilms);
-            input = residue + (pred >> s->cdlms[ch][ilms].scaling);
-            lms_update(s, ch, ilms, input, residue);
-            s->channel_residues[ch][icoef] = input;
-        }
-    }
+#define CD_LMS(bits, ROUND) \
+static void lms_update ## bits (WmallDecodeCtx *s, int ich, int ilms, int input) \
+{ \
+    int recent = s->cdlms[ich][ilms].recent; \
+    int range  = 1 << s->bits_per_sample - 1; \
+    int order  = s->cdlms[ich][ilms].order; \
+    int ##bits##_t *prev = (int##bits##_t *)s->cdlms[ich][ilms].lms_prevvalues; \
+ \
+    if (recent) \
+        recent--; \
+    else { \
+        memcpy(prev + order, prev, (bits/8) * order); \
+        memcpy(s->cdlms[ich][ilms].lms_updates + order, \
+               s->cdlms[ich][ilms].lms_updates, \
+               sizeof(*s->cdlms[ich][ilms].lms_updates) * order); \
+        recent = order - 1; \
+    } \
+ \
+    prev[recent] = av_clip(input, -range, range - 1); \
+    s->cdlms[ich][ilms].lms_updates[recent] = WMASIGN(input) * s->update_speed[ich]; \
+ \
+    s->cdlms[ich][ilms].lms_updates[recent + (order >> 4)] >>= 2; \
+    s->cdlms[ich][ilms].lms_updates[recent + (order >> 3)] >>= 1; \
+    s->cdlms[ich][ilms].recent = recent; \
+    memset(s->cdlms[ich][ilms].lms_updates + recent + order, 0, \
+           sizeof(s->cdlms[ich][ilms].lms_updates) - \
+           sizeof(*s->cdlms[ich][ilms].lms_updates)*(recent+order)); \
+} \
+ \
+static void revert_cdlms ## bits (WmallDecodeCtx *s, int ch, \
+                                  int coef_begin, int coef_end) \
+{ \
+    int icoef, pred, ilms, num_lms, residue, input; \
+ \
+    num_lms = s->cdlms_ttl[ch]; \
+    for (ilms = num_lms - 1; ilms >= 0; ilms--) { \
+        for (icoef = coef_begin; icoef < coef_end; icoef++) { \
+            int##bits##_t *prevvalues = (int##bits##_t *)s->cdlms[ch][ilms].lms_prevvalues; \
+            pred = 1 << (s->cdlms[ch][ilms].scaling - 1); \
+            residue = s->channel_residues[ch][icoef]; \
+            pred += s->dsp.scalarproduct_and_madd_int## bits (s->cdlms[ch][ilms].coefs, \
+                                                        prevvalues + s->cdlms[ch][ilms].recent, \
+                                                        s->cdlms[ch][ilms].lms_updates + \
+                                                        s->cdlms[ch][ilms].recent, \
+                                                        FFALIGN(s->cdlms[ch][ilms].order, ROUND), \
+                                                        WMASIGN(residue)); \
+            input = residue + (pred >> s->cdlms[ch][ilms].scaling); \
+            lms_update ## bits(s, ch, ilms, input); \
+            s->channel_residues[ch][icoef] = input; \
+        } \
+    } \
+    if (bits <= 16) emms_c(); \
 }
+
+CD_LMS(16, WMALL_COEFF_PAD_SIZE)
+CD_LMS(32, 8)
 
 static void revert_inter_ch_decorr(WmallDecodeCtx *s, int tile_size)
 {
@@ -810,7 +801,7 @@ static void revert_inter_ch_decorr(WmallDecodeCtx *s, int tile_size)
 static void revert_acfilter(WmallDecodeCtx *s, int tile_size)
 {
     int ich, pred, i, j;
-    int64_t *filter_coeffs = s->acfilter_coeffs;
+    int16_t *filter_coeffs = s->acfilter_coeffs;
     int scaling            = s->acfilter_scaling;
     int order              = s->acfilter_order;
 
@@ -830,7 +821,7 @@ static void revert_acfilter(WmallDecodeCtx *s, int tile_size)
         for (i = order; i < tile_size; i++) {
             pred = 0;
             for (j = 0; j < order; j++)
-                pred += s->channel_residues[ich][i - j - 1] * filter_coeffs[j];
+                pred += (uint32_t)s->channel_residues[ich][i - j - 1] * filter_coeffs[j];
             pred >>= scaling;
             s->channel_residues[ich][i] += pred;
         }
@@ -846,7 +837,7 @@ static int decode_subframe(WmallDecodeCtx *s)
     int total_samples = s->samples_per_frame * s->num_channels;
     int i, j, rawpcm_tile, padding_zeroes, res;
 
-    s->subframe_offset = bitstream_tell(&s->bc);
+    s->subframe_offset = get_bits_count(&s->gb);
 
     /* reset channel context and find the next block offset and size
         == the next block of the channel with the smallest number of
@@ -883,18 +874,18 @@ static int decode_subframe(WmallDecodeCtx *s)
         s->parsed_all_subframes = 1;
 
 
-    s->seekable_tile = bitstream_read_bit(&s->bc);
+    s->seekable_tile = get_bits1(&s->gb);
     if (s->seekable_tile) {
         clear_codec_buffers(s);
 
-        s->do_arith_coding    = bitstream_read_bit(&s->bc);
+        s->do_arith_coding    = get_bits1(&s->gb);
         if (s->do_arith_coding) {
             avpriv_request_sample(s->avctx, "Arithmetic coding");
             return AVERROR_PATCHWELCOME;
         }
-        s->do_ac_filter       = bitstream_read_bit(&s->bc);
-        s->do_inter_ch_decorr = bitstream_read_bit(&s->bc);
-        s->do_mclms           = bitstream_read_bit(&s->bc);
+        s->do_ac_filter       = get_bits1(&s->gb);
+        s->do_inter_ch_decorr = get_bits1(&s->gb);
+        s->do_mclms           = get_bits1(&s->gb);
 
         if (s->do_ac_filter)
             decode_ac_filter(s);
@@ -904,29 +895,32 @@ static int decode_subframe(WmallDecodeCtx *s)
 
         if ((res = decode_cdlms(s)) < 0)
             return res;
-        s->movave_scaling = bitstream_read(&s->bc, 3);
-        s->quant_stepsize = bitstream_read(&s->bc, 8) + 1;
+        s->movave_scaling = get_bits(&s->gb, 3);
+        s->quant_stepsize = get_bits(&s->gb, 8) + 1;
 
         reset_codec(s);
-    } else if (!s->cdlms[0][0].order) {
+    }
+
+    rawpcm_tile = get_bits1(&s->gb);
+
+    if (!rawpcm_tile && !s->cdlms[0][0].order) {
         av_log(s->avctx, AV_LOG_DEBUG,
                "Waiting for seekable tile\n");
         av_frame_unref(s->frame);
         return -1;
     }
 
-    rawpcm_tile = bitstream_read_bit(&s->bc);
 
     for (i = 0; i < s->num_channels; i++)
         s->is_channel_coded[i] = 1;
 
     if (!rawpcm_tile) {
         for (i = 0; i < s->num_channels; i++)
-            s->is_channel_coded[i] = bitstream_read_bit(&s->bc);
+            s->is_channel_coded[i] = get_bits1(&s->gb);
 
         if (s->bV3RTM) {
             // LPC
-            s->do_lpc = bitstream_read_bit(&s->bc);
+            s->do_lpc = get_bits1(&s->gb);
             if (s->do_lpc) {
                 decode_lpc(s);
                 avpriv_request_sample(s->avctx, "Expect wrong output since "
@@ -937,8 +931,8 @@ static int decode_subframe(WmallDecodeCtx *s)
     }
 
 
-    if (bitstream_read_bit(&s->bc))
-        padding_zeroes = bitstream_read(&s->bc, 5);
+    if (get_bits1(&s->gb))
+        padding_zeroes = get_bits(&s->gb, 5);
     else
         padding_zeroes = 0;
 
@@ -951,35 +945,40 @@ static int decode_subframe(WmallDecodeCtx *s)
         }
         ff_dlog(s->avctx, "RAWPCM %d bits per sample. "
                 "total %d bits, remain=%d\n", bits,
-                bits * s->num_channels * subframe_len, bitstream_tell(&s->bc));
+                bits * s->num_channels * subframe_len, get_bits_count(&s->gb));
         for (i = 0; i < s->num_channels; i++)
             for (j = 0; j < subframe_len; j++)
-                s->channel_coeffs[i][j] = bitstream_read_signed(&s->bc, bits);
+                s->channel_residues[i][j] = get_sbits_long(&s->gb, bits);
     } else {
-        for (i = 0; i < s->num_channels; i++)
+        for (i = 0; i < s->num_channels; i++) {
             if (s->is_channel_coded[i]) {
                 decode_channel_residues(s, i, subframe_len);
                 if (s->seekable_tile)
                     use_high_update_speed(s, i);
                 else
                     use_normal_update_speed(s, i);
-                revert_cdlms(s, i, 0, subframe_len);
+                if (s->bits_per_sample > 16)
+                    revert_cdlms32(s, i, 0, subframe_len);
+                else
+                    revert_cdlms16(s, i, 0, subframe_len);
             } else {
                 memset(s->channel_residues[i], 0, sizeof(**s->channel_residues) * subframe_len);
             }
-    }
-    if (s->do_mclms)
-        revert_mclms(s, subframe_len);
-    if (s->do_inter_ch_decorr)
-        revert_inter_ch_decorr(s, subframe_len);
-    if (s->do_ac_filter)
-        revert_acfilter(s, subframe_len);
+        }
 
-    /* Dequantize */
-    if (s->quant_stepsize != 1)
-        for (i = 0; i < s->num_channels; i++)
-            for (j = 0; j < subframe_len; j++)
-                s->channel_residues[i][j] *= s->quant_stepsize;
+        if (s->do_mclms)
+            revert_mclms(s, subframe_len);
+        if (s->do_inter_ch_decorr)
+            revert_inter_ch_decorr(s, subframe_len);
+        if (s->do_ac_filter)
+            revert_acfilter(s, subframe_len);
+
+        /* Dequantize */
+        if (s->quant_stepsize != 1)
+            for (i = 0; i < s->num_channels; i++)
+                for (j = 0; j < subframe_len; j++)
+                    s->channel_residues[i][j] *= s->quant_stepsize;
+    }
 
     /* Write to proper output buffer depending on bit-depth */
     for (i = 0; i < s->channels_for_cur_subframe; i++) {
@@ -990,7 +989,7 @@ static int decode_subframe(WmallDecodeCtx *s)
             if (s->bits_per_sample == 16) {
                 *s->samples_16[c]++ = (int16_t) s->channel_residues[c][j] << padding_zeroes;
             } else {
-                *s->samples_32[c]++ = s->channel_residues[c][j] << padding_zeroes;
+                *s->samples_32[c]++ = s->channel_residues[c][j] << (padding_zeroes + 8);
             }
         }
     }
@@ -1015,15 +1014,14 @@ static int decode_subframe(WmallDecodeCtx *s)
  */
 static int decode_frame(WmallDecodeCtx *s)
 {
-    BitstreamContext *bc = &s->bc;
+    GetBitContext* gb = &s->gb;
     int more_frames = 0, len = 0, i, ret;
 
     s->frame->nb_samples = s->samples_per_frame;
     if ((ret = ff_get_buffer(s->avctx, s->frame, 0)) < 0) {
         /* return an error if no frame could be decoded at all */
-        av_log(s->avctx, AV_LOG_ERROR,
-               "not enough space for the output samples\n");
         s->packet_loss = 1;
+        s->frame->nb_samples = 0;
         return ret;
     }
     for (i = 0; i < s->num_channels; i++) {
@@ -1033,33 +1031,37 @@ static int decode_frame(WmallDecodeCtx *s)
 
     /* get frame length */
     if (s->len_prefix)
-        len = bitstream_read(bc, s->log2_frame_size);
+        len = get_bits(gb, s->log2_frame_size);
 
     /* decode tile information */
-    if (decode_tilehdr(s)) {
+    if ((ret = decode_tilehdr(s))) {
         s->packet_loss = 1;
-        return 0;
+        av_frame_unref(s->frame);
+        return ret;
     }
 
     /* read drc info */
     if (s->dynamic_range_compression)
-        s->drc_gain = bitstream_read(bc, 8);
+        s->drc_gain = get_bits(gb, 8);
 
     /* no idea what these are for, might be the number of samples
        that need to be skipped at the beginning or end of a stream */
-    if (bitstream_read_bit(bc)) {
+    if (get_bits1(gb)) {
         int av_unused skip;
 
         /* usually true for the first frame */
-        if (bitstream_read_bit(bc)) {
-            skip = bitstream_read(bc, av_log2(s->samples_per_frame * 2));
+        if (get_bits1(gb)) {
+            skip = get_bits(gb, av_log2(s->samples_per_frame * 2));
             ff_dlog(s->avctx, "start skip: %i\n", skip);
         }
 
         /* sometimes true for the last frame */
-        if (bitstream_read_bit(bc)) {
-            skip = bitstream_read(bc, av_log2(s->samples_per_frame * 2));
+        if (get_bits1(gb)) {
+            skip = get_bits(gb, av_log2(s->samples_per_frame * 2));
             ff_dlog(s->avctx, "end skip: %i\n", skip);
+            s->frame->nb_samples -= skip;
+            if (s->frame->nb_samples <= 0)
+                return AVERROR_INVALIDDATA;
         }
 
     }
@@ -1073,34 +1075,36 @@ static int decode_frame(WmallDecodeCtx *s)
 
     /* decode all subframes */
     while (!s->parsed_all_subframes) {
+        int decoded_samples = s->channel[0].decoded_samples;
         if (decode_subframe(s) < 0) {
             s->packet_loss = 1;
+            if (s->frame->nb_samples)
+                s->frame->nb_samples = decoded_samples;
             return 0;
         }
     }
 
     ff_dlog(s->avctx, "Frame done\n");
 
-    if (s->skip_frame)
-        s->skip_frame = 0;
+    s->skip_frame = 0;
 
     if (s->len_prefix) {
-        if (len != (bitstream_tell(bc) - s->frame_offset) + 2) {
+        if (len != (get_bits_count(gb) - s->frame_offset) + 2) {
             /* FIXME: not sure if this is always an error */
             av_log(s->avctx, AV_LOG_ERROR,
                    "frame[%"PRIu32"] would have to skip %i bits\n",
                    s->frame_num,
-                   len - (bitstream_tell(bc) - s->frame_offset) - 1);
+                   len - (get_bits_count(gb) - s->frame_offset) - 1);
             s->packet_loss = 1;
             return 0;
         }
 
         /* skip the rest of the frame data */
-        bitstream_skip(bc, len - (bitstream_tell(bc) - s->frame_offset) - 1);
+        skip_bits_long(gb, len - (get_bits_count(gb) - s->frame_offset) - 1);
     }
 
     /* decode trailer bit */
-    more_frames = bitstream_read_bit(bc);
+    more_frames = get_bits1(gb);
     ++s->frame_num;
     return more_frames;
 }
@@ -1108,22 +1112,22 @@ static int decode_frame(WmallDecodeCtx *s)
 /**
  * @brief Calculate remaining input buffer length.
  * @param s  codec context
- * @param bc bitstream reader context
+ * @param gb bitstream reader context
  * @return remaining size in bits
  */
-static int remaining_bits(WmallDecodeCtx *s, BitstreamContext *bc)
+static int remaining_bits(WmallDecodeCtx *s, GetBitContext *gb)
 {
-    return s->buf_bit_size - bitstream_tell(bc);
+    return s->buf_bit_size - get_bits_count(gb);
 }
 
 /**
  * @brief Fill the bit reservoir with a (partial) frame.
  * @param s      codec context
- * @param bc     bitstream reader context
+ * @param gb     bitstream reader context
  * @param len    length of the partial frame
  * @param append decides whether to reset the buffer or not
  */
-static void save_bits(WmallDecodeCtx *s, BitstreamContext *bc, int len,
+static void save_bits(WmallDecodeCtx *s, GetBitContext* gb, int len,
                       int append)
 {
     int buflen;
@@ -1134,71 +1138,75 @@ static void save_bits(WmallDecodeCtx *s, BitstreamContext *bc, int len,
         and skipped later so that a fast byte copy is possible */
 
     if (!append) {
-        s->frame_offset   = bitstream_tell(bc) & 7;
+        s->frame_offset   = get_bits_count(gb) & 7;
         s->num_saved_bits = s->frame_offset;
-        init_put_bits(&s->pb, s->frame_data, MAX_FRAMESIZE);
+        init_put_bits(&s->pb, s->frame_data, s->max_frame_size);
     }
 
     buflen = (s->num_saved_bits + len + 8) >> 3;
 
-    if (len <= 0 || buflen > MAX_FRAMESIZE) {
+    if (len <= 0 || buflen > s->max_frame_size) {
         avpriv_request_sample(s->avctx, "Too small input buffer");
         s->packet_loss = 1;
+        s->num_saved_bits = 0;
         return;
     }
 
     s->num_saved_bits += len;
     if (!append) {
-        avpriv_copy_bits(&s->pb, bc->buffer + (bitstream_tell(bc) >> 3),
+        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
                          s->num_saved_bits);
     } else {
-        int align = 8 - (bitstream_tell(bc) & 7);
+        int align = 8 - (get_bits_count(gb) & 7);
         align = FFMIN(align, len);
-        put_bits(&s->pb, align, bitstream_read(bc, align));
+        put_bits(&s->pb, align, get_bits(gb, align));
         len -= align;
-        avpriv_copy_bits(&s->pb, bc->buffer + (bitstream_tell(bc) >> 3), len);
+        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
     }
-    bitstream_skip(bc, len);
+    skip_bits_long(gb, len);
 
     tmp = s->pb;
     flush_put_bits(&tmp);
 
-    bitstream_init(&s->bc, s->frame_data, s->num_saved_bits);
-    bitstream_skip(&s->bc, s->frame_offset);
+    init_get_bits(&s->gb, s->frame_data, s->num_saved_bits);
+    skip_bits(&s->gb, s->frame_offset);
 }
 
 static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
                          AVPacket* avpkt)
 {
     WmallDecodeCtx *s = avctx->priv_data;
-    BitstreamContext *bc = &s->pbc;
+    GetBitContext* gb  = &s->pgb;
     const uint8_t* buf = avpkt->data;
     int buf_size       = avpkt->size;
     int num_bits_prev_frame, packet_sequence_number, spliced_packet;
 
     s->frame->nb_samples = 0;
 
-    if (s->packet_done || s->packet_loss) {
+    if (!buf_size && s->num_saved_bits > get_bits_count(&s->gb)) {
+        s->packet_done = 0;
+        if (!decode_frame(s))
+            s->num_saved_bits = 0;
+    } else if (s->packet_done || s->packet_loss) {
         s->packet_done = 0;
 
-        /* sanity check for the buffer length */
-        if (buf_size < avctx->block_align)
+        if (!buf_size)
             return 0;
 
-        s->next_packet_start = buf_size - avctx->block_align;
-        buf_size             = avctx->block_align;
+        s->next_packet_start = buf_size - FFMIN(avctx->block_align, buf_size);
+        buf_size             = FFMIN(avctx->block_align, buf_size);
         s->buf_bit_size      = buf_size << 3;
 
         /* parse packet header */
-        bitstream_init(bc, buf, s->buf_bit_size);
-        packet_sequence_number = bitstream_read(bc, 4);
-        bitstream_skip(bc, 1); // Skip seekable_frame_in_packet, currently ununused
-        spliced_packet = bitstream_read_bit(bc);
+        init_get_bits(gb, buf, s->buf_bit_size);
+        packet_sequence_number = get_bits(gb, 4);
+        skip_bits(gb, 1);   // Skip seekable_frame_in_packet, currently unused
+        spliced_packet = get_bits1(gb);
         if (spliced_packet)
             avpriv_request_sample(avctx, "Bitstream splicing");
 
         /* get number of bits that need to be added to the previous frame */
-        num_bits_prev_frame = bitstream_read(bc, s->log2_frame_size);
+        num_bits_prev_frame = get_bits(gb, s->log2_frame_size);
 
         /* check for packet loss */
         if (!s->packet_loss &&
@@ -1211,7 +1219,7 @@ static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
         s->packet_sequence_number = packet_sequence_number;
 
         if (num_bits_prev_frame > 0) {
-            int remaining_packet_bits = s->buf_bit_size - bitstream_tell(bc);
+            int remaining_packet_bits = s->buf_bit_size - get_bits_count(gb);
             if (num_bits_prev_frame >= remaining_packet_bits) {
                 num_bits_prev_frame = remaining_packet_bits;
                 s->packet_done = 1;
@@ -1219,7 +1227,7 @@ static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
 
             /* Append the previous frame data to the remaining data from the
              * previous packet to create a full frame. */
-            save_bits(s, bc, num_bits_prev_frame, 1);
+            save_bits(s, gb, num_bits_prev_frame, 1);
 
             /* decode the cross packet frame if it is valid */
             if (num_bits_prev_frame < remaining_packet_bits && !s->packet_loss)
@@ -1234,23 +1242,25 @@ static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
              * to decode incomplete frames in the s->len_prefix == 0 case. */
             s->num_saved_bits = 0;
             s->packet_loss    = 0;
-            init_put_bits(&s->pb, s->frame_data, MAX_FRAMESIZE);
+            init_put_bits(&s->pb, s->frame_data, s->max_frame_size);
         }
 
     } else {
         int frame_size;
 
         s->buf_bit_size = (avpkt->size - s->next_packet_start) << 3;
-        bitstream_init(bc, avpkt->data, s->buf_bit_size);
-        bitstream_skip(bc, s->packet_offset);
+        init_get_bits(gb, avpkt->data, s->buf_bit_size);
+        skip_bits(gb, s->packet_offset);
 
-        if (s->len_prefix && remaining_bits(s, bc) > s->log2_frame_size &&
-            (frame_size = bitstream_peek(bc, s->log2_frame_size)) &&
-            frame_size <= remaining_bits(s, bc)) {
-            save_bits(s, bc, frame_size, 0);
-            s->packet_done = !decode_frame(s);
+        if (s->len_prefix && remaining_bits(s, gb) > s->log2_frame_size &&
+            (frame_size = show_bits(gb, s->log2_frame_size)) &&
+            frame_size <= remaining_bits(s, gb)) {
+            save_bits(s, gb, frame_size, 0);
+
+            if (!s->packet_loss)
+                s->packet_done = !decode_frame(s);
         } else if (!s->len_prefix
-                   && s->num_saved_bits > bitstream_tell(&s->bc)) {
+                   && s->num_saved_bits > get_bits_count(&s->gb)) {
             /* when the frames do not have a length prefix, we don't know the
              * compressed length of the individual frames however, we know what
              * part of a new packet belongs to the previous frame therefore we
@@ -1263,19 +1273,24 @@ static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
         }
     }
 
+    if (remaining_bits(s, gb) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Overread %d\n", -remaining_bits(s, gb));
+        s->packet_loss = 1;
+    }
+
     if (s->packet_done && !s->packet_loss &&
-        remaining_bits(s, bc) > 0) {
+        remaining_bits(s, gb) > 0) {
         /* save the rest of the data so that it can be decoded
          * with the next packet */
-        save_bits(s, bc, remaining_bits(s, bc), 0);
+        save_bits(s, gb, remaining_bits(s, gb), 0);
     }
 
     *got_frame_ptr   = s->frame->nb_samples > 0;
     av_frame_move_ref(data, s->frame);
 
-    s->packet_offset = bitstream_tell(bc) & 7;
+    s->packet_offset = get_bits_count(gb) & 7;
 
-    return (s->packet_loss) ? AVERROR_INVALIDDATA : bitstream_tell(bc) >> 3;
+    return (s->packet_loss) ? AVERROR_INVALIDDATA : buf_size ? get_bits_count(gb) >> 3 : 0;
 }
 
 static void flush(AVCodecContext *avctx)
@@ -1288,7 +1303,7 @@ static void flush(AVCodecContext *avctx)
     s->next_packet_start = 0;
     s->cdlms[0][0].order = 0;
     s->frame->nb_samples = 0;
-    init_put_bits(&s->pb, s->frame_data, MAX_FRAMESIZE);
+    init_put_bits(&s->pb, s->frame_data, s->max_frame_size);
 }
 
 static av_cold int decode_close(AVCodecContext *avctx)
@@ -1296,6 +1311,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
     WmallDecodeCtx *s = avctx->priv_data;
 
     av_frame_free(&s->frame);
+    av_freep(&s->frame_data);
 
     return 0;
 }
