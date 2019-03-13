@@ -2,20 +2,20 @@
  * QCP format (.qcp) demuxer
  * Copyright (c) 2009 Kenan Gillet
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,6 +30,7 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
+#include "riff.h"
 
 typedef struct QCPContext {
     uint32_t data_size;                     ///< size of data chunk
@@ -56,6 +57,11 @@ static const uint8_t guid_evrc[16] = {
     0x91, 0xef, 0x73, 0x6a, 0x51, 0x00, 0xce, 0xb4
 };
 
+static const uint8_t guid_4gv[16] = {
+    0xca, 0x29, 0xfd, 0x3c, 0x53, 0xf6, 0xf5, 0x4e,
+    0x90, 0xe9, 0xf4, 0x23, 0x6d, 0x59, 0x9b, 0x61
+};
+
 /**
  * SMV GUID as stored in the file
  */
@@ -73,7 +79,7 @@ static int is_qcelp_13k_guid(const uint8_t *guid) {
         && !memcmp(guid+1, guid_qcelp_13k_part, sizeof(guid_qcelp_13k_part));
 }
 
-static int qcp_probe(AVProbeData *pd)
+static int qcp_probe(const AVProbeData *pd)
 {
     if (AV_RL32(pd->buf  ) == AV_RL32("RIFF") &&
         AV_RL64(pd->buf+8) == AV_RL64("QLCMfmt "))
@@ -102,13 +108,14 @@ static int qcp_read_header(AVFormatContext *s)
     if (is_qcelp_13k_guid(buf)) {
         st->codecpar->codec_id = AV_CODEC_ID_QCELP;
     } else if (!memcmp(buf, guid_evrc, 16)) {
-        avpriv_report_missing_feature(s, "EVRC codec");
-        return AVERROR_PATCHWELCOME;
+        st->codecpar->codec_id = AV_CODEC_ID_EVRC;
     } else if (!memcmp(buf, guid_smv, 16)) {
-        avpriv_report_missing_feature(s, "SMV codec");
-        return AVERROR_PATCHWELCOME;
+        st->codecpar->codec_id = AV_CODEC_ID_SMV;
+    } else if (!memcmp(buf, guid_4gv, 16)) {
+        st->codecpar->codec_id = AV_CODEC_ID_4GV;
     } else {
-        av_log(s, AV_LOG_ERROR, "Unknown codec GUID.\n");
+        av_log(s, AV_LOG_ERROR, "Unknown codec GUID "FF_PRI_GUID".\n",
+               FF_ARG_GUID(buf));
         return AVERROR_INVALIDDATA;
     }
     avio_skip(pb, 2 + 80); // codec-version + codec-name
@@ -141,7 +148,7 @@ static int qcp_read_packet(AVFormatContext *s, AVPacket *pkt)
     QCPContext    *c  = s->priv_data;
     unsigned int  chunk_size, tag;
 
-    while(!pb->eof_reached) {
+    while(!avio_feof(pb)) {
         if (c->data_size) {
             int pkt_size, ret, mode = avio_r8(pb);
 

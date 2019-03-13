@@ -2,20 +2,20 @@
  * Bitmap Brothers JV demuxer
  * Copyright (c) 2005, 2011 Peter Ross <pross@xvid.org>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -34,10 +34,10 @@
 #define JV_PREAMBLE_SIZE 5
 
 typedef struct JVFrame {
-    int audio_size;    /** audio packet size (bytes) */
-    int video_size;    /** video packet size (bytes) */
-    int palette_size;  /** palette size (bytes) */
-    int video_type;    /** per-frame video compression type */
+    int audio_size;    /**< audio packet size (bytes) */
+    int video_size;    /**< video packet size (bytes) */
+    int palette_size;  /**< palette size (bytes) */
+    int video_type;    /**< per-frame video compression type */
 } JVFrame;
 
 typedef struct JVDemuxContext {
@@ -52,10 +52,10 @@ typedef struct JVDemuxContext {
 
 #define MAGIC " Compression by John M Phillips Copyright (C) 1995 The Bitmap Brothers Ltd."
 
-static int read_probe(AVProbeData *pd)
+static int read_probe(const AVProbeData *pd)
 {
-    if (pd->buf[0] == 'J' && pd->buf[1] == 'V' &&
-        !memcmp(pd->buf + 4, MAGIC, FFMIN(strlen(MAGIC), pd->buf_size - 4)))
+    if (pd->buf[0] == 'J' && pd->buf[1] == 'V' && strlen(MAGIC) + 4 <= pd->buf_size &&
+        !memcmp(pd->buf + 4, MAGIC, strlen(MAGIC)))
         return AVPROBE_SCORE_MAX;
     return 0;
 }
@@ -166,7 +166,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     AVIOContext *pb = s->pb;
     AVStream *ast = s->streams[0];
 
-    while (!s->pb->eof_reached && jv->pts < ast->nb_index_entries) {
+    while (!avio_feof(s->pb) && jv->pts < ast->nb_index_entries) {
         const AVIndexEntry *e   = ast->index_entries + jv->pts;
         const JVFrame      *jvf = jv->frames + jv->pts;
 

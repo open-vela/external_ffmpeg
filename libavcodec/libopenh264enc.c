@@ -2,20 +2,20 @@
  * OpenH264 video encoder
  * Copyright (C) 2014 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -53,23 +53,23 @@ typedef struct SVCContext {
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
 #if OPENH264_VER_AT_LEAST(1, 6)
-    { "slice_mode", "Slice mode", OFFSET(slice_mode), AV_OPT_TYPE_INT, { .i64 = SM_FIXEDSLCNUM_SLICE }, SM_SINGLE_SLICE, SM_RESERVED, VE, "slice_mode" },
+    { "slice_mode", "set slice mode", OFFSET(slice_mode), AV_OPT_TYPE_INT, { .i64 = SM_FIXEDSLCNUM_SLICE }, SM_SINGLE_SLICE, SM_RESERVED, VE, "slice_mode" },
 #else
-    { "slice_mode", "Slice mode", OFFSET(slice_mode), AV_OPT_TYPE_INT, { .i64 = SM_AUTO_SLICE }, SM_SINGLE_SLICE, SM_RESERVED, VE, "slice_mode" },
+    { "slice_mode", "set slice mode", OFFSET(slice_mode), AV_OPT_TYPE_INT, { .i64 = SM_AUTO_SLICE }, SM_SINGLE_SLICE, SM_RESERVED, VE, "slice_mode" },
 #endif
-    { "fixed", "A fixed number of slices", 0, AV_OPT_TYPE_CONST, { .i64 = SM_FIXEDSLCNUM_SLICE }, 0, 0, VE, "slice_mode" },
+        { "fixed", "a fixed number of slices", 0, AV_OPT_TYPE_CONST, { .i64 = SM_FIXEDSLCNUM_SLICE }, 0, 0, VE, "slice_mode" },
 #if OPENH264_VER_AT_LEAST(1, 6)
-    { "dyn", "Size limited (compatibility name)", 0, AV_OPT_TYPE_CONST, { .i64 = SM_SIZELIMITED_SLICE }, 0, 0, VE, "slice_mode" },
-    { "sizelimited", "Size limited", 0, AV_OPT_TYPE_CONST, { .i64 = SM_SIZELIMITED_SLICE }, 0, 0, VE, "slice_mode" },
+        { "dyn", "Size limited (compatibility name)", 0, AV_OPT_TYPE_CONST, { .i64 = SM_SIZELIMITED_SLICE }, 0, 0, VE, "slice_mode" },
+        { "sizelimited", "Size limited", 0, AV_OPT_TYPE_CONST, { .i64 = SM_SIZELIMITED_SLICE }, 0, 0, VE, "slice_mode" },
 #else
-    { "rowmb", "One slice per row of macroblocks", 0, AV_OPT_TYPE_CONST, { .i64 = SM_ROWMB_SLICE }, 0, 0, VE, "slice_mode" },
-    { "auto", "Automatic number of slices according to number of threads", 0, AV_OPT_TYPE_CONST, { .i64 = SM_AUTO_SLICE }, 0, 0, VE, "slice_mode" },
-    { "dyn", "Dynamic slicing", 0, AV_OPT_TYPE_CONST, { .i64 = SM_DYN_SLICE }, 0, 0, VE, "slice_mode" },
+        { "rowmb", "one slice per row of macroblocks", 0, AV_OPT_TYPE_CONST, { .i64 = SM_ROWMB_SLICE }, 0, 0, VE, "slice_mode" },
+        { "auto", "automatic number of slices according to number of threads", 0, AV_OPT_TYPE_CONST, { .i64 = SM_AUTO_SLICE }, 0, 0, VE, "slice_mode" },
+        { "dyn", "Dynamic slicing", 0, AV_OPT_TYPE_CONST, { .i64 = SM_DYN_SLICE }, 0, 0, VE, "slice_mode" },
 #endif
-    { "loopfilter", "Enable loop filter", OFFSET(loopfilter), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
-    { "profile", "Set profile restrictions", OFFSET(profile), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
-    { "max_nal_size", "Set maximum NAL size in bytes", OFFSET(max_nal_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
-    { "allow_skip_frames", "Allow skipping frames to hit the target bitrate", OFFSET(skip_frames), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "loopfilter", "enable loop filter", OFFSET(loopfilter), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, VE },
+    { "profile", "set profile restrictions", OFFSET(profile), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
+    { "max_nal_size", "set maximum NAL size in bytes", OFFSET(max_nal_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+    { "allow_skip_frames", "allow skipping frames to hit the target bitrate", OFFSET(skip_frames), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
     { "cabac", "Enable cabac", OFFSET(cabac), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
@@ -129,7 +129,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    param.fMaxFrameRate              = avctx->time_base.den / avctx->time_base.num;
+    param.fMaxFrameRate              = 1/av_q2d(avctx->time_base);
     param.iPicWidth                  = avctx->width;
     param.iPicHeight                 = avctx->height;
     param.iTargetBitrate             = avctx->bit_rate;
@@ -163,6 +163,47 @@ FF_ENABLE_DEPRECATION_WARNINGS
     param.sSpatialLayers[0].fFrameRate          = param.fMaxFrameRate;
     param.sSpatialLayers[0].iSpatialBitrate     = param.iTargetBitrate;
     param.sSpatialLayers[0].iMaxSpatialBitrate  = param.iMaxBitrate;
+
+#if OPENH264_VER_AT_LEAST(1, 7)
+    if (avctx->sample_aspect_ratio.num && avctx->sample_aspect_ratio.den) {
+        // Table E-1.
+        static const AVRational sar_idc[] = {
+            {   0,  0 }, // Unspecified (never written here).
+            {   1,  1 }, {  12, 11 }, {  10, 11 }, {  16, 11 },
+            {  40, 33 }, {  24, 11 }, {  20, 11 }, {  32, 11 },
+            {  80, 33 }, {  18, 11 }, {  15, 11 }, {  64, 33 },
+            { 160, 99 }, // Last 3 are unknown to openh264: {   4,  3 }, {   3,  2 }, {   2,  1 },
+        };
+        static const ESampleAspectRatio asp_idc[] = {
+            ASP_UNSPECIFIED,
+            ASP_1x1,      ASP_12x11,   ASP_10x11,   ASP_16x11,
+            ASP_40x33,    ASP_24x11,   ASP_20x11,   ASP_32x11,
+            ASP_80x33,    ASP_18x11,   ASP_15x11,   ASP_64x33,
+            ASP_160x99,
+        };
+        int num, den, i;
+
+        av_reduce(&num, &den, avctx->sample_aspect_ratio.num,
+                  avctx->sample_aspect_ratio.den, 65535);
+
+        for (i = 1; i < FF_ARRAY_ELEMS(sar_idc); i++) {
+            if (num == sar_idc[i].num &&
+                den == sar_idc[i].den)
+                break;
+        }
+        if (i == FF_ARRAY_ELEMS(sar_idc)) {
+            param.sSpatialLayers[0].eAspectRatio = ASP_EXT_SAR;
+            param.sSpatialLayers[0].sAspectRatioExtWidth = num;
+            param.sSpatialLayers[0].sAspectRatioExtHeight = den;
+        } else {
+            param.sSpatialLayers[0].eAspectRatio = asp_idc[i];
+        }
+        param.sSpatialLayers[0].bAspectRatioPresent = true;
+    }
+    else {
+        param.sSpatialLayers[0].bAspectRatioPresent = false;
+    }
+#endif
 
     if ((avctx->slices > 1) && (s->max_nal_size)) {
         av_log(avctx, AV_LOG_ERROR,
@@ -246,6 +287,10 @@ static int svc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     sp.iPicWidth  = avctx->width;
     sp.iPicHeight = avctx->height;
 
+    if (frame->pict_type == AV_PICTURE_TYPE_I) {
+        (*s->encoder)->ForceIntraFrame(s->encoder, true);
+    }
+
     encoded = (*s->encoder)->EncodeFrame(s->encoder, &sp, &fbi);
     if (encoded != cmResultSuccess) {
         av_log(avctx, AV_LOG_ERROR, "EncodeFrame failed\n");
@@ -271,7 +316,7 @@ static int svc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     }
     av_log(avctx, AV_LOG_DEBUG, "%d slices\n", fbi.sLayerInfo[fbi.iLayerNum - 1].iNalCount);
 
-    if ((ret = ff_alloc_packet(avpkt, size))) {
+    if ((ret = ff_alloc_packet2(avctx, avpkt, size, size))) {
         av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
     }
