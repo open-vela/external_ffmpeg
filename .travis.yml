@@ -17,14 +17,14 @@ matrix:
           compiler: gcc
 cache:
   directories:
-    - libav-samples
+    - ffmpeg-samples
 before_install:
   - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update; fi
 install:
   - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew install nasm; fi
 script:
-  - mkdir -p libav-samples
-  - ./configure --samples=libav-samples --cc=$CC
+  - mkdir -p ffmpeg-samples
+  - ./configure --samples=ffmpeg-samples --cc=$CC
   - make -j 8
   - make fate-rsync
   - make check -j 8

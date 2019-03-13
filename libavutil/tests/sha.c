@@ -1,44 +1,49 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/sha.c"
-
 #include <stdio.h>
+
+#include "libavutil/mem.h"
+#include "libavutil/sha.h"
 
 int main(void)
 {
     int i, j, k;
-    AVSHA ctx;
+    struct AVSHA *ctx;
     unsigned char digest[32];
     static const int lengths[3] = { 160, 224, 256 };
+
+    ctx = av_sha_alloc();
+    if (!ctx)
+        return 1;
 
     for (j = 0; j < 3; j++) {
         printf("Testing SHA-%d\n", lengths[j]);
         for (k = 0; k < 3; k++) {
-            av_sha_init(&ctx, lengths[j]);
+            av_sha_init(ctx, lengths[j]);
             if (k == 0)
-                av_sha_update(&ctx, "abc", 3);
+                av_sha_update(ctx, "abc", 3);
             else if (k == 1)
-                av_sha_update(&ctx, "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56);
+                av_sha_update(ctx, "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56);
             else
                 for (i = 0; i < 1000*1000; i++)
-                    av_sha_update(&ctx, "a", 1);
-            av_sha_final(&ctx, digest);
+                    av_sha_update(ctx, "a", 1);
+            av_sha_final(ctx, digest);
             for (i = 0; i < lengths[j] >> 3; i++)
                 printf("%02X", digest[i]);
             putchar('\n');
@@ -64,6 +69,7 @@ int main(void)
             break;
         }
     }
+    av_free(ctx);
 
     return 0;
 }
