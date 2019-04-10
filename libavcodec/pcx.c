@@ -5,36 +5,32 @@
  * This decoder does not support CGA palettes. I am unable to find samples
  * and Netpbm cannot generate them.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/imgutils.h"
-
 #include "avcodec.h"
-#include "bitstream.h"
 #include "bytestream.h"
+#include "get_bits.h"
 #include "internal.h"
 
 #define PCX_HEADER_SIZE 128
 
-/**
- * @return advanced src pointer
- */
-static void pcx_rle_decode(GetByteContext *gb,
+static int pcx_rle_decode(GetByteContext *gb,
                            uint8_t *dst,
                            unsigned int bytes_per_scanline,
                            int compressed)
@@ -42,11 +38,14 @@ static void pcx_rle_decode(GetByteContext *gb,
     unsigned int i = 0;
     unsigned char run, value;
 
+    if (bytestream2_get_bytes_left(gb) < 1)
+        return AVERROR_INVALIDDATA;
+
     if (compressed) {
-        while (i < bytes_per_scanline && bytestream2_get_bytes_left(gb)) {
+        while (i < bytes_per_scanline && bytestream2_get_bytes_left(gb)>0) {
             run   = 1;
             value = bytestream2_get_byte(gb);
-            if (value >= 0xc0 && bytestream2_get_bytes_left(gb)) {
+            if (value >= 0xc0 && bytestream2_get_bytes_left(gb)>0) {
                 run   = value & 0x3f;
                 value = bytestream2_get_byte(gb);
             }
@@ -56,15 +55,16 @@ static void pcx_rle_decode(GetByteContext *gb,
     } else {
         bytestream2_get_buffer(gb, dst, bytes_per_scanline);
     }
+    return 0;
 }
 
-static void pcx_palette(GetByteContext *gb, uint32_t *dst,
-                        unsigned int pallen)
+static void pcx_palette(GetByteContext *gb, uint32_t *dst, int pallen)
 {
-    unsigned int i;
+    int i;
 
+    pallen = FFMIN(pallen, bytestream2_get_bytes_left(gb) / 3);
     for (i = 0; i < pallen; i++)
-        *dst++ = bytestream2_get_be24(gb);
+        *dst++ = 0xFF000000 | bytestream2_get_be24u(gb);
     if (pallen < 256)
         memset(dst, 0, (256 - pallen) * sizeof(*dst));
 }
@@ -72,32 +72,34 @@ static void pcx_palette(GetByteContext *gb, uint32_t *dst,
 static int pcx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                             AVPacket *avpkt)
 {
-    const uint8_t *buf = avpkt->data;
-    int buf_size       = avpkt->size;
-    AVFrame *const p   = data;
     GetByteContext gb;
+    AVFrame * const p  = data;
     int compressed, xmin, ymin, xmax, ymax;
+    int ret;
     unsigned int w, h, bits_per_pixel, bytes_per_line, nplanes, stride, y, x,
                  bytes_per_scanline;
-    uint8_t *ptr;
-    uint8_t *scanline;
-    int ret = -1;
+    uint8_t *ptr, *scanline;
 
-    if (buf_size < PCX_HEADER_SIZE) {
+    if (avpkt->size < PCX_HEADER_SIZE) {
         av_log(avctx, AV_LOG_ERROR, "Packet too small\n");
         return AVERROR_INVALIDDATA;
     }
 
-    if (buf[0] != 0x0a || buf[1] > 5) {
+    bytestream2_init(&gb, avpkt->data, avpkt->size);
+
+    if (bytestream2_get_byteu(&gb) != 0x0a || bytestream2_get_byteu(&gb) > 5) {
         av_log(avctx, AV_LOG_ERROR, "this is not PCX encoded data\n");
         return AVERROR_INVALIDDATA;
     }
 
-    compressed = buf[2];
-    xmin       = AV_RL16(buf + 4);
-    ymin       = AV_RL16(buf + 6);
-    xmax       = AV_RL16(buf + 8);
-    ymax       = AV_RL16(buf + 10);
+    compressed                     = bytestream2_get_byteu(&gb);
+    bits_per_pixel                 = bytestream2_get_byteu(&gb);
+    xmin                           = bytestream2_get_le16u(&gb);
+    ymin                           = bytestream2_get_le16u(&gb);
+    xmax                           = bytestream2_get_le16u(&gb);
+    ymax                           = bytestream2_get_le16u(&gb);
+    avctx->sample_aspect_ratio.num = bytestream2_get_le16u(&gb);
+    avctx->sample_aspect_ratio.den = bytestream2_get_le16u(&gb);
 
     if (xmax < xmin || ymax < ymin) {
         av_log(avctx, AV_LOG_ERROR, "invalid image dimensions\n");
@@ -107,13 +109,13 @@ static int pcx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     w = xmax - xmin + 1;
     h = ymax - ymin + 1;
 
-    bits_per_pixel     = buf[3];
-    bytes_per_line     = AV_RL16(buf + 66);
-    nplanes            = buf[65];
+    bytestream2_skipu(&gb, 49);
+    nplanes            = bytestream2_get_byteu(&gb);
+    bytes_per_line     = bytestream2_get_le16u(&gb);
     bytes_per_scanline = nplanes * bytes_per_line;
 
     if (bytes_per_scanline < (w * bits_per_pixel * nplanes + 7) / 8 ||
-        (!compressed && bytes_per_scanline > buf_size / h)) {
+        (!compressed && bytes_per_scanline > bytestream2_get_bytes_left(&gb) / h)) {
         av_log(avctx, AV_LOG_ERROR, "PCX data is corrupted\n");
         return AVERROR_INVALIDDATA;
     }
@@ -136,15 +138,13 @@ static int pcx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return AVERROR_INVALIDDATA;
     }
 
-    bytestream2_init(&gb, buf + PCX_HEADER_SIZE, buf_size - PCX_HEADER_SIZE);
+    bytestream2_skipu(&gb, 60);
 
     if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
         return ret;
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
 
     p->pict_type = AV_PICTURE_TYPE_I;
 
@@ -157,7 +157,9 @@ static int pcx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     if (nplanes == 3 && bits_per_pixel == 8) {
         for (y = 0; y < h; y++) {
-            pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            ret = pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            if (ret < 0)
+                goto end;
 
             for (x = 0; x < w; x++) {
                 ptr[3 * x]     = scanline[x];
@@ -168,34 +170,53 @@ static int pcx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             ptr += stride;
         }
     } else if (nplanes == 1 && bits_per_pixel == 8) {
+        int palstart = avpkt->size - 769;
+
+        if (avpkt->size < 769) {
+            av_log(avctx, AV_LOG_ERROR, "File is too short\n");
+            ret = avctx->err_recognition & AV_EF_EXPLODE ?
+                  AVERROR_INVALIDDATA : avpkt->size;
+            goto end;
+        }
+
         for (y = 0; y < h; y++, ptr += stride) {
-            pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            ret = pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            if (ret < 0)
+                goto end;
             memcpy(ptr, scanline, w);
         }
 
+        if (bytestream2_tell(&gb) != palstart) {
+            av_log(avctx, AV_LOG_WARNING, "image data possibly corrupted\n");
+            bytestream2_seek(&gb, palstart, SEEK_SET);
+        }
         if (bytestream2_get_byte(&gb) != 12) {
             av_log(avctx, AV_LOG_ERROR, "expected palette after image data\n");
             ret = avctx->err_recognition & AV_EF_EXPLODE ?
-                  AVERROR_INVALIDDATA : buf_size;
+                  AVERROR_INVALIDDATA : avpkt->size;
             goto end;
         }
     } else if (nplanes == 1) {   /* all packed formats, max. 16 colors */
-        BitstreamContext s;
+        GetBitContext s;
 
         for (y = 0; y < h; y++) {
-            bitstream_init8(&s, scanline, bytes_per_scanline);
+            init_get_bits8(&s, scanline, bytes_per_scanline);
 
-            pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            ret = pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            if (ret < 0)
+                goto end;
 
             for (x = 0; x < w; x++)
-                ptr[x] = bitstream_read(&s, bits_per_pixel);
+                ptr[x] = get_bits(&s, bits_per_pixel);
             ptr += stride;
         }
     } else {    /* planar, 4, 8 or 16 colors */
         int i;
 
         for (y = 0; y < h; y++) {
-            pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            ret = pcx_rle_decode(&gb, scanline, bytes_per_scanline, compressed);
+            if (ret < 0)
+                goto end;
 
             for (x = 0; x < w; x++) {
                 int m = 0x80 >> (x & 7), v = 0;
@@ -209,23 +230,20 @@ static int pcx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         }
     }
 
+    ret = bytestream2_tell(&gb);
     if (nplanes == 1 && bits_per_pixel == 8) {
-        if (bytestream2_get_bytes_left(&gb) < 768) {
-            av_log(avctx, AV_LOG_ERROR, "Palette truncated\n");
-            ret = AVERROR_INVALIDDATA;
-            goto end;
-        }
-
         pcx_palette(&gb, (uint32_t *)p->data[1], 256);
+        ret += 256 * 3;
+    } else if (bits_per_pixel * nplanes == 1) {
+        AV_WN32A(p->data[1]  , 0xFF000000);
+        AV_WN32A(p->data[1]+4, 0xFFFFFFFF);
     } else if (bits_per_pixel < 8) {
-        GetByteContext gb1;
-        bytestream2_init(&gb1, avpkt->data + 16, 48);
-        pcx_palette(&gb1, (uint32_t *)p->data[1], 16);
+        bytestream2_seek(&gb, 16, SEEK_SET);
+        pcx_palette(&gb, (uint32_t *)p->data[1], 16);
     }
 
     *got_frame = 1;
 
-    ret = bytestream2_tell(&gb);
 end:
     av_free(scanline);
     return ret;

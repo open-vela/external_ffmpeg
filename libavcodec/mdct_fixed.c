@@ -1,22 +1,23 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #define FFT_FLOAT 0
+#define FFT_FIXED_32 0
 #include "mdct_template.c"
 
 /* same as ff_mdct_calcw_c with double-width unscaled output */
@@ -38,13 +39,13 @@ void ff_mdct_calcw_c(FFTContext *s, FFTDouble *out, const FFTSample *input)
 
     /* pre rotation */
     for(i=0;i<n8;i++) {
-        re = RSCALE(-input[2*i+n3] - input[n3-1-2*i]);
-        im = RSCALE(-input[n4+2*i] + input[n4-1-2*i]);
+        re = RSCALE(-input[2*i+n3], - input[n3-1-2*i]);
+        im = RSCALE(-input[n4+2*i], + input[n4-1-2*i]);
         j = revtab[i];
         CMUL(x[j].re, x[j].im, re, im, -tcos[i], tsin[i]);
 
-        re = RSCALE( input[2*i]    - input[n2-1-2*i]);
-        im = RSCALE(-input[n2+2*i] - input[ n-1-2*i]);
+        re = RSCALE( input[2*i]   , - input[n2-1-2*i]);
+        im = RSCALE(-input[n2+2*i], - input[ n-1-2*i]);
         j = revtab[n8 + i];
         CMUL(x[j].re, x[j].im, re, im, -tcos[n8 + i], tsin[n8 + i]);
     }

@@ -2,20 +2,20 @@
  * YUV4MPEG muxer
  * Copyright (c) 2001, 2002, 2003 Fabrice Bellard
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -33,10 +33,13 @@ static int yuv4_generate_header(AVFormatContext *s, char* buf)
     int raten, rated, aspectn, aspectd, n;
     char inter;
     const char *colorspace = "";
+    const char *colorrange = "";
+    int field_order;
 
     st     = s->streams[0];
     width  = st->codecpar->width;
     height = st->codecpar->height;
+    field_order = st->codecpar->field_order;
 
     // TODO: should be avg_frame_rate
     av_reduce(&raten, &rated, st->time_base.den,
@@ -48,8 +51,28 @@ static int yuv4_generate_header(AVFormatContext *s, char* buf)
     if (aspectn == 0 && aspectd == 1)
         aspectd = 0;  // 0:0 means unknown
 
-    switch (st->codecpar->field_order) {
+#if FF_API_LAVF_AVCTX
+    FF_DISABLE_DEPRECATION_WARNINGS
+    if (field_order != st->codec->field_order && st->codec->field_order != AV_FIELD_UNKNOWN)
+        field_order = st->codec->field_order;
+    FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
+    switch(st->codecpar->color_range) {
+    case AVCOL_RANGE_MPEG:
+        colorrange = " XCOLORRANGE=LIMITED";
+        break;
+    case AVCOL_RANGE_JPEG:
+        colorrange = " XCOLORRANGE=FULL";
+        break;
+    default:
+        break;
+    }
+
+    switch (field_order) {
+    case AV_FIELD_TB:
     case AV_FIELD_TT: inter = 't'; break;
+    case AV_FIELD_BT:
     case AV_FIELD_BB: inter = 'b'; break;
     default:          inter = 'p'; break;
     }
@@ -58,8 +81,32 @@ static int yuv4_generate_header(AVFormatContext *s, char* buf)
     case AV_PIX_FMT_GRAY8:
         colorspace = " Cmono";
         break;
+    case AV_PIX_FMT_GRAY9:
+        colorspace = " Cmono9";
+        break;
+    case AV_PIX_FMT_GRAY10:
+        colorspace = " Cmono10";
+        break;
+    case AV_PIX_FMT_GRAY12:
+        colorspace = " Cmono12";
+        break;
+    case AV_PIX_FMT_GRAY16:
+        colorspace = " Cmono16";
+        break;
     case AV_PIX_FMT_YUV411P:
         colorspace = " C411 XYSCSS=411";
+        break;
+    case AV_PIX_FMT_YUVJ420P:
+        colorspace = " C420jpeg XYSCSS=420JPEG";
+        colorrange = " XCOLORRANGE=FULL";
+        break;
+    case AV_PIX_FMT_YUVJ422P:
+        colorspace = " C422 XYSCSS=422";
+        colorrange = " XCOLORRANGE=FULL";
+        break;
+    case AV_PIX_FMT_YUVJ444P:
+        colorspace = " C444 XYSCSS=444";
+        colorrange = " XCOLORRANGE=FULL";
         break;
     case AV_PIX_FMT_YUV420P:
         switch (st->codecpar->chroma_location) {
@@ -74,15 +121,61 @@ static int yuv4_generate_header(AVFormatContext *s, char* buf)
     case AV_PIX_FMT_YUV444P:
         colorspace = " C444 XYSCSS=444";
         break;
+    case AV_PIX_FMT_YUV420P9:
+        colorspace = " C420p9 XYSCSS=420P9";
+        break;
+    case AV_PIX_FMT_YUV422P9:
+        colorspace = " C422p9 XYSCSS=422P9";
+        break;
+    case AV_PIX_FMT_YUV444P9:
+        colorspace = " C444p9 XYSCSS=444P9";
+        break;
+    case AV_PIX_FMT_YUV420P10:
+        colorspace = " C420p10 XYSCSS=420P10";
+        break;
+    case AV_PIX_FMT_YUV422P10:
+        colorspace = " C422p10 XYSCSS=422P10";
+        break;
+    case AV_PIX_FMT_YUV444P10:
+        colorspace = " C444p10 XYSCSS=444P10";
+        break;
+    case AV_PIX_FMT_YUV420P12:
+        colorspace = " C420p12 XYSCSS=420P12";
+        break;
+    case AV_PIX_FMT_YUV422P12:
+        colorspace = " C422p12 XYSCSS=422P12";
+        break;
+    case AV_PIX_FMT_YUV444P12:
+        colorspace = " C444p12 XYSCSS=444P12";
+        break;
+    case AV_PIX_FMT_YUV420P14:
+        colorspace = " C420p14 XYSCSS=420P14";
+        break;
+    case AV_PIX_FMT_YUV422P14:
+        colorspace = " C422p14 XYSCSS=422P14";
+        break;
+    case AV_PIX_FMT_YUV444P14:
+        colorspace = " C444p14 XYSCSS=444P14";
+        break;
+    case AV_PIX_FMT_YUV420P16:
+        colorspace = " C420p16 XYSCSS=420P16";
+        break;
+    case AV_PIX_FMT_YUV422P16:
+        colorspace = " C422p16 XYSCSS=422P16";
+        break;
+    case AV_PIX_FMT_YUV444P16:
+        colorspace = " C444p16 XYSCSS=444P16";
+        break;
     }
 
     /* construct stream header, if this is the first frame */
-    n = snprintf(buf, Y4M_LINE_MAX, "%s W%d H%d F%d:%d I%c A%d:%d%s\n",
+    n = snprintf(buf, Y4M_LINE_MAX, "%s W%d H%d F%d:%d I%c A%d:%d%s%s\n",
                  Y4M_MAGIC, width, height, raten, rated, inter,
-                 aspectn, aspectd, colorspace);
+                 aspectn, aspectd, colorspace, colorrange);
 
     return n;
 }
+
 
 static int yuv4_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
@@ -93,7 +186,6 @@ static int yuv4_write_packet(AVFormatContext *s, AVPacket *pkt)
     int width, height, h_chroma_shift, v_chroma_shift;
     int i;
     char buf2[Y4M_LINE_MAX + 1];
-    char buf1[20];
     uint8_t *ptr, *ptr1, *ptr2;
 
     frame = (AVFrame *)pkt->data;
@@ -112,24 +204,64 @@ static int yuv4_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     /* construct frame header */
 
-    snprintf(buf1, sizeof(buf1), "%s\n", Y4M_FRAME_MAGIC);
-    avio_write(pb, buf1, strlen(buf1));
+    avio_printf(s->pb, "%s\n", Y4M_FRAME_MAGIC);
 
     width  = st->codecpar->width;
     height = st->codecpar->height;
 
     ptr = frame->data[0];
+
+    switch (st->codecpar->format) {
+    case AV_PIX_FMT_GRAY8:
+    case AV_PIX_FMT_YUV411P:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUV444P:
+    // TODO: remove YUVJ pixel formats when they are completely removed from the codebase.
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUVJ422P:
+    case AV_PIX_FMT_YUVJ444P:
+        break;
+    case AV_PIX_FMT_GRAY9:
+    case AV_PIX_FMT_GRAY10:
+    case AV_PIX_FMT_GRAY12:
+    case AV_PIX_FMT_GRAY16:
+    case AV_PIX_FMT_YUV420P9:
+    case AV_PIX_FMT_YUV422P9:
+    case AV_PIX_FMT_YUV444P9:
+    case AV_PIX_FMT_YUV420P10:
+    case AV_PIX_FMT_YUV422P10:
+    case AV_PIX_FMT_YUV444P10:
+    case AV_PIX_FMT_YUV420P12:
+    case AV_PIX_FMT_YUV422P12:
+    case AV_PIX_FMT_YUV444P12:
+    case AV_PIX_FMT_YUV420P14:
+    case AV_PIX_FMT_YUV422P14:
+    case AV_PIX_FMT_YUV444P14:
+    case AV_PIX_FMT_YUV420P16:
+    case AV_PIX_FMT_YUV422P16:
+    case AV_PIX_FMT_YUV444P16:
+        width *= 2;
+        break;
+    default:
+        av_log(s, AV_LOG_ERROR, "The pixel format '%s' is not supported.\n",
+               av_get_pix_fmt_name(st->codecpar->format));
+        return AVERROR(EINVAL);
+    }
+
     for (i = 0; i < height; i++) {
         avio_write(pb, ptr, width);
         ptr += frame->linesize[0];
     }
 
-    if (st->codecpar->format != AV_PIX_FMT_GRAY8) {
+    if (st->codecpar->format != AV_PIX_FMT_GRAY8 && st->codecpar->format != AV_PIX_FMT_GRAY9 &&
+        st->codecpar->format != AV_PIX_FMT_GRAY10 && st->codecpar->format != AV_PIX_FMT_GRAY12 &&
+        st->codecpar->format != AV_PIX_FMT_GRAY16) {
         // Adjust for smaller Cb and Cr planes
         av_pix_fmt_get_chroma_sub_sample(st->codecpar->format, &h_chroma_shift,
                                          &v_chroma_shift);
         // Shift right, rounding up
-        width  = AV_CEIL_RSHIFT(width, h_chroma_shift);
+        width  = AV_CEIL_RSHIFT(width,  h_chroma_shift);
         height = AV_CEIL_RSHIFT(height, v_chroma_shift);
 
         ptr1 = frame->data[1];
@@ -143,6 +275,7 @@ static int yuv4_write_packet(AVFormatContext *s, AVPacket *pkt)
             ptr2 += frame->linesize[2];
         }
     }
+
     return 0;
 }
 
@@ -158,15 +291,58 @@ static int yuv4_write_header(AVFormatContext *s)
         return AVERROR_INVALIDDATA;
     }
 
-    if (s->streams[0]->codecpar->format == AV_PIX_FMT_YUV411P) {
-        av_log(s, AV_LOG_ERROR, "Warning: generating rarely used 4:1:1 YUV "
+    switch (s->streams[0]->codecpar->format) {
+    case AV_PIX_FMT_YUV411P:
+        av_log(s, AV_LOG_WARNING, "Warning: generating rarely used 4:1:1 YUV "
                "stream, some mjpegtools might not work.\n");
-    } else if ((s->streams[0]->codecpar->format != AV_PIX_FMT_YUV420P) &&
-               (s->streams[0]->codecpar->format != AV_PIX_FMT_YUV422P) &&
-               (s->streams[0]->codecpar->format != AV_PIX_FMT_GRAY8)   &&
-               (s->streams[0]->codecpar->format != AV_PIX_FMT_YUV444P)) {
-        av_log(s, AV_LOG_ERROR, "ERROR: yuv4mpeg only handles yuv444p, "
-               "yuv422p, yuv420p, yuv411p and gray pixel formats. "
+        break;
+    case AV_PIX_FMT_GRAY8:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUV444P:
+    // TODO: remove YUVJ pixel formats when they are completely removed from the codebase.
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUVJ422P:
+    case AV_PIX_FMT_YUVJ444P:
+        break;
+    case AV_PIX_FMT_GRAY9:
+    case AV_PIX_FMT_GRAY10:
+    case AV_PIX_FMT_GRAY12:
+    case AV_PIX_FMT_GRAY16:
+    case AV_PIX_FMT_YUV420P9:
+    case AV_PIX_FMT_YUV422P9:
+    case AV_PIX_FMT_YUV444P9:
+    case AV_PIX_FMT_YUV420P10:
+    case AV_PIX_FMT_YUV422P10:
+    case AV_PIX_FMT_YUV444P10:
+    case AV_PIX_FMT_YUV420P12:
+    case AV_PIX_FMT_YUV422P12:
+    case AV_PIX_FMT_YUV444P12:
+    case AV_PIX_FMT_YUV420P14:
+    case AV_PIX_FMT_YUV422P14:
+    case AV_PIX_FMT_YUV444P14:
+    case AV_PIX_FMT_YUV420P16:
+    case AV_PIX_FMT_YUV422P16:
+    case AV_PIX_FMT_YUV444P16:
+        if (s->strict_std_compliance >= FF_COMPLIANCE_NORMAL) {
+            av_log(s, AV_LOG_ERROR, "'%s' is not an official yuv4mpegpipe pixel format. "
+                   "Use '-strict -1' to encode to this pixel format.\n",
+                   av_get_pix_fmt_name(s->streams[0]->codecpar->format));
+            return AVERROR(EINVAL);
+        }
+        av_log(s, AV_LOG_WARNING, "Warning: generating non standard YUV stream. "
+               "Mjpegtools will not work.\n");
+        break;
+    default:
+        av_log(s, AV_LOG_ERROR, "ERROR: yuv4mpeg can only handle "
+               "yuv444p, yuv422p, yuv420p, yuv411p and gray8 pixel formats. "
+               "And using 'strict -1' also yuv444p9, yuv422p9, yuv420p9, "
+               "yuv444p10, yuv422p10, yuv420p10, "
+               "yuv444p12, yuv422p12, yuv420p12, "
+               "yuv444p14, yuv422p14, yuv420p14, "
+               "yuv444p16, yuv422p16, yuv420p16, "
+               "gray9, gray10, gray12 "
+               "and gray16 pixel formats. "
                "Use -pix_fmt to select one.\n");
         return AVERROR(EIO);
     }
@@ -178,7 +354,6 @@ static int yuv4_write_header(AVFormatContext *s)
 AVOutputFormat ff_yuv4mpegpipe_muxer = {
     .name              = "yuv4mpegpipe",
     .long_name         = NULL_IF_CONFIG_SMALL("YUV4MPEG pipe"),
-    .mime_type         = "",
     .extensions        = "y4m",
     .priv_data_size    = sizeof(int),
     .audio_codec       = AV_CODEC_ID_NONE,

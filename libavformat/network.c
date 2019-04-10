@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2007 The Libav Project
+ * Copyright (c) 2007 The FFmpeg Project
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,20 +23,24 @@
 #include "tls.h"
 #include "url.h"
 #include "libavcodec/internal.h"
+#include "libavutil/avutil.h"
 #include "libavutil/avassert.h"
 #include "libavutil/mem.h"
 #include "libavutil/time.h"
 
-void ff_tls_init(void)
+int ff_tls_init(void)
 {
 #if CONFIG_TLS_PROTOCOL
 #if CONFIG_OPENSSL
-    ff_openssl_init();
+    int ret;
+    if ((ret = ff_openssl_init()) < 0)
+        return ret;
 #endif
 #if CONFIG_GNUTLS
     ff_gnutls_init();
 #endif
 #endif
+    return 0;
 }
 
 void ff_tls_deinit(void)
@@ -51,20 +55,11 @@ void ff_tls_deinit(void)
 #endif
 }
 
-int ff_network_inited_globally;
-
 int ff_network_init(void)
 {
 #if HAVE_WINSOCK2_H
     WSADATA wsaData;
-#endif
 
-    if (!ff_network_inited_globally)
-        av_log(NULL, AV_LOG_WARNING, "Using network protocols without global "
-                                     "network initialization. Please use "
-                                     "avformat_network_init(), this will "
-                                     "become mandatory later.\n");
-#if HAVE_WINSOCK2_H
     if (WSAStartup(MAKEWORD(1,1), &wsaData))
         return 0;
 #endif
@@ -76,8 +71,46 @@ int ff_network_wait_fd(int fd, int write)
     int ev = write ? POLLOUT : POLLIN;
     struct pollfd p = { .fd = fd, .events = ev, .revents = 0 };
     int ret;
-    ret = poll(&p, 1, 100);
+    ret = poll(&p, 1, POLLING_TIME);
     return ret < 0 ? ff_neterrno() : p.revents & (ev | POLLERR | POLLHUP) ? 0 : AVERROR(EAGAIN);
+}
+
+int ff_network_wait_fd_timeout(int fd, int write, int64_t timeout, AVIOInterruptCB *int_cb)
+{
+    int ret;
+    int64_t wait_start = 0;
+
+    while (1) {
+        if (ff_check_interrupt(int_cb))
+            return AVERROR_EXIT;
+        ret = ff_network_wait_fd(fd, write);
+        if (ret != AVERROR(EAGAIN))
+            return ret;
+        if (timeout > 0) {
+            if (!wait_start)
+                wait_start = av_gettime_relative();
+            else if (av_gettime_relative() - wait_start > timeout)
+                return AVERROR(ETIMEDOUT);
+        }
+    }
+}
+
+int ff_network_sleep_interruptible(int64_t timeout, AVIOInterruptCB *int_cb)
+{
+    int64_t wait_start = av_gettime_relative();
+
+    while (1) {
+        int64_t time_left;
+
+        if (ff_check_interrupt(int_cb))
+            return AVERROR_EXIT;
+
+        time_left = timeout - (av_gettime_relative() - wait_start);
+        if (time_left <= 0)
+            return AVERROR(ETIMEDOUT);
+
+        av_usleep(FFMIN(time_left, POLLING_TIME * 1000));
+    }
 }
 
 void ff_network_close(void)
@@ -140,7 +173,7 @@ static int ff_poll_interrupt(struct pollfd *p, nfds_t nfds, int timeout,
                 continue;
             break;
         }
-    } while (timeout < 0 || runs-- > 0);
+    } while (timeout <= 0 || runs-- > 0);
 
     if (!ret)
         return AVERROR(ETIMEDOUT);
@@ -158,24 +191,30 @@ int ff_socket(int af, int type, int proto)
     {
         fd = socket(af, type, proto);
 #if HAVE_FCNTL
-        if (fd != -1)
-            fcntl(fd, F_SETFD, FD_CLOEXEC);
+        if (fd != -1) {
+            if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+                av_log(NULL, AV_LOG_DEBUG, "Failed to set close on exec\n");
+        }
 #endif
     }
 #ifdef SO_NOSIGPIPE
-    if (fd != -1)
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &(int){1}, sizeof(int));
+    if (fd != -1) {
+        if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &(int){1}, sizeof(int))) {
+             av_log(NULL, AV_LOG_WARNING, "setsockopt(SO_NOSIGPIPE) failed\n");
+        }
+    }
 #endif
     return fd;
 }
 
-int ff_listen_bind(int fd, const struct sockaddr *addr,
-                   socklen_t addrlen, int timeout, URLContext *h)
+int ff_listen(int fd, const struct sockaddr *addr,
+              socklen_t addrlen)
 {
     int ret;
     int reuse = 1;
-    struct pollfd lp = { fd, POLLIN, 0 };
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) {
+        av_log(NULL, AV_LOG_WARNING, "setsockopt(SO_REUSEADDR) failed\n");
+    }
     ret = bind(fd, addr, addrlen);
     if (ret)
         return ff_neterrno();
@@ -183,6 +222,13 @@ int ff_listen_bind(int fd, const struct sockaddr *addr,
     ret = listen(fd, 1);
     if (ret)
         return ff_neterrno();
+    return ret;
+}
+
+int ff_accept(int fd, int timeout, URLContext *h)
+{
+    int ret;
+    struct pollfd lp = { fd, POLLIN, 0 };
 
     ret = ff_poll_interrupt(&lp, 1, timeout, &h->interrupt_callback);
     if (ret < 0)
@@ -191,10 +237,21 @@ int ff_listen_bind(int fd, const struct sockaddr *addr,
     ret = accept(fd, NULL, NULL);
     if (ret < 0)
         return ff_neterrno();
+    if (ff_socket_nonblock(ret, 1) < 0)
+        av_log(NULL, AV_LOG_DEBUG, "ff_socket_nonblock failed\n");
 
+    return ret;
+}
+
+int ff_listen_bind(int fd, const struct sockaddr *addr,
+                   socklen_t addrlen, int timeout, URLContext *h)
+{
+    int ret;
+    if ((ret = ff_listen(fd, addr, addrlen)) < 0)
+        return ret;
+    if ((ret = ff_accept(fd, timeout, h)) < 0)
+        return ret;
     closesocket(fd);
-
-    ff_socket_nonblock(ret, 1);
     return ret;
 }
 
@@ -206,7 +263,8 @@ int ff_listen_connect(int fd, const struct sockaddr *addr,
     int ret;
     socklen_t optlen;
 
-    ff_socket_nonblock(fd, 1);
+    if (ff_socket_nonblock(fd, 1) < 0)
+        av_log(NULL, AV_LOG_DEBUG, "ff_socket_nonblock failed\n");
 
     while ((ret = connect(fd, addr, addrlen))) {
         ret = ff_neterrno();
@@ -518,4 +576,11 @@ int ff_http_match_no_proxy(const char *no_proxy, const char *hostname)
     }
     av_free(buf);
     return ret;
+}
+
+void ff_log_net_error(void *ctx, int level, const char* prefix)
+{
+    char errbuf[100];
+    av_strerror(ff_neterrno(), errbuf, sizeof(errbuf));
+    av_log(ctx, level, "%s: %s\n", prefix, errbuf);
 }
