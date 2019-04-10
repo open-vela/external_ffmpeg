@@ -2,20 +2,20 @@
  * CCITT Fax Group 3 and 4 decompression
  * Copyright (c) 2008 Konstantin Shishkov
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,8 +25,9 @@
  * @author Konstantin Shishkov
  */
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "put_bits.h"
+#include "vlc.h"
 #include "faxcompr.h"
 
 #define CCITT_SYMS 104
@@ -122,83 +123,8 @@ av_cold void ff_ccitt_unpack_init(void)
     initialized = 1;
 }
 
-static int decode_uncompressed(AVCodecContext *avctx, GetBitContext *gb,
-                               unsigned int *pix_left, int **runs,
-                               const int *runend, int *mode)
-{
-    int eob = 0;
-    int newmode;
-    int saved_run = 0;
 
-    do {
-        int cwi, k;
-        int cw = 0;
-        int codes[2];
-        do {
-            cwi = show_bits(gb, 11);
-            if (!cwi) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid uncompressed codeword\n");
-                return AVERROR_INVALIDDATA;
-            }
-            cwi = 10 - av_log2(cwi);
-            skip_bits(gb, cwi + 1);
-            if (cwi > 5) {
-                newmode = get_bits1(gb);
-                eob = 1;
-                cwi -= 6;
-            }
-            cw += cwi;
-        } while(cwi == 5);
-
-        codes[0] = cw;
-        codes[1] = !eob;
-
-        for (k = 0; k < 2; k++) {
-            if (codes[k]) {
-                if (*mode == !k) {
-                    *(*runs)++ = saved_run;
-                    if (*runs >= runend) {
-                        av_log(avctx, AV_LOG_ERROR, "uncompressed run overrun\n");
-                        return AVERROR_INVALIDDATA;
-                    }
-                    if (*pix_left <= saved_run) {
-                        av_log(avctx, AV_LOG_ERROR, "uncompressed run went out of bounds\n");
-                        return AVERROR_INVALIDDATA;
-                    }
-                    *pix_left -= saved_run;
-                    saved_run = 0;
-                    *mode = !*mode;
-                }
-                saved_run += codes[k];
-            }
-        }
-    } while (!eob);
-    *(*runs)++ = saved_run;
-    if (*runs >= runend) {
-        av_log(avctx, AV_LOG_ERROR, "uncompressed run overrun\n");
-        return AVERROR_INVALIDDATA;
-    }
-    if (*pix_left <= saved_run) {
-        if (*pix_left == saved_run)
-            return 1;
-        av_log(avctx, AV_LOG_ERROR, "uncompressed run went out of boundsE\n");
-        return AVERROR_INVALIDDATA;
-    }
-    *pix_left -= saved_run;
-    saved_run = 0;
-    *mode = !*mode;
-    if (newmode != *mode) { //FIXME CHECK
-        *(*runs)++ = 0;
-        if (*runs >= runend) {
-            av_log(avctx, AV_LOG_ERROR, "uncompressed run overrun\n");
-            return AVERROR_INVALIDDATA;
-        }
-        *mode = newmode;
-    }
-    return 0;
-}
-
-static int decode_group3_1d_line(AVCodecContext *avctx, GetBitContext *gb,
+static int decode_group3_1d_line(AVCodecContext *avctx, BitstreamContext *bc,
                                  unsigned int pix_left, int *runs,
                                  const int *runend)
 {
@@ -206,7 +132,7 @@ static int decode_group3_1d_line(AVCodecContext *avctx, GetBitContext *gb,
     unsigned int run = 0;
     unsigned int t;
     for (;;) {
-        t    = get_vlc2(gb, ccitt_vlc[mode].table, 9, 2);
+        t    = bitstream_read_vlc(bc, ccitt_vlc[mode].table, 9, 2);
         run += t;
         if (t < 64) {
             *runs++ = run;
@@ -224,25 +150,15 @@ static int decode_group3_1d_line(AVCodecContext *avctx, GetBitContext *gb,
             run       = 0;
             mode      = !mode;
         } else if ((int)t == -1) {
-            if (show_bits(gb, 12) == 15) {
-                int ret;
-                skip_bits(gb, 12);
-                ret = decode_uncompressed(avctx, gb, &pix_left, &runs, runend, &mode);
-                if (ret < 0) {
-                    return ret;
-                } else if (ret)
-                    break;
-            } else {
-                av_log(avctx, AV_LOG_ERROR, "Incorrect code\n");
-                return AVERROR_INVALIDDATA;
-            }
+            av_log(avctx, AV_LOG_ERROR, "Incorrect code\n");
+            return AVERROR_INVALIDDATA;
         }
     }
     *runs++ = 0;
     return 0;
 }
 
-static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
+static int decode_group3_2d_line(AVCodecContext *avctx, BitstreamContext *bc,
                                  unsigned int width, int *runs,
                                  const int *runend, const int *ref)
 {
@@ -250,19 +166,19 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
     int run_off       = *ref++;
     unsigned int offs = 0, run = 0;
 
+    runend--; // for the last written 0
+
     while (offs < width) {
-        int cmode = get_vlc2(gb, ccitt_group3_2d_vlc.table, 9, 1);
+        int cmode = bitstream_read_vlc(bc, ccitt_group3_2d_vlc.table, 9, 1);
         if (cmode == -1) {
             av_log(avctx, AV_LOG_ERROR, "Incorrect mode VLC\n");
             return AVERROR_INVALIDDATA;
         }
         if (!cmode) { //pass mode
-            if (run_off < width)
-                run_off += *ref++;
+            run_off += *ref++;
             run      = run_off - offs;
             offs     = run_off;
-            if (run_off < width)
-                run_off += *ref++;
+            run_off += *ref++;
             if (offs > width) {
                 av_log(avctx, AV_LOG_ERROR, "Run went out of bounds\n");
                 return AVERROR_INVALIDDATA;
@@ -273,7 +189,7 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
             for (k = 0; k < 2; k++) {
                 run = 0;
                 for (;;) {
-                    t = get_vlc2(gb, ccitt_vlc[mode].table, 9, 2);
+                    t = bitstream_read_vlc(bc, ccitt_vlc[mode].table, 9, 2);
                     if (t == -1) {
                         av_log(avctx, AV_LOG_ERROR, "Incorrect code\n");
                         return AVERROR_INVALIDDATA;
@@ -296,25 +212,8 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
                 mode = !mode;
             }
         } else if (cmode == 9 || cmode == 10) {
-            int xxx = get_bits(gb, 3);
-            if (cmode == 9 && xxx == 7) {
-                int ret;
-                int pix_left = width - offs;
-
-                if (saved_run) {
-                    av_log(avctx, AV_LOG_ERROR, "saved run %d on entering uncompressed mode\n", saved_run);
-                    return AVERROR_INVALIDDATA;
-                }
-                ret = decode_uncompressed(avctx, gb, &pix_left, &runs, runend, &mode);
-                offs = width - pix_left;
-                if (ret < 0) {
-                    return ret;
-                } else if (ret)
-                    break;
-            } else {
-                avpriv_report_missing_feature(avctx, "Special mode %d xxx=%d support", cmode, xxx);
-                return AVERROR_PATCHWELCOME;
-            }
+            avpriv_report_missing_feature(avctx, "Special modes support");
+            return AVERROR_PATCHWELCOME;
         } else { //vertical mode
             run      = run_off - offs + (cmode - 5);
             run_off -= *--ref;
@@ -332,19 +231,13 @@ static int decode_group3_2d_line(AVCodecContext *avctx, GetBitContext *gb,
             mode      = !mode;
         }
         //sync line pointers
-        while (offs < width && run_off <= offs) {
+        while (run_off <= offs) {
             run_off += *ref++;
             run_off += *ref++;
         }
     }
     *runs++ = saved_run;
-    if (saved_run) {
-        if (runs >= runend) {
-            av_log(avctx, AV_LOG_ERROR, "Run overrun\n");
-            return -1;
-        }
-        *runs++ = 0;
-    }
+    *runs++ = 0;
     return 0;
 }
 
@@ -353,7 +246,7 @@ static void put_line(uint8_t *dst, int size, int width, const int *runs)
     PutBitContext pb;
     int run, mode = ~0, pix_left = width, run_idx = 0;
 
-    init_put_bits(&pb, dst, size);
+    init_put_bits(&pb, dst, size * 8);
     while (pix_left > 0) {
         run       = runs[run_idx++];
         mode      = ~mode;
@@ -366,12 +259,12 @@ static void put_line(uint8_t *dst, int size, int width, const int *runs)
     flush_put_bits(&pb);
 }
 
-static int find_group3_syncmarker(GetBitContext *gb, int srcsize)
+static int find_group3_syncmarker(BitstreamContext *bc, int srcsize)
 {
     unsigned int state = -1;
-    srcsize -= get_bits_count(gb);
+    srcsize -= bitstream_tell(bc);
     while (srcsize-- > 0) {
-        state += state + get_bits1(gb);
+        state += state + bitstream_read_bit(bc);
         if ((state & 0xFFF) == 1)
             return 0;
     }
@@ -383,14 +276,13 @@ int ff_ccitt_unpack(AVCodecContext *avctx, const uint8_t *src, int srcsize,
                     enum TiffCompr compr, int opts)
 {
     int j;
-    GetBitContext gb;
+    BitstreamContext bc;
     int *runs, *ref = NULL, *runend;
     int ret;
     int runsize = avctx->width + 2;
-    int has_eol;
 
-    runs = av_malloc_array(runsize, sizeof(runs[0]));
-    ref  = av_malloc_array(runsize, sizeof(ref[0]));
+    runs = av_malloc(runsize * sizeof(runs[0]));
+    ref  = av_malloc(runsize * sizeof(ref[0]));
     if (!runs || !ref) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -398,31 +290,27 @@ int ff_ccitt_unpack(AVCodecContext *avctx, const uint8_t *src, int srcsize,
     ref[0] = avctx->width;
     ref[1] = 0;
     ref[2] = 0;
-    if ((ret = init_get_bits8(&gb, src, srcsize)) < 0)
-        goto fail;
-    has_eol = show_bits(&gb, 12) == 1 || show_bits(&gb, 16) == 1;
-
+    bitstream_init8(&bc, src, srcsize);
     for (j = 0; j < height; j++) {
         runend = runs + runsize;
         if (compr == TIFF_G4) {
-            ret = decode_group3_2d_line(avctx, &gb, avctx->width, runs, runend,
+            ret = decode_group3_2d_line(avctx, &bc, avctx->width, runs, runend,
                                         ref);
             if (ret < 0)
                 goto fail;
         } else {
             int g3d1 = (compr == TIFF_G3) && !(opts & 1);
             if (compr != TIFF_CCITT_RLE &&
-                has_eol &&
-                find_group3_syncmarker(&gb, srcsize * 8) < 0)
+                find_group3_syncmarker(&bc, srcsize * 8) < 0)
                 break;
-            if (compr == TIFF_CCITT_RLE || g3d1 || get_bits1(&gb))
-                ret = decode_group3_1d_line(avctx, &gb, avctx->width, runs,
+            if (compr == TIFF_CCITT_RLE || g3d1 || bitstream_read_bit(&bc))
+                ret = decode_group3_1d_line(avctx, &bc, avctx->width, runs,
                                             runend);
             else
-                ret = decode_group3_2d_line(avctx, &gb, avctx->width, runs,
+                ret = decode_group3_2d_line(avctx, &bc, avctx->width, runs,
                                             runend, ref);
             if (compr == TIFF_CCITT_RLE)
-                align_get_bits(&gb);
+                bitstream_align(&bc);
         }
         if (avctx->err_recognition & AV_EF_EXPLODE && ret < 0)
             goto fail;

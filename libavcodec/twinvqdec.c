@@ -2,20 +2,20 @@
  * TwinVQ decoder
  * Copyright (c) 2009 Vitor Sessak
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -23,8 +23,9 @@
 #include <stdint.h>
 
 #include "libavutil/channel_layout.h"
+
 #include "avcodec.h"
-#include "get_bits.h"
+#include "bitstream.h"
 #include "internal.h"
 #include "twinvq.h"
 #include "twinvq_data.h"
@@ -235,7 +236,7 @@ static void dec_bark_env(TwinVQContext *tctx, const uint8_t *in, int use_hist,
         }
 }
 
-static void read_cb_data(TwinVQContext *tctx, GetBitContext *gb,
+static void read_cb_data(TwinVQContext *tctx, BitstreamContext *bc,
                          uint8_t *dst, enum TwinVQFrameType ftype)
 {
     int i;
@@ -243,8 +244,8 @@ static void read_cb_data(TwinVQContext *tctx, GetBitContext *gb,
     for (i = 0; i < tctx->n_div[ftype]; i++) {
         int bs_second_part = (i >= tctx->bits_main_spec_change[ftype]);
 
-        *dst++ = get_bits(gb, tctx->bits_main_spec[0][ftype][bs_second_part]);
-        *dst++ = get_bits(gb, tctx->bits_main_spec[1][ftype][bs_second_part]);
+        *dst++ = bitstream_read(bc, tctx->bits_main_spec[0][ftype][bs_second_part]);
+        *dst++ = bitstream_read(bc, tctx->bits_main_spec[1][ftype][bs_second_part]);
     }
 }
 
@@ -255,14 +256,13 @@ static int twinvq_read_bitstream(AVCodecContext *avctx, TwinVQContext *tctx,
     const TwinVQModeTab *mtab = tctx->mtab;
     int channels              = tctx->avctx->channels;
     int sub;
-    GetBitContext gb;
-    int i, j, k, ret;
+    BitstreamContext bc;
+    int i, j, k;
 
-    if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
-        return ret;
-    skip_bits(&gb, get_bits(&gb, 8));
+    bitstream_init8(&bc, buf, buf_size);
+    bitstream_skip(&bc, bitstream_read(&bc, 8));
 
-    bits->window_type = get_bits(&gb, TWINVQ_WINDOW_TYPE_BITS);
+    bits->window_type = bitstream_read(&bc, TWINVQ_WINDOW_TYPE_BITS);
 
     if (bits->window_type > 8) {
         av_log(avctx, AV_LOG_ERROR, "Invalid window type, broken sample?\n");
@@ -273,47 +273,46 @@ static int twinvq_read_bitstream(AVCodecContext *avctx, TwinVQContext *tctx,
 
     sub = mtab->fmode[bits->ftype].sub;
 
-    read_cb_data(tctx, &gb, bits->main_coeffs, bits->ftype);
+    read_cb_data(tctx, &bc, bits->main_coeffs, bits->ftype);
 
     for (i = 0; i < channels; i++)
         for (j = 0; j < sub; j++)
             for (k = 0; k < mtab->fmode[bits->ftype].bark_n_coef; k++)
                 bits->bark1[i][j][k] =
-                    get_bits(&gb, mtab->fmode[bits->ftype].bark_n_bit);
+                    bitstream_read(&bc, mtab->fmode[bits->ftype].bark_n_bit);
 
     for (i = 0; i < channels; i++)
         for (j = 0; j < sub; j++)
-            bits->bark_use_hist[i][j] = get_bits1(&gb);
+            bits->bark_use_hist[i][j] = bitstream_read_bit(&bc);
 
     if (bits->ftype == TWINVQ_FT_LONG) {
         for (i = 0; i < channels; i++)
-            bits->gain_bits[i] = get_bits(&gb, TWINVQ_GAIN_BITS);
+            bits->gain_bits[i] = bitstream_read(&bc, TWINVQ_GAIN_BITS);
     } else {
         for (i = 0; i < channels; i++) {
-            bits->gain_bits[i] = get_bits(&gb, TWINVQ_GAIN_BITS);
+            bits->gain_bits[i] = bitstream_read(&bc, TWINVQ_GAIN_BITS);
             for (j = 0; j < sub; j++)
-                bits->sub_gain_bits[i * sub + j] = get_bits(&gb,
-                                                       TWINVQ_SUB_GAIN_BITS);
+                bits->sub_gain_bits[i * sub + j] = bitstream_read(&bc, TWINVQ_SUB_GAIN_BITS);
         }
     }
 
     for (i = 0; i < channels; i++) {
-        bits->lpc_hist_idx[i] = get_bits(&gb, mtab->lsp_bit0);
-        bits->lpc_idx1[i]     = get_bits(&gb, mtab->lsp_bit1);
+        bits->lpc_hist_idx[i] = bitstream_read(&bc, mtab->lsp_bit0);
+        bits->lpc_idx1[i]     = bitstream_read(&bc, mtab->lsp_bit1);
 
         for (j = 0; j < mtab->lsp_split; j++)
-            bits->lpc_idx2[i][j] = get_bits(&gb, mtab->lsp_bit2);
+            bits->lpc_idx2[i][j] = bitstream_read(&bc, mtab->lsp_bit2);
     }
 
     if (bits->ftype == TWINVQ_FT_LONG) {
-        read_cb_data(tctx, &gb, bits->ppc_coeffs, 3);
+        read_cb_data(tctx, &bc, bits->ppc_coeffs, 3);
         for (i = 0; i < channels; i++) {
-            bits->p_coef[i] = get_bits(&gb, mtab->ppc_period_bit);
-            bits->g_coef[i] = get_bits(&gb, mtab->pgain_bit);
+            bits->p_coef[i] = bitstream_read(&bc, mtab->ppc_period_bit);
+            bits->g_coef[i] = bitstream_read(&bc, mtab->pgain_bit);
         }
     }
 
-    return (get_bits_count(&gb) + 7) / 8;
+    return 0;
 }
 
 static av_cold int twinvq_decode_init(AVCodecContext *avctx)

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2016 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
+ * Libav is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
+ * with Libav; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
@@ -324,7 +324,7 @@ static void check_loop_filter(void)
     int alphas[36], betas[36];
     int8_t tc0[36][4];
 
-    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *pix, ptrdiff_t stride,
+    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *pix, int stride,
                       int alpha, int beta, int8_t *tc0);
 
     for (bit_depth = 8; bit_depth <= 10; bit_depth++) {
@@ -388,7 +388,7 @@ static void check_loop_filter_intra(void)
     int bit_depth;
     int alphas[36], betas[36];
 
-    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *pix, ptrdiff_t stride,
+    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *pix, int stride,
                       int alpha, int beta);
 
     for (bit_depth = 8; bit_depth <= 10; bit_depth++) {

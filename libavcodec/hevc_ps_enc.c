@@ -1,24 +1,24 @@
 /*
  * HEVC Parameter Set encoding
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "golomb.h"
+#include "golomb_legacy.h"
 #include "hevc_ps.h"
 #include "put_bits.h"
 
@@ -67,7 +67,7 @@ int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
                            uint8_t *buf, int buf_size)
 {
     PutBitContext pb;
-    int i, data_size;
+    int i;
 
     init_put_bits(&pb, buf, buf_size);
     put_bits(&pb,  4, id);
@@ -103,7 +103,6 @@ int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
         if (vps->vps_poc_proportional_to_timing_flag)
             set_ue_golomb(&pb, vps->vps_num_ticks_poc_diff_one - 1);
 
-        set_ue_golomb(&pb, vps->vps_num_hrd_parameters);
         if (vps->vps_num_hrd_parameters) {
             avpriv_report_missing_feature(NULL, "Writing HRD parameters");
             return AVERROR_PATCHWELCOME;
@@ -115,8 +114,5 @@ int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
     put_bits(&pb, 1, 1);    // stop bit
     avpriv_align_put_bits(&pb);
 
-    data_size = put_bits_count(&pb) / 8;
-    flush_put_bits(&pb);
-
-    return data_size;
+    return put_bits_count(&pb) / 8;
 }
