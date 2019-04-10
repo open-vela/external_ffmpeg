@@ -2,20 +2,20 @@
  * RTMP network protocol
  * Copyright (c) 2010 Howard Chu
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,9 @@
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "avformat.h"
+#if CONFIG_NETWORK
+#include "network.h"
+#endif
 #include "url.h"
 
 #include <librtmp/rtmp.h>
@@ -48,6 +51,7 @@ typedef struct LibRTMPContext {
     char *client_buffer_time;
     int live;
     char *temp_filename;
+    int buffer_size;
 } LibRTMPContext;
 
 static void rtmp_log(int level, const char *fmt, va_list args)
@@ -232,10 +236,23 @@ static int rtmp_open(URLContext *s, const char *uri, int flags)
         goto fail;
     }
 
+#if CONFIG_NETWORK
+    if (ctx->buffer_size >= 0 && (flags & AVIO_FLAG_WRITE)) {
+        int tmp = ctx->buffer_size;
+        if (setsockopt(r->m_sb.sb_socket, SOL_SOCKET, SO_SNDBUF, &tmp, sizeof(tmp))) {
+            rc = AVERROR_EXTERNAL;
+            goto fail;
+        }
+    }
+#endif
+
     s->is_streamed = 1;
     return 0;
 fail:
     av_freep(&ctx->temp_filename);
+    if (rc)
+        RTMP_Close(r);
+
     return rc;
 }
 
@@ -244,7 +261,10 @@ static int rtmp_write(URLContext *s, const uint8_t *buf, int size)
     LibRTMPContext *ctx = s->priv_data;
     RTMP *r = &ctx->rtmp;
 
-    return RTMP_Write(r, buf, size);
+    int ret = RTMP_Write(r, buf, size);
+    if (!ret)
+        return AVERROR_EOF;
+    return ret;
 }
 
 static int rtmp_read(URLContext *s, uint8_t *buf, int size)
@@ -252,7 +272,10 @@ static int rtmp_read(URLContext *s, uint8_t *buf, int size)
     LibRTMPContext *ctx = s->priv_data;
     RTMP *r = &ctx->rtmp;
 
-    return RTMP_Read(r, buf, size);
+    int ret = RTMP_Read(r, buf, size);
+    if (!ret)
+        return AVERROR_EOF;
+    return ret;
 }
 
 static int rtmp_read_pause(URLContext *s, int pause)
@@ -310,6 +333,9 @@ static const AVOption options[] = {
     {"rtmp_swfurl", "URL of the SWF player. By default no value will be sent", OFFSET(swfurl), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
     {"rtmp_swfverify", "URL to player swf file, compute hash/size automatically. (unimplemented)", OFFSET(swfverify), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC},
     {"rtmp_tcurl", "URL of the target stream. Defaults to proto://host[:port]/app.", OFFSET(tcurl), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, DEC|ENC},
+#if CONFIG_NETWORK
+    {"rtmp_buffer_size", "set buffer size in bytes", OFFSET(buffer_size), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, DEC|ENC },
+#endif
     { NULL },
 };
 
