@@ -1,20 +1,20 @@
 /*
  * Intel MediaSDK QSV encoder/decoder shared code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -32,15 +32,13 @@
 
 #define ASYNC_DEPTH_DEFAULT 4       // internal parallelism
 
-#define QSV_MAX_ENC_PAYLOAD 2       // # of mfxEncodeCtrl payloads supported
-
 #define QSV_VERSION_ATLEAST(MAJOR, MINOR)   \
     (MFX_VERSION_MAJOR > (MAJOR) ||         \
      MFX_VERSION_MAJOR == (MAJOR) && MFX_VERSION_MINOR >= (MINOR))
 
 #define QSV_RUNTIME_VERSION_ATLEAST(MFX_VERSION, MAJOR, MINOR) \
-    ((MFX_VERSION.Major > (MAJOR)) ||                           \
-    (MFX_VERSION.Major == (MAJOR) && MFX_VERSION.Minor >= (MINOR)))
+    (MFX_VERSION.Major > (MAJOR)) ||                           \
+    (MFX_VERSION.Major == (MAJOR) && MFX_VERSION.Minor >= (MINOR))
 
 typedef struct QSVMid {
     AVBufferRef *hw_frames_ref;
@@ -54,7 +52,6 @@ typedef struct QSVMid {
 typedef struct QSVFrame {
     AVFrame *frame;
     mfxFrameSurface1 surface;
-    mfxEncodeCtrl enc_ctrl;
     mfxExtDecodedFrameInfo dec_info;
     mfxExtBuffer *ext_param;
 
@@ -78,7 +75,7 @@ typedef struct QSVFramesContext {
 } QSVFramesContext;
 
 /**
- * Convert a libmfx error code into an ffmpeg error code.
+ * Convert a libmfx error code into a libav error code.
  */
 int ff_qsv_map_error(mfxStatus mfx_err, const char **desc);
 

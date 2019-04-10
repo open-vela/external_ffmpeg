@@ -2,20 +2,20 @@
  * Screenpresso decoder
  * Copyright (C) 2015 Vittorio Giovara <vittorio.giovara@gmail.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -30,7 +30,7 @@
  * rebuilt frame (not the reference), and since there is no coordinate system
  * they contain exactly as many pixel as the keyframe.
  *
- * Supports: BGR0, BGR24, RGB555
+ * Supports: BGRA, BGR24, RGB555
  */
 
 #include <stdint.h>
@@ -129,7 +129,7 @@ static int screenpresso_decode_frame(AVCodecContext *avctx, void *data,
         avctx->pix_fmt = AV_PIX_FMT_BGR24;
         break;
     case 4:
-        avctx->pix_fmt = AV_PIX_FMT_BGR0;
+        avctx->pix_fmt = AV_PIX_FMT_BGRA;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid bits per pixel value (%d)\n",
@@ -179,7 +179,7 @@ static int screenpresso_decode_frame(AVCodecContext *avctx, void *data,
     }
     *got_frame = 1;
 
-    return avpkt->size;
+    return 0;
 }
 
 AVCodec ff_screenpresso_decoder = {

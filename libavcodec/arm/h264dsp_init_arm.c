@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010 Mans Rullgard <mans@mansr.com>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,15 +25,15 @@
 #include "libavcodec/h264dsp.h"
 #include "libavcodec/arm/startcode.h"
 
-void ff_h264_v_loop_filter_luma_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
+void ff_h264_v_loop_filter_luma_neon(uint8_t *pix, int stride, int alpha,
                                      int beta, int8_t *tc0);
-void ff_h264_h_loop_filter_luma_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
+void ff_h264_h_loop_filter_luma_neon(uint8_t *pix, int stride, int alpha,
                                      int beta, int8_t *tc0);
-void ff_h264_v_loop_filter_chroma_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
+void ff_h264_v_loop_filter_chroma_neon(uint8_t *pix, int stride, int alpha,
                                        int beta, int8_t *tc0);
-void ff_h264_h_loop_filter_chroma_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
+void ff_h264_h_loop_filter_chroma_neon(uint8_t *pix, int stride, int alpha,
                                        int beta, int8_t *tc0);
-void ff_h264_h_loop_filter_chroma422_neon(uint8_t *pix, ptrdiff_t stride, int alpha,
+void ff_h264_h_loop_filter_chroma422_neon(uint8_t *pix, int stride, int alpha,
                                           int beta, int8_t *tc0);
 
 void ff_weight_h264_pixels_16_neon(uint8_t *dst, int stride, int height,
@@ -74,7 +74,6 @@ void ff_h264_idct8_add4_neon(uint8_t *dst, const int *block_offset,
 static av_cold void h264dsp_init_neon(H264DSPContext *c, const int bit_depth,
                                       const int chroma_format_idc)
 {
-#if HAVE_NEON
     if (bit_depth == 8) {
         c->h264_v_loop_filter_luma   = ff_h264_v_loop_filter_luma_neon;
         c->h264_h_loop_filter_luma   = ff_h264_h_loop_filter_luma_neon;
@@ -103,7 +102,6 @@ static av_cold void h264dsp_init_neon(H264DSPContext *c, const int bit_depth,
         c->h264_idct8_dc_add    = ff_h264_idct8_dc_add_neon;
         c->h264_idct8_add4      = ff_h264_idct8_add4_neon;
     }
-#endif // HAVE_NEON
 }
 
 av_cold void ff_h264dsp_init_arm(H264DSPContext *c, const int bit_depth,
@@ -111,10 +109,8 @@ av_cold void ff_h264dsp_init_arm(H264DSPContext *c, const int bit_depth,
 {
     int cpu_flags = av_get_cpu_flags();
 
-#if HAVE_ARMV6
     if (have_setend(cpu_flags))
         c->startcode_find_candidate = ff_startcode_find_candidate_armv6;
-#endif
     if (have_neon(cpu_flags))
         h264dsp_init_neon(c, bit_depth, chroma_format_idc);
 }

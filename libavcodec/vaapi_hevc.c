@@ -3,20 +3,20 @@
  *
  * Copyright (C) 2015 Timo Rothenpieler <timo@rothenpieler.org>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -122,6 +122,8 @@ static int vaapi_hevc_start_frame(AVCodecContext          *avctx,
     pic->pic.output_surface = ff_vaapi_get_surface_id(h->ref->frame);
 
     pic->pic_param = (VAPictureParameterBufferHEVC) {
+        .pic_fields.value                             = 0,
+        .slice_parsing_fields.value                   = 0,
         .pic_width_in_luma_samples                    = sps->width,
         .pic_height_in_luma_samples                   = sps->height,
         .log2_min_luma_coding_block_size_minus3       = sps->log2_min_cb_size - 3,
@@ -230,11 +232,11 @@ static int vaapi_hevc_start_frame(AVCodecContext          *avctx,
                 iq_matrix.ScalingList8x8[i][j]   = scaling_list->sl[1][i][j];
                 iq_matrix.ScalingList16x16[i][j] = scaling_list->sl[2][i][j];
                 if (i < 2)
-                    iq_matrix.ScalingList32x32[i][j] = scaling_list->sl[3][i * 3][j];
+                    iq_matrix.ScalingList32x32[i][j] = scaling_list->sl[3][i][j];
             }
             iq_matrix.ScalingListDC16x16[i] = scaling_list->sl_dc[0][i];
             if (i < 2)
-                iq_matrix.ScalingListDC32x32[i] = scaling_list->sl_dc[1][i * 3];
+                iq_matrix.ScalingListDC32x32[i] = scaling_list->sl_dc[1][i];
         }
 
         err = ff_vaapi_decode_make_param_buffer(avctx, &pic->pic,
@@ -377,7 +379,7 @@ static int vaapi_hevc_decode_slice(AVCodecContext *avctx,
         .slice_data_flag               = VA_SLICE_DATA_FLAG_ALL,
         /* Add 1 to the bits count here to account for the byte_alignment bit, which
          * always is at least one bit and not accounted for otherwise. */
-        .slice_data_byte_offset        = (get_bits_count(&h->HEVClc->gb) + 1 + 7) / 8,
+        .slice_data_byte_offset        = (get_bits_count(&h->HEVClc.gb) + 1 + 7) / 8,
         .slice_segment_address         = sh->slice_segment_addr,
         .slice_qp_delta                = sh->slice_qp_delta,
         .slice_cb_qp_offset            = sh->slice_cb_qp_offset,
