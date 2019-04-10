@@ -4,20 +4,20 @@
  * Copyright (c) 2006-2010 Justin Ruggles <justin.ruggles@gmail.com>
  * Copyright (c) 2006-2010 Prakash Punnoor <prakash@punnoor.de>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -36,7 +36,6 @@
 
 #define AC3ENC_TYPE AC3ENC_TYPE_AC3
 #include "ac3enc_opts_template.c"
-
 static const AVClass ac3enc_class = {
     .class_name = "AC-3 Encoder",
     .item_name  = av_default_item_name,
@@ -79,6 +78,13 @@ static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl)
     return FFMIN(coord, COEF_MAX);
 }
 
+static void sum_square_butterfly(AC3EncodeContext *s, float sum[4],
+                                 const float *coef0, const float *coef1,
+                                 int len)
+{
+    s->ac3dsp.sum_square_butterfly_float(sum, coef0, coef1, len);
+}
+
 
 #include "ac3enc_template.c"
 
@@ -109,7 +115,7 @@ av_cold int ff_ac3_float_mdct_init(AC3EncodeContext *s)
     n  = 1 << 9;
     n2 = n >> 1;
 
-    window = av_malloc(n * sizeof(*window));
+    window = av_malloc_array(n, sizeof(*window));
     if (!window) {
         av_log(s->avctx, AV_LOG_ERROR, "Cannot allocate memory.\n");
         return AVERROR(ENOMEM);
@@ -126,7 +132,9 @@ av_cold int ff_ac3_float_mdct_init(AC3EncodeContext *s)
 av_cold int ff_ac3_float_encode_init(AVCodecContext *avctx)
 {
     AC3EncodeContext *s = avctx->priv_data;
-    avpriv_float_dsp_init(&s->fdsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!s->fdsp)
+        return AVERROR(ENOMEM);
     return ff_ac3_encode_init(avctx);
 }
 

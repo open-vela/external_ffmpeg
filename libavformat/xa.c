@@ -2,20 +2,20 @@
  * Maxis XA (.xa) File Demuxer
  * Copyright (c) 2008 Robert Marston
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -40,7 +40,7 @@ typedef struct MaxisXADemuxContext {
     uint32_t sent_bytes;
 } MaxisXADemuxContext;
 
-static int xa_probe(AVProbeData *p)
+static int xa_probe(const AVProbeData *p)
 {
     int channels, srate, bits_per_sample;
     if (p->buf_size < 24)
@@ -84,8 +84,11 @@ static int xa_read_header(AVFormatContext *s)
     avio_skip(pb, 2);       /* Skip block align */
     avio_skip(pb, 2);       /* Skip bits-per-sample */
 
+    if (!st->codecpar->channels || !st->codecpar->sample_rate)
+        return AVERROR_INVALIDDATA;
+
     st->codecpar->bit_rate = av_clip(15LL * st->codecpar->channels * 8 *
-                                     st->codecpar->sample_rate / 28, 0, INT_MAX);
+                                  st->codecpar->sample_rate / 28, 0, INT_MAX);
 
     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
     st->start_time = 0;

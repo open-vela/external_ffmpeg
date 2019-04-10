@@ -2,20 +2,20 @@
  * DXA demuxer
  * Copyright (c) 2007 Konstantin Shishkov
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -37,7 +37,7 @@ typedef struct DXAContext {
     int readvid;
 }DXAContext;
 
-static int dxa_probe(AVProbeData *p)
+static int dxa_probe(const AVProbeData *p)
 {
     int w, h;
     if (p->buf_size < 15)
@@ -67,12 +67,12 @@ static int dxa_read_header(AVFormatContext *s)
 
     tag = avio_rl32(pb);
     if (tag != MKTAG('D', 'E', 'X', 'A'))
-        return -1;
+        return AVERROR_INVALIDDATA;
     flags = avio_r8(pb);
     c->frames = avio_rb16(pb);
     if(!c->frames){
         av_log(s, AV_LOG_ERROR, "File contains no frames ???\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     fps = avio_rb32(pb);
@@ -92,7 +92,7 @@ static int dxa_read_header(AVFormatContext *s)
 
     st = avformat_new_stream(s, NULL);
     if (!st)
-        return -1;
+        return AVERROR(ENOMEM);
 
     // Parse WAV data header
     if(avio_rl32(pb) == MKTAG('W', 'A', 'V', 'E')){
@@ -105,14 +105,14 @@ static int dxa_read_header(AVFormatContext *s)
 
         ast = avformat_new_stream(s, NULL);
         if (!ast)
-            return -1;
-        ret = ff_get_wav_header(s, pb, ast->codecpar, fsize);
+            return AVERROR(ENOMEM);
+        ret = ff_get_wav_header(s, pb, ast->codecpar, fsize, 0);
         if (ret < 0)
             return ret;
         if (ast->codecpar->sample_rate > 0)
             avpriv_set_pts_info(ast, 64, 1, ast->codecpar->sample_rate);
         // find 'data' chunk
-        while(avio_tell(pb) < c->vidpos && !pb->eof_reached){
+        while(avio_tell(pb) < c->vidpos && !avio_feof(pb)){
             tag = avio_rl32(pb);
             fsize = avio_rl32(pb);
             if(tag == MKTAG('d', 'a', 't', 'a')) break;
@@ -170,9 +170,14 @@ static int dxa_read_packet(AVFormatContext *s, AVPacket *pkt)
         return 0;
     }
     avio_seek(s->pb, c->vidpos, SEEK_SET);
-    while(!s->pb->eof_reached && c->frames){
-        avio_read(s->pb, buf, 4);
-        switch(AV_RL32(buf)){
+    while(!avio_feof(s->pb) && c->frames){
+        uint32_t tag;
+        if ((ret = avio_read(s->pb, buf, 4)) != 4) {
+            av_log(s, AV_LOG_ERROR, "failed reading chunk type\n");
+            return ret < 0 ? ret : AVERROR_INVALIDDATA;
+        }
+        tag = AV_RL32(buf);
+        switch (tag) {
         case MKTAG('N', 'U', 'L', 'L'):
             if(av_new_packet(pkt, 4 + pal_size) < 0)
                 return AVERROR(ENOMEM);
@@ -189,12 +194,15 @@ static int dxa_read_packet(AVFormatContext *s, AVPacket *pkt)
             avio_read(s->pb, pal + 4, 768);
             break;
         case MKTAG('F', 'R', 'A', 'M'):
-            avio_read(s->pb, buf + 4, DXA_EXTRA_SIZE - 4);
+            if ((ret = avio_read(s->pb, buf + 4, DXA_EXTRA_SIZE - 4)) != DXA_EXTRA_SIZE - 4) {
+                av_log(s, AV_LOG_ERROR, "failed reading dxa_extra\n");
+                return ret < 0 ? ret : AVERROR_INVALIDDATA;
+            }
             size = AV_RB32(buf + 5);
             if(size > 0xFFFFFF){
                 av_log(s, AV_LOG_ERROR, "Frame size is too big: %"PRIu32"\n",
                        size);
-                return -1;
+                return AVERROR_INVALIDDATA;
             }
             if(av_new_packet(pkt, size + DXA_EXTRA_SIZE + pal_size) < 0)
                 return AVERROR(ENOMEM);
@@ -211,11 +219,11 @@ static int dxa_read_packet(AVFormatContext *s, AVPacket *pkt)
             c->readvid = 0;
             return 0;
         default:
-            av_log(s, AV_LOG_ERROR, "Unknown tag %c%c%c%c\n", buf[0], buf[1], buf[2], buf[3]);
-            return -1;
+            av_log(s, AV_LOG_ERROR, "Unknown tag %s\n", av_fourcc2str(tag));
+            return AVERROR_INVALIDDATA;
         }
     }
-    return AVERROR(EIO);
+    return AVERROR_EOF;
 }
 
 AVInputFormat ff_dxa_demuxer = {

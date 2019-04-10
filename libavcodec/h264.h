@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -24,10 +24,14 @@
 #ifndef AVCODEC_H264_H
 #define AVCODEC_H264_H
 
-#define QP_MAX_NUM (51 + 2 * 6)           // The maximum supported qp
+#define QP_MAX_NUM (51 + 6*6)           // The maximum supported qp
 
-/* NAL unit types */
+/*
+ * Table 7-1 – NAL unit type codes, syntax element categories, and NAL unit type classes in
+ * T-REC-H.264-201704
+ */
 enum {
+    H264_NAL_UNSPECIFIED     = 0,
     H264_NAL_SLICE           = 1,
     H264_NAL_DPA             = 2,
     H264_NAL_DPB             = 3,
@@ -41,7 +45,24 @@ enum {
     H264_NAL_END_STREAM      = 11,
     H264_NAL_FILLER_DATA     = 12,
     H264_NAL_SPS_EXT         = 13,
+    H264_NAL_PREFIX          = 14,
+    H264_NAL_SUB_SPS         = 15,
+    H264_NAL_DPS             = 16,
+    H264_NAL_RESERVED17      = 17,
+    H264_NAL_RESERVED18      = 18,
     H264_NAL_AUXILIARY_SLICE = 19,
+    H264_NAL_EXTEN_SLICE     = 20,
+    H264_NAL_DEPTH_EXTEN_SLICE = 21,
+    H264_NAL_RESERVED22      = 22,
+    H264_NAL_RESERVED23      = 23,
+    H264_NAL_UNSPECIFIED24   = 24,
+    H264_NAL_UNSPECIFIED25   = 25,
+    H264_NAL_UNSPECIFIED26   = 26,
+    H264_NAL_UNSPECIFIED27   = 27,
+    H264_NAL_UNSPECIFIED28   = 28,
+    H264_NAL_UNSPECIFIED29   = 29,
+    H264_NAL_UNSPECIFIED30   = 30,
+    H264_NAL_UNSPECIFIED31   = 31,
 };
 
 

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2010, Google, Inc.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -31,20 +31,19 @@
 
 #include "avcodec.h"
 #include "internal.h"
-#include "libaom.h"
+#include "profiles.h"
 
 typedef struct AV1DecodeContext {
     struct aom_codec_ctx decoder;
 } AV1DecodeContext;
 
-static av_cold int aom_init(AVCodecContext *avctx)
+static av_cold int aom_init(AVCodecContext *avctx,
+                            const struct aom_codec_iface *iface)
 {
     AV1DecodeContext *ctx           = avctx->priv_data;
     struct aom_codec_dec_cfg deccfg = {
-        /* token partitions+1 would be a decent choice */
-        .threads = FFMIN(avctx->thread_count, 16)
+        .threads = FFMIN(avctx->thread_count ? avctx->thread_count : av_cpu_count(), 16)
     };
-    const struct aom_codec_iface *iface = &aom_codec_av1_dx_algo;
 
     av_log(avctx, AV_LOG_INFO, "%s\n", aom_codec_version_str());
     av_log(avctx, AV_LOG_VERBOSE, "%s\n", aom_codec_build_config());
@@ -61,9 +60,10 @@ static av_cold int aom_init(AVCodecContext *avctx)
 
 static void image_copy_16_to_8(AVFrame *pic, struct aom_image *img)
 {
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pic->format);
     int i;
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < desc->nb_components; i++) {
         int w = img->d_w;
         int h = img->d_h;
         int x, y;
@@ -82,6 +82,77 @@ static void image_copy_16_to_8(AVFrame *pic, struct aom_image *img)
     }
 }
 
+// returns 0 on success, AVERROR_INVALIDDATA otherwise
+static int set_pix_fmt(AVCodecContext *avctx, struct aom_image *img)
+{
+    static const enum AVColorRange color_ranges[] = {
+        AVCOL_RANGE_MPEG, AVCOL_RANGE_JPEG
+    };
+    avctx->color_range = color_ranges[img->range];
+    avctx->color_primaries = img->cp;
+    avctx->colorspace  = img->mc;
+    avctx->color_trc   = img->tc;
+
+    switch (img->fmt) {
+    case AOM_IMG_FMT_I420:
+    case AOM_IMG_FMT_I42016:
+        if (img->bit_depth == 8) {
+            avctx->pix_fmt = img->monochrome ?
+                             AV_PIX_FMT_GRAY8 : AV_PIX_FMT_YUV420P;
+            avctx->profile = FF_PROFILE_AV1_MAIN;
+            return 0;
+        } else if (img->bit_depth == 10) {
+            avctx->pix_fmt = img->monochrome ?
+                             AV_PIX_FMT_GRAY10 : AV_PIX_FMT_YUV420P10;
+            avctx->profile = FF_PROFILE_AV1_MAIN;
+            return 0;
+        } else if (img->bit_depth == 12) {
+            avctx->pix_fmt = img->monochrome ?
+                             AV_PIX_FMT_GRAY12 : AV_PIX_FMT_YUV420P12;
+            avctx->profile = FF_PROFILE_AV1_PROFESSIONAL;
+            return 0;
+        } else {
+            return AVERROR_INVALIDDATA;
+        }
+    case AOM_IMG_FMT_I422:
+    case AOM_IMG_FMT_I42216:
+        if (img->bit_depth == 8) {
+            avctx->pix_fmt = AV_PIX_FMT_YUV422P;
+            avctx->profile = FF_PROFILE_AV1_PROFESSIONAL;
+            return 0;
+        } else if (img->bit_depth == 10) {
+            avctx->pix_fmt = AV_PIX_FMT_YUV422P10;
+            avctx->profile = FF_PROFILE_AV1_PROFESSIONAL;
+            return 0;
+        } else if (img->bit_depth == 12) {
+            avctx->pix_fmt = AV_PIX_FMT_YUV422P12;
+            avctx->profile = FF_PROFILE_AV1_PROFESSIONAL;
+            return 0;
+        } else {
+            return AVERROR_INVALIDDATA;
+        }
+    case AOM_IMG_FMT_I444:
+    case AOM_IMG_FMT_I44416:
+        if (img->bit_depth == 8) {
+            avctx->pix_fmt = AV_PIX_FMT_YUV444P;
+            avctx->profile = FF_PROFILE_AV1_HIGH;
+            return 0;
+        } else if (img->bit_depth == 10) {
+            avctx->pix_fmt = AV_PIX_FMT_YUV444P10;
+            avctx->profile = FF_PROFILE_AV1_HIGH;
+            return 0;
+        } else if (img->bit_depth == 12) {
+            avctx->pix_fmt = AV_PIX_FMT_YUV444P12;
+            avctx->profile = FF_PROFILE_AV1_PROFESSIONAL;
+            return 0;
+        } else {
+            return AVERROR_INVALIDDATA;
+        }
+
+    default:
+        return AVERROR_INVALIDDATA;
+    }
+}
 
 static int aom_decode(AVCodecContext *avctx, void *data, int *got_frame,
                       AVPacket *avpkt)
@@ -105,11 +176,16 @@ static int aom_decode(AVCodecContext *avctx, void *data, int *got_frame,
     }
 
     if ((img = aom_codec_get_frame(&ctx->decoder, &iter))) {
-        avctx->pix_fmt = ff_aom_imgfmt_to_pixfmt(img->fmt, img->bit_depth);
-        if (avctx->pix_fmt == AV_PIX_FMT_NONE) {
-            av_log(avctx, AV_LOG_ERROR, "Unsupported output colorspace (0x%02x %dbits)\n",
+        if (img->d_w > img->w || img->d_h > img->h) {
+            av_log(avctx, AV_LOG_ERROR, "Display dimensions %dx%d exceed storage %dx%d\n",
+                   img->d_w, img->d_h, img->w, img->h);
+            return AVERROR_EXTERNAL;
+        }
+
+        if ((ret = set_pix_fmt(avctx, img)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Unsupported output colorspace (%d) / bit_depth (%d)\n",
                    img->fmt, img->bit_depth);
-            return AVERROR_INVALIDDATA;
+            return ret;
         }
 
         if ((int)img->d_w != avctx->width || (int)img->d_h != avctx->height) {
@@ -126,14 +202,6 @@ static int aom_decode(AVCodecContext *avctx, void *data, int *got_frame,
         else
             av_image_copy(picture->data, picture->linesize, (const uint8_t **)img->planes,
                           img->stride, avctx->pix_fmt, img->d_w, img->d_h);
-        switch (img->range) {
-        case AOM_CR_STUDIO_RANGE:
-            picture->color_range = AVCOL_RANGE_MPEG;
-            break;
-        case AOM_CR_FULL_RANGE:
-            picture->color_range = AVCOL_RANGE_JPEG;
-            break;
-        }
         *got_frame = 1;
     }
     return avpkt->size;
@@ -146,15 +214,21 @@ static av_cold int aom_free(AVCodecContext *avctx)
     return 0;
 }
 
+static av_cold int av1_init(AVCodecContext *avctx)
+{
+    return aom_init(avctx, &aom_codec_av1_dx_algo);
+}
+
 AVCodec ff_libaom_av1_decoder = {
     .name           = "libaom-av1",
     .long_name      = NULL_IF_CONFIG_SMALL("libaom AV1"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_AV1,
     .priv_data_size = sizeof(AV1DecodeContext),
-    .init           = aom_init,
+    .init           = av1_init,
     .close          = aom_free,
     .decode         = aom_decode,
     .capabilities   = AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
+    .profiles       = NULL_IF_CONFIG_SMALL(ff_av1_profiles),
     .wrapper_name   = "libaom",
 };

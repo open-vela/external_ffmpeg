@@ -1,5 +1,7 @@
+/fifo_muxer
 /movenc
 /noproxy
+/rtmpdh
 /seek
 /srtp
 /url

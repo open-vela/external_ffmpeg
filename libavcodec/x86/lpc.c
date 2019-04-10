@@ -2,26 +2,25 @@
  * SIMD-optimized LPC functions
  * Copyright (c) 2007 Loren Merritt
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
-#include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
@@ -73,6 +72,7 @@ static void lpc_apply_welch_window_sse2(const int32_t *data, int len,
         "3:                                    \n\t"
         :"+&r"(i), "+&r"(j)
         :"r"(w_data+n2), "r"(data+n2), "m"(c), "r"(len)
+         NAMED_CONSTRAINTS_ARRAY_ADD(pd_1,pd_2)
          XMM_CLOBBERS_ONLY("%xmm0", "%xmm1", "%xmm2", "%xmm3",
                                     "%xmm5", "%xmm6", "%xmm7")
     );
@@ -117,6 +117,7 @@ static void lpc_compute_autocorr_sse2(const double *data, int len, int lag,
                 "movsd     %%xmm2, 16(%1)           \n\t"
                 :"+&r"(i)
                 :"r"(autoc+j), "r"(data+len), "r"(data+len-j)
+                 NAMED_CONSTRAINTS_ARRAY_ADD(pd_1)
                 :"memory"
             );
         } else {
@@ -140,6 +141,7 @@ static void lpc_compute_autocorr_sse2(const double *data, int len, int lag,
                 "movsd     %%xmm1, %2               \n\t"
                 :"+&r"(i), "=m"(autoc[j]), "=m"(autoc[j+1])
                 :"r"(data+len), "r"(data+len-j)
+                 NAMED_CONSTRAINTS_ARRAY_ADD(pd_1)
             );
         }
     }
@@ -152,7 +154,7 @@ av_cold void ff_lpc_init_x86(LPCContext *c)
 #if HAVE_SSE2_INLINE
     int cpu_flags = av_get_cpu_flags();
 
-    if (INLINE_SSE2_SLOW(cpu_flags)) {
+    if (INLINE_SSE2(cpu_flags) || INLINE_SSE2_SLOW(cpu_flags)) {
         c->lpc_apply_welch_window = lpc_apply_welch_window_sse2;
         c->lpc_compute_autocorr   = lpc_compute_autocorr_sse2;
     }
