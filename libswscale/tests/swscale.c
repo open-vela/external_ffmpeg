@@ -1,20 +1,20 @@
 /*
- * Copyright (C) 2003-2011 Michael Niedermayer <michaelni@gmx.at>
+ * Copyright (C) 2003 Michael Niedermayer <michaelni@gmx.at>
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -25,7 +25,6 @@
 #include <stdarg.h>
 
 #undef HAVE_AV_CONFIG_H
-#include "libavutil/cpu.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem.h"
 #include "libavutil/avutil.h"
@@ -55,7 +54,7 @@
      (x) == AV_PIX_FMT_RGB32_1 ||         \
      (x) == AV_PIX_FMT_YUVA420P)
 
-static uint64_t getSSD(const uint8_t *src1, const uint8_t *src2,
+static uint64_t getSSD(const uint8_t * const src1, const uint8_t * const src2,
                        int stride1, int stride2, int w, int h)
 {
     int x, y;
@@ -94,7 +93,7 @@ static int doTest(const uint8_t * const ref[4], int refStride[4], int w, int h,
     static int srcStride[4];
     uint8_t *dst[4] = { 0 };
     uint8_t *out[4] = { 0 };
-    int dstStride[4] = {0};
+    int dstStride[4];
     int i;
     uint64_t ssdY, ssdU = 0, ssdV = 0, ssdA = 0;
     struct SwsContext *dstContext = NULL, *outContext = NULL;
@@ -108,13 +107,8 @@ static int doTest(const uint8_t * const ref[4], int refStride[4], int w, int h,
         for (p = 0; p < 4; p++)
             av_freep(&src[p]);
 
-        res = av_image_fill_linesizes(srcStride, srcFormat, srcW);
-        if (res < 0) {
-            fprintf(stderr, "av_image_fill_linesizes failed\n");
-            goto end;
-        }
+        av_image_fill_linesizes(srcStride, srcFormat, srcW);
         for (p = 0; p < 4; p++) {
-            srcStride[p] = FFALIGN(srcStride[p], 16);
             if (srcStride[p])
                 src[p] = av_mallocz(srcStride[p] * srcH + 16);
             if (srcStride[p] && !src[p]) {
@@ -141,12 +135,7 @@ static int doTest(const uint8_t * const ref[4], int refStride[4], int w, int h,
         cur_srcH      = srcH;
     }
 
-    res = av_image_fill_linesizes(dstStride, dstFormat, dstW);
-    if (res < 0) {
-        fprintf(stderr, "av_image_fill_linesizes failed\n");
-        goto end;
-    }
-
+    av_image_fill_linesizes(dstStride, dstFormat, dstW);
     for (i = 0; i < 4; i++) {
         /* Image buffers passed into libswscale can be allocated any way you
          * prefer, as long as they're aligned enough for the architecture, and
@@ -154,7 +143,6 @@ static int doTest(const uint8_t * const ref[4], int refStride[4], int w, int h,
          * allocated with av_malloc). */
         /* An extra 16 bytes is being allocated because some scalers may write
          * out of bounds. */
-        dstStride[i] = FFALIGN(dstStride[i], 16);
         if (dstStride[i])
             dst[i] = av_mallocz(dstStride[i] * dstH + 16);
         if (dstStride[i] && !dst[i]) {
@@ -180,7 +168,7 @@ static int doTest(const uint8_t * const ref[4], int refStride[4], int w, int h,
            flags);
     fflush(stdout);
 
-    sws_scale(dstContext, (const uint8_t * const*)src, srcStride, 0, srcH, dst, dstStride);
+    sws_scale(dstContext, src, srcStride, 0, srcH, dst, dstStride);
 
     for (i = 0; i < 4 && dstStride[i]; i++)
         crc = av_crc(av_crc_get_table(AV_CRC_32_IEEE), crc, dst[i],
@@ -193,7 +181,6 @@ static int doTest(const uint8_t * const ref[4], int refStride[4], int w, int h,
         ssdA = r->ssdA;
     } else {
         for (i = 0; i < 4; i++) {
-            refStride[i] = FFALIGN(refStride[i], 16);
             if (refStride[i])
                 out[i] = av_mallocz(refStride[i] * h);
             if (refStride[i] && !out[i]) {
@@ -313,16 +300,16 @@ static int fileTest(const uint8_t * const ref[4], int refStride[4],
         struct Results r;
         enum AVPixelFormat srcFormat;
         char srcStr[12];
-        int srcW = 0, srcH = 0;
+        int srcW, srcH;
         enum AVPixelFormat dstFormat;
         char dstStr[12];
-        int dstW = 0, dstH = 0;
+        int dstW, dstH;
         int flags;
         int ret;
 
         ret = sscanf(buf,
                      " %12s %dx%d -> %12s %dx%d flags=%d CRC=%x"
-                     " SSD=%"SCNu64 ", %"SCNu64 ", %"SCNu64 ", %"SCNu64 "\n",
+                     " SSD=%"PRIu64 ", %"PRIu64 ", %"PRIu64 ", %"PRIu64 "\n",
                      srcStr, &srcW, &srcH, dstStr, &dstW, &dstH,
                      &flags, &r.crc, &r.ssdY, &r.ssdU, &r.ssdV, &r.ssdA);
         if (ret != 12) {
@@ -333,8 +320,7 @@ static int fileTest(const uint8_t * const ref[4], int refStride[4],
         srcFormat = av_get_pix_fmt(srcStr);
         dstFormat = av_get_pix_fmt(dstStr);
 
-        if (srcFormat == AV_PIX_FMT_NONE || dstFormat == AV_PIX_FMT_NONE ||
-            srcW > 8192U || srcH > 8192U || dstW > 8192U || dstH > 8192U) {
+        if (srcFormat == AV_PIX_FMT_NONE || dstFormat == AV_PIX_FMT_NONE) {
             fprintf(stderr, "malformed input file\n");
             return -1;
         }
@@ -363,7 +349,7 @@ int main(int argc, char **argv)
     enum AVPixelFormat srcFormat = AV_PIX_FMT_NONE;
     enum AVPixelFormat dstFormat = AV_PIX_FMT_NONE;
     uint8_t *rgb_data   = av_malloc(W * H * 4);
-    const uint8_t * const rgb_src[4] = { rgb_data, NULL, NULL, NULL };
+    const uint8_t *rgb_src[4] = { rgb_data, NULL, NULL, NULL };
     int rgb_stride[4]   = { 4 * W, 0, 0, 0 };
     uint8_t *data       = av_malloc(4 * W * H);
     const uint8_t * const src[4] = { data, data + W * H, data + W * H * 2, data + W * H * 3 };
@@ -373,28 +359,34 @@ int main(int argc, char **argv)
     AVLFG rand;
     int res = -1;
     int i;
-    FILE *fp = NULL;
 
     if (!rgb_data || !data)
         return -1;
+
+    sws = sws_getContext(W / 12, H / 12, AV_PIX_FMT_RGB32, W, H,
+                         AV_PIX_FMT_YUVA420P, SWS_BILINEAR, NULL, NULL, NULL);
+
+    av_lfg_init(&rand, 1);
+
+    for (y = 0; y < H; y++)
+        for (x = 0; x < W * 4; x++)
+            rgb_data[ x + y * 4 * W] = av_lfg_get(&rand);
+    sws_scale(sws, rgb_src, rgb_stride, 0, H, (uint8_t * const *) src, stride);
+    sws_freeContext(sws);
+    av_free(rgb_data);
 
     for (i = 1; i < argc; i += 2) {
         if (argv[i][0] != '-' || i + 1 == argc)
             goto bad_option;
         if (!strcmp(argv[i], "-ref")) {
-            fp = fopen(argv[i + 1], "r");
+            FILE *fp = fopen(argv[i + 1], "r");
             if (!fp) {
                 fprintf(stderr, "could not open '%s'\n", argv[i + 1]);
                 goto error;
             }
-        } else if (!strcmp(argv[i], "-cpuflags")) {
-            unsigned flags = av_get_cpu_flags();
-            int ret = av_parse_cpu_caps(&flags, argv[i + 1]);
-            if (ret < 0) {
-                fprintf(stderr, "invalid cpu flags %s\n", argv[i + 1]);
-                return ret;
-            }
-            av_force_cpu_flags(flags);
+            res = fileTest(src, stride, W, H, fp, srcFormat, dstFormat);
+            fclose(fp);
+            goto end;
         } else if (!strcmp(argv[i], "-src")) {
             srcFormat = av_get_pix_fmt(argv[i + 1]);
             if (srcFormat == AV_PIX_FMT_NONE) {
@@ -414,25 +406,9 @@ bad_option:
         }
     }
 
-    sws = sws_getContext(W / 12, H / 12, AV_PIX_FMT_RGB32, W, H,
-                         AV_PIX_FMT_YUVA420P, SWS_BILINEAR, NULL, NULL, NULL);
-
-    av_lfg_init(&rand, 1);
-
-    for (y = 0; y < H; y++)
-        for (x = 0; x < W * 4; x++)
-            rgb_data[ x + y * 4 * W] = av_lfg_get(&rand);
-    sws_scale(sws, rgb_src, rgb_stride, 0, H / 12, (uint8_t * const *) src, stride);
-    sws_freeContext(sws);
-    av_free(rgb_data);
-
-    if(fp) {
-        res = fileTest(src, stride, W, H, fp, srcFormat, dstFormat);
-        fclose(fp);
-    } else {
-        selfTest(src, stride, W, H, srcFormat, dstFormat);
-        res = 0;
-    }
+    selfTest(src, stride, W, H, srcFormat, dstFormat);
+end:
+    res = 0;
 error:
     av_free(data);
 

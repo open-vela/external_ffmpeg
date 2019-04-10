@@ -2,20 +2,20 @@
  * Brute Force & Ignorance (BFI) demuxer
  * Copyright (c) 2008 Sisir Koppaka
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,7 +39,7 @@ typedef struct BFIContext {
     int avflag;
 } BFIContext;
 
-static int bfi_probe(const AVProbeData * p)
+static int bfi_probe(AVProbeData * p)
 {
     /* Check file header */
     if (AV_RL32(p->buf) == MKTAG('B', 'F', '&', 'I'))
@@ -54,7 +54,7 @@ static int bfi_read_header(AVFormatContext * s)
     AVIOContext *pb = s->pb;
     AVStream *vstream;
     AVStream *astream;
-    int ret, fps, chunk_header;
+    int fps, chunk_header;
 
     /* Initialize the video codec... */
     vstream = avformat_new_stream(s, NULL);
@@ -80,23 +80,18 @@ static int bfi_read_header(AVFormatContext * s)
 
     /*Load the palette to extradata */
     avio_skip(pb, 8);
-    ret = ff_get_extradata(s, vstream->codecpar, pb, 768);
-    if (ret < 0)
-        return ret;
+    vstream->codecpar->extradata      = av_malloc(768);
+    vstream->codecpar->extradata_size = 768;
+    avio_read(pb, vstream->codecpar->extradata,
+              vstream->codecpar->extradata_size);
 
     astream->codecpar->sample_rate = avio_rl32(pb);
-    if (astream->codecpar->sample_rate <= 0) {
-        av_log(s, AV_LOG_ERROR, "Invalid sample rate %d\n", astream->codecpar->sample_rate);
-        return AVERROR_INVALIDDATA;
-    }
 
     /* Set up the video codec... */
     avpriv_set_pts_info(vstream, 32, 1, fps);
     vstream->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
     vstream->codecpar->codec_id   = AV_CODEC_ID_BFI;
     vstream->codecpar->format     = AV_PIX_FMT_PAL8;
-    vstream->nb_frames            =
-    vstream->duration             = bfi->nframes;
 
     /* Set up the audio codec now... */
     astream->codecpar->codec_type      = AVMEDIA_TYPE_AUDIO;
@@ -105,7 +100,7 @@ static int bfi_read_header(AVFormatContext * s)
     astream->codecpar->channel_layout  = AV_CH_LAYOUT_MONO;
     astream->codecpar->bits_per_coded_sample = 8;
     astream->codecpar->bit_rate        =
-        (int64_t)astream->codecpar->sample_rate * astream->codecpar->bits_per_coded_sample;
+        astream->codecpar->sample_rate * astream->codecpar->bits_per_coded_sample;
     avio_seek(pb, chunk_header - 3, SEEK_SET);
     avpriv_set_pts_info(astream, 64, 1, astream->codecpar->sample_rate);
     return 0;
@@ -117,15 +112,15 @@ static int bfi_read_packet(AVFormatContext * s, AVPacket * pkt)
     BFIContext *bfi = s->priv_data;
     AVIOContext *pb = s->pb;
     int ret, audio_offset, video_offset, chunk_size, audio_size = 0;
-    if (bfi->nframes == 0 || avio_feof(pb)) {
-        return AVERROR_EOF;
+    if (bfi->nframes == 0 || pb->eof_reached) {
+        return AVERROR(EIO);
     }
 
     /* If all previous chunks were completely read, then find a new one... */
     if (!bfi->avflag) {
         uint32_t state = 0;
         while(state != MKTAG('S','A','V','I')){
-            if (avio_feof(pb))
+            if (pb->eof_reached)
                 return AVERROR(EIO);
             state = 256*state + avio_r8(pb);
         }
