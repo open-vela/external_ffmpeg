@@ -2,7 +2,7 @@
  * AAC encoder wrapper
  * Copyright (c) 2012 Martin Storsjo
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -251,7 +251,7 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
         }
         if ((err = aacEncoder_SetParam(s->handle, AACENC_BITRATE,
                                        avctx->bit_rate)) != AACENC_OK) {
-            av_log(avctx, AV_LOG_ERROR, "Unable to set the bitrate %"PRId64": %s\n",
+            av_log(avctx, AV_LOG_ERROR, "Unable to set the bitrate %d: %s\n",
                    avctx->bit_rate, aac_get_error(err));
             goto error;
         }
@@ -390,8 +390,10 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     in_buf.bufElSizes        = &in_buffer_element_size;
 
     /* The maximum packet size is 6144 bits aka 768 bytes per channel. */
-    if ((ret = ff_alloc_packet2(avctx, avpkt, FFMAX(8192, 768 * avctx->channels), 0)) < 0)
+    if ((ret = ff_alloc_packet(avpkt, FFMAX(8192, 768 * avctx->channels)))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
         return ret;
+    }
 
     out_ptr                   = avpkt->data;
     out_buffer_size           = avpkt->size;

@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -39,14 +39,10 @@ typedef struct HWMapContext {
 
 static int hwmap_query_formats(AVFilterContext *avctx)
 {
-    int ret;
-
-    if ((ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
-                              &avctx->inputs[0]->out_formats)) < 0 ||
-        (ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
-                              &avctx->outputs[0]->in_formats)) < 0)
-        return ret;
-
+    ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
+                   &avctx->inputs[0]->out_formats);
+    ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
+                   &avctx->outputs[0]->in_formats);
     return 0;
 }
 
@@ -114,8 +110,7 @@ static int hwmap_config_output(AVFilterLink *outlink)
             err = av_hwframe_ctx_create_derived(&ctx->hwframes_ref,
                                                 outlink->format,
                                                 device,
-                                                inlink->hw_frames_ctx,
-                                                ctx->mode);
+                                                inlink->hw_frames_ctx, 0);
             if (err < 0) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to create derived "
                        "frames context: %d.\n", err);
@@ -368,7 +363,7 @@ static av_cold void hwmap_uninit(AVFilterContext *avctx)
 }
 
 #define OFFSET(x) offsetof(HWMapContext, x)
-#define FLAGS (AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM)
+#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption hwmap_options[] = {
     { "mode", "Frame mapping mode",
       OFFSET(mode), AV_OPT_TYPE_FLAGS,
@@ -395,17 +390,22 @@ static const AVOption hwmap_options[] = {
       OFFSET(reverse), AV_OPT_TYPE_INT,
       { .i64 = 0 }, 0, 1, FLAGS },
 
-    { NULL }
+    { NULL },
 };
 
-AVFILTER_DEFINE_CLASS(hwmap);
+static const AVClass hwmap_class = {
+    .class_name = "hwmap",
+    .item_name  = av_default_item_name,
+    .option     = hwmap_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static const AVFilterPad hwmap_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = hwmap_get_buffer,
-        .filter_frame     = hwmap_filter_frame,
+        .get_video_buffer = &hwmap_get_buffer,
+        .filter_frame     = &hwmap_filter_frame,
     },
     { NULL }
 };
@@ -414,7 +414,7 @@ static const AVFilterPad hwmap_outputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
-        .config_props = hwmap_config_output,
+        .config_props = &hwmap_config_output,
     },
     { NULL }
 };
@@ -422,10 +422,10 @@ static const AVFilterPad hwmap_outputs[] = {
 AVFilter ff_vf_hwmap = {
     .name           = "hwmap",
     .description    = NULL_IF_CONFIG_SMALL("Map hardware frames"),
-    .uninit         = hwmap_uninit,
+    .uninit         = &hwmap_uninit,
     .priv_size      = sizeof(HWMapContext),
     .priv_class     = &hwmap_class,
-    .query_formats  = hwmap_query_formats,
+    .query_formats  = &hwmap_query_formats,
     .inputs         = hwmap_inputs,
     .outputs        = hwmap_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,

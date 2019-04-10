@@ -59,8 +59,10 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_get_buffer(avctx, pic, AV_GET_BUFFER_FLAG_REF)) < 0)
-        return ret;
+    if (ff_get_buffer(avctx, pic, AV_GET_BUFFER_FLAG_REF) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
+        return AVERROR(ENOMEM);
+    }
 
     zstream->next_in  = avpkt->data;
     zstream->avail_in = avpkt->size;

@@ -7,20 +7,20 @@
  * 1,4,8bpp support and context / deglobalize stuff
  * by Michael Niedermayer (michaelni@gmx.at)
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -50,29 +50,33 @@ DECLARE_ASM_CONST(8, uint64_t, pb_03) = 0x0303030303030303ULL;
 DECLARE_ASM_CONST(8, uint64_t, pb_07) = 0x0707070707070707ULL;
 
 //MMX versions
-#if HAVE_MMX_INLINE && HAVE_6REGS
+#if HAVE_MMX_INLINE
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 0
 #define RENAME(a) a ## _mmx
 #include "yuv2rgb_template.c"
-#endif /* HAVE_MMX_INLINE && HAVE_6REGS */
+#endif /* HAVE_MMX_INLINE */
 
 // MMXEXT versions
-#if HAVE_MMXEXT_INLINE && HAVE_6REGS
+#if HAVE_MMXEXT_INLINE
 #undef RENAME
 #undef COMPILE_TEMPLATE_MMXEXT
 #define COMPILE_TEMPLATE_MMXEXT 1
 #define RENAME(a) a ## _mmxext
 #include "yuv2rgb_template.c"
-#endif /* HAVE_MMXEXT_INLINE && HAVE_6REGS */
+#endif /* HAVE_MMXEXT_INLINE */
 
 #endif /* HAVE_INLINE_ASM */
 
 av_cold SwsFunc ff_yuv2rgb_init_x86(SwsContext *c)
 {
-#if HAVE_MMX_INLINE && HAVE_6REGS
+#if HAVE_MMX_INLINE
     int cpu_flags = av_get_cpu_flags();
+
+    if (c->srcFormat != AV_PIX_FMT_YUV420P &&
+        c->srcFormat != AV_PIX_FMT_YUVA420P)
+        return NULL;
 
 #if HAVE_MMXEXT_INLINE
     if (INLINE_MMXEXT(cpu_flags)) {
@@ -113,7 +117,7 @@ av_cold SwsFunc ff_yuv2rgb_init_x86(SwsContext *c)
                 return yuv420_rgb15_mmx;
         }
     }
-#endif /* HAVE_MMX_INLINE  && HAVE_6REGS */
+#endif /* HAVE_MMX_INLINE */
 
     return NULL;
 }

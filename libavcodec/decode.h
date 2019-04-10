@@ -1,20 +1,20 @@
 /*
  * generic decoding-related code
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -29,9 +29,14 @@
 
 /**
  * This struct stores per-frame lavc-internal data and is attached to it via
- * private_ref.
+ * opaque_ref.
  */
 typedef struct FrameDecodeData {
+    /**
+     * The original user-set opaque_ref.
+     */
+    AVBufferRef *user_opaque_ref;
+
     /**
      * The callback to perform some delayed processing on the frame right
      * before it is returned to the caller.
@@ -75,7 +80,5 @@ void ff_decode_bsfs_uninit(AVCodecContext *avctx);
  */
 int ff_decode_get_hw_frames_ctx(AVCodecContext *avctx,
                                 enum AVHWDeviceType dev_type);
-
-int ff_attach_decode_data(AVFrame *frame);
 
 #endif /* AVCODEC_DECODE_H */

@@ -1,4 +1,4 @@
-FATE_PIXFMT-$(CONFIG_SCALE_FILTER) =           bgr24           \
+FATE_PIXFMT =           bgr24           \
                         gray            \
                         monob           \
                         monow           \
@@ -18,7 +18,7 @@ FATE_PIXFMT-$(CONFIG_SCALE_FILTER) =           bgr24           \
                         yuvj444p        \
                         yuyv422         \
 
-FATE_PIXFMT := $(FATE_PIXFMT-yes:%=fate-pixfmt-%)
+FATE_PIXFMT := $(FATE_PIXFMT:%=fate-pixfmt-%)
 
 $(FATE_PIXFMT): CMD = pixfmt_conversion
 $(FATE_PIXFMT): REF = $(SRC_PATH)/tests/ref/pixfmt/$(@:fate-pixfmt-%=%)
