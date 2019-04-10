@@ -4,20 +4,20 @@
  * Copyright (c) 2010 Anssi Hannula
  * Copyright (c) 2010 Carl Eugen Hoyos
  *
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -95,7 +95,7 @@ static const AVOption options[] = {
 { NULL },
 };
 
-static const AVClass spdif_class = {
+static const AVClass class = {
     .class_name     = "spdif",
     .item_name      = av_default_item_name,
     .option         = options,
@@ -118,8 +118,7 @@ static int spdif_header_eac3(AVFormatContext *s, AVPacket *pkt)
     static const uint8_t eac3_repeat[4] = {6, 3, 2, 1};
     int repeat = 1;
 
-    int bsid = pkt->data[5] >> 3;
-    if (bsid > 10 && (pkt->data[4] & 0xc0) != 0xc0) /* fscod */
+    if ((pkt->data[4] & 0xc0) != 0xc0) /* fscod */
         repeat = eac3_repeat[(pkt->data[4] & 0x30) >> 4]; /* numblkscod */
 
     ctx->hd_buf = av_fast_realloc(ctx->hd_buf, &ctx->hd_buf_size, ctx->hd_buf_filled + pkt->size);
@@ -422,13 +421,8 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
 
     memcpy(&ctx->hd_buf[ctx->hd_buf_count * TRUEHD_FRAME_OFFSET - BURST_HEADER_SIZE + mat_code_length],
            pkt->data, pkt->size);
-    if (ctx->hd_buf_count < 23) {
-        memset(&ctx->hd_buf[ctx->hd_buf_count * TRUEHD_FRAME_OFFSET - BURST_HEADER_SIZE + mat_code_length + pkt->size],
-               0, TRUEHD_FRAME_OFFSET - pkt->size - mat_code_length);
-    } else {
-        size_t padding = MAT_FRAME_SIZE - (ctx->hd_buf_count * TRUEHD_FRAME_OFFSET - BURST_HEADER_SIZE + pkt->size);
-        memset(&ctx->hd_buf[MAT_FRAME_SIZE - padding], 0, padding);
-    }
+    memset(&ctx->hd_buf[ctx->hd_buf_count * TRUEHD_FRAME_OFFSET - BURST_HEADER_SIZE + mat_code_length + pkt->size],
+           0, TRUEHD_FRAME_OFFSET - pkt->size - mat_code_length);
 
     if (++ctx->hd_buf_count < 24){
         ctx->pkt_offset = 0;
@@ -468,7 +462,6 @@ static int spdif_write_header(AVFormatContext *s)
         ctx->header_info = spdif_header_aac;
         break;
     case AV_CODEC_ID_TRUEHD:
-    case AV_CODEC_ID_MLP:
         ctx->header_info = spdif_header_truehd;
         ctx->hd_buf = av_malloc(MAT_FRAME_SIZE);
         if (!ctx->hd_buf)
@@ -530,13 +523,13 @@ static int spdif_write_packet(struct AVFormatContext *s, AVPacket *pkt)
     }
 
     if (ctx->extra_bswap ^ (ctx->spdif_flags & SPDIF_FLAG_BIGENDIAN)) {
-        avio_write(s->pb, ctx->out_buf, ctx->out_bytes & ~1);
+    avio_write(s->pb, ctx->out_buf, ctx->out_bytes & ~1);
     } else {
-        av_fast_malloc(&ctx->buffer, &ctx->buffer_size, ctx->out_bytes + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!ctx->buffer)
-            return AVERROR(ENOMEM);
-        ff_spdif_bswap_buf16((uint16_t *)ctx->buffer, (uint16_t *)ctx->out_buf, ctx->out_bytes >> 1);
-        avio_write(s->pb, ctx->buffer, ctx->out_bytes & ~1);
+    av_fast_malloc(&ctx->buffer, &ctx->buffer_size, ctx->out_bytes + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!ctx->buffer)
+        return AVERROR(ENOMEM);
+    ff_spdif_bswap_buf16((uint16_t *)ctx->buffer, (uint16_t *)ctx->out_buf, ctx->out_bytes >> 1);
+    avio_write(s->pb, ctx->buffer, ctx->out_bytes & ~1);
     }
 
     /* a final lone byte has to be MSB aligned */
@@ -562,5 +555,5 @@ AVOutputFormat ff_spdif_muxer = {
     .write_packet      = spdif_write_packet,
     .write_trailer     = spdif_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
-    .priv_class        = &spdif_class,
+    .priv_class        = &class,
 };

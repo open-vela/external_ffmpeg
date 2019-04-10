@@ -1,18 +1,18 @@
 /*
- * This file is part of FFmpeg.
+ * This file is part of Libav.
  *
- * FFmpeg is free software; you can redistribute it and/or
+ * Libav is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * FFmpeg is distributed in the hope that it will be useful,
+ * Libav is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with FFmpeg; if not, write to the Free Software
+ * License along with Libav; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -80,7 +80,7 @@ static int h264_redundant_pps_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = ff_cbs_read_packet(ctx->input, au, in);
     if (err < 0)
-        goto fail;
+        return err;
 
     au_has_sps = 0;
     for (i = 0; i < au->nb_units; i++) {
@@ -89,15 +89,11 @@ static int h264_redundant_pps_filter(AVBSFContext *bsf, AVPacket *out)
         if (nal->type == H264_NAL_SPS)
             au_has_sps = 1;
         if (nal->type == H264_NAL_PPS) {
-            err = h264_redundant_pps_fixup_pps(ctx, nal->content);
-            if (err < 0)
-                goto fail;
+            h264_redundant_pps_fixup_pps(ctx, nal->content);
             if (!au_has_sps) {
-                av_log(bsf, AV_LOG_VERBOSE, "Deleting redundant PPS "
+                av_log(ctx, AV_LOG_VERBOSE, "Deleting redundant PPS "
                        "at %"PRId64".\n", in->pts);
-                err = ff_cbs_delete_unit(ctx->input, au, i);
-                if (err < 0)
-                    goto fail;
+                ff_cbs_delete_unit(ctx->input, au, i);
             }
         }
         if (nal->type == H264_NAL_SLICE ||
@@ -109,21 +105,17 @@ static int h264_redundant_pps_filter(AVBSFContext *bsf, AVPacket *out)
 
     err = ff_cbs_write_packet(ctx->output, out, au);
     if (err < 0)
-        goto fail;
+        return err;
 
+    ff_cbs_fragment_uninit(ctx->output, au);
 
     err = av_packet_copy_props(out, in);
     if (err < 0)
-        goto fail;
+        return err;
 
-    err = 0;
-fail:
-    ff_cbs_fragment_reset(ctx->output, au);
     av_packet_free(&in);
-    if (err < 0)
-        av_packet_unref(out);
 
-    return err;
+    return 0;
 }
 
 static int h264_redundant_pps_init(AVBSFContext *bsf)
@@ -146,29 +138,25 @@ static int h264_redundant_pps_init(AVBSFContext *bsf)
         err = ff_cbs_read_extradata(ctx->input, au, bsf->par_in);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to read extradata.\n");
-            goto fail;
+            return err;
         }
 
         for (i = 0; i < au->nb_units; i++) {
-            if (au->units[i].type == H264_NAL_PPS) {
-                err = h264_redundant_pps_fixup_pps(ctx, au->units[i].content);
-                if (err < 0)
-                    goto fail;
-            }
+            if (au->units[i].type == H264_NAL_PPS)
+                h264_redundant_pps_fixup_pps(ctx, au->units[i].content);
         }
 
         ctx->extradata_pic_init_qp = ctx->current_pic_init_qp;
         err = ff_cbs_write_extradata(ctx->output, bsf->par_out, au);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
-            goto fail;
+            return err;
         }
+
+        ff_cbs_fragment_uninit(ctx->output, au);
     }
 
-    err = 0;
-fail:
-    ff_cbs_fragment_reset(ctx->output, au);
-    return err;
+    return 0;
 }
 
 static void h264_redundant_pps_flush(AVBSFContext *bsf)
@@ -180,8 +168,6 @@ static void h264_redundant_pps_flush(AVBSFContext *bsf)
 static void h264_redundant_pps_close(AVBSFContext *bsf)
 {
     H264RedundantPPSContext *ctx = bsf->priv_data;
-
-    ff_cbs_fragment_free(ctx->input, &ctx->access_unit);
     ff_cbs_close(&ctx->input);
     ff_cbs_close(&ctx->output);
 }
