@@ -46,8 +46,8 @@ typedef struct {
     uint8_t bit_depth_chroma;
     uint8_t frame_mbs_only_flag;
     AVRational sar;
-} H264SPS;
+} H264SequenceParameterSet;
 
-int ff_avc_decode_sps(H264SPS *sps, const uint8_t *buf, int buf_size);
+H264SequenceParameterSet *ff_avc_decode_sps(const uint8_t *src, int src_len);
 
 #endif /* AVFORMAT_AVC_H */
