@@ -51,8 +51,6 @@ enum Projections {
     BARREL_SPLIT,
     TSPYRAMID,
     HEQUIRECTANGULAR,
-    EQUISOLID,
-    ORTHOGRAPHIC,
     NB_PROJECTIONS,
 };
 

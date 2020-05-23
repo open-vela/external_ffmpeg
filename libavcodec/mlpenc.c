@@ -531,7 +531,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Unsupported sample rate %d. Supported "
                             "sample rates are 44100, 88200, 176400, 48000, "
                             "96000, and 192000.\n", avctx->sample_rate);
-        return AVERROR(EINVAL);
+        return -1;
     }
     ctx->coded_sample_rate[1] = -1 & 0xf;
 
@@ -564,7 +564,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
     default:
         av_log(avctx, AV_LOG_ERROR, "Sample format not supported. "
                "Only 16- and 24-bit samples are supported.\n");
-        return AVERROR(EINVAL);
+        return -1;
     }
     ctx->coded_sample_fmt[1] = -1 & 0xf;
 
@@ -638,7 +638,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
             ctx->channel_arrangement = 12; break;
         default:
             av_log(avctx, AV_LOG_ERROR, "Unsupported channel arrangement\n");
-            return AVERROR(EINVAL);
+            return -1;
         }
         ctx->flags = FLAGS_DVDA;
         ctx->channel_occupancy = ff_mlp_ch_info[ctx->channel_arrangement].channel_occupancy;
@@ -666,7 +666,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
             break;
         default:
             av_log(avctx, AV_LOG_ERROR, "Unsupported channel arrangement\n");
-            return AVERROR(EINVAL);
+            return -1;
         }
         ctx->flags = 0;
         ctx->channel_occupancy = 0;
@@ -1190,7 +1190,7 @@ static unsigned int write_access_unit(MLPEncodeContext *ctx, uint8_t *buf,
     int total_length;
 
     if (buf_size < 4)
-        return AVERROR(EINVAL);
+        return -1;
 
     /* Frame header will be written at the end. */
     buf      += 4;
@@ -1198,7 +1198,7 @@ static unsigned int write_access_unit(MLPEncodeContext *ctx, uint8_t *buf,
 
     if (restart_frame) {
         if (buf_size < 28)
-            return AVERROR(EINVAL);
+            return -1;
         write_major_sync(ctx, buf, buf_size);
         buf      += 28;
         buf_size -= 28;
@@ -1820,8 +1820,7 @@ static int apply_filter(MLPEncodeContext *ctx, unsigned int channel)
         if (!filter_state_buffer[i]) {
             av_log(ctx->avctx, AV_LOG_ERROR,
                    "Not enough memory for applying filters.\n");
-            ret = AVERROR(ENOMEM);
-            goto free_and_return;
+            return -1;
         }
     }
 
@@ -1849,7 +1848,7 @@ static int apply_filter(MLPEncodeContext *ctx, unsigned int channel)
         residual = sample - (accum & mask);
 
         if (residual < SAMPLE_MIN(24) || residual > SAMPLE_MAX(24)) {
-            ret = AVERROR_INVALIDDATA;
+            ret = -1;
             goto free_and_return;
         }
 
@@ -2227,6 +2226,9 @@ static int mlp_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     if ((ret = ff_alloc_packet2(avctx, avpkt, 87500 * avctx->channels, 0)) < 0)
         return ret;
 
+    if (!frame)
+        return 1;
+
     /* add current frame to queue */
     if ((ret = ff_af_queue_add(&ctx->afq, frame)) < 0)
         return ret;
@@ -2265,7 +2267,7 @@ static int mlp_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     if (ctx->frame_size[ctx->frame_index] > MAX_BLOCKSIZE) {
         av_log(avctx, AV_LOG_ERROR, "Invalid frame size (%d > %d)\n",
                ctx->frame_size[ctx->frame_index], MAX_BLOCKSIZE);
-        return AVERROR_INVALIDDATA;
+        return -1;
     }
 
     restart_frame = !ctx->frame_index;
@@ -2387,7 +2389,7 @@ AVCodec ff_mlp_encoder = {
     .init                   = mlp_encode_init,
     .encode2                = mlp_encode_frame,
     .close                  = mlp_encode_close,
-    .capabilities           = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_EXPERIMENTAL,
+    .capabilities           = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_EXPERIMENTAL,
     .sample_fmts            = (const enum AVSampleFormat[]) {AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE},
     .supported_samplerates  = (const int[]) {44100, 48000, 88200, 96000, 176400, 192000, 0},
     .channel_layouts        = ff_mlp_channel_layouts,
@@ -2403,7 +2405,7 @@ AVCodec ff_truehd_encoder = {
     .init                   = mlp_encode_init,
     .encode2                = mlp_encode_frame,
     .close                  = mlp_encode_close,
-    .capabilities           = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_EXPERIMENTAL,
+    .capabilities           = AV_CODEC_CAP_SMALL_LAST_FRAME | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_EXPERIMENTAL,
     .sample_fmts            = (const enum AVSampleFormat[]) {AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE},
     .supported_samplerates  = (const int[]) {44100, 48000, 88200, 96000, 176400, 192000, 0},
     .channel_layouts        = (const uint64_t[]) {AV_CH_LAYOUT_STEREO, AV_CH_LAYOUT_5POINT0_BACK, AV_CH_LAYOUT_5POINT1_BACK, 0},
