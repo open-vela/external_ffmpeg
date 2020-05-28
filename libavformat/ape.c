@@ -83,8 +83,6 @@ typedef struct APEContext {
     uint8_t  *bittable;
 } APEContext;
 
-static int ape_read_close(AVFormatContext * s);
-
 static int ape_probe(const AVProbeData * p)
 {
     int version = AV_RL16(p->buf+4);
@@ -283,18 +281,14 @@ static int ape_read_header(AVFormatContext * s)
 
     if (ape->seektablelength > 0) {
         ape->seektable = av_mallocz(ape->seektablelength);
-        if (!ape->seektable) {
-            ret = AVERROR(ENOMEM);
-            goto fail;
-        }
+        if (!ape->seektable)
+            return AVERROR(ENOMEM);
         for (i = 0; i < ape->seektablelength / sizeof(uint32_t) && !pb->eof_reached; i++)
             ape->seektable[i] = avio_rl32(pb);
         if (ape->fileversion < 3810) {
             ape->bittable = av_mallocz(ape->totalframes);
-            if (!ape->bittable) {
-                ret = AVERROR(ENOMEM);
-                goto fail;
-            }
+            if (!ape->bittable)
+                return AVERROR(ENOMEM);
             for (i = 0; i < ape->totalframes && !pb->eof_reached; i++)
                 ape->bittable[i] = avio_r8(pb);
         }
@@ -347,10 +341,8 @@ static int ape_read_header(AVFormatContext * s)
 
     /* now we are ready: build format streams */
     st = avformat_new_stream(s, NULL);
-    if (!st) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (!st)
+        return AVERROR(ENOMEM);
 
     total_blocks = (ape->totalframes == 0) ? 0 : ((ape->totalframes - 1) * ape->blocksperframe) + ape->finalframeblocks;
 
@@ -367,7 +359,7 @@ static int ape_read_header(AVFormatContext * s)
     avpriv_set_pts_info(st, 64, 1, ape->samplerate);
 
     if ((ret = ff_alloc_extradata(st->codecpar, APE_EXTRADATA_SIZE)) < 0)
-        goto fail;
+        return ret;
     AV_WL16(st->codecpar->extradata + 0, ape->fileversion);
     AV_WL16(st->codecpar->extradata + 2, ape->compressiontype);
     AV_WL16(st->codecpar->extradata + 4, ape->formatflags);
@@ -386,10 +378,6 @@ static int ape_read_header(AVFormatContext * s)
     }
 
     return 0;
-fail:
-    ape_read_close(s);
-
-    return ret;
 }
 
 static int ape_read_packet(AVFormatContext * s, AVPacket * pkt)
