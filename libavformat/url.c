@@ -90,8 +90,6 @@ static void trim_double_dot_url(char *buf, const char *rel, int size)
     if (p && (sep = strstr(p, "://"))) {
         sep += 3;
         root = strchr(sep, '/');
-        if (!root)
-            return;
     }
 
     /* set new current position if the root node is changed */
@@ -152,7 +150,6 @@ void ff_make_absolute_url(char *buf, int size, const char *base,
     }
     /* If rel actually is an absolute url, just copy it */
     if (!base || strstr(rel, "://") || rel[0] == '/') {
-        memset(buf, 0, size);
         trim_double_dot_url(buf, rel, size);
         return;
     }
@@ -180,8 +177,6 @@ void ff_make_absolute_url(char *buf, int size, const char *base,
         if (sep) {
             sep += 3;
             root = strchr(sep, '/');
-            if (!root)
-                return;
         }
     }
 
