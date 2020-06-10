@@ -1768,20 +1768,6 @@ static int set_stream_info_from_input_stream(AVStream *st, struct playlist *pls,
     else
         avpriv_set_pts_info(st, ist->pts_wrap_bits, ist->time_base.num, ist->time_base.den);
 
-    // copy disposition
-    st->disposition = ist->disposition;
-
-    // copy side data
-    for (int i = 0; i < ist->nb_side_data; i++) {
-        const AVPacketSideData *sd_src = &ist->side_data[i];
-        uint8_t *dst_data;
-
-        dst_data = av_stream_new_side_data(st, sd_src->type, sd_src->size);
-        if (!dst_data)
-            return AVERROR(ENOMEM);
-        memcpy(dst_data, sd_src->data, sd_src->size);
-    }
-
     st->internal->need_context_update = 1;
 
     return 0;
@@ -1946,7 +1932,6 @@ static int hls_read_header(AVFormatContext *s)
     /* Open the demuxer for each playlist */
     for (i = 0; i < c->n_playlists; i++) {
         struct playlist *pls = c->playlists[i];
-        char *url;
         ff_const59 AVInputFormat *in_fmt = NULL;
 
         if (!(pls->ctx = avformat_alloc_context())) {
@@ -1984,9 +1969,8 @@ static int hls_read_header(AVFormatContext *s)
                           read_data, NULL, NULL);
         pls->ctx->probesize = s->probesize > 0 ? s->probesize : 1024 * 4;
         pls->ctx->max_analyze_duration = s->max_analyze_duration > 0 ? s->max_analyze_duration : 4 * AV_TIME_BASE;
-        url = av_strdup(pls->segments[0]->url);
-        ret = av_probe_input_buffer(&pls->pb, &in_fmt, url, NULL, 0, 0);
-        av_free(url);
+        ret = av_probe_input_buffer(&pls->pb, &in_fmt, pls->segments[0]->url,
+                                    NULL, 0, 0);
         if (ret < 0) {
             /* Free the ctx - it isn't initialized properly at this point,
              * so avformat_close_input shouldn't be called. If

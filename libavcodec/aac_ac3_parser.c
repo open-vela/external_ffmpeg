@@ -97,13 +97,8 @@ get_next:
             avctx->audio_service_type = s->service_type;
         }
 
-        /* Calculate the average bit rate */
-        s->frame_number++;
-        if (avctx->codec_id != AV_CODEC_ID_EAC3) {
-            avctx->bit_rate =
-                (s->last_bit_rate * (s->frame_number -1) + s->bit_rate)/s->frame_number;
-            s->last_bit_rate = avctx->bit_rate;
-        }
+        if (avctx->codec_id != AV_CODEC_ID_EAC3)
+            avctx->bit_rate = s->bit_rate;
     }
 
     return i;
