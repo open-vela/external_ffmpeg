@@ -129,6 +129,8 @@ int ff_amf_encode_close(AVCodecContext *avctx);
 /**
 * Ecoding one frame - common function for all AMF encoders
 */
+
+int ff_amf_send_frame(AVCodecContext *avctx, const AVFrame *frame);
 int ff_amf_receive_packet(AVCodecContext *avctx, AVPacket *avpkt);
 
 /**
