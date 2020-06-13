@@ -97,10 +97,8 @@ static int stl_read_header(AVFormatContext *s)
         if (pts_start != AV_NOPTS_VALUE) {
             AVPacket *sub;
             sub = ff_subtitles_queue_insert(&stl->q, p, strlen(p), 0);
-            if (!sub) {
-                ff_subtitles_queue_clean(&stl->q);
+            if (!sub)
                 return AVERROR(ENOMEM);
-            }
             sub->pos = pos;
             sub->pts = pts_start;
             sub->duration = duration;
