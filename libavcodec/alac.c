@@ -489,7 +489,6 @@ static int allocate_buffers(ALACContext *alac)
 {
     int ch;
     unsigned buf_size = alac->max_samples_per_frame * sizeof(int32_t);
-    unsigned extra_buf_size = buf_size + AV_INPUT_BUFFER_PADDING_SIZE;
 
     for (ch = 0; ch < 2; ch++) {
         alac->predict_error_buffer[ch]  = NULL;
@@ -498,19 +497,22 @@ static int allocate_buffers(ALACContext *alac)
     }
 
     for (ch = 0; ch < FFMIN(alac->channels, 2); ch++) {
-        if (!(alac->predict_error_buffer[ch] = av_malloc(buf_size)))
-            return AVERROR(ENOMEM);
+        FF_ALLOC_OR_GOTO(alac->avctx, alac->predict_error_buffer[ch],
+                         buf_size, buf_alloc_fail);
 
         alac->direct_output = alac->sample_size > 16;
         if (!alac->direct_output) {
-            if (!(alac->output_samples_buffer[ch] = av_malloc(extra_buf_size)))
-                return AVERROR(ENOMEM);
+            FF_ALLOC_OR_GOTO(alac->avctx, alac->output_samples_buffer[ch],
+                             buf_size + AV_INPUT_BUFFER_PADDING_SIZE, buf_alloc_fail);
         }
 
-        if (!(alac->extra_bits_buffer[ch] = av_malloc(extra_buf_size)))
-            return AVERROR(ENOMEM);
+        FF_ALLOC_OR_GOTO(alac->avctx, alac->extra_bits_buffer[ch],
+                         buf_size + AV_INPUT_BUFFER_PADDING_SIZE, buf_alloc_fail);
     }
     return 0;
+buf_alloc_fail:
+    alac_decode_close(alac->avctx);
+    return AVERROR(ENOMEM);
 }
 
 static int alac_set_info(ALACContext *alac)
@@ -623,6 +625,5 @@ AVCodec ff_alac_decoder = {
     .close          = alac_decode_close,
     .decode         = alac_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .priv_class     = &alac_class
 };
