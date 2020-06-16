@@ -32,10 +32,6 @@
 
 static const AVRational ms_tb = {1, 1000};
 
-/*
- * TODO list
- * 1) handle font and color completely
- */
 enum cc_mode {
     CCMODE_POPON,
     CCMODE_PAINTON,
@@ -319,11 +315,13 @@ static void write_char(CCaptionSubContext *ctx, struct Screen *screen, char ch)
     uint8_t col = ctx->cursor_column;
     char *row = screen->characters[ctx->cursor_row];
     char *font = screen->fonts[ctx->cursor_row];
+    char *color = screen->colors[ctx->cursor_row];
     char *charset = screen->charsets[ctx->cursor_row];
 
     if (col < SCREEN_COLUMNS) {
         row[col] = ch;
         font[col] = ctx->cursor_font;
+        color[col] = ctx->cursor_color;
         charset[col] = ctx->cursor_charset;
         ctx->cursor_charset = CCSET_BASIC_AMERICAN;
         if (ch) ctx->cursor_column++;
@@ -437,6 +435,7 @@ static int capture_screen(CCaptionSubContext *ctx)
     int i, j, tab = 0;
     struct Screen *screen = ctx->screen + ctx->active_screen;
     enum cc_font prev_font = CCFONT_REGULAR;
+    enum cc_color_code prev_color = CCCOL_WHITE;
     av_bprint_clear(&ctx->buffer);
 
     for (i = 0; screen->row_used && i < SCREEN_ROWS; i++)
@@ -457,6 +456,7 @@ static int capture_screen(CCaptionSubContext *ctx)
         if (CHECK_FLAG(screen->row_used, i)) {
             const char *row = screen->characters[i];
             const char *font = screen->fonts[i];
+            const char *color = screen->colors[i];
             const char *charset = screen->charsets[i];
             const char *override;
             int x, y, seen_char = 0;
@@ -471,7 +471,7 @@ static int capture_screen(CCaptionSubContext *ctx)
             av_bprintf(&ctx->buffer, "{\\an7}{\\pos(%d,%d)}", x, y);
 
             for (; j < SCREEN_COLUMNS; j++) {
-                const char *e_tag = "", *s_tag = "";
+                const char *e_tag = "", *s_tag = "", *c_tag = "";
 
                 if (row[j] == 0)
                     break;
@@ -500,15 +500,42 @@ static int capture_screen(CCaptionSubContext *ctx)
                         break;
                     }
                 }
+                if (prev_color != color[j]) {
+                    switch (color[j]) {
+                    case CCCOL_WHITE:
+                        c_tag = "{\\c&HFFFFFF&}";
+                        break;
+                    case CCCOL_GREEN:
+                        c_tag = "{\\c&H00FF00&}";
+                        break;
+                    case CCCOL_BLUE:
+                        c_tag = "{\\c&HFF0000&}";
+                        break;
+                    case CCCOL_CYAN:
+                        c_tag = "{\\c&HFFFF00&}";
+                        break;
+                    case CCCOL_RED:
+                        c_tag = "{\\c&H0000FF&}";
+                        break;
+                    case CCCOL_YELLOW:
+                        c_tag = "{\\c&H00FFFF&}";
+                        break;
+                    case CCCOL_MAGENTA:
+                        c_tag = "{\\c&HFF00FF&}";
+                        break;
+                    }
+                }
+
                 prev_font = font[j];
+                prev_color = color[j];
                 override = charset_overrides[(int)charset[j]][(int)row[j]];
                 if (override) {
-                    av_bprintf(&ctx->buffer, "%s%s%s", e_tag, s_tag, override);
+                    av_bprintf(&ctx->buffer, "%s%s%s%s", e_tag, s_tag, c_tag, override);
                     seen_char = 1;
                 } else if (row[j] == ' ' && !seen_char) {
-                    av_bprintf(&ctx->buffer, "%s%s\\h", e_tag, s_tag);
+                    av_bprintf(&ctx->buffer, "%s%s%s\\h", e_tag, s_tag, c_tag);
                 } else {
-                    av_bprintf(&ctx->buffer, "%s%s%c", e_tag, s_tag, row[j]);
+                    av_bprintf(&ctx->buffer, "%s%s%s%c", e_tag, s_tag, c_tag, row[j]);
                     seen_char = 1;
                 }
 
@@ -579,40 +606,48 @@ static void handle_pac(CCaptionSubContext *ctx, uint8_t hi, uint8_t lo)
 /**
  * @param pts it is required to set end time
  */
-static void handle_edm(CCaptionSubContext *ctx, int64_t pts)
+static int handle_edm(CCaptionSubContext *ctx, int64_t pts)
 {
     struct Screen *screen = ctx->screen + ctx->active_screen;
+    int ret;
 
     // In buffered mode, keep writing to screen until it is wiped.
     // Before wiping the display, capture contents to emit subtitle.
     if (!ctx->real_time)
-        reap_screen(ctx, pts);
+        ret = reap_screen(ctx, pts);
 
     screen->row_used = 0;
 
     // In realtime mode, emit an empty caption so the last one doesn't
     // stay on the screen.
     if (ctx->real_time)
-        reap_screen(ctx, pts);
+        ret = reap_screen(ctx, pts);
+
+    return ret;
 }
 
-static void handle_eoc(CCaptionSubContext *ctx, int64_t pts)
+static int handle_eoc(CCaptionSubContext *ctx, int64_t pts)
 {
+    int ret;
+
+    ctx->active_screen = !ctx->active_screen;
+
     // In buffered mode, we wait til the *next* EOC and
     // reap what was already on the screen since the last EOC.
     if (!ctx->real_time)
-        handle_edm(ctx,pts);
+        ret = handle_edm(ctx, pts);
 
-    ctx->active_screen = !ctx->active_screen;
     ctx->cursor_column = 0;
 
     // In realtime mode, we display the buffered contents (after
     // flipping the buffer to active above) as soon as EOC arrives.
     if (ctx->real_time)
-        reap_screen(ctx, pts);
+        ret = reap_screen(ctx, pts);
+
+    return ret;
 }
 
-static void handle_delete_end_of_row(CCaptionSubContext *ctx, char hi, char lo)
+static void handle_delete_end_of_row(CCaptionSubContext *ctx)
 {
     struct Screen *screen = get_writing_screen(ctx);
     write_char(ctx, screen, 0);
@@ -658,11 +693,12 @@ static void handle_char(CCaptionSubContext *ctx, char hi, char lo)
        ff_dlog(ctx, "(%c)\n", hi);
 }
 
-static void process_cc608(CCaptionSubContext *ctx, int64_t pts, uint8_t hi, uint8_t lo)
+static int process_cc608(CCaptionSubContext *ctx, int64_t pts, uint8_t hi, uint8_t lo)
 {
+    int ret = 0;
+
     if (hi == ctx->prev_cmd[0] && lo == ctx->prev_cmd[1]) {
-        /* ignore redundant command */
-        return;
+        return 0;
     }
 
     /* set prev command */
@@ -682,7 +718,7 @@ static void process_cc608(CCaptionSubContext *ctx, int64_t pts, uint8_t hi, uint
             ctx->mode = CCMODE_POPON;
             break;
         case 0x24:
-            handle_delete_end_of_row(ctx, hi, lo);
+            handle_delete_end_of_row(ctx);
             break;
         case 0x25:
         case 0x26:
@@ -706,7 +742,7 @@ static void process_cc608(CCaptionSubContext *ctx, int64_t pts, uint8_t hi, uint
             /* carriage return */
             ff_dlog(ctx, "carriage return\n");
             if (!ctx->real_time)
-                reap_screen(ctx, pts);
+                ret = reap_screen(ctx, pts);
             roll_up(ctx);
             ctx->cursor_column = 0;
             break;
@@ -722,7 +758,7 @@ static void process_cc608(CCaptionSubContext *ctx, int64_t pts, uint8_t hi, uint
         case 0x2f:
             /* end of caption */
             ff_dlog(ctx, "handle_eoc\n");
-            handle_eoc(ctx, pts);
+            ret = handle_eoc(ctx, pts);
             break;
         default:
             ff_dlog(ctx, "Unknown command 0x%hhx 0x%hhx\n", hi, lo);
@@ -745,6 +781,8 @@ static void process_cc608(CCaptionSubContext *ctx, int64_t pts, uint8_t hi, uint
         /* Ignoring all other non data code */
         ff_dlog(ctx, "Unknown command 0x%hhx 0x%hhx\n", hi, lo);
     }
+
+    return ret;
 }
 
 static int decode(AVCodecContext *avctx, void *data, int *got_sub, AVPacket *avpkt)
@@ -765,23 +803,25 @@ static int decode(AVCodecContext *avctx, void *data, int *got_sub, AVPacket *avp
     memcpy(ctx->pktbuf, avpkt->data, len);
     bptr = ctx->pktbuf;
 
-    for (i  = 0; i < len; i += 3) {
+    for (i = 0; i < len; i += 3) {
         uint8_t cc_type = *(bptr + i) & 3;
         if (validate_cc_data_pair(bptr + i))
             continue;
         /* ignoring data field 1 */
-        if(cc_type == 1)
+        if (cc_type == 1)
             continue;
         else
-            process_cc608(ctx, start_time, *(bptr + i + 1) & 0x7f, *(bptr + i + 2) & 0x7f);
+            ret = process_cc608(ctx, start_time, *(bptr + i + 1) & 0x7f, *(bptr + i + 2) & 0x7f);
+
+        if (ret < 0)
+            return ret;
 
         if (!ctx->buffer_changed)
             continue;
         ctx->buffer_changed = 0;
 
-        if (*ctx->buffer.str || ctx->real_time)
-        {
-            ff_dlog(ctx, "cdp writing data (%s)\n",ctx->buffer.str);
+        if (ctx->buffer.str[0] || ctx->real_time) {
+            ff_dlog(ctx, "cdp writing data (%s)\n", ctx->buffer.str);
             ret = ff_ass_add_rect(sub, ctx->buffer.str, ctx->readorder++, 0, NULL, NULL);
             if (ret < 0)
                 return ret;
