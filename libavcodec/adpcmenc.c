@@ -58,11 +58,14 @@ typedef struct ADPCMEncodeContext {
 
 #define FREEZE_INTERVAL 128
 
+static av_cold int adpcm_encode_close(AVCodecContext *avctx);
+
 static av_cold int adpcm_encode_init(AVCodecContext *avctx)
 {
     ADPCMEncodeContext *s = avctx->priv_data;
     uint8_t *extradata;
     int i;
+    int ret = AVERROR(ENOMEM);
 
     if (avctx->channels > 2) {
         av_log(avctx, AV_LOG_ERROR, "only stereo or mono is supported\n");
@@ -86,11 +89,14 @@ static av_cold int adpcm_encode_init(AVCodecContext *avctx)
     if (avctx->trellis) {
         int frontier  = 1 << avctx->trellis;
         int max_paths =  frontier * FREEZE_INTERVAL;
-        if (!FF_ALLOC_TYPED_ARRAY(s->paths,        max_paths)    ||
-            !FF_ALLOC_TYPED_ARRAY(s->node_buf,     2 * frontier) ||
-            !FF_ALLOC_TYPED_ARRAY(s->nodep_buf,    2 * frontier) ||
-            !FF_ALLOC_TYPED_ARRAY(s->trellis_hash, 65536))
-            return AVERROR(ENOMEM);
+        FF_ALLOC_OR_GOTO(avctx, s->paths,
+                         max_paths * sizeof(*s->paths), error);
+        FF_ALLOC_OR_GOTO(avctx, s->node_buf,
+                         2 * frontier * sizeof(*s->node_buf),  error);
+        FF_ALLOC_OR_GOTO(avctx, s->nodep_buf,
+                         2 * frontier * sizeof(*s->nodep_buf), error);
+        FF_ALLOC_OR_GOTO(avctx, s->trellis_hash,
+                         65536 * sizeof(*s->trellis_hash), error);
     }
 
     avctx->bits_per_coded_sample = av_get_bits_per_sample(avctx->codec->id);
@@ -117,7 +123,7 @@ static av_cold int adpcm_encode_init(AVCodecContext *avctx)
         avctx->bits_per_coded_sample = 4;
         avctx->block_align    = BLKSIZE;
         if (!(avctx->extradata = av_malloc(32 + AV_INPUT_BUFFER_PADDING_SIZE)))
-            return AVERROR(ENOMEM);
+            goto error;
         avctx->extradata_size = 32;
         extradata = avctx->extradata;
         bytestream_put_le16(&extradata, avctx->frame_size);
@@ -137,7 +143,8 @@ static av_cold int adpcm_encode_init(AVCodecContext *avctx)
             avctx->sample_rate != 44100) {
             av_log(avctx, AV_LOG_ERROR, "Sample rate must be 11025, "
                    "22050 or 44100\n");
-            return AVERROR(EINVAL);
+            ret = AVERROR(EINVAL);
+            goto error;
         }
         avctx->frame_size = 512 * (avctx->sample_rate / 11025);
         break;
@@ -146,10 +153,13 @@ static av_cold int adpcm_encode_init(AVCodecContext *avctx)
         avctx->block_align = BLKSIZE;
         break;
     default:
-        return AVERROR(EINVAL);
+        ret = AVERROR(EINVAL);
+        goto error;
     }
 
     return 0;
+error:
+    return ret;
 }
 
 static av_cold int adpcm_encode_close(AVCodecContext *avctx)
@@ -513,8 +523,7 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
         /* stereo: 4 bytes (8 samples) for left, 4 bytes for right */
         if (avctx->trellis > 0) {
-            if (!FF_ALLOC_TYPED_ARRAY(buf, avctx->channels * blocks * 8))
-                return AVERROR(ENOMEM);
+            FF_ALLOC_ARRAY_OR_GOTO(avctx, buf, avctx->channels, blocks * 8, error);
             for (ch = 0; ch < avctx->channels; ch++) {
                 adpcm_compress_trellis(avctx, &samples_p[ch][1],
                                        buf + ch * blocks * 8, &c->status[ch],
@@ -609,8 +618,7 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         }
 
         if (avctx->trellis > 0) {
-            if (!(buf = av_malloc(2 * n)))
-                return AVERROR(ENOMEM);
+            FF_ALLOC_OR_GOTO(avctx, buf, 2 * n, error);
             adpcm_compress_trellis(avctx, samples + avctx->channels, buf,
                                    &c->status[0], n, avctx->channels);
             if (avctx->channels == 2)
@@ -658,8 +666,7 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
         if (avctx->trellis > 0) {
             n = avctx->block_align - 7 * avctx->channels;
-            if (!(buf = av_malloc(2 * n)))
-                return AVERROR(ENOMEM);
+            FF_ALLOC_OR_GOTO(avctx, buf, 2 * n, error);
             if (avctx->channels == 1) {
                 adpcm_compress_trellis(avctx, samples, buf, &c->status[0], n,
                                        avctx->channels);
@@ -686,8 +693,7 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     case AV_CODEC_ID_ADPCM_YAMAHA:
         n = frame->nb_samples / 2;
         if (avctx->trellis > 0) {
-            if (!(buf = av_malloc(2 * n * 2)))
-                return AVERROR(ENOMEM);
+            FF_ALLOC_OR_GOTO(avctx, buf, 2 * n * 2, error);
             n *= 2;
             if (avctx->channels == 1) {
                 adpcm_compress_trellis(avctx, samples, buf, &c->status[0], n,
@@ -718,6 +724,8 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     avpkt->size = pkt_size;
     *got_packet_ptr = 1;
     return 0;
+error:
+    return AVERROR(ENOMEM);
 }
 
 static const enum AVSampleFormat sample_fmts[] = {

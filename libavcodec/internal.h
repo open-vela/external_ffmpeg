@@ -110,11 +110,8 @@
 
 typedef struct DecodeSimpleContext {
     AVPacket *in_pkt;
+    AVFrame  *out_frame;
 } DecodeSimpleContext;
-
-typedef struct EncodeSimpleContext {
-    AVFrame *in_frame;
-} EncodeSimpleContext;
 
 typedef struct AVCodecInternal {
     /**
@@ -154,8 +151,6 @@ typedef struct AVCodecInternal {
 
     void *frame_thread_encoder;
 
-    EncodeSimpleContext es;
-
     /**
      * Number of audio samples to skip at the start of the next decoded frame
      */
@@ -175,6 +170,7 @@ typedef struct AVCodecInternal {
      * buffers for using new encode/decode API through legacy API
      */
     AVPacket *buffer_pkt;
+    int buffer_pkt_valid; // encoding: packet without data can be valid
     AVFrame *buffer_frame;
     int draining_done;
     int compat_decode_warned;
@@ -185,7 +181,6 @@ typedef struct AVCodecInternal {
      * of the packet (that should be submitted in the next decode call */
     size_t compat_decode_partial_size;
     AVFrame *compat_decode_frame;
-    AVPacket *compat_encode_packet;
 
     int showed_multi_packet_warning;
 
@@ -376,21 +371,6 @@ AVCPBProperties *ff_add_cpb_side_data(AVCodecContext *avctx);
  * @return           Zero on success, negative error code on failure
  */
 int ff_alloc_a53_sei(const AVFrame *frame, size_t prefix_len,
-                     void **data, size_t *sei_size);
-
-/**
- * Check AVFrame for S12M timecode side data and allocate and fill TC SEI message with timecode info
- *
- * @param frame      Raw frame to get S12M timecode side data from
- * @param prefix_len Number of bytes to allocate before SEI message
- * @param data       Pointer to a variable to store allocated memory
- *                   Upon return the variable will hold NULL on error or if frame has no S12M timecode info.
- *                   Otherwise it will point to prefix_len uninitialized bytes followed by
- *                   *sei_size SEI message
- * @param sei_size   Pointer to a variable to store generated SEI message length
- * @return           Zero on success, negative error code on failure
- */
-int ff_alloc_timecode_sei(const AVFrame *frame, size_t prefix_len,
                      void **data, size_t *sei_size);
 
 /**
