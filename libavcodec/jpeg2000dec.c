@@ -269,8 +269,6 @@ static int get_siz(Jpeg2000DecoderContext *s)
     const enum AVPixelFormat *possible_fmts = NULL;
     int possible_fmts_nb = 0;
     int ret;
-    int o_dimx, o_dimy; //original image dimensions.
-    int dimx, dimy;
 
     if (bytestream2_get_bytes_left(&s->g) < 36) {
         av_log(s->avctx, AV_LOG_ERROR, "Insufficient space for SIZ\n");
@@ -373,18 +371,11 @@ static int get_siz(Jpeg2000DecoderContext *s)
     }
 
     /* compute image size with reduction factor */
-    o_dimx = ff_jpeg2000_ceildivpow2(s->width  - s->image_offset_x,
-                                               s->reduction_factor);
-    o_dimy = ff_jpeg2000_ceildivpow2(s->height - s->image_offset_y,
-                                               s->reduction_factor);
-    dimx = ff_jpeg2000_ceildiv(o_dimx, s->cdx[0]);
-    dimy = ff_jpeg2000_ceildiv(o_dimy, s->cdy[0]);
-    for (i = 1; i < s->ncomponents; i++) {
-        dimx = FFMAX(dimx, ff_jpeg2000_ceildiv(o_dimx, s->cdx[i]));
-        dimy = FFMAX(dimy, ff_jpeg2000_ceildiv(o_dimy, s->cdy[i]));
-    }
-
-    ret = ff_set_dimensions(s->avctx, dimx, dimy);
+    ret = ff_set_dimensions(s->avctx,
+            ff_jpeg2000_ceildivpow2(s->width  - s->image_offset_x,
+                                               s->reduction_factor),
+            ff_jpeg2000_ceildivpow2(s->height - s->image_offset_y,
+                                               s->reduction_factor));
     if (ret < 0)
         return ret;
 
@@ -567,7 +558,7 @@ static int get_cod(Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c,
 
     if ((ret = get_cox(s, &tmp)) < 0)
         return ret;
-    tmp.init = 1;
+
     for (compno = 0; compno < s->ncomponents; compno++)
         if (!(properties[compno] & HAD_COC))
             memcpy(c + compno, &tmp, sizeof(tmp));
@@ -605,7 +596,6 @@ static int get_coc(Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c,
         return ret;
 
     properties[compno] |= HAD_COC;
-    c->init = 1;
     return 0;
 }
 
@@ -979,11 +969,12 @@ static int init_tile(Jpeg2000DecoderContext *s, int tileno)
         comp->coord_o[0][1] = tile->coord[0][1];
         comp->coord_o[1][0] = tile->coord[1][0];
         comp->coord_o[1][1] = tile->coord[1][1];
-
-        comp->coord_o[0][0] = ff_jpeg2000_ceildiv(comp->coord_o[0][0], s->cdx[compno]);
-        comp->coord_o[0][1] = ff_jpeg2000_ceildiv(comp->coord_o[0][1], s->cdx[compno]);
-        comp->coord_o[1][0] = ff_jpeg2000_ceildiv(comp->coord_o[1][0], s->cdy[compno]);
-        comp->coord_o[1][1] = ff_jpeg2000_ceildiv(comp->coord_o[1][1], s->cdy[compno]);
+        if (compno) {
+            comp->coord_o[0][0] /= s->cdx[compno];
+            comp->coord_o[0][1] /= s->cdx[compno];
+            comp->coord_o[1][0] /= s->cdy[compno];
+            comp->coord_o[1][1] /= s->cdy[compno];
+        }
 
         comp->coord[0][0] = ff_jpeg2000_ceildivpow2(comp->coord_o[0][0], s->reduction_factor);
         comp->coord[0][1] = ff_jpeg2000_ceildivpow2(comp->coord_o[0][1], s->reduction_factor);
@@ -992,8 +983,7 @@ static int init_tile(Jpeg2000DecoderContext *s, int tileno)
 
         if (!comp->roi_shift)
             comp->roi_shift = s->roi_shift[compno];
-        if (!codsty->init)
-            return AVERROR_INVALIDDATA;
+
         if (ret = ff_jpeg2000_init_component(comp, codsty, qntsty,
                                              s->cbps[compno], s->cdx[compno],
                                              s->cdy[compno], s->avctx))
@@ -1937,23 +1927,18 @@ static inline void tile_codeblocks(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile
             float *datap     = comp->f_data;                                                      \
             int32_t *i_datap = comp->i_data;                                                      \
             int cbps         = s->cbps[compno];                                                   \
-            int w            = tile->comp[compno].coord[0][1] -                                   \
-                               ff_jpeg2000_ceildiv(s->image_offset_x, s->cdx[compno]);            \
-            int h            = tile->comp[compno].coord[1][1] -                                   \
-                               ff_jpeg2000_ceildiv(s->image_offset_y, s->cdy[compno]);            \
+            int w            = tile->comp[compno].coord[0][1] - s->image_offset_x;                \
             int plane        = 0;                                                                 \
                                                                                                   \
             if (planar)                                                                           \
                 plane = s->cdef[compno] ? s->cdef[compno]-1 : (s->ncomponents-1);                 \
                                                                                                   \
-            y    = tile->comp[compno].coord[1][0] -                                               \
-                   ff_jpeg2000_ceildiv(s->image_offset_y, s->cdy[compno]);                        \
+            y    = tile->comp[compno].coord[1][0] - s->image_offset_y / s->cdy[compno];           \
             line = (PIXEL *)picture->data[plane] + y * (picture->linesize[plane] / sizeof(PIXEL));\
-            for (; y < h; y++) {                                                                  \
+            for (; y < tile->comp[compno].coord[1][1] - s->image_offset_y; y++) {                 \
                 PIXEL *dst;                                                                       \
                                                                                                   \
-                x   = tile->comp[compno].coord[0][0] -                                            \
-                      ff_jpeg2000_ceildiv(s->image_offset_x, s->cdx[compno]);                     \
+                x   = tile->comp[compno].coord[0][0] - s->image_offset_x / s->cdx[compno];        \
                 dst = line + x * pixelsize + compno*!planar;                                      \
                                                                                                   \
                 if (codsty->transform == FF_DWT97) {                                              \

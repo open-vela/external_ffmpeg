@@ -406,10 +406,9 @@ static int dv_write_packet(struct AVFormatContext *s, AVPacket *pkt)
 
     fsize = dv_assemble_frame(s, s->priv_data, s->streams[pkt->stream_index],
                               pkt->data, pkt->size, &frame);
-    if (fsize < 0) {
-        return fsize;
+    if (fsize > 0) {
+        avio_write(s->pb, frame, fsize);
     }
-    avio_write(s->pb, frame, fsize);
     return 0;
 }
 
