@@ -23,11 +23,13 @@
  * DNN native backend implementation.
  */
 
+#include <math.h>
+
 #include "dnn_backend_native.h"
 #include "libavutil/avassert.h"
 #include "dnn_backend_native_layer_mathunary.h"
 
-int dnn_load_layer_math_unary(Layer *layer, AVIOContext *model_file_context, int file_size)
+int dnn_load_layer_math_unary(Layer *layer, AVIOContext *model_file_context, int file_size, int operands_num)
 {
     DnnLayerMathUnaryParams *params;
     int dnn_size = 0;
@@ -41,6 +43,10 @@ int dnn_load_layer_math_unary(Layer *layer, AVIOContext *model_file_context, int
     layer->input_operand_indexes[0] = (int32_t)avio_rl32(model_file_context);
     layer->output_operand_index = (int32_t)avio_rl32(model_file_context);
     dnn_size += 8;
+
+    if (layer->input_operand_indexes[0] >= operands_num || layer->output_operand_index >= operands_num) {
+        return 0;
+    }
 
     return dnn_size;
 
@@ -73,6 +79,30 @@ int dnn_execute_layer_math_unary(DnnOperand *operands, const int32_t *input_oper
     case DMUO_ABS:
         for (int i = 0; i < dims_count; ++i)
             dst[i] = FFABS(src[i]);
+        return 0;
+    case DMUO_SIN:
+        for (int i = 0; i < dims_count; ++i)
+            dst[i] = sin(src[i]);
+        return 0;
+    case DMUO_COS:
+        for (int i = 0; i < dims_count; ++i)
+            dst[i] = cos(src[i]);
+        return 0;
+    case DMUO_TAN:
+        for (int i = 0; i < dims_count; ++i)
+            dst[i] = tan(src[i]);
+        return 0;
+    case DMUO_ASIN:
+        for (int i = 0; i < dims_count; ++i)
+            dst[i] = asin(src[i]);
+        return 0;
+    case DMUO_ACOS:
+        for (int i = 0; i < dims_count; ++i)
+            dst[i] = acos(src[i]);
+        return 0;
+    case DMUO_ATAN:
+        for (int i = 0; i < dims_count; ++i)
+            dst[i] = atan(src[i]);
         return 0;
     default:
         return -1;

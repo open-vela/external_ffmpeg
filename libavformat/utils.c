@@ -2782,7 +2782,7 @@ static void estimate_timings_from_bit_rate(AVFormatContext *ic)
                 st      = ic->streams[i];
                 if (   st->time_base.num <= INT64_MAX / ic->bit_rate
                     && st->duration == AV_NOPTS_VALUE) {
-                    duration = av_rescale(8 * filesize, st->time_base.den,
+                    duration = av_rescale(filesize, 8LL * st->time_base.den,
                                           ic->bit_rate *
                                           (int64_t) st->time_base.num);
                     st->duration = duration;
@@ -4132,8 +4132,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
             avcodec_string(buf, sizeof(buf), st->internal->avctx, 0);
             av_log(ic, AV_LOG_WARNING,
                    "Could not find codec parameters for stream %d (%s): %s\n"
-                   "Consider increasing the value for the 'analyzeduration' and 'probesize' options\n",
-                   i, buf, errmsg);
+                   "Consider increasing the value for the 'analyzeduration' (%"PRId64") and 'probesize' (%"PRId64") options\n",
+                   i, buf, errmsg, ic->max_analyze_duration, ic->probesize);
         } else {
             ret = 0;
         }
