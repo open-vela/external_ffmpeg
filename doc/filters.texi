@@ -4197,6 +4197,9 @@ If not specified, or the expressed duration is negative, the audio is
 supposed to be generated forever.
 Only used if plugin have zero inputs.
 
+@item latency, l
+Enable latency compensation, by default is disabled.
+Only used if plugin have inputs.
 @end table
 
 @subsection Examples
@@ -9288,13 +9291,21 @@ TensorFlow backend. To enable this backend you
 need to install the TensorFlow for C library (see
 @url{https://www.tensorflow.org/install/install_c}) and configure FFmpeg with
 @code{--enable-libtensorflow}
+
+@item openvino
+OpenVINO backend. To enable this backend you
+need to build and install the OpenVINO for C library (see
+@url{https://github.com/openvinotoolkit/openvino/blob/master/build-instruction.md}) and configure FFmpeg with
+@code{--enable-libopenvino} (--extra-cflags=-I... --extra-ldflags=-L... might
+be needed if the header files and libraries are not installed into system path)
+
 @end table
 
 Default value is @samp{native}.
 
 @item model
 Set path to model file specifying network architecture and its parameters.
-Note that different backends use different file formats. TensorFlow and native
+Note that different backends use different file formats. TensorFlow, OpenVINO and native
 backend can load files for only its format.
 
 Native model file (.model) can be generated from TensorFlow model file (.pb) by using tools/python/convert.py
@@ -12809,7 +12820,7 @@ The obtained VMAF score is printed through the logging system.
 
 It requires Netflix's vmaf library (libvmaf) as a pre-requisite.
 After installing the library it can be enabled using:
-@code{./configure --enable-libvmaf --enable-version3}.
+@code{./configure --enable-libvmaf}.
 If no model path is specified it uses the default model: @code{vmaf_v0.6.1.pkl}.
 
 The filter has following options:
@@ -14342,8 +14353,14 @@ It accepts the following values:
 @item yuv420
 force YUV420 output
 
+@item yuv420p10
+force YUV420p10 output
+
 @item yuv422
 force YUV422 output
+
+@item yuv422p10
+force YUV422p10 output
 
 @item yuv444
 force YUV444 output
@@ -17971,7 +17988,7 @@ subtitles=video.mkv:si=1
 To make the subtitles stream from @file{sub.srt} appear in 80% transparent blue
 @code{DejaVu Serif}, use:
 @example
-subtitles=sub.srt:force_style='FontName=DejaVu Serif,PrimaryColour=&HCCFF0000'
+subtitles=sub.srt:force_style='Fontname=DejaVu Serif,PrimaryColour=&HCCFF0000'
 @end example
 
 @section super2xsai
@@ -19313,6 +19330,46 @@ Truncated square pyramid projection.
 @item he
 @item hequirect
 Half equirectangular projection.
+
+@item equisolid
+Equisolid format.
+
+Format specific options:
+@table @option
+@item h_fov
+@item v_fov
+@item d_fov
+Set output horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+
+@item ih_fov
+@item iv_fov
+@item id_fov
+Set input horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+@end table
+
+@item og
+Orthographic format.
+
+Format specific options:
+@table @option
+@item h_fov
+@item v_fov
+@item d_fov
+Set output horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+
+@item ih_fov
+@item iv_fov
+@item id_fov
+Set input horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+@end table
 @end table
 
 @item interp
@@ -20733,6 +20790,12 @@ Input frame count.
 @item on
 Output frame count.
 
+@item in_time, it
+The input timestamp expressed in seconds. It's NAN if the input timestamp is unknown.
+
+@item out_time, time, ot
+The output timestamp expressed in seconds.
+
 @item x
 @item y
 Last calculated 'x' and 'y' position from 'x' and 'y' expression
@@ -20771,13 +20834,13 @@ display aspect ratio
 
 @itemize
 @item
-Zoom-in up to 1.5 and pan at same time to some spot near center of picture:
+Zoom in up to 1.5x and pan at same time to some spot near center of picture:
 @example
 zoompan=z='min(zoom+0.0015,1.5)':d=700:x='if(gte(zoom,1.5),x,x+1/a)':y='if(gte(zoom,1.5),y,y+1)':s=640x360
 @end example
 
 @item
-Zoom-in up to 1.5 and pan always at center of picture:
+Zoom in up to 1.5x and pan always at center of picture:
 @example
 zoompan=z='min(zoom+0.0015,1.5)':d=700:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'
 @end example
@@ -20787,6 +20850,13 @@ Same as above but without pausing:
 @example
 zoompan=z='min(max(zoom,pzoom)+0.0015,1.5)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'
 @end example
+
+@item
+Zoom in 2x into center of picture only for the first second of the input video:
+@example
+zoompan=z='if(between(in_time,0,1),2,1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'
+@end example
+
 @end itemize
 
 @anchor{zscale}

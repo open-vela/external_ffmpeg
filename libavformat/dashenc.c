@@ -115,6 +115,7 @@ typedef struct OutputStream {
     int64_t last_dts, last_pts;
     int last_flags;
     int bit_rate;
+    int first_segment_bit_rate;
     SegmentType segment_type;  /* segment type selected for this particular stream */
     const char *format_name;
     const char *extension_name;
@@ -171,6 +172,7 @@ typedef struct DASHContext {
     const char *user_agent;
     AVDictionary *http_opts;
     int hls_playlist;
+    const char *hls_master_name;
     int http_persistent;
     int master_playlist_created;
     AVIOContext *mpd_out;
@@ -839,8 +841,12 @@ static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_ind
             continue;
 
         if (os->bit_rate > 0)
-            snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"",
-                     os->bit_rate);
+            snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"", os->bit_rate);
+        else if (final) {
+            int average_bit_rate = os->pos * 8 * AV_TIME_BASE / c->total_duration;
+            snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"", average_bit_rate);
+        } else if (os->first_segment_bit_rate > 0)
+            snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"", os->first_segment_bit_rate);
 
         if (as->media_type == AVMEDIA_TYPE_VIDEO) {
             avio_printf(out, "\t\t\t<Representation id=\"%d\" mimeType=\"video/%s\" codecs=\"%s\"%s width=\"%d\" height=\"%d\"",
@@ -1261,9 +1267,9 @@ static int write_manifest(AVFormatContext *s, int final)
             return 0;
 
         if (*c->dirname)
-            snprintf(filename_hls, sizeof(filename_hls), "%smaster.m3u8", c->dirname);
+            snprintf(filename_hls, sizeof(filename_hls), "%s%s", c->dirname, c->hls_master_name);
         else
-            snprintf(filename_hls, sizeof(filename_hls), "master.m3u8");
+            snprintf(filename_hls, sizeof(filename_hls), "%s", c->hls_master_name);
 
         snprintf(temp_filename, sizeof(temp_filename), use_rename ? "%s.tmp" : "%s", filename_hls);
 
@@ -1304,7 +1310,13 @@ static int write_manifest(AVFormatContext *s, int final)
             OutputStream *os = &c->streams[i];
             char *agroup = NULL;
             char *codec_str_ptr = NULL;
-            int stream_bitrate = st->codecpar->bit_rate + os->muxer_overhead;
+            int stream_bitrate = os->muxer_overhead;
+            if (os->bit_rate > 0)
+                stream_bitrate += os->bit_rate;
+            else if (final)
+                stream_bitrate += os->pos * 8 * AV_TIME_BASE / c->total_duration;
+            else if (os->first_segment_bit_rate > 0)
+                stream_bitrate += os->first_segment_bit_rate;
             if (st->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
                 continue;
             if (os->segment_type != SEGMENT_TYPE_MP4)
@@ -1957,11 +1969,8 @@ static int dash_flush(AVFormatContext *s, int final, int stream)
         os->total_pkt_size = 0;
         os->total_pkt_duration = 0;
 
-        if (!os->bit_rate) {
-            // calculate average bitrate of first segment
-            int64_t bitrate = (int64_t) range_length * 8 * (c->use_timeline ? os->ctx->streams[0]->time_base.den : AV_TIME_BASE) / duration;
-            if (bitrate >= 0)
-                os->bit_rate = bitrate;
+        if (!os->bit_rate && !os->first_segment_bit_rate) {
+            os->first_segment_bit_rate = (int64_t) range_length * 8 * AV_TIME_BASE / duration;
         }
         add_segment(os, os->filename, os->start_pts, os->max_pts - os->start_pts, os->pos, range_length, index_length, next_exp_index);
         av_log(s, AV_LOG_VERBOSE, "Representation %d media segment %d written to: %s\n", i, os->segment_index, os->full_path);
@@ -2292,7 +2301,7 @@ static int dash_write_trailer(AVFormatContext *s)
 
         if (c->hls_playlist && c->master_playlist_created) {
             char filename[1024];
-            snprintf(filename, sizeof(filename), "%smaster.m3u8", c->dirname);
+            snprintf(filename, sizeof(filename), "%s%s", c->dirname, c->hls_master_name);
             dashenc_delete_file(s, filename);
         }
     }
@@ -2349,6 +2358,7 @@ static const AVOption options[] = {
     { "http_user_agent", "override User-Agent field in HTTP header", OFFSET(user_agent), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, E},
     { "http_persistent", "Use persistent HTTP connections", OFFSET(http_persistent), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, E },
     { "hls_playlist", "Generate HLS playlist files(master.m3u8, media_%d.m3u8)", OFFSET(hls_playlist), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
+    { "hls_master_name", "HLS master playlist name", OFFSET(hls_master_name), AV_OPT_TYPE_STRING, {.str = "master.m3u8"}, 0, 0, E },
     { "streaming", "Enable/Disable streaming mode of output. Each frame will be moof fragment", OFFSET(streaming), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
     { "timeout", "set timeout for socket I/O operations", OFFSET(timeout), AV_OPT_TYPE_DURATION, { .i64 = -1 }, -1, INT_MAX, .flags = E },
     { "index_correction", "Enable/Disable segment index correction logic", OFFSET(index_correction), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
