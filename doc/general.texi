@@ -751,6 +751,8 @@ following image formats are supported:
     @tab Portable GrayMap image
 @item PGMYUV       @tab X @tab X
     @tab PGM with U and V components in YUV 4:2:0
+@item PGX          @tab   @tab X
+    @tab PGX file decoder
 @item PIC          @tab @tab X
     @tab Pictor/PC Paint
 @item PNG          @tab X @tab X
@@ -803,6 +805,7 @@ following image formats are supported:
 @item Apple MJPEG-B          @tab     @tab  X
 @item Apple Pixlet           @tab     @tab  X
 @item Apple ProRes           @tab  X  @tab  X
+    @tab fourcc: apch,apcn,apcs,apco,ap4h,ap4x
 @item Apple QuickDraw        @tab     @tab  X
     @tab fourcc: qdrw
 @item Asus v1                @tab  X  @tab  X
@@ -835,6 +838,8 @@ following image formats are supported:
 @item BitJazz SheerVideo     @tab     @tab  X
 @item Bitmap Brothers JV video  @tab   @tab X
 @item y41p Brooktree uncompressed 4:1:1 12-bit     @tab  X  @tab  X
+@item Brooktree ProSumer Video  @tab     @tab  X
+    @tab fourcc: BT20
 @item Brute Force & Ignorance   @tab   @tab X
     @tab Used in the game Flash Traffic: City of Angels.
 @item C93 video              @tab     @tab  X
@@ -968,6 +973,7 @@ following image formats are supported:
 @item MPEG-4 part 2 Microsoft variant version 3  @tab  X  @tab  X
 @item Newtek SpeedHQ               @tab     @tab  X
 @item Nintendo Gamecube THP video  @tab     @tab  X
+@item NotchLC                @tab     @tab  X
 @item NuppelVideo/RTjpeg     @tab     @tab  X
     @tab Video encoding used in NuppelVideo files.
 @item On2 VP3                @tab     @tab  X
@@ -986,8 +992,6 @@ following image formats are supported:
     @tab encoding supported through external library libvpx
 @item Pinnacle TARGA CineWave YUV16 @tab     @tab  X
     @tab fourcc: Y216
-@item Prores                 @tab     @tab  X
-    @tab fourcc: apch,apcn,apcs,apco
 @item Q-team QPEG            @tab     @tab  X
     @tab fourccs: QPEG, Q1.0, Q1.1
 @item QuickTime 8BPS video   @tab     @tab  X
