@@ -2398,7 +2398,7 @@ Encode something and both archive it in a WebM file and stream it
 as MPEG-TS over UDP:
 @example
 ffmpeg -i ... -c:v libx264 -c:a mp2 -f tee -map 0:v -map 0:a
-  "archive-20121107.mkv|[f=mpegts]udp://10.0.1.255:1234/"
+  "archive-20121107.mkv|[f=mpegts]udp://10.0.0.0:1234/"
 @end example
 
 @item
@@ -2406,7 +2406,7 @@ As above, but continue streaming even if output to local file fails
 (for example local drive fills up):
 @example
 ffmpeg -i ... -c:v libx264 -c:a mp2 -f tee -map 0:v -map 0:a
-  "[onfail=ignore]archive-20121107.mkv|[f=mpegts]udp://10.0.1.255:1234/"
+  "[onfail=ignore]archive-20121107.mkv|[f=mpegts]udp://10.0.0.0:1234/"
 @end example
 
 @item

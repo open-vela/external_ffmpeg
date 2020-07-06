@@ -293,13 +293,13 @@ static int parse_source_parameters(AVDiracSeqHeader *dsh, GetBitContext *gb,
         dsh->color_trc       = dirac_color_presets[idx].color_trc;
 
         if (!dsh->color_spec_index) {
-            /* [DIRAC_STD] 10.3.9.1 Colour primaries */
+            /* [DIRAC_STD] 10.0.0.0 Colour primaries */
             if (get_bits1(gb)) {
                 idx = get_interleaved_ue_golomb(gb);
                 if (idx < 3U)
                     dsh->color_primaries = dirac_primaries[idx];
             }
-            /* [DIRAC_STD] 10.3.9.2 Colour matrix */
+            /* [DIRAC_STD] 10.0.0.0 Colour matrix */
             if (get_bits1(gb)) {
                 idx = get_interleaved_ue_golomb(gb);
                 if (!idx)
@@ -307,7 +307,7 @@ static int parse_source_parameters(AVDiracSeqHeader *dsh, GetBitContext *gb,
                 else if (idx == 1)
                     dsh->colorspace = AVCOL_SPC_BT470BG;
             }
-            /* [DIRAC_STD] 10.3.9.3 Transfer function */
+            /* [DIRAC_STD] 10.0.0.0 Transfer function */
             if (get_bits1(gb) && !get_interleaved_ue_golomb(gb))
                 dsh->color_trc = AVCOL_TRC_BT709;
         }
