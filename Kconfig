@@ -1,0 +1,28 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+comment "FFmpeg"
+
+config LIB_FFMPEG
+	tristate "Enable FFmpeg"
+	default n
+
+if LIB_FFMPEG
+
+config LIB_FFMPEG_CONFIGURATION
+	string "ffmpeg configuration"
+	default ""
+	---help---
+		FFmpeg configuration which pass to configure
+
+config LIB_FFMPEG_TOOLS_PRIORITY
+	int "task priority"
+	default 100
+
+config LIB_FFMPEG_TOOLS_STACKSIZE
+	int "stack size"
+	default 40960
+
+endif # LIB_FFMPEG
