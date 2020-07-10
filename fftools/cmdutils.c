@@ -65,6 +65,10 @@
 
 static int init_report(const char *env);
 
+const char *program_name;
+int program_birth_year;
+show_help_t program_show_help;
+
 AVDictionary *sws_dict;
 AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts, *resample_opts;
@@ -78,6 +82,17 @@ enum show_muxdemuxers {
     SHOW_DEMUXERS,
     SHOW_MUXERS,
 };
+
+static void init_global_value(void)
+{
+    sws_dict = NULL;
+    swr_opts = NULL;
+    format_opts = codec_opts = resample_opts = NULL;
+
+    report_file = NULL;
+    report_file_level = AV_LOG_DEBUG;
+    hide_banner = 0;
+}
 
 void init_opts(void)
 {
@@ -116,6 +131,8 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
 
 void init_dynload(void)
 {
+    init_global_value();
+
 #if HAVE_SETDLLDIRECTORY && defined(_WIN32)
     /* Calling SetDllDirectory with the empty string (but not NULL) removes the
      * current working directory from the DLL search path as a security pre-caution. */
@@ -2008,7 +2025,7 @@ int show_help(void *optctx, const char *opt, const char *arg)
         *par++ = 0;
 
     if (!*topic) {
-        show_help_default(topic, par);
+        program_show_help(topic, par);
     } else if (!strcmp(topic, "decoder")) {
         show_help_codec(par, 0);
     } else if (!strcmp(topic, "encoder")) {
@@ -2026,7 +2043,7 @@ int show_help(void *optctx, const char *opt, const char *arg)
     } else if (!strcmp(topic, "bsf")) {
         show_help_bsf(par);
     } else {
-        show_help_default(topic, par);
+        program_show_help(topic, par);
     }
 
     av_freep(&topic);
