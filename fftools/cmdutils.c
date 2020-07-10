@@ -53,11 +53,24 @@
 #include "compat/w32dlfcn.h"
 #endif
 
+const char *program_name;
+int program_birth_year;
+show_help_t program_show_help;
+
 AVDictionary *sws_dict;
 AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts;
 
 int hide_banner = 0;
+
+static void init_global_value(void)
+{
+    sws_dict = NULL;
+    swr_opts = NULL;
+    format_opts = codec_opts = NULL;
+
+    hide_banner = 0;
+}
 
 void uninit_opts(void)
 {
@@ -74,6 +87,8 @@ void log_callback_help(void *ptr, int level, const char *fmt, va_list vl)
 
 void init_dynload(void)
 {
+    init_global_value();
+
 #if HAVE_SETDLLDIRECTORY && defined(_WIN32)
     /* Calling SetDllDirectory with the empty string (but not NULL) removes the
      * current working directory from the DLL search path as a security pre-caution. */

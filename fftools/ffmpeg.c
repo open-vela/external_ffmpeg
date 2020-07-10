@@ -82,9 +82,6 @@
 #include "ffmpeg_sched.h"
 #include "ffmpeg_utils.h"
 
-const char program_name[] = "ffmpeg";
-const int program_birth_year = 2000;
-
 FILE *vstats_file;
 
 typedef struct BenchmarkTimeStamps {
@@ -119,6 +116,31 @@ int        nb_decoders;
 static struct termios oldtty;
 static int restore_tty;
 #endif
+
+static void init_global_value(void)
+{
+    program_name = "ffmpeg";
+    program_birth_year = 2000;
+
+    vstats_file = NULL;
+    memset(&current_time, 0, sizeof(current_time));
+    progress_avio = NULL;
+
+    input_files   = NULL;
+    nb_input_files   = 0;
+
+    output_files   = NULL;
+    nb_output_files   = 0;
+
+    filtergraphs = NULL;
+    nb_filtergraphs = 0;
+
+#if HAVE_TERMIOS_H
+    /* init terminal so that we can grab keys */
+    memset(&oldtty, 0, sizeof(oldtty));
+    restore_tty = 0;
+#endif
+}
 
 static void term_exit_sigsafe(void)
 {
@@ -949,6 +971,8 @@ int main(int argc, char **argv)
 
     int ret;
     BenchmarkTimeStamps ti;
+
+    init_global_value();
 
     init_dynload();
 
