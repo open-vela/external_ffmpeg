@@ -106,9 +106,6 @@
 
 #include "libavutil/avassert.h"
 
-const char program_name[] = "ffmpeg";
-const int program_birth_year = 2000;
-
 static FILE *vstats_file;
 
 const char *const forced_keyframes_const_names[] = {
@@ -167,6 +164,44 @@ static int restore_tty;
 #if HAVE_THREADS
 static void free_input_threads(void);
 #endif
+
+static void init_global_value(void)
+{
+    program_name = "ffmpeg";
+    program_birth_year = 2000;
+
+    run_as_daemon  = 0;
+    nb_frames_dup = 0;
+    dup_warning = 1000;
+    nb_frames_drop = 0;
+    memset(decode_error_stat, 0, sizeof(decode_error_stat));
+
+    want_sdp = 1;
+
+    memset(&current_time, 0, sizeof(current_time));
+    progress_avio = NULL;
+
+    subtitle_out = NULL;
+
+    input_streams = NULL;
+    nb_input_streams = 0;
+    input_files   = NULL;
+    nb_input_files   = 0;
+
+    output_streams = NULL;
+    nb_output_streams = 0;
+    output_files   = NULL;
+    nb_output_files   = 0;
+
+    filtergraphs = NULL;
+    nb_filtergraphs = 0;
+
+#if HAVE_TERMIOS_H
+    /* init terminal so that we can grab keys */
+    memset(&oldtty, 0, sizeof(oldtty));
+    restore_tty = 0;
+#endif
+}
 
 /* sub2video hack:
    Convert subtitles to video with alpha to insert them in filter graphs.
@@ -4820,6 +4855,8 @@ int main(int argc, char **argv)
 {
     int i, ret;
     BenchmarkTimeStamps ti;
+
+    init_global_value();
 
     init_dynload();
 
