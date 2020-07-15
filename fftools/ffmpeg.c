@@ -3999,11 +3999,30 @@ static int check_keyboard_interaction(int64_t cur_time)
         if(debug) av_log_set_level(AV_LOG_DEBUG);
         fprintf(stderr,"debug=%d\n", debug);
     }
+    if (key == '!') {
+        char buf[64];
+        int k = 0;
+        i = 0;
+
+        fprintf(stderr, "\nEnter command to system\n");
+
+        set_tty_echo(1);
+        while ((k = read_key()) != '\n' && k != '\r' && i < sizeof(buf)-1) {
+            if (k > 0)
+                buf[i++] = k;
+            av_usleep(1);
+        }
+        buf[i] = 0;
+        set_tty_echo(0);
+
+        system(buf);
+    }
     if (key == '?'){
         fprintf(stderr, "key    function\n"
                         "?      show this help\n"
                         "+      increase verbosity\n"
                         "-      decrease verbosity\n"
+                        "!      Send command to sytem\n"
                         "c      Send command to first matching filter supporting it\n"
                         "C      Send/Queue command to all matching filters\n"
                         "D      cycle through available debug modes\n"
