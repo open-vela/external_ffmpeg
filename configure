@@ -2005,6 +2005,7 @@ ARCH_EXT_LIST_ARM="
     armv6
     armv6t2
     armv8
+    armv8m_main
     neon
     vfp
     vfpv3
@@ -4946,6 +4947,7 @@ elif enabled arm; then
         elif check_arm_arch 7M  7_M;  then echo armv7-m
         elif check_arm_arch 7EM 7E_M; then echo armv7-m
         elif check_arm_arch 8A  8_A;  then echo armv8-a
+        elif check_arm_arch 8M_MAIN;  then echo armv8-m.main
         fi
     }
 
@@ -5838,6 +5840,10 @@ EOF
     enabled vfp     && check_insn vfp     'fadds s0, s0, s0'
     enabled vfpv3   && check_insn vfpv3   'vmov.f32 s0, #1.0'
     enabled setend  && check_insn setend  'setend be'
+
+    if [ $cpu = armv8-m.main ]; then
+        enable armv8m_main_inline
+    fi
 
     [ $target_os = linux ] || [ $target_os = android ] ||
         map 'enabled_any ${v}_external ${v}_inline || disable $v' \
