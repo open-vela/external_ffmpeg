@@ -79,6 +79,9 @@ typedef struct InputFile {
     int       nb_streams;
 } InputFile;
 
+const char program_name[] = "ffprobe";
+const int program_birth_year = 2007;
+
 static int do_bitexact = 0;
 static int do_count_frames = 0;
 static int do_count_packets = 0;
@@ -295,15 +298,13 @@ typedef struct LogBuffer {
 
 static LogBuffer *log_buffer;
 static int log_buffer_size;
-static int print_prefix = 1;
-static int next_registered_writer_idx = 0;
-static int initialized = 0;
 
 static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 {
     AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
     va_list vl2;
     char line[1024];
+    static int print_prefix = 1;
     void *new_log_buffer;
 
     va_copy(vl2, vl);
@@ -883,6 +884,8 @@ static const Writer *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
 
 static int writer_register(const Writer *writer)
 {
+    static int next_registered_writer_idx = 0;
+
     if (next_registered_writer_idx == MAX_REGISTERED_WRITERS_NB)
         return AVERROR(ENOMEM);
 
@@ -1791,6 +1794,8 @@ static Writer xml_writer = {
 
 static void writer_register_all(void)
 {
+    static int initialized;
+
     if (initialized)
         return;
     initialized = 1;
@@ -3305,7 +3310,7 @@ static int opt_print_filename(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-static void show_help_default(const char *opt, const char *arg)
+void show_help_default(const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     show_usage();
@@ -3581,77 +3586,6 @@ static inline int check_section_show_entries(int section_id)
     return 0;
 }
 
-static void init_global_value(void)
-{
-    program_show_help = show_help_default;
-    program_name = "ffprobe";
-    program_birth_year = 2000;
-
-    do_bitexact = 0;
-    do_count_frames = 0;
-    do_count_packets = 0;
-    do_read_frames  = 0;
-    do_read_packets = 0;
-    do_show_chapters = 0;
-    do_show_error   = 0;
-    do_show_format  = 0;
-    do_show_frames  = 0;
-    do_show_packets = 0;
-    do_show_programs = 0;
-    do_show_streams = 0;
-    do_show_stream_disposition = 0;
-    do_show_data    = 0;
-    do_show_program_version  = 0;
-    do_show_library_versions = 0;
-    do_show_pixel_formats = 0;
-    do_show_pixel_format_flags = 0;
-    do_show_pixel_format_components = 0;
-    do_show_log = 0;
-
-    do_show_chapter_tags = 0;
-    do_show_format_tags = 0;
-    do_show_frame_tags = 0;
-    do_show_program_tags = 0;
-    do_show_stream_tags = 0;
-    do_show_packet_tags = 0;
-
-    show_value_unit              = 0;
-    use_value_prefix             = 0;
-    use_byte_value_binary_prefix = 0;
-    use_value_sexagesimal_format = 0;
-    show_private_data            = 1;
-
-    print_format = NULL;
-    stream_specifier = NULL;
-    show_data_hash = NULL;
-
-    read_intervals = NULL;
-    read_intervals_nb = 0;
-
-    find_stream_info  = 1;
-
-    options = NULL;
-
-    /* FFprobe context */
-    input_filename = NULL;
-    print_input_filename = NULL;
-    iformat = NULL;
-
-    hash = NULL;
-
-    nb_streams = 0;
-    nb_streams_packets = NULL;
-    nb_streams_frames = NULL;
-    selected_streams = NULL;
-
-    log_buffer = NULL;
-    log_buffer_size = 0;
-
-    print_prefix = 1;
-    next_registered_writer_idx = 0;
-    initialized = 0;
-}
-
 #define SET_DO_SHOW(id, varname) do {                                   \
         if (check_section_show_entries(SECTION_ID_##id))                \
             do_show_##varname = 1;                                      \
@@ -3664,8 +3598,6 @@ int main(int argc, char **argv)
     char *buf;
     char *w_name = NULL, *w_args = NULL;
     int ret, i;
-
-    init_global_value();
 
     init_dynload();
 

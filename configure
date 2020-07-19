@@ -2007,7 +2007,6 @@ ARCH_EXT_LIST_ARM="
     armv6
     armv6t2
     armv8
-    armv8m_main
     neon
     vfp
     vfpv3
@@ -2244,7 +2243,6 @@ SYSTEM_FUNCS="
     SetDllDirectory
     setmode
     setrlimit
-    setvbuf
     Sleep
     strerror_r
     sysconf
@@ -4960,7 +4958,6 @@ elif enabled arm; then
         elif check_arm_arch 7M  7_M;  then echo armv7-m
         elif check_arm_arch 7EM 7E_M; then echo armv7-m
         elif check_arm_arch 8A  8_A;  then echo armv8-a
-        elif check_arm_arch 8M_MAIN;  then echo armv8-m.main
         fi
     }
 
@@ -5845,10 +5842,6 @@ EOF
     enabled vfpv3   && check_insn vfpv3   'vmov.f32 s0, #1.0'
     enabled setend  && check_insn setend  'setend be'
 
-    if [ $cpu = armv8-m.main ]; then
-        enable armv8m_main_inline
-    fi
-
     [ $target_os = linux ] || [ $target_os = android ] ||
         map 'enabled_any ${v}_external ${v}_inline || disable $v' \
             $ARCH_EXT_LIST_ARM
@@ -6046,7 +6039,9 @@ if ! disabled network; then
     check_type "sys/types.h sys/socket.h" socklen_t
 
     # Prefer arpa/inet.h over winsock2
-    if check_headers winsock2.h ; then
+    if check_headers arpa/inet.h ; then
+        check_func closesocket
+    elif check_headers winsock2.h ; then
         check_func_headers winsock2.h closesocket -lws2 &&
             network_extralibs="-lws2" ||
         { check_func_headers winsock2.h closesocket -lws2_32 &&
@@ -6062,7 +6057,7 @@ if ! disabled network; then
         check_struct winsock2.h "struct sockaddr" sa_len
         check_type ws2tcpip.h "struct sockaddr_in6"
         check_type ws2tcpip.h "struct sockaddr_storage"
-    elif ! check_headers arpa/inet.h ; then
+    else
         disable network
     fi
 fi
@@ -6099,19 +6094,18 @@ check_func  gethrtime
 check_func  getopt
 check_func  getrusage
 check_func  gettimeofday
-check_func_headers "unistd.h" isatty
+check_func  isatty
 check_func  mkstemp
 check_func  mmap
 check_func  mprotect
 # Solaris has nanosleep in -lrt, OpenSolaris no longer needs that
 check_func_headers time.h nanosleep || check_lib nanosleep time.h nanosleep -lrt
 check_func  sched_getaffinity
-check_func_headers sys/resource.h setrlimit
-check_func_headers stdio.h setvbuf
+check_func  setrlimit
 check_struct "sys/stat.h" "struct stat" st_mtim.tv_nsec -D_BSD_SOURCE
 check_func  strerror_r
 check_func  sysconf
-check_func_headers sys/sysctl.h sysctl
+check_func  sysctl
 check_func  usleep
 
 check_func_headers conio.h kbhit
@@ -6155,7 +6149,7 @@ check_headers sys/resource.h
 check_headers sys/select.h
 check_headers sys/time.h
 check_headers sys/un.h
-check_func_headers termios.h tcsetattr
+check_headers termios.h
 check_headers unistd.h
 check_headers valgrind/valgrind.h
 check_func_headers VideoToolbox/VTCompressionSession.h VTCompressionSessionPrepareToEncodeFrames -framework VideoToolbox
