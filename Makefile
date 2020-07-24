@@ -102,7 +102,7 @@ CFLAGS += -w -Os -DHAVE_AV_CONFIG_H
 libavutil/ffversion.h .version:
 	$(Q)ffbuild/version.sh . libavutil/ffversion.h $(EXTRA_VERSION)
 
-config.h: $(TOPDIR)/include/nuttx/config.h
+config.h:
 	$(Q) echo "FFMPEG configure... $(CONFIG_ARCH)"
 	$(Q)./configure             --disable-all                   \
 		--disable-everything    --disable-autodetect            \
