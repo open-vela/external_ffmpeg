@@ -75,6 +75,7 @@ AVDictionary *format_opts, *codec_opts, *resample_opts;
 
 static FILE *report_file;
 static int report_file_level = AV_LOG_DEBUG;
+static int print_prefix = 1;
 int hide_banner = 0;
 
 enum show_muxdemuxers {
@@ -91,6 +92,7 @@ static void init_global_value(void)
 
     report_file = NULL;
     report_file_level = AV_LOG_DEBUG;
+    print_prefix = 1;
     hide_banner = 0;
 }
 
@@ -117,7 +119,6 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
 {
     va_list vl2;
     char line[1024];
-    static int print_prefix = 1;
 
     va_copy(vl2, vl);
     av_log_default_callback(ptr, level, fmt, vl);
@@ -2055,7 +2056,7 @@ int read_yesno(void)
     int c = getchar();
     int yesno = (av_toupper(c) == 'Y');
 
-    while (c != '\n' && c != EOF)
+    while (c != '\n' && c != '\r' && c != EOF)
         c = getchar();
 
     return yesno;
