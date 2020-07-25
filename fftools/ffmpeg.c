@@ -161,47 +161,13 @@ static struct termios oldtty;
 static int restore_tty;
 #endif
 
+static int64_t last_time = -1;
+static int qp_histogram[52];
+static int64_t last_time_keyboard;
+
 #if HAVE_THREADS
 static void free_input_threads(void);
 #endif
-
-static void init_global_value(void)
-{
-    program_name = "ffmpeg";
-    program_birth_year = 2000;
-
-    run_as_daemon  = 0;
-    nb_frames_dup = 0;
-    dup_warning = 1000;
-    nb_frames_drop = 0;
-    memset(decode_error_stat, 0, sizeof(decode_error_stat));
-
-    want_sdp = 1;
-
-    memset(&current_time, 0, sizeof(current_time));
-    progress_avio = NULL;
-
-    subtitle_out = NULL;
-
-    input_streams = NULL;
-    nb_input_streams = 0;
-    input_files   = NULL;
-    nb_input_files   = 0;
-
-    output_streams = NULL;
-    nb_output_streams = 0;
-    output_files   = NULL;
-    nb_output_files   = 0;
-
-    filtergraphs = NULL;
-    nb_filtergraphs = 0;
-
-#if HAVE_TERMIOS_H
-    /* init terminal so that we can grab keys */
-    memset(&oldtty, 0, sizeof(oldtty));
-    restore_tty = 0;
-#endif
-}
 
 /* sub2video hack:
    Convert subtitles to video with alpha to insert them in filter graphs.
@@ -1677,8 +1643,6 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
     double bitrate;
     double speed;
     int64_t pts = INT64_MIN + 1;
-    static int64_t last_time = -1;
-    static int qp_histogram[52];
     int hours, mins, secs, us;
     const char *hours_sign;
     int ret;
@@ -3901,13 +3865,12 @@ static void set_tty_echo(int on)
 static int check_keyboard_interaction(int64_t cur_time)
 {
     int i, ret, key;
-    static int64_t last_time;
     if (received_nb_signals)
         return AVERROR_EXIT;
     /* read_key() returns 0 on EOF */
-    if(cur_time - last_time >= 100000 && !run_as_daemon){
+    if(cur_time - last_time_keyboard >= 100000 && !run_as_daemon){
         key =  read_key();
-        last_time = cur_time;
+        last_time_keyboard = cur_time;
     }else
         key = -1;
     if (key == 'q')
@@ -4868,6 +4831,54 @@ static int64_t getmaxrss(void)
 
 static void log_callback_null(void *ptr, int level, const char *fmt, va_list vl)
 {
+}
+
+static void init_global_value(void)
+{
+    program_name = "ffmpeg";
+    program_birth_year = 2000;
+
+    vstats_file = NULL;
+    run_as_daemon  = 0;
+    nb_frames_dup = 0;
+    dup_warning = 1000;
+    nb_frames_drop = 0;
+    memset(decode_error_stat, 0, sizeof(decode_error_stat));
+
+    want_sdp = 1;
+
+    memset(&current_time, 0, sizeof(current_time));
+    progress_avio = NULL;
+
+    subtitle_out = NULL;
+
+    input_streams = NULL;
+    nb_input_streams = 0;
+    input_files   = NULL;
+    nb_input_files   = 0;
+
+    output_streams = NULL;
+    nb_output_streams = 0;
+    output_files   = NULL;
+    nb_output_files   = 0;
+
+    filtergraphs = NULL;
+    nb_filtergraphs = 0;
+
+#if HAVE_TERMIOS_H
+    /* init terminal so that we can grab keys */
+    memset(&oldtty, 0, sizeof(oldtty));
+    restore_tty = 0;
+#endif
+    last_time = -1;
+    memset(qp_histogram, 0, sizeof(qp_histogram));
+    last_time_keyboard = 0;
+
+    received_sigterm = 0;
+    received_nb_signals = 0;
+    transcode_init_done = ATOMIC_VAR_INIT(0);
+    ffmpeg_exited = 0;
+    main_return_code = 0;
 }
 
 int main(int argc, char **argv)
