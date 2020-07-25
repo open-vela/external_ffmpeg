@@ -295,13 +295,15 @@ typedef struct LogBuffer {
 
 static LogBuffer *log_buffer;
 static int log_buffer_size;
+static int print_prefix = 1;
+static int next_registered_writer_idx = 0;
+static int initialized = 0;
 
 static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 {
     AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
     va_list vl2;
     char line[1024];
-    static int print_prefix = 1;
     void *new_log_buffer;
 
     va_copy(vl2, vl);
@@ -881,8 +883,6 @@ static const Writer *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
 
 static int writer_register(const Writer *writer)
 {
-    static int next_registered_writer_idx = 0;
-
     if (next_registered_writer_idx == MAX_REGISTERED_WRITERS_NB)
         return AVERROR(ENOMEM);
 
@@ -1791,8 +1791,6 @@ static Writer xml_writer = {
 
 static void writer_register_all(void)
 {
-    static int initialized;
-
     if (initialized)
         return;
     initialized = 1;
@@ -3648,6 +3646,10 @@ static void init_global_value(void)
 
     log_buffer = NULL;
     log_buffer_size = 0;
+
+    print_prefix = 1;
+    next_registered_writer_idx = 0;
+    initialized = 0;
 }
 
 #define SET_DO_SHOW(id, varname) do {                                   \
