@@ -41,6 +41,8 @@ extern AVInputFormat  ff_iec61883_demuxer;
 extern AVInputFormat  ff_jack_demuxer;
 extern AVInputFormat  ff_kmsgrab_demuxer;
 extern AVInputFormat  ff_lavfi_demuxer;
+extern AVInputFormat  ff_nuttx_demuxer;
+extern AVOutputFormat ff_nuttx_muxer;
 extern AVInputFormat  ff_openal_demuxer;
 extern AVOutputFormat ff_opengl_muxer;
 extern AVInputFormat  ff_oss_demuxer;
