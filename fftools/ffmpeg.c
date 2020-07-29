@@ -4894,7 +4894,9 @@ int main(int argc, char **argv)
 
     register_exit(ffmpeg_cleanup);
 
+#if HAVE_SETVBUF
     setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
+#endif
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
     parse_loglevel(argc, argv, options);
