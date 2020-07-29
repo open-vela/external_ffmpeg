@@ -2244,6 +2244,7 @@ SYSTEM_FUNCS="
     SetDllDirectory
     setmode
     setrlimit
+    setvbuf
     Sleep
     strerror_r
     sysconf
@@ -6098,7 +6099,7 @@ check_func  gethrtime
 check_func  getopt
 check_func  getrusage
 check_func  gettimeofday
-check_func  isatty
+check_func_headers "unistd.h" isatty
 check_func  mkstemp
 check_func  mmap
 check_func  mprotect
@@ -6106,6 +6107,7 @@ check_func  mprotect
 check_func_headers time.h nanosleep || check_lib nanosleep time.h nanosleep -lrt
 check_func  sched_getaffinity
 check_func_headers sys/resource.h setrlimit
+check_func_headers stdio.h setvbuf
 check_struct "sys/stat.h" "struct stat" st_mtim.tv_nsec -D_BSD_SOURCE
 check_func  strerror_r
 check_func  sysconf
