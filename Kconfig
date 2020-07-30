@@ -23,6 +23,6 @@ config LIB_FFMPEG_TOOLS_PRIORITY
 
 config LIB_FFMPEG_TOOLS_STACKSIZE
 	int "stack size"
-	default 40960
+	default 51200
 
 endif # LIB_FFMPEG
