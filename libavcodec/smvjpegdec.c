@@ -79,12 +79,14 @@ static av_cold int smvjpeg_decode_end(AVCodecContext *avctx)
 {
     SMVJpegDecodeContext *s = avctx->priv_data;
     MJpegDecodeContext *jpg = &s->jpg;
+    int ret;
 
     jpg->picture_ptr = NULL;
     av_frame_free(&s->picture[0]);
     av_frame_free(&s->picture[1]);
-    avcodec_free_context(&s->avctx);
-    return 0;
+    ret = avcodec_close(s->avctx);
+    av_freep(&s->avctx);
+    return ret;
 }
 
 static av_cold int smvjpeg_decode_init(AVCodecContext *avctx)
@@ -129,7 +131,7 @@ static av_cold int smvjpeg_decode_init(AVCodecContext *avctx)
     s->avctx->refcounted_frames = 1;
     s->avctx->flags = avctx->flags;
     s->avctx->idct_algo = avctx->idct_algo;
-    if ((r = avcodec_open2(s->avctx, codec, &thread_opt)) < 0) {
+    if ((r = ff_codec_open2_recursive(s->avctx, codec, &thread_opt)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "MJPEG codec failed to open\n");
         ret = r;
     }
@@ -220,5 +222,4 @@ AVCodec ff_smvjpeg_decoder = {
     .close          = smvjpeg_decode_end,
     .decode         = smvjpeg_decode_frame,
     .priv_class     = &smvjpegdec_class,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

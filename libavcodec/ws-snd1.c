@@ -178,5 +178,4 @@ AVCodec ff_ws_snd1_decoder = {
     .init           = ws_snd_decode_init,
     .decode         = ws_snd_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

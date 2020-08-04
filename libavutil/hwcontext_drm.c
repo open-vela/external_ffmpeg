@@ -19,8 +19,6 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <linux/dma-buf.h>
-#include <sys/ioctl.h>
 
 #include <drm.h>
 #include <xf86drm.h>
@@ -87,8 +85,6 @@ static int drm_get_buffer(AVHWFramesContext *hwfc, AVFrame *frame)
 typedef struct DRMMapping {
     // Address and length of each mmap()ed region.
     int nb_regions;
-    int sync_flags;
-    int object[AV_DRM_MAX_PLANES];
     void *address[AV_DRM_MAX_PLANES];
     size_t length[AV_DRM_MAX_PLANES];
 } DRMMapping;
@@ -97,16 +93,10 @@ static void drm_unmap_frame(AVHWFramesContext *hwfc,
                             HWMapDescriptor *hwmap)
 {
     DRMMapping *map = hwmap->priv;
-    struct dma_buf_sync sync = { .flags = DMA_BUF_SYNC_END | map->sync_flags };
-    int i, ret;
+    int i;
 
-    for (i = 0; i < map->nb_regions; i++) {
-        ret = ioctl(map->object[i], DMA_BUF_IOCTL_SYNC, &sync);
-        if (ret)
-            av_log(hwfc, AV_LOG_ERROR, "Failed to issue ioctl sync to DRM object "
-                   "%d: %d.\n", map->object[i], errno);
+    for (i = 0; i < map->nb_regions; i++)
         munmap(map->address[i], map->length[i]);
-    }
 
     av_free(map);
 }
@@ -115,7 +105,6 @@ static int drm_map_frame(AVHWFramesContext *hwfc,
                          AVFrame *dst, const AVFrame *src, int flags)
 {
     const AVDRMFrameDescriptor *desc = (AVDRMFrameDescriptor*)src->data[0];
-    struct dma_buf_sync sync_start = { 0 };
     DRMMapping *map;
     int err, i, p, plane;
     int mmap_prot;
@@ -126,16 +115,10 @@ static int drm_map_frame(AVHWFramesContext *hwfc,
         return AVERROR(ENOMEM);
 
     mmap_prot = 0;
-    if (flags & AV_HWFRAME_MAP_READ) {
+    if (flags & AV_HWFRAME_MAP_READ)
         mmap_prot |= PROT_READ;
-        map->sync_flags |= DMA_BUF_SYNC_READ;
-    }
-    if (flags & AV_HWFRAME_MAP_WRITE) {
+    if (flags & AV_HWFRAME_MAP_WRITE)
         mmap_prot |= PROT_WRITE;
-        map->sync_flags |= DMA_BUF_SYNC_WRITE;
-    }
-
-    sync_start.flags = DMA_BUF_SYNC_START | map->sync_flags;
 
     av_assert0(desc->nb_objects <= AV_DRM_MAX_PLANES);
     for (i = 0; i < desc->nb_objects; i++) {
@@ -150,15 +133,6 @@ static int drm_map_frame(AVHWFramesContext *hwfc,
 
         map->address[i] = addr;
         map->length[i]  = desc->objects[i].size;
-        map->object[i] = desc->objects[i].fd;
-
-        err = ioctl(desc->objects[i].fd, DMA_BUF_IOCTL_SYNC, &sync_start);
-        if (err) {
-            err = AVERROR(errno);
-            av_log(hwfc, AV_LOG_ERROR, "Failed to issue ioctl sync to DRM object "
-                   "%d: %d.\n", desc->objects[i].fd, errno);
-            goto fail;
-        }
     }
     map->nb_regions = i;
 

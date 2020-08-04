@@ -363,11 +363,11 @@ int ff_av1_parse_seq_header(AV1SequenceParameters *seq, const uint8_t *buf, int 
 
 int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size)
 {
-    AVIOContext *meta_pb;
+    AVIOContext *seq_pb = NULL, *meta_pb = NULL;
     AV1SequenceParameters seq_params;
     PutBitContext pbc;
-    uint8_t header[4], *meta;
-    const uint8_t *seq;
+    uint8_t header[4];
+    uint8_t *seq, *meta;
     int64_t obu_size;
     int start_pos, type, temporal_id, spatial_id;
     int ret, nb_seq = 0, seq_size, meta_size;
@@ -375,23 +375,12 @@ int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size)
     if (size <= 0)
         return AVERROR_INVALIDDATA;
 
-    if (buf[0] & 0x80) {
-        // first bit is nonzero, the passed data does not consist purely of
-        // OBUs. Expect that the data is already in AV1CodecConfigurationRecord
-        // format.
-        int config_record_version = buf[0] & 0x7f;
-        if (config_record_version != 1 || size < 4) {
-            return AVERROR_INVALIDDATA;
-        }
-
-        avio_write(pb, buf, size);
-
-        return 0;
-    }
-
-    ret = avio_open_dyn_buf(&meta_pb);
+    ret = avio_open_dyn_buf(&seq_pb);
     if (ret < 0)
         return ret;
+    ret = avio_open_dyn_buf(&meta_pb);
+    if (ret < 0)
+        goto fail;
 
     while (size > 0) {
         int len = parse_obu_header(buf, size, &obu_size, &start_pos,
@@ -412,8 +401,7 @@ int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size)
             if (ret < 0)
                 goto fail;
 
-            seq      = buf;
-            seq_size = len;
+            avio_write(seq_pb, buf, len);
             break;
         case AV1_OBU_METADATA:
             if (!obu_size) {
@@ -429,7 +417,8 @@ int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size)
         buf  += len;
     }
 
-    if (!nb_seq) {
+    seq_size  = avio_get_dyn_buf(seq_pb, &seq);
+    if (!seq_size) {
         ret = AVERROR_INVALIDDATA;
         goto fail;
     }
@@ -458,6 +447,7 @@ int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size)
         avio_write(pb, meta, meta_size);
 
 fail:
+    ffio_free_dyn_buf(&seq_pb);
     ffio_free_dyn_buf(&meta_pb);
 
     return ret;
