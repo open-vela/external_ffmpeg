@@ -19,10 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/thread.h"
-
-#include "config.h"
-
 #include "avcodec.h"
 #include "get_bits.h"
 #include "bswapdsp.h"
@@ -69,7 +65,6 @@ static av_cold int mp_decode_end(AVCodecContext *avctx)
 
 static av_cold int mp_decode_init(AVCodecContext *avctx)
 {
-    av_unused static AVOnce init_static_once = AV_ONCE_INIT;
     MotionPixelsContext *mp = avctx->priv_data;
     int w4 = (avctx->width  + 3) & ~3;
     int h4 = (avctx->height + 3) & ~3;
@@ -79,23 +74,26 @@ static av_cold int mp_decode_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
     }
 
+    motionpixels_tableinit();
     mp->avctx = avctx;
     ff_bswapdsp_init(&mp->bdsp);
     mp->changes_map = av_mallocz_array(avctx->width, h4);
     mp->offset_bits_len = av_log2(avctx->width * avctx->height) + 1;
     mp->vpt = av_mallocz_array(avctx->height, sizeof(YuvPixel));
     mp->hpt = av_mallocz_array(h4 / 4, w4 / 4 * sizeof(YuvPixel));
-    if (!mp->changes_map || !mp->vpt || !mp->hpt)
+    if (!mp->changes_map || !mp->vpt || !mp->hpt) {
+        av_freep(&mp->changes_map);
+        av_freep(&mp->vpt);
+        av_freep(&mp->hpt);
         return AVERROR(ENOMEM);
+    }
     avctx->pix_fmt = AV_PIX_FMT_RGB555;
 
     mp->frame = av_frame_alloc();
-    if (!mp->frame)
+    if (!mp->frame) {
+        mp_decode_end(avctx);
         return AVERROR(ENOMEM);
-
-#if !CONFIG_HARDCODED_TABLES
-    ff_thread_once(&init_static_once, motionpixels_tableinit);
-#endif
+    }
 
     return 0;
 }
@@ -141,7 +139,7 @@ static int mp_get_code(MotionPixelsContext *mp, GetBitContext *gb, int size, int
         if (mp_get_code(mp, gb, size, code + 1) < 0)
             return AVERROR_INVALIDDATA;
     }
-    if (mp->current_codes_count >= mp->codes_count) {
+    if (mp->current_codes_count >= MAX_HUFF_CODES) {
         av_log(mp->avctx, AV_LOG_ERROR, "too many codes\n");
         return AVERROR_INVALIDDATA;
     }
@@ -200,8 +198,12 @@ static void mp_set_rgb_from_yuv(MotionPixelsContext *mp, int x, int y, const Yuv
 
 static av_always_inline int mp_get_vlc(MotionPixelsContext *mp, GetBitContext *gb)
 {
-    return mp->vlc.table ? get_vlc2(gb, mp->vlc.table, mp->max_codes_bits, 1)
-                         : mp->codes[0].delta;
+    int i;
+
+    i = (mp->codes_count == 1) ? 0 : get_vlc2(gb, mp->vlc.table, mp->max_codes_bits, 1);
+    if (i < 0)
+        return i;
+    return mp->codes[i].delta;
 }
 
 static void mp_decode_line(MotionPixelsContext *mp, GetBitContext *gb, int y)
@@ -328,14 +330,10 @@ static int mp_decode_frame(AVCodecContext *avctx,
     if (sz == 0)
         goto end;
 
-    if (mp->codes_count > 1) {
-        ret = ff_init_vlc_sparse(&mp->vlc, mp->max_codes_bits, mp->codes_count,
-                                 &mp->codes[0].size,  sizeof(HuffCode), 1,
-                                 &mp->codes[0].code,  sizeof(HuffCode), 4,
-                                 &mp->codes[0].delta, sizeof(HuffCode), 1, 0);
-        if (ret < 0)
-            goto end;
-    }
+    if (mp->max_codes_bits <= 0)
+        goto end;
+    if (init_vlc(&mp->vlc, mp->max_codes_bits, mp->codes_count, &mp->codes[0].size, sizeof(HuffCode), 1, &mp->codes[0].code, sizeof(HuffCode), 4, 0))
+        goto end;
     mp_decode_frame_helper(mp, &gb);
     ff_free_vlc(&mp->vlc);
 
@@ -356,5 +354,4 @@ AVCodec ff_motionpixels_decoder = {
     .close          = mp_decode_end,
     .decode         = mp_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_INIT_THREADSAFE,
 };
