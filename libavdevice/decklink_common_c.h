@@ -23,8 +23,6 @@
 #ifndef AVDEVICE_DECKLINK_COMMON_C_H
 #define AVDEVICE_DECKLINK_COMMON_C_H
 
-#include <DeckLinkAPIVersion.h>
-
 typedef enum DecklinkPtsSource {
     PTS_SRC_AUDIO     = 1,
     PTS_SRC_VIDEO     = 2,
@@ -42,7 +40,6 @@ struct decklink_cctx {
     /* Options */
     int list_devices;
     int list_formats;
-    int enable_klv;
     int64_t teletext_lines;
     double preroll;
     int audio_channels;

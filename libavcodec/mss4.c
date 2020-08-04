@@ -648,6 +648,7 @@ static av_cold int mss4_decode_init(AVCodecContext *avctx)
 
     if (mss4_init_vlcs(c)) {
         av_log(avctx, AV_LOG_ERROR, "Cannot initialise VLCs\n");
+        mss4_free_vlcs(c);
         return AVERROR(ENOMEM);
     }
     for (i = 0; i < 3; i++) {
@@ -655,13 +656,16 @@ static av_cold int mss4_decode_init(AVCodecContext *avctx)
         c->prev_dc[i]   = av_malloc_array(c->dc_stride[i], sizeof(**c->prev_dc));
         if (!c->prev_dc[i]) {
             av_log(avctx, AV_LOG_ERROR, "Cannot allocate buffer\n");
+            mss4_free_vlcs(c);
             return AVERROR(ENOMEM);
         }
     }
 
     c->pic = av_frame_alloc();
-    if (!c->pic)
+    if (!c->pic) {
+        mss4_decode_end(avctx);
         return AVERROR(ENOMEM);
+    }
 
     avctx->pix_fmt     = AV_PIX_FMT_YUV444P;
 
@@ -678,5 +682,4 @@ AVCodec ff_mts2_decoder = {
     .close          = mss4_decode_end,
     .decode         = mss4_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_INIT_THREADSAFE,
 };

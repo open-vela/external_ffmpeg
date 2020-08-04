@@ -22,7 +22,6 @@
  */
 
 #include "libavutil/avassert.h"
-#include "libavutil/thread.h"
 #include "avcodec.h"
 #include "get_bits.h"
 #include "idctdsp.h"
@@ -47,7 +46,7 @@ static VLC j_ac_vlc[2][2][8];  // [quant < 13], [intra / inter], [select]
 static VLC j_dc_vlc[2][8];     // [quant], [select]
 static VLC j_orient_vlc[2][4]; // [quant], [select]
 
-static av_cold void x8_vlc_init(void)
+static av_cold int x8_vlc_init(void)
 {
     int i;
     int offset = 0;
@@ -116,7 +115,13 @@ static av_cold void x8_vlc_init(void)
         init_or_vlc(j_orient_vlc[1][i], x8_orient_lowquant_table[i][0]);
 #undef init_or_vlc
 
-    av_assert2(offset == FF_ARRAY_ELEMS(table));
+    if (offset != sizeof(table) / sizeof(VLC_TYPE) / 2) {
+        av_log(NULL, AV_LOG_ERROR, "table size %"SIZE_SPECIFIER" does not match needed %i\n",
+               sizeof(table) / sizeof(VLC_TYPE) / 2, offset);
+        return AVERROR_INVALIDDATA;
+    }
+
+    return 0;
 }
 
 static void x8_reset_vlc_tables(IntraX8Context *w)
@@ -726,7 +731,9 @@ av_cold int ff_intrax8_common_init(AVCodecContext *avctx,
                                    int block_last_index[12],
                                    int mb_width, int mb_height)
 {
-    static AVOnce init_static_once = AV_ONCE_INIT;
+    int ret = x8_vlc_init();
+    if (ret < 0)
+        return ret;
 
     w->avctx = avctx;
     w->idsp = *idsp;
@@ -754,8 +761,6 @@ av_cold int ff_intrax8_common_init(AVCodecContext *avctx,
 
     ff_intrax8dsp_init(&w->dsp);
     ff_blockdsp_init(&w->bdsp, avctx);
-
-    ff_thread_once(&init_static_once, x8_vlc_init);
 
     return 0;
 }

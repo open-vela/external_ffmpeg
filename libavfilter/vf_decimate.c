@@ -273,21 +273,29 @@ static av_cold int decimate_init(AVFilterContext *ctx)
 {
     DecimateContext *dm = ctx->priv;
     AVFilterPad pad = {
-        .name         = "main",
+        .name         = av_strdup("main"),
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
         .config_props = config_input,
     };
     int ret;
 
-    if ((ret = ff_insert_inpad(ctx, INPUT_MAIN, &pad)) < 0)
+    if (!pad.name)
+        return AVERROR(ENOMEM);
+    if ((ret = ff_insert_inpad(ctx, INPUT_MAIN, &pad)) < 0) {
+        av_freep(&pad.name);
         return ret;
+    }
 
     if (dm->ppsrc) {
-        pad.name = "clean_src";
+        pad.name = av_strdup("clean_src");
         pad.config_props = NULL;
-        if ((ret = ff_insert_inpad(ctx, INPUT_CLEANSRC, &pad)) < 0)
+        if (!pad.name)
+            return AVERROR(ENOMEM);
+        if ((ret = ff_insert_inpad(ctx, INPUT_CLEANSRC, &pad)) < 0) {
+            av_freep(&pad.name);
             return ret;
+        }
     }
 
     if ((dm->blockx & (dm->blockx - 1)) ||
@@ -318,6 +326,8 @@ static av_cold void decimate_uninit(AVFilterContext *ctx)
             av_frame_free(&dm->clean_src[i]);
     }
     av_freep(&dm->clean_src);
+    for (i = 0; i < ctx->nb_inputs; i++)
+        av_freep(&ctx->input_pads[i].name);
 }
 
 static int request_inlink(AVFilterContext *ctx, int lid)
