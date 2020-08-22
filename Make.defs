@@ -21,4 +21,8 @@
 
 ifneq ($(CONFIG_LIB_FFMPEG),)
 CONFIGURED_APPS += $(APPDIR)/external/ffmpeg
+
+CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/ffmpeg}
+CXXFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/ffmpeg}
+
 endif
