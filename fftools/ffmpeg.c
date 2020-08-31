@@ -434,24 +434,7 @@ void term_init(void)
 static int read_key(void)
 {
     unsigned char ch;
-#if HAVE_TERMIOS_H
-    int n = 1;
-    struct timeval tv;
-    fd_set rfds;
-
-    FD_ZERO(&rfds);
-    FD_SET(0, &rfds);
-    tv.tv_sec = 0;
-    tv.tv_usec = 0;
-    n = select(1, &rfds, NULL, NULL, &tv);
-    if (n > 0) {
-        n = read(0, &ch, 1);
-        if (n == 1)
-            return ch;
-
-        return n;
-    }
-#elif HAVE_KBHIT
+#if HAVE_KBHIT
 #    if HAVE_PEEKNAMEDPIPE
     static int is_pipe;
     static HANDLE input_handle;
@@ -478,6 +461,23 @@ static int read_key(void)
 #    endif
     if(kbhit())
         return(getch());
+#else
+    int n = 1;
+    struct timeval tv;
+    fd_set rfds;
+
+    FD_ZERO(&rfds);
+    FD_SET(0, &rfds);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    n = select(1, &rfds, NULL, NULL, &tv);
+    if (n > 0) {
+        n = read(0, &ch, 1);
+        if (n == 1)
+            return ch;
+
+        return n;
+    }
 #endif
     return -1;
 }
