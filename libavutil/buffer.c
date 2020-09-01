@@ -170,7 +170,6 @@ int av_buffer_realloc(AVBufferRef **pbuf, int size)
 {
     AVBufferRef *buf = *pbuf;
     uint8_t *tmp;
-    int ret;
 
     if (!buf) {
         /* allocate a new buffer with av_realloc(), so it will be reallocatable
@@ -197,9 +196,9 @@ int av_buffer_realloc(AVBufferRef **pbuf, int size)
         /* cannot realloc, allocate a new reallocable buffer and copy data */
         AVBufferRef *new = NULL;
 
-        ret = av_buffer_realloc(&new, size);
-        if (ret < 0)
-            return ret;
+        av_buffer_realloc(&new, size);
+        if (!new)
+            return AVERROR(ENOMEM);
 
         memcpy(new->data, buf->data, FFMIN(size, buf->size));
 

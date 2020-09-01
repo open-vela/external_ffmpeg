@@ -45,6 +45,4 @@ typedef struct ADPCMChannelStatus {
     int idelta;
 } ADPCMChannelStatus;
 
-int16_t ff_adpcm_argo_expand_nibble(ADPCMChannelStatus *cs, int nibble, int shift, int flag);
-
 #endif /* AVCODEC_ADPCM_H */

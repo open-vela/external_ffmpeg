@@ -878,16 +878,18 @@ static int parse_cinespace(AVFilterContext *ctx, FILE *f)
 
                     prelut_sizes[i] = npoints;
                     in_min[i] = FLT_MAX;
-                    in_max[i] = -FLT_MAX;
+                    in_max[i] = FLT_MIN;
                     out_min[i] = FLT_MAX;
-                    out_max[i] = -FLT_MAX;
+                    out_max[i] = FLT_MIN;
+
+                    last = FLT_MIN;
 
                     for (int j = 0; j < npoints; j++) {
                         NEXT_FLOAT_OR_GOTO(v, end)
                         in_min[i] = FFMIN(in_min[i], v);
                         in_max[i] = FFMAX(in_max[i], v);
                         in_prelut[i][j] = v;
-                        if (j > 0 && v < last) {
+                        if (v < last) {
                             av_log(ctx, AV_LOG_ERROR, "Invalid file, non increasing prelut.\n");
                             ret = AVERROR(ENOMEM);
                             goto end;

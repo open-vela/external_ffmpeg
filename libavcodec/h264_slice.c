@@ -1125,10 +1125,9 @@ static int h264_export_frame_props(H264Context *h)
 {
     const SPS *sps = h->ps.sps;
     H264Picture *cur = h->cur_pic_ptr;
-    AVFrame *out = cur->f;
 
-    out->interlaced_frame = 0;
-    out->repeat_pict      = 0;
+    cur->f->interlaced_frame = 0;
+    cur->f->repeat_pict      = 0;
 
     /* Signal interlacing information externally. */
     /* Prioritize picture timing SEI information over used
@@ -1151,59 +1150,59 @@ static int h264_export_frame_props(H264Context *h)
             break;
         case H264_SEI_PIC_STRUCT_TOP_FIELD:
         case H264_SEI_PIC_STRUCT_BOTTOM_FIELD:
-            out->interlaced_frame = 1;
+            cur->f->interlaced_frame = 1;
             break;
         case H264_SEI_PIC_STRUCT_TOP_BOTTOM:
         case H264_SEI_PIC_STRUCT_BOTTOM_TOP:
             if (FIELD_OR_MBAFF_PICTURE(h))
-                out->interlaced_frame = 1;
+                cur->f->interlaced_frame = 1;
             else
                 // try to flag soft telecine progressive
-                out->interlaced_frame = h->prev_interlaced_frame;
+                cur->f->interlaced_frame = h->prev_interlaced_frame;
             break;
         case H264_SEI_PIC_STRUCT_TOP_BOTTOM_TOP:
         case H264_SEI_PIC_STRUCT_BOTTOM_TOP_BOTTOM:
             /* Signal the possibility of telecined film externally
              * (pic_struct 5,6). From these hints, let the applications
              * decide if they apply deinterlacing. */
-            out->repeat_pict = 1;
+            cur->f->repeat_pict = 1;
             break;
         case H264_SEI_PIC_STRUCT_FRAME_DOUBLING:
-            out->repeat_pict = 2;
+            cur->f->repeat_pict = 2;
             break;
         case H264_SEI_PIC_STRUCT_FRAME_TRIPLING:
-            out->repeat_pict = 4;
+            cur->f->repeat_pict = 4;
             break;
         }
 
         if ((pt->ct_type & 3) &&
             pt->pic_struct <= H264_SEI_PIC_STRUCT_BOTTOM_TOP)
-            out->interlaced_frame = (pt->ct_type & (1 << 1)) != 0;
+            cur->f->interlaced_frame = (pt->ct_type & (1 << 1)) != 0;
     } else {
         /* Derive interlacing flag from used decoding process. */
-        out->interlaced_frame = FIELD_OR_MBAFF_PICTURE(h);
+        cur->f->interlaced_frame = FIELD_OR_MBAFF_PICTURE(h);
     }
-    h->prev_interlaced_frame = out->interlaced_frame;
+    h->prev_interlaced_frame = cur->f->interlaced_frame;
 
     if (cur->field_poc[0] != cur->field_poc[1]) {
         /* Derive top_field_first from field pocs. */
-        out->top_field_first = cur->field_poc[0] < cur->field_poc[1];
+        cur->f->top_field_first = cur->field_poc[0] < cur->field_poc[1];
     } else {
         if (sps->pic_struct_present_flag && h->sei.picture_timing.present) {
             /* Use picture timing SEI information. Even if it is a
              * information of a past frame, better than nothing. */
             if (h->sei.picture_timing.pic_struct == H264_SEI_PIC_STRUCT_TOP_BOTTOM ||
                 h->sei.picture_timing.pic_struct == H264_SEI_PIC_STRUCT_TOP_BOTTOM_TOP)
-                out->top_field_first = 1;
+                cur->f->top_field_first = 1;
             else
-                out->top_field_first = 0;
-        } else if (out->interlaced_frame) {
+                cur->f->top_field_first = 0;
+        } else if (cur->f->interlaced_frame) {
             /* Default to top field first when pic_struct_present_flag
              * is not set but interlaced frame detected */
-            out->top_field_first = 1;
+            cur->f->top_field_first = 1;
         } else {
             /* Most likely progressive */
-            out->top_field_first = 0;
+            cur->f->top_field_first = 0;
         }
     }
 
@@ -1212,7 +1211,7 @@ static int h264_export_frame_props(H264Context *h)
         h->sei.frame_packing.content_interpretation_type > 0 &&
         h->sei.frame_packing.content_interpretation_type < 3) {
         H264SEIFramePacking *fp = &h->sei.frame_packing;
-        AVStereo3D *stereo = av_stereo3d_create_side_data(out);
+        AVStereo3D *stereo = av_stereo3d_create_side_data(cur->f);
         if (stereo) {
         switch (fp->arrangement_type) {
         case H264_SEI_FPA_TYPE_CHECKERBOARD:
@@ -1259,7 +1258,7 @@ static int h264_export_frame_props(H264Context *h)
          h->sei.display_orientation.vflip)) {
         H264SEIDisplayOrientation *o = &h->sei.display_orientation;
         double angle = o->anticlockwise_rotation * 360 / (double) (1 << 16);
-        AVFrameSideData *rotation = av_frame_new_side_data(out,
+        AVFrameSideData *rotation = av_frame_new_side_data(cur->f,
                                                            AV_FRAME_DATA_DISPLAYMATRIX,
                                                            sizeof(int32_t) * 9);
         if (rotation) {
@@ -1270,7 +1269,7 @@ static int h264_export_frame_props(H264Context *h)
     }
 
     if (h->sei.afd.present) {
-        AVFrameSideData *sd = av_frame_new_side_data(out, AV_FRAME_DATA_AFD,
+        AVFrameSideData *sd = av_frame_new_side_data(cur->f, AV_FRAME_DATA_AFD,
                                                      sizeof(uint8_t));
 
         if (sd) {
@@ -1282,7 +1281,7 @@ static int h264_export_frame_props(H264Context *h)
     if (h->sei.a53_caption.buf_ref) {
         H264SEIA53Caption *a53 = &h->sei.a53_caption;
 
-        AVFrameSideData *sd = av_frame_new_side_data_from_buf(out, AV_FRAME_DATA_A53_CC, a53->buf_ref);
+        AVFrameSideData *sd = av_frame_new_side_data_from_buf(cur->f, AV_FRAME_DATA_A53_CC, a53->buf_ref);
         if (!sd)
             av_buffer_unref(&a53->buf_ref);
         a53->buf_ref = NULL;
@@ -1290,25 +1289,11 @@ static int h264_export_frame_props(H264Context *h)
         h->avctx->properties |= FF_CODEC_PROPERTY_CLOSED_CAPTIONS;
     }
 
-    for (int i = 0; i < h->sei.unregistered.nb_buf_ref; i++) {
-        H264SEIUnregistered *unreg = &h->sei.unregistered;
-
-        if (unreg->buf_ref[i]) {
-            AVFrameSideData *sd = av_frame_new_side_data_from_buf(out,
-                    AV_FRAME_DATA_SEI_UNREGISTERED,
-                    unreg->buf_ref[i]);
-            if (!sd)
-                av_buffer_unref(&unreg->buf_ref[i]);
-            unreg->buf_ref[i] = NULL;
-        }
-    }
-    h->sei.unregistered.nb_buf_ref = 0;
-
     if (h->sei.picture_timing.timecode_cnt > 0) {
+        uint32_t tc = 0;
         uint32_t *tc_sd;
-        char tcbuf[AV_TIMECODE_STR_SIZE];
 
-        AVFrameSideData *tcside = av_frame_new_side_data(out,
+        AVFrameSideData *tcside = av_frame_new_side_data(cur->f,
                                                          AV_FRAME_DATA_S12M_TIMECODE,
                                                          sizeof(uint32_t)*4);
         if (!tcside)
@@ -1318,15 +1303,33 @@ static int h264_export_frame_props(H264Context *h)
         tc_sd[0] = h->sei.picture_timing.timecode_cnt;
 
         for (int i = 0; i < tc_sd[0]; i++) {
-            int drop = h->sei.picture_timing.timecode[i].dropframe;
-            int   hh = h->sei.picture_timing.timecode[i].hours;
-            int   mm = h->sei.picture_timing.timecode[i].minutes;
-            int   ss = h->sei.picture_timing.timecode[i].seconds;
-            int   ff = h->sei.picture_timing.timecode[i].frame;
+            uint32_t frames;
 
-            tc_sd[i + 1] = av_timecode_get_smpte(h->avctx->framerate, drop, hh, mm, ss, ff);
-            av_timecode_make_smpte_tc_string2(tcbuf, h->avctx->framerate, tc_sd[i + 1], 0, 0);
-            av_dict_set(&out->metadata, "timecode", tcbuf, 0);
+            /* For SMPTE 12-M timecodes, frame count is a special case if > 30 FPS.
+               See SMPTE ST 12-1:2014 Sec 12.1 for more info. */
+            if (av_cmp_q(h->avctx->framerate, (AVRational) {30, 1}) == 1) {
+                frames = h->sei.picture_timing.timecode[i].frame / 2;
+                if (h->sei.picture_timing.timecode[i].frame % 2 == 1) {
+                    if (av_cmp_q(h->avctx->framerate, (AVRational) {50, 1}) == 0)
+                        tc |= (1 << 7);
+                    else
+                        tc |= (1 << 23);
+                }
+            } else {
+                frames = h->sei.picture_timing.timecode[i].frame;
+            }
+
+            tc |= h->sei.picture_timing.timecode[i].dropframe << 30;
+            tc |= (frames / 10) << 28;
+            tc |= (frames % 10) << 24;
+            tc |= (h->sei.picture_timing.timecode[i].seconds / 10) << 20;
+            tc |= (h->sei.picture_timing.timecode[i].seconds % 10) << 16;
+            tc |= (h->sei.picture_timing.timecode[i].minutes / 10) << 12;
+            tc |= (h->sei.picture_timing.timecode[i].minutes % 10) << 8;
+            tc |= (h->sei.picture_timing.timecode[i].hours / 10) << 4;
+            tc |= (h->sei.picture_timing.timecode[i].hours % 10);
+
+            tc_sd[i + 1] = tc;
         }
         h->sei.picture_timing.timecode_cnt = 0;
     }

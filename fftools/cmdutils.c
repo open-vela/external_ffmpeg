@@ -65,12 +65,17 @@
 
 static int init_report(const char *env);
 
+const char *program_name;
+int program_birth_year;
+show_help_t program_show_help;
+
 AVDictionary *sws_dict;
 AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts, *resample_opts;
 
 static FILE *report_file;
 static int report_file_level = AV_LOG_DEBUG;
+static int print_prefix = 1;
 int hide_banner = 0;
 
 enum show_muxdemuxers {
@@ -78,6 +83,18 @@ enum show_muxdemuxers {
     SHOW_DEMUXERS,
     SHOW_MUXERS,
 };
+
+static void init_global_value(void)
+{
+    sws_dict = NULL;
+    swr_opts = NULL;
+    format_opts = codec_opts = resample_opts = NULL;
+
+    report_file = NULL;
+    report_file_level = AV_LOG_DEBUG;
+    print_prefix = 1;
+    hide_banner = 0;
+}
 
 void init_opts(void)
 {
@@ -102,7 +119,6 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
 {
     va_list vl2;
     char line[1024];
-    static int print_prefix = 1;
 
     va_copy(vl2, vl);
     av_log_default_callback(ptr, level, fmt, vl);
@@ -116,6 +132,8 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
 
 void init_dynload(void)
 {
+    init_global_value();
+
 #if HAVE_SETDLLDIRECTORY && defined(_WIN32)
     /* Calling SetDllDirectory with the empty string (but not NULL) removes the
      * current working directory from the DLL search path as a security pre-caution. */
@@ -202,14 +220,13 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
 
 void show_help_children(const AVClass *class, int flags)
 {
-    void *iter = NULL;
-    const AVClass *child;
+    const AVClass *child = NULL;
     if (class->option) {
         av_opt_show2(&class, NULL, flags, 0);
         printf("\n");
     }
 
-    while (child = av_opt_child_class_iterate(class, &iter))
+    while (child = av_opt_child_class_next(class, child))
         show_help_children(child, flags);
 }
 
@@ -2008,7 +2025,7 @@ int show_help(void *optctx, const char *opt, const char *arg)
         *par++ = 0;
 
     if (!*topic) {
-        show_help_default(topic, par);
+        program_show_help(topic, par);
     } else if (!strcmp(topic, "decoder")) {
         show_help_codec(par, 0);
     } else if (!strcmp(topic, "encoder")) {
@@ -2026,7 +2043,7 @@ int show_help(void *optctx, const char *opt, const char *arg)
     } else if (!strcmp(topic, "bsf")) {
         show_help_bsf(par);
     } else {
-        show_help_default(topic, par);
+        program_show_help(topic, par);
     }
 
     av_freep(&topic);
@@ -2038,7 +2055,7 @@ int read_yesno(void)
     int c = getchar();
     int yesno = (av_toupper(c) == 'Y');
 
-    while (c != '\n' && c != EOF)
+    while (c != '\n' && c != '\r' && c != EOF)
         c = getchar();
 
     return yesno;
