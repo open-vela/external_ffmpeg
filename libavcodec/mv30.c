@@ -200,10 +200,10 @@ static inline void idct2_1d(int *blk, int step)
 {
     const int t0 = blk[0 * step];
     const int t1 = blk[1 * step];
-    const int t2 = t1 * 473 >> 8;
+    const int t2 = (int)(t1 * 473U) >> 8;
     const int t3 = t2 - t1;
-    const int t4 = (t1 * 362 >> 8) - t3;
-    const int t5 = ((t1 * 277 >> 8) - t2) + t4;
+    const int t4 =  ((int)(t1 * 362U) >> 8) - t3;
+    const int t5 = (((int)(t1 * 277U) >> 8) - t2) + t4;
 
     blk[0 * step] = t1 + t0;
     blk[1 * step] = t0 + t3;
@@ -531,8 +531,13 @@ static int decode_inter(AVCodecContext *avctx, GetBitContext *gb,
         for (int x = 0; x < avctx->width; x += 16) {
             if (cnt >= 4)
                 cnt = 0;
-            if (cnt == 0)
+            if (cnt == 0) {
+                if (get_bits_left(&mask) < 8) {
+                    ret = AVERROR_INVALIDDATA;
+                    goto fail;
+                }
                 flags = get_bits(&mask, 8);
+            }
 
             dst[0] = frame->data[0] + linesize[0] * y + x;
             dst[1] = frame->data[0] + linesize[0] * y + x + 8;
