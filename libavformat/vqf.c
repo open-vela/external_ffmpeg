@@ -132,6 +132,9 @@ static int vqf_read_header(AVFormatContext *s)
 
         switch(chunk_tag){
         case MKTAG('C','O','M','M'):
+            if (len < 12)
+                return AVERROR_INVALIDDATA;
+
             avio_read(s->pb, comm_chunk, 12);
             st->codecpar->channels = AV_RB32(comm_chunk    ) + 1;
             read_bitrate        = AV_RB32(comm_chunk + 4);
@@ -274,17 +277,17 @@ static int vqf_read_seek(AVFormatContext *s,
                                                    AV_ROUND_DOWN : AV_ROUND_UP);
     pos *= c->frame_bit_len;
 
-    st->cur_dts = av_rescale(pos, st->time_base.den,
+    ffstream(st)->cur_dts = av_rescale(pos, st->time_base.den,
                              st->codecpar->bit_rate * (int64_t)st->time_base.num);
 
-    if ((ret = avio_seek(s->pb, ((pos-7) >> 3) + s->internal->data_offset, SEEK_SET)) < 0)
+    if ((ret = avio_seek(s->pb, ((pos-7) >> 3) + ffformatcontext(s)->data_offset, SEEK_SET)) < 0)
         return ret;
 
     c->remaining_bits = -7 - ((pos-7)&7);
     return 0;
 }
 
-AVInputFormat ff_vqf_demuxer = {
+const AVInputFormat ff_vqf_demuxer = {
     .name           = "vqf",
     .long_name      = NULL_IF_CONFIG_SMALL("Nippon Telegraph and Telephone Corporation (NTT) TwinVQ"),
     .priv_data_size = sizeof(VqfContext),
