@@ -49,8 +49,7 @@ enum {
 typedef struct H264MetadataContext {
     const AVClass *class;
 
-    CodedBitstreamContext *input;
-    CodedBitstreamContext *output;
+    CodedBitstreamContext *cbc;
     CodedBitstreamFragment access_unit;
 
     int done_first_au;
@@ -290,7 +289,7 @@ static int h264_metadata_update_side_data(AVBSFContext *bsf, AVPacket *pkt)
     if (!side_data_size)
         return 0;
 
-    err = ff_cbs_read(ctx->input, au, side_data, side_data_size);
+    err = ff_cbs_read(ctx->cbc, au, side_data, side_data_size);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to read extradata from packet side data.\n");
         return err;
@@ -304,7 +303,7 @@ static int h264_metadata_update_side_data(AVBSFContext *bsf, AVPacket *pkt)
         }
     }
 
-    err = ff_cbs_write_fragment_data(ctx->output, au);
+    err = ff_cbs_write_fragment_data(ctx->cbc, au);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to write extradata into packet side data.\n");
         return err;
@@ -315,7 +314,7 @@ static int h264_metadata_update_side_data(AVBSFContext *bsf, AVPacket *pkt)
         return AVERROR(ENOMEM);
     memcpy(side_data, au->data, au->data_size);
 
-    ff_cbs_fragment_reset(au);
+    ff_cbs_fragment_reset(ctx->cbc, au);
 
     return 0;
 }
@@ -335,7 +334,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
     if (err < 0)
         goto fail;
 
-    err = ff_cbs_read_packet(ctx->input, au, pkt);
+    err = ff_cbs_read_packet(ctx->cbc, au, pkt);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to read packet.\n");
         goto fail;
@@ -350,7 +349,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
     // If an AUD is present, it must be the first NAL unit.
     if (au->units[0].type == H264_NAL_AUD) {
         if (ctx->aud == REMOVE)
-            ff_cbs_delete_unit(au, 0);
+            ff_cbs_delete_unit(ctx->cbc, au, 0);
     } else {
         if (ctx->aud == INSERT) {
             static const int primary_pic_type_table[] = {
@@ -391,7 +390,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
                 .primary_pic_type = j,
             };
 
-            err = ff_cbs_insert_unit_content(au,
+            err = ff_cbs_insert_unit_content(ctx->cbc, au,
                                              0, H264_NAL_AUD, &aud, NULL);
             if (err < 0) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to insert AUD.\n");
@@ -449,7 +448,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
             udu->data_length = len + 1;
             memcpy(udu->data, ctx->sei_user_data + i + 1, len + 1);
 
-            err = ff_cbs_h264_add_sei_message(au, &payload);
+            err = ff_cbs_h264_add_sei_message(ctx->cbc, au, &payload);
             if (err < 0) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to add user data SEI "
                        "message to access unit.\n");
@@ -468,7 +467,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
     if (ctx->delete_filler) {
         for (i = au->nb_units - 1; i >= 0; i--) {
             if (au->units[i].type == H264_NAL_FILLER_DATA) {
-                ff_cbs_delete_unit(au, i);
+                ff_cbs_delete_unit(ctx->cbc, au, i);
                 continue;
             }
 
@@ -479,7 +478,8 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
                 for (j = sei->payload_count - 1; j >= 0; j--) {
                     if (sei->payload[j].payload_type ==
                         H264_SEI_TYPE_FILLER_PAYLOAD)
-                        ff_cbs_h264_delete_sei_message(au, &au->units[i], j);
+                        ff_cbs_h264_delete_sei_message(ctx->cbc, au,
+                                                       &au->units[i], j);
                 }
             }
         }
@@ -503,7 +503,8 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
 
                 if (ctx->display_orientation == REMOVE ||
                     ctx->display_orientation == INSERT) {
-                    ff_cbs_h264_delete_sei_message(au, &au->units[i], j);
+                    ff_cbs_h264_delete_sei_message(ctx->cbc, au,
+                                                   &au->units[i], j);
                     continue;
                 }
 
@@ -527,7 +528,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
                 if (err < 0) {
                     av_log(bsf, AV_LOG_ERROR, "Failed to attach extracted "
                            "displaymatrix side data to packet.\n");
-                    av_free(matrix);
+                    av_freep(matrix);
                     goto fail;
                 }
             }
@@ -594,7 +595,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
         if (write) {
             disp->display_orientation_repetition_period = 1;
 
-            err = ff_cbs_h264_add_sei_message(au, &payload);
+            err = ff_cbs_h264_add_sei_message(ctx->cbc, au, &payload);
             if (err < 0) {
                 av_log(bsf, AV_LOG_ERROR, "Failed to add display orientation "
                        "SEI message to access unit.\n");
@@ -603,7 +604,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
         }
     }
 
-    err = ff_cbs_write_packet(ctx->output, pkt, au);
+    err = ff_cbs_write_packet(ctx->cbc, pkt, au);
     if (err < 0) {
         av_log(bsf, AV_LOG_ERROR, "Failed to write packet.\n");
         goto fail;
@@ -613,7 +614,7 @@ static int h264_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
 
     err = 0;
 fail:
-    ff_cbs_fragment_reset(au);
+    ff_cbs_fragment_reset(ctx->cbc, au);
 
     if (err < 0)
         av_packet_unref(pkt);
@@ -627,15 +628,12 @@ static int h264_metadata_init(AVBSFContext *bsf)
     CodedBitstreamFragment *au = &ctx->access_unit;
     int err, i;
 
-    err = ff_cbs_init(&ctx->input,  AV_CODEC_ID_H264, bsf);
-    if (err < 0)
-        return err;
-    err = ff_cbs_init(&ctx->output, AV_CODEC_ID_H264, bsf);
+    err = ff_cbs_init(&ctx->cbc, AV_CODEC_ID_H264, bsf);
     if (err < 0)
         return err;
 
     if (bsf->par_in->extradata) {
-        err = ff_cbs_read_extradata(ctx->input, au, bsf->par_in);
+        err = ff_cbs_read_extradata(ctx->cbc, au, bsf->par_in);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to read extradata.\n");
             goto fail;
@@ -649,7 +647,7 @@ static int h264_metadata_init(AVBSFContext *bsf)
             }
         }
 
-        err = ff_cbs_write_extradata(ctx->output, bsf->par_out, au);
+        err = ff_cbs_write_extradata(ctx->cbc, bsf->par_out, au);
         if (err < 0) {
             av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
             goto fail;
@@ -658,7 +656,7 @@ static int h264_metadata_init(AVBSFContext *bsf)
 
     err = 0;
 fail:
-    ff_cbs_fragment_reset(au);
+    ff_cbs_fragment_reset(ctx->cbc, au);
     return err;
 }
 
@@ -666,9 +664,8 @@ static void h264_metadata_close(AVBSFContext *bsf)
 {
     H264MetadataContext *ctx = bsf->priv_data;
 
-    ff_cbs_fragment_free(&ctx->access_unit);
-    ff_cbs_close(&ctx->input);
-    ff_cbs_close(&ctx->output);
+    ff_cbs_fragment_free(ctx->cbc, &ctx->access_unit);
+    ff_cbs_close(&ctx->cbc);
 }
 
 #define OFFSET(x) offsetof(H264MetadataContext, x)
