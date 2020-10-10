@@ -104,23 +104,23 @@ static void get_qtable(int16_t *table, int quant, const uint8_t *quant_tab)
 
 static inline void idct_1d(int *blk, int step)
 {
-    const unsigned t0 = blk[0 * step] + blk[4 * step];
-    const unsigned t1 = blk[0 * step] - blk[4 * step];
-    const unsigned t2 = blk[2 * step] + blk[6 * step];
-    const unsigned t3 = ((int)((blk[2 * step] - blk[6 * step]) * 362U) >> 8) - t2;
-    const unsigned t4 = t0 + t2;
-    const unsigned t5 = t0 - t2;
-    const unsigned t6 = t1 + t3;
-    const unsigned t7 = t1 - t3;
-    const unsigned t8 = blk[5 * step] + blk[3 * step];
-    const unsigned t9 = blk[5 * step] - blk[3 * step];
-    const unsigned tA = blk[1 * step] + blk[7 * step];
-    const unsigned tB = blk[1 * step] - blk[7 * step];
-    const unsigned tC = t8 + tA;
-    const unsigned tD = (int)((tB + t9) * 473U) >> 8;
-    const unsigned tE = (((int)(t9 * -669U) >> 8) - tC) + tD;
-    const unsigned tF = ((int)((tA - t8) * 362U) >> 8) - tE;
-    const unsigned t10 = (((int)(tB * 277U) >> 8) - tD) + tF;
+    const int t0 = blk[0 * step] + blk[4 * step];
+    const int t1 = blk[0 * step] - blk[4 * step];
+    const int t2 = blk[2 * step] + blk[6 * step];
+    const int t3 = ((int)((blk[2 * step] - blk[6 * step]) * 362U) >> 8) - t2;
+    const int t4 = t0 + t2;
+    const int t5 = t0 - t2;
+    const int t6 = t1 + t3;
+    const int t7 = t1 - t3;
+    const int t8 = blk[5 * step] + blk[3 * step];
+    const int t9 = blk[5 * step] - blk[3 * step];
+    const int tA = blk[1 * step] + blk[7 * step];
+    const int tB = blk[1 * step] - blk[7 * step];
+    const int tC = t8 + tA;
+    const int tD = (int)((tB + t9) * 473U) >> 8;
+    const int tE = (((int)(t9 * -669U) >> 8) - tC) + tD;
+    const int tF = ((int)((tA - t8) * 362U) >> 8) - tE;
+    const int t10 = (((int)(tB * 277U) >> 8) - tD) + tF;
 
     blk[0 * step] = t4 + tC;
     blk[1 * step] = t6 + tE;
@@ -200,10 +200,10 @@ static inline void idct2_1d(int *blk, int step)
 {
     const int t0 = blk[0 * step];
     const int t1 = blk[1 * step];
-    const int t2 = (int)(t1 * 473U) >> 8;
+    const int t2 = t1 * 473 >> 8;
     const int t3 = t2 - t1;
-    const int t4 =  ((int)(t1 * 362U) >> 8) - t3;
-    const int t5 = (((int)(t1 * 277U) >> 8) - t2) + t4;
+    const int t4 = (t1 * 362 >> 8) - t3;
+    const int t5 = ((t1 * 277 >> 8) - t2) + t4;
 
     blk[0 * step] = t1 + t0;
     blk[1 * step] = t0 + t3;
@@ -531,13 +531,8 @@ static int decode_inter(AVCodecContext *avctx, GetBitContext *gb,
         for (int x = 0; x < avctx->width; x += 16) {
             if (cnt >= 4)
                 cnt = 0;
-            if (cnt == 0) {
-                if (get_bits_left(&mask) < 8) {
-                    ret = AVERROR_INVALIDDATA;
-                    goto fail;
-                }
+            if (cnt == 0)
                 flags = get_bits(&mask, 8);
-            }
 
             dst[0] = frame->data[0] + linesize[0] * y + x;
             dst[1] = frame->data[0] + linesize[0] * y + x + 8;

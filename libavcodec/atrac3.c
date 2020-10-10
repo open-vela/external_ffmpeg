@@ -111,8 +111,7 @@ typedef struct ATRAC3Context {
 
     AtracGCContext    gainc_ctx;
     FFTContext        mdct_ctx;
-    void (*vector_fmul)(float *dst, const float *src0, const float *src1,
-                        int len);
+    AVFloatDSPContext *fdsp;
 } ATRAC3Context;
 
 static DECLARE_ALIGNED(32, float, mdct_window)[MDCT_SIZE];
@@ -145,7 +144,7 @@ static void imlt(ATRAC3Context *q, float *input, float *output, int odd_band)
     q->mdct_ctx.imdct_calc(&q->mdct_ctx, output, input);
 
     /* Perform windowing on the output. */
-    q->vector_fmul(output, output, mdct_window, MDCT_SIZE);
+    q->fdsp->vector_fmul(output, output, mdct_window, MDCT_SIZE);
 }
 
 /*
@@ -195,6 +194,7 @@ static av_cold int atrac3_decode_close(AVCodecContext *avctx)
 
     av_freep(&q->units);
     av_freep(&q->decoded_bytes_buffer);
+    av_freep(&q->fdsp);
 
     ff_mdct_end(&q->mdct_ctx);
 
@@ -874,7 +874,6 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     int version, delay, samples_per_frame, frame_factor;
     const uint8_t *edata_ptr = avctx->extradata;
     ATRAC3Context *q = avctx->priv_data;
-    AVFloatDSPContext *fdsp;
 
     if (avctx->channels < MIN_CHANNELS || avctx->channels > MAX_CHANNELS) {
         av_log(avctx, AV_LOG_ERROR, "Channel configuration error!\n");
@@ -978,6 +977,7 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     /* initialize the MDCT transform */
     if ((ret = ff_mdct_init(&q->mdct_ctx, 9, 1, 1.0 / 32768)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing MDCT\n");
+        av_freep(&q->decoded_bytes_buffer);
         return ret;
     }
 
@@ -998,15 +998,13 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     }
 
     ff_atrac_init_gain_compensation(&q->gainc_ctx, 4, 3);
-    fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
-    if (!fdsp)
-        return AVERROR(ENOMEM);
-    q->vector_fmul = fdsp->vector_fmul;
-    av_free(fdsp);
+    q->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
 
     q->units = av_mallocz_array(avctx->channels, sizeof(*q->units));
-    if (!q->units)
+    if (!q->units || !q->fdsp) {
+        atrac3_decode_close(avctx);
         return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -1023,7 +1021,6 @@ AVCodec ff_atrac3_decoder = {
     .capabilities     = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1,
     .sample_fmts      = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                         AV_SAMPLE_FMT_NONE },
-    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };
 
 AVCodec ff_atrac3al_decoder = {
@@ -1038,5 +1035,4 @@ AVCodec ff_atrac3al_decoder = {
     .capabilities     = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1,
     .sample_fmts      = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                         AV_SAMPLE_FMT_NONE },
-    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };

@@ -442,10 +442,8 @@ av_cold int ff_ivi_init_tiles(IVIPlaneDesc *planes,
 
             av_freep(&band->tiles);
             band->tiles = av_mallocz_array(band->num_tiles, sizeof(IVITile));
-            if (!band->tiles) {
-                band->num_tiles = 0;
+            if (!band->tiles)
                 return AVERROR(ENOMEM);
-            }
 
             /* use the first luma band as reference for motion vectors
              * and quant */

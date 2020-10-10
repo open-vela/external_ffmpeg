@@ -23,7 +23,6 @@
 
 #include "libavutil/intfloat.h"
 #include "libavutil/opt.h"
-#include "libavcodec/packet_internal.h"
 #include "avformat.h"
 #include "internal.h"
 #include "aiff.h"
@@ -221,8 +220,8 @@ static int aiff_write_packet(AVFormatContext *s, AVPacket *pkt)
         if (s->streams[pkt->stream_index]->nb_frames >= 1)
             return 0;
 
-        return avpriv_packet_list_put(&aiff->pict_list, &aiff->pict_list_end,
-                                  pkt, av_packet_ref, 0);
+        return ff_packet_list_put(&aiff->pict_list, &aiff->pict_list_end,
+                                  pkt, FF_PACKETLIST_FLAG_REF_PACKET);
     }
 
     return 0;
@@ -273,7 +272,7 @@ static void aiff_deinit(AVFormatContext *s)
 {
     AIFFOutputContext *aiff = s->priv_data;
 
-    avpriv_packet_list_free(&aiff->pict_list, &aiff->pict_list_end);
+    ff_packet_list_free(&aiff->pict_list, &aiff->pict_list_end);
 }
 
 #define OFFSET(x) offsetof(AIFFOutputContext, x)
