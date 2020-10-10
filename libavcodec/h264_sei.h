@@ -126,8 +126,6 @@ typedef struct H264SEIA53Caption {
 
 typedef struct H264SEIUnregistered {
     int x264_build;
-    AVBufferRef **buf_ref;
-    int nb_buf_ref;
 } H264SEIUnregistered;
 
 typedef struct H264SEIRecoveryPoint {

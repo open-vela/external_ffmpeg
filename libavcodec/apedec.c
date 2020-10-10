@@ -262,8 +262,9 @@ static av_cold int ape_decode_init(AVCodecContext *avctx)
     for (i = 0; i < APE_FILTER_LEVELS; i++) {
         if (!ape_filter_orders[s->fset][i])
             break;
-        if (!(s->filterbuf[i] = av_malloc((ape_filter_orders[s->fset][i] * 3 + HISTORY_SIZE) * 4)))
-            return AVERROR(ENOMEM);
+        FF_ALLOC_OR_GOTO(avctx, s->filterbuf[i],
+                         (ape_filter_orders[s->fset][i] * 3 + HISTORY_SIZE) * 4,
+                         filter_alloc_fail);
     }
 
     if (s->fileversion < 3860) {
@@ -299,6 +300,9 @@ static av_cold int ape_decode_init(AVCodecContext *avctx)
     avctx->channel_layout = (avctx->channels==2) ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
 
     return 0;
+filter_alloc_fail:
+    ape_decode_close(avctx);
+    return AVERROR(ENOMEM);
 }
 
 /**
@@ -1569,7 +1573,7 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
         for (ch = 0; ch < s->channels; ch++) {
             sample24 = (int32_t *)frame->data[ch];
             for (i = 0; i < blockstodecode; i++)
-                *sample24++ = s->decoded[ch][i] * 256U;
+                *sample24++ = s->decoded[ch][i] * 256;
         }
         break;
     }
@@ -1634,7 +1638,6 @@ AVCodec ff_ape_decoder = {
     .decode         = ape_decode_frame,
     .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DELAY |
                       AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .flush          = ape_flush,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
                                                       AV_SAMPLE_FMT_S16P,

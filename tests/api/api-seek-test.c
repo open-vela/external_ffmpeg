@@ -266,6 +266,7 @@ end:
     av_freep(&crc_array);
     av_freep(&pts_array);
     av_frame_free(&fr);
+    avcodec_close(ctx);
     avformat_close_input(&fmt_ctx);
     avcodec_free_context(&ctx);
     return result;
