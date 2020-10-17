@@ -115,6 +115,9 @@ RMStream *ff_rm_alloc_rmstream (void)
 
 void ff_rm_free_rmstream (RMStream *rms)
 {
+    if (!rms)
+        return;
+
     av_packet_unref(&rms->pkt);
 }
 
@@ -162,7 +165,11 @@ static int rm_read_audio_stream_info(AVFormatContext *s, AVIOContext *pb,
         avio_rb16(pb); /* version2 */
         avio_rb32(pb); /* header size */
         flavor= avio_rb16(pb); /* add codec info / flavor */
-        ast->coded_framesize = coded_framesize = avio_rb32(pb); /* coded frame size */
+        coded_framesize = avio_rb32(pb); /* coded frame size */
+        if (coded_framesize < 0)
+            return AVERROR_INVALIDDATA;
+        ast->coded_framesize = coded_framesize;
+
         avio_rb32(pb); /* ??? */
         bytes_per_minute = avio_rb32(pb);
         if (version == 4) {
@@ -538,7 +545,7 @@ static int rm_read_header(AVFormatContext *s)
     unsigned int data_off = 0, indx_off = 0;
     char buf[128], mime[128];
     int flags = 0;
-    int ret = -1;
+    int ret;
     unsigned size, v;
     int64_t codec_pos;
 
@@ -554,6 +561,7 @@ static int rm_read_header(AVFormatContext *s)
     avio_skip(pb, tag_size - 8);
 
     for(;;) {
+        ret = AVERROR_INVALIDDATA;
         if (avio_feof(pb))
             goto fail;
         tag = avio_rl32(pb);
@@ -619,8 +627,9 @@ static int rm_read_header(AVFormatContext *s)
                 avio_seek(pb, codec_pos + size, SEEK_SET);
             } else {
                 avio_skip(pb, -4);
-                if (ff_rm_read_mdpr_codecdata(s, s->pb, st, st->priv_data,
-                                              size, mime) < 0)
+                ret = ff_rm_read_mdpr_codecdata(s, s->pb, st, st->priv_data,
+                                                size, mime);
+                if (ret < 0)
                     goto fail;
             }
 
@@ -694,17 +703,19 @@ static int rm_sync(AVFormatContext *s, int64_t *timestamp, int *flags, int *stre
             state= (state<<8) + avio_r8(pb);
 
             if(state == MKBETAG('I', 'N', 'D', 'X')){
-                int n_pkts, expected_len;
+                int n_pkts;
+                int64_t expected_len;
                 len = avio_rb32(pb);
                 avio_skip(pb, 2);
                 n_pkts = avio_rb32(pb);
-                expected_len = 20 + n_pkts * 14;
-                if (len == 20)
+                expected_len = 20 + n_pkts * 14LL;
+
+                if (len == 20 && expected_len <= INT_MAX)
                     /* some files don't add index entries to chunk size... */
                     len = expected_len;
                 else if (len != expected_len)
                     av_log(s, AV_LOG_WARNING,
-                           "Index size %d (%d pkts) is wrong, should be %d.\n",
+                           "Index size %d (%d pkts) is wrong, should be %"PRId64".\n",
                            len, n_pkts, expected_len);
                 len -= 14; // we already read part of the index header
                 if(len<0)
