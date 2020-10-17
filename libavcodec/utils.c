@@ -50,6 +50,8 @@
 #include "thread.h"
 #include "frame_thread_encoder.h"
 #include "internal.h"
+#include "packet_internal.h"
+#include "put_bits.h"
 #include "raw.h"
 #include "bytestream.h"
 #include "version.h"
@@ -93,7 +95,7 @@ void av_fast_padded_mallocz(void *ptr, unsigned int *size, size_t min_size)
 
 int av_codec_is_encoder(const AVCodec *codec)
 {
-    return codec && (codec->encode_sub || codec->encode2 ||codec->send_frame);
+    return codec && (codec->encode_sub || codec->encode2 || codec->receive_packet);
 }
 
 int av_codec_is_decoder(const AVCodec *codec)
@@ -585,13 +587,16 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, const AVCodec *code
 
     avci->to_free = av_frame_alloc();
     avci->compat_decode_frame = av_frame_alloc();
+    avci->compat_encode_packet = av_packet_alloc();
     avci->buffer_frame = av_frame_alloc();
     avci->buffer_pkt = av_packet_alloc();
+    avci->es.in_frame = av_frame_alloc();
     avci->ds.in_pkt = av_packet_alloc();
     avci->last_pkt_props = av_packet_alloc();
-    if (!avci->to_free      || !avci->compat_decode_frame ||
+    if (!avci->compat_decode_frame || !avci->compat_encode_packet ||
         !avci->buffer_frame || !avci->buffer_pkt          ||
-        !avci->ds.in_pkt    || !avci->last_pkt_props) {
+        !avci->es.in_frame  || !avci->ds.in_pkt           ||
+        !avci->to_free      || !avci->last_pkt_props) {
         ret = AVERROR(ENOMEM);
         goto free_and_end;
     }
@@ -603,7 +608,7 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, const AVCodec *code
             avctx->priv_data = av_mallocz(codec->priv_data_size);
             if (!avctx->priv_data) {
                 ret = AVERROR(ENOMEM);
-                goto end;
+                goto free_and_end;
             }
             if (codec->priv_class) {
                 *(const AVClass **)avctx->priv_data = codec->priv_class;
@@ -691,7 +696,7 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, const AVCodec *code
     if ((avctx->codec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) &&
         avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
         const char *codec_string = av_codec_is_encoder(codec) ? "encoder" : "decoder";
-        AVCodec *codec2;
+        const AVCodec *codec2;
         av_log(avctx, AV_LOG_ERROR,
                "The %s '%s' is experimental but experimental codecs are not enabled, "
                "add '-strict %d' if you want to use it.\n",
@@ -926,6 +931,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         || avci->frame_thread_encoder)) {
         ret = avctx->codec->init(avctx);
         if (ret < 0) {
+            codec_init_ok = -1;
             goto free_and_end;
         }
         codec_init_ok = 1;
@@ -1017,38 +1023,43 @@ end:
     return ret;
 free_and_end:
     if (avctx->codec && avctx->codec->close &&
-        (codec_init_ok ||
-         (avctx->codec->caps_internal & FF_CODEC_CAP_INIT_CLEANUP)))
+        (codec_init_ok > 0 || (codec_init_ok < 0 &&
+         avctx->codec->caps_internal & FF_CODEC_CAP_INIT_CLEANUP)))
         avctx->codec->close(avctx);
 
     if (HAVE_THREADS && avci->thread_ctx)
         ff_thread_free(avctx);
 
-    if (codec->priv_class && codec->priv_data_size)
+    if (codec->priv_class && avctx->priv_data)
         av_opt_free(avctx->priv_data);
     av_opt_free(avctx);
 
+    if (av_codec_is_encoder(avctx->codec)) {
 #if FF_API_CODED_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
-    av_frame_free(&avctx->coded_frame);
+        av_frame_free(&avctx->coded_frame);
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
+        av_freep(&avctx->extradata);
+        avctx->extradata_size = 0;
+    }
 
     av_dict_free(&tmp);
     av_freep(&avctx->priv_data);
     av_freep(&avctx->subtitle_header);
-    if (avci) {
-        av_frame_free(&avci->to_free);
-        av_frame_free(&avci->compat_decode_frame);
-        av_frame_free(&avci->buffer_frame);
-        av_packet_free(&avci->buffer_pkt);
-        av_packet_free(&avci->last_pkt_props);
 
-        av_packet_free(&avci->ds.in_pkt);
-        av_bsf_free(&avci->bsf);
+    av_frame_free(&avci->to_free);
+    av_frame_free(&avci->compat_decode_frame);
+    av_frame_free(&avci->buffer_frame);
+    av_packet_free(&avci->compat_encode_packet);
+    av_packet_free(&avci->buffer_pkt);
+    av_packet_free(&avci->last_pkt_props);
 
-        av_buffer_unref(&avci->pool);
-    }
+    av_packet_free(&avci->ds.in_pkt);
+    av_frame_free(&avci->es.in_frame);
+    av_bsf_free(&avci->bsf);
+
+    av_buffer_unref(&avci->pool);
     av_freep(&avci);
     avctx->internal = NULL;
     avctx->codec = NULL;
@@ -1079,9 +1090,10 @@ void avcodec_flush_buffers(AVCodecContext *avctx)
     avci->nb_draining_errors = 0;
     av_frame_unref(avci->buffer_frame);
     av_frame_unref(avci->compat_decode_frame);
+    av_packet_unref(avci->compat_encode_packet);
     av_packet_unref(avci->buffer_pkt);
-    avci->buffer_pkt_valid = 0;
 
+    av_frame_unref(avci->es.in_frame);
     av_packet_unref(avci->ds.in_pkt);
 
     if (HAVE_THREADS && avctx->active_thread_type & FF_THREAD_FRAME)
@@ -1139,10 +1151,14 @@ av_cold int avcodec_close(AVCodecContext *avctx)
         av_frame_free(&avctx->internal->to_free);
         av_frame_free(&avctx->internal->compat_decode_frame);
         av_frame_free(&avctx->internal->buffer_frame);
+        av_packet_free(&avctx->internal->compat_encode_packet);
         av_packet_free(&avctx->internal->buffer_pkt);
         av_packet_free(&avctx->internal->last_pkt_props);
+        avpriv_packet_list_free(&avctx->internal->pkt_props,
+                                &avctx->internal->pkt_props_tail);
 
         av_packet_free(&avctx->internal->ds.in_pkt);
+        av_frame_free(&avctx->internal->es.in_frame);
 
         av_buffer_unref(&avctx->internal->pool);
 
@@ -1184,7 +1200,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 const char *avcodec_get_name(enum AVCodecID id)
 {
     const AVCodecDescriptor *cd;
-    AVCodec *codec;
+    const AVCodec *codec;
 
     if (id == AV_CODEC_ID_NONE)
         return "none";
@@ -1201,6 +1217,7 @@ const char *avcodec_get_name(enum AVCodecID id)
     return "unknown_codec";
 }
 
+#if FF_API_TAG_STRING
 size_t av_get_codec_tag_string(char *buf, size_t buf_size, unsigned int codec_tag)
 {
     int i, len, ret = 0;
@@ -1220,6 +1237,7 @@ size_t av_get_codec_tag_string(char *buf, size_t buf_size, unsigned int codec_ta
     }
     return ret;
 }
+#endif
 
 void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
 {
@@ -1470,8 +1488,10 @@ int av_get_exact_bits_per_sample(enum AVCodecID codec_id)
     switch (codec_id) {
     case AV_CODEC_ID_8SVX_EXP:
     case AV_CODEC_ID_8SVX_FIB:
+    case AV_CODEC_ID_ADPCM_ARGO:
     case AV_CODEC_ID_ADPCM_CT:
     case AV_CODEC_ID_ADPCM_IMA_APC:
+    case AV_CODEC_ID_ADPCM_IMA_APM:
     case AV_CODEC_ID_ADPCM_IMA_EA_SEAD:
     case AV_CODEC_ID_ADPCM_IMA_OKI:
     case AV_CODEC_ID_ADPCM_IMA_WS:
@@ -1594,7 +1614,10 @@ static int get_audio_frame_duration(enum AVCodecID id, int sr, int ch, int ba,
     case AV_CODEC_ID_MP1:          return  384;
     case AV_CODEC_ID_ATRAC1:       return  512;
     case AV_CODEC_ID_ATRAC9:
-    case AV_CODEC_ID_ATRAC3:       return 1024 * framecount;
+    case AV_CODEC_ID_ATRAC3:
+        if (framecount > INT_MAX/1024)
+            return 0;
+        return 1024 * framecount;
     case AV_CODEC_ID_ATRAC3P:      return 2048;
     case AV_CODEC_ID_MP2:
     case AV_CODEC_ID_MUSEPACK7:    return 1152;
@@ -1653,6 +1676,10 @@ static int get_audio_frame_duration(enum AVCodecID id, int sr, int ch, int ba,
         if (ch > 0 && ch < INT_MAX/16) {
             /* calc from frame_bytes and channels */
             switch (id) {
+            case AV_CODEC_ID_FASTAUDIO:
+                return frame_bytes / (40 * ch) * 256;
+            case AV_CODEC_ID_ADPCM_IMA_MOFLEX:
+                return (frame_bytes - 4 * ch) / (128 * ch) * 256;
             case AV_CODEC_ID_ADPCM_AFC:
                 return frame_bytes / (9 * ch) * 16;
             case AV_CODEC_ID_ADPCM_PSX:
@@ -1837,7 +1864,7 @@ unsigned int avpriv_toupper4(unsigned int x)
 ((unsigned)av_toupper((x >> 24) & 0xFF) << 24);
 }
 
-int ff_thread_ref_frame(ThreadFrame *dst, ThreadFrame *src)
+int ff_thread_ref_frame(ThreadFrame *dst, const ThreadFrame *src)
 {
     int ret;
 
@@ -1917,29 +1944,6 @@ void ff_thread_report_progress2(AVCodecContext *avctx, int field, int thread, in
 int avcodec_is_open(AVCodecContext *s)
 {
     return !!s->internal;
-}
-
-int avpriv_bprint_to_extradata(AVCodecContext *avctx, struct AVBPrint *buf)
-{
-    int ret;
-    char *str;
-
-    ret = av_bprint_finalize(buf, &str);
-    if (ret < 0)
-        return ret;
-    if (!av_bprint_is_complete(buf)) {
-        av_free(str);
-        return AVERROR(ENOMEM);
-    }
-
-    avctx->extradata = str;
-    /* Note: the string is NUL terminated (so extradata can be read as a
-     * string), but the ending character is not accounted in the size (in
-     * binary formats you are likely not supposed to mux that character). When
-     * extradata is copied, it is also padded with AV_INPUT_BUFFER_PADDING_SIZE
-     * zeros. */
-    avctx->extradata_size = buf->len;
-    return 0;
 }
 
 const uint8_t *avpriv_find_start_code(const uint8_t *av_restrict p,
@@ -2193,45 +2197,75 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
     return 0;
 }
 
-int ff_alloc_a53_sei(const AVFrame *frame, size_t prefix_len,
+static unsigned bcd2uint(uint8_t bcd)
+{
+    unsigned low  = bcd & 0xf;
+    unsigned high = bcd >> 4;
+    if (low > 9 || high > 9)
+        return 0;
+    return low + 10*high;
+}
+
+int ff_alloc_timecode_sei(const AVFrame *frame, AVRational rate, size_t prefix_len,
                      void **data, size_t *sei_size)
 {
-    AVFrameSideData *side_data = NULL;
+    AVFrameSideData *sd = NULL;
     uint8_t *sei_data;
+    PutBitContext pb;
+    uint32_t *tc;
+    int m;
 
     if (frame)
-        side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_A53_CC);
+        sd = av_frame_get_side_data(frame, AV_FRAME_DATA_S12M_TIMECODE);
 
-    if (!side_data) {
+    if (!sd) {
         *data = NULL;
         return 0;
     }
+    tc =  (uint32_t*)sd->data;
+    m  = tc[0] & 3;
 
-    *sei_size = side_data->size + 11;
+    *sei_size = sizeof(uint32_t) * 4;
     *data = av_mallocz(*sei_size + prefix_len);
     if (!*data)
         return AVERROR(ENOMEM);
     sei_data = (uint8_t*)*data + prefix_len;
 
-    // country code
-    sei_data[0] = 181;
-    sei_data[1] = 0;
-    sei_data[2] = 49;
+    init_put_bits(&pb, sei_data, *sei_size);
+    put_bits(&pb, 2, m); // num_clock_ts
 
-    /**
-     * 'GA94' is standard in North America for ATSC, but hard coding
-     * this style may not be the right thing to do -- other formats
-     * do exist. This information is not available in the side_data
-     * so we are going with this right now.
-     */
-    AV_WL32(sei_data + 3, MKTAG('G', 'A', '9', '4'));
-    sei_data[7] = 3;
-    sei_data[8] = ((side_data->size/3) & 0x1f) | 0x40;
-    sei_data[9] = 0;
+    for (int j = 1; j <= m; j++) {
+        uint32_t tcsmpte = tc[j];
+        unsigned hh   = bcd2uint(tcsmpte     & 0x3f);    // 6-bit hours
+        unsigned mm   = bcd2uint(tcsmpte>>8  & 0x7f);    // 7-bit minutes
+        unsigned ss   = bcd2uint(tcsmpte>>16 & 0x7f);    // 7-bit seconds
+        unsigned ff   = bcd2uint(tcsmpte>>24 & 0x3f);    // 6-bit frames
+        unsigned drop = tcsmpte & 1<<30 && !0;  // 1-bit drop if not arbitrary bit
 
-    memcpy(sei_data + 10, side_data->data, side_data->size);
+        /* Calculate frame number of HEVC by SMPTE ST 12-1:2014 Sec 12.2 if rate > 30FPS */
+        if (av_cmp_q(rate, (AVRational) {30, 1}) == 1) {
+            unsigned pc;
+            ff *= 2;
+            if (av_cmp_q(rate, (AVRational) {50, 1}) == 0)
+                pc = !!(tcsmpte & 1 << 7);
+            else
+                pc = !!(tcsmpte & 1 << 23);
+            ff = (ff + pc) & 0x7f;
+        }
 
-    sei_data[side_data->size+10] = 255;
+        put_bits(&pb, 1, 1); // clock_timestamp_flag
+        put_bits(&pb, 1, 1); // units_field_based_flag
+        put_bits(&pb, 5, 0); // counting_type
+        put_bits(&pb, 1, 1); // full_timestamp_flag
+        put_bits(&pb, 1, 0); // discontinuity_flag
+        put_bits(&pb, 1, drop);
+        put_bits(&pb, 9, ff);
+        put_bits(&pb, 6, ss);
+        put_bits(&pb, 6, mm);
+        put_bits(&pb, 5, hh);
+        put_bits(&pb, 5, 0);
+    }
+    flush_put_bits(&pb);
 
     return 0;
 }
