@@ -43,6 +43,7 @@ extern AVFilter ff_af_afftdn;
 extern AVFilter ff_af_afftfilt;
 extern AVFilter ff_af_afir;
 extern AVFilter ff_af_aformat;
+extern AVFilter ff_af_afreqshift;
 extern AVFilter ff_af_agate;
 extern AVFilter ff_af_aiir;
 extern AVFilter ff_af_aintegral;
@@ -61,6 +62,7 @@ extern AVFilter ff_af_anull;
 extern AVFilter ff_af_apad;
 extern AVFilter ff_af_aperms;
 extern AVFilter ff_af_aphaser;
+extern AVFilter ff_af_aphaseshift;
 extern AVFilter ff_af_apulsator;
 extern AVFilter ff_af_arealtime;
 extern AVFilter ff_af_aresample;
@@ -172,6 +174,7 @@ extern AVFilter ff_vf_bwdif;
 extern AVFilter ff_vf_cas;
 extern AVFilter ff_vf_chromahold;
 extern AVFilter ff_vf_chromakey;
+extern AVFilter ff_vf_chromanr;
 extern AVFilter ff_vf_chromashift;
 extern AVFilter ff_vf_ciescope;
 extern AVFilter ff_vf_codecview;
@@ -527,7 +530,7 @@ const AVFilter *avfilter_get_by_name(const char *name)
 
     while ((f = av_filter_iterate(&opaque)))
         if (!strcmp(f->name, name))
-            return (AVFilter *)f;
+            return f;
 
     return NULL;
 }

@@ -53,6 +53,7 @@ static void *codec_child_next(void *obj, void *prev)
     return NULL;
 }
 
+#if FF_API_CHILD_CLASS_NEXT
 static const AVClass *codec_child_class_next(const AVClass *prev)
 {
     void *iter = NULL;
@@ -65,6 +66,17 @@ static const AVClass *codec_child_class_next(const AVClass *prev)
 
     /* find next codec with priv options */
     while (c = av_codec_iterate(&iter))
+        if (c->priv_class)
+            return c->priv_class;
+    return NULL;
+}
+#endif
+
+static const AVClass *codec_child_class_iterate(void **iter)
+{
+    const AVCodec *c;
+    /* find next codec with priv options */
+    while (c = av_codec_iterate(iter))
         if (c->priv_class)
             return c->priv_class;
     return NULL;
@@ -84,7 +96,10 @@ static const AVClass av_codec_context_class = {
     .version                 = LIBAVUTIL_VERSION_INT,
     .log_level_offset_offset = offsetof(AVCodecContext, log_level_offset),
     .child_next              = codec_child_next,
+#if FF_API_CHILD_CLASS_NEXT
     .child_class_next        = codec_child_class_next,
+#endif
+    .child_class_iterate     = codec_child_class_iterate,
     .category                = AV_CLASS_CATEGORY_ENCODER,
     .get_category            = get_category,
 };
@@ -312,6 +327,7 @@ static const AVOption frame_options[]={
 {NULL},
 };
 
+#if FF_API_COPY_CONTEXT
 static const AVClass av_frame_class = {
     .class_name              = "AVFrame",
     .item_name               = NULL,
@@ -323,6 +339,7 @@ const AVClass *avcodec_get_frame_class(void)
 {
     return &av_frame_class;
 }
+#endif
 
 #define SROFFSET(x) offsetof(AVSubtitleRect,x)
 
@@ -337,6 +354,7 @@ static const AVOption subtitle_rect_options[]={
 {NULL},
 };
 
+#if FF_API_COPY_CONTEXT
 static const AVClass av_subtitle_rect_class = {
     .class_name             = "AVSubtitleRect",
     .item_name              = NULL,
@@ -348,3 +366,4 @@ const AVClass *avcodec_get_subtitle_rect_class(void)
 {
     return &av_subtitle_rect_class;
 }
+#endif
