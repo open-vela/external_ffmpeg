@@ -113,7 +113,6 @@ static const AVMetadataConv avi_metadata_conv[] = {
     { 0 },
 };
 
-static int avi_read_close(AVFormatContext *s);
 static int avi_load_index(AVFormatContext *s);
 static int guess_ni_flag(AVFormatContext *s);
 
@@ -440,7 +439,7 @@ static int calculate_bitrate(AVFormatContext *s)
         maxpos = FFMAX(maxpos, st->index_entries[j-1].pos);
         lensum += len;
     }
-    if (maxpos < av_rescale(avi->io_fsize, 9, 10)) // index does not cover the whole file
+    if (maxpos < avi->io_fsize*9/10) // index does not cover the whole file
         return 0;
     if (lensum*9/10 > maxpos || lensum < maxpos*9/10) // frame sum and filesize mismatch
         return 0;
@@ -465,7 +464,6 @@ static int calculate_bitrate(AVFormatContext *s)
     return 1;
 }
 
-#define RETURN_ERROR(code) do { ret = (code); goto fail; } while (0)
 static int avi_read_header(AVFormatContext *s)
 {
     AVIContext *avi = s->priv_data;
@@ -501,7 +499,7 @@ static int avi_read_header(AVFormatContext *s)
     frame_period = 0;
     for (;;) {
         if (avio_feof(pb))
-            RETURN_ERROR(AVERROR_INVALIDDATA);
+            goto fail;
         tag  = avio_rl32(pb);
         size = avio_rl32(pb);
 
@@ -573,12 +571,12 @@ static int avi_read_header(AVFormatContext *s)
                 stream_index++;
                 st = avformat_new_stream(s, NULL);
                 if (!st)
-                    RETURN_ERROR(AVERROR(ENOMEM));
+                    goto fail;
 
                 st->id = stream_index;
                 ast    = av_mallocz(sizeof(AVIStream));
                 if (!ast)
-                    RETURN_ERROR(AVERROR(ENOMEM));
+                    goto fail;
                 st->priv_data = ast;
             }
             if (amv_file_format)
@@ -594,12 +592,12 @@ static int avi_read_header(AVFormatContext *s)
                 /* After some consideration -- I don't think we
                  * have to support anything but DV in type1 AVIs. */
                 if (s->nb_streams != 1)
-                    RETURN_ERROR(AVERROR_INVALIDDATA);
+                    goto fail;
 
                 if (handler != MKTAG('d', 'v', 's', 'd') &&
                     handler != MKTAG('d', 'v', 'h', 'd') &&
                     handler != MKTAG('d', 'v', 's', 'l'))
-                    return AVERROR_INVALIDDATA;
+                    goto fail;
 
                 if (!CONFIG_DV_DEMUXER)
                     return AVERROR_DEMUXER_NOT_FOUND;
@@ -699,7 +697,7 @@ static int avi_read_header(AVFormatContext *s)
                            "Invalid sample_size %d at stream %d\n",
                            ast->sample_size,
                            stream_index);
-                    RETURN_ERROR(AVERROR_INVALIDDATA);
+                    goto fail;
                 }
                 av_log(s, AV_LOG_WARNING,
                        "Invalid sample_size %d at stream %d "
@@ -929,7 +927,7 @@ static int avi_read_header(AVFormatContext *s)
                         av_log(s, AV_LOG_WARNING, "New extradata in strd chunk, freeing previous one.\n");
                     }
                     if ((ret = ff_get_extradata(s, st->codecpar, pb, size)) < 0)
-                        goto fail;
+                        return ret;
                 }
 
                 if (st->codecpar->extradata_size & 1) //FIXME check if the encoder really did this correctly
@@ -947,7 +945,7 @@ static int avi_read_header(AVFormatContext *s)
                 avi->use_odml &&
                 read_odml_index(s, 0) < 0 &&
                 (s->error_recognition & AV_EF_EXPLODE))
-                RETURN_ERROR(AVERROR_INVALIDDATA);
+                goto fail;
             avio_seek(pb, pos + size, SEEK_SET);
             break;
         case MKTAG('v', 'p', 'r', 'p'):
@@ -982,7 +980,7 @@ static int avi_read_header(AVFormatContext *s)
             if (s->nb_streams) {
                 ret = avi_read_tag(s, s->streams[s->nb_streams - 1], tag, size);
                 if (ret < 0)
-                    goto fail;
+                    return ret;
                 break;
             }
         default:
@@ -993,7 +991,7 @@ static int avi_read_header(AVFormatContext *s)
                        "I will ignore it and try to continue anyway.\n",
                        av_fourcc2str(tag), size);
                 if (s->error_recognition & AV_EF_EXPLODE)
-                    RETURN_ERROR(AVERROR_INVALIDDATA);
+                    goto fail;
                 avi->movi_list = avio_tell(pb) - 4;
                 avi->movi_end  = avi->fsize;
                 goto end_of_header;
@@ -1010,7 +1008,9 @@ static int avi_read_header(AVFormatContext *s)
 end_of_header:
     /* check stream number */
     if (stream_index != s->nb_streams - 1) {
-        RETURN_ERROR(AVERROR_INVALIDDATA);
+
+fail:
+        return AVERROR_INVALIDDATA;
     }
 
     if (!avi->index_loaded && (pb->seekable & AVIO_SEEKABLE_NORMAL))
@@ -1019,7 +1019,7 @@ end_of_header:
     avi->index_loaded    |= 1;
 
     if ((ret = guess_ni_flag(s)) < 0)
-        goto fail;
+        return ret;
 
     avi->non_interleaved |= ret | (s->flags & AVFMT_FLAG_SORT_DTS);
 
@@ -1056,9 +1056,6 @@ end_of_header:
     ff_metadata_conv_ctx(s, NULL, ff_riff_info_conv);
 
     return 0;
-fail:
-    avi_read_close(s);
-    return ret;
 }
 
 static int read_gab2_sub(AVFormatContext *s, AVStream *st, AVPacket *pkt)
@@ -1072,15 +1069,11 @@ static int read_gab2_sub(AVFormatContext *s, AVStream *st, AVPacket *pkt)
         ff_const59 AVInputFormat *sub_demuxer;
         AVRational time_base;
         int size;
-        AVProbeData pd;
-        unsigned int desc_len;
         AVIOContext *pb = avio_alloc_context(pkt->data + 7,
                                              pkt->size - 7,
                                              0, NULL, NULL, NULL, NULL);
-        if (!pb)
-            goto error;
-
-        desc_len = avio_rl32(pb);
+        AVProbeData pd;
+        unsigned int desc_len = avio_rl32(pb);
 
         if (desc_len > pb->buf_end - pb->buf_ptr)
             goto error;
