@@ -1964,13 +1964,9 @@ static int parse_rtsp_message(AVFormatContext *s)
 
     if (rt->rtsp_flags & RTSP_FLAG_LISTEN) {
         if (rt->state == RTSP_STATE_STREAMING) {
-            if (!ff_rtsp_parse_streaming_commands(s))
-                return AVERROR_EOF;
-            else
-                av_log(s, AV_LOG_WARNING,
-                       "Unable to answer to TEARDOWN\n");
+            return ff_rtsp_parse_streaming_commands(s);
         } else
-            return 0;
+            return AVERROR_EOF;
     } else {
         RTSPMessageHeader reply;
         ret = ff_rtsp_read_reply(s, &reply, NULL, 0, NULL);
@@ -1994,7 +1990,7 @@ static int udp_read_packet(AVFormatContext *s, RTSPStream **prtsp_st,
     int *fds = NULL, fdsnum, fdsidx;
 
     if (!p) {
-        p = rt->p = av_malloc_array(2 * (rt->nb_rtsp_streams + 1), sizeof(struct pollfd));
+        p = rt->p = av_malloc_array(2 * rt->nb_rtsp_streams + 1, sizeof(struct pollfd));
         if (!p)
             return AVERROR(ENOMEM);
 

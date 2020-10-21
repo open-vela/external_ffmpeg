@@ -246,7 +246,7 @@ static int update_context_from_thread(AVCodecContext *dst, AVCodecContext *src, 
 {
     int err = 0;
 
-    if (dst != src && (for_user || !(src->codec_descriptor->props & AV_CODEC_PROP_INTRA_ONLY))) {
+    if (dst != src && (for_user || src->codec->update_thread_context)) {
         dst->time_base = src->time_base;
         dst->framerate = src->framerate;
         dst->width     = src->width;
@@ -297,16 +297,9 @@ static int update_context_from_thread(AVCodecContext *dst, AVCodecContext *src, 
 
         dst->hwaccel_flags = src->hwaccel_flags;
 
-        if (!!dst->internal->pool != !!src->internal->pool ||
-            (dst->internal->pool && dst->internal->pool->data != src->internal->pool->data)) {
-            av_buffer_unref(&dst->internal->pool);
-
-            if (src->internal->pool) {
-                dst->internal->pool = av_buffer_ref(src->internal->pool);
-                if (!dst->internal->pool)
-                    return AVERROR(ENOMEM);
-            }
-        }
+        err = av_buffer_replace(&dst->internal->pool, src->internal->pool);
+        if (err < 0)
+            return err;
     }
 
     if (for_user) {
