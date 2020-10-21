@@ -48,6 +48,7 @@
 #include "libavcodec/bytestream.h"
 #include "libavcodec/flac.h"
 #include "libavcodec/mpeg4audio.h"
+#include "libavcodec/packet_internal.h"
 
 #include "avformat.h"
 #include "avio_internal.h"
@@ -2027,12 +2028,12 @@ static int matroska_parse_flac(AVFormatContext *s,
 
 static int mkv_field_order(MatroskaDemuxContext *matroska, int64_t field_order)
 {
-    int major, minor, micro, bttb = 0;
+    int minor, micro, bttb = 0;
 
     /* workaround a bug in our Matroska muxer, introduced in version 57.36 alongside
      * this function, and fixed in 57.52 */
-    if (matroska->muxingapp && sscanf(matroska->muxingapp, "Lavf%d.%d.%d", &major, &minor, &micro) == 3)
-        bttb = (major == 57 && minor >= 36 && minor <= 51 && micro >= 100);
+    if (matroska->muxingapp && sscanf(matroska->muxingapp, "Lavf57.%d.%d", &minor, &micro) == 2)
+        bttb = (minor >= 36 && minor <= 51 && micro >= 100);
 
     switch (field_order) {
     case MATROSKA_VIDEO_FIELDORDER_PROGRESSIVE:
@@ -2162,30 +2163,26 @@ static int mkv_parse_video_projection(AVStream *st, const MatroskaTrack *track,
                                       void *logctx)
 {
     AVSphericalMapping *spherical;
+    const MatroskaTrackVideoProjection *mkv_projection = &track->video.projection;
+    const uint8_t *priv_data = mkv_projection->private.data;
     enum AVSphericalProjection projection;
     size_t spherical_size;
     uint32_t l = 0, t = 0, r = 0, b = 0;
     uint32_t padding = 0;
     int ret;
-    GetByteContext gb;
 
-    bytestream2_init(&gb, track->video.projection.private.data,
-                     track->video.projection.private.size);
-
-    if (bytestream2_get_byte(&gb) != 0) {
+    if (mkv_projection->private.size && priv_data[0] != 0) {
         av_log(logctx, AV_LOG_WARNING, "Unknown spherical metadata\n");
         return 0;
     }
 
-    bytestream2_skip(&gb, 3); // flags
-
     switch (track->video.projection.type) {
     case MATROSKA_VIDEO_PROJECTION_TYPE_EQUIRECTANGULAR:
         if (track->video.projection.private.size == 20) {
-            t = bytestream2_get_be32(&gb);
-            b = bytestream2_get_be32(&gb);
-            l = bytestream2_get_be32(&gb);
-            r = bytestream2_get_be32(&gb);
+            t = AV_RB32(priv_data +  4);
+            b = AV_RB32(priv_data +  8);
+            l = AV_RB32(priv_data + 12);
+            r = AV_RB32(priv_data + 16);
 
             if (b >= UINT_MAX - t || r >= UINT_MAX - l) {
                 av_log(logctx, AV_LOG_ERROR,
@@ -2209,14 +2206,14 @@ static int mkv_parse_video_projection(AVStream *st, const MatroskaTrack *track,
             av_log(logctx, AV_LOG_ERROR, "Missing projection private properties\n");
             return AVERROR_INVALIDDATA;
         } else if (track->video.projection.private.size == 12) {
-            uint32_t layout = bytestream2_get_be32(&gb);
+            uint32_t layout = AV_RB32(priv_data + 4);
             if (layout) {
                 av_log(logctx, AV_LOG_WARNING,
                        "Unknown spherical cubemap layout %"PRIu32"\n", layout);
                 return 0;
             }
             projection = AV_SPHERICAL_CUBEMAP;
-            padding = bytestream2_get_be32(&gb);
+            padding = AV_RB32(priv_data + 8);
         } else {
             av_log(logctx, AV_LOG_ERROR, "Unknown spherical metadata\n");
             return AVERROR_INVALIDDATA;
@@ -2995,7 +2992,7 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
         MatroskaTrack *tracks = matroska->tracks.elem;
         MatroskaTrack *track;
 
-        ff_packet_list_get(&matroska->queue, &matroska->queue_end, pkt);
+        avpriv_packet_list_get(&matroska->queue, &matroska->queue_end, pkt);
         track = &tracks[pkt->stream_index];
         if (track->has_palette) {
             uint8_t *pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE, AVPALETTE_SIZE);
@@ -3017,7 +3014,7 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
  */
 static void matroska_clear_queue(MatroskaDemuxContext *matroska)
 {
-    ff_packet_list_free(&matroska->queue, &matroska->queue_end);
+    avpriv_packet_list_free(&matroska->queue, &matroska->queue_end);
 }
 
 static int matroska_parse_laces(MatroskaDemuxContext *matroska, uint8_t **buf,
@@ -3183,7 +3180,7 @@ static int matroska_parse_rm_audio(MatroskaDemuxContext *matroska,
         track->audio.buf_timecode = AV_NOPTS_VALUE;
         pkt->pos                  = pos;
         pkt->stream_index         = st->index;
-        ret = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+        ret = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
         if (ret < 0) {
             av_packet_unref(pkt);
             return AVERROR(ENOMEM);
@@ -3405,7 +3402,7 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
     pkt->duration = duration;
     pkt->pos = pos;
 
-    err = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+    err = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
     if (err < 0) {
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);
@@ -3516,7 +3513,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    res = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+    res = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
     if (res < 0) {
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);

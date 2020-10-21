@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
 
 #include "libavcodec/avcodec.h"
 #include "libavcodec/bytestream.h"
@@ -75,6 +76,10 @@ static int64_t io_seek(void *opaque, int64_t offset, int whence)
     }
     if (offset < 0 || offset > c->filesize)
         return -1;
+    if (IO_FLAT) {
+        c->fuzz      += offset - c->pos;
+        c->fuzz_size -= offset - c->pos;
+    }
     c->pos = offset;
     return 0;
 }
@@ -98,10 +103,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     static int c;
     int seekable = 0;
     int ret;
+    AVInputFormat *fmt = NULL;
+#ifdef FFMPEG_DEMUXER
+#define DEMUXER_SYMBOL0(DEMUXER) ff_##DEMUXER##_demuxer
+#define DEMUXER_SYMBOL(DEMUXER) DEMUXER_SYMBOL0(DEMUXER)
+    extern AVInputFormat DEMUXER_SYMBOL(FFMPEG_DEMUXER);
+    fmt = &DEMUXER_SYMBOL(FFMPEG_DEMUXER);
+#endif
 
     if (!c) {
-        av_register_all();
-        avcodec_register_all();
         av_log_set_level(AV_LOG_PANIC);
         c=1;
     }
@@ -109,15 +119,44 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (!avfmt)
         error("Failed avformat_alloc_context()");
 
-    if (size > 2048) {
+    if (IO_FLAT) {
+        seekable = 1;
+        io_buffer_size = size;
+    } else if (size > 2048) {
+        int flags;
+        char extension[64];
+
         GetByteContext gbc;
         memcpy (filename, data + size - 1024, 1024);
         bytestream2_init(&gbc, data + size - 2048, 1024);
         size -= 2048;
 
         io_buffer_size = bytestream2_get_le32(&gbc) & 0xFFFFFFF;
-        seekable       = bytestream2_get_byte(&gbc) & 1;
+        flags          = bytestream2_get_byte(&gbc);
+        seekable       = flags & 1;
         filesize       = bytestream2_get_le64(&gbc) & 0x7FFFFFFFFFFFFFFF;
+
+        if ((flags & 2) && strlen(filename) < sizeof(filename) / 2) {
+            const AVInputFormat *avif = NULL;
+            void *avif_iter = NULL;
+            int avif_count = 0;
+            while ((avif = av_demuxer_iterate(&avif_iter))) {
+                if (avif->extensions)
+                    avif_count ++;
+            }
+            avif_count =  bytestream2_get_le32(&gbc) % avif_count;
+
+            avif_iter = NULL;
+            while ((avif = av_demuxer_iterate(&avif_iter))) {
+                if (avif->extensions)
+                    if (!avif_count--)
+                        break;
+            }
+            av_strlcpy(extension, avif->extensions, sizeof(extension));
+            if (strchr(extension, ','))
+                *strchr(extension, ',') = 0;
+            av_strlcatf(filename, sizeof(filename), ".%s", extension);
+        }
     }
     io_buffer = av_malloc(io_buffer_size);
     if (!io_buffer)
@@ -134,7 +173,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     avfmt->pb = fuzzed_pb;
 
-    ret = avformat_open_input(&avfmt, filename, NULL, NULL);
+    ret = avformat_open_input(&avfmt, filename, fmt, NULL);
     if (ret < 0) {
         av_freep(&fuzzed_pb->buffer);
         av_freep(&fuzzed_pb);
