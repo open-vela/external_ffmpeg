@@ -302,7 +302,7 @@ static av_cold int init_subtitles(AVFilterContext *ctx)
     AVDictionary *codec_opts = NULL;
     AVFormatContext *fmt = NULL;
     AVCodecContext *dec_ctx = NULL;
-    const AVCodec *dec;
+    AVCodec *dec = NULL;
     const AVCodecDescriptor *dec_desc;
     AVStream *st;
     AVPacket pkt;
@@ -384,25 +384,22 @@ static av_cold int init_subtitles(AVFilterContext *ctx)
     if (!dec) {
         av_log(ctx, AV_LOG_ERROR, "Failed to find subtitle codec %s\n",
                avcodec_get_name(st->codecpar->codec_id));
-        ret = AVERROR_DECODER_NOT_FOUND;
-        goto end;
+        return AVERROR(EINVAL);
     }
     dec_desc = avcodec_descriptor_get(st->codecpar->codec_id);
     if (dec_desc && !(dec_desc->props & AV_CODEC_PROP_TEXT_SUB)) {
         av_log(ctx, AV_LOG_ERROR,
                "Only text based subtitles are currently supported\n");
-        ret = AVERROR_PATCHWELCOME;
-        goto end;
+        return AVERROR_PATCHWELCOME;
     }
     if (ass->charenc)
         av_dict_set(&codec_opts, "sub_charenc", ass->charenc, 0);
-    av_dict_set(&codec_opts, "sub_text_format", "ass", 0);
+    if (LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,26,100))
+        av_dict_set(&codec_opts, "sub_text_format", "ass", 0);
 
     dec_ctx = avcodec_alloc_context3(dec);
-    if (!dec_ctx) {
-        ret = AVERROR(ENOMEM);
-        goto end;
-    }
+    if (!dec_ctx)
+        return AVERROR(ENOMEM);
 
     ret = avcodec_parameters_to_context(dec_ctx, st->codecpar);
     if (ret < 0)
@@ -448,6 +445,9 @@ static av_cold int init_subtitles(AVFilterContext *ctx)
         ass_process_codec_private(ass->track,
                                   dec_ctx->subtitle_header,
                                   dec_ctx->subtitle_header_size);
+    av_init_packet(&pkt);
+    pkt.data = NULL;
+    pkt.size = 0;
     while (av_read_frame(fmt, &pkt) >= 0) {
         int i, got_subtitle;
         AVSubtitle sub = {0};
@@ -464,8 +464,11 @@ static av_cold int init_subtitles(AVFilterContext *ctx)
                     char *ass_line = sub.rects[i]->ass;
                     if (!ass_line)
                         break;
-                    ass_process_chunk(ass->track, ass_line, strlen(ass_line),
-                                      start_time, duration);
+                    if (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,25,100))
+                        ass_process_data(ass->track, ass_line, strlen(ass_line));
+                    else
+                        ass_process_chunk(ass->track, ass_line, strlen(ass_line),
+                                          start_time, duration);
                 }
             }
         }
@@ -475,6 +478,7 @@ static av_cold int init_subtitles(AVFilterContext *ctx)
 
 end:
     av_dict_free(&codec_opts);
+    avcodec_close(dec_ctx);
     avcodec_free_context(&dec_ctx);
     avformat_close_input(&fmt);
     return ret;

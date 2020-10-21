@@ -51,9 +51,6 @@ enum Projections {
     BARREL_SPLIT,
     TSPYRAMID,
     HEQUIRECTANGULAR,
-    EQUISOLID,
-    ORTHOGRAPHIC,
-    OCTAHEDRON,
     NB_PROJECTIONS,
 };
 
@@ -65,7 +62,6 @@ enum InterpMethod {
     LANCZOS,
     SPLINE16,
     GAUSSIAN,
-    MITCHELL,
     NB_INTERP_METHODS,
 };
 
@@ -110,12 +106,6 @@ typedef struct XYRemap {
     float ker[4][4];
 } XYRemap;
 
-typedef struct SliceXYRemap {
-    int16_t *u[2], *v[2];
-    int16_t *ker[2];
-    uint8_t *mask;
-} SliceXYRemap;
-
 typedef struct V360Context {
     const AVClass *class;
     int in, out;
@@ -150,8 +140,9 @@ typedef struct V360Context {
     float flat_range[2];
     float iflat_range[2];
 
-    float rot_quaternion[2][4];
+    float rot_mat[3][3];
 
+    float input_mirror_modifier[2];
     float output_mirror_modifier[3];
 
     int in_width, in_height;
@@ -170,9 +161,10 @@ typedef struct V360Context {
     int elements;
     int mask_size;
     int max_value;
-    int nb_threads;
 
-    SliceXYRemap *slice_remap;
+    int16_t *u[2], *v[2];
+    int16_t *ker[2];
+    uint8_t *mask;
     unsigned map[4];
 
     int (*in_transform)(const struct V360Context *s,

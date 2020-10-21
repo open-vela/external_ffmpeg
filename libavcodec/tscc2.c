@@ -74,14 +74,18 @@ static av_cold int init_vlcs(TSCC2Context *c)
                                  tscc2_nc_vlc_bits[i],  1, 1,
                                  tscc2_nc_vlc_codes[i], 2, 2,
                                  tscc2_nc_vlc_syms,     1, 1, INIT_VLC_LE);
-        if (ret)
+        if (ret) {
+            free_vlcs(c);
             return ret;
+        }
         ret = ff_init_vlc_sparse(c->ac_vlc + i, 9, tscc2_ac_vlc_sizes[i],
                                  tscc2_ac_vlc_bits[i],  1, 1,
                                  tscc2_ac_vlc_codes[i], 2, 2,
                                  tscc2_ac_vlc_syms[i],  2, 2, INIT_VLC_LE);
-        if (ret)
+        if (ret) {
+            free_vlcs(c);
             return ret;
+        }
     }
 
     return 0;
@@ -356,12 +360,15 @@ static av_cold int tscc2_decode_init(AVCodecContext *avctx)
     c->slice_quants = av_malloc(c->mb_width * c->mb_height);
     if (!c->slice_quants) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate slice information\n");
+        free_vlcs(c);
         return AVERROR(ENOMEM);
     }
 
     c->pic = av_frame_alloc();
-    if (!c->pic)
+    if (!c->pic) {
+        tscc2_decode_end(avctx);
         return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -376,5 +383,4 @@ AVCodec ff_tscc2_decoder = {
     .close          = tscc2_decode_end,
     .decode         = tscc2_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

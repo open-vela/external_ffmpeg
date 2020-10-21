@@ -510,22 +510,20 @@ static MpegTSFilter *mpegts_open_section_filter(MpegTSContext *ts,
 {
     MpegTSFilter *filter;
     MpegTSSectionFilter *sec;
-    uint8_t *section_buf = av_mallocz(MAX_SECTION_SIZE);
 
-    if (!section_buf)
+    if (!(filter = mpegts_open_filter(ts, pid, MPEGTS_SECTION)))
         return NULL;
-
-    if (!(filter = mpegts_open_filter(ts, pid, MPEGTS_SECTION))) {
-        av_free(section_buf);
-        return NULL;
-    }
     sec = &filter->u.section_filter;
     sec->section_cb  = section_cb;
     sec->opaque      = opaque;
-    sec->section_buf = section_buf;
+    sec->section_buf = av_mallocz(MAX_SECTION_SIZE);
     sec->check_crc   = check_crc;
     sec->last_ver    = -1;
 
+    if (!sec->section_buf) {
+        av_free(filter);
+        return NULL;
+    }
     return filter;
 }
 
@@ -1343,8 +1341,7 @@ skip:
                         }
                     }
 
-                    if (pes->st->codecpar->codec_id == AV_CODEC_ID_DVB_TELETEXT &&
-                        !pcr_found) {
+                    if (!pcr_found) {
                         av_log(pes->stream, AV_LOG_VERBOSE,
                                "Forcing DTS/PTS to be unset for a "
                                "non-trustworthy PES packet for PID %d as "
@@ -1804,12 +1801,12 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
         mpegts_find_stream_type(st, desc_tag, DESC_types);
 
     switch (desc_tag) {
-    case VIDEO_STREAM_DESCRIPTOR:
+    case 0x02: /* video stream descriptor */
         if (get8(pp, desc_end) & 0x1) {
             st->disposition |= AV_DISPOSITION_STILL_IMAGE;
         }
         break;
-    case SL_DESCRIPTOR:
+    case 0x1E: /* SL descriptor */
         desc_es_id = get16(pp, desc_end);
         if (desc_es_id < 0)
             break;
@@ -1832,7 +1829,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
                     mpegts_open_section_filter(ts, pid, m4sl_cb, ts, 1);
             }
         break;
-    case FMC_DESCRIPTOR:
+    case 0x1F: /* FMC descriptor */
         if (get16(pp, desc_end) < 0)
             break;
         if (mp4_descr_count > 0 &&
@@ -1958,7 +1955,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
             }
         }
         break;
-    case ISO_639_LANGUAGE_DESCRIPTOR:
+    case 0x0a: /* ISO 639 language descriptor */
         for (i = 0; i + 4 <= desc_len; i += 4) {
             language[i + 0] = get8(pp, desc_end);
             language[i + 1] = get8(pp, desc_end);
@@ -1984,7 +1981,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
             av_dict_set(&st->metadata, "language", language, AV_DICT_DONT_OVERWRITE);
         }
         break;
-    case REGISTRATION_DESCRIPTOR:
+    case 0x05: /* registration descriptor */
         st->codecpar->codec_tag = bytestream_get_le32(pp);
         av_log(fc, AV_LOG_TRACE, "reg_desc=%.4s\n", (char *)&st->codecpar->codec_tag);
         if (st->codecpar->codec_id == AV_CODEC_ID_NONE || st->request_probe > 0) {
@@ -1996,7 +1993,7 @@ int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type
     case 0x52: /* stream identifier descriptor */
         st->stream_identifier = 1 + get8(pp, desc_end);
         break;
-    case METADATA_DESCRIPTOR:
+    case 0x26: /* metadata descriptor */
         if (get16(pp, desc_end) == 0xFFFF)
             *pp += 4;
         if (get8(pp, desc_end) == 0xFF) {
@@ -2338,13 +2335,13 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             // something else is broken, exit the program_descriptors_loop
             break;
         program_info_length -= len + 2;
-        if (tag == IOD_DESCRIPTOR) {
+        if (tag == 0x1d) { // IOD descriptor
             get8(&p, p_end); // scope
             get8(&p, p_end); // label
             len -= 2;
             mp4_read_iods(ts->stream, p, len, mp4_descr + mp4_descr_count,
                           &mp4_descr_count, MAX_MP4_DESCR_COUNT);
-        } else if (tag == REGISTRATION_DESCRIPTOR && len >= 4) {
+        } else if (tag == 0x05 && len >= 4) { // registration descriptor
             prog_reg_desc = bytestream_get_le32(&p);
             len -= 4;
         }
@@ -3051,11 +3048,10 @@ static int mpegts_read_header(AVFormatContext *s)
     MpegTSContext *ts = s->priv_data;
     AVIOContext *pb   = s->pb;
     int64_t pos, probesize = s->probesize;
-    int64_t seekback = FFMAX(s->probesize, (int64_t)ts->resync_size + PROBE_PACKET_MAX_BUF);
 
     s->internal->prefer_codec_framerate = 1;
 
-    if (ffio_ensure_seekback(pb, seekback) < 0)
+    if (ffio_ensure_seekback(pb, probesize) < 0)
         av_log(s, AV_LOG_WARNING, "Failed to allocate buffers for seekback\n");
 
     pos = avio_tell(pb);
