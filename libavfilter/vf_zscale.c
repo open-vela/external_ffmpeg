@@ -187,10 +187,10 @@ static int query_formats(AVFilterContext *ctx)
     };
     int ret;
 
-    ret = ff_formats_ref(ff_make_format_list(pixel_fmts), &ctx->inputs[0]->outcfg.formats);
+    ret = ff_formats_ref(ff_make_format_list(pixel_fmts), &ctx->inputs[0]->out_formats);
     if (ret < 0)
         return ret;
-    return ff_formats_ref(ff_make_format_list(pixel_fmts), &ctx->outputs[0]->incfg.formats);
+    return ff_formats_ref(ff_make_format_list(pixel_fmts), &ctx->outputs[0]->in_formats);
 }
 
 static int config_props(AVFilterLink *outlink)

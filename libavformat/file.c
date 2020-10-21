@@ -79,7 +79,7 @@ typedef struct FileContext {
 #endif
 } FileContext;
 
-static const AVOption file_options[] = {
+static const AVOption ff_file_options[] = {
     { "truncate", "truncate existing files on write", offsetof(FileContext, trunc), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, AV_OPT_FLAG_ENCODING_PARAM },
     { "blocksize", "set I/O operation maximum block size", offsetof(FileContext, blocksize), AV_OPT_TYPE_INT, { .i64 = INT_MAX }, 1, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM },
     { "follow", "Follow a file as it is being written", offsetof(FileContext, follow), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AV_OPT_FLAG_DECODING_PARAM },
@@ -92,10 +92,10 @@ static const AVOption pipe_options[] = {
     { NULL }
 };
 
-static const AVClass file_class = {
+static const AVClass ff_file_class = {
     .class_name = "file",
     .item_name  = av_default_item_name,
-    .option     = file_options,
+    .option     = ff_file_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
@@ -106,7 +106,7 @@ static const AVClass pipe_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static int file_read(URLContext *h, unsigned char *buf, int size)
+static int ff_file_read(URLContext *h, unsigned char *buf, int size)
 {
     FileContext *c = h->priv_data;
     int ret;
@@ -119,7 +119,7 @@ static int file_read(URLContext *h, unsigned char *buf, int size)
     return (ret == -1) ? AVERROR(errno) : ret;
 }
 
-static int file_write(URLContext *h, const unsigned char *buf, int size)
+static int ff_file_write(URLContext *h, const unsigned char *buf, int size)
 {
     FileContext *c = h->priv_data;
     int ret;
@@ -128,13 +128,13 @@ static int file_write(URLContext *h, const unsigned char *buf, int size)
     return (ret == -1) ? AVERROR(errno) : ret;
 }
 
-static int file_get_handle(URLContext *h)
+static int ff_file_get_handle(URLContext *h)
 {
     FileContext *c = h->priv_data;
     return c->fd;
 }
 
-static int file_check(URLContext *h, int mask)
+static int ff_file_check(URLContext *h, int mask)
 {
     int ret = 0;
     const char *filename = h->filename;
@@ -167,7 +167,7 @@ static int file_check(URLContext *h, int mask)
     return ret;
 }
 
-static int file_delete(URLContext *h)
+static int ff_file_delete(URLContext *h)
 {
 #if HAVE_UNISTD_H
     int ret;
@@ -190,7 +190,7 @@ static int file_delete(URLContext *h)
 #endif /* HAVE_UNISTD_H */
 }
 
-static int file_move(URLContext *h_src, URLContext *h_dst)
+static int ff_file_move(URLContext *h_src, URLContext *h_dst)
 {
     const char *filename_src = h_src->filename;
     const char *filename_dst = h_dst->filename;
@@ -205,7 +205,7 @@ static int file_move(URLContext *h_src, URLContext *h_dst)
 
 #if CONFIG_FILE_PROTOCOL
 
-static int file_open(URLContext *h, const char *filename, int flags)
+static int ff_file_open(URLContext *h, const char *filename, int flags)
 {
     FileContext *c = h->priv_data;
     int access;
@@ -247,7 +247,7 @@ static int file_open(URLContext *h, const char *filename, int flags)
 }
 
 /* XXX: use llseek */
-static int64_t file_seek(URLContext *h, int64_t pos, int whence)
+static int64_t ff_file_seek(URLContext *h, int64_t pos, int whence)
 {
     FileContext *c = h->priv_data;
     int64_t ret;
@@ -263,13 +263,13 @@ static int64_t file_seek(URLContext *h, int64_t pos, int whence)
     return ret < 0 ? AVERROR(errno) : ret;
 }
 
-static int file_close(URLContext *h)
+static int ff_file_close(URLContext *h)
 {
     FileContext *c = h->priv_data;
     return close(c->fd);
 }
 
-static int file_open_dir(URLContext *h)
+static int ff_file_open_dir(URLContext *h)
 {
 #if HAVE_LSTAT
     FileContext *c = h->priv_data;
@@ -284,7 +284,7 @@ static int file_open_dir(URLContext *h)
 #endif /* HAVE_LSTAT */
 }
 
-static int file_read_dir(URLContext *h, AVIODirEntry **next)
+static int ff_file_read_dir(URLContext *h, AVIODirEntry **next)
 {
 #if HAVE_LSTAT
     FileContext *c = h->priv_data;
@@ -342,7 +342,7 @@ static int file_read_dir(URLContext *h, AVIODirEntry **next)
 #endif /* HAVE_LSTAT */
 }
 
-static int file_close_dir(URLContext *h)
+static int ff_file_close_dir(URLContext *h)
 {
 #if HAVE_LSTAT
     FileContext *c = h->priv_data;
@@ -355,20 +355,20 @@ static int file_close_dir(URLContext *h)
 
 const URLProtocol ff_file_protocol = {
     .name                = "file",
-    .url_open            = file_open,
-    .url_read            = file_read,
-    .url_write           = file_write,
-    .url_seek            = file_seek,
-    .url_close           = file_close,
-    .url_get_file_handle = file_get_handle,
-    .url_check           = file_check,
-    .url_delete          = file_delete,
-    .url_move            = file_move,
+    .url_open            = ff_file_open,
+    .url_read            = ff_file_read,
+    .url_write           = ff_file_write,
+    .url_seek            = ff_file_seek,
+    .url_close           = ff_file_close,
+    .url_get_file_handle = ff_file_get_handle,
+    .url_check           = ff_file_check,
+    .url_delete          = ff_file_delete,
+    .url_move            = ff_file_move,
     .priv_data_size      = sizeof(FileContext),
-    .priv_data_class     = &file_class,
-    .url_open_dir        = file_open_dir,
-    .url_read_dir        = file_read_dir,
-    .url_close_dir       = file_close_dir,
+    .priv_data_class     = &ff_file_class,
+    .url_open_dir        = ff_file_open_dir,
+    .url_read_dir        = ff_file_read_dir,
+    .url_close_dir       = ff_file_close_dir,
     .default_whitelist   = "file,crypto,data"
 };
 
@@ -402,10 +402,10 @@ static int pipe_open(URLContext *h, const char *filename, int flags)
 const URLProtocol ff_pipe_protocol = {
     .name                = "pipe",
     .url_open            = pipe_open,
-    .url_read            = file_read,
-    .url_write           = file_write,
-    .url_get_file_handle = file_get_handle,
-    .url_check           = file_check,
+    .url_read            = ff_file_read,
+    .url_write           = ff_file_write,
+    .url_get_file_handle = ff_file_get_handle,
+    .url_check           = ff_file_check,
     .priv_data_size      = sizeof(FileContext),
     .priv_data_class     = &pipe_class,
     .default_whitelist   = "crypto,data"

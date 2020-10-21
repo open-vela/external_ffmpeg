@@ -79,9 +79,6 @@ typedef struct InputFile {
     int       nb_streams;
 } InputFile;
 
-const char program_name[] = "ffprobe";
-const int program_birth_year = 2007;
-
 static int do_bitexact = 0;
 static int do_count_frames = 0;
 static int do_count_packets = 0;
@@ -298,13 +295,15 @@ typedef struct LogBuffer {
 
 static LogBuffer *log_buffer;
 static int log_buffer_size;
+static int print_prefix = 1;
+static int next_registered_writer_idx = 0;
+static int initialized = 0;
 
 static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 {
     AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
     va_list vl2;
     char line[1024];
-    static int print_prefix = 1;
     void *new_log_buffer;
 
     va_copy(vl2, vl);
@@ -884,8 +883,6 @@ static const Writer *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
 
 static int writer_register(const Writer *writer)
 {
-    static int next_registered_writer_idx = 0;
-
     if (next_registered_writer_idx == MAX_REGISTERED_WRITERS_NB)
         return AVERROR(ENOMEM);
 
@@ -1794,8 +1791,6 @@ static Writer xml_writer = {
 
 static void writer_register_all(void)
 {
-    static int initialized;
-
     if (initialized)
         return;
     initialized = 1;
@@ -2225,7 +2220,7 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
                 writer_print_section_header(w, SECTION_ID_FRAME_SIDE_DATA_TIMECODE_LIST);
                 for (int j = 1; j <= m ; j++) {
                     char tcbuf[AV_TIMECODE_STR_SIZE];
-                    av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, tc[j], 0, 0);
+                    av_timecode_make_smpte_tc_string(tcbuf, tc[j], 0);
                     writer_print_section_header(w, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
                     print_str("value", tcbuf);
                     writer_print_section_footer(w);
@@ -2854,7 +2849,7 @@ static int open_input_file(InputFile *ifile, const char *filename,
 {
     int err, i;
     AVFormatContext *fmt_ctx = NULL;
-    AVDictionaryEntry *t = NULL;
+    AVDictionaryEntry *t;
     int scan_all_pmts_set = 0;
 
     fmt_ctx = avformat_alloc_context();
@@ -2879,8 +2874,10 @@ static int open_input_file(InputFile *ifile, const char *filename,
     ifile->fmt_ctx = fmt_ctx;
     if (scan_all_pmts_set)
         av_dict_set(&format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);
-    while ((t = av_dict_get(format_opts, "", t, AV_DICT_IGNORE_SUFFIX)))
-        av_log(NULL, AV_LOG_WARNING, "Option %s skipped - not known to demuxer.\n", t->key);
+    if ((t = av_dict_get(format_opts, "", NULL, AV_DICT_IGNORE_SUFFIX))) {
+        av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
+        return AVERROR_OPTION_NOT_FOUND;
+    }
 
     if (find_stream_info) {
         AVDictionary **opts = setup_find_stream_info_opts(fmt_ctx, codec_opts);
@@ -3192,7 +3189,7 @@ static inline void mark_section_show_entries(SectionID section_id,
 
     section->show_all_entries = show_all_entries;
     if (show_all_entries) {
-        SectionID *id;
+        int *id;
         for (id = section->children_ids; *id != -1; id++)
             mark_section_show_entries(*id, show_all_entries, entries);
     } else {
@@ -3310,7 +3307,7 @@ static int opt_print_filename(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-void show_help_default(const char *opt, const char *arg)
+static void show_help_default(const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     show_usage();
@@ -3472,7 +3469,7 @@ static int opt_pretty(void *optctx, const char *opt, const char *arg)
 
 static void print_section(SectionID id, int level)
 {
-    const SectionID *pid;
+    const int *pid;
     const struct section *section = &sections[id];
     printf("%c%c%c",
            section->flags & SECTION_FLAG_IS_WRAPPER           ? 'W' : '.',
@@ -3586,6 +3583,77 @@ static inline int check_section_show_entries(int section_id)
     return 0;
 }
 
+static void init_global_value(void)
+{
+    program_show_help = show_help_default;
+    program_name = "ffprobe";
+    program_birth_year = 2000;
+
+    do_bitexact = 0;
+    do_count_frames = 0;
+    do_count_packets = 0;
+    do_read_frames  = 0;
+    do_read_packets = 0;
+    do_show_chapters = 0;
+    do_show_error   = 0;
+    do_show_format  = 0;
+    do_show_frames  = 0;
+    do_show_packets = 0;
+    do_show_programs = 0;
+    do_show_streams = 0;
+    do_show_stream_disposition = 0;
+    do_show_data    = 0;
+    do_show_program_version  = 0;
+    do_show_library_versions = 0;
+    do_show_pixel_formats = 0;
+    do_show_pixel_format_flags = 0;
+    do_show_pixel_format_components = 0;
+    do_show_log = 0;
+
+    do_show_chapter_tags = 0;
+    do_show_format_tags = 0;
+    do_show_frame_tags = 0;
+    do_show_program_tags = 0;
+    do_show_stream_tags = 0;
+    do_show_packet_tags = 0;
+
+    show_value_unit              = 0;
+    use_value_prefix             = 0;
+    use_byte_value_binary_prefix = 0;
+    use_value_sexagesimal_format = 0;
+    show_private_data            = 1;
+
+    print_format = NULL;
+    stream_specifier = NULL;
+    show_data_hash = NULL;
+
+    read_intervals = NULL;
+    read_intervals_nb = 0;
+
+    find_stream_info  = 1;
+
+    options = NULL;
+
+    /* FFprobe context */
+    input_filename = NULL;
+    print_input_filename = NULL;
+    iformat = NULL;
+
+    hash = NULL;
+
+    nb_streams = 0;
+    nb_streams_packets = NULL;
+    nb_streams_frames = NULL;
+    selected_streams = NULL;
+
+    log_buffer = NULL;
+    log_buffer_size = 0;
+
+    print_prefix = 1;
+    next_registered_writer_idx = 0;
+    initialized = 0;
+}
+
 #define SET_DO_SHOW(id, varname) do {                                   \
         if (check_section_show_entries(SECTION_ID_##id))                \
             do_show_##varname = 1;                                      \
@@ -3598,6 +3666,8 @@ int main(int argc, char **argv)
     char *buf;
     char *w_name = NULL, *w_args = NULL;
     int ret, i;
+
+    init_global_value();
 
     init_dynload();
 
