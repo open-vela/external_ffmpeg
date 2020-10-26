@@ -24,7 +24,6 @@
 
 #define FFMIN(a,b) ((a) > (b) ? (b) : (a))
 #define FFMAX(a,b) ((a) > (b) ? (a) : (b))
-#define FFABS(a) ((a) >= 0 ? (a) : (-(a)))
 
 static int64_t fsize(FILE *f) {
     int64_t end, pos = ftell(f);
@@ -102,9 +101,9 @@ int main(int argc, char **argv) {
             int j = pos + i;
             c += signal[i] * data[j];
         }
-        if (FFABS(c) > sigamp * 0.94)
-            maxshift = FFMIN(maxshift, FFABS(pos)+32);
-        if (FFABS(c) > FFABS(bestc)) {
+        if (fabs(c) > sigamp * 0.94)
+            maxshift = FFMIN(maxshift, fabs(pos)+32);
+        if (fabs(c) > fabs(bestc)) {
             bestc = c;
             bestpos = pos;
         }

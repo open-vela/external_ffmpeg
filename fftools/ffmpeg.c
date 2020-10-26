@@ -106,9 +106,6 @@
 
 #include "libavutil/avassert.h"
 
-const char program_name[] = "ffmpeg";
-const int program_birth_year = 2000;
-
 static FILE *vstats_file;
 
 const char *const forced_keyframes_const_names[] = {
@@ -163,6 +160,10 @@ int        nb_filtergraphs;
 static struct termios oldtty;
 static int restore_tty;
 #endif
+
+static int64_t last_time = -1;
+static int qp_histogram[52];
+static int64_t last_time_keyboard;
 
 #if HAVE_THREADS
 static void free_input_threads(void);
@@ -433,24 +434,7 @@ void term_init(void)
 static int read_key(void)
 {
     unsigned char ch;
-#if HAVE_TERMIOS_H
-    int n = 1;
-    struct timeval tv;
-    fd_set rfds;
-
-    FD_ZERO(&rfds);
-    FD_SET(0, &rfds);
-    tv.tv_sec = 0;
-    tv.tv_usec = 0;
-    n = select(1, &rfds, NULL, NULL, &tv);
-    if (n > 0) {
-        n = read(0, &ch, 1);
-        if (n == 1)
-            return ch;
-
-        return n;
-    }
-#elif HAVE_KBHIT
+#if HAVE_KBHIT
 #    if HAVE_PEEKNAMEDPIPE
     static int is_pipe;
     static HANDLE input_handle;
@@ -477,6 +461,23 @@ static int read_key(void)
 #    endif
     if(kbhit())
         return(getch());
+#else
+    int n = 1;
+    struct timeval tv;
+    fd_set rfds;
+
+    FD_ZERO(&rfds);
+    FD_SET(0, &rfds);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    n = select(1, &rfds, NULL, NULL, &tv);
+    if (n > 0) {
+        n = read(0, &ch, 1);
+        if (n == 1)
+            return ch;
+
+        return n;
+    }
 #endif
     return -1;
 }
@@ -528,7 +529,6 @@ static void ffmpeg_cleanup(int ret)
         for (j = 0; j < fg->nb_outputs; j++) {
             OutputFilter *ofilter = fg->outputs[j];
 
-            avfilter_inout_free(&ofilter->out_tmp);
             av_freep(&ofilter->name);
             av_freep(&ofilter->formats);
             av_freep(&ofilter->channel_layouts);
@@ -1392,26 +1392,6 @@ static void do_video_stats(OutputStream *ost, int frame_size)
 
 static int init_output_stream(OutputStream *ost, char *error, int error_len);
 
-static int init_output_stream_wrapper(OutputStream *ost, unsigned int fatal)
-{
-    int ret = AVERROR_BUG;
-    char error[1024] = {0};
-
-    if (ost->initialized)
-        return 0;
-
-    ret = init_output_stream(ost, error, sizeof(error));
-    if (ret < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Error initializing output stream %d:%d -- %s\n",
-               ost->file_index, ost->index, error);
-
-        if (fatal)
-            exit_program(1);
-    }
-
-    return ret;
-}
-
 static void finish_output_stream(OutputStream *ost)
 {
     OutputFile *of = output_files[ost->file_index];
@@ -1448,7 +1428,15 @@ static int reap_filters(int flush)
             continue;
         filter = ost->filter->filter;
 
-        init_output_stream_wrapper(ost, 1);
+        if (!ost->initialized) {
+            char error[1024] = "";
+            ret = init_output_stream(ost, error, sizeof(error));
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Error initializing output stream %d:%d -- %s\n",
+                       ost->file_index, ost->index, error);
+                exit_program(1);
+            }
+        }
 
         if (!ost->filtered_frame && !(ost->filtered_frame = av_frame_alloc())) {
             return AVERROR(ENOMEM);
@@ -1655,8 +1643,6 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
     double bitrate;
     double speed;
     int64_t pts = INT64_MIN + 1;
-    static int64_t last_time = -1;
-    static int qp_histogram[52];
     int hours, mins, secs, us;
     const char *hours_sign;
     int ret;
@@ -1872,6 +1858,7 @@ static void flush_encoders(void)
         // Maybe we should just let encoding fail instead.
         if (!ost->initialized) {
             FilterGraph *fg = ost->filter->graph;
+            char error[1024] = "";
 
             av_log(NULL, AV_LOG_WARNING,
                    "Finishing stream %d:%d without any data written to it.\n",
@@ -1897,7 +1884,12 @@ static void flush_encoders(void)
                 finish_output_stream(ost);
             }
 
-            init_output_stream_wrapper(ost, 1);
+            ret = init_output_stream(ost, error, sizeof(error));
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Error initializing output stream %d:%d -- %s\n",
+                       ost->file_index, ost->index, error);
+                exit_program(1);
+            }
         }
 
         if (enc->codec_type != AVMEDIA_TYPE_VIDEO && enc->codec_type != AVMEDIA_TYPE_AUDIO)
@@ -3675,7 +3667,7 @@ static int transcode_init(void)
         if (output_streams[i]->filter)
             continue;
 
-        ret = init_output_stream_wrapper(output_streams[i], 0);
+        ret = init_output_stream(output_streams[i], error, sizeof(error));
         if (ret < 0)
             goto dump_format;
     }
@@ -3873,13 +3865,12 @@ static void set_tty_echo(int on)
 static int check_keyboard_interaction(int64_t cur_time)
 {
     int i, ret, key;
-    static int64_t last_time;
     if (received_nb_signals)
         return AVERROR_EXIT;
     /* read_key() returns 0 on EOF */
-    if(cur_time - last_time >= 100000 && !run_as_daemon){
+    if(cur_time - last_time_keyboard >= 100000 && !run_as_daemon){
         key =  read_key();
-        last_time = cur_time;
+        last_time_keyboard = cur_time;
     }else
         key = -1;
     if (key == 'q')
@@ -3971,11 +3962,30 @@ static int check_keyboard_interaction(int64_t cur_time)
         if(debug) av_log_set_level(AV_LOG_DEBUG);
         fprintf(stderr,"debug=%d\n", debug);
     }
+    if (key == '!') {
+        char buf[64];
+        int k = 0;
+        i = 0;
+
+        fprintf(stderr, "\nEnter command to system\n");
+
+        set_tty_echo(1);
+        while ((k = read_key()) != '\n' && k != '\r' && i < sizeof(buf)-1) {
+            if (k > 0)
+                buf[i++] = k;
+            av_usleep(1);
+        }
+        buf[i] = 0;
+        set_tty_echo(0);
+
+        system(buf);
+    }
     if (key == '?'){
         fprintf(stderr, "key    function\n"
                         "?      show this help\n"
                         "+      increase verbosity\n"
                         "-      decrease verbosity\n"
+                        "!      Send command to sytem\n"
                         "c      Send command to first matching filter supporting it\n"
                         "C      Send/Queue command to all matching filters\n"
                         "D      cycle through available debug modes\n"
@@ -4058,9 +4068,7 @@ static int init_input_thread(int i)
     int ret;
     InputFile *f = input_files[i];
 
-    if (f->thread_queue_size < 0)
-        f->thread_queue_size = (nb_input_files > 1 ? 8 : 0);
-    if (!f->thread_queue_size)
+    if (nb_input_files == 1)
         return 0;
 
     if (f->ctx->pb ? !f->ctx->pb->seekable :
@@ -4114,7 +4122,7 @@ static int get_input_packet(InputFile *f, AVPacket *pkt)
     }
 
 #if HAVE_THREADS
-    if (f->thread_queue_size)
+    if (nb_input_files > 1)
         return get_input_packet_mt(f, pkt);
 #endif
     return av_read_frame(f->ctx, pkt);
@@ -4586,8 +4594,15 @@ static int transcode_step(void)
     }
 
     if (ost->filter && ost->filter->graph->graph) {
-        init_output_stream_wrapper(ost, 1);
-
+        if (!ost->initialized) {
+            char error[1024] = {0};
+            ret = init_output_stream(ost, error, sizeof(error));
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Error initializing output stream %d:%d -- %s\n",
+                       ost->file_index, ost->index, error);
+                exit_program(1);
+            }
+        }
         if ((ret = transcode_from_filter(ost->filter->graph, &ist)) < 0)
             return ret;
         if (!ist)
@@ -4818,16 +4833,68 @@ static void log_callback_null(void *ptr, int level, const char *fmt, va_list vl)
 {
 }
 
+static void init_global_value(void)
+{
+    program_name = "ffmpeg";
+    program_birth_year = 2000;
+
+    vstats_file = NULL;
+    run_as_daemon  = 0;
+    nb_frames_dup = 0;
+    dup_warning = 1000;
+    nb_frames_drop = 0;
+    memset(decode_error_stat, 0, sizeof(decode_error_stat));
+
+    want_sdp = 1;
+
+    memset(&current_time, 0, sizeof(current_time));
+    progress_avio = NULL;
+
+    subtitle_out = NULL;
+
+    input_streams = NULL;
+    nb_input_streams = 0;
+    input_files   = NULL;
+    nb_input_files   = 0;
+
+    output_streams = NULL;
+    nb_output_streams = 0;
+    output_files   = NULL;
+    nb_output_files   = 0;
+
+    filtergraphs = NULL;
+    nb_filtergraphs = 0;
+
+#if HAVE_TERMIOS_H
+    /* init terminal so that we can grab keys */
+    memset(&oldtty, 0, sizeof(oldtty));
+    restore_tty = 0;
+#endif
+    last_time = -1;
+    memset(qp_histogram, 0, sizeof(qp_histogram));
+    last_time_keyboard = 0;
+
+    received_sigterm = 0;
+    received_nb_signals = 0;
+    transcode_init_done = ATOMIC_VAR_INIT(0);
+    ffmpeg_exited = 0;
+    main_return_code = 0;
+}
+
 int main(int argc, char **argv)
 {
     int i, ret;
     BenchmarkTimeStamps ti;
 
+    init_global_value();
+
     init_dynload();
 
     register_exit(ffmpeg_cleanup);
 
+#if HAVE_SETVBUF
     setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
+#endif
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
     parse_loglevel(argc, argv, options);

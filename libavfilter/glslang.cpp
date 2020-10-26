@@ -24,6 +24,7 @@ extern "C" {
 }
 
 #include <glslang/Include/ResourceLimits.h>
+#include <glslang/Include/revision.h>
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 

@@ -93,13 +93,6 @@ enum WidthType {
     NB_WTYPE,
 };
 
-enum TransformType {
-    DI,
-    DII,
-    TDII,
-    NB_TTYPE,
-};
-
 typedef struct ChanCache {
     double i1, i2;
     double o1, o2;
@@ -113,7 +106,6 @@ typedef struct BiquadsContext {
     int width_type;
     int poles;
     int csg;
-    int transform_type;
 
     double gain;
     double frequency;
@@ -265,101 +257,6 @@ BIQUAD_FILTER(s16, int16_t, INT16_MIN, INT16_MAX, 1)
 BIQUAD_FILTER(s32, int32_t, INT32_MIN, INT32_MAX, 1)
 BIQUAD_FILTER(flt, float,   -1., 1., 0)
 BIQUAD_FILTER(dbl, double,  -1., 1., 0)
-
-#define BIQUAD_DII_FILTER(name, type, min, max, need_clipping)                \
-static void biquad_dii_## name (BiquadsContext *s,                            \
-                            const void *input, void *output, int len,         \
-                            double *z1, double *z2,                           \
-                            double *unused1, double *unused2,                 \
-                            double b0, double b1, double b2,                  \
-                            double a1, double a2, int *clippings,             \
-                            int disabled)                                     \
-{                                                                             \
-    const type *ibuf = input;                                                 \
-    type *obuf = output;                                                      \
-    double w1 = *z1;                                                          \
-    double w2 = *z2;                                                          \
-    double wet = s->mix;                                                      \
-    double dry = 1. - wet;                                                    \
-    double in, out, w0;                                                       \
-                                                                              \
-    a1 = -a1;                                                                 \
-    a2 = -a2;                                                                 \
-                                                                              \
-    for (int i = 0; i < len; i++) {                                           \
-        in = ibuf[i];                                                         \
-        w0 = in + a1 * w1 + a2 * w2;                                          \
-        out = b0 * w0 + b1 * w1 + b2 * w2;                                    \
-        w2 = w1;                                                              \
-        w1 = w0;                                                              \
-        out = out * wet + in * dry;                                           \
-        if (disabled) {                                                       \
-            obuf[i] = in;                                                     \
-        } else if (need_clipping && out < min) {                              \
-            (*clippings)++;                                                   \
-            obuf[i] = min;                                                    \
-        } else if (need_clipping && out > max) {                              \
-            (*clippings)++;                                                   \
-            obuf[i] = max;                                                    \
-        } else {                                                              \
-            obuf[i] = out;                                                    \
-        }                                                                     \
-    }                                                                         \
-    *z1 = w1;                                                                 \
-    *z2 = w2;                                                                 \
-}
-
-BIQUAD_DII_FILTER(s16, int16_t, INT16_MIN, INT16_MAX, 1)
-BIQUAD_DII_FILTER(s32, int32_t, INT32_MIN, INT32_MAX, 1)
-BIQUAD_DII_FILTER(flt, float,   -1., 1., 0)
-BIQUAD_DII_FILTER(dbl, double,  -1., 1., 0)
-
-#define BIQUAD_TDII_FILTER(name, type, min, max, need_clipping)               \
-static void biquad_tdii_## name (BiquadsContext *s,                           \
-                            const void *input, void *output, int len,         \
-                            double *z1, double *z2,                           \
-                            double *unused1, double *unused2,                 \
-                            double b0, double b1, double b2,                  \
-                            double a1, double a2, int *clippings,             \
-                            int disabled)                                     \
-{                                                                             \
-    const type *ibuf = input;                                                 \
-    type *obuf = output;                                                      \
-    double w1 = *z1;                                                          \
-    double w2 = *z2;                                                          \
-    double wet = s->mix;                                                      \
-    double dry = 1. - wet;                                                    \
-    double in, out;                                                           \
-                                                                              \
-    a1 = -a1;                                                                 \
-    a2 = -a2;                                                                 \
-                                                                              \
-    for (int i = 0; i < len; i++) {                                           \
-        in = ibuf[i];                                                         \
-        out = b0 * in + w1;                                                   \
-        w1 = b1 * in + w2 + a1 * out;                                         \
-        w2 = b2 * in + a2 * out;                                              \
-        out = out * wet + in * dry;                                           \
-        if (disabled) {                                                       \
-            obuf[i] = in;                                                     \
-        } else if (need_clipping && out < min) {                              \
-            (*clippings)++;                                                   \
-            obuf[i] = min;                                                    \
-        } else if (need_clipping && out > max) {                              \
-            (*clippings)++;                                                   \
-            obuf[i] = max;                                                    \
-        } else {                                                              \
-            obuf[i] = out;                                                    \
-        }                                                                     \
-    }                                                                         \
-    *z1 = w1;                                                                 \
-    *z2 = w2;                                                                 \
-}
-
-BIQUAD_TDII_FILTER(s16, int16_t, INT16_MIN, INT16_MAX, 1)
-BIQUAD_TDII_FILTER(s32, int32_t, INT32_MIN, INT32_MAX, 1)
-BIQUAD_TDII_FILTER(flt, float,   -1., 1., 0)
-BIQUAD_TDII_FILTER(dbl, double,  -1., 1., 0)
 
 static int config_filter(AVFilterLink *outlink, int reset)
 {
@@ -540,64 +437,15 @@ static int config_filter(AVFilterLink *outlink, int reset)
     if (reset)
         memset(s->cache, 0, sizeof(ChanCache) * inlink->channels);
 
+    switch (inlink->format) {
+    case AV_SAMPLE_FMT_S16P: s->filter = biquad_s16; break;
+    case AV_SAMPLE_FMT_S32P: s->filter = biquad_s32; break;
+    case AV_SAMPLE_FMT_FLTP: s->filter = biquad_flt; break;
+    case AV_SAMPLE_FMT_DBLP: s->filter = biquad_dbl; break;
+    default: av_assert0(0);
+    }
 
-    switch (s->transform_type) {
-    case DI:
-        switch (inlink->format) {
-        case AV_SAMPLE_FMT_S16P:
-            s->filter = biquad_s16;
-            break;
-        case AV_SAMPLE_FMT_S32P:
-            s->filter = biquad_s32;
-            break;
-        case AV_SAMPLE_FMT_FLTP:
-            s->filter = biquad_flt;
-            break;
-        case AV_SAMPLE_FMT_DBLP:
-            s->filter = biquad_dbl;
-            break;
-        default: av_assert0(0);
-        }
-        break;
-    case DII:
-        switch (inlink->format) {
-        case AV_SAMPLE_FMT_S16P:
-            s->filter = biquad_dii_s16;
-            break;
-        case AV_SAMPLE_FMT_S32P:
-            s->filter = biquad_dii_s32;
-            break;
-        case AV_SAMPLE_FMT_FLTP:
-            s->filter = biquad_dii_flt;
-            break;
-        case AV_SAMPLE_FMT_DBLP:
-            s->filter = biquad_dii_dbl;
-            break;
-        default: av_assert0(0);
-        }
-        break;
-    case TDII:
-        switch (inlink->format) {
-        case AV_SAMPLE_FMT_S16P:
-            s->filter = biquad_tdii_s16;
-            break;
-        case AV_SAMPLE_FMT_S32P:
-            s->filter = biquad_tdii_s32;
-            break;
-        case AV_SAMPLE_FMT_FLTP:
-            s->filter = biquad_tdii_flt;
-            break;
-        case AV_SAMPLE_FMT_DBLP:
-            s->filter = biquad_tdii_dbl;
-            break;
-        default: av_assert0(0);
-        }
-        break;
-    default:
-        av_assert0(0);
-     }
-
-     s->block_align = av_get_bytes_per_sample(inlink->format);
+    s->block_align = av_get_bytes_per_sample(inlink->format);
 
     return 0;
 }
@@ -762,11 +610,6 @@ static const AVOption equalizer_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -793,11 +636,6 @@ static const AVOption bass_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -824,11 +662,6 @@ static const AVOption treble_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -854,11 +687,6 @@ static const AVOption bandpass_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -883,11 +711,6 @@ static const AVOption bandreject_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -914,11 +737,6 @@ static const AVOption lowpass_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -945,11 +763,6 @@ static const AVOption highpass_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -976,11 +789,6 @@ static const AVOption allpass_options[] = {
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"order", "set filter order", OFFSET(order), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, FLAGS},
     {"o",     "set filter order", OFFSET(order), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -1007,11 +815,6 @@ static const AVOption lowshelf_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -1038,11 +841,6 @@ static const AVOption highshelf_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
@@ -1062,11 +860,6 @@ static const AVOption biquad_options[] = {
     {"c",        "set channels to filter", OFFSET(channels), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64=-1}, INT64_MIN, INT64_MAX, FLAGS},
     {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
     {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
     {NULL}
 };
 
