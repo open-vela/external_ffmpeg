@@ -350,7 +350,7 @@ static av_cold int read_specific_config(ALSDecContext *ctx)
         return AVERROR_INVALIDDATA;
 
     if (avctx->channels > FF_SANE_NB_CHANNELS) {
-        avpriv_request_sample(avctx, "Huge number of channels");
+        avpriv_request_sample(avctx, "Huge number of channels\n");
         return AVERROR_PATCHWELCOME;
     }
 

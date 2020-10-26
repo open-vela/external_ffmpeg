@@ -309,8 +309,6 @@ static int output_frame(AVFilterLink *outlink)
                 }
             }
         }
-
-        s->next_pts = frame_list_next_pts(s->frame_list);
     } else {
         /* first input closed: use the available samples */
         nb_samples = INT_MAX;
@@ -326,6 +324,7 @@ static int output_frame(AVFilterLink *outlink)
         }
     }
 
+    s->next_pts = frame_list_next_pts(s->frame_list);
     frame_list_remove_samples(s->frame_list, nb_samples);
 
     calculate_scales(s, nb_samples);
@@ -589,18 +588,30 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static const enum AVSampleFormat sample_fmts[] = {
-        AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_FLTP,
-        AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP,
-        AV_SAMPLE_FMT_NONE
-    };
+    AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts;
     int ret;
 
-    if ((ret = ff_set_common_formats(ctx, ff_make_format_list(sample_fmts))) < 0 ||
-        (ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
-        return ret;
+    layouts = ff_all_channel_counts();
+    if (!layouts) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
 
-    return ff_set_common_channel_layouts(ctx, ff_all_channel_counts());
+    if ((ret = ff_add_format(&formats, AV_SAMPLE_FMT_FLT ))          < 0 ||
+        (ret = ff_add_format(&formats, AV_SAMPLE_FMT_FLTP))          < 0 ||
+        (ret = ff_add_format(&formats, AV_SAMPLE_FMT_DBL ))          < 0 ||
+        (ret = ff_add_format(&formats, AV_SAMPLE_FMT_DBLP))          < 0 ||
+        (ret = ff_set_common_formats        (ctx, formats))          < 0 ||
+        (ret = ff_set_common_channel_layouts(ctx, layouts))          < 0 ||
+        (ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
+        goto fail;
+    return 0;
+fail:
+    if (layouts)
+        av_freep(&layouts->channel_layouts);
+    av_freep(&layouts);
+    return ret;
 }
 
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
