@@ -235,15 +235,13 @@ static int pcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
 typedef struct PCMDecode {
     short   table[256];
-    void (*vector_fmul_scalar)(float *dst, const float *src, float mul,
-                               int len);
+    AVFloatDSPContext *fdsp;
     float   scale;
 } PCMDecode;
 
 static av_cold int pcm_decode_init(AVCodecContext *avctx)
 {
     PCMDecode *s = avctx->priv_data;
-    AVFloatDSPContext *fdsp;
     int i;
 
     if (avctx->channels <= 0) {
@@ -270,11 +268,9 @@ static av_cold int pcm_decode_init(AVCodecContext *avctx)
             return AVERROR_INVALIDDATA;
 
         s->scale = 1. / (1 << (avctx->bits_per_coded_sample - 1));
-        fdsp = avpriv_float_dsp_alloc(0);
-        if (!fdsp)
+        s->fdsp = avpriv_float_dsp_alloc(0);
+        if (!s->fdsp)
             return AVERROR(ENOMEM);
-        s->vector_fmul_scalar = fdsp->vector_fmul_scalar;
-        av_free(fdsp);
         break;
     default:
         break;
@@ -284,6 +280,15 @@ static av_cold int pcm_decode_init(AVCodecContext *avctx)
 
     if (avctx->sample_fmt == AV_SAMPLE_FMT_S32)
         avctx->bits_per_raw_sample = av_get_bits_per_sample(avctx->codec_id);
+
+    return 0;
+}
+
+static av_cold int pcm_decode_close(AVCodecContext *avctx)
+{
+    PCMDecode *s = avctx->priv_data;
+
+    av_freep(&s->fdsp);
 
     return 0;
 }
@@ -524,9 +529,9 @@ static int pcm_decode_frame(AVCodecContext *avctx, void *data,
 
     if (avctx->codec_id == AV_CODEC_ID_PCM_F16LE ||
         avctx->codec_id == AV_CODEC_ID_PCM_F24LE) {
-        s->vector_fmul_scalar((float *)frame->extended_data[0],
-                              (const float *)frame->extended_data[0],
-                              s->scale, FFALIGN(frame->nb_samples * avctx->channels, 4));
+        s->fdsp->vector_fmul_scalar((float *)frame->extended_data[0],
+                                    (const float *)frame->extended_data[0],
+                                    s->scale, FFALIGN(frame->nb_samples * avctx->channels, 4));
         emms_c();
     }
 
@@ -565,6 +570,7 @@ AVCodec ff_ ## name_ ## _decoder = {                                        \
     .id             = AV_CODEC_ID_ ## id_,                                  \
     .priv_data_size = sizeof(PCMDecode),                                    \
     .init           = pcm_decode_init,                                      \
+    .close          = pcm_decode_close,                                     \
     .decode         = pcm_decode_frame,                                     \
     .capabilities   = AV_CODEC_CAP_DR1,                                     \
     .sample_fmts    = (const enum AVSampleFormat[]){ sample_fmt_,           \

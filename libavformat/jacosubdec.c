@@ -136,7 +136,6 @@ static int get_shift(int timeres, const char *buf)
 {
     int sign = 1;
     int a = 0, b = 0, c = 0, d = 0;
-    int64_t ret;
 #define SSEP "%*1[.:]"
     int n = sscanf(buf, "%d"SSEP"%d"SSEP"%d"SSEP"%d", &a, &b, &c, &d);
 #undef SSEP
@@ -146,22 +145,13 @@ static int get_shift(int timeres, const char *buf)
         a = FFABS(a);
     }
 
-    ret = 0;
     switch (n) {
-    case 4:
-        ret = sign * (((int64_t)a*3600 + b*60 + c) * timeres + d);
-        break;
-    case 3:
-        ret = sign * ((         (int64_t)a*60 + b) * timeres + c);
-        break;
-    case 2:
-        ret = sign * ((                (int64_t)a) * timeres + b);
-        break;
+    case 4: return sign * ((a*3600 + b*60 + c) * timeres + d);
+    case 3: return sign * ((         a*60 + b) * timeres + c);
+    case 2: return sign * ((                a) * timeres + b);
     }
-    if ((int)ret != ret)
-        ret = 0;
 
-    return ret;
+    return 0;
 }
 
 static int jacosub_read_header(AVFormatContext *s)
