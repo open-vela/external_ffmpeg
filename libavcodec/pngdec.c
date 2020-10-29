@@ -1597,8 +1597,6 @@ static int decode_frame_lscr(AVCodecContext *avctx,
 
     if (avpkt->size < 2)
         return AVERROR_INVALIDDATA;
-    if (avpkt->size == 2)
-        return 0;
 
     bytestream2_init(gb, avpkt->data, avpkt->size);
 
