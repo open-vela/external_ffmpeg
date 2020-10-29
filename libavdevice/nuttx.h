@@ -45,6 +45,7 @@ typedef struct NuttxPriv {
 
     int         periods;      ///< buffer pereids
     int         period_bytes; ///< preferred size for reads and writes, in bytes
+    int         period_time;  ///< preferred time for reads and writes, in ms
 
     int         frame_size;   ///< bytes per sample * channels
     uint32_t    sample_rate;
@@ -56,7 +57,7 @@ typedef struct NuttxPriv {
     bool        mute;
     double      volume;
 
-    uint8_t     *buffer;
+    struct ap_buffer_s *abuffer_cur;
     int         buffer_pos;
 
     int64_t     timestamp;    ///< current timestamp, without latency applied.
@@ -70,8 +71,8 @@ av_cold int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool 
 av_cold int ff_nuttx_open(NuttxPriv *priv, const char *device, enum AVCodecID);
 av_cold int ff_nuttx_close(NuttxPriv *priv);
 
-int ff_nuttx_write_period(NuttxPriv *priv, uint8_t *buf, int size);
-int ff_nuttx_read_period(NuttxPriv *priv, uint8_t *buf, int *size);
+int ff_nuttx_write_data(NuttxPriv *priv, uint8_t *buf, int size);
+int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *buf, int *size);
 
 int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volume);
 int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute);

@@ -68,51 +68,22 @@ static av_cold int nuttx_write_header(AVFormatContext *s1)
 static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
 {
     NuttxPriv *priv = s1->priv_data;
-    uint8_t *buf = pkt->data;
-    int size = pkt->size;
-    int ret = 0;
+    int ret;
 
-    while (size > 0) {
-        int len;
+    ret = ff_nuttx_write_data(priv, pkt->data, pkt->size);
+    if (ret < 0) {
 
-        if (priv->buffer_pos) {
-            len = FFMIN(priv->period_bytes - priv->buffer_pos, size);
+        if (ret != AVERROR(EAGAIN))
+            av_log(s1, AV_LOG_ERROR, "%s, error ret %d\n", __func__, ret);
 
-            memcpy(priv->buffer + priv->buffer_pos, buf, len);
-            priv->buffer_pos += len;
-
-            if (priv->buffer_pos >= priv->period_bytes) {
-                ret = ff_nuttx_write_period(priv, priv->buffer, priv->period_bytes);
-                if (ret < 0)
-                    goto out;
-                priv->buffer_pos = 0;
-            }
-        } else {
-            len = FFMIN(priv->period_bytes, size);
-
-            if (size >= priv->period_bytes) {
-                ret = ff_nuttx_write_period(priv, buf, priv->period_bytes);
-                if (ret < 0)
-                    goto out;
-            } else {
-                memcpy(priv->buffer, buf, len);
-                priv->buffer_pos = len;
-            }
-        }
-
-        buf  += len;
-        size -= len;
+        return ret;
     }
 
     if (pkt->dts != AV_NOPTS_VALUE)
         priv->timestamp = pkt->dts;
     priv->timestamp += pkt->duration ? pkt->duration :
                        pkt->size / priv->frame_size;
-out:
-    if (ret < 0)
-        av_log(s1, AV_LOG_ERROR, "%s, error ret %d\n", __func__, ret);
-
-    return ret;
+    return 0;
 }
 
 static av_cold int nuttx_write_trailer(struct AVFormatContext *s1)
@@ -126,7 +97,7 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
     NuttxPriv *priv = s1->priv_data;
     int ret = 0;
 
-    if (!data || priv->fd < 0)
+    if (!data)
         return AVERROR(EINVAL);
 
     switch (type) {
@@ -192,6 +163,7 @@ static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *ob
 static const AVOption options[] = {
     { "periods",      "", OFFSET(periods),         AV_OPT_TYPE_INT,     {.i64 = 4},    1, INT_MAX, FLAGS},
     { "period_bytes", "", OFFSET(period_bytes),    AV_OPT_TYPE_INT,     {.i64 = 8192}, 1, INT_MAX, FLAGS},
+    { "period_time",  "", OFFSET(period_time),     AV_OPT_TYPE_INT,     {.i64 = 0},    0, INT_MAX, FLAGS},
     { NULL },
 };
 

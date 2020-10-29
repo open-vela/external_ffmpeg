@@ -330,6 +330,76 @@ static av_cold bool ff_nuttx_check_support(enum AVCodecID codec_id)
     }
 }
 
+static int ff_nuttx_set_volume_internal(NuttxPriv *priv, double volume)
+{
+    struct audio_caps_desc_s caps_desc = {0};
+    int ret;
+
+    caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
+    caps_desc.caps.ac_type           = AUDIO_TYPE_FEATURE;
+    caps_desc.caps.ac_format.hw      = AUDIO_FU_VOLUME;
+    caps_desc.caps.ac_controls.hw[0] = volume * 1000;
+
+    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, (unsigned long)&caps_desc);
+    if (ret < 0)
+        return AVERROR(errno);
+
+    return 0;
+}
+
+static int ff_nuttx_get_volume_internal(NuttxPriv *priv, double *volume)
+{
+    struct audio_caps_s caps;
+    int ret;
+
+    caps.ac_len       = sizeof(struct audio_caps_s);
+    caps.ac_type      = AUDIO_TYPE_FEATURE;
+    caps.ac_format.hw = AUDIO_FU_VOLUME;
+
+    ret = ioctl(priv->fd, AUDIOIOC_GETCAPS, (unsigned long)&caps);
+    if (ret < 0)
+        return AVERROR(errno);
+
+    *volume = (double)caps.ac_controls.w / 1000;
+
+    return 0;
+}
+
+static int ff_nuttx_set_mute_internal(NuttxPriv *priv, bool mute)
+{
+    struct audio_caps_desc_s caps_desc = {0};
+    int ret;
+
+    caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
+    caps_desc.caps.ac_type           = AUDIO_TYPE_FEATURE;
+    caps_desc.caps.ac_format.hw      = AUDIO_FU_MUTE;
+    caps_desc.caps.ac_controls.hw[0] = mute;
+
+    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, (unsigned long)&caps_desc);
+    if (ret < 0)
+        return AVERROR(errno);
+
+    return 0;
+}
+
+static int ff_nuttx_get_mute_internal(NuttxPriv *priv, bool *mute)
+{
+    struct audio_caps_s caps;
+    int ret;
+
+    caps.ac_len       = sizeof(struct audio_caps_s);
+    caps.ac_type      = AUDIO_TYPE_FEATURE;
+    caps.ac_format.hw = AUDIO_FU_MUTE;
+
+    ret = ioctl(priv->fd, AUDIOIOC_GETCAPS, (unsigned long)&caps);
+    if (ret < 0)
+        return AVERROR(errno);
+
+    *mute = !!caps.ac_controls.b[0];
+
+    return 0;
+}
+
 av_cold int ff_nuttx_open(NuttxPriv *priv, const char *device, enum AVCodecID codec_id)
 {
     struct audio_caps_desc_s caps_desc = {0};
@@ -394,6 +464,9 @@ av_cold int ff_nuttx_open(NuttxPriv *priv, const char *device, enum AVCodecID co
 
     if (priv->periods && priv->period_bytes) {
         /* try to set BUFINFO and don't care the returns */
+        if (priv->period_time)
+            priv->period_bytes = priv->period_time * priv->sample_rate *
+                                 priv->channels * bps / 8000;
         buf_info.nbuffers    = priv->periods;
         buf_info.buffer_size = priv->period_bytes;
         ioctl(priv->fd, AUDIOIOC_SETBUFFERINFO, (unsigned long)&buf_info);
@@ -437,12 +510,15 @@ av_cold int ff_nuttx_open(NuttxPriv *priv, const char *device, enum AVCodecID co
         priv->free_abuffer = priv->periods;
     }
 
-    /* create local buffer */
-    priv->buffer = av_malloc(priv->period_bytes);
-    if (!priv->buffer) {
-        ret = AVERROR(ENOMEM);
-        goto out;
-    }
+    if (priv->volume)
+        ff_nuttx_set_volume_internal(priv, priv->volume);
+    else
+        ff_nuttx_get_volume_internal(priv, &priv->volume);
+
+    if (priv->mute)
+        ff_nuttx_set_mute_internal(priv, priv->mute);
+    else
+        ff_nuttx_get_mute_internal(priv, &priv->mute);
 
     /* start audio */
     ret = ioctl(priv->fd, AUDIOIOC_START, 0);
@@ -509,11 +585,8 @@ av_cold int ff_nuttx_close(NuttxPriv *priv)
         priv->abuffer = NULL;
     }
 
-    if (priv->buffer) {
-        free(priv->buffer);
-        priv->buffer = NULL;
-        priv->buffer_pos = 0;
-    }
+    priv->abuffer_cur = NULL;
+    priv->buffer_pos  = 0;
 
     close(priv->fd);
     priv->fd = -1;
@@ -558,28 +631,49 @@ static int ff_nuttx_get_buffer(NuttxPriv *priv, struct ap_buffer_s **abuffer)
     return 0;
 }
 
-int ff_nuttx_write_period(NuttxPriv *priv, uint8_t *buf, int size)
+int ff_nuttx_write_data(NuttxPriv *priv, uint8_t *buf, int size)
 {
+    struct ap_buffer_s *abuffer = priv->abuffer_cur;
     struct audio_buf_desc_s desc;
-    struct ap_buffer_s *abuffer;
     int ret;
 
-    ret = ff_nuttx_get_buffer(priv, &abuffer);
-    if (ret < 0)
-        return ret;
+    while (size > 0) {
+        int len;
 
-    memcpy(abuffer->samp, buf, size);
-    abuffer->nbytes = size;
+        if (priv->buffer_pos == 0) {
+            ret = ff_nuttx_get_buffer(priv, &abuffer);
+            if (ret < 0)
+                return ret;
 
-    desc.u.buffer = abuffer;
-    ret = ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, (unsigned long)&desc);
-    if (ret < 0)
-        ret = AVERROR(errno);
+            priv->abuffer_cur = abuffer;
+        }
+
+        len = FFMIN(priv->period_bytes - priv->buffer_pos, size);
+
+        memcpy(abuffer->samp + priv->buffer_pos, buf, len);
+
+        priv->buffer_pos += len;
+        if (priv->buffer_pos == priv->period_bytes) {
+
+            priv->buffer_pos = 0;
+            abuffer->nbytes  = priv->period_bytes;
+            desc.u.buffer    = abuffer;
+
+            ret = ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, (unsigned long)&desc);
+            if (ret < 0) {
+                ret = AVERROR(errno);
+                break;
+            }
+        }
+
+        buf  += len;
+        size -= len;
+    }
 
     return ret;
 }
 
-int ff_nuttx_read_period(NuttxPriv *priv, uint8_t *buf, int *size)
+int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *buf, int *size)
 {
     struct audio_buf_desc_s desc;
     struct ap_buffer_s *abuffer;
@@ -606,54 +700,41 @@ int ff_nuttx_read_period(NuttxPriv *priv, uint8_t *buf, int *size)
 
 int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volume)
 {
-    struct audio_caps_desc_s caps_desc = {0};
-    int ret;
-    int val;
+    int ret = 0;
+
+    if (volume < 0 || volume > 1.0)
+        return AVERROR(EINVAL);
 
     if (priv->volume == volume)
         return 0;
 
-    val = volume * 1000;
+    if (priv->fd)
+        ret = ff_nuttx_set_volume_internal(priv, volume);
 
-    if (val < 0 || val > 1000)
-        return AVERROR(EINVAL);
+    if (ret >= 0) {
+        priv->volume = volume;
+        ff_nuttx_notify_changed(s1, priv, true);
+    }
 
-    caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
-    caps_desc.caps.ac_type           = AUDIO_TYPE_FEATURE;
-    caps_desc.caps.ac_format.hw      = AUDIO_FU_VOLUME;
-    caps_desc.caps.ac_controls.hw[0] = val;
-
-    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, (unsigned long)&caps_desc);
-    if (ret < 0)
-        return AVERROR(errno);
-
-    priv->volume = volume;
-    ff_nuttx_notify_changed(s1, priv, true);
-
-    return 0;
+    return ret;
 }
 
 int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute)
 {
-    struct audio_caps_desc_s caps_desc = {0};
-    int ret;
+    int ret = 0;
 
     if (priv->mute == mute)
         return 0;
 
-    caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
-    caps_desc.caps.ac_type           = AUDIO_TYPE_FEATURE;
-    caps_desc.caps.ac_format.hw      = AUDIO_FU_MUTE;
-    caps_desc.caps.ac_controls.hw[0] = mute;
+    if (priv->fd)
+        ret = ff_nuttx_set_mute_internal(priv, mute);
 
-    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, (unsigned long)&caps_desc);
-    if (ret < 0)
-        return AVERROR(errno);
+    if (ret >= 0) {
+        priv->mute = mute;
+        ff_nuttx_notify_changed(s1, priv, false);
+    }
 
-    priv->mute = mute;
-    ff_nuttx_notify_changed(s1, priv, false);
-
-    return 0;
+    return ret;
 }
 
 int ff_nuttx_notify_changed(struct AVFormatContext *s1, NuttxPriv *priv, bool volume)

@@ -53,7 +53,7 @@ static av_cold int nuttx_read_header(AVFormatContext *s1)
     if (s1->flags & AVFMT_FLAG_NONBLOCK)
         priv->nonblock = true;
 
-    priv->playback   = false;
+    priv->playback = false;
 
     ret = ff_nuttx_open(s1->priv_data, s1->url, codec_id);
     if (ret < 0)
@@ -93,9 +93,13 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
         return AVERROR(EIO);
 
     size = priv->period_bytes;
-    ret = ff_nuttx_read_period(priv, pkt->data, &size);
+    ret = ff_nuttx_read_data(priv, pkt->data, &size);
     if (ret < 0) {
-        av_log(s1, AV_LOG_ERROR, "%s, error ret %d\n", __func__, ret);
+        av_packet_unref(pkt);
+
+        if (ret != AVERROR(EAGAIN))
+            av_log(s1, AV_LOG_ERROR, "%s, error ret %d\n", __func__, ret);
+
         return ret;
     }
 
@@ -124,6 +128,7 @@ static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *ob
 static const AVOption options[] = {
     { "periods",        "", OFFSET(periods),        AV_OPT_TYPE_INT, {.i64 = 4},     1, INT_MAX, FLAGS },
     { "period_bytes",   "", OFFSET(period_bytes),   AV_OPT_TYPE_INT, {.i64 = 8192},  1, INT_MAX, FLAGS },
+    { "period_time",    "", OFFSET(period_time),    AV_OPT_TYPE_INT, {.i64 = 0},     0, INT_MAX, FLAGS },
     { "sample_rate",    "", OFFSET(sample_rate),    AV_OPT_TYPE_INT, {.i64 = 48000}, 1, INT_MAX, FLAGS },
     { "channels",       "", OFFSET(channels),       AV_OPT_TYPE_INT, {.i64 = 1},     1, INT_MAX, FLAGS },
     { "channel_layout", "", OFFSET(channel_layout), AV_OPT_TYPE_INT, {.i64 = 0},     0, INT_MAX, FLAGS },
