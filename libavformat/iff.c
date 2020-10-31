@@ -449,6 +449,9 @@ static int iff_read_header(AVFormatContext *s)
         data_size = iff->is_64bit ? avio_rb64(pb) : avio_rb32(pb);
         orig_pos = avio_tell(pb);
 
+        if (data_size >= INT64_MAX)
+            return AVERROR_INVALIDDATA;
+
         switch(chunk_id) {
         case ID_VHDR:
             st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
@@ -836,7 +839,7 @@ static int iff_read_packet(AVFormatContext *s,
         } else if (st->codecpar->codec_tag == ID_DST) {
             return read_dst_frame(s, pkt);
         } else {
-            if (iff->body_size > INT_MAX)
+            if (iff->body_size > INT_MAX || !iff->body_size)
                 return AVERROR_INVALIDDATA;
             ret = av_get_packet(pb, pkt, iff->body_size);
         }
@@ -872,6 +875,8 @@ static int iff_read_packet(AVFormatContext *s,
             pkt->flags |= AV_PKT_FLAG_KEY;
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
                st->codecpar->codec_tag  != ID_ANIM) {
+        if (iff->body_size > INT_MAX || !iff->body_size)
+            return AVERROR_INVALIDDATA;
         ret = av_get_packet(pb, pkt, iff->body_size);
         pkt->pos = pos;
         if (pos == iff->body_pos)
