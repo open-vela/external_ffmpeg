@@ -25,8 +25,6 @@
 
 #define EPSON 0.00001
 
-extern const AVClass dnn_native_class;
-
 static int test_with_same_dilate(void)
 {
     // the input data and expected data are generated with below python code.
@@ -98,10 +96,6 @@ static int test_with_same_dilate(void)
     };
     float bias[2] = { -1.6574852, -0.72915393 };
 
-    NativeContext ctx;
-    ctx.class = &dnn_native_class;
-    ctx.options.conv2d_threads = 1;
-
     params.activation = TANH;
     params.has_bias = 1;
     params.biases = bias;
@@ -120,7 +114,7 @@ static int test_with_same_dilate(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    dnn_execute_layer_conv2d(operands, input_indexes, 1, &params, &ctx);
+    dnn_execute_layer_conv2d(operands, input_indexes, 1, &params);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {
@@ -202,10 +196,6 @@ static int test_with_valid(void)
     };
     float bias[2] = { -0.4773722, -0.19620377 };
 
-    NativeContext ctx;
-    ctx.class = &dnn_native_class;
-    ctx.options.conv2d_threads = 1;
-
     params.activation = TANH;
     params.has_bias = 1;
     params.biases = bias;
@@ -224,7 +214,7 @@ static int test_with_valid(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    dnn_execute_layer_conv2d(operands, input_indexes, 1, &params, &ctx);
+    dnn_execute_layer_conv2d(operands, input_indexes, 1, &params);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {

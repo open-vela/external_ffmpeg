@@ -34,15 +34,22 @@
 #undef main /* We don't want SDL to override our main() */
 #endif
 
+typedef void (*show_help_t)(const char *opt, const char *arg);
+
 /**
  * program name, defined by the program for show_version().
  */
-extern const char program_name[];
+extern const char *program_name;
 
 /**
  * program birth year, defined by the program for show_banner()
  */
-extern const int program_birth_year;
+extern int program_birth_year;
+
+/**
+ * program show_help, defined by the program for show_help().
+ */
+extern show_help_t program_show_help;
 
 extern AVCodecContext *avcodec_opts[AVMEDIA_TYPE_NB];
 extern AVFormatContext *avformat_opts;
@@ -247,12 +254,6 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
  * children.
  */
 void show_help_children(const AVClass *class, int flags);
-
-/**
- * Per-fftool specific help handler. Implemented in each
- * fftool, called by show_help().
- */
-void show_help_default(const char *opt, const char *arg);
 
 /**
  * Generic -h handler common to all fftools.
