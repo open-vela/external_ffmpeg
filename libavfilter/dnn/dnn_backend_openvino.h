@@ -1,6 +1,5 @@
 /*
- * Common Ut Video code
- * Copyright (c) 2011 Konstantin Shishkov
+ * Copyright (c) 2020
  *
  * This file is part of FFmpeg.
  *
@@ -21,27 +20,20 @@
 
 /**
  * @file
- * Common Ut Video code
+ * DNN inference functions interface for OpenVINO backend.
  */
 
-#include "utvideo.h"
 
-#if FF_API_PRIVATE_OPT
-const int ff_ut_pred_order[5] = {
-    PRED_LEFT, PRED_MEDIAN, PRED_MEDIAN, PRED_NONE, PRED_GRADIENT
-};
+#ifndef AVFILTER_DNN_DNN_BACKEND_OPENVINO_H
+#define AVFILTER_DNN_DNN_BACKEND_OPENVINO_H
+
+#include "../dnn_interface.h"
+
+DNNModel *ff_dnn_load_model_ov(const char *model_filename, const char *options, void *userdata);
+
+DNNReturnType ff_dnn_execute_model_ov(const DNNModel *model, const char *input_name, AVFrame *in_frame,
+                                      const char **output_names, uint32_t nb_output, AVFrame *out_frame);
+
+void ff_dnn_free_model_ov(DNNModel **model);
+
 #endif
-
-const int ff_ut_rgb_order[4]  = { 1, 2, 0, 3 }; // G, B, R, A
-
-int ff_ut_huff_cmp_len(const void *a, const void *b)
-{
-    const HuffEntry *aa = a, *bb = b;
-    return (aa->len - bb->len)*256 + aa->sym - bb->sym;
-}
-
-int ff_ut10_huff_cmp_len(const void *a, const void *b)
-{
-    const HuffEntry *aa = a, *bb = b;
-    return (aa->len - bb->len)*1024 + aa->sym - bb->sym;
-}
