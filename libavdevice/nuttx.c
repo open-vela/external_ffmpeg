@@ -108,7 +108,7 @@ av_cold static int ff_nuttx_get_capabilities(NuttxPriv *priv, const char *device
         goto out;
     }
 
-    rcaps->ac_len = sizeof(rcaps);
+    rcaps->ac_len = sizeof(struct audio_caps_s);
     rcaps->ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
     rcaps->ac_subtype = AUDIO_TYPE_QUERY;
 
