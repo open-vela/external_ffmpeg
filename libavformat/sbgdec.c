@@ -474,6 +474,8 @@ static int parse_timestamp(struct sbg_parser *p,
     while (lex_char(p, '+')) {
         if (!lex_time(p, &dt))
             return AVERROR_INVALIDDATA;
+        if (av_sat_add64(rel, dt) - dt != rel)
+            return AVERROR_INVALIDDATA;
         rel += dt;
         r = 1;
     }
@@ -536,6 +538,9 @@ static int parse_time_sequence(struct sbg_parser *p, int inblock)
         return AVERROR_INVALIDDATA;
     }
     ts.type = p->current_time.type;
+
+    if (av_sat_add64(p->current_time.t, rel_ts) != p->current_time.t + (uint64_t)rel_ts)
+        return AVERROR_INVALIDDATA;
     ts.t    = p->current_time.t + rel_ts;
     r = parse_fade(p, &fade);
     if (r < 0)
