@@ -2268,6 +2268,7 @@ It accepts the following values:
 @item alg
 @item quintic
 @item sin
+@item erf
 @end table
 
 @item param
