@@ -28,8 +28,6 @@
  * @author Nicolas George ( nicolas george normalesup org )
  */
 
-#define _POSIX_C_SOURCE 2
-
 #include <alsa/asoundlib.h>
 #include "avdevice.h"
 #include "libavutil/avassert.h"
