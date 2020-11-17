@@ -71,7 +71,9 @@ enum AVSampleFormat {
     AV_SAMPLE_FMT_S64,         ///< signed 64 bits
     AV_SAMPLE_FMT_S64P,        ///< signed 64 bits, planar
 
-    AV_SAMPLE_FMT_NB           ///< Number of sample formats. DO NOT USE if linking dynamically
+    AV_SAMPLE_FMT_NB,          ///< Number of sample formats. DO NOT USE if linking dynamically
+
+    AV_SAMPLE_FMT_MAX = 0x7FFFFFFF
 };
 
 /**
