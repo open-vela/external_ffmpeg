@@ -1068,27 +1068,29 @@ int ff_hevc_annexb2mp4_buf(const uint8_t *buf_in, uint8_t **buf_out,
 int ff_isom_write_hvcc(AVIOContext *pb, const uint8_t *data,
                        int size, int ps_array_completeness)
 {
+    int ret = 0;
+    uint8_t *buf, *end, *start = NULL;
     HEVCDecoderConfigurationRecord hvcc;
-    uint8_t *buf, *end, *start;
-    int ret;
+
+    hvcc_init(&hvcc);
 
     if (size < 6) {
         /* We can't write a valid hvcC from the provided data */
-        return AVERROR_INVALIDDATA;
+        ret = AVERROR_INVALIDDATA;
+        goto end;
     } else if (*data == 1) {
         /* Data is already hvcC-formatted */
         avio_write(pb, data, size);
-        return 0;
+        goto end;
     } else if (!(AV_RB24(data) == 1 || AV_RB32(data) == 1)) {
         /* Not a valid Annex B start code prefix */
-        return AVERROR_INVALIDDATA;
+        ret = AVERROR_INVALIDDATA;
+        goto end;
     }
 
     ret = ff_avc_parse_nal_units_buf(data, &start, &size);
     if (ret < 0)
-        return ret;
-
-    hvcc_init(&hvcc);
+        goto end;
 
     buf = start;
     end = start + size;
