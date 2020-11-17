@@ -156,7 +156,6 @@ static int hash_write_trailer(struct AVFormatContext *s)
 
     return 0;
 }
-#endif
 
 static void hash_free(struct AVFormatContext *s)
 {
@@ -169,6 +168,7 @@ static void hash_free(struct AVFormatContext *s)
     }
     av_freep(&c->hashes);
 }
+#endif
 
 #if CONFIG_HASH_MUXER
 static const AVClass hashenc_class = {
@@ -326,6 +326,14 @@ static int framehash_write_packet(struct AVFormatContext *s, AVPacket *pkt)
     avio_printf(s->pb, "\n");
     return 0;
 }
+
+static void framehash_free(struct AVFormatContext *s)
+{
+    struct HashContext *c = s->priv_data;
+    if (c->hashes)
+        av_hash_freep(&c->hashes[0]);
+    av_freep(&c->hashes);
+}
 #endif
 
 #if CONFIG_FRAMEHASH_MUXER
@@ -345,7 +353,7 @@ AVOutputFormat ff_framehash_muxer = {
     .init              = framehash_init,
     .write_header      = framehash_write_header,
     .write_packet      = framehash_write_packet,
-    .deinit            = hash_free,
+    .deinit            = framehash_free,
     .flags             = AVFMT_VARIABLE_FPS | AVFMT_TS_NONSTRICT |
                          AVFMT_TS_NEGATIVE,
     .priv_class        = &framehash_class,
@@ -369,7 +377,7 @@ AVOutputFormat ff_framemd5_muxer = {
     .init              = framehash_init,
     .write_header      = framehash_write_header,
     .write_packet      = framehash_write_packet,
-    .deinit            = hash_free,
+    .deinit            = framehash_free,
     .flags             = AVFMT_VARIABLE_FPS | AVFMT_TS_NONSTRICT |
                          AVFMT_TS_NEGATIVE,
     .priv_class        = &framemd5_class,
