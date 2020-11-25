@@ -293,26 +293,18 @@ static void free_rendition_list(HLSContext *c)
     c->n_renditions = 0;
 }
 
-/*
- * Used to reset a statically allocated AVPacket to a clean state,
- * containing no data.
- */
-static void reset_packet(AVPacket *pkt)
-{
-    av_init_packet(pkt);
-    pkt->data = NULL;
-}
-
 static struct playlist *new_playlist(HLSContext *c, const char *url,
                                      const char *base)
 {
     struct playlist *pls = av_mallocz(sizeof(struct playlist));
     if (!pls)
         return NULL;
-    reset_packet(&pls->pkt);
     ff_make_absolute_url(pls->url, sizeof(pls->url), base, url);
-    if (!pls->url[0])
+    if (!pls->url[0]) {
+        av_free(pls);
         return NULL;
+    }
+    av_init_packet(&pls->pkt);
     pls->seek_timestamp = AV_NOPTS_VALUE;
 
     pls->is_id3_timestamped = -1;
@@ -625,7 +617,7 @@ static int open_url_keepalive(AVFormatContext *s, AVIOContext **pb,
 }
 
 static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
-                    AVDictionary *opts, AVDictionary *opts2, int *is_http_out)
+                    AVDictionary **opts, AVDictionary *opts2, int *is_http_out)
 {
     HLSContext *c = s->priv_data;
     AVDictionary *tmp = NULL;
@@ -672,7 +664,7 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
     else if (strcmp(proto_name, "file") || !strncmp(url, "file,", 5))
         return AVERROR_INVALIDDATA;
 
-    av_dict_copy(&tmp, opts, 0);
+    av_dict_copy(&tmp, *opts, 0);
     av_dict_copy(&tmp, opts2, 0);
 
     if (is_http && c->http_persistent && *pb) {
@@ -698,7 +690,7 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
             av_opt_get(*pb, "cookies", AV_OPT_SEARCH_CHILDREN, (uint8_t**)&new_cookies);
 
         if (new_cookies)
-            av_dict_set(&opts, "cookies", new_cookies, AV_DICT_DONT_STRDUP_VAL);
+            av_dict_set(opts, "cookies", new_cookies, AV_DICT_DONT_STRDUP_VAL);
     }
 
     av_dict_free(&tmp);
@@ -1239,12 +1231,12 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
            seg->url, seg->url_offset, pls->index);
 
     if (seg->key_type == KEY_NONE) {
-        ret = open_url(pls->parent, in, seg->url, c->avio_opts, opts, &is_http);
+        ret = open_url(pls->parent, in, seg->url, &c->avio_opts, opts, &is_http);
     } else if (seg->key_type == KEY_AES_128) {
         char iv[33], key[33], url[MAX_URL_SIZE];
         if (strcmp(seg->key, pls->key_url)) {
             AVIOContext *pb = NULL;
-            if (open_url(pls->parent, &pb, seg->key, c->avio_opts, opts, NULL) == 0) {
+            if (open_url(pls->parent, &pb, seg->key, &c->avio_opts, opts, NULL) == 0) {
                 ret = avio_read(pb, pls->key, sizeof(pls->key));
                 if (ret != sizeof(pls->key)) {
                     av_log(pls->parent, AV_LOG_ERROR, "Unable to read key file %s\n",
@@ -1268,7 +1260,7 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
         av_dict_set(&opts, "key", key, 0);
         av_dict_set(&opts, "iv", iv, 0);
 
-        ret = open_url(pls->parent, in, url, c->avio_opts, opts, &is_http);
+        ret = open_url(pls->parent, in, url, &c->avio_opts, opts, &is_http);
         if (ret < 0) {
             goto cleanup;
         }
@@ -1291,7 +1283,7 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
      * as would be expected. Wrong offset received from the server will not be
      * noticed without the call, though.
      */
-    if (ret == 0 && !is_http && seg->key_type == KEY_NONE && seg->url_offset) {
+    if (ret == 0 && !is_http && seg->url_offset) {
         int64_t seekret = avio_seek(*in, seg->url_offset, SEEK_SET);
         if (seekret < 0) {
             av_log(pls->parent, AV_LOG_ERROR, "Unable to seek to offset %"PRId64" of HLS segment '%s'\n", seg->url_offset, seg->url);
@@ -1768,6 +1760,20 @@ static int set_stream_info_from_input_stream(AVStream *st, struct playlist *pls,
     else
         avpriv_set_pts_info(st, ist->pts_wrap_bits, ist->time_base.num, ist->time_base.den);
 
+    // copy disposition
+    st->disposition = ist->disposition;
+
+    // copy side data
+    for (int i = 0; i < ist->nb_side_data; i++) {
+        const AVPacketSideData *sd_src = &ist->side_data[i];
+        uint8_t *dst_data;
+
+        dst_data = av_stream_new_side_data(st, sd_src->type, sd_src->size);
+        if (!dst_data)
+            return AVERROR(ENOMEM);
+        memcpy(dst_data, sd_src->data, sd_src->size);
+    }
+
     st->internal->need_context_update = 1;
 
     return 0;
@@ -1970,19 +1976,21 @@ static int hls_read_header(AVFormatContext *s)
                           read_data, NULL, NULL);
         pls->ctx->probesize = s->probesize > 0 ? s->probesize : 1024 * 4;
         pls->ctx->max_analyze_duration = s->max_analyze_duration > 0 ? s->max_analyze_duration : 4 * AV_TIME_BASE;
+        pls->ctx->interrupt_callback = s->interrupt_callback;
         url = av_strdup(pls->segments[0]->url);
         ret = av_probe_input_buffer(&pls->pb, &in_fmt, url, NULL, 0, 0);
-        av_free(url);
         if (ret < 0) {
             /* Free the ctx - it isn't initialized properly at this point,
              * so avformat_close_input shouldn't be called. If
              * avformat_open_input fails below, it frees and zeros the
              * context, so it doesn't need any special treatment like this. */
-            av_log(s, AV_LOG_ERROR, "Error when loading first segment '%s'\n", pls->segments[0]->url);
+            av_log(s, AV_LOG_ERROR, "Error when loading first segment '%s'\n", url);
             avformat_free_context(pls->ctx);
             pls->ctx = NULL;
+            av_free(url);
             goto fail;
         }
+        av_free(url);
         pls->ctx->pb       = &pls->pb;
         pls->ctx->io_open  = nested_io_open;
         pls->ctx->flags   |= s->flags & ~AVFMT_FLAG_CUSTOM_IO;
@@ -2145,7 +2153,6 @@ static int hls_read_packet(AVFormatContext *s, AVPacket *pkt)
                 if (ret < 0) {
                     if (!avio_feof(&pls->pb) && ret != AVERROR_EOF)
                         return ret;
-                    reset_packet(&pls->pkt);
                     break;
                 } else {
                     /* stream_index check prevents matching picture attachments etc. */
@@ -2365,7 +2372,7 @@ static const AVOption hls_options[] = {
         OFFSET(live_start_index), AV_OPT_TYPE_INT, {.i64 = -3}, INT_MIN, INT_MAX, FLAGS},
     {"allowed_extensions", "List of file extensions that hls is allowed to access",
         OFFSET(allowed_extensions), AV_OPT_TYPE_STRING,
-        {.str = "3gp,aac,avi,flac,mkv,m3u8,m4a,m4s,m4v,mpg,mov,mp2,mp3,mp4,mpeg,mpegts,ogg,ogv,oga,ts,vob,wav"},
+        {.str = "3gp,aac,avi,ac3,eac3,flac,mkv,m3u8,m4a,m4s,m4v,mpg,mov,mp2,mp3,mp4,mpeg,mpegts,ogg,ogv,oga,ts,vob,wav"},
         INT_MIN, INT_MAX, FLAGS},
     {"max_reload", "Maximum number of times a insufficient list is attempted to be reloaded",
         OFFSET(max_reload), AV_OPT_TYPE_INT, {.i64 = 1000}, 0, INT_MAX, FLAGS},

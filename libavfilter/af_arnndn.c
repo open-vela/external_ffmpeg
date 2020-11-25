@@ -127,6 +127,7 @@ typedef struct DenoiseState {
     int last_period;
     float mem_hp_x[2];
     float lastg[NB_BANDS];
+    float history[FRAME_SIZE];
     RNNState rnn;
     AVTXContext *tx, *txi;
     av_tx_fn tx_fn, txi_fn;
@@ -136,12 +137,13 @@ typedef struct AudioRNNContext {
     const AVClass *class;
 
     char *model_name;
+    float mix;
 
     int channels;
     DenoiseState *st;
 
     DECLARE_ALIGNED(32, float, window)[WINDOW_SIZE];
-    float dct_table[NB_BANDS*NB_BANDS];
+    DECLARE_ALIGNED(32, float, dct_table)[FFALIGN(NB_BANDS, 4)][FFALIGN(NB_BANDS, 4)];
 
     RNNModel *model;
 
@@ -413,8 +415,7 @@ static void inverse_transform(DenoiseState *st, float *out, const AVComplexFloat
     AVComplexFloat x[WINDOW_SIZE];
     AVComplexFloat y[WINDOW_SIZE];
 
-    for (int i = 0; i < FREQ_SIZE; i++)
-        x[i] = in[i];
+    RNN_COPY(x, in, FREQ_SIZE);
 
     for (int i = FREQ_SIZE; i < WINDOW_SIZE; i++) {
         x[i].re =  x[WINDOW_SIZE - i].re;
@@ -497,12 +498,18 @@ static void frame_analysis(AudioRNNContext *s, DenoiseState *st, AVComplexFloat 
 static void frame_synthesis(AudioRNNContext *s, DenoiseState *st, float *out, const AVComplexFloat *y)
 {
     LOCAL_ALIGNED_32(float, x, [WINDOW_SIZE]);
+    const float *src = st->history;
+    const float mix = s->mix;
+    const float imix = 1.f - FFMAX(mix, 0.f);
 
     inverse_transform(st, x, y);
     s->fdsp->vector_fmul(x, x, s->window, WINDOW_SIZE);
     s->fdsp->vector_fmac_scalar(x, st->synthesis_mem, 1.f, FRAME_SIZE);
     RNN_COPY(out, x, FRAME_SIZE);
     RNN_COPY(st->synthesis_mem, &x[FRAME_SIZE], FRAME_SIZE);
+
+    for (int n = 0; n < FRAME_SIZE; n++)
+        out[n] = out[n] * mix + src[n] * imix;
 }
 
 static inline void xcorr_kernel(const float *x, const float *y, float sum[4], int len)
@@ -781,7 +788,7 @@ static float compute_pitch_gain(float xy, float xx, float yy)
     return xy / sqrtf(1.f + xx * yy);
 }
 
-static const int second_check[16] = {0, 0, 3, 2, 3, 2, 5, 2, 3, 2, 3, 2, 5, 2, 3, 2};
+static const uint8_t second_check[16] = {0, 0, 3, 2, 3, 2, 5, 2, 3, 2, 3, 2, 5, 2, 3, 2};
 static float remove_doubling(float *x, int maxperiod, int minperiod, int N,
                              int *T0_, int prev_period, float prev_gain)
 {
@@ -992,11 +999,9 @@ static void pitch_search(const float *x_lp, float *y,
 static void dct(AudioRNNContext *s, float *out, const float *in)
 {
     for (int i = 0; i < NB_BANDS; i++) {
-        float sum = 0.f;
+        float sum;
 
-        for (int j = 0; j < NB_BANDS; j++) {
-            sum += in[j] * s->dct_table[j * NB_BANDS + i];
-        }
+        sum = s->fdsp->scalarproduct_float(in, s->dct_table[i], FFALIGN(NB_BANDS, 4));
         out[i] = sum * sqrtf(2.f / 22);
     }
 }
@@ -1007,7 +1012,7 @@ static int compute_frame_features(AudioRNNContext *s, DenoiseState *st, AVComple
     float E = 0;
     float *ceps_0, *ceps_1, *ceps_2;
     float spec_variability = 0;
-    float Ly[NB_BANDS];
+    LOCAL_ALIGNED_32(float, Ly, [NB_BANDS]);
     LOCAL_ALIGNED_32(float, p, [WINDOW_SIZE]);
     float pitch_buf[PITCH_BUF_SIZE>>1];
     int pitch_index;
@@ -1323,37 +1328,37 @@ static void compute_rnn(AudioRNNContext *s, RNNState *rnn, float *gains, float *
     compute_gru(s, rnn->model->vad_gru, rnn->vad_gru_state, dense_out);
     compute_dense(rnn->model->vad_output, vad, rnn->vad_gru_state);
 
-    for (int i = 0; i < rnn->model->input_dense_size; i++)
-        noise_input[i] = dense_out[i];
-    for (int i = 0; i < rnn->model->vad_gru_size; i++)
-        noise_input[i + rnn->model->input_dense_size] = rnn->vad_gru_state[i];
-    for (int i = 0; i < INPUT_SIZE; i++)
-        noise_input[i + rnn->model->input_dense_size + rnn->model->vad_gru_size] = input[i];
+    memcpy(noise_input, dense_out, rnn->model->input_dense_size * sizeof(float));
+    memcpy(noise_input + rnn->model->input_dense_size,
+           rnn->vad_gru_state, rnn->model->vad_gru_size * sizeof(float));
+    memcpy(noise_input + rnn->model->input_dense_size + rnn->model->vad_gru_size,
+           input, INPUT_SIZE * sizeof(float));
 
     compute_gru(s, rnn->model->noise_gru, rnn->noise_gru_state, noise_input);
 
-    for (int i = 0; i < rnn->model->vad_gru_size; i++)
-        denoise_input[i] = rnn->vad_gru_state[i];
-    for (int i = 0; i < rnn->model->noise_gru_size; i++)
-        denoise_input[i + rnn->model->vad_gru_size] = rnn->noise_gru_state[i];
-    for (int i = 0; i < INPUT_SIZE; i++)
-        denoise_input[i + rnn->model->vad_gru_size + rnn->model->noise_gru_size] = input[i];
+    memcpy(denoise_input, rnn->vad_gru_state, rnn->model->vad_gru_size * sizeof(float));
+    memcpy(denoise_input + rnn->model->vad_gru_size,
+           rnn->noise_gru_state, rnn->model->noise_gru_size * sizeof(float));
+    memcpy(denoise_input + rnn->model->vad_gru_size + rnn->model->noise_gru_size,
+           input, INPUT_SIZE * sizeof(float));
 
     compute_gru(s, rnn->model->denoise_gru, rnn->denoise_gru_state, denoise_input);
     compute_dense(rnn->model->denoise_output, gains, rnn->denoise_gru_state);
 }
 
-static float rnnoise_channel(AudioRNNContext *s, DenoiseState *st, float *out, const float *in)
+static float rnnoise_channel(AudioRNNContext *s, DenoiseState *st, float *out, const float *in,
+                             int disabled)
 {
     AVComplexFloat X[FREQ_SIZE];
     AVComplexFloat P[WINDOW_SIZE];
     float x[FRAME_SIZE];
     float Ex[NB_BANDS], Ep[NB_BANDS];
-    float Exp[NB_BANDS];
+    LOCAL_ALIGNED_32(float, Exp, [NB_BANDS]);
     float features[NB_FEATURES];
     float g[NB_BANDS];
     float gf[FREQ_SIZE];
     float vad_prob = 0;
+    float *history = st->history;
     static const float a_hp[2] = {-1.99599, 0.99600};
     static const float b_hp[2] = {-2, 1};
     int silence;
@@ -1361,7 +1366,7 @@ static float rnnoise_channel(AudioRNNContext *s, DenoiseState *st, float *out, c
     biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE);
     silence = compute_frame_features(s, st, X, P, Ex, Ep, Exp, features, x);
 
-    if (!silence) {
+    if (!silence && !disabled) {
         compute_rnn(s, &st->rnn, g, &vad_prob, features);
         pitch_filter(X, P, Ex, Ep, Exp, g);
         for (int i = 0; i < NB_BANDS; i++) {
@@ -1380,6 +1385,7 @@ static float rnnoise_channel(AudioRNNContext *s, DenoiseState *st, float *out, c
     }
 
     frame_synthesis(s, st, out, X);
+    memcpy(history, in, FRAME_SIZE * sizeof(*history));
 
     return vad_prob;
 }
@@ -1400,7 +1406,8 @@ static int rnnoise_channels(AVFilterContext *ctx, void *arg, int jobnr, int nb_j
     for (int ch = start; ch < end; ch++) {
         rnnoise_channel(s, &s->st[ch],
                         (float *)out->extended_data[ch],
-                        (const float *)in->extended_data[ch]);
+                        (const float *)in->extended_data[ch],
+                        ctx->is_disabled);
     }
 
     return 0;
@@ -1477,9 +1484,9 @@ static av_cold int init(AVFilterContext *ctx)
 
     for (int i = 0; i < NB_BANDS; i++) {
         for (int j = 0; j < NB_BANDS; j++) {
-            s->dct_table[i*NB_BANDS + j] = cosf((i + .5f) * j * M_PI / NB_BANDS);
+            s->dct_table[j][i] = cosf((i + .5f) * j * M_PI / NB_BANDS);
             if (j == 0)
-                s->dct_table[i*NB_BANDS + j] *= sqrtf(.5);
+                s->dct_table[j][i] *= sqrtf(.5);
         }
     }
 
@@ -1529,6 +1536,7 @@ static const AVFilterPad outputs[] = {
 static const AVOption arnndn_options[] = {
     { "model", "set model name", OFFSET(model_name), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, AF },
     { "m",     "set model name", OFFSET(model_name), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, AF },
+    { "mix",   "set output vs input mix", OFFSET(mix), AV_OPT_TYPE_FLOAT, {.dbl=1.0},-1, 1, AF },
     { NULL }
 };
 
@@ -1545,5 +1553,6 @@ AVFilter ff_af_arnndn = {
     .uninit        = uninit,
     .inputs        = inputs,
     .outputs       = outputs,
-    .flags         = AVFILTER_FLAG_SLICE_THREADS,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL |
+                     AVFILTER_FLAG_SLICE_THREADS,
 };
