@@ -170,6 +170,7 @@ int av_buffer_realloc(AVBufferRef **pbuf, int size)
 {
     AVBufferRef *buf = *pbuf;
     uint8_t *tmp;
+    int ret;
 
     if (!buf) {
         /* allocate a new buffer with av_realloc(), so it will be reallocatable
@@ -196,9 +197,9 @@ int av_buffer_realloc(AVBufferRef **pbuf, int size)
         /* cannot realloc, allocate a new reallocable buffer and copy data */
         AVBufferRef *new = NULL;
 
-        av_buffer_realloc(&new, size);
-        if (!new)
-            return AVERROR(ENOMEM);
+        ret = av_buffer_realloc(&new, size);
+        if (ret < 0)
+            return ret;
 
         memcpy(new->data, buf->data, FFMIN(size, buf->size));
 
@@ -212,6 +213,32 @@ int av_buffer_realloc(AVBufferRef **pbuf, int size)
 
     buf->buffer->data = buf->data = tmp;
     buf->buffer->size = buf->size = size;
+    return 0;
+}
+
+int av_buffer_replace(AVBufferRef **pdst, AVBufferRef *src)
+{
+    AVBufferRef *dst = *pdst;
+    AVBufferRef *tmp;
+
+    if (!src) {
+        av_buffer_unref(pdst);
+        return 0;
+    }
+
+    if (dst && dst->buffer == src->buffer) {
+        /* make sure the data pointers match */
+        dst->data = src->data;
+        dst->size = src->size;
+        return 0;
+    }
+
+    tmp = av_buffer_ref(src);
+    if (!tmp)
+        return AVERROR(ENOMEM);
+
+    av_buffer_unref(pdst);
+    *pdst = tmp;
     return 0;
 }
 
