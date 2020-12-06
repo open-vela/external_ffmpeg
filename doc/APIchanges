@@ -15,6 +15,59 @@ libavutil:     2017-10-21
 
 API changes, most recent first:
 
+2020-12-03 - xxxxxxxxxx - lavu 56.62.100 - timecode.h
+  Add av_timecode_init_from_components.
+
+2020-xx-xx - xxxxxxxxxx - lavc 58.114.100 - avcodec.h
+  Deprecate AVCodecContext.thread_safe_callbacks. Starting with
+  LIBAVCODEC_VERSION_MAJOR=60, user callbacks must always be
+  thread-safe when frame threading is used.
+
+2020-11-25 - xxxxxxxxxx - lavc 58.113.100 - avcodec.h
+  Adds a new flag AV_CODEC_EXPORT_DATA_FILM_GRAIN for export_side_data.
+
+2020-11-25 - xxxxxxxxxx - lavu 56.61.100 - film_grain_params.h
+  Adds a new API for extracting codec film grain parameters as side data.
+  Adds a new AVFrameSideDataType entry AV_FRAME_DATA_FILM_GRAIN_PARAMS for it.
+
+2020-xx-xx - xxxxxxxxxx - lavf 58.64.100 - avformat.h
+  Add AVSTREAM_EVENT_FLAG_NEW_PACKETS.
+
+2020-xx-xx - xxxxxxxxxx - lavu 56.60.100 - buffer.h
+  Add a av_buffer_replace() convenience function.
+
+2020-09-xx - xxxxxxxxxx - lavu 56.59.100 - timecode.h
+  Add av_timecode_make_smpte_tc_string2.
+
+2020-08-21 - xxxxxxxxxx - lavu 56.58.100 - avstring.h
+  Deprecate av_d2str(). Use av_asprintf() instead.
+
+2020-08-04 - xxxxxxxxxx - lavu 56.58.100 - channel_layout.h
+  Add AV_CH_LAYOUT_22POINT2 together with its newly required pieces:
+  AV_CH_TOP_SIDE_LEFT, AV_CH_TOP_SIDE_RIGHT, AV_CH_BOTTOM_FRONT_CENTER,
+  AV_CH_BOTTOM_FRONT_LEFT, AV_CH_BOTTOM_FRONT_RIGHT.
+
+2020-07-xx - xxxxxxxxxx - lavu 56.57.100 - cpu.h
+  Add AV_CPU_FLAG_MMI and AV_CPU_FLAG_MSA.
+
+2020-07-xx - xxxxxxxxxx - lavu 56.56.100 - imgutils.h
+  Add av_image_fill_plane_sizes().
+
+2020-07-xx - xxxxxxxxxx - lavc 58.96.100 - packet.h
+  Add AV_PKT_DATA_S12M_TIMECODE.
+
+2020-06-12 - b09fb030c1 - lavu 56.55.100 - pixdesc.h
+  Add AV_PIX_FMT_X2RGB10.
+
+2020-06-xx - xxxxxxxxxx - lavu 56.54.100 - frame.h
+  Add AV_FRAME_DATA_SEI_UNREGISTERED.
+
+2020-06-xx - xxxxxxxxxx - lavu 56.53.100 - log.h opt.h
+  Add av_opt_child_class_iterate() and AVClass.child_class_iterate().
+  Deprecate av_opt_child_class_next() and AVClass.child_class_next().
+
+-------- 8< --------- FFmpeg 4.3 was cut here -------- 8< ---------
+
 2020-06-05 - ec39c2276a - lavu 56.50.100 - buffer.h
   Passing NULL as alloc argument to av_buffer_pool_init2() is now allowed.
 

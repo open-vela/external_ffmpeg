@@ -107,7 +107,7 @@ typedef struct ThreadData {
 
 #define EXPONENT_MASK 0x7F800000
 #define MANTISSA_MASK 0x007FFFFF
-#define SIGN_MASK     0x7FFFFFFF
+#define SIGN_MASK     0x80000000
 
 static inline float sanitizef(float f)
 {
@@ -120,7 +120,7 @@ static inline float sanitizef(float f)
             return 0.0f;
         } else if (t.i & SIGN_MASK) {
             // -INF
-            return FLT_MIN;
+            return -FLT_MAX;
         } else {
             // +INF
             return FLT_MAX;
@@ -878,18 +878,16 @@ static int parse_cinespace(AVFilterContext *ctx, FILE *f)
 
                     prelut_sizes[i] = npoints;
                     in_min[i] = FLT_MAX;
-                    in_max[i] = FLT_MIN;
+                    in_max[i] = -FLT_MAX;
                     out_min[i] = FLT_MAX;
-                    out_max[i] = FLT_MIN;
-
-                    last = FLT_MIN;
+                    out_max[i] = -FLT_MAX;
 
                     for (int j = 0; j < npoints; j++) {
                         NEXT_FLOAT_OR_GOTO(v, end)
                         in_min[i] = FFMIN(in_min[i], v);
                         in_max[i] = FFMAX(in_max[i], v);
                         in_prelut[i][j] = v;
-                        if (v < last) {
+                        if (j > 0 && v < last) {
                             av_log(ctx, AV_LOG_ERROR, "Invalid file, non increasing prelut.\n");
                             ret = AVERROR(ENOMEM);
                             goto end;
