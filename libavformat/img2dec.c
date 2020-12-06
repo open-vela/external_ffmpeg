@@ -587,7 +587,7 @@ static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
         int index = av_index_search_timestamp(st, timestamp, flags);
         if(index < 0)
             return -1;
-        s1->img_number = st->index_entries[index].pos;
+        s1->img_number = st->internal->index_entries[index].pos;
         return 0;
     }
 
@@ -682,6 +682,17 @@ static int bmp_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     }
     return AVPROBE_SCORE_EXTENSION / 4;
+}
+
+static int cri_probe(const AVProbeData *p)
+{
+    const uint8_t *b = p->buf;
+
+    if (   AV_RL32(b) == 1
+        && AV_RL32(b + 4) == 4
+        && AV_RN32(b + 8) == AV_RN32("DVCC"))
+        return AVPROBE_SCORE_MAX - 1;
+    return 0;
 }
 
 static int dds_probe(const AVProbeData *p)
@@ -1000,6 +1011,14 @@ static int pgmyuv_probe(const AVProbeData *p) // custom FFmpeg format recognized
     return ret && av_match_ext(p->filename, "pgmyuv") ? ret : 0;
 }
 
+static int pgx_probe(const AVProbeData *p)
+{
+    const uint8_t *b = p->buf;
+    if (!memcmp(b, "PG ML ", 6))
+        return AVPROBE_SCORE_EXTENSION + 1;
+    return 0;
+}
+
 static int ppm_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 3) || pnm_magic_check(p, 6) ? pnm_probe(p) : 0;
@@ -1062,6 +1081,17 @@ static int gif_probe(const AVProbeData *p)
     return AVPROBE_SCORE_MAX - 1;
 }
 
+static int photocd_probe(const AVProbeData *p)
+{
+    if (!memcmp(p->buf, "PCD_OPA", 7))
+        return AVPROBE_SCORE_MAX - 1;
+
+    if (p->buf_size < 0x807 || memcmp(p->buf + 0x800, "PCD_IPI", 7))
+        return 0;
+
+    return AVPROBE_SCORE_MAX - 1;
+}
+
 #define IMAGEAUTO_DEMUXER(imgname, codecid)\
 static const AVClass imgname ## _class = {\
     .class_name = AV_STRINGIFY(imgname) " demuxer",\
@@ -1082,6 +1112,7 @@ AVInputFormat ff_image_ ## imgname ## _pipe_demuxer = {\
 };
 
 IMAGEAUTO_DEMUXER(bmp,     AV_CODEC_ID_BMP)
+IMAGEAUTO_DEMUXER(cri,     AV_CODEC_ID_CRI)
 IMAGEAUTO_DEMUXER(dds,     AV_CODEC_ID_DDS)
 IMAGEAUTO_DEMUXER(dpx,     AV_CODEC_ID_DPX)
 IMAGEAUTO_DEMUXER(exr,     AV_CODEC_ID_EXR)
@@ -1094,6 +1125,8 @@ IMAGEAUTO_DEMUXER(pbm,     AV_CODEC_ID_PBM)
 IMAGEAUTO_DEMUXER(pcx,     AV_CODEC_ID_PCX)
 IMAGEAUTO_DEMUXER(pgm,     AV_CODEC_ID_PGM)
 IMAGEAUTO_DEMUXER(pgmyuv,  AV_CODEC_ID_PGMYUV)
+IMAGEAUTO_DEMUXER(pgx,     AV_CODEC_ID_PGX)
+IMAGEAUTO_DEMUXER(photocd, AV_CODEC_ID_PHOTOCD)
 IMAGEAUTO_DEMUXER(pictor,  AV_CODEC_ID_PICTOR)
 IMAGEAUTO_DEMUXER(png,     AV_CODEC_ID_PNG)
 IMAGEAUTO_DEMUXER(ppm,     AV_CODEC_ID_PPM)
