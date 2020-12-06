@@ -120,8 +120,6 @@ static av_cold int mpc8_decode_init(AVCodecContext * avctx)
     av_lfg_init(&c->rnd, 0xDEADBEEF);
     ff_mpadsp_init(&c->mpadsp);
 
-    ff_mpc_init();
-
     init_get_bits(&gb, avctx->extradata, 16);
 
     skip_bits(&gb, 3);//sample rate
@@ -232,6 +230,7 @@ static av_cold int mpc8_decode_init(AVCodecContext * avctx)
                  &mpc8_q8_codes[i], 1, 1, INIT_VLC_USE_NEW_STATIC);
     }
     vlc_initialized = 1;
+    ff_mpa_synth_init_fixed();
 
     return 0;
 }
@@ -384,7 +383,7 @@ static int mpc8_decode_frame(AVCodecContext * avctx, void *data,
                 for(j = 0; j < SAMPLES_PER_BAND; j += 2){
                     t = get_vlc2(gb, q3_vlc[res - 3].table, MPC8_Q3_BITS, 2) + q3_offsets[res - 3];
                     c->Q[ch][off + j + 1] = t >> 4;
-                    c->Q[ch][off + j + 0] = (t & 8) ? (t & 0xF) - 16 : (t & 0xF);
+                    c->Q[ch][off + j + 0] = sign_extend(t, 4);
                 }
                 break;
             case 5:

@@ -295,6 +295,7 @@ static int cdxl_decode_frame(AVCodecContext *avctx, void *data,
     if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
     p->pict_type = AV_PICTURE_TYPE_I;
+    p->key_frame = 1;
 
     if (encoding) {
         av_fast_padded_malloc(&c->new_video, &c->new_video_size,
@@ -334,4 +335,5 @@ AVCodec ff_cdxl_decoder = {
     .close          = cdxl_decode_end,
     .decode         = cdxl_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
