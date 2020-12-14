@@ -605,10 +605,10 @@ static int writer_open(WriterContext **wctx, const Writer *writer, const char *a
             if (ret < 0) {
                 AVBPrint bp;
                 av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
-                bprint_bytes(&bp, p0, p-p0),
-                    av_log(wctx, AV_LOG_ERROR,
-                           "Invalid UTF8 sequence %s found in string validation replace '%s'\n",
-                           bp.str, (*wctx)->string_validation_replacement);
+                bprint_bytes(&bp, p0, p-p0);
+                av_log(wctx, AV_LOG_ERROR,
+                       "Invalid UTF8 sequence %s found in string validation replace '%s'\n",
+                       bp.str, (*wctx)->string_validation_replacement);
                 return ret;
             }
         }
