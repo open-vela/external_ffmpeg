@@ -43,16 +43,20 @@ static av_cold int pcm_encode_init(AVCodecContext *avctx)
     avctx->frame_size = 0;
 #if !CONFIG_HARDCODED_TABLES
     switch (avctx->codec->id) {
-#define INIT_ONCE(id, name)                                                 \
-    case AV_CODEC_ID_PCM_ ## id:                                            \
-        if (CONFIG_PCM_ ## id ## _ENCODER) {                                \
-            static AVOnce init_static_once = AV_ONCE_INIT;                  \
-            ff_thread_once(&init_static_once, pcm_ ## name ## _tableinit);  \
-        }                                                                   \
+#define INIT_ONCE(id, name)                                             \
+    case AV_CODEC_ID_PCM_ ## id:                                        \
+        static AVOnce init_static_once = AV_ONCE_INIT;                  \
+        ff_thread_once(&init_static_once, pcm_ ## name ## _tableinit);  \
         break
+#if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER
         INIT_ONCE(ALAW,  alaw);
+#endif
+#if CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER
         INIT_ONCE(MULAW, ulaw);
+#endif
+#if CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
         INIT_ONCE(VIDC,  vidc);
+#endif
     default:
         break;
     }
@@ -216,24 +220,30 @@ static int pcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
             bytestream_put_buffer(&dst, src, n * sample_size);
         }
         break;
+#if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER
     case AV_CODEC_ID_PCM_ALAW:
         for (; n > 0; n--) {
             v      = *samples++;
             *dst++ = linear_to_alaw[(v + 32768) >> 2];
         }
         break;
+#endif
+#if CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER
     case AV_CODEC_ID_PCM_MULAW:
         for (; n > 0; n--) {
             v      = *samples++;
             *dst++ = linear_to_ulaw[(v + 32768) >> 2];
         }
         break;
+#endif
+#if CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
     case AV_CODEC_ID_PCM_VIDC:
         for (; n > 0; n--) {
             v      = *samples++;
             *dst++ = linear_to_vidc[(v + 32768) >> 2];
         }
         break;
+#endif
     default:
         return -1;
     }
@@ -256,18 +266,24 @@ static av_cold int pcm_decode_init(AVCodecContext *avctx)
     int i;
 
     switch (avctx->codec_id) {
+#if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER
     case AV_CODEC_ID_PCM_ALAW:
         for (i = 0; i < 256; i++)
             s->table[i] = alaw2linear(i);
         break;
+#endif
+#if CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER
     case AV_CODEC_ID_PCM_MULAW:
         for (i = 0; i < 256; i++)
             s->table[i] = ulaw2linear(i);
         break;
+#endif
+#if CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
     case AV_CODEC_ID_PCM_VIDC:
         for (i = 0; i < 256; i++)
             s->table[i] = vidc2linear(i);
         break;
+#endif
     case AV_CODEC_ID_PCM_F16LE:
     case AV_CODEC_ID_PCM_F24LE:
         if (avctx->bits_per_coded_sample < 1 || avctx->bits_per_coded_sample > 24)
@@ -498,6 +514,9 @@ static int pcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             bytestream_get_buffer(&src, samples, n * sample_size);
         }
         break;
+#if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER || \
+    CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER || \
+    CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
     case AV_CODEC_ID_PCM_ALAW:
     case AV_CODEC_ID_PCM_MULAW:
     case AV_CODEC_ID_PCM_VIDC:
@@ -506,6 +525,7 @@ static int pcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             samples += 2;
         }
         break;
+#endif
     case AV_CODEC_ID_PCM_LXF:
     {
         int i;
@@ -595,7 +615,9 @@ const FFCodec ff_ ## name_ ## _decoder = {                                  \
     PCM_DECODER(id, sample_fmt_, name, long_name_)
 
 /* Note: Do not forget to add new entries to the Makefile as well. */
+#if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER
 PCM_CODEC  (PCM_ALAW,         AV_SAMPLE_FMT_S16, pcm_alaw,         "PCM A-law / G.711 A-law");
+#endif
 PCM_DECODER(PCM_F16LE,        AV_SAMPLE_FMT_FLT, pcm_f16le,        "PCM 16.8 floating point little-endian");
 PCM_DECODER(PCM_F24LE,        AV_SAMPLE_FMT_FLT, pcm_f24le,        "PCM 24.0 floating point little-endian");
 PCM_CODEC  (PCM_F32BE,        AV_SAMPLE_FMT_FLT, pcm_f32be,        "PCM 32-bit floating point big-endian");
@@ -603,7 +625,9 @@ PCM_CODEC  (PCM_F32LE,        AV_SAMPLE_FMT_FLT, pcm_f32le,        "PCM 32-bit f
 PCM_CODEC  (PCM_F64BE,        AV_SAMPLE_FMT_DBL, pcm_f64be,        "PCM 64-bit floating point big-endian");
 PCM_CODEC  (PCM_F64LE,        AV_SAMPLE_FMT_DBL, pcm_f64le,        "PCM 64-bit floating point little-endian");
 PCM_DECODER(PCM_LXF,          AV_SAMPLE_FMT_S32P,pcm_lxf,          "PCM signed 20-bit little-endian planar");
+#if CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER
 PCM_CODEC  (PCM_MULAW,        AV_SAMPLE_FMT_S16, pcm_mulaw,        "PCM mu-law / G.711 mu-law");
+#endif
 PCM_CODEC  (PCM_S8,           AV_SAMPLE_FMT_U8,  pcm_s8,           "PCM signed 8-bit");
 PCM_CODEC  (PCM_S8_PLANAR,    AV_SAMPLE_FMT_U8P, pcm_s8_planar,    "PCM signed 8-bit planar");
 PCM_CODEC  (PCM_S16BE,        AV_SAMPLE_FMT_S16, pcm_s16be,        "PCM signed 16-bit big-endian");
@@ -626,5 +650,7 @@ PCM_CODEC  (PCM_U32BE,        AV_SAMPLE_FMT_S32, pcm_u32be,        "PCM unsigned
 PCM_CODEC  (PCM_U32LE,        AV_SAMPLE_FMT_S32, pcm_u32le,        "PCM unsigned 32-bit little-endian");
 PCM_CODEC  (PCM_S64BE,        AV_SAMPLE_FMT_S64, pcm_s64be,        "PCM signed 64-bit big-endian");
 PCM_CODEC  (PCM_S64LE,        AV_SAMPLE_FMT_S64, pcm_s64le,        "PCM signed 64-bit little-endian");
+#if CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
 PCM_CODEC  (PCM_VIDC,         AV_SAMPLE_FMT_S16, pcm_vidc,         "PCM Archimedes VIDC");
+#endif
 PCM_DECODER(PCM_SGA,          AV_SAMPLE_FMT_U8,  pcm_sga,          "PCM SGA");
