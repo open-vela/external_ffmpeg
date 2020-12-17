@@ -28,41 +28,83 @@
  * which gives a low latency suitable for real-time playback.
  */
 
+#include <poll.h>
+
 #include "libavformat/internal.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
 #include "nuttx.h"
 
-static av_cold int nuttx_write_header(AVFormatContext *s1)
+static int nuttx_init(struct AVFormatContext *s1)
+{
+    NuttxPriv *priv = s1->priv_data;
+    int ret;
+
+    ret = ff_nuttx_init(priv, s1->url);
+
+    return ret < 0 ? ret : 1;
+}
+
+static void nuttx_deinit(struct AVFormatContext *s1)
+{
+    NuttxPriv *priv = s1->priv_data;
+    int ret;
+
+    if (priv->lastpkt)
+        av_packet_free(&priv->lastpkt);
+
+    ff_nuttx_deinit(s1->priv_data);
+}
+
+static int nuttx_write_header(AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
     AVStream *st = s1->streams[0];
-    enum AVCodecID codec_id;
     int ret;
 
-    priv->fd = -1;
-
-    if (s1->nb_streams != 1 ||
-        s1->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
-        av_log(s1, AV_LOG_ERROR, "Only a single audio stream is supported.\n");
+    if (s1->nb_streams != 1 || s1->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
         return AVERROR(EINVAL);
-    }
-
-    codec_id = st->codecpar->codec_id;
 
     if (s1->flags & AVFMT_FLAG_NONBLOCK)
         priv->nonblock = true;
 
-    priv->sample_rate = st->codecpar->sample_rate;
-    priv->channels    = st->codecpar->channels;
-    priv->playback    = true;
+    priv->sample_rate    = st->codecpar->sample_rate;
+    priv->channels       = st->codecpar->channels;
+    priv->channel_layout = st->codecpar->channel_layout;
+    priv->codec          = st->codecpar->codec_id;
 
-    ret = ff_nuttx_open(s1->priv_data, s1->url, codec_id);
+    ret = ff_nuttx_open(s1->priv_data, true);
     if (ret >= 0)
         avpriv_set_pts_info(st, 64, 1, priv->sample_rate);
 
     return ret;
+}
+
+static int nuttx_write_trailer(struct AVFormatContext *s1)
+{
+    NuttxPriv *priv = s1->priv_data;
+
+    ff_nuttx_close(priv, priv->nonblock);
+    return 0;
+}
+
+static int nuttx_write_lastpacket(AVFormatContext *s1)
+{
+    NuttxPriv *priv = s1->priv_data;
+    int ret;
+
+    ret = ff_nuttx_write_data(priv, priv->lastpkt->data, priv->lastpkt->size);
+    if (ret < 0)
+        return ret;
+
+    priv->lastpkt->data += ret;
+    priv->lastpkt->size -= ret;
+    if (priv->lastpkt->size)
+        return AVERROR(EAGAIN);
+
+    av_packet_free(&priv->lastpkt);
+    return 0;
 }
 
 static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
@@ -70,58 +112,72 @@ static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
     NuttxPriv *priv = s1->priv_data;
     int ret;
 
+    if (priv->lastpkt)
+        return nuttx_write_lastpacket(s1);
+
+    if (!pkt)
+        return 0;
+
     ret = ff_nuttx_write_data(priv, pkt->data, pkt->size);
-    if (ret < 0) {
-
-        if (ret != AVERROR(EAGAIN))
-            av_log(s1, AV_LOG_ERROR, "%s, error ret %d\n", __func__, ret);
-
+    if (ret < 0)
         return ret;
+
+    if (ret != pkt->size) {
+        priv->lastpkt = av_packet_clone(pkt);
+        priv->lastpkt->data += ret;
+        priv->lastpkt->size -= ret;
+        return AVERROR(EAGAIN);
     }
 
-    if (pkt->dts != AV_NOPTS_VALUE)
-        priv->timestamp = pkt->dts;
-    priv->timestamp += pkt->duration ? pkt->duration :
-                       pkt->size / priv->frame_size;
     return 0;
-}
-
-static av_cold int nuttx_write_trailer(struct AVFormatContext *s1)
-{
-    return ff_nuttx_close(s1->priv_data);
 }
 
 static int nuttx_control_message(struct AVFormatContext *s1, int type,
                                  void *data, size_t data_size)
 {
     NuttxPriv *priv = s1->priv_data;
-    int ret = 0;
-
-    if (!data)
-        return AVERROR(EINVAL);
 
     switch (type) {
         case AV_APP_TO_DEV_SET_VOLUME:
-            ret = ff_nuttx_set_volume(s1, priv, *((double *)data));
-            break;
+            if (!data)
+                return AVERROR(EINVAL);
+
+            return ff_nuttx_set_volume(s1, priv, *((double *)data));
         case AV_APP_TO_DEV_MUTE:
-            ret = ff_nuttx_set_mute(s1, priv, true);
-            break;
+            return ff_nuttx_set_mute(s1, priv, true);
         case AV_APP_TO_DEV_UNMUTE:
-            ret = ff_nuttx_set_mute(s1, priv, false);
-            break;
+            return ff_nuttx_set_mute(s1, priv, false);
         case AV_APP_TO_DEV_TOGGLE_MUTE:
-            ret = ff_nuttx_set_mute(s1, priv, !priv->mute);
-            break;
+            return ff_nuttx_set_mute(s1, priv, !priv->mute);
         case AV_APP_TO_DEV_GET_VOLUME:
-            ret = ff_nuttx_notify_changed(s1, priv, true);
-            break;
+            return ff_nuttx_notify_changed(s1, priv, true);
         case AV_APP_TO_DEV_GET_MUTE:
-            ret = ff_nuttx_notify_changed(s1, priv, false);
-            break;
+            return ff_nuttx_notify_changed(s1, priv, false);
+        case AV_APP_TO_DEV_GET_POLLFD: {
+            struct pollfd *poll = data;
+
+            if (!data || data_size < sizeof(struct pollfd) * 2)
+                return AVERROR(EINVAL);
+
+            poll[0].fd      = priv->mq;
+            poll[0].events  = POLLIN;
+            poll[1].fd      = 0;
+            poll[1].events  = 0;
+
+            return 0;
+        }
+        case AV_APP_TO_DEV_POLL_AVAILABLE: {
+            int ret;
+
+            ret = ff_nuttx_poll_available(priv, true);
+            if (ret > 0)
+                avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+
+            return ret;
+        }
     }
 
-    return ret;
+    return AVERROR(ENOSYS);
 }
 
 static int nuttx_write_frame(AVFormatContext *s1, int stream_index,
@@ -143,42 +199,26 @@ static int nuttx_write_frame(AVFormatContext *s1, int stream_index,
     return nuttx_write_packet(s1, &pkt);
 }
 
-static void nuttx_get_output_timestamp(AVFormatContext *s1, int stream,
-                                       int64_t *dts, int64_t *wall)
-{
-    NuttxPriv *priv = s1->priv_data;
-
-    *wall = av_gettime();
-    *dts  = priv->timestamp;
-}
-
 static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
                                         const char *key, int flags)
 {
     return ff_nuttx_capbility_query_ranges(ranges, obj, key, flags, true);
 }
 
-#define OFFSET(x) offsetof(NuttxPriv, x)
-#define FLAGS AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
-static const AVOption options[] = {
-    { "periods",      "", OFFSET(periods),         AV_OPT_TYPE_INT,     {.i64 = 4},    1, INT_MAX, FLAGS},
-    { "period_bytes", "", OFFSET(period_bytes),    AV_OPT_TYPE_INT,     {.i64 = 8192}, 1, INT_MAX, FLAGS},
-    { "period_time",  "", OFFSET(period_time),     AV_OPT_TYPE_INT,     {.i64 = 0},    0, INT_MAX, FLAGS},
-    { NULL },
-};
-
-static const AVClass nuttx_muxer_class = {
-    .class_name     = "NUTTX outdev",
-    .item_name      = av_default_item_name,
-    .option         = options,
-    .version        = LIBAVUTIL_VERSION_INT,
-    .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
-    .query_ranges   = nuttx_capbility_query_ranges,
+static const AVClass nuttx_cap_class = {
+    .class_name   = "NUTTX outdev capbility",
+    .item_name    = av_default_item_name,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = nuttx_capbility_query_ranges,
 };
 
 static int nuttx_create_device_capabilities(struct AVFormatContext *s1, struct AVDeviceCapabilitiesQuery *caps)
 {
-    caps->av_class = &nuttx_muxer_class;
+    if (!caps)
+        return AVERROR(EINVAL);
+
+    caps->av_class = &nuttx_cap_class;
     return 0;
 }
 
@@ -195,21 +235,39 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
     return ff_nuttx_get_device_list(device_list, true);
 }
 
+#define OFFSET(x) offsetof(NuttxPriv, x)
+#define FLAGS AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
+static const AVOption options[] = {
+    { "periods",      "", OFFSET(periods),      AV_OPT_TYPE_INT, {.i64 = 4},   0, INT_MAX, FLAGS},
+    { "period_bytes", "", OFFSET(period_bytes), AV_OPT_TYPE_INT, {.i64 = 0},   0, INT_MAX, FLAGS},
+    { "period_time",  "", OFFSET(period_time),  AV_OPT_TYPE_INT, {.i64 = 20},  0, INT_MAX, FLAGS},
+    { NULL },
+};
+
+static const AVClass nuttx_muxer_class = {
+    .class_name = "NUTTX outdev",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+};
+
 AVOutputFormat ff_nuttx_muxer = {
-    .name           = "nuttx",
-    .long_name      = NULL_IF_CONFIG_SMALL("NUTTX audio output"),
-    .priv_data_size = sizeof(NuttxPriv),
-    .audio_codec    = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),
-    .video_codec    = AV_CODEC_ID_NONE,
-    .write_header   = nuttx_write_header,
-    .write_packet   = nuttx_write_packet,
-    .write_trailer  = nuttx_write_trailer,
-    .control_message      = nuttx_control_message,
-    .write_uncoded_frame  = nuttx_write_frame,
-    .get_output_timestamp = nuttx_get_output_timestamp,
+    .name                       = "nuttx",
+    .long_name                  = NULL_IF_CONFIG_SMALL("NUTTX audio output"),
+    .priv_data_size             = sizeof(NuttxPriv),
+    .audio_codec                = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),
+    .video_codec                = AV_CODEC_ID_NONE,
+    .init                       = nuttx_init,
+    .deinit                     = nuttx_deinit,
+    .write_header               = nuttx_write_header,
+    .write_packet               = nuttx_write_packet,
+    .write_trailer              = nuttx_write_trailer,
+    .control_message            = nuttx_control_message,
+    .write_uncoded_frame        = nuttx_write_frame,
     .create_device_capabilities = nuttx_create_device_capabilities,
     .free_device_capabilities   = nuttx_free_device_capabilities,
-    .get_device_list = nuttx_get_device_list,
-    .flags           = AVFMT_NOFILE,
-    .priv_class      = &nuttx_muxer_class,
+    .get_device_list            = nuttx_get_device_list,
+    .flags                      = AVFMT_NOFILE,
+    .priv_class                 = &nuttx_muxer_class,
 };
