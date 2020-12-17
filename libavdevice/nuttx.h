@@ -36,45 +36,49 @@
 #include "avdevice.h"
 
 typedef struct NuttxPriv {
-    AVClass     *class;
+    AVClass    *class;
 
-    struct ap_buffer_s **abuffer;
-    int         free_abuffer;
+    bool       running;
+    bool       flushing;
 
-    char        mqname[16];   ///< message queue name
-    mqd_t       mq;           ///< message queue
-    int         fd;           ///< nuttx device fd
+    char       mqname[16];   ///< message queue name
+    mqd_t      mq;           ///< message queue
+    int        fd;           ///< nuttx device fd
 
-    int         periods;      ///< buffer pereids
-    int         period_bytes; ///< preferred size for reads and writes, in bytes
-    int         period_time;  ///< preferred time for reads and writes, in ms
+    int        periods;      ///< buffer pereids
+    int        period_bytes; ///< preferred size for reads and writes, in bytes
+    int        period_time;  ///< preferred time for reads and writes, in ms
 
-    int         frame_size;   ///< bytes per sample * channels
-    uint32_t    sample_rate;
-    uint32_t    channels;
-    uint32_t    channel_layout;
-    bool        playback;
-    bool        nonblock;
+    int        codec;
+    int        frame_size;   ///< bytes per sample * channels
+    uint32_t   sample_rate;
+    uint32_t   channels;
+    uint64_t   channel_layout;
+    bool       nonblock;
 
-    bool        mute;
-    double      volume;
+    bool       mute;
+    double     volume;
 
-    struct ap_buffer_s *abuffer_cur;
-    int         buffer_pos;
+    dq_queue_t bufferq;
 
-    int64_t     timestamp;    ///< current timestamp, without latency applied.
-    int         last_period;
+    AVPacket   *lastpkt;
+
     TimeFilter *timefilter;
 } NuttxPriv;
 
-av_cold int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
-                                            const char *key, int flags, bool playback);
-av_cold int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback);
-av_cold int ff_nuttx_open(NuttxPriv *priv, const char *device, enum AVCodecID);
-av_cold int ff_nuttx_close(NuttxPriv *priv);
+int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                    const char *key, int flags, bool playback);
+int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback);
 
-int ff_nuttx_write_data(NuttxPriv *priv, uint8_t *buf, int size);
-int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *buf, int *size);
+int ff_nuttx_init(NuttxPriv *priv, const char *device);
+void ff_nuttx_deinit(NuttxPriv *priv);
+
+int ff_nuttx_open(NuttxPriv *priv, bool playback);
+void ff_nuttx_close(NuttxPriv *priv, bool nonblock);
+
+int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock);
+int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size);
+int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size);
 
 int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volume);
 int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute);
