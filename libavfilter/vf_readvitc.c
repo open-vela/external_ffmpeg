@@ -207,7 +207,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVJ444P,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pixel_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
@@ -232,6 +235,7 @@ static const AVFilterPad inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -239,15 +243,16 @@ static const AVFilterPad outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_readvitc = {
+AVFilter ff_vf_readvitc = {
     .name          = "readvitc",
     .description   = NULL_IF_CONFIG_SMALL("Read vertical interval timecode and write it to frame metadata."),
     .priv_size     = sizeof(ReadVitcContext),
     .priv_class    = &readvitc_class,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
+    .inputs        = inputs,
+    .outputs       = outputs,
     .init          = init,
     .query_formats = query_formats,
 };

@@ -117,7 +117,8 @@ static int npptranspose_query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE,
     };
 
-    return ff_set_common_formats_from_list(ctx, pixel_formats);
+    AVFilterFormats *pix_fmts = ff_make_format_list(pixel_formats);
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static int init_stage(NPPTransposeStageContext *stage, AVBufferRef *device_ctx)
@@ -460,6 +461,7 @@ static const AVFilterPad npptranspose_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = npptranspose_filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad npptranspose_outputs[] = {
@@ -468,9 +470,10 @@ static const AVFilterPad npptranspose_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = npptranspose_config_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_transpose_npp = {
+AVFilter ff_vf_transpose_npp = {
     .name           = "transpose_npp",
     .description    = NULL_IF_CONFIG_SMALL("NVIDIA Performance Primitives video transpose"),
     .init           = npptranspose_init,
@@ -478,7 +481,7 @@ const AVFilter ff_vf_transpose_npp = {
     .query_formats  = npptranspose_query_formats,
     .priv_size      = sizeof(NPPTransposeContext),
     .priv_class     = &npptranspose_class,
-    FILTER_INPUTS(npptranspose_inputs),
-    FILTER_OUTPUTS(npptranspose_outputs),
+    .inputs         = npptranspose_inputs,
+    .outputs        = npptranspose_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

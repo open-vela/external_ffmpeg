@@ -263,7 +263,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA420P10,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -359,6 +362,9 @@ static void apply_lut10(HueContext *s,
         vdst += dst_linesize;
     }
 }
+
+#define TS2D(ts) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *inpic)
 {
@@ -502,6 +508,7 @@ static const AVFilterPad hue_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad hue_outputs[] = {
@@ -509,9 +516,10 @@ static const AVFilterPad hue_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_hue = {
+AVFilter ff_vf_hue = {
     .name            = "hue",
     .description     = NULL_IF_CONFIG_SMALL("Adjust the hue and saturation of the input video."),
     .priv_size       = sizeof(HueContext),
@@ -519,8 +527,8 @@ const AVFilter ff_vf_hue = {
     .uninit          = uninit,
     .query_formats   = query_formats,
     .process_command = process_command,
-    FILTER_INPUTS(hue_inputs),
-    FILTER_OUTPUTS(hue_outputs),
+    .inputs          = hue_inputs,
+    .outputs         = hue_outputs,
     .priv_class      = &hue_class,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

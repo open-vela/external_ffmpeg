@@ -26,8 +26,6 @@
 #include "libavutil/intfloat.h"
 #include "libavutil/dict.h"
 
-#define FRAME_SIZE_OFFSET 40
-
 typedef struct {
     int64_t data;
     uint8_t *pkt_sizes;
@@ -83,6 +81,8 @@ static uint32_t samples_per_packet(enum AVCodecID codec_id, int channels, int bl
         return 320;
     case AV_CODEC_ID_MP1:
         return 384;
+    case AV_CODEC_ID_OPUS:
+        return 960;
     case AV_CODEC_ID_MP2:
     case AV_CODEC_ID_MP3:
         return 1152;
@@ -240,26 +240,19 @@ static int caf_write_trailer(AVFormatContext *s)
 {
     CAFContext *caf = s->priv_data;
     AVIOContext *pb = s->pb;
-    AVStream *st = s->streams[0];
-    AVCodecParameters *par = st->codecpar;
+    AVCodecParameters *par = s->streams[0]->codecpar;
 
     if (pb->seekable & AVIO_SEEKABLE_NORMAL) {
         int64_t file_size = avio_tell(pb);
 
         avio_seek(pb, caf->data, SEEK_SET);
         avio_wb64(pb, file_size - caf->data - 8);
+        avio_seek(pb, file_size, SEEK_SET);
         if (!par->block_align) {
-            int packet_size = samples_per_packet(par->codec_id, par->channels, par->block_align);
-            if (!packet_size) {
-                packet_size = st->duration / (caf->packets - 1);
-                avio_seek(pb, FRAME_SIZE_OFFSET, SEEK_SET);
-                avio_wb32(pb, packet_size);
-            }
-            avio_seek(pb, file_size, SEEK_SET);
             ffio_wfourcc(pb, "pakt");
             avio_wb64(pb, caf->size_entries_used + 24);
             avio_wb64(pb, caf->packets); ///< mNumberPackets
-            avio_wb64(pb, caf->packets * packet_size); ///< mNumberValidFrames
+            avio_wb64(pb, caf->packets * samples_per_packet(par->codec_id, par->channels, par->block_align)); ///< mNumberValidFrames
             avio_wb32(pb, 0); ///< mPrimingFrames
             avio_wb32(pb, 0); ///< mRemainderFrames
             avio_write(pb, caf->pkt_sizes, caf->size_entries_used);
@@ -270,7 +263,7 @@ static int caf_write_trailer(AVFormatContext *s)
     return 0;
 }
 
-const AVOutputFormat ff_caf_muxer = {
+AVOutputFormat ff_caf_muxer = {
     .name           = "caf",
     .long_name      = NULL_IF_CONFIG_SMALL("Apple CAF (Core Audio Format)"),
     .mime_type      = "audio/x-caf",
@@ -281,5 +274,5 @@ const AVOutputFormat ff_caf_muxer = {
     .write_header   = caf_write_header,
     .write_packet   = caf_write_packet,
     .write_trailer  = caf_write_trailer,
-    .codec_tag      = ff_caf_codec_tags_list,
+    .codec_tag      = (const AVCodecTag* const []){ff_codec_caf_tags, 0},
 };
