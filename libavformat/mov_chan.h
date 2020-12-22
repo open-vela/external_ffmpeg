@@ -28,7 +28,7 @@
 
 #include <stdint.h>
 
-#include "libavcodec/codec_id.h"
+#include "libavcodec/avcodec.h"
 #include "avformat.h"
 
 /**

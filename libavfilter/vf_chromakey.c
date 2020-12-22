@@ -197,7 +197,7 @@ static int do_chromahold_slice(AVFilterContext *avctx, void *arg, int jobnr, int
             du = u - ctx->chromakey_uv[0];
             dv = v - ctx->chromakey_uv[1];
 
-            diff = sqrt((du * du + dv * dv) / (255.0 * 255.0 * 2.0));
+            diff = sqrt((du * du + dv * dv) / (255.0 * 255.0));
 
             alpha = diff > ctx->similarity;
             if (ctx->blend > 0.0001) {
@@ -236,7 +236,7 @@ static int do_chromahold16_slice(AVFilterContext *avctx, void *arg, int jobnr, i
             du = u - ctx->chromakey_uv[0];
             dv = v - ctx->chromakey_uv[1];
 
-            diff = sqrt((du * du + dv * dv) / (max * max * 2.0));
+            diff = sqrt((du * du + dv * dv) / (max * max));
 
             alpha = diff > ctx->similarity;
             if (ctx->blend > 0.0001) {
@@ -260,8 +260,7 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
     ChromakeyContext *ctx = avctx->priv;
     int res;
 
-    if (res = ff_filter_execute(avctx, ctx->do_slice, frame, NULL,
-                                FFMIN(frame->height, ff_filter_get_nb_threads(avctx))))
+    if (res = avctx->internal->execute(avctx, ctx->do_slice, frame, NULL, FFMIN(frame->height, ff_filter_get_nb_threads(avctx))))
         return res;
 
     return ff_filter_frame(avctx->outputs[0], frame);
@@ -332,11 +331,14 @@ static av_cold int query_formats(AVFilterContext *avctx)
         AV_PIX_FMT_YUVA420P16, AV_PIX_FMT_YUVA422P16, AV_PIX_FMT_YUVA444P16,
         AV_PIX_FMT_NONE
     };
-    const enum AVPixelFormat *pix_fmts;
 
-    pix_fmts = !strcmp(avctx->filter->name, "chromahold") ? hold_pixel_fmts : pixel_fmts;
+    AVFilterFormats *formats = NULL;
 
-    return ff_set_common_formats_from_list(avctx, pix_fmts);
+    formats = ff_make_format_list(!strcmp(avctx->filter->name, "chromahold") ? hold_pixel_fmts : pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+
+    return ff_set_common_formats(avctx, formats);
 }
 
 static av_cold int config_input(AVFilterLink *inlink)
@@ -367,10 +369,11 @@ static const AVFilterPad chromakey_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_VIDEO,
-        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
+        .needs_writable = 1,
         .filter_frame   = filter_frame,
         .config_props   = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad chromakey_outputs[] = {
@@ -379,6 +382,7 @@ static const AVFilterPad chromakey_outputs[] = {
         .type           = AVMEDIA_TYPE_VIDEO,
         .config_props   = config_output,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(ChromakeyContext, x)
@@ -394,14 +398,14 @@ static const AVOption chromakey_options[] = {
 
 AVFILTER_DEFINE_CLASS(chromakey);
 
-const AVFilter ff_vf_chromakey = {
+AVFilter ff_vf_chromakey = {
     .name          = "chromakey",
     .description   = NULL_IF_CONFIG_SMALL("Turns a certain color into transparency. Operates on YUV colors."),
     .priv_size     = sizeof(ChromakeyContext),
     .priv_class    = &chromakey_class,
     .query_formats = query_formats,
-    FILTER_INPUTS(chromakey_inputs),
-    FILTER_OUTPUTS(chromakey_outputs),
+    .inputs        = chromakey_inputs,
+    .outputs       = chromakey_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
     .process_command = process_command,
 };
@@ -418,10 +422,11 @@ static const AVFilterPad chromahold_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_VIDEO,
-        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
+        .needs_writable = 1,
         .filter_frame   = filter_frame,
         .config_props   = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad chromahold_outputs[] = {
@@ -430,18 +435,19 @@ static const AVFilterPad chromahold_outputs[] = {
         .type           = AVMEDIA_TYPE_VIDEO,
         .config_props   = config_output,
     },
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(chromahold);
 
-const AVFilter ff_vf_chromahold = {
+AVFilter ff_vf_chromahold = {
     .name          = "chromahold",
     .description   = NULL_IF_CONFIG_SMALL("Turns a certain color range into gray."),
     .priv_size     = sizeof(ChromakeyContext),
     .priv_class    = &chromahold_class,
     .query_formats = query_formats,
-    FILTER_INPUTS(chromahold_inputs),
-    FILTER_OUTPUTS(chromahold_outputs),
+    .inputs        = chromahold_inputs,
+    .outputs       = chromahold_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
     .process_command = process_command,
 };

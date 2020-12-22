@@ -173,9 +173,18 @@ static int read_chunk(AVFormatContext *s)
     if (avio_feof(s->pb))
         return AVERROR_EOF;
 
-    while (avio_r8(s->pb) != 'D' || avio_r8(s->pb) != 'H' || avio_r8(s->pb) != 'A' || avio_r8(s->pb) != 'V') {
-        if (avio_feof(s->pb))
-            return AVERROR_EOF;
+    if (avio_rl32(s->pb) != MKTAG('D','H','A','V')) {
+        dhav->last_good_pos += 0x8000;
+        avio_seek(s->pb, dhav->last_good_pos, SEEK_SET);
+
+        while (avio_rl32(s->pb) != MKTAG('D','H','A','V')) {
+            if (avio_feof(s->pb))
+                return AVERROR_EOF;
+            dhav->last_good_pos += 0x8000;
+            ret = avio_skip(s->pb, 0x8000 - 4);
+            if (ret < 0)
+                return ret;
+        }
     }
 
     start = avio_tell(s->pb) - 4;
@@ -281,8 +290,6 @@ static int dhav_read_header(AVFormatContext *s)
                 int seek_back;
 
                 seek_back = avio_rl32(s->pb) + 8;
-                if (seek_back < 9)
-                    break;
                 dhav->last_good_pos = avio_tell(s->pb);
                 avio_seek(s->pb, -seek_back, SEEK_CUR);
             }
@@ -352,7 +359,7 @@ retry:
         case 0x4:
         case 0x8: st->codecpar->codec_id = AV_CODEC_ID_H264;  break;
         case 0xc: st->codecpar->codec_id = AV_CODEC_ID_HEVC;  break;
-        default: avpriv_request_sample(s, "Unknown video codec %X", dhav->video_codec);
+        default: avpriv_request_sample(s, "Unknown video codec %X\n", dhav->video_codec);
         }
         st->duration             = dhav->duration;
         st->codecpar->width      = dhav->width;
@@ -385,7 +392,7 @@ retry:
         case 0x1f: st->codecpar->codec_id = AV_CODEC_ID_MP2;       break;
         case 0x21: st->codecpar->codec_id = AV_CODEC_ID_MP3;       break;
         case 0x0d: st->codecpar->codec_id = AV_CODEC_ID_ADPCM_MS;  break;
-        default: avpriv_request_sample(s, "Unknown audio codec %X", dhav->audio_codec);
+        default: avpriv_request_sample(s, "Unknown audio codec %X\n", dhav->audio_codec);
         }
         st->duration              = dhav->duration;
         st->codecpar->channels    = dhav->audio_channels;
@@ -434,10 +441,10 @@ static int dhav_read_seek(AVFormatContext *s, int stream_index,
 
     if (index < 0)
         return -1;
-    if (avio_seek(s->pb, st->internal->index_entries[index].pos, SEEK_SET) < 0)
+    if (avio_seek(s->pb, st->index_entries[index].pos, SEEK_SET) < 0)
         return -1;
 
-    pts = st->internal->index_entries[index].timestamp;
+    pts = st->index_entries[index].timestamp;
 
     for (int n = 0; n < s->nb_streams; n++) {
         AVStream *st = s->streams[n];
@@ -451,7 +458,7 @@ static int dhav_read_seek(AVFormatContext *s, int stream_index,
     return 0;
 }
 
-const AVInputFormat ff_dhav_demuxer = {
+AVInputFormat ff_dhav_demuxer = {
     .name           = "dhav",
     .long_name      = NULL_IF_CONFIG_SMALL("Video DAV"),
     .priv_data_size = sizeof(DHAVContext),

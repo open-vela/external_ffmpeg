@@ -29,6 +29,8 @@ typedef struct ADerivativeContext {
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
     static const enum AVSampleFormat derivative_sample_fmts[] = {
         AV_SAMPLE_FMT_S16P, AV_SAMPLE_FMT_FLTP,
         AV_SAMPLE_FMT_S32P, AV_SAMPLE_FMT_DBLP,
@@ -38,16 +40,26 @@ static int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_formats_from_list(ctx, strcmp(ctx->filter->name, "aintegral") ?
-                                              derivative_sample_fmts : integral_sample_fmts);
+    int ret;
+
+    formats = ff_make_format_list(strcmp(ctx->filter->name, "aintegral") ?
+                                  derivative_sample_fmts : integral_sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_all_channel_counts(ctx);
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 #define DERIVATIVE(name, type)                                          \
@@ -163,6 +175,7 @@ static const AVFilterPad aderivative_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad aderivative_outputs[] = {
@@ -170,24 +183,25 @@ static const AVFilterPad aderivative_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_aderivative = {
+AVFilter ff_af_aderivative = {
     .name          = "aderivative",
     .description   = NULL_IF_CONFIG_SMALL("Compute derivative of input audio."),
     .query_formats = query_formats,
     .priv_size     = sizeof(ADerivativeContext),
     .uninit        = uninit,
-    FILTER_INPUTS(aderivative_inputs),
-    FILTER_OUTPUTS(aderivative_outputs),
+    .inputs        = aderivative_inputs,
+    .outputs       = aderivative_outputs,
 };
 
-const AVFilter ff_af_aintegral = {
+AVFilter ff_af_aintegral = {
     .name          = "aintegral",
     .description   = NULL_IF_CONFIG_SMALL("Compute integral of input audio."),
     .query_formats = query_formats,
     .priv_size     = sizeof(ADerivativeContext),
     .uninit        = uninit,
-    FILTER_INPUTS(aderivative_inputs),
-    FILTER_OUTPUTS(aderivative_outputs),
+    .inputs        = aderivative_inputs,
+    .outputs       = aderivative_outputs,
 };
