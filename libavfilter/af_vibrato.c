@@ -113,19 +113,32 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -149,7 +162,7 @@ static int config_input(AVFilterLink *inlink)
     s->buf = av_calloc(inlink->channels, sizeof(*s->buf));
     if (!s->buf)
         return AVERROR(ENOMEM);
-    s->buf_size = lrint(inlink->sample_rate * 0.005 + 0.5);
+    s->buf_size = inlink->sample_rate * 0.005;
     for (c = 0; c < s->channels; c++) {
         s->buf[c] = av_malloc_array(s->buf_size, sizeof(*s->buf[c]));
         if (!s->buf[c])
@@ -157,7 +170,7 @@ static int config_input(AVFilterLink *inlink)
     }
     s->buf_index = 0;
 
-    s->wave_table_size = lrint(inlink->sample_rate / s->freq + 0.5);
+    s->wave_table_size = inlink->sample_rate / s->freq;
     s->wave_table = av_malloc_array(s->wave_table_size, sizeof(*s->wave_table));
     if (!s->wave_table)
         return AVERROR(ENOMEM);
@@ -174,6 +187,7 @@ static const AVFilterPad avfilter_af_vibrato_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad avfilter_af_vibrato_outputs[] = {
@@ -181,15 +195,16 @@ static const AVFilterPad avfilter_af_vibrato_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_vibrato = {
+AVFilter ff_af_vibrato = {
     .name          = "vibrato",
     .description   = NULL_IF_CONFIG_SMALL("Apply vibrato effect."),
     .priv_size     = sizeof(VibratoContext),
     .priv_class    = &vibrato_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(avfilter_af_vibrato_inputs),
-    FILTER_OUTPUTS(avfilter_af_vibrato_outputs),
+    .inputs        = avfilter_af_vibrato_inputs,
+    .outputs       = avfilter_af_vibrato_outputs,
 };
