@@ -34,6 +34,7 @@ extern AVFilter ff_af_acrusher;
 extern AVFilter ff_af_adeclick;
 extern AVFilter ff_af_adeclip;
 extern AVFilter ff_af_adelay;
+extern AVFilter ff_af_adenorm;
 extern AVFilter ff_af_aderivative;
 extern AVFilter ff_af_aecho;
 extern AVFilter ff_af_aemphasis;
@@ -43,6 +44,7 @@ extern AVFilter ff_af_afftdn;
 extern AVFilter ff_af_afftfilt;
 extern AVFilter ff_af_afir;
 extern AVFilter ff_af_aformat;
+extern AVFilter ff_af_afreqshift;
 extern AVFilter ff_af_agate;
 extern AVFilter ff_af_aiir;
 extern AVFilter ff_af_aintegral;
@@ -61,6 +63,7 @@ extern AVFilter ff_af_anull;
 extern AVFilter ff_af_apad;
 extern AVFilter ff_af_aperms;
 extern AVFilter ff_af_aphaser;
+extern AVFilter ff_af_aphaseshift;
 extern AVFilter ff_af_apulsator;
 extern AVFilter ff_af_arealtime;
 extern AVFilter ff_af_aresample;
@@ -80,6 +83,10 @@ extern AVFilter ff_af_asr;
 extern AVFilter ff_af_astats;
 extern AVFilter ff_af_astreamselect;
 extern AVFilter ff_af_asubboost;
+extern AVFilter ff_af_asubcut;
+extern AVFilter ff_af_asupercut;
+extern AVFilter ff_af_asuperpass;
+extern AVFilter ff_af_asuperstop;
 extern AVFilter ff_af_atempo;
 extern AVFilter ff_af_atrim;
 extern AVFilter ff_af_axcorrelate;
@@ -128,6 +135,7 @@ extern AVFilter ff_af_sidechaingate;
 extern AVFilter ff_af_silencedetect;
 extern AVFilter ff_af_silenceremove;
 extern AVFilter ff_af_sofalizer;
+extern AVFilter ff_af_speechnorm;
 extern AVFilter ff_af_stereotools;
 extern AVFilter ff_af_stereowiden;
 extern AVFilter ff_af_superequalizer;
@@ -172,6 +180,7 @@ extern AVFilter ff_vf_bwdif;
 extern AVFilter ff_vf_cas;
 extern AVFilter ff_vf_chromahold;
 extern AVFilter ff_vf_chromakey;
+extern AVFilter ff_vf_chromanr;
 extern AVFilter ff_vf_chromashift;
 extern AVFilter ff_vf_ciescope;
 extern AVFilter ff_vf_codecview;
@@ -376,6 +385,7 @@ extern AVFilter ff_vf_sharpness_vaapi;
 extern AVFilter ff_vf_showinfo;
 extern AVFilter ff_vf_showpalette;
 extern AVFilter ff_vf_shuffleframes;
+extern AVFilter ff_vf_shufflepixels;
 extern AVFilter ff_vf_shuffleplanes;
 extern AVFilter ff_vf_sidedata;
 extern AVFilter ff_vf_signalstats;
@@ -527,7 +537,7 @@ const AVFilter *avfilter_get_by_name(const char *name)
 
     while ((f = av_filter_iterate(&opaque)))
         if (!strcmp(f->name, name))
-            return (AVFilter *)f;
+            return f;
 
     return NULL;
 }
