@@ -403,7 +403,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             put_bits(&pb, 8, v);
         }
     }
-    avpriv_align_put_bits(&pb);
+    align_put_bits(&pb);
     av_freep(&buf2);
 
     /* End of image */
@@ -418,7 +418,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return 0;
 
 memfail:
-    av_packet_unref(pkt);
     av_freep(&buf2);
     av_freep(&state);
     av_freep(&zero);
