@@ -128,8 +128,7 @@ avs_read_video_packet(AVFormatContext * s, AVPacket * pkt,
 static int avs_read_audio_packet(AVFormatContext * s, AVPacket * pkt)
 {
     AvsFormat *avs = s->priv_data;
-    int ret;
-    int64_t size;
+    int ret, size;
 
     size = avio_tell(s->pb);
     ret = ff_voc_get_packet(s, pkt, avs->st_audio, avs->remaining_audio_size);
