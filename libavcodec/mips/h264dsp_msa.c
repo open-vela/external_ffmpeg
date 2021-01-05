@@ -21,7 +21,7 @@
 #include "libavutil/mips/generic_macros_msa.h"
 #include "h264dsp_mips.h"
 
-static void avc_wgt_4x2_msa(uint8_t *data, ptrdiff_t stride,
+static void avc_wgt_4x2_msa(uint8_t *data, int32_t stride,
                             int32_t log2_denom, int32_t src_weight,
                             int32_t offset_in)
 {
@@ -48,9 +48,8 @@ static void avc_wgt_4x2_msa(uint8_t *data, ptrdiff_t stride,
     ST_W2(src0, 0, 1, data, stride);
 }
 
-static void avc_wgt_4x4_msa(uint8_t *data, ptrdiff_t stride,
-                            int32_t log2_denom, int32_t src_weight,
-                            int32_t offset_in)
+static void avc_wgt_4x4_msa(uint8_t *data, int32_t stride, int32_t log2_denom,
+                            int32_t src_weight, int32_t offset_in)
 {
     uint32_t tp0, tp1, tp2, tp3, offset_val;
     v16u8 src0 = { 0 };
@@ -75,9 +74,8 @@ static void avc_wgt_4x4_msa(uint8_t *data, ptrdiff_t stride,
     ST_W4(src0, 0, 1, 2, 3, data, stride);
 }
 
-static void avc_wgt_4x8_msa(uint8_t *data, ptrdiff_t stride,
-                            int32_t log2_denom, int32_t src_weight,
-                            int32_t offset_in)
+static void avc_wgt_4x8_msa(uint8_t *data, int32_t stride, int32_t log2_denom,
+                            int32_t src_weight, int32_t offset_in)
 {
     uint32_t tp0, tp1, tp2, tp3, offset_val;
     v16u8 src0 = { 0 }, src1 = { 0 };
@@ -107,9 +105,8 @@ static void avc_wgt_4x8_msa(uint8_t *data, ptrdiff_t stride,
     ST_W8(src0, src1, 0, 1, 2, 3, 0, 1, 2, 3, data, stride);
 }
 
-static void avc_wgt_8x4_msa(uint8_t *data, ptrdiff_t stride,
-                            int32_t log2_denom, int32_t src_weight,
-                            int32_t offset_in)
+static void avc_wgt_8x4_msa(uint8_t *data, int32_t stride, int32_t log2_denom,
+                            int32_t src_weight, int32_t offset_in)
 {
     uint32_t offset_val;
     uint64_t tp0, tp1, tp2, tp3;
@@ -139,7 +136,7 @@ static void avc_wgt_8x4_msa(uint8_t *data, ptrdiff_t stride,
     ST_D4(src0, src1, 0, 1, 0, 1, data, stride);
 }
 
-static void avc_wgt_8x8_msa(uint8_t *data, ptrdiff_t stride, int32_t log2_denom,
+static void avc_wgt_8x8_msa(uint8_t *data, int32_t stride, int32_t log2_denom,
                             int32_t src_weight, int32_t offset_in)
 {
     uint32_t offset_val;
@@ -181,9 +178,8 @@ static void avc_wgt_8x8_msa(uint8_t *data, ptrdiff_t stride, int32_t log2_denom,
     ST_D8(src0, src1, src2, src3, 0, 1, 0, 1, 0, 1, 0, 1, data, stride);
 }
 
-static void avc_wgt_8x16_msa(uint8_t *data, ptrdiff_t stride,
-                             int32_t log2_denom, int32_t src_weight,
-                             int32_t offset_in)
+static void avc_wgt_8x16_msa(uint8_t *data, int32_t stride, int32_t log2_denom,
+                             int32_t src_weight, int32_t offset_in)
 {
     uint32_t offset_val, cnt;
     uint64_t tp0, tp1, tp2, tp3;
@@ -227,7 +223,7 @@ static void avc_wgt_8x16_msa(uint8_t *data, ptrdiff_t stride,
     }
 }
 
-static void avc_biwgt_4x2_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
+static void avc_biwgt_4x2_msa(uint8_t *src, uint8_t *dst, int32_t stride,
                               int32_t log2_denom, int32_t src_weight,
                               int32_t dst_weight, int32_t offset_in)
 {
@@ -260,7 +256,7 @@ static void avc_biwgt_4x2_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
     ST_W2(dst0, 0, 1, dst, stride);
 }
 
-static void avc_biwgt_4x4_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
+static void avc_biwgt_4x4_msa(uint8_t *src, uint8_t *dst, int32_t stride,
                               int32_t log2_denom, int32_t src_weight,
                               int32_t dst_weight, int32_t offset_in)
 {
@@ -294,7 +290,7 @@ static void avc_biwgt_4x4_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
     ST_W4(dst0, 0, 1, 2, 3, dst, stride);
 }
 
-static void avc_biwgt_4x8_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
+static void avc_biwgt_4x8_msa(uint8_t *src, uint8_t *dst, int32_t stride,
                               int32_t log2_denom, int32_t src_weight,
                               int32_t dst_weight, int32_t offset_in)
 {
@@ -334,7 +330,7 @@ static void avc_biwgt_4x8_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
     ST_W8(dst0, dst1, 0, 1, 2, 3, 0, 1, 2, 3, dst, stride);
 }
 
-static void avc_biwgt_8x4_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
+static void avc_biwgt_8x4_msa(uint8_t *src, uint8_t *dst, int32_t stride,
                               int32_t log2_denom, int32_t src_weight,
                               int32_t dst_weight, int32_t offset_in)
 {
@@ -372,7 +368,7 @@ static void avc_biwgt_8x4_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
     ST_D4(dst0, dst1, 0, 1, 0, 1, dst, stride);
 }
 
-static void avc_biwgt_8x8_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
+static void avc_biwgt_8x8_msa(uint8_t *src, uint8_t *dst, int32_t stride,
                               int32_t log2_denom, int32_t src_weight,
                               int32_t dst_weight, int32_t offset_in)
 {
@@ -423,7 +419,7 @@ static void avc_biwgt_8x8_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
     ST_D8(dst0, dst1, dst2, dst3, 0, 1, 0, 1, 0, 1, 0, 1, dst, stride);
 }
 
-static void avc_biwgt_8x16_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
+static void avc_biwgt_8x16_msa(uint8_t *src, uint8_t *dst, int32_t stride,
                                int32_t log2_denom, int32_t src_weight,
                                int32_t dst_weight, int32_t offset_in)
 {
@@ -683,7 +679,7 @@ static void avc_biwgt_8x16_msa(uint8_t *src, uint8_t *dst, ptrdiff_t stride,
 static void avc_loopfilter_luma_intra_edge_hor_msa(uint8_t *data,
                                                    uint8_t alpha_in,
                                                    uint8_t beta_in,
-                                                   ptrdiff_t img_width)
+                                                   uint32_t img_width)
 {
     v16u8 p0_asub_q0, p1_asub_p0, q1_asub_q0;
     v16u8 is_less_than, is_less_than_beta, is_less_than_alpha;
@@ -816,7 +812,7 @@ static void avc_loopfilter_luma_intra_edge_hor_msa(uint8_t *data,
 static void avc_loopfilter_luma_intra_edge_ver_msa(uint8_t *data,
                                                    uint8_t alpha_in,
                                                    uint8_t beta_in,
-                                                   ptrdiff_t img_width)
+                                                   uint32_t img_width)
 {
     uint8_t *src = data - 4;
     v16u8 alpha, beta, p0_asub_q0;
@@ -973,8 +969,7 @@ static void avc_loopfilter_luma_intra_edge_ver_msa(uint8_t *data,
     }
 }
 
-static void avc_h_loop_filter_luma_mbaff_intra_msa(uint8_t *src,
-                                                   ptrdiff_t stride,
+static void avc_h_loop_filter_luma_mbaff_intra_msa(uint8_t *src, int32_t stride,
                                                    int32_t alpha_in,
                                                    int32_t beta_in)
 {
@@ -1176,7 +1171,7 @@ static void avc_h_loop_filter_luma_mbaff_intra_msa(uint8_t *src,
 static void avc_loopfilter_cb_or_cr_intra_edge_hor_msa(uint8_t *data_cb_or_cr,
                                                        uint8_t alpha_in,
                                                        uint8_t beta_in,
-                                                       ptrdiff_t img_width)
+                                                       uint32_t img_width)
 {
     v16u8 alpha, beta;
     v16u8 is_less_than;
@@ -1225,7 +1220,7 @@ static void avc_loopfilter_cb_or_cr_intra_edge_hor_msa(uint8_t *data_cb_or_cr,
 static void avc_loopfilter_cb_or_cr_intra_edge_ver_msa(uint8_t *data_cb_or_cr,
                                                        uint8_t alpha_in,
                                                        uint8_t beta_in,
-                                                       ptrdiff_t img_width)
+                                                       uint32_t img_width)
 {
     v8i16 tmp1;
     v16u8 alpha, beta, is_less_than;
@@ -1291,7 +1286,7 @@ static void avc_loopfilter_luma_inter_edge_ver_msa(uint8_t *data,
                                                    uint8_t tc2, uint8_t tc3,
                                                    uint8_t alpha_in,
                                                    uint8_t beta_in,
-                                                   ptrdiff_t img_width)
+                                                   uint32_t img_width)
 {
     v16u8 tmp_vec, bs = { 0 };
 
@@ -1571,7 +1566,7 @@ static void avc_loopfilter_luma_inter_edge_hor_msa(uint8_t *data,
                                                    uint8_t tc2, uint8_t tc3,
                                                    uint8_t alpha_in,
                                                    uint8_t beta_in,
-                                                   ptrdiff_t image_width)
+                                                   uint32_t image_width)
 {
     v16u8 tmp_vec;
     v16u8 bs = { 0 };
@@ -1720,7 +1715,7 @@ static void avc_loopfilter_luma_inter_edge_hor_msa(uint8_t *data,
     }
 }
 
-static void avc_h_loop_filter_luma_mbaff_msa(uint8_t *in, ptrdiff_t stride,
+static void avc_h_loop_filter_luma_mbaff_msa(uint8_t *in, int32_t stride,
                                              int32_t alpha_in, int32_t beta_in,
                                              int8_t *tc0)
 {
@@ -1946,7 +1941,7 @@ static void avc_loopfilter_cb_or_cr_inter_edge_hor_msa(uint8_t *data,
                                                        uint8_t tc2, uint8_t tc3,
                                                        uint8_t alpha_in,
                                                        uint8_t beta_in,
-                                                       ptrdiff_t img_width)
+                                                       uint32_t img_width)
 {
     v16u8 alpha, beta;
     v8i16 tmp_vec;
@@ -2032,7 +2027,7 @@ static void avc_loopfilter_cb_or_cr_inter_edge_ver_msa(uint8_t *data,
                                                        uint8_t tc2, uint8_t tc3,
                                                        uint8_t alpha_in,
                                                        uint8_t beta_in,
-                                                       ptrdiff_t img_width)
+                                                       uint32_t img_width)
 {
     uint8_t *src;
     v16u8 alpha, beta;
@@ -2120,7 +2115,7 @@ static void avc_loopfilter_cb_or_cr_inter_edge_ver_msa(uint8_t *data,
     }
 }
 
-static void avc_h_loop_filter_chroma422_msa(uint8_t *src, ptrdiff_t stride,
+static void avc_h_loop_filter_chroma422_msa(uint8_t *src, int32_t stride,
                                             int32_t alpha_in, int32_t beta_in,
                                             int8_t *tc0)
 {
@@ -2144,8 +2139,7 @@ static void avc_h_loop_filter_chroma422_msa(uint8_t *src, ptrdiff_t stride,
     }
 }
 
-static void avc_h_loop_filter_chroma422_mbaff_msa(uint8_t *src,
-                                                  ptrdiff_t stride,
+static void avc_h_loop_filter_chroma422_mbaff_msa(uint8_t *src, int32_t stride,
                                                   int32_t alpha_in,
                                                   int32_t beta_in,
                                                   int8_t *tc0)
@@ -2177,7 +2171,7 @@ static void avc_h_loop_filter_chroma422_mbaff_msa(uint8_t *src,
     }
 }
 
-void ff_h264_h_lpf_luma_inter_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_h_lpf_luma_inter_msa(uint8_t *data, int img_width,
                                   int alpha, int beta, int8_t *tc)
 {
     uint8_t bs0 = 1;
@@ -2199,7 +2193,7 @@ void ff_h264_h_lpf_luma_inter_msa(uint8_t *data, ptrdiff_t img_width,
                                            alpha, beta, img_width);
 }
 
-void ff_h264_v_lpf_luma_inter_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_v_lpf_luma_inter_msa(uint8_t *data, int img_width,
                                   int alpha, int beta, int8_t *tc)
 {
 
@@ -2222,7 +2216,7 @@ void ff_h264_v_lpf_luma_inter_msa(uint8_t *data, ptrdiff_t img_width,
                                            alpha, beta, img_width);
 }
 
-void ff_h264_h_lpf_chroma_inter_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_h_lpf_chroma_inter_msa(uint8_t *data, int img_width,
                                     int alpha, int beta, int8_t *tc)
 {
     uint8_t bs0 = 1;
@@ -2244,7 +2238,7 @@ void ff_h264_h_lpf_chroma_inter_msa(uint8_t *data, ptrdiff_t img_width,
                                                alpha, beta, img_width);
 }
 
-void ff_h264_v_lpf_chroma_inter_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_v_lpf_chroma_inter_msa(uint8_t *data, int img_width,
                                     int alpha, int beta, int8_t *tc)
 {
     uint8_t bs0 = 1;
@@ -2266,40 +2260,40 @@ void ff_h264_v_lpf_chroma_inter_msa(uint8_t *data, ptrdiff_t img_width,
                                                alpha, beta, img_width);
 }
 
-void ff_h264_h_lpf_luma_intra_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_h_lpf_luma_intra_msa(uint8_t *data, int img_width,
                                   int alpha, int beta)
 {
     avc_loopfilter_luma_intra_edge_ver_msa(data, (uint8_t) alpha,
                                            (uint8_t) beta,
-                                           img_width);
+                                           (unsigned int) img_width);
 }
 
-void ff_h264_v_lpf_luma_intra_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_v_lpf_luma_intra_msa(uint8_t *data, int img_width,
                                   int alpha, int beta)
 {
     avc_loopfilter_luma_intra_edge_hor_msa(data, (uint8_t) alpha,
                                            (uint8_t) beta,
-                                           img_width);
+                                           (unsigned int) img_width);
 }
 
-void ff_h264_h_lpf_chroma_intra_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_h_lpf_chroma_intra_msa(uint8_t *data, int img_width,
                                     int alpha, int beta)
 {
     avc_loopfilter_cb_or_cr_intra_edge_ver_msa(data, (uint8_t) alpha,
                                                (uint8_t) beta,
-                                               img_width);
+                                               (unsigned int) img_width);
 }
 
-void ff_h264_v_lpf_chroma_intra_msa(uint8_t *data, ptrdiff_t img_width,
+void ff_h264_v_lpf_chroma_intra_msa(uint8_t *data, int img_width,
                                     int alpha, int beta)
 {
     avc_loopfilter_cb_or_cr_intra_edge_hor_msa(data, (uint8_t) alpha,
                                                (uint8_t) beta,
-                                               img_width);
+                                               (unsigned int) img_width);
 }
 
 void ff_h264_h_loop_filter_chroma422_msa(uint8_t *src,
-                                         ptrdiff_t ystride,
+                                         int32_t ystride,
                                          int32_t alpha, int32_t beta,
                                          int8_t *tc0)
 {
@@ -2307,7 +2301,7 @@ void ff_h264_h_loop_filter_chroma422_msa(uint8_t *src,
 }
 
 void ff_h264_h_loop_filter_chroma422_mbaff_msa(uint8_t *src,
-                                               ptrdiff_t ystride,
+                                               int32_t ystride,
                                                int32_t alpha,
                                                int32_t beta,
                                                int8_t *tc0)
@@ -2316,7 +2310,7 @@ void ff_h264_h_loop_filter_chroma422_mbaff_msa(uint8_t *src,
 }
 
 void ff_h264_h_loop_filter_luma_mbaff_msa(uint8_t *src,
-                                          ptrdiff_t ystride,
+                                          int32_t ystride,
                                           int32_t alpha,
                                           int32_t beta,
                                           int8_t *tc0)
@@ -2325,7 +2319,7 @@ void ff_h264_h_loop_filter_luma_mbaff_msa(uint8_t *src,
 }
 
 void ff_h264_h_loop_filter_luma_mbaff_intra_msa(uint8_t *src,
-                                                ptrdiff_t ystride,
+                                                int32_t ystride,
                                                 int32_t alpha,
                                                 int32_t beta)
 {

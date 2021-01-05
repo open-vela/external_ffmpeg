@@ -67,10 +67,7 @@ const AVClass ffurl_context_class = {
     .option           = options,
     .version          = LIBAVUTIL_VERSION_INT,
     .child_next       = urlcontext_child_next,
-#if FF_API_CHILD_CLASS_NEXT
     .child_class_next = ff_urlcontext_child_class_next,
-#endif
-    .child_class_iterate = ff_urlcontext_child_class_iterate,
 };
 /*@}*/
 
@@ -352,6 +349,13 @@ int ffurl_open_whitelist(URLContext **puc, const char *filename, int flags,
 fail:
     ffurl_closep(puc);
     return ret;
+}
+
+int ffurl_open(URLContext **puc, const char *filename, int flags,
+               const AVIOInterruptCB *int_cb, AVDictionary **options)
+{
+    return ffurl_open_whitelist(puc, filename, flags,
+                                int_cb, options, NULL, NULL, NULL);
 }
 
 static inline int retry_transfer_wrapper(URLContext *h, uint8_t *buf,
