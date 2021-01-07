@@ -1267,10 +1267,11 @@ int av_interleaved_write_frame(AVFormatContext *s, AVPacket *pkt)
     }
 }
 
-int av_write_trailer(AVFormatContext *s)
+int avformat_write_trailer(AVFormatContext *s)
 {
-    int i, ret1, ret = 0;
     AVPacket pkt = {0};
+    int i, ret1, ret = 0;
+
     av_init_packet(&pkt);
 
     for (i = 0; i < s->nb_streams; i++) {
@@ -1290,11 +1291,20 @@ int av_write_trailer(AVFormatContext *s)
         if (!(s->oformat->flags & AVFMT_NOFILE) && s->pb)
             avio_write_marker(s->pb, AV_NOPTS_VALUE, AVIO_DATA_MARKER_TRAILER);
         if (ret >= 0) {
-        ret = s->oformat->write_trailer(s);
+            ret = s->oformat->write_trailer(s);
         } else {
             s->oformat->write_trailer(s);
         }
     }
+
+    return ret;
+}
+
+int av_write_trailer(AVFormatContext *s)
+{
+    int i, ret;
+
+    ret = avformat_write_trailer(s);
 
     deinit_muxer(s);
 

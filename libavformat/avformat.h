@@ -2600,6 +2600,16 @@ int av_interleaved_write_uncoded_frame(AVFormatContext *s, int stream_index,
 int av_write_uncoded_frame_query(AVFormatContext *s, int stream_index);
 
 /**
+ * Write the stream trailer to an output media file
+ *
+ * May only be called after a successful call to avformat_write_header.
+ *
+ * @param s media file handle
+ * @return 0 if OK, AVERROR_xxx on error
+ */
+int avformat_write_trailer(AVFormatContext *s);
+
+/**
  * Write the stream trailer to an output media file and free the
  * file private data.
  *
