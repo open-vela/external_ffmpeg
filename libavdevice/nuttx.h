@@ -29,6 +29,8 @@
 #include <nuttx/config.h>
 #include <nuttx/audio/audio.h>
 
+#include <mqueue.h>
+
 #include "libavutil/log.h"
 #include "timefilter.h"
 #include "avdevice.h"
