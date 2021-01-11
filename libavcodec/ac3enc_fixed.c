@@ -27,7 +27,7 @@
  */
 
 #define FFT_FLOAT 0
-#define AC3ENC_FLOAT 0
+#undef CONFIG_AC3ENC_FLOAT
 #include "internal.h"
 #include "audiodsp.h"
 #include "ac3enc.h"
@@ -115,7 +115,7 @@ static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl)
  *
  * @param s  AC-3 encoder private context
  */
-static av_cold void ac3_fixed_mdct_end(AC3EncodeContext *s)
+av_cold void ff_ac3_fixed_mdct_end(AC3EncodeContext *s)
 {
     ff_mdct_end(&s->mdct);
 }
@@ -127,7 +127,7 @@ static av_cold void ac3_fixed_mdct_end(AC3EncodeContext *s)
  * @param s  AC-3 encoder private context
  * @return   0 on success, negative error code on failure
  */
-static av_cold int ac3_fixed_mdct_init(AC3EncodeContext *s)
+av_cold int ff_ac3_fixed_mdct_init(AC3EncodeContext *s)
 {
     int ret = ff_mdct_init(&s->mdct, 9, 0, -1.0);
     s->mdct_window = ff_ac3_window;
@@ -139,9 +139,6 @@ static av_cold int ac3_fixed_encode_init(AVCodecContext *avctx)
 {
     AC3EncodeContext *s = avctx->priv_data;
     s->fixed_point = 1;
-    s->mdct_end                = ac3_fixed_mdct_end;
-    s->mdct_init               = ac3_fixed_mdct_init;
-    s->allocate_sample_buffers = allocate_sample_buffers;
     return ff_ac3_encode_init(avctx);
 }
 
@@ -158,7 +155,6 @@ AVCodec ff_ac3_fixed_encoder = {
     .sample_fmts     = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
     .priv_class      = &ac3enc_class,
-    .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
     .supported_samplerates = ff_ac3_sample_rate_tab,
     .channel_layouts = ff_ac3_channel_layouts,
     .defaults        = ac3_defaults,

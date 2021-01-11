@@ -26,7 +26,7 @@
  * floating-point AC-3 encoder.
  */
 
-#define AC3ENC_FLOAT 1
+#define CONFIG_AC3ENC_FLOAT 1
 #include "internal.h"
 #include "audiodsp.h"
 #include "ac3enc.h"
@@ -94,7 +94,7 @@ static void sum_square_butterfly(AC3EncodeContext *s, float sum[4],
  *
  * @param s  AC-3 encoder private context
  */
-static av_cold void ac3_float_mdct_end(AC3EncodeContext *s)
+av_cold void ff_ac3_float_mdct_end(AC3EncodeContext *s)
 {
     ff_mdct_end(&s->mdct);
     av_freep(&s->mdct_window);
@@ -107,7 +107,7 @@ static av_cold void ac3_float_mdct_end(AC3EncodeContext *s)
  * @param s  AC-3 encoder private context
  * @return   0 on success, negative error code on failure
  */
-static av_cold int ac3_float_mdct_init(AC3EncodeContext *s)
+av_cold int ff_ac3_float_mdct_init(AC3EncodeContext *s)
 {
     float *window;
     int i, n, n2;
@@ -132,9 +132,6 @@ static av_cold int ac3_float_mdct_init(AC3EncodeContext *s)
 av_cold int ff_ac3_float_encode_init(AVCodecContext *avctx)
 {
     AC3EncodeContext *s = avctx->priv_data;
-    s->mdct_end                = ac3_float_mdct_end;
-    s->mdct_init               = ac3_float_mdct_init;
-    s->allocate_sample_buffers = allocate_sample_buffers;
     s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
     if (!s->fdsp)
         return AVERROR(ENOMEM);
@@ -156,5 +153,4 @@ AVCodec ff_ac3_encoder = {
     .supported_samplerates = ff_ac3_sample_rate_tab,
     .channel_layouts = ff_ac3_channel_layouts,
     .defaults        = ac3_defaults,
-    .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
