@@ -41,8 +41,8 @@
 #include "put_bits.h"
 #include "audiodsp.h"
 
-#ifndef CONFIG_AC3ENC_FLOAT
-#define CONFIG_AC3ENC_FLOAT 0
+#ifndef AC3ENC_FLOAT
+#define AC3ENC_FLOAT 0
 #endif
 
 #define OFFSET(param) offsetof(AC3EncodeContext, options.param)
@@ -52,7 +52,7 @@
 #define AC3ENC_TYPE_AC3         1
 #define AC3ENC_TYPE_EAC3        2
 
-#if CONFIG_AC3ENC_FLOAT
+#if AC3ENC_FLOAT
 #define AC3_NAME(x) ff_ac3_float_ ## x
 #define MAC_COEF(d,a,b) ((d)+=(a)*(b))
 #define COEF_MIN (-16777215.0/16777216.0)
@@ -282,32 +282,10 @@ void ff_ac3_adjust_frame_size(AC3EncodeContext *s);
 
 void ff_ac3_compute_coupling_strategy(AC3EncodeContext *s);
 
-void ff_ac3_apply_rematrixing(AC3EncodeContext *s);
-
-void ff_ac3_process_exponents(AC3EncodeContext *s);
-
-int ff_ac3_compute_bit_allocation(AC3EncodeContext *s);
-
-void ff_ac3_group_exponents(AC3EncodeContext *s);
-
-void ff_ac3_quantize_mantissas(AC3EncodeContext *s);
-
-void ff_ac3_output_frame(AC3EncodeContext *s, unsigned char *frame);
-
-
-/* prototypes for functions in ac3enc_fixed.c and ac3enc_float.c */
-
-void ff_ac3_fixed_mdct_end(AC3EncodeContext *s);
-void ff_ac3_float_mdct_end(AC3EncodeContext *s);
-
-int ff_ac3_fixed_mdct_init(AC3EncodeContext *s);
-int ff_ac3_float_mdct_init(AC3EncodeContext *s);
-
+int ff_ac3_encode_frame_common_end(AVCodecContext *avctx, AVPacket *avpkt,
+                                   const AVFrame *frame, int *got_packet_ptr);
 
 /* prototypes for functions in ac3enc_template.c */
-
-int ff_ac3_fixed_allocate_sample_buffers(AC3EncodeContext *s);
-int ff_ac3_float_allocate_sample_buffers(AC3EncodeContext *s);
 
 int ff_ac3_fixed_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                               const AVFrame *frame, int *got_packet_ptr);
