@@ -49,7 +49,6 @@
 
 #include "libavutil/common.h"
 #include "libavutil/mem.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/thread.h"
 
 #define CHECK_ERROR(condition, errorcode, goto_point)                          \
