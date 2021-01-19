@@ -489,6 +489,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
 static int query_formats(AVFilterContext *ctx)
 {
     int ret;
+    AVFilterFormats *in_fmts, *out_fmts;
     static const enum AVPixelFormat in_pix_fmts[] = {
         AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_NV12,
@@ -504,12 +505,16 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    ret = ff_formats_ref(ff_make_format_list(in_pix_fmts),
-                         &ctx->inputs[0]->outcfg.formats);
+    in_fmts  = ff_make_format_list(in_pix_fmts);
+    out_fmts = ff_make_format_list(out_pix_fmts);
+    ret = ff_formats_ref(in_fmts, &ctx->inputs[0]->out_formats);
     if (ret < 0)
         return ret;
-    return ff_formats_ref(ff_make_format_list(out_pix_fmts),
-                          &ctx->outputs[0]->incfg.formats);
+    ret = ff_formats_ref(out_fmts, &ctx->outputs[0]->in_formats);
+    if (ret < 0)
+        return ret;
+
+    return 0;
 }
 
 static av_cold void vpp_uninit(AVFilterContext *ctx)

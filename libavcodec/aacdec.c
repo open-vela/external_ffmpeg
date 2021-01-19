@@ -69,11 +69,6 @@
 #   include "mips/aacdec_mips.h"
 #endif
 
-DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(sine_120))[120];
-DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(sine_960))[960];
-DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(aac_kbd_long_960))[960];
-DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(aac_kbd_short_120))[120];
-
 static av_always_inline void reset_predict_state(PredictorState *ps)
 {
     ps->r0   = 0.0f;
@@ -491,17 +486,14 @@ static int latm_decode_frame(AVCodecContext *avctx, void *out,
     if ((err = init_get_bits8(&gb, avpkt->data, avpkt->size)) < 0)
         return err;
 
-    if (get_bits(&gb, 11) != LOAS_SYNC_WORD) {
-        // try raw LATM since LOAS_SYNC_WORD not found.
-        if ((err = init_get_bits8(&gb, avpkt->data, avpkt->size)) < 0)
-            return err;
-        muxlength = avpkt->size;
-    } else {
-        muxlength = get_bits(&gb, 13) + 3;
-        // not enough data, the parser should have sorted this out
-        if (muxlength > avpkt->size)
-            return AVERROR_INVALIDDATA;
-    }
+    // check for LOAS sync word
+    if (get_bits(&gb, 11) != LOAS_SYNC_WORD)
+        return AVERROR_INVALIDDATA;
+
+    muxlength = get_bits(&gb, 13) + 3;
+    // not enough data, the parser should have sorted this out
+    if (muxlength > avpkt->size)
+        return AVERROR_INVALIDDATA;
 
     if ((err = read_audio_mux_element(latmctx, &gb)))
         return (err < 0) ? err : avpkt->size;

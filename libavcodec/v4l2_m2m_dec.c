@@ -138,10 +138,14 @@ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
     V4L2Context *const capture = &s->capture;
     V4L2Context *const output = &s->output;
+    AVPacket avpkt = {0};
     int ret;
 
-    if (!s->buf_pkt.size) {
-        ret = ff_decode_get_packet(avctx, &s->buf_pkt);
+    if (s->buf_pkt.size) {
+        avpkt = s->buf_pkt;
+        memset(&s->buf_pkt, 0, sizeof(AVPacket));
+    } else {
+        ret = ff_decode_get_packet(avctx, &avpkt);
         if (ret < 0 && ret != AVERROR_EOF)
             return ret;
     }
@@ -149,29 +153,32 @@ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     if (s->draining)
         goto dequeue;
 
-    ret = ff_v4l2_context_enqueue_packet(output, &s->buf_pkt);
-    if (ret < 0 && ret != AVERROR(EAGAIN))
-        goto fail;
+    ret = ff_v4l2_context_enqueue_packet(output, &avpkt);
+    if (ret < 0) {
+        if (ret != AVERROR(EAGAIN))
+           return ret;
 
-    /* if EAGAIN don't unref packet and try to enqueue in the next iteration */
-    if (ret != AVERROR(EAGAIN))
-        av_packet_unref(&s->buf_pkt);
+        s->buf_pkt = avpkt;
+        /* no input buffers available, continue dequeing */
+    }
 
-    if (!s->draining) {
+    if (avpkt.size) {
         ret = v4l2_try_start(avctx);
         if (ret) {
+            av_packet_unref(&avpkt);
+
             /* cant recover */
-            if (ret != AVERROR(ENOMEM))
-                ret = 0;
-            goto fail;
+            if (ret == AVERROR(ENOMEM))
+                return ret;
+
+            return 0;
         }
     }
 
 dequeue:
+    if (!s->buf_pkt.size)
+        av_packet_unref(&avpkt);
     return ff_v4l2_context_dequeue_frame(capture, frame, -1);
-fail:
-    av_packet_unref(&s->buf_pkt);
-    return ret;
 }
 
 static av_cold int v4l2_decode_init(AVCodecContext *avctx)
@@ -205,6 +212,9 @@ static av_cold int v4l2_decode_init(AVCodecContext *avctx)
     ret = ff_v4l2_m2m_codec_init(priv);
     if (ret) {
         av_log(avctx, AV_LOG_ERROR, "can't configure decoder\n");
+        s->self_ref = NULL;
+        av_buffer_unref(&priv->context_ref);
+
         return ret;
     }
 
@@ -213,7 +223,10 @@ static av_cold int v4l2_decode_init(AVCodecContext *avctx)
 
 static av_cold int v4l2_decode_close(AVCodecContext *avctx)
 {
-    return ff_v4l2_m2m_codec_end(avctx->priv_data);
+    V4L2m2mPriv *priv = avctx->priv_data;
+    V4L2m2mContext *s = priv->context;
+    av_packet_unref(&s->buf_pkt);
+    return ff_v4l2_m2m_codec_end(priv);
 }
 
 #define OFFSET(x) offsetof(V4L2m2mPriv, x)
@@ -248,7 +261,7 @@ static const AVOption options[] = {
         .close          = v4l2_decode_close, \
         .bsfs           = bsf_name, \
         .capabilities   = AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING, \
-        .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS | FF_CODEC_CAP_INIT_CLEANUP, \
+        .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS, \
         .wrapper_name   = "v4l2m2m", \
     }
 
