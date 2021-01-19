@@ -156,6 +156,7 @@ extern AVFilter ff_asrc_hilbert;
 extern AVFilter ff_asrc_sinc;
 extern AVFilter ff_asrc_sine;
 
+extern AVFilter ff_asink_adevsink;
 extern AVFilter ff_asink_anullsink;
 
 extern AVFilter ff_vf_addroi;
