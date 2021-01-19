@@ -125,7 +125,7 @@ static av_cold int tdsc_init(AVCodecContext *avctx)
     ctx->jpeg_avctx->flags2 = avctx->flags2;
     ctx->jpeg_avctx->dct_algo = avctx->dct_algo;
     ctx->jpeg_avctx->idct_algo = avctx->idct_algo;
-    ret = avcodec_open2(ctx->jpeg_avctx, codec, NULL);
+    ret = ff_codec_open2_recursive(ctx->jpeg_avctx, codec, NULL);
     if (ret < 0)
         return ret;
 
@@ -390,7 +390,7 @@ static int tdsc_decode_tiles(AVCodecContext *avctx, int number_tiles)
     for (i = 0; i < number_tiles; i++) {
         int tile_size;
         int tile_mode;
-        int x, y, x2, y2, w, h;
+        int x, y, w, h;
         int ret;
 
         if (bytestream2_get_bytes_left(&ctx->gbc) < 4 ||
@@ -408,19 +408,20 @@ static int tdsc_decode_tiles(AVCodecContext *avctx, int number_tiles)
         bytestream2_skip(&ctx->gbc, 4); // unknown
         x = bytestream2_get_le32(&ctx->gbc);
         y = bytestream2_get_le32(&ctx->gbc);
-        x2 = bytestream2_get_le32(&ctx->gbc);
-        y2 = bytestream2_get_le32(&ctx->gbc);
+        w = bytestream2_get_le32(&ctx->gbc) - x;
+        h = bytestream2_get_le32(&ctx->gbc) - y;
 
-        if (x < 0 || y < 0 || x2 <= x || y2 <= y ||
-            x2 > ctx->width || y2 > ctx->height
-        ) {
+        if (x >= ctx->width || y >= ctx->height) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Invalid tile position (%d.%d %d.%d outside %dx%d).\n",
-                   x, y, x2, y2, ctx->width, ctx->height);
+                   "Invalid tile position (%d.%d outside %dx%d).\n",
+                   x, y, ctx->width, ctx->height);
             return AVERROR_INVALIDDATA;
         }
-        w = x2 - x;
-        h = y2 - y;
+        if (x + w > ctx->width || y + h > ctx->height) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Invalid tile size %dx%d\n", w, h);
+            return AVERROR_INVALIDDATA;
+        }
 
         ret = av_reallocp(&ctx->tilebuffer, tile_size);
         if (!ctx->tilebuffer)
@@ -529,15 +530,10 @@ static int tdsc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Resize deflate buffer on resolution change */
     if (ctx->width != avctx->width || ctx->height != avctx->height) {
-        int deflatelen = avctx->width * avctx->height * (3 + 1);
-        if (deflatelen != ctx->deflatelen) {
-            ctx->deflatelen =deflatelen;
-            ret = av_reallocp(&ctx->deflatebuffer, ctx->deflatelen);
-            if (ret < 0) {
-                ctx->deflatelen = 0;
-                return ret;
-            }
-        }
+        ctx->deflatelen = avctx->width * avctx->height * (3 + 1);
+        ret = av_reallocp(&ctx->deflatebuffer, ctx->deflatelen);
+        if (ret < 0)
+            return ret;
     }
     dlen = ctx->deflatelen;
 
