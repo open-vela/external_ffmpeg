@@ -22,8 +22,6 @@
 
 #include <inttypes.h>
 
-#include "libavutil/mem_internal.h"
-
 #include "avcodec.h"
 #include "bytestream.h"
 #include "internal.h"
