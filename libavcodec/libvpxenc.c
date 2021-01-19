@@ -41,6 +41,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
 
 /**
  * Portion of struct vpx_codec_cx_pkt from vpx_encoder.h.
@@ -124,6 +125,10 @@ typedef struct VPxEncoderContext {
      * encounter a frame with ROI side data.
      */
     int roi_warned;
+#if CONFIG_LIBVPX_VP9_ENCODER && defined(VPX_CTRL_VP9E_SET_MAX_INTER_BITRATE_PCT)
+    vpx_svc_ref_frame_config_t ref_frame_config;
+    AVDictionary *vpx_ref_frame_config;
+#endif
 } VPxContext;
 
 /** String mappings for enum vp8e_enc_control_id */
@@ -151,6 +156,7 @@ static const char *const ctlidstr[] = {
     [VP9E_SET_SVC_LAYER_ID]            = "VP9E_SET_SVC_LAYER_ID",
 #if VPX_ENCODER_ABI_VERSION >= 12
     [VP9E_SET_SVC_PARAMETERS]          = "VP9E_SET_SVC_PARAMETERS",
+    [VP9E_SET_SVC_REF_FRAME_CONFIG]    = "VP9E_SET_SVC_REF_FRAME_CONFIG",
 #endif
     [VP9E_SET_SVC]                     = "VP9E_SET_SVC",
 #if VPX_ENCODER_ABI_VERSION >= 11
@@ -393,6 +399,20 @@ static void vp8_ts_parse_int_array(int *dest, char *value, size_t value_len, int
     }
 }
 
+#if CONFIG_LIBVPX_VP9_ENCODER && defined(VPX_CTRL_VP9E_SET_MAX_INTER_BITRATE_PCT)
+static void vp8_ts_parse_int64_array(int64_t *dest, char *value, size_t value_len, int max_entries)
+{
+    int dest_idx = 0;
+    char *saveptr = NULL;
+    char *token = av_strtok(value, ",", &saveptr);
+
+    while (token && dest_idx < max_entries) {
+        dest[dest_idx++] = strtoull(token, NULL, 10);
+        token = av_strtok(NULL, ",", &saveptr);
+    }
+}
+#endif
+
 static void set_temporal_layer_pattern(int layering_mode, vpx_codec_enc_cfg_t *cfg,
                                        int *layer_flags, int *flag_periodicity)
 {
@@ -540,13 +560,56 @@ static int vpx_ts_param_parse(VPxContext *ctx, struct vpx_codec_enc_cfg *enccfg,
     return 0;
 }
 
+#if CONFIG_LIBVPX_VP9_ENCODER && defined(VPX_CTRL_VP9E_SET_MAX_INTER_BITRATE_PCT)
+static int vpx_ref_frame_config_parse(VPxContext *ctx, const struct vpx_codec_enc_cfg *enccfg,
+                                      char *key, char *value, enum AVCodecID codec_id)
+{
+    size_t value_len = strlen(value);
+    int ss_number_layers = enccfg->ss_number_layers;
+    vpx_svc_ref_frame_config_t *ref_frame_config = &ctx->ref_frame_config;
+
+    if (!value_len)
+        return -1;
+
+    if (codec_id != AV_CODEC_ID_VP9)
+        return -1;
+
+    if (!strcmp(key, "rfc_update_buffer_slot")) {
+        vp8_ts_parse_int_array(ref_frame_config->update_buffer_slot, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_update_last")) {
+        vp8_ts_parse_int_array(ref_frame_config->update_last, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_update_golden")) {
+        vp8_ts_parse_int_array(ref_frame_config->update_golden, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_update_alt_ref")) {
+        vp8_ts_parse_int_array(ref_frame_config->update_alt_ref, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_lst_fb_idx")) {
+        vp8_ts_parse_int_array(ref_frame_config->lst_fb_idx, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_gld_fb_idx")) {
+        vp8_ts_parse_int_array(ref_frame_config->gld_fb_idx, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_alt_fb_idx")) {
+        vp8_ts_parse_int_array(ref_frame_config->alt_fb_idx, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_reference_last")) {
+        vp8_ts_parse_int_array(ref_frame_config->reference_last, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_reference_golden")) {
+        vp8_ts_parse_int_array(ref_frame_config->reference_golden, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_reference_alt_ref")) {
+        vp8_ts_parse_int_array(ref_frame_config->reference_alt_ref, value, value_len, ss_number_layers);
+    } else if (!strcmp(key, "rfc_reference_duration")) {
+        vp8_ts_parse_int64_array(ref_frame_config->duration, value, value_len, ss_number_layers);
+    }
+
+    return 0;
+}
+#endif
+
 #if CONFIG_LIBVPX_VP9_ENCODER
 static int set_pix_fmt(AVCodecContext *avctx, vpx_codec_caps_t codec_caps,
                        struct vpx_codec_enc_cfg *enccfg, vpx_codec_flags_t *flags,
                        vpx_img_fmt_t *img_fmt)
 {
     VPxContext av_unused *ctx = avctx->priv_data;
-    enccfg->g_bit_depth = enccfg->g_input_bit_depth = 8;
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(avctx->pix_fmt);
+    enccfg->g_bit_depth = enccfg->g_input_bit_depth = desc->comp[0].depth;
     switch (avctx->pix_fmt) {
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVA420P:
@@ -570,8 +633,6 @@ static int set_pix_fmt(AVCodecContext *avctx, vpx_codec_caps_t codec_caps,
     case AV_PIX_FMT_YUV420P10:
     case AV_PIX_FMT_YUV420P12:
         if (codec_caps & VPX_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV420P10 ? 10 : 12;
             enccfg->g_profile = 2;
             *img_fmt = VPX_IMG_FMT_I42016;
             *flags |= VPX_CODEC_USE_HIGHBITDEPTH;
@@ -581,8 +642,6 @@ static int set_pix_fmt(AVCodecContext *avctx, vpx_codec_caps_t codec_caps,
     case AV_PIX_FMT_YUV422P10:
     case AV_PIX_FMT_YUV422P12:
         if (codec_caps & VPX_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV422P10 ? 10 : 12;
             enccfg->g_profile = 3;
             *img_fmt = VPX_IMG_FMT_I42216;
             *flags |= VPX_CODEC_USE_HIGHBITDEPTH;
@@ -592,8 +651,6 @@ static int set_pix_fmt(AVCodecContext *avctx, vpx_codec_caps_t codec_caps,
     case AV_PIX_FMT_YUV440P10:
     case AV_PIX_FMT_YUV440P12:
         if (codec_caps & VPX_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV440P10 ? 10 : 12;
             enccfg->g_profile = 3;
             *img_fmt = VPX_IMG_FMT_I44016;
             *flags |= VPX_CODEC_USE_HIGHBITDEPTH;
@@ -606,9 +663,6 @@ static int set_pix_fmt(AVCodecContext *avctx, vpx_codec_caps_t codec_caps,
     case AV_PIX_FMT_YUV444P10:
     case AV_PIX_FMT_YUV444P12:
         if (codec_caps & VPX_CODEC_CAP_HIGHBITDEPTH) {
-            enccfg->g_bit_depth = enccfg->g_input_bit_depth =
-                avctx->pix_fmt == AV_PIX_FMT_YUV444P10 ||
-                avctx->pix_fmt == AV_PIX_FMT_GBRP10 ? 10 : 12;
             enccfg->g_profile = 3;
             *img_fmt = VPX_IMG_FMT_I44416;
             *flags |= VPX_CODEC_USE_HIGHBITDEPTH;
@@ -1130,7 +1184,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         if (cx_frame->have_sse) {
             int i;
             /* Beware of the Y/U/V/all order! */
-#if FF_API_CODED_FRAME
+#if FF_API_CODED_FRAME && FF_API_ERROR_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
             avctx->coded_frame->error[0] = cx_frame->sse[1];
             avctx->coded_frame->error[1] = cx_frame->sse[2];
@@ -1535,6 +1589,28 @@ static int vpx_encode(AVCodecContext *avctx, AVPacket *pkt,
 #endif
                 layer_id_valid = 1;
             }
+#if CONFIG_LIBVPX_VP9_ENCODER && defined(VPX_CTRL_VP9E_SET_MAX_INTER_BITRATE_PCT)
+            en = av_dict_get(frame->metadata, "ref-frame-config", NULL, 0);
+
+            if (en) {
+                if (avctx->codec_id == AV_CODEC_ID_VP9) {
+                    AVDictionaryEntry* en2 = NULL;
+                    av_dict_parse_string(&ctx->vpx_ref_frame_config, en->value, "=", ":", 0);
+
+                    while ((en2 = av_dict_get(ctx->vpx_ref_frame_config, "", en2, AV_DICT_IGNORE_SUFFIX))) {
+                        if (vpx_ref_frame_config_parse(ctx, enccfg, en2->key, en2->value, avctx->codec_id) < 0)
+                            av_log(avctx, AV_LOG_WARNING,
+                                   "Error parsing option '%s = %s'.\n",
+                                   en2->key, en2->value);
+                    }
+
+                    codecctl_intp(avctx, VP9E_SET_SVC_REF_FRAME_CONFIG, (int *)&ctx->ref_frame_config);
+                } else {
+                    av_log(avctx, AV_LOG_WARNING,
+                           "Error using option ref-frame-config for a non-VP9 codec\n");
+                }
+            }
+#endif
         }
 
         if (sd) {

@@ -23,6 +23,7 @@
 
 #include "libavutil/tx.h"
 #include "libavutil/float_dsp.h"
+#include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -774,7 +775,8 @@ AVCodec ff_siren_decoder = {
     .close          = siren_close,
     .decode         = siren_decode,
     .flush          = siren_flush,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
+                      AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };
