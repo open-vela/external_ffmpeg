@@ -491,14 +491,17 @@ static int latm_decode_frame(AVCodecContext *avctx, void *out,
     if ((err = init_get_bits8(&gb, avpkt->data, avpkt->size)) < 0)
         return err;
 
-    // check for LOAS sync word
-    if (get_bits(&gb, 11) != LOAS_SYNC_WORD)
-        return AVERROR_INVALIDDATA;
-
-    muxlength = get_bits(&gb, 13) + 3;
-    // not enough data, the parser should have sorted this out
-    if (muxlength > avpkt->size)
-        return AVERROR_INVALIDDATA;
+    if (get_bits(&gb, 11) != LOAS_SYNC_WORD) {
+        // try raw LATM since LOAS_SYNC_WORD not found.
+        if ((err = init_get_bits8(&gb, avpkt->data, avpkt->size)) < 0)
+            return err;
+        muxlength = avpkt->size;
+    } else {
+        muxlength = get_bits(&gb, 13) + 3;
+        // not enough data, the parser should have sorted this out
+        if (muxlength > avpkt->size)
+            return AVERROR_INVALIDDATA;
+    }
 
     if ((err = read_audio_mux_element(latmctx, &gb)))
         return (err < 0) ? err : avpkt->size;
