@@ -23,9 +23,42 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/timecode.h"
 #include "bytestream.h"
 #include "avcodec.h"
 #include "internal.h"
+
+enum DPX_TRC {
+    DPX_TRC_USER_DEFINED       = 0,
+    DPX_TRC_PRINTING_DENSITY   = 1,
+    DPX_TRC_LINEAR             = 2,
+    DPX_TRC_LOGARITHMIC        = 3,
+    DPX_TRC_UNSPECIFIED_VIDEO  = 4,
+    DPX_TRC_SMPTE_274          = 5,
+    DPX_TRC_ITU_R_709_4        = 6,
+    DPX_TRC_ITU_R_601_625      = 7,
+    DPX_TRC_ITU_R_601_525      = 8,
+    DPX_TRC_SMPTE_170          = 9,
+    DPX_TRC_ITU_R_624_4_PAL    = 10,
+    DPX_TRC_Z_LINEAR           = 11,
+    DPX_TRC_Z_HOMOGENEOUS      = 12,
+};
+
+enum DPX_COL_SPEC {
+    DPX_COL_SPEC_USER_DEFINED       = 0,
+    DPX_COL_SPEC_PRINTING_DENSITY   = 1,
+    /* 2 = N/A */
+    /* 3 = N/A */
+    DPX_COL_SPEC_UNSPECIFIED_VIDEO  = 4,
+    DPX_COL_SPEC_SMPTE_274          = 5,
+    DPX_COL_SPEC_ITU_R_709_4        = 6,
+    DPX_COL_SPEC_ITU_R_601_625      = 7,
+    DPX_COL_SPEC_ITU_R_601_525      = 8,
+    DPX_COL_SPEC_SMPTE_170          = 9,
+    DPX_COL_SPEC_ITU_R_624_4_PAL    = 10,
+    /* 11 = N/A */
+    /* 12 = N/A */
+};
 
 static unsigned int read16(const uint8_t **ptr, int is_big)
 {
@@ -131,9 +164,10 @@ static int decode_frame(AVCodecContext *avctx,
 
     unsigned int offset;
     int magic_num, endian;
-    int x, y, stride, i, ret;
+    int x, y, stride, i, j, ret;
     int w, h, bits_per_color, descriptor, elements, packing;
-    int encoding, need_align = 0;
+    int yuv, color_trc, color_spec;
+    int encoding, need_align = 0, unpadded_10bit = 0;
 
     unsigned int rgbBuffer = 0;
     int n_datum = 0;
@@ -192,6 +226,8 @@ static int decode_frame(AVCodecContext *avctx,
     // Need to end in 0x320 to read the descriptor
     buf += 20;
     descriptor = buf[0];
+    color_trc = buf[1];
+    color_spec = buf[2];
 
     // Need to end in 0x323 to read the bits per color
     buf += 3;
@@ -216,31 +252,105 @@ static int decode_frame(AVCodecContext *avctx,
     else
         avctx->sample_aspect_ratio = (AVRational){ 0, 1 };
 
+    /* preferred frame rate from Motion-picture film header */
     if (offset >= 1724 + 4) {
         buf = avpkt->data + 1724;
         i = read32(&buf, endian);
-        if(i) {
+        if(i && i != 0xFFFFFFFF) {
             AVRational q = av_d2q(av_int2float(i), 4096);
             if (q.num > 0 && q.den > 0)
                 avctx->framerate = q;
         }
     }
 
+    /* alternative frame rate from television header */
+    if (offset >= 1940 + 4 &&
+        !(avctx->framerate.num && avctx->framerate.den)) {
+        buf = avpkt->data + 1940;
+        i = read32(&buf, endian);
+        if(i && i != 0xFFFFFFFF) {
+            AVRational q = av_d2q(av_int2float(i), 4096);
+            if (q.num > 0 && q.den > 0)
+                avctx->framerate = q;
+        }
+    }
+
+    /* SMPTE TC from television header */
+    if (offset >= 1920 + 4) {
+        uint32_t tc;
+        uint32_t *tc_sd;
+        char tcbuf[AV_TIMECODE_STR_SIZE];
+
+        buf = avpkt->data + 1920;
+        // read32 to native endian, av_bswap32 to opposite of native for
+        // compatibility with av_timecode_make_smpte_tc_string2 etc
+        tc = av_bswap32(read32(&buf, endian));
+
+        if (i != 0xFFFFFFFF) {
+            AVFrameSideData *tcside =
+                av_frame_new_side_data(p, AV_FRAME_DATA_S12M_TIMECODE,
+                                       sizeof(uint32_t) * 4);
+            if (!tcside)
+                return AVERROR(ENOMEM);
+
+            tc_sd = (uint32_t*)tcside->data;
+            tc_sd[0] = 1;
+            tc_sd[1] = tc;
+
+            av_timecode_make_smpte_tc_string2(tcbuf, avctx->framerate,
+                                              tc_sd[1], 0, 0);
+            av_dict_set(&p->metadata, "timecode", tcbuf, 0);
+        }
+    }
+
+    /* color range from television header */
+    if (offset >= 1964 + 4) {
+        buf = avpkt->data + 1952;
+        i = read32(&buf, endian);
+
+        buf = avpkt->data + 1964;
+        j = read32(&buf, endian);
+
+        if (i != 0xFFFFFFFF && j != 0xFFFFFFFF) {
+            float minCV, maxCV;
+            minCV = av_int2float(i);
+            maxCV = av_int2float(j);
+            if (bits_per_color >= 1 &&
+                minCV == 0.0f && maxCV == ((1<<bits_per_color) - 1)) {
+                avctx->color_range = AVCOL_RANGE_JPEG;
+            } else if (bits_per_color >= 8 &&
+                       minCV == (1  <<(bits_per_color - 4)) &&
+                       maxCV == (235<<(bits_per_color - 8))) {
+                avctx->color_range = AVCOL_RANGE_MPEG;
+            }
+        }
+    }
+
     switch (descriptor) {
     case 6:  // Y
         elements = 1;
+        yuv = 1;
+        break;
+    case 50: // RGB
+        elements = 3;
+        yuv = 0;
         break;
     case 52: // ABGR
     case 51: // RGBA
-    case 103: // UYVA4444
         elements = 4;
-        break;
-    case 50: // RGB
-    case 102: // UYV444
-        elements = 3;
+        yuv = 0;
         break;
     case 100: // UYVY422
         elements = 2;
+        yuv = 1;
+        break;
+    case 102: // UYV444
+        elements = 3;
+        yuv = 1;
+        break;
+    case 103: // UYVA4444
+        elements = 4;
+        yuv = 1;
         break;
     default:
         avpriv_report_missing_feature(avctx, "Descriptor %d", descriptor);
@@ -282,6 +392,82 @@ static int decode_frame(AVCodecContext *avctx,
         return AVERROR_PATCHWELCOME;
     default:
         return AVERROR_INVALIDDATA;
+    }
+
+    switch (color_trc) {
+    case DPX_TRC_LINEAR:
+        avctx->color_trc = AVCOL_TRC_LINEAR;
+        break;
+    case DPX_TRC_SMPTE_274:
+    case DPX_TRC_ITU_R_709_4:
+        avctx->color_trc = AVCOL_TRC_BT709;
+        break;
+    case DPX_TRC_ITU_R_601_625:
+    case DPX_TRC_ITU_R_601_525:
+    case DPX_TRC_SMPTE_170:
+        avctx->color_trc = AVCOL_TRC_SMPTE170M;
+        break;
+    case DPX_TRC_ITU_R_624_4_PAL:
+        avctx->color_trc = AVCOL_TRC_GAMMA28;
+        break;
+    case DPX_TRC_USER_DEFINED:
+    case DPX_TRC_UNSPECIFIED_VIDEO:
+        /* Nothing to do */
+        break;
+    default:
+        av_log(avctx, AV_LOG_VERBOSE, "Cannot map DPX transfer characteristic "
+            "%d to color_trc.\n", color_trc);
+        break;
+    }
+
+    switch (color_spec) {
+    case DPX_COL_SPEC_SMPTE_274:
+    case DPX_COL_SPEC_ITU_R_709_4:
+        avctx->color_primaries = AVCOL_PRI_BT709;
+        break;
+    case DPX_COL_SPEC_ITU_R_601_625:
+    case DPX_COL_SPEC_ITU_R_624_4_PAL:
+        avctx->color_primaries = AVCOL_PRI_BT470BG;
+        break;
+    case DPX_COL_SPEC_ITU_R_601_525:
+    case DPX_COL_SPEC_SMPTE_170:
+        avctx->color_primaries = AVCOL_PRI_SMPTE170M;
+        break;
+    case DPX_COL_SPEC_USER_DEFINED:
+    case DPX_COL_SPEC_UNSPECIFIED_VIDEO:
+        /* Nothing to do */
+        break;
+    default:
+        av_log(avctx, AV_LOG_VERBOSE, "Cannot map DPX color specification "
+            "%d to color_primaries.\n", color_spec);
+        break;
+    }
+
+    if (yuv) {
+        switch (color_spec) {
+        case DPX_COL_SPEC_SMPTE_274:
+        case DPX_COL_SPEC_ITU_R_709_4:
+            avctx->colorspace = AVCOL_SPC_BT709;
+            break;
+        case DPX_COL_SPEC_ITU_R_601_625:
+        case DPX_COL_SPEC_ITU_R_624_4_PAL:
+            avctx->colorspace = AVCOL_SPC_BT470BG;
+            break;
+        case DPX_COL_SPEC_ITU_R_601_525:
+        case DPX_COL_SPEC_SMPTE_170:
+            avctx->colorspace = AVCOL_SPC_SMPTE170M;
+            break;
+        case DPX_COL_SPEC_USER_DEFINED:
+        case DPX_COL_SPEC_UNSPECIFIED_VIDEO:
+            /* Nothing to do */
+            break;
+        default:
+            av_log(avctx, AV_LOG_INFO, "Cannot map DPX color specification "
+                "%d to colorspace.\n", color_spec);
+            break;
+        }
+    } else {
+        avctx->colorspace = AVCOL_SPC_RGB;
     }
 
     // Table 3c: Runs will always break at scan line boundaries. Packing
@@ -390,6 +576,12 @@ static int decode_frame(AVCodecContext *avctx,
     input_device[32] = '\0';
     av_dict_set(&p->metadata, "Input Device", input_device, 0);
 
+    // Some devices do not pad 10bit samples to whole 32bit words per row
+    if (!memcmp(input_device, "Scanity", 7) ||
+        !memcmp(creator, "Lasergraphics Inc.", 18)) {
+        unpadded_10bit = 1;
+    }
+
     // Move pointer to offset from start of file
     buf =  avpkt->data + offset;
 
@@ -422,7 +614,7 @@ static int decode_frame(AVCodecContext *avctx,
                     read10in32(&buf, &rgbBuffer,
                                &n_datum, endian, shift);
             }
-            if (memcmp(input_device, "Scanity", 7))
+            if (!unpadded_10bit)
                 n_datum = 0;
             for (i = 0; i < elements; i++)
                 ptr[i] += p->linesize[i];
