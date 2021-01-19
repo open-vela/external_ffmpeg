@@ -25,7 +25,6 @@
  */
 
 #include "libavutil/imgutils.h"
-#include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
 #include "hwconfig.h"
@@ -188,7 +187,7 @@ static av_always_inline
 int update_dimensions(VP8Context *s, int width, int height, int is_vp7)
 {
     AVCodecContext *avctx = s->avctx;
-    int i, ret, dim_reset = 0;
+    int i, ret;
 
     if (width  != s->avctx->width || ((width+15)/16 != s->mb_width || (height+15)/16 != s->mb_height) && s->macroblocks_base ||
         height != s->avctx->height) {
@@ -197,12 +196,9 @@ int update_dimensions(VP8Context *s, int width, int height, int is_vp7)
         ret = ff_set_dimensions(s->avctx, width, height);
         if (ret < 0)
             return ret;
-
-        dim_reset = (s->macroblocks_base != NULL);
     }
 
-    if ((s->pix_fmt == AV_PIX_FMT_NONE || dim_reset) &&
-         !s->actually_webp && !is_vp7) {
+    if (!s->actually_webp && !is_vp7) {
         s->pix_fmt = get_pixel_format(s);
         if (s->pix_fmt < 0)
             return AVERROR(EINVAL);
@@ -2966,7 +2962,7 @@ AVCodec ff_vp8_decoder = {
                              AV_CODEC_CAP_SLICE_THREADS,
     .flush                 = vp8_decode_flush,
     .update_thread_context = ONLY_IF_THREADS_ENABLED(vp8_decode_update_thread_context),
-    .hw_configs            = (const AVCodecHWConfigInternal *const []) {
+    .hw_configs            = (const AVCodecHWConfigInternal*[]) {
 #if CONFIG_VP8_VAAPI_HWACCEL
                                HWACCEL_VAAPI(vp8),
 #endif

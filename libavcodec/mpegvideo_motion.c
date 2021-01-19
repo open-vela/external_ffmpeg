@@ -25,8 +25,6 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/internal.h"
-#include "libavutil/mem_internal.h"
-
 #include "avcodec.h"
 #include "h261.h"
 #include "mpegutils.h"
