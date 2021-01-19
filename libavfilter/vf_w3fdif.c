@@ -34,6 +34,8 @@
 typedef struct W3FDIFContext {
     const AVClass *class;
     int filter;           ///< 0 is simple, 1 is more complex
+    int mode;             ///< 0 is frame, 1 is field
+    int parity;           ///< frame field parity
     int deint;            ///< which frames to deinterlace
     int linesize[4];      ///< bytes of pixel data per line for each plane
     int planeheight[4];   ///< height of each plane
@@ -49,13 +51,20 @@ typedef struct W3FDIFContext {
 } W3FDIFContext;
 
 #define OFFSET(x) offsetof(W3FDIFContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 #define CONST(name, help, val, unit) { name, help, 0, AV_OPT_TYPE_CONST, {.i64=val}, 0, 0, FLAGS, unit }
 
 static const AVOption w3fdif_options[] = {
     { "filter", "specify the filter", OFFSET(filter), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, FLAGS, "filter" },
     CONST("simple",  NULL, 0, "filter"),
     CONST("complex", NULL, 1, "filter"),
+    { "mode",   "specify the interlacing mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, FLAGS, "mode"},
+    CONST("frame", "send one frame for each frame", 0, "mode"),
+    CONST("field", "send one frame for each field", 1, "mode"),
+    { "parity", "specify the assumed picture field parity", OFFSET(parity), AV_OPT_TYPE_INT, {.i64=-1}, -1, 1, FLAGS, "parity" },
+    CONST("tff",  "assume top field first",     0, "parity"),
+    CONST("bff",  "assume bottom field first",  1, "parity"),
+    CONST("auto", "auto detect parity",        -1, "parity"),
     { "deint",  "specify which frames to deinterlace", OFFSET(deint), AV_OPT_TYPE_INT, {.i64=0}, 0, 1, FLAGS, "deint" },
     CONST("all",        "deinterlace all frames",                       0, "deint"),
     CONST("interlaced", "only deinterlace frames marked as interlaced", 1, "deint"),
@@ -76,11 +85,15 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA420P, AV_PIX_FMT_YUVA422P, AV_PIX_FMT_YUVA444P,
         AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_GRAY8,
+        AV_PIX_FMT_GRAY9, AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12, AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
         AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9,
         AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10,
+        AV_PIX_FMT_YUV440P10,
         AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV444P12,
+        AV_PIX_FMT_YUV440P12,
         AV_PIX_FMT_YUV420P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV444P14,
-        AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10, AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14,
+        AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
+        AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10, AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
         AV_PIX_FMT_YUVA444P9, AV_PIX_FMT_YUVA444P10, AV_PIX_FMT_YUVA444P12, AV_PIX_FMT_YUVA444P16,
         AV_PIX_FMT_YUVA422P9, AV_PIX_FMT_YUVA422P10, AV_PIX_FMT_YUVA422P12, AV_PIX_FMT_YUVA422P16,
         AV_PIX_FMT_YUVA420P9, AV_PIX_FMT_YUVA420P10, AV_PIX_FMT_YUVA420P16,
@@ -372,10 +385,13 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
     const int start = (height * jobnr) / nb_jobs;
     const int end = (height * (jobnr+1)) / nb_jobs;
     const int max = s->max;
+    const int interlaced = cur->interlaced_frame;
+    const int tff = s->field == (s->parity == -1 ? interlaced ? cur->top_field_first : 1 :
+                                 s->parity ^ 1);
     int j, y_in, y_out;
 
     /* copy unchanged the lines of the field */
-    y_out = start + ((s->field == cur->top_field_first) ^ (start & 1));
+    y_out = start + (tff ^ (start & 1));
 
     in_line  = cur_data + (y_out * cur_line_stride);
     out_line = dst_data + (y_out * dst_line_stride);
@@ -388,7 +404,7 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
     }
 
     /* interpolate other lines of the field */
-    y_out = start + ((s->field != cur->top_field_first) ^ (start & 1));
+    y_out = start + ((!tff) ^ (start & 1));
 
     out_line = dst_data + (y_out * dst_line_stride);
 
@@ -489,7 +505,8 @@ static int filter(AVFilterContext *ctx, int is_second)
         ctx->internal->execute(ctx, deinterlace_slice, &td, NULL, FFMIN(s->planeheight[plane], s->nb_threads));
     }
 
-    s->field = !s->field;
+    if (s->mode)
+        s->field = !s->field;
 
     return ff_filter_frame(outlink, out);
 }
@@ -526,7 +543,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         return 0;
 
     ret = filter(ctx, 0);
-    if (ret < 0)
+    if (ret < 0 || s->mode == 0)
         return ret;
 
     return filter(ctx, 1);
@@ -602,4 +619,5 @@ AVFilter ff_vf_w3fdif = {
     .inputs        = w3fdif_inputs,
     .outputs       = w3fdif_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = ff_filter_process_command,
 };
