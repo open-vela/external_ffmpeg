@@ -993,11 +993,6 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
 
                     av_log(s, AV_LOG_DEBUG, "Compresssed frame %s tlen=%d dlen=%ld\n", tag, tlen, dlen);
 
-                    if (tlen <= 0)
-                        goto seek;
-                    if (dlen / 32768 > tlen)
-                        goto seek;
-
                     av_fast_malloc(&uncompressed_buffer, &uncompressed_buffer_size, dlen);
                     if (!uncompressed_buffer) {
                         av_log(s, AV_LOG_ERROR, "Failed to alloc %ld bytes\n", dlen);
