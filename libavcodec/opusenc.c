@@ -25,7 +25,6 @@
 #include "opustab.h"
 
 #include "libavutil/float_dsp.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "internal.h"
 #include "bytestream.h"

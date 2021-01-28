@@ -369,10 +369,7 @@ static int decode_header(SnowContext *s){
                 htaps = htaps*2 + 2;
                 p->htaps= htaps;
                 for(i= htaps/2; i; i--){
-                    unsigned hcoeff = get_symbol(&s->c, s->header_state, 0);
-                    if (hcoeff > 127)
-                        return AVERROR_INVALIDDATA;
-                    p->hcoeff[i]= hcoeff * (1-2*(i&1));
+                    p->hcoeff[i]= get_symbol(&s->c, s->header_state, 0) * (1-2*(i&1));
                     sum += p->hcoeff[i];
                 }
                 p->hcoeff[0]= 32-sum;
@@ -417,6 +414,17 @@ static int decode_header(SnowContext *s){
         av_log(s->avctx, AV_LOG_ERROR, "qbias %d is too large\n", s->qbias);
         s->qbias = 0;
         return AVERROR_INVALIDDATA;
+    }
+
+    return 0;
+}
+
+static av_cold int decode_init(AVCodecContext *avctx)
+{
+    int ret;
+
+    if ((ret = ff_snow_common_init(avctx)) < 0) {
+        return ret;
     }
 
     return 0;
@@ -654,7 +662,7 @@ AVCodec ff_snow_decoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_SNOW,
     .priv_data_size = sizeof(SnowContext),
-    .init           = ff_snow_common_init,
+    .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1 /*| AV_CODEC_CAP_DRAW_HORIZ_BAND*/,

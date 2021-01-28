@@ -73,11 +73,14 @@ static av_cold int concat_open(URLContext *h, const char *uri, int flags)
 
     for (i = 0, len = 1; uri[i]; i++) {
         if (uri[i] == *AV_CAT_SEPARATOR) {
-            len++;
+            /* integer overflow */
+            if (++len == UINT_MAX / sizeof(*nodes)) {
+                return AVERROR(ENAMETOOLONG);
+            }
         }
     }
 
-    if (!(nodes = av_realloc_array(NULL, len, sizeof(*nodes))))
+    if (!(nodes = av_realloc(NULL, sizeof(*nodes) * len)))
         return AVERROR(ENOMEM);
     else
         data->nodes = nodes;
