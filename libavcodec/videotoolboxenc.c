@@ -31,7 +31,6 @@
 #include "libavutil/pixdesc.h"
 #include "internal.h"
 #include <pthread.h>
-#include "atsc_a53.h"
 #include "h264.h"
 #include "h264_sei.h"
 #include <dlfcn.h>
@@ -226,9 +225,7 @@ typedef struct VTEncContext {
     bool flushing;
     bool has_b_frames;
     bool warned_color_range;
-
-    /* can't be bool type since AVOption will access it as int */
-    int a53_cc;
+    bool a53_cc;
 } VTEncContext;
 
 static int vtenc_populate_extradata(AVCodecContext   *avctx,
@@ -294,7 +291,7 @@ static int vtenc_q_pop(VTEncContext *vtctx, bool wait, CMSampleBufferRef *buf, E
         return 0;
     }
 
-    while (!vtctx->q_head && !vtctx->async_error && wait && !vtctx->flushing) {
+    while (!vtctx->q_head && !vtctx->async_error && wait) {
         pthread_cond_wait(&vtctx->cv_sample_sent, &vtctx->lock);
     }
 
@@ -310,7 +307,6 @@ static int vtenc_q_pop(VTEncContext *vtctx, bool wait, CMSampleBufferRef *buf, E
         vtctx->q_tail = NULL;
     }
 
-    vtctx->frame_ct_out++;
     pthread_mutex_unlock(&vtctx->lock);
 
     *buf = info->cm_buffer;
@@ -322,6 +318,7 @@ static int vtenc_q_pop(VTEncContext *vtctx, bool wait, CMSampleBufferRef *buf, E
     }
     av_free(info);
 
+    vtctx->frame_ct_out++;
 
     return 0;
 }
@@ -340,6 +337,7 @@ static void vtenc_q_push(VTEncContext *vtctx, CMSampleBufferRef buffer, ExtraSEI
     info->next = NULL;
 
     pthread_mutex_lock(&vtctx->lock);
+    pthread_cond_signal(&vtctx->cv_sample_sent);
 
     if (!vtctx->q_head) {
         vtctx->q_head = info;
@@ -349,7 +347,6 @@ static void vtenc_q_push(VTEncContext *vtctx, CMSampleBufferRef buffer, ExtraSEI
 
     vtctx->q_tail = info;
 
-    pthread_cond_signal(&vtctx->cv_sample_sent);
     pthread_mutex_unlock(&vtctx->lock);
 }
 
@@ -573,6 +570,7 @@ static void vtenc_output_callback(
     ExtraSEI *sei = sourceFrameCtx;
 
     if (vtctx->async_error) {
+        if(sample_buffer) CFRelease(sample_buffer);
         return;
     }
 
@@ -790,6 +788,7 @@ static int get_cv_pixel_format(AVCodecContext* avctx,
         *av_pixel_format = range == AVCOL_RANGE_JPEG ?
                                         kCVPixelFormatType_420YpCbCr10BiPlanarFullRange :
                                         kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
+        *av_pixel_format = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
     } else {
         return AVERROR(EINVAL);
     }
@@ -1114,12 +1113,15 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
         }
     }
 
-    if (profile_level) {
-        status = VTSessionSetProperty(vtctx->session,
-                                      kVTCompressionPropertyKey_ProfileLevel,
-                                      profile_level);
-        if (status) {
-            av_log(avctx, AV_LOG_ERROR, "Error setting profile/level property: %d. Output will be encoded using a supported profile/level combination.\n", status);
+    if (vtctx->codec_id == AV_CODEC_ID_H264) {
+        // kVTCompressionPropertyKey_ProfileLevel is not available for HEVC
+        if (profile_level) {
+            status = VTSessionSetProperty(vtctx->session,
+                                        kVTCompressionPropertyKey_ProfileLevel,
+                                        profile_level);
+            if (status) {
+                av_log(avctx, AV_LOG_ERROR, "Error setting profile/level property: %d. Output will be encoded using a supported profile/level combination.\n", status);
+            }
         }
     }
 
@@ -1751,7 +1753,7 @@ static int copy_replace_length_codes(
             remaining_dst_size--;
 
             wrote_bytes = write_sei(sei,
-                                    SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35,
+                                    H264_SEI_TYPE_USER_DATA_REGISTERED,
                                     dst_data,
                                     remaining_dst_size);
 
@@ -1807,7 +1809,7 @@ static int copy_replace_length_codes(
                 return status;
 
             wrote_bytes = write_sei(sei,
-                                    SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35,
+                                    H264_SEI_TYPE_USER_DATA_REGISTERED,
                                     new_sei,
                                     remaining_dst_size - old_sei_length);
             if (wrote_bytes < 0)
@@ -1903,7 +1905,7 @@ static int vtenc_cm_to_avpacket(
 
     if (sei) {
         size_t msg_size = get_sei_msg_bytes(sei,
-                                            SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35);
+                                            H264_SEI_TYPE_USER_DATA_REGISTERED);
 
         sei_nalu_size = sizeof(start_code) + 1 + msg_size + 1;
     }
@@ -2491,17 +2493,14 @@ static av_cold int vtenc_close(AVCodecContext *avctx)
 {
     VTEncContext *vtctx = avctx->priv_data;
 
-    if(!vtctx->session) {
-        pthread_cond_destroy(&vtctx->cv_sample_sent);
-        pthread_mutex_destroy(&vtctx->lock);
-        return 0;
-    }
+    pthread_cond_destroy(&vtctx->cv_sample_sent);
+    pthread_mutex_destroy(&vtctx->lock);
+
+    if(!vtctx->session) return 0;
 
     VTCompressionSessionCompleteFrames(vtctx->session,
                                        kCMTimeIndefinite);
     clear_frame_queue(vtctx);
-    pthread_cond_destroy(&vtctx->cv_sample_sent);
-    pthread_mutex_destroy(&vtctx->lock);
     CFRelease(vtctx->session);
     vtctx->session = NULL;
 
