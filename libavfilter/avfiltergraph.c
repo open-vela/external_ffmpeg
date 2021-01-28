@@ -372,63 +372,6 @@ static int formats_declared(AVFilterContext *f)
     return 1;
 }
 
-static AVFilterFormats *clone_filter_formats(AVFilterFormats *arg)
-{
-    AVFilterFormats *a = av_memdup(arg, sizeof(*arg));
-    if (a) {
-        a->refcount = 0;
-        a->refs     = NULL;
-        a->formats  = av_memdup(a->formats, sizeof(*a->formats) * a->nb_formats);
-        if (!a->formats && arg->formats)
-            av_freep(&a);
-    }
-    return a;
-}
-
-static int can_merge_formats(AVFilterFormats *a_arg,
-                             AVFilterFormats *b_arg,
-                             enum AVMediaType type,
-                             int is_sample_rate)
-{
-    AVFilterFormats *a, *b, *ret;
-    if (a_arg == b_arg)
-        return 1;
-    a = clone_filter_formats(a_arg);
-    b = clone_filter_formats(b_arg);
-
-    if (!a || !b) {
-        if (a)
-            av_freep(&a->formats);
-        if (b)
-            av_freep(&b->formats);
-
-        av_freep(&a);
-        av_freep(&b);
-
-        return 0;
-    }
-
-    if (is_sample_rate) {
-        ret = ff_merge_samplerates(a, b);
-    } else {
-        ret = ff_merge_formats(a, b, type);
-    }
-    if (ret) {
-        av_freep(&ret->formats);
-        av_freep(&ret->refs);
-        av_freep(&ret);
-        return 1;
-    } else {
-        if (a)
-            av_freep(&a->formats);
-        if (b)
-            av_freep(&b->formats);
-        av_freep(&a);
-        av_freep(&b);
-        return 0;
-    }
-}
-
 /**
  * Perform one round of query_formats() and merging formats lists on the
  * filter graph.
@@ -468,31 +411,18 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
 
         for (j = 0; j < filter->nb_inputs; j++) {
             AVFilterLink *link = filter->inputs[j];
+            int old_count_delayed = count_delayed;
             int convert_needed = 0;
 
             if (!link)
                 continue;
-
-            if (link->in_formats != link->out_formats
-                && link->in_formats && link->out_formats)
-                if (!can_merge_formats(link->in_formats, link->out_formats,
-                                      link->type, 0))
-                    convert_needed = 1;
-            if (link->type == AVMEDIA_TYPE_AUDIO) {
-                if (link->in_samplerates != link->out_samplerates
-                    && link->in_samplerates && link->out_samplerates)
-                    if (!can_merge_formats(link->in_samplerates,
-                                           link->out_samplerates,
-                                           0, 1))
-                        convert_needed = 1;
-            }
 
 #define MERGE_DISPATCH(field, statement)                                     \
             if (!(link->in_ ## field && link->out_ ## field)) {              \
                 count_delayed++;                                             \
             } else if (link->in_ ## field == link->out_ ## field) {          \
                 count_already_merged++;                                      \
-            } else if (!convert_needed) {                                    \
+            } else {                                                         \
                 count_merged++;                                              \
                 statement                                                    \
             }
@@ -501,26 +431,27 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
                 MERGE_DISPATCH(channel_layouts,
                     if (!ff_merge_channel_layouts(link->in_channel_layouts,
                                                   link->out_channel_layouts))
-                        convert_needed = 1;
+                        convert_needed |= 0x04;
                 )
                 MERGE_DISPATCH(samplerates,
                     if (!ff_merge_samplerates(link->in_samplerates,
                                               link->out_samplerates))
-                        convert_needed = 1;
+                        convert_needed |= 0x01;
                 )
             }
             MERGE_DISPATCH(formats,
                 if (!ff_merge_formats(link->in_formats, link->out_formats,
                                       link->type))
-                    convert_needed = 1;
+                    convert_needed |= 0x02;
             )
 #undef MERGE_DISPATCH
 
-            if (convert_needed) {
+            if (convert_needed && count_delayed == old_count_delayed) {
                 AVFilterContext *convert;
                 const AVFilter *filter;
                 AVFilterLink *inlink, *outlink;
                 char inst_name[30];
+                char inst_opts[64];
 
                 if (graph->disable_auto_convert) {
                     av_log(log_ctx, AV_LOG_ERROR,
@@ -556,9 +487,11 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
 
                     snprintf(inst_name, sizeof(inst_name), "auto_resampler_%d",
                              resampler_count++);
-                    if ((ret = avfilter_graph_create_filter(&convert, filter,
-                                                            inst_name, graph->aresample_swr_opts,
-                                                            NULL, graph)) < 0)
+                    snprintf(inst_opts, sizeof(inst_opts), "converter=%d:%s",
+                             convert_needed, graph->aresample_swr_opts ? graph->aresample_swr_opts : "");
+                     if ((ret = avfilter_graph_create_filter(&convert, filter,
+                                                             inst_name, inst_opts,
+                                                             NULL, graph)) < 0)
                         return ret;
                     break;
                 default:
