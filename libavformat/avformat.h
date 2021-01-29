@@ -780,6 +780,26 @@ typedef struct AVInputFormat {
      * @see avdevice_capabilities_free() for more details.
      */
     int (*free_device_capabilities)(struct AVFormatContext *s, struct AVDeviceCapabilitiesQuery *caps);
+
+    /**
+     * Initialize format. May allocate data here, and set any AVFormatContext or
+     * AVStream parameters that need to be set before packets are read.
+     *
+     * Return 0 if streams were fully configured, negative AVERROR on failure
+     *
+     * Any allocations made here must be freed in deinit().
+     */
+    int (*init)(struct AVFormatContext *);
+
+    /**
+     * Deinitialize format. If present, this is called whenever the demuxer is being
+     * destroyed, regardless of whether or not the header has been read.
+     *
+     * This should be called after read_close().
+     *
+     * This is called if init() fails as well.
+     */
+    void (*deinit)(struct AVFormatContext *);
 } AVInputFormat;
 /**
  * @}
@@ -2386,6 +2406,12 @@ int av_read_pause(AVFormatContext *s);
  * and set *s to NULL.
  */
 void avformat_close_input(AVFormatContext **s);
+
+/**
+ * Close an opened input AVFormatContext.
+ */
+int av_demuxer_close(AVFormatContext *ic);
+
 /**
  * @}
  */

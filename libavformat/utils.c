@@ -594,10 +594,17 @@ FF_ENABLE_DEPRECATION_WARNINGS
     if (s->pb)
         ff_id3v2_read_dict(s->pb, &s->internal->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
 
+    if (s->iformat->init) {
+        ret = s->iformat->init(s);
+        if (ret < 0)
+            goto fail;
+    }
+
+    s->internal->initialized = 1;
 
     if (!(s->flags&AVFMT_FLAG_PRIV_OPT) && s->iformat->read_header)
         if ((ret = s->iformat->read_header(s)) < 0)
-            goto fail;
+            goto deinit;
 
     if (!s->metadata) {
         s->metadata = s->internal->id3v2_meta;
@@ -642,8 +649,11 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return 0;
 
 close:
-    if (s->iformat->read_close)
+    if (!(s->flags&AVFMT_FLAG_PRIV_OPT) && s->iformat->read_close)
         s->iformat->read_close(s);
+deinit:
+    if (s->iformat && s->iformat->deinit)
+        s->iformat->deinit(s);
 fail:
     ff_id3v2_free_extra_meta(&id3v2_extra_meta);
     av_dict_free(&tmp);
@@ -4416,6 +4426,9 @@ void avformat_free_context(AVFormatContext *s)
     if (!s)
         return;
 
+    if (s->iformat && s->iformat->deinit && s->internal->initialized)
+        s->iformat->deinit(s);
+
     if (s->oformat && s->oformat->deinit && s->internal->initialized)
         s->oformat->deinit(s);
 
@@ -4452,6 +4465,16 @@ void avformat_free_context(AVFormatContext *s)
     av_free(s);
 }
 
+int av_demuxer_close(AVFormatContext *ic)
+{
+    flush_packet_queue(ic);
+
+    if (ic->iformat && ic->iformat->read_close)
+        return ic->iformat->read_close(ic);
+
+    return 0;
+}
+
 void avformat_close_input(AVFormatContext **ps)
 {
     AVFormatContext *s;
@@ -4467,11 +4490,7 @@ void avformat_close_input(AVFormatContext **ps)
         (s->flags & AVFMT_FLAG_CUSTOM_IO))
         pb = NULL;
 
-    flush_packet_queue(s);
-
-    if (s->iformat)
-        if (s->iformat->read_close)
-            s->iformat->read_close(s);
+    av_demuxer_close(s);
 
     avformat_free_context(s);
 
