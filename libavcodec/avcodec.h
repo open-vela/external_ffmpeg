@@ -410,6 +410,11 @@ typedef struct RcOverride{
  * Export the AVVideoEncParams structure through frame side data.
  */
 #define AV_CODEC_EXPORT_DATA_VIDEO_ENC_PARAMS (1 << 2)
+/**
+ * Decoding only.
+ * Do not apply film grain, export it instead.
+ */
+#define AV_CODEC_EXPORT_DATA_FILM_GRAIN (1 << 3)
 
 /**
  * Pan Scan area.
@@ -1314,9 +1319,9 @@ typedef struct AVCodecContext {
      *
      * Some decoders do not support linesizes changing between frames.
      *
-     * If frame multithreading is used and thread_safe_callbacks is set,
-     * this callback may be called from a different thread, but not from more
-     * than one at once. Does not need to be reentrant.
+     * If frame multithreading is used, this callback may be called from a
+     * different thread, but not from more than one at once. Does not need to be
+     * reentrant.
      *
      * @see avcodec_align_dimensions2()
      *
@@ -1340,6 +1345,7 @@ typedef struct AVCodecContext {
      */
     int (*get_buffer2)(struct AVCodecContext *s, AVFrame *frame, int flags);
 
+#if FF_API_OLD_ENCDEC
     /**
      * If non-zero, the decoded audio and video frames returned from
      * avcodec_decode_video2() and avcodec_decode_audio4() are reference-counted
@@ -1355,6 +1361,7 @@ typedef struct AVCodecContext {
      */
     attribute_deprecated
     int refcounted_frames;
+#endif
 
     /* - encoding parameters */
     float qcompress;  ///< amount of qscale change between easy & hard scenes (0.0-1.0)
@@ -1614,38 +1621,16 @@ typedef struct AVCodecContext {
 #define FF_DEBUG_BITSTREAM   4
 #define FF_DEBUG_MB_TYPE     8
 #define FF_DEBUG_QP          16
-#if FF_API_DEBUG_MV
-/**
- * @deprecated this option does nothing
- */
-#define FF_DEBUG_MV          32
-#endif
 #define FF_DEBUG_DCT_COEFF   0x00000040
 #define FF_DEBUG_SKIP        0x00000080
 #define FF_DEBUG_STARTCODE   0x00000100
 #define FF_DEBUG_ER          0x00000400
 #define FF_DEBUG_MMCO        0x00000800
 #define FF_DEBUG_BUGS        0x00001000
-#if FF_API_DEBUG_MV
-#define FF_DEBUG_VIS_QP      0x00002000
-#define FF_DEBUG_VIS_MB_TYPE 0x00004000
-#endif
 #define FF_DEBUG_BUFFERS     0x00008000
 #define FF_DEBUG_THREADS     0x00010000
 #define FF_DEBUG_GREEN_MD    0x00800000
 #define FF_DEBUG_NOMC        0x01000000
-
-#if FF_API_DEBUG_MV
-    /**
-     * debug
-     * - encoding: Set by user.
-     * - decoding: Set by user.
-     */
-    int debug_mv;
-#define FF_DEBUG_VIS_MV_P_FOR  0x00000001 // visualize forward predicted MVs of P-frames
-#define FF_DEBUG_VIS_MV_B_FOR  0x00000002 // visualize forward predicted MVs of B-frames
-#define FF_DEBUG_VIS_MV_B_BACK 0x00000004 // visualize backward predicted MVs of B-frames
-#endif
 
     /**
      * Error recognition; may misdetect some more or less valid parts as errors.
@@ -1803,6 +1788,7 @@ typedef struct AVCodecContext {
      */
     int active_thread_type;
 
+#if FF_API_THREAD_SAFE_CALLBACKS
     /**
      * Set by the client if its custom get_buffer() callback can be called
      * synchronously from another thread, which allows faster multithreaded decoding.
@@ -1810,8 +1796,14 @@ typedef struct AVCodecContext {
      * Ignored if the default get_buffer() is used.
      * - encoding: Set by user.
      * - decoding: Set by user.
+     *
+     * @deprecated the custom get_buffer2() callback should always be
+     *   thread-safe. Thread-unsafe get_buffer2() implementations will be
+     *   invalid once this field is removed.
      */
+    attribute_deprecated
     int thread_safe_callbacks;
+#endif
 
     /**
      * The codec may call this to execute several independent things.
@@ -1948,6 +1940,9 @@ typedef struct AVCodecContext {
 #define FF_PROFILE_HEVC_MAIN_10                     2
 #define FF_PROFILE_HEVC_MAIN_STILL_PICTURE          3
 #define FF_PROFILE_HEVC_REXT                        4
+
+#define FF_PROFILE_VVC_MAIN_10                      1
+#define FF_PROFILE_VVC_MAIN_10_444                 33
 
 #define FF_PROFILE_AV1_MAIN                         0
 #define FF_PROFILE_AV1_HIGH                         1
@@ -2148,12 +2143,11 @@ typedef struct AVCodecContext {
      */
     int seek_preroll;
 
-#if !FF_API_DEBUG_MV
+#if FF_API_DEBUG_MV
     /**
-     * debug motion vectors
-     * - encoding: Set by user.
-     * - decoding: Set by user.
+     * @deprecated unused
      */
+    attribute_deprecated
     int debug_mv;
 #define FF_DEBUG_VIS_MV_P_FOR  0x00000001 //visualize forward predicted MVs of P frames
 #define FF_DEBUG_VIS_MV_B_FOR  0x00000002 //visualize forward predicted MVs of B frames
@@ -2967,6 +2961,7 @@ int avcodec_enum_to_chroma_pos(int *xpos, int *ypos, enum AVChromaLocation pos);
  */
 enum AVChromaLocation avcodec_chroma_pos_to_enum(int xpos, int ypos);
 
+#if FF_API_OLD_ENCDEC
 /**
  * Decode the audio frame of size avpkt->size from avpkt->data into frame.
  *
@@ -3073,6 +3068,7 @@ attribute_deprecated
 int avcodec_decode_video2(AVCodecContext *avctx, AVFrame *picture,
                          int *got_picture_ptr,
                          const AVPacket *avpkt);
+#endif
 
 /**
  * Decode a subtitle message.
@@ -3543,11 +3539,13 @@ typedef struct AVCodecParser {
  */
 const AVCodecParser *av_parser_iterate(void **opaque);
 
+#if FF_API_NEXT
 attribute_deprecated
 AVCodecParser *av_parser_next(const AVCodecParser *c);
 
 attribute_deprecated
 void av_register_codec_parser(AVCodecParser *parser);
+#endif
 AVCodecParserContext *av_parser_init(int codec_id);
 
 /**
@@ -3608,6 +3606,7 @@ void av_parser_close(AVCodecParserContext *s);
  * @{
  */
 
+#if FF_API_OLD_ENCDEC
 /**
  * Encode a frame of audio.
  *
@@ -3690,6 +3689,7 @@ int avcodec_encode_audio2(AVCodecContext *avctx, AVPacket *avpkt,
 attribute_deprecated
 int avcodec_encode_video2(AVCodecContext *avctx, AVPacket *avpkt,
                           const AVFrame *frame, int *got_packet_ptr);
+#endif
 
 int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size,
                             const AVSubtitle *sub);
