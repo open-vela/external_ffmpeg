@@ -96,6 +96,7 @@
 #include "libswscale/swscale_internal.h"
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/pixdesc.h"
 #include "yuv2rgb_altivec.h"
 
@@ -424,13 +425,13 @@ static int altivec_ ## name(SwsContext *c, const unsigned char **in,          \
 }
 
 #define out_abgr(a, b, c, ptr)                                          \
-    vec_mstrgb32(__typeof__(a), ((__typeof__(a)) { 255 }), c, b, a, ptr)
+    vec_mstrgb32(__typeof__(a), ((__typeof__(a)) vec_splat((__typeof__(a)){ 255 }, 0)), c, b, a, ptr)
 #define out_bgra(a, b, c, ptr)                                          \
-    vec_mstrgb32(__typeof__(a), c, b, a, ((__typeof__(a)) { 255 }), ptr)
+    vec_mstrgb32(__typeof__(a), c, b, a, ((__typeof__(a)) vec_splat((__typeof__(a)){ 255 }, 0)), ptr)
 #define out_rgba(a, b, c, ptr)                                          \
-    vec_mstrgb32(__typeof__(a), a, b, c, ((__typeof__(a)) { 255 }), ptr)
+    vec_mstrgb32(__typeof__(a), a, b, c, ((__typeof__(a)) vec_splat((__typeof__(a)){ 255 }, 0)), ptr)
 #define out_argb(a, b, c, ptr)                                          \
-    vec_mstrgb32(__typeof__(a), ((__typeof__(a)) { 255 }), a, b, c, ptr)
+    vec_mstrgb32(__typeof__(a), ((__typeof__(a)) vec_splat((__typeof__(a)){ 255 }, 0)), a, b, c, ptr)
 #define out_rgb24(a, b, c, ptr) vec_mstrgb24(a, b, c, ptr)
 #define out_bgr24(a, b, c, ptr) vec_mstbgr24(a, b, c, ptr)
 
