@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include "thread.h"
 #include "mem.h"
+#include "mem_internal.h"
 #include "avassert.h"
 #include "attributes.h"
 
@@ -57,6 +58,7 @@ typedef void FFTComplex;
         (dim) = (are) * (bim) - (aim) * (bre);                                 \
     } while (0)
 
+#define UNSCALE(x) (x)
 #define RESCALE(x) (x)
 
 #define FOLD(a, b) ((a) + (b))
@@ -84,7 +86,8 @@ typedef void FFTComplex;
         (dim)   = (int)(((accu) + 0x40000000) >> 31);                          \
     } while (0)
 
-#define RESCALE(x) (lrintf((x) * 2147483648.0))
+#define UNSCALE(x) ((double)x/2147483648.0)
+#define RESCALE(x) (av_clip64(lrintf((x) * 2147483648.0), INT32_MIN, INT32_MAX))
 
 #define FOLD(x, y) ((int)((x) + (unsigned)(y) + 32) >> 6)
 
@@ -107,6 +110,7 @@ struct AVTXContext {
     int m;              /* Ptwo part */
     int inv;            /* Is inverted */
     int type;           /* Type */
+    double scale;       /* Scale */
 
     FFTComplex *exptab; /* MDCT exptab */
     FFTComplex *tmp;    /* Temporary buffer needed for all compound transforms */

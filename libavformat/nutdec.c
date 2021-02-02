@@ -260,7 +260,7 @@ static int decode_main_header(NUTContext *nut)
         if (tmp_fields > 5)
             count = ffio_read_varlen(bc);
         else
-            count = tmp_mul - tmp_size;
+            count = tmp_mul - (unsigned)tmp_size;
         if (tmp_fields > 6)
             get_s(bc);
         if (tmp_fields > 7)
@@ -1235,15 +1235,15 @@ static int read_seek(AVFormatContext *s, int stream_index,
         return AVERROR(ENOSYS);
     }
 
-    if (st->index_entries) {
+    if (st->internal->index_entries) {
         int index = av_index_search_timestamp(st, pts, flags);
         if (index < 0)
             index = av_index_search_timestamp(st, pts, flags ^ AVSEEK_FLAG_BACKWARD);
         if (index < 0)
             return -1;
 
-        pos2 = st->index_entries[index].pos;
-        ts   = st->index_entries[index].timestamp;
+        pos2 = st->internal->index_entries[index].pos;
+        ts   = st->internal->index_entries[index].timestamp;
     } else {
         av_tree_find(nut->syncpoints, &dummy, ff_nut_sp_pts_cmp,
                      (void **) next_node);
