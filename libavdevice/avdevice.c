@@ -81,9 +81,14 @@ const char * avdevice_license(void)
 int avdevice_app_to_dev_control_message(struct AVFormatContext *s, enum AVAppToDevMessageType type,
                                         void *data, size_t data_size)
 {
-    if (!s->oformat || !s->oformat->control_message)
-        return AVERROR(ENOSYS);
-    return s->oformat->control_message(s, type, data, data_size);
+    int ret = AVERROR(ENOSYS);
+
+    if (s->oformat && s->oformat->control_message)
+        ret = s->oformat->control_message(s, type, data, data_size);
+    else if (s->iformat && s->iformat->control_message)
+        ret = s->iformat->control_message(s, type, data, data_size);
+
+    return ret;
 }
 
 int avdevice_dev_to_app_control_message(struct AVFormatContext *s, enum AVDevToAppMessageType type,

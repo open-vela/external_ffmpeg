@@ -800,6 +800,12 @@ typedef struct AVInputFormat {
      * This is called if init() fails as well.
      */
     void (*deinit)(struct AVFormatContext *);
+
+    /**
+     * Allows sending messages from application to device.
+     */
+    int (*control_message)(struct AVFormatContext *s, int type,
+                           void *data, size_t data_size);
 } AVInputFormat;
 /**
  * @}
