@@ -847,6 +847,15 @@ typedef int (avfilter_action_func)(AVFilterContext *ctx, void *arg, int jobnr, i
 typedef int (avfilter_execute_func)(AVFilterContext *ctx, avfilter_action_func *func,
                                     void *arg, int *ret, int nb_jobs);
 
+
+/**
+ * A function set ready to filtergraph
+ *
+ * @param ctx the filter context
+ *
+ */
+typedef void (*avfilter_ready_func)(AVFilterContext *ctx);
+
 typedef struct AVFilterGraph {
     const AVClass *av_class;
     AVFilterContext **filters;
@@ -917,6 +926,10 @@ typedef struct AVFilterGraph {
     int sink_links_count;
 
     unsigned disable_auto_convert;
+
+    /* AVFilter ready function notify graph */
+
+    avfilter_ready_func ready;
 } AVFilterGraph;
 
 /**

@@ -193,6 +193,9 @@ int avfilter_link_get_channels(AVFilterLink *link)
 void ff_filter_set_ready(AVFilterContext *filter, unsigned priority)
 {
     filter->ready = FFMAX(filter->ready, priority);
+
+    if (filter->graph && filter->graph->ready)
+        filter->graph->ready(filter);
 }
 
 /**
