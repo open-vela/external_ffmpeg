@@ -31,12 +31,12 @@ enum ATAAlgorithm {
 };
 
 typedef struct ATADenoiseDSPContext {
-    void (*filter_row[4])(const uint8_t *src, uint8_t *dst,
-                          const uint8_t **srcf,
-                          int w, int mid, int size,
-                          int thra, int thrb, const float *weight);
+    void (*filter_row)(const uint8_t *src, uint8_t *dst,
+                       const uint8_t **srcf,
+                       int w, int mid, int size,
+                       int thra, int thrb);
 } ATADenoiseDSPContext;
 
-void ff_atadenoise_init_x86(ATADenoiseDSPContext *dsp, int depth, int algorithm, const float *sigma);
+void ff_atadenoise_init_x86(ATADenoiseDSPContext *dsp, int depth, int algorithm);
 
 #endif /* AVFILTER_ATADENOISE_H */

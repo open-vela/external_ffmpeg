@@ -1,6 +1,6 @@
 /*
  * Chromaprint fingerprinting muxer
- * Copyright (c) 2015 rcombs
+ * Copyright (c) 2015 Rodger Combs
  *
  * This file is part of FFmpeg.
  *
