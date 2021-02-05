@@ -36,7 +36,6 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "decode.h"
 #include "bytestream.h"
 #include "internal.h"
 

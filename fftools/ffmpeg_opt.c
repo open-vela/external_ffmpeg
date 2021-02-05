@@ -51,49 +51,47 @@
 #define SPECIFIER_OPT_FMT_f    "%f"
 #define SPECIFIER_OPT_FMT_dbl  "%lf"
 
-static const char *const opt_name_codec_names[]               = {"c", "codec", "acodec", "vcodec", "scodec", "dcodec", NULL};
-static const char *const opt_name_audio_channels[]            = {"ac", NULL};
-static const char *const opt_name_audio_sample_rate[]         = {"ar", NULL};
-static const char *const opt_name_frame_rates[]               = {"r", NULL};
-static const char *const opt_name_frame_sizes[]               = {"s", NULL};
-static const char *const opt_name_frame_pix_fmts[]            = {"pix_fmt", NULL};
-static const char *const opt_name_ts_scale[]                  = {"itsscale", NULL};
-static const char *const opt_name_hwaccels[]                  = {"hwaccel", NULL};
-static const char *const opt_name_hwaccel_devices[]           = {"hwaccel_device", NULL};
-static const char *const opt_name_hwaccel_output_formats[]    = {"hwaccel_output_format", NULL};
-static const char *const opt_name_autorotate[]                = {"autorotate", NULL};
-static const char *const opt_name_autoscale[]                 = {"autoscale", NULL};
-static const char *const opt_name_max_frames[]                = {"frames", "aframes", "vframes", "dframes", NULL};
-static const char *const opt_name_bitstream_filters[]         = {"bsf", "absf", "vbsf", NULL};
-static const char *const opt_name_codec_tags[]                = {"tag", "atag", "vtag", "stag", NULL};
-static const char *const opt_name_sample_fmts[]               = {"sample_fmt", NULL};
-static const char *const opt_name_qscale[]                    = {"q", "qscale", NULL};
-static const char *const opt_name_forced_key_frames[]         = {"forced_key_frames", NULL};
-static const char *const opt_name_force_fps[]                 = {"force_fps", NULL};
-static const char *const opt_name_frame_aspect_ratios[]       = {"aspect", NULL};
-static const char *const opt_name_rc_overrides[]              = {"rc_override", NULL};
-static const char *const opt_name_intra_matrices[]            = {"intra_matrix", NULL};
-static const char *const opt_name_inter_matrices[]            = {"inter_matrix", NULL};
-static const char *const opt_name_chroma_intra_matrices[]     = {"chroma_intra_matrix", NULL};
-static const char *const opt_name_top_field_first[]           = {"top", NULL};
-static const char *const opt_name_presets[]                   = {"pre", "apre", "vpre", "spre", NULL};
-static const char *const opt_name_copy_initial_nonkeyframes[] = {"copyinkfr", NULL};
-static const char *const opt_name_copy_prior_start[]          = {"copypriorss", NULL};
-static const char *const opt_name_filters[]                   = {"filter", "af", "vf", NULL};
-static const char *const opt_name_filter_scripts[]            = {"filter_script", NULL};
-static const char *const opt_name_reinit_filters[]            = {"reinit_filter", NULL};
-static const char *const opt_name_fix_sub_duration[]          = {"fix_sub_duration", NULL};
-static const char *const opt_name_canvas_sizes[]              = {"canvas_size", NULL};
-static const char *const opt_name_pass[]                      = {"pass", NULL};
-static const char *const opt_name_passlogfiles[]              = {"passlogfile", NULL};
-static const char *const opt_name_max_muxing_queue_size[]     = {"max_muxing_queue_size", NULL};
-static const char *const opt_name_muxing_queue_data_threshold[] = {"muxing_queue_data_threshold", NULL};
-static const char *const opt_name_guess_layout_max[]          = {"guess_layout_max", NULL};
-static const char *const opt_name_apad[]                      = {"apad", NULL};
-static const char *const opt_name_discard[]                   = {"discard", NULL};
-static const char *const opt_name_disposition[]               = {"disposition", NULL};
-static const char *const opt_name_time_bases[]                = {"time_base", NULL};
-static const char *const opt_name_enc_time_bases[]            = {"enc_time_base", NULL};
+static const char *opt_name_codec_names[]               = {"c", "codec", "acodec", "vcodec", "scodec", "dcodec", NULL};
+static const char *opt_name_audio_channels[]            = {"ac", NULL};
+static const char *opt_name_audio_sample_rate[]         = {"ar", NULL};
+static const char *opt_name_frame_rates[]               = {"r", NULL};
+static const char *opt_name_frame_sizes[]               = {"s", NULL};
+static const char *opt_name_frame_pix_fmts[]            = {"pix_fmt", NULL};
+static const char *opt_name_ts_scale[]                  = {"itsscale", NULL};
+static const char *opt_name_hwaccels[]                  = {"hwaccel", NULL};
+static const char *opt_name_hwaccel_devices[]           = {"hwaccel_device", NULL};
+static const char *opt_name_hwaccel_output_formats[]    = {"hwaccel_output_format", NULL};
+static const char *opt_name_autorotate[]                = {"autorotate", NULL};
+static const char *opt_name_max_frames[]                = {"frames", "aframes", "vframes", "dframes", NULL};
+static const char *opt_name_bitstream_filters[]         = {"bsf", "absf", "vbsf", NULL};
+static const char *opt_name_codec_tags[]                = {"tag", "atag", "vtag", "stag", NULL};
+static const char *opt_name_sample_fmts[]               = {"sample_fmt", NULL};
+static const char *opt_name_qscale[]                    = {"q", "qscale", NULL};
+static const char *opt_name_forced_key_frames[]         = {"forced_key_frames", NULL};
+static const char *opt_name_force_fps[]                 = {"force_fps", NULL};
+static const char *opt_name_frame_aspect_ratios[]       = {"aspect", NULL};
+static const char *opt_name_rc_overrides[]              = {"rc_override", NULL};
+static const char *opt_name_intra_matrices[]            = {"intra_matrix", NULL};
+static const char *opt_name_inter_matrices[]            = {"inter_matrix", NULL};
+static const char *opt_name_chroma_intra_matrices[]     = {"chroma_intra_matrix", NULL};
+static const char *opt_name_top_field_first[]           = {"top", NULL};
+static const char *opt_name_presets[]                   = {"pre", "apre", "vpre", "spre", NULL};
+static const char *opt_name_copy_initial_nonkeyframes[] = {"copyinkfr", NULL};
+static const char *opt_name_copy_prior_start[]          = {"copypriorss", NULL};
+static const char *opt_name_filters[]                   = {"filter", "af", "vf", NULL};
+static const char *opt_name_filter_scripts[]            = {"filter_script", NULL};
+static const char *opt_name_reinit_filters[]            = {"reinit_filter", NULL};
+static const char *opt_name_fix_sub_duration[]          = {"fix_sub_duration", NULL};
+static const char *opt_name_canvas_sizes[]              = {"canvas_size", NULL};
+static const char *opt_name_pass[]                      = {"pass", NULL};
+static const char *opt_name_passlogfiles[]              = {"passlogfile", NULL};
+static const char *opt_name_max_muxing_queue_size[]     = {"max_muxing_queue_size", NULL};
+static const char *opt_name_guess_layout_max[]          = {"guess_layout_max", NULL};
+static const char *opt_name_apad[]                      = {"apad", NULL};
+static const char *opt_name_discard[]                   = {"discard", NULL};
+static const char *opt_name_disposition[]               = {"disposition", NULL};
+static const char *opt_name_time_bases[]                = {"time_base", NULL};
+static const char *opt_name_enc_time_bases[]            = {"enc_time_base", NULL};
 
 #define WARN_MULTIPLE_OPT_USAGE(name, type, so, st)\
 {\
@@ -173,8 +171,6 @@ float max_error_rate  = 2.0/3;
 int filter_nbthreads = 0;
 int filter_complex_nbthreads = 0;
 int vstats_version = 2;
-int auto_conversion_filters = 1;
-int64_t stats_period = 500000;
 
 
 static int intra_only         = 0;
@@ -231,7 +227,6 @@ static void init_options(OptionsContext *o)
     o->limit_filesize = UINT64_MAX;
     o->chapters_input_file = INT_MAX;
     o->accurate_seek  = 1;
-    o->thread_queue_size = -1;
 }
 
 static int show_hwaccels(void *optctx, const char *opt, const char *arg)
@@ -281,21 +276,6 @@ static int opt_abort_on(void *optctx, const char *opt, const char *arg)
     const AVClass *pclass = &class;
 
     return av_opt_eval_flags(&pclass, &opts[0], arg, &abort_on_flags);
-}
-
-static int opt_stats_period(void *optctx, const char *opt, const char *arg)
-{
-    int64_t user_stats_period = parse_time_or_die(opt, arg, 1);
-
-    if (user_stats_period <= 0) {
-        av_log(NULL, AV_LOG_ERROR, "stats_period %s must be positive.\n", arg);
-        return AVERROR(EINVAL);
-    }
-
-    stats_period = user_stats_period;
-    av_log(NULL, AV_LOG_INFO, "ffmpeg stats and -progress period set to %s.\n", arg);
-
-    return 0;
 }
 
 static int opt_sameq(void *optctx, const char *opt, const char *arg)
@@ -867,6 +847,15 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
         case AVMEDIA_TYPE_VIDEO:
             if(!ist->dec)
                 ist->dec = avcodec_find_decoder(par->codec_id);
+#if FF_API_LOWRES
+            if (st->codec->lowres) {
+                ist->dec_ctx->lowres = st->codec->lowres;
+                ist->dec_ctx->width  = st->codec->width;
+                ist->dec_ctx->height = st->codec->height;
+                ist->dec_ctx->coded_width  = st->codec->coded_width;
+                ist->dec_ctx->coded_height = st->codec->coded_height;
+            }
+#endif
 
             // avformat_find_stream_info() doesn't set this for us anymore.
             ist->dec_ctx->framerate = st->avg_frame_rate;
@@ -1280,7 +1269,7 @@ static int open_input_file(OptionsContext *o, const char *filename)
     f->duration = 0;
     f->time_base = (AVRational){ 1, 1 };
 #if HAVE_THREADS
-    f->thread_queue_size = o->thread_queue_size;
+    f->thread_queue_size = o->thread_queue_size > 0 ? o->thread_queue_size : 8;
 #endif
 
     /* check if all codec options have been used */
@@ -1473,8 +1462,6 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
         ost->encoder_opts  = filter_codec_opts(o->g->codec_opts, ost->enc->id, oc, st, ost->enc);
 
         MATCH_PER_STREAM_OPT(presets, str, preset, oc, st);
-        ost->autoscale = 1;
-        MATCH_PER_STREAM_OPT(autoscale, i, ost->autoscale, oc, st);
         if (preset && (!(ret = get_preset_file_2(preset, ost->enc->name, &s)))) {
             do  {
                 buf = get_line(s);
@@ -1571,11 +1558,6 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
     ost->max_muxing_queue_size = 128;
     MATCH_PER_STREAM_OPT(max_muxing_queue_size, i, ost->max_muxing_queue_size, oc, st);
     ost->max_muxing_queue_size *= sizeof(AVPacket);
-
-    ost->muxing_queue_data_size = 0;
-
-    ost->muxing_queue_data_threshold = 50*1024*1024;
-    MATCH_PER_STREAM_OPT(muxing_queue_data_threshold, i, ost->muxing_queue_data_threshold, oc, st);
 
     if (oc->oformat->flags & AVFMT_GLOBALHEADER)
         ost->enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -2223,23 +2205,22 @@ static int open_output_file(OptionsContext *o, const char *filename)
 
         /* video: highest resolution */
         if (!o->video_disable && av_guess_codec(oc->oformat, NULL, filename, NULL, AVMEDIA_TYPE_VIDEO) != AV_CODEC_ID_NONE) {
-            int best_score = 0, idx = -1;
+            int area = 0, idx = -1;
             int qcr = avformat_query_codec(oc->oformat, oc->oformat->video_codec, 0);
             for (i = 0; i < nb_input_streams; i++) {
-                int score;
+                int new_area;
                 ist = input_streams[i];
-                score = ist->st->codecpar->width * ist->st->codecpar->height
-                           + 100000000 * !!(ist->st->event_flags & AVSTREAM_EVENT_FLAG_NEW_PACKETS)
+                new_area = ist->st->codecpar->width * ist->st->codecpar->height + 100000000*!!ist->st->codec_info_nb_frames
                            + 5000000*!!(ist->st->disposition & AV_DISPOSITION_DEFAULT);
                 if (ist->user_set_discard == AVDISCARD_ALL)
                     continue;
                 if((qcr!=MKTAG('A', 'P', 'I', 'C')) && (ist->st->disposition & AV_DISPOSITION_ATTACHED_PIC))
-                    score = 1;
+                    new_area = 1;
                 if (ist->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-                    score > best_score) {
+                    new_area > area) {
                     if((qcr==MKTAG('A', 'P', 'I', 'C')) && !(ist->st->disposition & AV_DISPOSITION_ATTACHED_PIC))
                         continue;
-                    best_score = score;
+                    area = new_area;
                     idx = i;
                 }
             }
@@ -2641,9 +2622,6 @@ loop_end:
         if(o->recording_time != INT64_MAX)
             av_dict_set(&oc->metadata, "duration", NULL, 0);
         av_dict_set(&oc->metadata, "creation_time", NULL, 0);
-        av_dict_set(&oc->metadata, "company_name", NULL, 0);
-        av_dict_set(&oc->metadata, "product_name", NULL, 0);
-        av_dict_set(&oc->metadata, "product_version", NULL, 0);
     }
     if (!o->metadata_streams_manual)
         for (i = of->ost_index; i < nb_output_streams; i++) {
@@ -3208,7 +3186,7 @@ static int opt_filter_complex_script(void *optctx, const char *opt, const char *
     return 0;
 }
 
-void show_help_default(const char *opt, const char *arg)
+static void show_help_default(const char *opt, const char *arg)
 {
     /* per-file options have at least one of those set */
     const int per_file = OPT_SPEC | OPT_OFFSET | OPT_PERFILE;
@@ -3331,11 +3309,61 @@ static int open_files(OptionGroupList *l, const char *inout,
     return 0;
 }
 
+static void init_global_value(void)
+{
+    program_show_help = show_help_default;
+
+    filter_hw_device = NULL;
+
+    vstats_filename = NULL;
+    sdp_filename = NULL;
+
+    audio_drift_threshold = 0.1;
+    dts_delta_threshold   = 10;
+    dts_error_threshold   = 3600*30;
+
+    audio_volume      = 256;
+    audio_sync_method = 0;
+    video_sync_method = VSYNC_AUTO;
+    frame_drop_threshold = 0;
+    do_deinterlace    = 0;
+    do_benchmark      = 0;
+    do_benchmark_all  = 0;
+    do_hex_dump       = 0;
+    do_pkt_dump       = 0;
+    copy_ts           = 0;
+    start_at_zero     = 0;
+    copy_tb           = -1;
+    debug_ts          = 0;
+    exit_on_error     = 0;
+    abort_on_flags    = 0;
+    print_stats       = -1;
+    qp_hist           = 0;
+    stdin_interaction = 1;
+    frame_bits_per_raw_sample = 0;
+    max_error_rate  = 2.0/3;
+    filter_nbthreads = 0;
+    filter_complex_nbthreads = 0;
+    vstats_version = 2;
+
+    intra_only         = 0;
+    file_overwrite     = 0;
+    no_file_overwrite  = 0;
+    do_psnr            = 0;
+    input_sync;
+    input_stream_potentially_available = 0;
+    ignore_unknown_streams = 0;
+    copy_unknown_streams = 0;
+    find_stream_info = 1;
+}
+
 int ffmpeg_parse_options(int argc, char **argv)
 {
     OptionParseContext octx;
     uint8_t error[128];
     int ret;
+
+    init_global_value();
 
     memset(&octx, 0, sizeof(octx));
 
@@ -3563,12 +3591,8 @@ const OptionDef options[] = {
         "create a complex filtergraph", "graph_description" },
     { "filter_complex_script", HAS_ARG | OPT_EXPERT,                 { .func_arg = opt_filter_complex_script },
         "read complex filtergraph description from a file", "filename" },
-    { "auto_conversion_filters", OPT_BOOL | OPT_EXPERT,              { &auto_conversion_filters },
-        "enable automatic conversion filters globally" },
     { "stats",          OPT_BOOL,                                    { &print_stats },
         "print progress report during encoding", },
-    { "stats_period",    HAS_ARG | OPT_EXPERT,                       { .func_arg = opt_stats_period },
-        "set the period at which ffmpeg updates stats and -progress output", "time" },
     { "attach",         HAS_ARG | OPT_PERFILE | OPT_EXPERT |
                         OPT_OUTPUT,                                  { .func_arg = opt_attach },
         "add an attachment to the output file", "filename" },
@@ -3580,7 +3604,7 @@ const OptionDef options[] = {
     { "debug_ts",       OPT_BOOL | OPT_EXPERT,                       { &debug_ts },
         "print timestamp debugging info" },
     { "max_error_rate",  HAS_ARG | OPT_FLOAT,                        { &max_error_rate },
-        "ratio of decoding errors (0.0: no errors, 1.0: 100% errors) above which ffmpeg returns an error instead of success.", "maximum error rate" },
+        "ratio of errors (0.0: no errors, 1.0: 100% errors) above which ffmpeg returns an error instead of success.", "maximum error rate" },
     { "discard",        OPT_STRING | HAS_ARG | OPT_SPEC |
                         OPT_INPUT,                                   { .off = OFFSET(discard) },
         "discard", "" },
@@ -3690,9 +3714,6 @@ const OptionDef options[] = {
     { "autorotate",       HAS_ARG | OPT_BOOL | OPT_SPEC |
                           OPT_EXPERT | OPT_INPUT,                                { .off = OFFSET(autorotate) },
         "automatically insert correct rotate filters" },
-    { "autoscale",        HAS_ARG | OPT_BOOL | OPT_SPEC |
-                          OPT_EXPERT | OPT_OUTPUT,                               { .off = OFFSET(autoscale) },
-        "automatically insert a scale filter at the end of the filter graph" },
 
     /* audio options */
     { "aframes",        OPT_AUDIO | HAS_ARG  | OPT_PERFILE | OPT_OUTPUT,           { .func_arg = opt_audio_frames },
@@ -3779,8 +3800,6 @@ const OptionDef options[] = {
 
     { "max_muxing_queue_size", HAS_ARG | OPT_INT | OPT_SPEC | OPT_EXPERT | OPT_OUTPUT, { .off = OFFSET(max_muxing_queue_size) },
         "maximum number of packets that can be buffered while waiting for all streams to initialize", "packets" },
-    { "muxing_queue_data_threshold", HAS_ARG | OPT_INT | OPT_SPEC | OPT_EXPERT | OPT_OUTPUT, { .off = OFFSET(muxing_queue_data_threshold) },
-        "set the threshold after which max_muxing_queue_size is taken into account", "bytes" },
 
     /* data codec support */
     { "dcodec", HAS_ARG | OPT_DATA | OPT_PERFILE | OPT_EXPERT | OPT_INPUT | OPT_OUTPUT, { .func_arg = opt_data_codec },
