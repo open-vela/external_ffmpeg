@@ -56,7 +56,6 @@ static int r3d_read_red1(AVFormatContext *s)
     R3DContext *r3d = s->priv_data;
     char filename[258];
     int tmp;
-    int ret;
     int av_unused tmp2;
     AVRational framerate;
 
@@ -98,9 +97,7 @@ static int r3d_read_red1(AVFormatContext *s)
     r3d->audio_channels = avio_r8(s->pb); // audio channels
     av_log(s, AV_LOG_TRACE, "audio channels %d\n", tmp);
 
-    ret = avio_read(s->pb, filename, 257);
-    if (ret < 257)
-        return ret < 0 ? ret : AVERROR_EOF;
+    avio_read(s->pb, filename, 257);
     filename[sizeof(filename)-1] = 0;
     av_dict_set(&st->metadata, "filename", filename, 0);
 
