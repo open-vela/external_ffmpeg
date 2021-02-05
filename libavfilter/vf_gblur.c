@@ -25,8 +25,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <float.h>
-
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -53,15 +51,6 @@ typedef struct ThreadData {
     int height;
     int width;
 } ThreadData;
-
-static void postscale_c(float *buffer, int length,
-                        float postscale, float min, float max)
-{
-    for (int i = 0; i < length; i++) {
-        buffer[i] *= postscale;
-        buffer[i] = av_clipf(buffer[i], min, max);
-    }
-}
 
 static void horiz_slice_c(float *buffer, int width, int height, int steps,
                           float nu, float bscale)
@@ -163,22 +152,25 @@ static int filter_vertically(AVFilterContext *ctx, void *arg, int jobnr, int nb_
     return 0;
 }
 
+
 static int filter_postscale(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
 {
     GBlurContext *s = ctx->priv;
     ThreadData *td = arg;
-    const float max = s->flt ?  FLT_MAX : (1 << s->depth) - 1;
-    const float min = s->flt ? -FLT_MAX : 0.f;
+    const float max = (1 << s->depth) - 1;
     const int height = td->height;
     const int width = td->width;
-    const int awidth = FFALIGN(width, 64);
-    const int slice_start = (height *  jobnr   ) / nb_jobs;
-    const int slice_end   = (height * (jobnr+1)) / nb_jobs;
+    const int64_t numpixels = width * (int64_t)height;
+    const unsigned slice_start = (numpixels *  jobnr   ) / nb_jobs;
+    const unsigned slice_end   = (numpixels * (jobnr+1)) / nb_jobs;
     const float postscale = s->postscale * s->postscaleV;
-    const int slice_size = slice_end - slice_start;
+    float *buffer = s->buffer;
+    unsigned i;
 
-    s->postscale_slice(s->buffer + slice_start * awidth,
-                       slice_size * awidth, postscale, min, max);
+    for (i = slice_start; i < slice_end; i++) {
+        buffer[i] *= postscale;
+        buffer[i] = av_clipf(buffer[i], 0.f, max);
+    }
 
     return 0;
 }
@@ -222,8 +214,6 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
         AV_PIX_FMT_GBRAP, AV_PIX_FMT_GBRAP10, AV_PIX_FMT_GBRAP12, AV_PIX_FMT_GBRAP16,
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY9, AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12, AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
-        AV_PIX_FMT_GBRPF32, AV_PIX_FMT_GBRAPF32,
-        AV_PIX_FMT_GRAYF32,
         AV_PIX_FMT_NONE
     };
 
@@ -233,8 +223,7 @@ static int query_formats(AVFilterContext *ctx)
 void ff_gblur_init(GBlurContext *s)
 {
     s->horiz_slice = horiz_slice_c;
-    s->postscale_slice = postscale_c;
-    if (ARCH_X86)
+    if (ARCH_X86_64)
         ff_gblur_init_x86(s);
 }
 
@@ -244,7 +233,6 @@ static int config_input(AVFilterLink *inlink)
     GBlurContext *s = inlink->dst->priv;
 
     s->depth = desc->comp[0].depth;
-    s->flt = !!(desc->flags & AV_PIX_FMT_FLAG_FLOAT);
     s->planewidth[1] = s->planewidth[2] = AV_CEIL_RSHIFT(inlink->w, desc->log2_chroma_w);
     s->planewidth[0] = s->planewidth[3] = inlink->w;
     s->planeheight[1] = s->planeheight[2] = AV_CEIL_RSHIFT(inlink->h, desc->log2_chroma_h);
@@ -252,7 +240,7 @@ static int config_input(AVFilterLink *inlink)
 
     s->nb_planes = av_pix_fmt_count_planes(inlink->format);
 
-    s->buffer = av_malloc_array(FFALIGN(inlink->w, 64), FFALIGN(inlink->h, 64) * sizeof(*s->buffer));
+    s->buffer = av_malloc_array(FFALIGN(inlink->w, 16), FFALIGN(inlink->h, 16) * sizeof(*s->buffer));
     if (!s->buffer)
         return AVERROR(ENOMEM);
 
@@ -315,11 +303,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             continue;
         }
 
-        if (s->flt) {
-            av_image_copy_plane((uint8_t *)bptr, width * sizeof(float),
-                                in->data[plane], in->linesize[plane],
-                                width * sizeof(float), height);
-        } else if (s->depth == 8) {
+        if (s->depth == 8) {
             for (y = 0; y < height; y++) {
                 for (x = 0; x < width; x++) {
                     bptr[x] = src[x];
@@ -340,11 +324,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         gaussianiir2d(ctx, plane);
 
         bptr = s->buffer;
-        if (s->flt) {
-            av_image_copy_plane(out->data[plane], out->linesize[plane],
-                                (uint8_t *)bptr, width * sizeof(float),
-                                width * sizeof(float), height);
-        } else if (s->depth == 8) {
+        if (s->depth == 8) {
             for (y = 0; y < height; y++) {
                 for (x = 0; x < width; x++) {
                     dst[x] = bptr[x];
