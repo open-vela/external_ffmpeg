@@ -159,7 +159,10 @@ static int parse_audio_var(AVFormatContext *avctx, AVStream *st,
         st->codecpar->sample_rate = var_read_int(pb, size);
         avpriv_set_pts_info(st, 33, 1, st->codecpar->sample_rate);
     } else if (!strcmp(name, "SAMPLE_WIDTH")) {
-        st->codecpar->bits_per_coded_sample = var_read_int(pb, size) * 8;
+        uint64_t bpc = var_read_int(pb, size) * (uint64_t)8;
+        if (bpc > 16)
+            return AVERROR_INVALIDDATA;
+        st->codecpar->bits_per_coded_sample = bpc;
     } else
         return AVERROR_INVALIDDATA;
 
@@ -431,8 +434,8 @@ static int mv_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     int64_t ret;
     uint64_t pos;
 
-    if (frame < st->nb_index_entries) {
-        index = &st->index_entries[frame];
+    if (frame < st->internal->nb_index_entries) {
+        index = &st->internal->index_entries[frame];
         pos   = avio_tell(pb);
         if (index->pos > pos)
             avio_skip(pb, index->pos - pos);
