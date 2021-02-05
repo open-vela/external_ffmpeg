@@ -190,6 +190,24 @@ enum AVAppToDevMessageType {
      */
     AV_APP_TO_DEV_GET_VOLUME = MKBETAG('G', 'V', 'O', 'L'),
     AV_APP_TO_DEV_GET_MUTE   = MKBETAG('G', 'M', 'U', 'T'),
+
+    /**
+     * Get fd for poll.
+     *
+     * Get device fd for polling.
+     *
+     * data: struct pollfd: terminated by a zeroed element.
+     */
+    AV_APP_TO_DEV_GET_POLLFD = MKBETAG('G','P','O','L'),
+
+    /**
+     * Nofity device poll available.
+     *
+     * Once poll wakeup by events, then nofity device with this cmd.
+     *
+     * data: struct pollfd: terminated by a zeroed element.
+     */
+    AV_APP_TO_DEV_POLL_AVAILABLE = MKBETAG('P','A','V','A'),
 };
 
 /**

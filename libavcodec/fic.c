@@ -22,7 +22,6 @@
  */
 
 #include "libavutil/common.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "internal.h"
