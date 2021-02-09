@@ -23,6 +23,8 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
+#include "libavutil/mem_internal.h"
+
 #include "vp9dsp.h"
 
 const DECLARE_ALIGNED(16, int16_t, ff_vp9_subpel_filters)[3][16][8] = {
@@ -96,4 +98,5 @@ av_cold void ff_vp9dsp_init(VP9DSPContext *dsp, int bpp, int bitexact)
     if (ARCH_ARM) ff_vp9dsp_init_arm(dsp, bpp);
     if (ARCH_X86) ff_vp9dsp_init_x86(dsp, bpp, bitexact);
     if (ARCH_MIPS) ff_vp9dsp_init_mips(dsp, bpp);
+    if (ARCH_LOONGARCH) ff_vp9dsp_init_loongarch(dsp, bpp);
 }
