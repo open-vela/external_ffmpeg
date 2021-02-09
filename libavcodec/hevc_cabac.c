@@ -454,19 +454,12 @@ void ff_hevc_save_states(HEVCContext *s, int ctb_addr_ts)
          (s->ps.sps->ctb_width == 2 &&
           ctb_addr_ts % s->ps.sps->ctb_width == 0))) {
         memcpy(s->cabac_state, s->HEVClc->cabac_state, HEVC_CONTEXTS);
-        if (s->ps.sps->persistent_rice_adaptation_enabled_flag) {
-            memcpy(s->stat_coeff, s->HEVClc->stat_coeff, HEVC_STAT_COEFFS);
-        }
     }
 }
 
-static void load_states(HEVCContext *s, int thread)
+static void load_states(HEVCContext *s)
 {
     memcpy(s->HEVClc->cabac_state, s->cabac_state, HEVC_CONTEXTS);
-    if (s->ps.sps->persistent_rice_adaptation_enabled_flag) {
-        const HEVCContext *prev = s->sList[(thread + s->threads_number - 1) % s->threads_number];
-        memcpy(s->HEVClc->stat_coeff, prev->stat_coeff, HEVC_STAT_COEFFS);
-    }
 }
 
 static int cabac_reinit(HEVCLocalContext *lc)
@@ -508,7 +501,7 @@ static void cabac_init_state(HEVCContext *s)
         s->HEVClc->stat_coeff[i] = 0;
 }
 
-int ff_hevc_cabac_init(HEVCContext *s, int ctb_addr_ts, int thread)
+int ff_hevc_cabac_init(HEVCContext *s, int ctb_addr_ts)
 {
     if (ctb_addr_ts == s->ps.pps->ctb_addr_rs_to_ts[s->sh.slice_ctb_addr_rs]) {
         int ret = cabac_init_decoder(s);
@@ -525,7 +518,7 @@ int ff_hevc_cabac_init(HEVCContext *s, int ctb_addr_ts, int thread)
                 if (s->ps.sps->ctb_width == 1)
                     cabac_init_state(s);
                 else if (s->sh.dependent_slice_segment_flag == 1)
-                    load_states(s, thread);
+                    load_states(s);
             }
         }
     } else {
@@ -556,7 +549,7 @@ int ff_hevc_cabac_init(HEVCContext *s, int ctb_addr_ts, int thread)
                 if (s->ps.sps->ctb_width == 1)
                     cabac_init_state(s);
                 else
-                    load_states(s, thread);
+                    load_states(s);
             }
         }
     }
@@ -1005,7 +998,7 @@ static av_always_inline int coeff_abs_level_remaining_decode(HEVCContext *s, int
     } else {
         int prefix_minus3 = prefix - 3;
 
-        if (prefix == CABAC_MAX_BIN || prefix_minus3 + rc_rice_param > 16 + 6) {
+        if (prefix == CABAC_MAX_BIN || prefix_minus3 + rc_rice_param >= 31) {
             av_log(s->avctx, AV_LOG_ERROR, "CABAC_MAX_BIN : %d\n", prefix);
             return 0;
         }

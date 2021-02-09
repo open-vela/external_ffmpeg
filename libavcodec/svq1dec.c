@@ -33,7 +33,6 @@
  */
 
 #include "libavutil/crc.h"
-#include "libavutil/thread.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -43,7 +42,6 @@
 #include "mathops.h"
 #include "svq1.h"
 
-#define SVQ1_BLOCK_TYPE_VLC_BITS 3
 static VLC svq1_block_type;
 static VLC svq1_motion_component;
 static VLC svq1_intra_multistage[6];
@@ -457,8 +455,7 @@ static int svq1_decode_delta_block(AVCodecContext *avctx, HpelDSPContext *hdsp,
     int result = 0;
 
     /* get block type */
-    block_type = get_vlc2(bitbuf, svq1_block_type.table,
-                          SVQ1_BLOCK_TYPE_VLC_BITS, 1);
+    block_type = get_vlc2(bitbuf, svq1_block_type.table, 2, 2);
 
     /* reset motion vectors */
     if (block_type == SVQ1_BLOCK_SKIP || block_type == SVQ1_BLOCK_INTRA) {
@@ -682,7 +679,7 @@ static int svq1_decode_frame(AVCodecContext *avctx, void *data,
     if (result < 0)
         return result;
 
-    pmv = av_malloc_array(FFALIGN(s->width, 16) / 8 + 3, sizeof(*pmv));
+    pmv = av_malloc((FFALIGN(s->width, 16) / 8 + 3) * sizeof(*pmv));
     if (!pmv)
         return AVERROR(ENOMEM);
 
@@ -765,17 +762,31 @@ err:
     return result;
 }
 
-static av_cold void svq1_static_init(void)
+static av_cold int svq1_decode_init(AVCodecContext *avctx)
 {
-    INIT_VLC_STATIC(&svq1_block_type, SVQ1_BLOCK_TYPE_VLC_BITS, 4,
+    SVQ1Context *s = avctx->priv_data;
+    int i;
+    int offset = 0;
+
+    s->prev = av_frame_alloc();
+    if (!s->prev)
+        return AVERROR(ENOMEM);
+
+    s->width            = avctx->width  + 3 & ~3;
+    s->height           = avctx->height + 3 & ~3;
+    avctx->pix_fmt      = AV_PIX_FMT_YUV410P;
+
+    ff_hpeldsp_init(&s->hdsp, avctx->flags);
+
+    INIT_VLC_STATIC(&svq1_block_type, 2, 4,
                     &ff_svq1_block_type_vlc[0][1], 2, 1,
-                    &ff_svq1_block_type_vlc[0][0], 2, 1, 8);
+                    &ff_svq1_block_type_vlc[0][0], 2, 1, 6);
 
     INIT_VLC_STATIC(&svq1_motion_component, 7, 33,
                     &ff_mvtab[0][1], 2, 1,
                     &ff_mvtab[0][0], 2, 1, 176);
 
-    for (int i = 0, offset = 0; i < 6; i++) {
+    for (i = 0; i < 6; i++) {
         static const uint8_t sizes[2][6] = { { 14, 10, 14, 18, 16, 18 },
                                              { 10, 10, 14, 14, 14, 16 } };
         static VLC_TYPE table[168][2];
@@ -802,24 +813,6 @@ static av_cold void svq1_static_init(void)
     INIT_VLC_STATIC(&svq1_inter_mean, 9, 512,
                     &ff_svq1_inter_mean_vlc[0][1], 4, 2,
                     &ff_svq1_inter_mean_vlc[0][0], 4, 2, 1434);
-}
-
-static av_cold int svq1_decode_init(AVCodecContext *avctx)
-{
-    static AVOnce init_static_once = AV_ONCE_INIT;
-    SVQ1Context *s = avctx->priv_data;
-
-    s->prev = av_frame_alloc();
-    if (!s->prev)
-        return AVERROR(ENOMEM);
-
-    s->width            = avctx->width  + 3 & ~3;
-    s->height           = avctx->height + 3 & ~3;
-    avctx->pix_fmt      = AV_PIX_FMT_YUV410P;
-
-    ff_hpeldsp_init(&s->hdsp, avctx->flags);
-
-    ff_thread_once(&init_static_once, svq1_static_init);
 
     return 0;
 }
@@ -855,5 +848,4 @@ AVCodec ff_svq1_decoder = {
     .flush          = svq1_flush,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV410P,
                                                      AV_PIX_FMT_NONE },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
