@@ -19,9 +19,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/error.h"
-#include "libavcodec/avcodec.h"
+#include "config.h"
+#include "libavutil/common.h"
 #include "avformat.h"
+#include "internal.h"
+#include "metadata.h"
 #include "riff.h"
 
 /* Note: When encoding, the first matching tag is used, so order is
@@ -454,6 +456,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '0', 'R', 'A') },
     { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '0', 'R', 'G') },
     { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '0', 'G', '0') },
+    { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '0', 'Y', '0') },
     { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '0', 'Y', '2') },
     { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '0', 'Y', '4') },
     { AV_CODEC_ID_MAGICYUV,     MKTAG('M', '2', 'R', 'A') },
@@ -557,6 +560,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_DVAUDIO,         0x0215 },
     { AV_CODEC_ID_DVAUDIO,         0x0216 },
     { AV_CODEC_ID_ATRAC3,          0x0270 },
+    { AV_CODEC_ID_MSNSIREN,        0x028E },
     { AV_CODEC_ID_ADPCM_G722,      0x028F },
     { AV_CODEC_ID_IMC,             0x0401 },
     { AV_CODEC_ID_IAC,             0x0402 },
@@ -587,6 +591,16 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_VORBIS,          ('V' << 8) + 'o' },
     { AV_CODEC_ID_NONE,      0 },
 };
+
+#if CONFIG_AVI_MUXER || CONFIG_WTV_MUXER
+const AVCodecTag *const ff_riff_codec_tags_list[] = {
+    ff_codec_bmp_tags, ff_codec_wav_tags, NULL
+};
+#endif
+
+#if CONFIG_WAV_DEMUXER || CONFIG_WAV_MUXER || CONFIG_W64_DEMUXER || CONFIG_W64_MUXER
+const AVCodecTag *const ff_wav_codec_tags_list[] = { ff_codec_wav_tags, NULL };
+#endif
 
 const AVMetadataConv ff_riff_info_conv[] = {
     { "IART", "artist"     },
