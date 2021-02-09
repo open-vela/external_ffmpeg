@@ -234,8 +234,6 @@ static int update_model6_to_7(PixelModel3 *m)
         }
         p = (e + 127) >> 7;
         k = ((f + e - 1) >> 7) + 1;
-        if (k > FF_ARRAY_ELEMS(n.dectab))
-            return AVERROR_INVALIDDATA;
         for (i = 0; i < k - p; i++)
             n.dectab[p + i] = j;
         e += f;
@@ -704,11 +702,7 @@ static int update_model3_to_7(PixelModel3 *m, uint8_t value)
         e = d;
         n.cntsum += n.cnts[e];
         n.freqs1[e] = c;
-        g = n.freqs[e];
-        f = (c + g - 1 >> 7) + 1;
-        if (f > FF_ARRAY_ELEMS(n.dectab))
-            return AVERROR_INVALIDDATA;
-        for (q = c + 128 - 1 >> 7; q < f; q++) {
+        for (g = n.freqs[e], q = c + 128 - 1 >> 7, f = (c + g - 1 >> 7) + 1; q < f; q++) {
             n.dectab[q] = e;
         }
         c += g;
@@ -843,7 +837,6 @@ static int decode_unit3(SCPRContext *s, PixelModel3 *m, uint32_t code, uint32_t 
     uint16_t a = 0, b = 0;
     uint32_t param;
     int type;
-    int ret;
 
     type = m->type;
     switch (type) {
@@ -866,9 +859,7 @@ static int decode_unit3(SCPRContext *s, PixelModel3 *m, uint32_t code, uint32_t 
         break;
     case 3:
         *value = bytestream2_get_byte(&s->gb);
-        ret = decode_static3(m, *value);
-        if (ret < 0)
-            return AVERROR_INVALIDDATA;
+        decode_static3(m, *value);
         sync_code3(gb, rc);
         break;
     case 4:
@@ -886,9 +877,7 @@ static int decode_unit3(SCPRContext *s, PixelModel3 *m, uint32_t code, uint32_t 
         break;
     case 6:
         if (!decode_adaptive6(m, code, value, &a, &b)) {
-            ret = update_model6_to_7(m);
-            if (ret < 0)
-                return AVERROR_INVALIDDATA;
+            update_model6_to_7(m);
         }
         decode3(gb, rc, a, b);
         sync_code3(gb, rc);

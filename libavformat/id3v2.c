@@ -605,10 +605,7 @@ static void read_apic(AVFormatContext *s, AVIOContext *pb, int taglen,
 
     /* mimetype */
     if (isv34) {
-        int ret = avio_get_str(pb, taglen, mimetype, sizeof(mimetype));
-        if (ret < 0 || ret >= taglen)
-            goto fail;
-        taglen -= ret;
+        taglen -= avio_get_str(pb, taglen, mimetype, sizeof(mimetype));
     } else {
         if (avio_read(pb, mimetype, 3) < 0)
             goto fail;
@@ -995,11 +992,6 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
                     int err;
 
                     av_log(s, AV_LOG_DEBUG, "Compresssed frame %s tlen=%d dlen=%ld\n", tag, tlen, dlen);
-
-                    if (tlen <= 0)
-                        goto seek;
-                    if (dlen / 32768 > tlen)
-                        goto seek;
 
                     av_fast_malloc(&uncompressed_buffer, &uncompressed_buffer_size, dlen);
                     if (!uncompressed_buffer) {

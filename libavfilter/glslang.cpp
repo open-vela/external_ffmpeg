@@ -24,6 +24,7 @@ extern "C" {
 }
 
 #include <glslang/Include/ResourceLimits.h>
+#include <glslang/Include/revision.h>
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 
@@ -235,7 +236,8 @@ int glslang_init(void)
 void glslang_uninit(void)
 {
     pthread_mutex_lock(&glslang_mutex);
-    if (glslang_refcount && (--glslang_refcount == 0))
+    av_assert0(glslang_refcount > 0);
+    if (--glslang_refcount == 0)
         FinalizeProcess();
     pthread_mutex_unlock(&glslang_mutex);
 }
