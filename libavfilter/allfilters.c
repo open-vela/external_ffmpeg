@@ -148,6 +148,7 @@ extern AVFilter ff_af_volume;
 extern AVFilter ff_af_volumedetect;
 
 extern AVFilter ff_asrc_aevalsrc;
+extern AVFilter ff_asrc_adevsrc;
 extern AVFilter ff_asrc_afirsrc;
 extern AVFilter ff_asrc_anoisesrc;
 extern AVFilter ff_asrc_anullsrc;
