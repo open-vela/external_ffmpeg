@@ -132,7 +132,7 @@ void compute_images_mse(PSNRContext *s,
 static void set_meta(AVDictionary **metadata, const char *key, char comp, float d)
 {
     char value[128];
-    snprintf(value, sizeof(value), "%0.2f", d);
+    snprintf(value, sizeof(value), "%f", d);
     if (comp) {
         char key2[128];
         snprintf(key2, sizeof(key2), "%s%c", key, comp);
@@ -154,7 +154,7 @@ static int do_psnr(FFFrameSync *fs)
     ret = ff_framesync_dualinput_get(fs, &master, &ref);
     if (ret < 0)
         return ret;
-    if (!ref)
+    if (ctx->is_disabled || !ref)
         return ff_filter_frame(ctx->outputs[0], master);
     metadata = &master->metadata;
 
@@ -427,4 +427,5 @@ AVFilter ff_vf_psnr = {
     .priv_class    = &psnr_class,
     .inputs        = psnr_inputs,
     .outputs       = psnr_outputs,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
 };
