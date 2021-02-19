@@ -35,6 +35,7 @@
 #include "libavutil/bprint.h"
 #include "libavutil/display.h"
 #include "libavutil/hash.h"
+#include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/mastering_display_metadata.h"
 #include "libavutil/dovi_meta.h"
 #include "libavutil/opt.h"
@@ -78,6 +79,9 @@ typedef struct InputFile {
     InputStream *streams;
     int       nb_streams;
 } InputFile;
+
+const char program_name[] = "ffprobe";
+const int program_birth_year = 2007;
 
 static int do_bitexact = 0;
 static int do_count_frames = 0;
@@ -295,15 +299,13 @@ typedef struct LogBuffer {
 
 static LogBuffer *log_buffer;
 static int log_buffer_size;
-static int print_prefix = 1;
-static int next_registered_writer_idx = 0;
-static int initialized = 0;
 
 static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 {
     AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
     va_list vl2;
     char line[1024];
+    static int print_prefix = 1;
     void *new_log_buffer;
 
     va_copy(vl2, vl);
@@ -603,10 +605,10 @@ static int writer_open(WriterContext **wctx, const Writer *writer, const char *a
             if (ret < 0) {
                 AVBPrint bp;
                 av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
-                bprint_bytes(&bp, p0, p-p0);
-                av_log(wctx, AV_LOG_ERROR,
-                       "Invalid UTF8 sequence %s found in string validation replace '%s'\n",
-                       bp.str, (*wctx)->string_validation_replacement);
+                bprint_bytes(&bp, p0, p-p0),
+                    av_log(wctx, AV_LOG_ERROR,
+                           "Invalid UTF8 sequence %s found in string validation replace '%s'\n",
+                           bp.str, (*wctx)->string_validation_replacement);
                 return ret;
             }
         }
@@ -883,6 +885,8 @@ static const Writer *registered_writers[MAX_REGISTERED_WRITERS_NB + 1];
 
 static int writer_register(const Writer *writer)
 {
+    static int next_registered_writer_idx = 0;
+
     if (next_registered_writer_idx == MAX_REGISTERED_WRITERS_NB)
         return AVERROR(ENOMEM);
 
@@ -1791,6 +1795,8 @@ static Writer xml_writer = {
 
 static void writer_register_all(void)
 {
+    static int initialized;
+
     if (initialized)
         return;
     initialized = 1;
@@ -1853,6 +1859,105 @@ static inline int show_tags(WriterContext *w, AVDictionary *tags, int section_id
     writer_print_section_footer(w);
 
     return ret;
+}
+
+static void print_dynamic_hdr10_plus(WriterContext *w, const AVDynamicHDRPlus *metadata)
+{
+    if (!metadata)
+        return;
+    print_int("application version", metadata->application_version);
+    print_int("num_windows", metadata->num_windows);
+    for (int n = 1; n < metadata->num_windows; n++) {
+        const AVHDRPlusColorTransformParams *params = &metadata->params[n];
+        print_q("window_upper_left_corner_x",
+                params->window_upper_left_corner_x,'/');
+        print_q("window_upper_left_corner_y",
+                params->window_upper_left_corner_y,'/');
+        print_q("window_lower_right_corner_x",
+                params->window_lower_right_corner_x,'/');
+        print_q("window_lower_right_corner_y",
+                params->window_lower_right_corner_y,'/');
+        print_q("window_upper_left_corner_x",
+                params->window_upper_left_corner_x,'/');
+        print_q("window_upper_left_corner_y",
+                params->window_upper_left_corner_y,'/');
+        print_int("center_of_ellipse_x",
+                  params->center_of_ellipse_x ) ;
+        print_int("center_of_ellipse_y",
+                  params->center_of_ellipse_y );
+        print_int("rotation_angle",
+                  params->rotation_angle);
+        print_int("semimajor_axis_internal_ellipse",
+                  params->semimajor_axis_internal_ellipse);
+        print_int("semimajor_axis_external_ellipse",
+                  params->semimajor_axis_external_ellipse);
+        print_int("semiminor_axis_external_ellipse",
+                  params->semiminor_axis_external_ellipse);
+        print_int("overlap_process_option",
+                  params->overlap_process_option);
+    }
+    print_q("targeted_system_display_maximum_luminance",
+            metadata->targeted_system_display_maximum_luminance,'/');
+    if (metadata->targeted_system_display_actual_peak_luminance_flag) {
+        print_int("num_rows_targeted_system_display_actual_peak_luminance",
+                  metadata->num_rows_targeted_system_display_actual_peak_luminance);
+        print_int("num_cols_targeted_system_display_actual_peak_luminance",
+                  metadata->num_cols_targeted_system_display_actual_peak_luminance);
+        for (int i = 0; i < metadata->num_rows_targeted_system_display_actual_peak_luminance; i++) {
+            for (int j = 0; j < metadata->num_cols_targeted_system_display_actual_peak_luminance; j++) {
+                print_q("targeted_system_display_actual_peak_luminance",
+                        metadata->targeted_system_display_actual_peak_luminance[i][j],'/');
+            }
+        }
+    }
+    for (int n = 0; n < metadata->num_windows; n++) {
+        const AVHDRPlusColorTransformParams *params = &metadata->params[n];
+        for (int i = 0; i < 3; i++) {
+            print_q("maxscl",params->maxscl[i],'/');
+        }
+        print_q("average_maxrgb",
+                params->average_maxrgb,'/');
+        print_int("num_distribution_maxrgb_percentiles",
+                  params->num_distribution_maxrgb_percentiles);
+        for (int i = 0; i < params->num_distribution_maxrgb_percentiles; i++) {
+            print_int("distribution_maxrgb_percentage",
+                      params->distribution_maxrgb[i].percentage);
+            print_q("distribution_maxrgb_percentile",
+                    params->distribution_maxrgb[i].percentile,'/');
+        }
+        print_q("fraction_bright_pixels",
+                params->fraction_bright_pixels,'/');
+    }
+    if (metadata->mastering_display_actual_peak_luminance_flag) {
+        print_int("num_rows_mastering_display_actual_peak_luminance",
+                  metadata->num_rows_mastering_display_actual_peak_luminance);
+        print_int("num_cols_mastering_display_actual_peak_luminance",
+                  metadata->num_cols_mastering_display_actual_peak_luminance);
+        for (int i = 0; i < metadata->num_rows_mastering_display_actual_peak_luminance; i++) {
+            for (int j = 0; j <  metadata->num_cols_mastering_display_actual_peak_luminance; j++) {
+                print_q("mastering_display_actual_peak_luminance",
+                        metadata->mastering_display_actual_peak_luminance[i][j],'/');
+            }
+        }
+    }
+
+    for (int n = 0; n < metadata->num_windows; n++) {
+        const AVHDRPlusColorTransformParams *params = &metadata->params[n];
+        if (params->tone_mapping_flag) {
+            print_q("knee_point_x", params->knee_point_x,'/');
+            print_q("knee_point_y", params->knee_point_y,'/');
+            print_int("num_bezier_curve_anchors",
+                      params->num_bezier_curve_anchors );
+            for (int i = 0; i < params->num_bezier_curve_anchors; i++) {
+                print_q("bezier_curve_anchors",
+                        params->bezier_curve_anchors[i],'/');
+            }
+        }
+        if (params->color_saturation_mapping_flag) {
+            print_q("color_saturation_weight",
+                    params->color_saturation_weight,'/');
+        }
+    }
 }
 
 static void print_pkt_side_data(WriterContext *w,
@@ -2220,7 +2325,7 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
                 writer_print_section_header(w, SECTION_ID_FRAME_SIDE_DATA_TIMECODE_LIST);
                 for (int j = 1; j <= m ; j++) {
                     char tcbuf[AV_TIMECODE_STR_SIZE];
-                    av_timecode_make_smpte_tc_string(tcbuf, tc[j], 0);
+                    av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, tc[j], 0, 0);
                     writer_print_section_header(w, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
                     print_str("value", tcbuf);
                     writer_print_section_footer(w);
@@ -2245,6 +2350,9 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
                     print_q("min_luminance", metadata->min_luminance, '/');
                     print_q("max_luminance", metadata->max_luminance, '/');
                 }
+            } else if (sd->type == AV_FRAME_DATA_DYNAMIC_HDR_PLUS) {
+                AVDynamicHDRPlus *metadata = (AVDynamicHDRPlus *)sd->data;
+                print_dynamic_hdr10_plus(w, metadata);
             } else if (sd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL) {
                 AVContentLightMetadata *metadata = (AVContentLightMetadata *)sd->data;
                 print_int("max_content", metadata->MaxCLL);
@@ -2849,7 +2957,7 @@ static int open_input_file(InputFile *ifile, const char *filename,
 {
     int err, i;
     AVFormatContext *fmt_ctx = NULL;
-    AVDictionaryEntry *t;
+    AVDictionaryEntry *t = NULL;
     int scan_all_pmts_set = 0;
 
     fmt_ctx = avformat_alloc_context();
@@ -2874,10 +2982,8 @@ static int open_input_file(InputFile *ifile, const char *filename,
     ifile->fmt_ctx = fmt_ctx;
     if (scan_all_pmts_set)
         av_dict_set(&format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);
-    if ((t = av_dict_get(format_opts, "", NULL, AV_DICT_IGNORE_SUFFIX))) {
-        av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
-        return AVERROR_OPTION_NOT_FOUND;
-    }
+    while ((t = av_dict_get(format_opts, "", t, AV_DICT_IGNORE_SUFFIX)))
+        av_log(NULL, AV_LOG_WARNING, "Option %s skipped - not known to demuxer.\n", t->key);
 
     if (find_stream_info) {
         AVDictionary **opts = setup_find_stream_info_opts(fmt_ctx, codec_opts);
@@ -3189,7 +3295,7 @@ static inline void mark_section_show_entries(SectionID section_id,
 
     section->show_all_entries = show_all_entries;
     if (show_all_entries) {
-        int *id;
+        SectionID *id;
         for (id = section->children_ids; *id != -1; id++)
             mark_section_show_entries(*id, show_all_entries, entries);
     } else {
@@ -3307,7 +3413,7 @@ static int opt_print_filename(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-static void show_help_default(const char *opt, const char *arg)
+void show_help_default(const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     show_usage();
@@ -3469,7 +3575,7 @@ static int opt_pretty(void *optctx, const char *opt, const char *arg)
 
 static void print_section(SectionID id, int level)
 {
-    const int *pid;
+    const SectionID *pid;
     const struct section *section = &sections[id];
     printf("%c%c%c",
            section->flags & SECTION_FLAG_IS_WRAPPER           ? 'W' : '.',
@@ -3583,77 +3689,6 @@ static inline int check_section_show_entries(int section_id)
     return 0;
 }
 
-static void init_global_value(void)
-{
-    program_show_help = show_help_default;
-    program_name = "ffprobe";
-    program_birth_year = 2000;
-
-    do_bitexact = 0;
-    do_count_frames = 0;
-    do_count_packets = 0;
-    do_read_frames  = 0;
-    do_read_packets = 0;
-    do_show_chapters = 0;
-    do_show_error   = 0;
-    do_show_format  = 0;
-    do_show_frames  = 0;
-    do_show_packets = 0;
-    do_show_programs = 0;
-    do_show_streams = 0;
-    do_show_stream_disposition = 0;
-    do_show_data    = 0;
-    do_show_program_version  = 0;
-    do_show_library_versions = 0;
-    do_show_pixel_formats = 0;
-    do_show_pixel_format_flags = 0;
-    do_show_pixel_format_components = 0;
-    do_show_log = 0;
-
-    do_show_chapter_tags = 0;
-    do_show_format_tags = 0;
-    do_show_frame_tags = 0;
-    do_show_program_tags = 0;
-    do_show_stream_tags = 0;
-    do_show_packet_tags = 0;
-
-    show_value_unit              = 0;
-    use_value_prefix             = 0;
-    use_byte_value_binary_prefix = 0;
-    use_value_sexagesimal_format = 0;
-    show_private_data            = 1;
-
-    print_format = NULL;
-    stream_specifier = NULL;
-    show_data_hash = NULL;
-
-    read_intervals = NULL;
-    read_intervals_nb = 0;
-
-    find_stream_info  = 1;
-
-    options = NULL;
-
-    /* FFprobe context */
-    input_filename = NULL;
-    print_input_filename = NULL;
-    iformat = NULL;
-
-    hash = NULL;
-
-    nb_streams = 0;
-    nb_streams_packets = NULL;
-    nb_streams_frames = NULL;
-    selected_streams = NULL;
-
-    log_buffer = NULL;
-    log_buffer_size = 0;
-
-    print_prefix = 1;
-    next_registered_writer_idx = 0;
-    initialized = 0;
-}
-
 #define SET_DO_SHOW(id, varname) do {                                   \
         if (check_section_show_entries(SECTION_ID_##id))                \
             do_show_##varname = 1;                                      \
@@ -3666,8 +3701,6 @@ int main(int argc, char **argv)
     char *buf;
     char *w_name = NULL, *w_args = NULL;
     int ret, i;
-
-    init_global_value();
 
     init_dynload();
 
