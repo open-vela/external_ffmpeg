@@ -428,6 +428,16 @@ static int calc_active_inputs(MixContext *s)
     return 0;
 }
 
+static void amix_fifo_reset(AVFilterContext *ctx)
+{
+    AVFilterLink *link = ctx->outputs[0];
+    MixContext *s = ctx->priv;
+    int i;
+
+    for (i = 0; i < s->nb_inputs; i++)
+        av_audio_fifo_reset(s->fifos[i]);
+}
+
 static int activate(AVFilterContext *ctx)
 {
     AVFilterLink *outlink = ctx->outputs[0];
@@ -476,6 +486,7 @@ static int activate(AVFilterContext *ctx)
                     s->input_state[i] = 0;
                     if (s->nb_inputs == 1) {
                         ff_outlink_set_status(outlink, status, pts);
+                        amix_fifo_reset(ctx);
                         return 0;
                     }
                 } else {
@@ -490,6 +501,7 @@ static int activate(AVFilterContext *ctx)
 
     if (calc_active_inputs(s)) {
         ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
+        amix_fifo_reset(ctx);
         return 0;
     }
 
