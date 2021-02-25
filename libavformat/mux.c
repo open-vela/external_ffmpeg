@@ -1283,6 +1283,9 @@ int av_write_trailer(AVFormatContext *s)
             if (ret >= 0)
                 ret = ret1;
         }
+
+        if (!s->internal->streams_initialized)
+            av_freep(&s->streams[i]->internal->priv_pts);
     }
     ret1 = interleaved_write_packet(s, NULL, 1);
     if (ret >= 0)
