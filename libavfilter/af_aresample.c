@@ -189,6 +189,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamplesref)
     AVFrame *outsamplesref;
     int ret;
 
+    if (!swr_is_initialized(aresample->swr)) {
+        ret = swr_init(aresample->swr);
+        if (ret < 0)
+            return ret;
+    }
+
     delay = swr_get_delay(aresample->swr, outlink->sample_rate);
     if (delay > 0)
         n_out += FFMIN(delay, FFMAX(4096, n_out));
@@ -245,12 +251,22 @@ static int flush_frame(AVFilterLink *outlink, int final, AVFrame **outsamplesref
     if (!outsamplesref)
         return AVERROR(ENOMEM);
 
+    if (!swr_is_initialized(aresample->swr)) {
+        int ret = swr_init(aresample->swr);
+        if (ret < 0)
+            return ret;
+    }
+
     pts = swr_next_pts(aresample->swr, INT64_MIN);
     pts = ROUNDED_DIV(pts, inlink->sample_rate);
 
     n_out = swr_convert(aresample->swr, outsamplesref->extended_data, n_out, final ? NULL : (void*)outsamplesref->extended_data, 0);
     if (n_out <= 0) {
         av_frame_free(&outsamplesref);
+
+        if (final && n_out == 0)
+            swr_close(aresample->swr);
+
         return (n_out == 0) ? AVERROR_EOF : n_out;
     }
 
