@@ -220,6 +220,7 @@ void ff_avfilter_link_set_in_status(AVFilterLink *link, int status, int64_t pts)
     link->status_in_pts = pts;
     link->frame_wanted_out = 0;
     link->frame_blocked_in = 0;
+    ff_frame_pool_uninit((FFFramePool**)&link->frame_pool);
     filter_unblock(link->dst);
     ff_filter_set_ready(link->dst, 200);
 }
@@ -231,6 +232,7 @@ void ff_avfilter_link_set_out_status(AVFilterLink *link, int status, int64_t pts
     link->status_out = status;
     if (pts != AV_NOPTS_VALUE)
         ff_update_link_current_pts(link, pts);
+    ff_frame_pool_uninit((FFFramePool**)&link->frame_pool);
     filter_unblock(link->dst);
     ff_filter_set_ready(link->src, 200);
 }
