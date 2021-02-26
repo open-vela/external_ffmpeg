@@ -45,8 +45,6 @@
  * plugin.
  */
 
-#define _POSIX_C_SOURCE 2
-
 #include <alsa/asoundlib.h>
 
 #include "libavutil/internal.h"
