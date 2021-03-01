@@ -99,18 +99,14 @@ out:
     return ret;
 }
 
-static int adevsink_control_message(struct AVFormatContext *s, int type,
+static int adevsrc_control_message(struct AVFormatContext *s, int type,
                                     void *data, size_t data_size)
 {
     AVFilterContext *ctx = av_format_get_opaque(s);
     ADevSrcPriv *priv = ctx->priv;
 
-    if (type == AV_DEV_TO_APP_BUFFER_READABLE) {
-        if (!priv->dec_ctx)
-            ff_request_frame(ctx->outputs[0]);
-        else
-            ff_filter_set_ready(ctx, 100);
-    }
+    if (type == AV_DEV_TO_APP_BUFFER_READABLE)
+        ff_request_frame(ctx->outputs[0]);
 
     return 0;
 }
@@ -130,7 +126,7 @@ static int adevsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
         return AVERROR(ENOMEM);
 
     av_format_set_opaque(priv->fmt_ctx, ctx);
-    av_format_set_control_message_cb(priv->fmt_ctx, adevsink_control_message);
+    av_format_set_control_message_cb(priv->fmt_ctx, adevsrc_control_message);
 
     priv->fmt_ctx->flags |= AVFMT_FLAG_NONBLOCK | AVFMT_FLAG_PRIV_OPT;
     ret = avformat_open_input(&priv->fmt_ctx, priv->devname, fmt, options);
@@ -166,7 +162,7 @@ static int adevsrc_activate(AVFilterContext *ctx)
     }
 
     if (!ff_outlink_frame_wanted(link))
-        return 0;
+        return FFERROR_NOT_READY;
 
     frame = av_frame_alloc();
     if (!frame)
