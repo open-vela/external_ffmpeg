@@ -522,6 +522,7 @@ extern const FFCodec ff_ra_288_decoder;
 extern const FFCodec ff_ralf_decoder;
 extern const FFCodec ff_sbc_encoder;
 extern const FFCodec ff_sbc_decoder;
+extern const FFCodec ff_sbc_packed_decoder;
 extern const FFCodec ff_shorten_decoder;
 extern const FFCodec ff_sipr_decoder;
 extern const FFCodec ff_siren_decoder;
