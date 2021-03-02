@@ -165,6 +165,7 @@ typedef struct MixContext {
     int duration_mode;          /**< mode for determining duration */
     float dropout_transition;   /**< transition time when an input drops out */
     char *weights_str;          /**< string for custom weights for every input */
+    int timeout;                /**< timeout for force output(0 disable force output) */
 
     int nb_channels;            /**< number of channels */
     int sample_rate;            /**< sample rate */
@@ -177,6 +178,7 @@ typedef struct MixContext {
     float *scale_norm;          /**< normalization factor for every input */
     int64_t next_pts;           /**< calculated pts for next output frame */
     FrameList *frame_list;      /**< list of frame info for the first input */
+    timer_t timer_id;
 } MixContext;
 
 #define OFFSET(x) offsetof(MixContext, x)
@@ -188,6 +190,8 @@ static const AVOption amix_options[] = {
             OFFSET(nb_inputs), AV_OPT_TYPE_INT, { .i64 = 2 }, 1, INT16_MAX, A|F },
     { "first_input", "first input",
             OFFSET(first_input), AV_OPT_TYPE_INT, { .i64 = 0 }, -1, INT16_MAX, A|F },
+    { "timeout", "timeout for force output",
+            OFFSET(timeout), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT32_MAX, A|F },
     { "duration", "How to determine the end-of-stream.",
             OFFSET(duration_mode), AV_OPT_TYPE_INT, { .i64 = DURATION_LONGEST }, 0,  2, A|F, "duration" },
         { "longest",  "Duration of longest input.",  0, AV_OPT_TYPE_CONST, { .i64 = DURATION_LONGEST  }, 0, 0, A|F, "duration" },
@@ -287,6 +291,61 @@ static int config_output(AVFilterLink *outlink)
     return 0;
 }
 
+static bool is_timeout(AVFilterContext *ctx)
+{
+    MixContext *s = ctx->priv;
+    struct itimerspec its;
+
+    if (s->timer_id && timer_gettime(s->timer_id, &its) == 0 &&
+        its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0)
+        return true;
+
+    return false;
+}
+
+static void timer_notify(union sigval value)
+{
+    AVFilterContext *ctx = value.sival_ptr;
+    MixContext *s = ctx->priv;
+
+    ff_filter_set_ready(ctx, 10);
+}
+
+static int update_timer(AVFilterContext *ctx, bool start)
+{
+    MixContext *s = ctx->priv;
+    struct itimerspec its;
+    struct sigevent se;
+
+    if (s->timeout <= 0 || start == !!s->timer_id)
+        return 0;
+
+    if (!start && s->timer_id) {
+        timer_delete(s->timer_id);
+        s->timer_id = NULL;
+        return 0;
+    }
+
+    if (!s->timer_id) {
+        se.sigev_notify = SIGEV_THREAD;
+        se.sigev_value.sival_ptr = ctx;
+        se.sigev_notify_function = timer_notify;
+        se.sigev_notify_attributes = NULL;
+
+        if (timer_create(CLOCK_MONOTONIC, &se, &s->timer_id) < 0)
+            return AVERROR(errno);
+    }
+
+    memset(&its, 0, sizeof(its));
+    its.it_value.tv_sec = s->timeout / 1000;
+    its.it_value.tv_nsec = s->timeout % 1000 * 1000000;
+
+    if (timer_settime(s->timer_id, 0, &its, NULL) < 0)
+        return AVERROR(errno);
+
+    return 0;
+}
+
 /**
  * Read samples from the input FIFOs, mix, and write to the output link.
  */
@@ -304,11 +363,12 @@ static int output_frame(AVFilterLink *outlink)
             if (i != s->first_input && s->input_state[i] & INPUT_ON) {
                 ns = av_audio_fifo_size(s->fifos[i]);
                 if (ns < nb_samples) {
-                    if (!(s->input_state[i] & INPUT_EOF))
+                    if (!is_timeout(ctx) && !(s->input_state[i] & INPUT_EOF))
                         /* unclosed input with not enough samples */
                         return 0;
                     /* closed input to drain */
-                    nb_samples = ns;
+                    if (ns > 0)
+                        nb_samples = ns;
                 }
             }
         }
@@ -318,7 +378,10 @@ static int output_frame(AVFilterLink *outlink)
         for (i = 0; i < s->nb_inputs; i++) {
             if (i != s->first_input && s->input_state[i] & INPUT_ON) {
                 ns = av_audio_fifo_size(s->fifos[i]);
-                nb_samples = FFMIN(nb_samples, ns);
+                if (is_timeout(ctx) && ns == 0)
+                    s->input_state[i] = 0;
+                else
+                    nb_samples = FFMIN(nb_samples, ns);
             }
         }
         if (nb_samples == INT_MAX) {
@@ -327,15 +390,15 @@ static int output_frame(AVFilterLink *outlink)
         }
     }
 
+    if (nb_samples == 0)
+        return 0;
+
     if (s->first_input >= 0) {
         s->next_pts = frame_list_next_pts(s->frame_list);
         frame_list_remove_samples(s->frame_list, nb_samples);
     }
 
     calculate_scales(s, nb_samples);
-
-    if (nb_samples == 0)
-        return 0;
 
     out_buf = ff_get_audio_buffer(outlink, nb_samples);
     if (!out_buf)
@@ -348,7 +411,7 @@ static int output_frame(AVFilterLink *outlink)
     }
 
     for (i = 0; i < s->nb_inputs; i++) {
-        if (s->input_state[i] & INPUT_ON) {
+        if (av_audio_fifo_size(s->fifos[i]) >= nb_samples && s->input_state[i] & INPUT_ON) {
             int planes, plane_size, p;
 
             av_audio_fifo_read(s->fifos[i], (void **)in_buf->extended_data,
@@ -380,6 +443,7 @@ static int output_frame(AVFilterLink *outlink)
     if (s->next_pts != AV_NOPTS_VALUE)
         s->next_pts += nb_samples;
 
+    update_timer(ctx, false);
     return ff_filter_frame(outlink, out_buf);
 }
 
@@ -443,6 +507,7 @@ static int activate(AVFilterContext *ctx)
     AVFilterLink *outlink = ctx->outputs[0];
     MixContext *s = ctx->priv;
     AVFrame *buf = NULL;
+    bool consume = false;
     int i, ret;
 
     FF_FILTER_FORWARD_STATUS_BACK_ALL(outlink, ctx);
@@ -469,11 +534,14 @@ static int activate(AVFilterContext *ctx)
             }
 
             av_frame_free(&buf);
-
-            ret = output_frame(outlink);
-            if (ret < 0)
-                return ret;
+            consume = true;
         }
+    }
+
+    if (consume || is_timeout(ctx)) {
+        ret = output_frame(outlink);
+        if (ret < 0)
+            return ret;
     }
 
     for (i = 0; i < s->nb_inputs; i++) {
@@ -508,8 +576,10 @@ static int activate(AVFilterContext *ctx)
     if (ff_outlink_frame_wanted(outlink)) {
         int wanted_samples;
 
+        update_timer(ctx, true);
+
         if (s->first_input < 0 || !(s->input_state[s->first_input] & INPUT_ON))
-            return request_samples(ctx, 1);
+            return request_samples(ctx, s->timeout * s->sample_rate / 1000);
 
         if (s->frame_list->nb_frames == 0) {
             ff_inlink_request_frame(ctx->inputs[s->first_input]);
