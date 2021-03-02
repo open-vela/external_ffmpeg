@@ -197,6 +197,7 @@ static av_cold int vble_decode_init(AVCodecContext *avctx)
 
     if (!ctx->val) {
         av_log(avctx, AV_LOG_ERROR, "Could not allocate values buffer.\n");
+        vble_decode_close(avctx);
         return AVERROR(ENOMEM);
     }
 
