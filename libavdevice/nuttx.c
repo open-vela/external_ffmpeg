@@ -396,7 +396,13 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
 {
     struct audio_buf_desc_s buf_desc;
     struct audio_msg_s msg;
+    int dc = dq_count(&priv->bufferq);
     int ret, i;
+
+    if (!priv->running && !priv->flushing && dc > 0 && dc < priv->periods) {
+        ioctl(priv->fd, AUDIOIOC_START, 0);
+        priv->running = true;
+    }
 
     if (priv->running) {
         ioctl(priv->fd, AUDIOIOC_STOP, 0);
