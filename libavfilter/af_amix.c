@@ -516,6 +516,7 @@ static int activate(AVFilterContext *ctx)
         AVFilterLink *inlink = ctx->inputs[i];
 
         if ((ret = ff_inlink_consume_frame(ctx->inputs[i], &buf)) > 0) {
+            s->input_state[i] |= INPUT_ON;
             if (i == s->first_input) {
                 int64_t pts = av_rescale_q(buf->pts, inlink->time_base,
                                            outlink->time_base);
