@@ -278,6 +278,8 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device)
         goto out;
     }
 
+    priv->volume = NAN;
+
     return 0;
 
 out:
