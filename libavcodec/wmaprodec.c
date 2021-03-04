@@ -92,8 +92,6 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mem_internal.h"
-
 #include "avcodec.h"
 #include "internal.h"
 #include "get_bits.h"
@@ -1581,14 +1579,14 @@ static void save_bits(WMAProDecodeCtx *s, GetBitContext* gb, int len,
 
     s->num_saved_bits += len;
     if (!append) {
-        ff_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
+        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
                      s->num_saved_bits);
     } else {
         int align = 8 - (get_bits_count(gb) & 7);
         align = FFMIN(align, len);
         put_bits(&s->pb, align, get_bits(gb, align));
         len -= align;
-        ff_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
+        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
     }
     skip_bits_long(gb, len);
 
@@ -1721,12 +1719,6 @@ static int decode_packet(AVCodecContext *avctx, WMAProDecodeCtx *s,
         }
     } else {
         int frame_size;
-
-        if (avpkt->size < s->next_packet_start) {
-            s->packet_loss = 1;
-            return AVERROR_INVALIDDATA;
-        }
-
         s->buf_bit_size = (avpkt->size - s->next_packet_start) << 3;
         init_get_bits(gb, avpkt->data, s->buf_bit_size);
         skip_bits(gb, s->packet_offset);
