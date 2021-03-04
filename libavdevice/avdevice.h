@@ -190,24 +190,6 @@ enum AVAppToDevMessageType {
      */
     AV_APP_TO_DEV_GET_VOLUME = MKBETAG('G', 'V', 'O', 'L'),
     AV_APP_TO_DEV_GET_MUTE   = MKBETAG('G', 'M', 'U', 'T'),
-
-    /**
-     * Get fd for poll.
-     *
-     * Get device fd for polling.
-     *
-     * data: struct pollfd: terminated by a zeroed element.
-     */
-    AV_APP_TO_DEV_GET_POLLFD = MKBETAG('G','P','O','L'),
-
-    /**
-     * Nofity device poll available.
-     *
-     * Once poll wakeup by events, then nofity device with this cmd.
-     *
-     * data: struct pollfd: terminated by a zeroed element.
-     */
-    AV_APP_TO_DEV_POLL_AVAILABLE = MKBETAG('P','A','V','A'),
 };
 
 /**
@@ -339,6 +321,7 @@ int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
                                         enum AVDevToAppMessageType type,
                                         void *data, size_t data_size);
 
+#if FF_API_DEVICE_CAPABILITIES
 /**
  * Following API allows user to probe device capabilities (supported codecs,
  * pixel formats, sample formats, resolutions, channel counts, etc).
@@ -434,6 +417,7 @@ typedef struct AVDeviceCapabilitiesQuery {
 /**
  * AVOption table used by devices to implement device capabilities API. Should not be used by a user.
  */
+attribute_deprecated
 extern const AVOption av_device_capabilities[];
 
 /**
@@ -453,6 +437,7 @@ extern const AVOption av_device_capabilities[];
  *
  * @return >= 0 on success, negative otherwise.
  */
+attribute_deprecated
 int avdevice_capabilities_create(AVDeviceCapabilitiesQuery **caps, AVFormatContext *s,
                                  AVDictionary **device_options);
 
@@ -462,7 +447,9 @@ int avdevice_capabilities_create(AVDeviceCapabilitiesQuery **caps, AVFormatConte
  * @param caps Device capabilities data to be freed.
  * @param s    Context of the device.
  */
+attribute_deprecated
 void avdevice_capabilities_free(AVDeviceCapabilitiesQuery **caps, AVFormatContext *s);
+#endif
 
 /**
  * Structure describes basic parameters of the device.
