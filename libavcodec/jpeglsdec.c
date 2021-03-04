@@ -149,7 +149,7 @@ static inline int ls_get_code_regular(GetBitContext *gb, JLSState *state, int Q)
 {
     int k, ret;
 
-    for (k = 0; ((unsigned)state->N[Q] << k) < state->A[Q]; k++)
+    for (k = 0; (state->N[Q] << k) < state->A[Q]; k++)
         ;
 
 #ifdef JLS_BROKEN
@@ -551,8 +551,7 @@ AVCodec ff_jpegls_decoder = {
     .priv_data_size = sizeof(MJpegDecodeContext),
     .init           = ff_mjpeg_decode_init,
     .close          = ff_mjpeg_decode_end,
-    .receive_frame  = ff_mjpeg_receive_frame,
+    .decode         = ff_mjpeg_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP |
-                      FF_CODEC_CAP_SETS_PKT_DTS,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

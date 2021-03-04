@@ -208,8 +208,6 @@ static int mjpeg_probe(const AVProbeData *p)
             return AVPROBE_SCORE_EXTENSION / 2;
         return AVPROBE_SCORE_EXTENSION / 4;
     }
-    if (!nb_invalid && nb_frames)
-        return AVPROBE_SCORE_EXTENSION / 4;
 
     return 0;
 }

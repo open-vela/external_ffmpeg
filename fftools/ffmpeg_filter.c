@@ -60,8 +60,7 @@ static const enum AVPixelFormat *get_compliance_unofficial_pix_fmts(enum AVCodec
     }
 }
 
-static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx,
-                                    const AVCodec *codec, enum AVPixelFormat target)
+enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx, AVCodec *codec, enum AVPixelFormat target)
 {
     if (codec && codec->pix_fmts) {
         const enum AVPixelFormat *p = codec->pix_fmts;
@@ -74,7 +73,7 @@ static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx
             p = get_compliance_unofficial_pix_fmts(enc_ctx->codec_id, p);
         }
         for (; *p != AV_PIX_FMT_NONE; p++) {
-            best = av_find_best_pix_fmt_of_2(best, *p, target, has_alpha, NULL);
+            best= avcodec_find_best_pix_fmt_of_2(best, *p, target, has_alpha, NULL);
             if (*p == target)
                 break;
         }
@@ -89,6 +88,29 @@ static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx
         }
     }
     return target;
+}
+
+void choose_sample_fmt(AVStream *st, AVCodec *codec)
+{
+    if (codec && codec->sample_fmts) {
+        const enum AVSampleFormat *p = codec->sample_fmts;
+        for (; *p != -1; p++) {
+            if (*p == st->codecpar->format)
+                break;
+        }
+        if (*p == -1) {
+            const AVCodecDescriptor *desc = avcodec_descriptor_get(codec->id);
+            if(desc && (desc->props & AV_CODEC_PROP_LOSSLESS) && av_get_sample_fmt_name(st->codecpar->format) > av_get_sample_fmt_name(codec->sample_fmts[0]))
+                av_log(NULL, AV_LOG_ERROR, "Conversion will not be lossless.\n");
+            if(av_get_sample_fmt_name(st->codecpar->format))
+            av_log(NULL, AV_LOG_WARNING,
+                   "Incompatible sample format '%s' for codec '%s', auto-selecting format '%s'\n",
+                   av_get_sample_fmt_name(st->codecpar->format),
+                   codec->name,
+                   av_get_sample_fmt_name(codec->sample_fmts[0]));
+            st->codecpar->format = codec->sample_fmts[0];
+        }
+    }
 }
 
 static char *choose_pix_fmts(OutputFilter *ofilter)
@@ -448,7 +470,7 @@ static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter,
     if (ret < 0)
         return ret;
 
-    if ((ofilter->width || ofilter->height) && ofilter->ost->autoscale) {
+    if (ofilter->width || ofilter->height) {
         char args[255];
         AVFilterContext *filter;
         AVDictionaryEntry *e = NULL;
@@ -618,6 +640,13 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
         pad_idx = 0;
     }
 
+    if (audio_volume != 256 && 0) {
+        char args[256];
+
+        snprintf(args, sizeof(args), "%f", audio_volume / 256.);
+        AUTO_INSERT_FILTER("-vol", "volume", args);
+    }
+
     if (ost->apad && of->shortest) {
         char args[256];
         int i;
@@ -645,8 +674,7 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
     return 0;
 }
 
-static int configure_output_filter(FilterGraph *fg, OutputFilter *ofilter,
-                                   AVFilterInOut *out)
+int configure_output_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out)
 {
     if (!ofilter->ost) {
         av_log(NULL, AV_LOG_FATAL, "Filter %s has an unconnected output\n", ofilter->name);
@@ -1076,8 +1104,6 @@ int configure_filtergraph(FilterGraph *fg)
         configure_output_filter(fg, fg->outputs[i], cur);
     avfilter_inout_free(&outputs);
 
-    if (!auto_conversion_filters)
-        avfilter_graph_set_auto_convert(fg->graph, AVFILTER_AUTO_CONVERT_NONE);
     if ((ret = avfilter_graph_config(fg->graph, NULL)) < 0)
         goto fail;
 
@@ -1174,6 +1200,15 @@ int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *frame)
             return AVERROR(ENOMEM);
     }
 
+    return 0;
+}
+
+int ist_in_filtergraph(FilterGraph *fg, InputStream *ist)
+{
+    int i;
+    for (i = 0; i < fg->nb_inputs; i++)
+        if (fg->inputs[i]->ist == ist)
+            return 1;
     return 0;
 }
 

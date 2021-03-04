@@ -45,7 +45,7 @@ static int test(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    ff_dnn_execute_layer_maximum(operands, input_indexes, 1, &params, NULL);
+    dnn_execute_layer_maximum(operands, input_indexes, 1, &params);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(input) / sizeof(float); i++) {
