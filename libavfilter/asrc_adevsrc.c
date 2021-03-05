@@ -55,6 +55,7 @@ static void adevsrc_stop(AVFilterContext *ctx)
 
 static int adevsrc_start(AVFilterContext *ctx)
 {
+    AVFilterLink *link = ctx->outputs[0];
     ADevSrcPriv *priv = ctx->priv;
     AVStream *st;
     AVCodec *dec;
@@ -82,6 +83,9 @@ static int adevsrc_start(AVFilterContext *ctx)
         ret = AVERROR(ENOMEM);
         goto out;
     }
+
+    av_opt_set_sample_fmt(priv->dec_ctx, "request_sample_fmt",
+                          link->format, AV_OPT_SEARCH_CHILDREN);
 
     /* Copy codec parameters from input stream to output codec context */
     ret = avcodec_parameters_to_context(priv->dec_ctx, st->codecpar);
@@ -242,6 +246,7 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     AVFilterFormats *formats = NULL;
     ADevSrcPriv *priv = ctx->priv;
     AVOptionRanges *ranges;
+    bool codec = false;
     int ret, i;
 
     ret = avdevice_capabilities_create(&caps, priv->fmt_ctx, NULL);
@@ -249,11 +254,31 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
         return 0;
 
     ret = av_opt_query_ranges(&ranges, caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
+    if (ret < 0) {
+        ret = av_opt_query_ranges(&ranges, caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE);
+        codec = true;
+    }
+
     if (ret >= 0) {
         for (i = 0; i < ranges->nb_ranges; i++) {
-            ret = ff_add_format(&formats, ranges->range[i]->value_min);
-            if (ret < 0)
-                goto out;
+            int64_t fmt = ranges->range[i]->value_min;
+
+            if (codec) {
+                AVCodec *codec = avcodec_find_decoder(fmt);
+                int n = 0;
+
+                if (!codec)
+                    return AVERROR(EINVAL);
+
+                while (codec->sample_fmts[n] != AV_SAMPLE_FMT_NONE)
+                    ret = ff_add_format(&formats, codec->sample_fmts[n++]);
+                    if (ret < 0)
+                        goto out;
+            } else {
+                ret = ff_add_format(&formats, fmt);
+                if (ret < 0)
+                    goto out;
+            }
         }
 
         av_opt_freep_ranges(&ranges);
@@ -322,7 +347,9 @@ static int adevsrc_config_props(AVFilterLink *link)
 
     av_dict_set_int(&fmt_opt, "sample_rate", link->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "channels", link->channels, 0);
-    av_dict_set_int(&fmt_opt, "channel_layout", link->channel_layout, 0);
+
+    if (link->channel_layout)
+        av_dict_set_int(&fmt_opt, "channel_layout", link->channel_layout, 0);
 
     av_opt_set_dict(priv->fmt_ctx->priv_data, &fmt_opt);
     av_dict_free(&fmt_opt);
