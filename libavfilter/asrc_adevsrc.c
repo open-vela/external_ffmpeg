@@ -99,6 +99,12 @@ out:
     return ret;
 }
 
+static inline void avdevsrc_force_request(AVFilterContext *ctx)
+{
+    ctx->outputs[0]->frame_wanted_out = 1;
+    ff_filter_set_ready(ctx, 300);
+}
+
 static int adevsrc_control_message(struct AVFormatContext *s, int type,
                                     void *data, size_t data_size)
 {
@@ -106,7 +112,7 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
     ADevSrcPriv *priv = ctx->priv;
 
     if (type == AV_DEV_TO_APP_BUFFER_READABLE)
-        ff_request_frame(ctx->outputs[0]);
+        avdevsrc_force_request(ctx);
 
     return 0;
 }
@@ -222,7 +228,8 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
                 AV_APP_TO_DEV_POLL_AVAILABLE,
                 res, res_len);
     } else if (!strcmp(cmd, "start")) {
-        return ff_request_frame(ctx->outputs[0]);
+        avdevsrc_force_request(ctx);
+        return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
@@ -337,7 +344,6 @@ static void* adevsrc_child_next(void *obj, void *prev)
 
 #define OFFSET(x) offsetof(ADevSrcPriv, x)
 #define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
-
 static const AVOption adevsrc_options[] = {
     { "format",         "", OFFSET(format),         AV_OPT_TYPE_STRING, .flags = A },
     { "devname",        "", OFFSET(devname),        AV_OPT_TYPE_STRING, .flags = A },
@@ -352,7 +358,6 @@ static const AVClass adevsrc_class = {
     .category   = AV_CLASS_CATEGORY_FILTER,
     .child_next = adevsrc_child_next,
 };
-
 
 static const AVFilterPad adevsrc_outputs[] = {
     {
