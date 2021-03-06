@@ -59,7 +59,7 @@ int av_buffersink_get_frame_flags(AVFilterContext *ctx, AVFrame *frame, int flag
  */
 #define AV_BUFFERSINK_FLAG_NO_REQUEST 2
 
-#if FF_API_NEXT
+#if FF_API_BUFFERSINK_ALLOC
 /**
  * Struct to use for initializing a buffersink context.
  */
