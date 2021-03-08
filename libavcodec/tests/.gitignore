@@ -5,6 +5,7 @@
 /codec_desc
 /dct
 /fft
+/fft-fixed
 /fft-fixed32
 /golomb
 /h264_levels
@@ -17,6 +18,7 @@
 /mjpegenc_huffman
 /motion
 /mpeg12framerate
+/options
 /rangecoder
 /snowenc
 /utils
