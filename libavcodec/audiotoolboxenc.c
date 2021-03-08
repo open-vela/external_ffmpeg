@@ -1,7 +1,7 @@
 /*
  * Audio Toolbox system codecs
  *
- * copyright (c) 2016 rcombs
+ * copyright (c) 2016 Rodger Combs
  *
  * This file is part of FFmpeg.
  *
