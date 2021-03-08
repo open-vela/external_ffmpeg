@@ -426,10 +426,14 @@ static int output_frame(AVFilterLink *outlink)
     if (nb_samples == 0 || nb_samples == INT_MAX)
         return 0;
 
-    if (s->first_input >= 0) {
+    if (s->first_input >= 0 && s->first_input < s->nb_inputs) {
         s->next_pts = frame_list_next_pts(s->frame_list);
         frame_list_remove_samples(s->frame_list, nb_samples);
-    }
+    } else if (s->next_pts == AV_NOPTS_VALUE)
+        s->next_pts = 0;
+    else
+        s->next_pts += nb_samples;
+
 
     calculate_scales(s, nb_samples);
 
@@ -480,8 +484,10 @@ static int output_frame(AVFilterLink *outlink)
     av_frame_free(&in_buf);
 
     out_buf->pts = s->next_pts;
-    if (s->next_pts != AV_NOPTS_VALUE)
-        s->next_pts += nb_samples;
+    if (s->first_input >= 0 && s->first_input < s->nb_inputs) {
+        if (s->next_pts != AV_NOPTS_VALUE)
+            s->next_pts += nb_samples;
+    }
 
     update_timer(ctx, false);
     return ff_filter_frame(outlink, out_buf);
@@ -590,6 +596,8 @@ static int activate(AVFilterContext *ctx)
 
     if (calc_active_inputs(s)) {
         ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
+        if (s->first_input < 0)
+            s->next_pts = AV_NOPTS_VALUE;
         amix_fifo_reset(ctx);
         return 0;
     }
