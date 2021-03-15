@@ -300,10 +300,6 @@ static int rscc_decode_frame(AVCodecContext *avctx, void *data,
             ret = AVERROR_INVALIDDATA;
             goto end;
         }
-        if (ctx->inflated_size < pixel_size) {
-            ret = AVERROR_INVALIDDATA;
-            goto end;
-        }
         ret = uncompress(ctx->inflated_buf, &len, gbc->buffer, packed_size);
         if (ret) {
             av_log(avctx, AV_LOG_ERROR, "Pixel deflate error %d.\n", ret);
@@ -346,7 +342,7 @@ static int rscc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Palette handling */
     if (avctx->pix_fmt == AV_PIX_FMT_PAL8) {
-        buffer_size_t size;
+        int size;
         const uint8_t *palette = av_packet_get_side_data(avpkt,
                                                          AV_PKT_DATA_PALETTE,
                                                          &size);

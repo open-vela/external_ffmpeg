@@ -32,7 +32,6 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "decode.h"
 #include "internal.h"
 #include "libvpx.h"
 #include "profiles.h"
@@ -221,7 +220,7 @@ static int vpx_decode(AVCodecContext *avctx,
     struct vpx_image *img, *img_alpha;
     int ret;
     uint8_t *side_data = NULL;
-    buffer_size_t side_data_size;
+    int side_data_size = 0;
 
     ret = decode_frame(avctx, &ctx->decoder, avpkt->data, avpkt->size);
     if (ret)
