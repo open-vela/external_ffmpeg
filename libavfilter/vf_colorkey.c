@@ -135,8 +135,10 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
     ColorkeyContext *ctx = avctx->priv;
     int res;
 
-    if (res = ff_filter_execute(avctx, ctx->do_slice, frame, NULL,
-                                FFMIN(frame->height, ff_filter_get_nb_threads(avctx))))
+    if (res = av_frame_make_writable(frame))
+        return res;
+
+    if (res = avctx->internal->execute(avctx, ctx->do_slice, frame, NULL, FFMIN(frame->height, ff_filter_get_nb_threads(avctx))))
         return res;
 
     return ff_filter_frame(avctx->outputs[0], frame);
@@ -169,14 +171,19 @@ static av_cold int query_formats(AVFilterContext *avctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(avctx, pixel_fmts);
+    AVFilterFormats *formats = NULL;
+
+    formats = ff_make_format_list(pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+
+    return ff_set_common_formats(avctx, formats);
 }
 
 static const AVFilterPad colorkey_inputs[] = {
     {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
-        .flags        = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame = filter_frame,
     },
     { NULL }
@@ -205,7 +212,7 @@ static const AVOption colorkey_options[] = {
 
 AVFILTER_DEFINE_CLASS(colorkey);
 
-const AVFilter ff_vf_colorkey = {
+AVFilter ff_vf_colorkey = {
     .name          = "colorkey",
     .description   = NULL_IF_CONFIG_SMALL("Turns a certain color into transparency. Operates on RGB colors."),
     .priv_size     = sizeof(ColorkeyContext),
@@ -230,7 +237,7 @@ static const AVOption colorhold_options[] = {
 
 AVFILTER_DEFINE_CLASS(colorhold);
 
-const AVFilter ff_vf_colorhold = {
+AVFilter ff_vf_colorhold = {
     .name          = "colorhold",
     .description   = NULL_IF_CONFIG_SMALL("Turns a certain color range into gray. Operates on RGB colors."),
     .priv_size     = sizeof(ColorkeyContext),

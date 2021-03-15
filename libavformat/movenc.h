@@ -134,10 +134,11 @@ typedef struct MOVTrack {
     uint32_t    default_size;
 
     HintSampleQueue sample_queue;
-    AVPacket *cover_image;
+    AVPacket cover_image;
 
     AVIOContext *mdat_buf;
     int64_t     data_offset;
+    int64_t     frag_start;
     int         frag_discont;
     int         entries_flushed;
 
@@ -214,8 +215,6 @@ typedef struct MOVMuxContext {
     int per_stream_grouping;
     AVFormatContext *fc;
 
-    AVPacket *pkt;
-
     int use_editlist;
     float gamma;
 
@@ -236,7 +235,6 @@ typedef struct MOVMuxContext {
     int write_tmcd;
     MOVPrftBox write_prft;
     int empty_hdlr_name;
-    int movie_timescale;
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT              (1 <<  0)

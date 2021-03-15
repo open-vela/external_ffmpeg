@@ -154,20 +154,33 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterChannelLayouts *layouts;
+    AVFilterFormats *formats;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_S16P, AV_SAMPLE_FMT_S32P,
         AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 #define MOD(a, b) (((a) >= (b)) ? (a) - (b) : (a))
@@ -363,7 +376,7 @@ static const AVFilterPad aecho_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_aecho = {
+AVFilter ff_af_aecho = {
     .name          = "aecho",
     .description   = NULL_IF_CONFIG_SMALL("Add echoing to the audio."),
     .query_formats = query_formats,

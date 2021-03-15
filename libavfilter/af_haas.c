@@ -91,7 +91,8 @@ static int query_formats(AVFilterContext *ctx)
         (ret = ff_set_common_channel_layouts (ctx     , layout             )) < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -215,7 +216,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_haas = {
+AVFilter ff_af_haas = {
     .name           = "haas",
     .description    = NULL_IF_CONFIG_SMALL("Apply Haas Stereo Enhancer."),
     .query_formats  = query_formats,

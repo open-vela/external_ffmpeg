@@ -21,7 +21,6 @@
 #include "avio_internal.h"
 #include "internal.h"
 
-#include "libavutil/avassert.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
@@ -54,60 +53,32 @@ static void *format_child_next(void *obj, void *prev)
     return NULL;
 }
 
-enum {
-    CHILD_CLASS_ITER_AVIO = 0,
-    CHILD_CLASS_ITER_MUX,
-    CHILD_CLASS_ITER_DEMUX,
-    CHILD_CLASS_ITER_DONE,
-
-};
-
-#define ITER_STATE_SHIFT 16
-
-static const AVClass *format_child_class_iterate(void **iter)
+static const AVClass *format_child_class_next(const AVClass *prev)
 {
-    // we use the low 16 bits of iter as the value to be passed to
-    // av_(de)muxer_iterate()
-    void *val = (void*)(((uintptr_t)*iter) & ((1 << ITER_STATE_SHIFT) - 1));
-    unsigned int state = ((uintptr_t)*iter) >> ITER_STATE_SHIFT;
-    const AVClass *ret = NULL;
+    AVInputFormat  *ifmt = NULL;
+    AVOutputFormat *ofmt = NULL;
 
-    if (state == CHILD_CLASS_ITER_AVIO) {
-        ret = &ff_avio_class;
-        state++;
-        goto finish;
-    }
+    if (!prev)
+        return &ff_avio_class;
 
-    if (state == CHILD_CLASS_ITER_MUX) {
-        const AVOutputFormat *ofmt;
+    while ((ifmt = av_iformat_next(ifmt)))
+        if (ifmt->priv_class == prev)
+            break;
 
-        while ((ofmt = av_muxer_iterate(&val))) {
-            ret = ofmt->priv_class;
-            if (ret)
-                goto finish;
-        }
+    if (!ifmt)
+        while ((ofmt = av_oformat_next(ofmt)))
+            if (ofmt->priv_class == prev)
+                break;
+    if (!ofmt)
+        while (ifmt = av_iformat_next(ifmt))
+            if (ifmt->priv_class)
+                return ifmt->priv_class;
 
-        val = NULL;
-        state++;
-    }
+    while (ofmt = av_oformat_next(ofmt))
+        if (ofmt->priv_class)
+            return ofmt->priv_class;
 
-    if (state == CHILD_CLASS_ITER_DEMUX) {
-        const AVInputFormat *ifmt;
-
-        while ((ifmt = av_demuxer_iterate(&val))) {
-            ret = ifmt->priv_class;
-            if (ret)
-                goto finish;
-        }
-        val = NULL;
-        state++;
-    }
-
-finish:
-    // make sure none av_(de)muxer_iterate does not set the high bits of val
-    av_assert0(!((uintptr_t)val >> ITER_STATE_SHIFT));
-    *iter = (void*)((uintptr_t)val | (state << ITER_STATE_SHIFT));
-    return ret;
+    return NULL;
 }
 
 static AVClassCategory get_category(void *ptr)
@@ -123,7 +94,7 @@ static const AVClass av_format_context_class = {
     .option         = avformat_options,
     .version        = LIBAVUTIL_VERSION_INT,
     .child_next     = format_child_next,
-    .child_class_iterate = format_child_class_iterate,
+    .child_class_next = format_child_class_next,
     .category       = AV_CLASS_CATEGORY_MUXER,
     .get_category   = get_category,
 };
@@ -142,6 +113,13 @@ static int io_open_default(AVFormatContext *s, AVIOContext **pb,
         loglevel = AV_LOG_INFO;
 
     av_log(s, loglevel, "Opening \'%s\' for %s\n", url, flags & AVIO_FLAG_WRITE ? "writing" : "reading");
+
+#if FF_API_OLD_OPEN_CALLBACKS
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (s->open_cb)
+        return s->open_cb(s, pb, url, flags, &s->interrupt_callback, options);
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     return ffio_open_whitelist(pb, url, flags, &s->interrupt_callback, options, s->protocol_whitelist, s->protocol_blacklist);
 }
@@ -172,15 +150,6 @@ AVFormatContext *avformat_alloc_context(void)
 
     internal = av_mallocz(sizeof(*internal));
     if (!internal) {
-        av_free(ic);
-        return NULL;
-    }
-    internal->pkt = av_packet_alloc();
-    internal->parse_pkt = av_packet_alloc();
-    if (!internal->pkt || !internal->parse_pkt) {
-        av_packet_free(&internal->pkt);
-        av_packet_free(&internal->parse_pkt);
-        av_free(internal);
         av_free(ic);
         return NULL;
     }

@@ -17,6 +17,8 @@
  */
 #include <string.h>
 
+#include "libavutil/avassert.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/mastering_display_metadata.h"
@@ -403,7 +405,7 @@ static const AVFilterPad tonemap_vaapi_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_tonemap_vaapi = {
+AVFilter ff_vf_tonemap_vaapi = {
     .name           = "tonemap_vaapi",
     .description    = NULL_IF_CONFIG_SMALL("VAAPI VPP for tone-mapping"),
     .priv_size      = sizeof(HDRVAAPIContext),

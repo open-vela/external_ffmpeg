@@ -352,8 +352,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
     td.in = in, td.out = out;
-    ff_filter_execute(ctx, filter_slice, &td, NULL,
-                      FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
 }
@@ -383,7 +382,7 @@ static const AVFilterPad avfilter_vf_transpose_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
-        .get_buffer.video = get_video_buffer,
+        .get_video_buffer = get_video_buffer,
         .filter_frame = filter_frame,
     },
     { NULL }
@@ -398,7 +397,7 @@ static const AVFilterPad avfilter_vf_transpose_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_transpose = {
+AVFilter ff_vf_transpose = {
     .name          = "transpose",
     .description   = NULL_IF_CONFIG_SMALL("Transpose input video."),
     .priv_size     = sizeof(TransContext),

@@ -204,7 +204,7 @@ static int yop_read_seek(AVFormatContext *s, int stream_index,
     return 0;
 }
 
-const AVInputFormat ff_yop_demuxer = {
+AVInputFormat ff_yop_demuxer = {
     .name           = "yop",
     .long_name      = NULL_IF_CONFIG_SMALL("Psygnosis YOP"),
     .priv_data_size = sizeof(YopDecContext),

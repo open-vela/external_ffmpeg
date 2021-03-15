@@ -21,6 +21,7 @@
  * video scene change detection filter
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -74,7 +75,10 @@ static int query_formats(AVFilterContext *ctx)
             AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -207,7 +211,7 @@ static const AVFilterPad scdet_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_scdet = {
+AVFilter ff_vf_scdet = {
     .name          = "scdet",
     .description   = NULL_IF_CONFIG_SMALL("Detect video scene change"),
     .priv_size     = sizeof(SCDetContext),

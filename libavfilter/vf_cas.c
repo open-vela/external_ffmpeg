@@ -193,8 +193,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     av_frame_copy_props(out, in);
 
     s->in = in;
-    ff_filter_execute(ctx, s->do_slice, out, NULL,
-                      FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, s->do_slice, out, NULL,
+                           FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
     av_frame_free(&in);
     s->in = NULL;
 
@@ -230,7 +230,13 @@ static av_cold int query_formats(AVFilterContext *avctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(avctx, pixel_fmts);
+    AVFilterFormats *formats = NULL;
+
+    formats = ff_make_format_list(pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+
+    return ff_set_common_formats(avctx, formats);
 }
 
 static av_cold int config_input(AVFilterLink *inlink)
@@ -280,7 +286,7 @@ static const AVOption cas_options[] = {
 
 AVFILTER_DEFINE_CLASS(cas);
 
-const AVFilter ff_vf_cas = {
+AVFilter ff_vf_cas = {
     .name          = "cas",
     .description   = NULL_IF_CONFIG_SMALL("Contrast Adaptive Sharpen."),
     .priv_size     = sizeof(CASContext),

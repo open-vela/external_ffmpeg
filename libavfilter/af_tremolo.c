@@ -85,19 +85,32 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBL,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -113,7 +126,7 @@ static int config_input(AVFilterLink *inlink)
     const double offset = 1. - s->depth / 2.;
     int i;
 
-    s->table_size = lrint(inlink->sample_rate / s->freq + 0.5);
+    s->table_size = inlink->sample_rate / s->freq;
     s->table = av_malloc_array(s->table_size, sizeof(*s->table));
     if (!s->table)
         return AVERROR(ENOMEM);
@@ -147,7 +160,7 @@ static const AVFilterPad avfilter_af_tremolo_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_tremolo = {
+AVFilter ff_af_tremolo = {
     .name          = "tremolo",
     .description   = NULL_IF_CONFIG_SMALL("Apply tremolo effect."),
     .priv_size     = sizeof(TremoloContext),

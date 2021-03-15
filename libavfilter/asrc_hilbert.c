@@ -18,7 +18,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "audio.h"
 #include "avfilter.h"
@@ -102,15 +101,29 @@ static av_cold int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_FLT,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
+    int ret;
+
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats (ctx, formats);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_channel_layouts_from_list(ctx, chlayouts);
+    layouts = avfilter_make_format64_list(chlayouts);
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_samplerates_from_list(ctx, sample_rates);
+    formats = ff_make_format_list(sample_rates);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static av_cold int config_props(AVFilterLink *outlink)
@@ -174,7 +187,7 @@ static const AVFilterPad hilbert_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_asrc_hilbert = {
+AVFilter ff_asrc_hilbert = {
     .name          = "hilbert",
     .description   = NULL_IF_CONFIG_SMALL("Generate a Hilbert transform FIR coefficients."),
     .query_formats = query_formats,

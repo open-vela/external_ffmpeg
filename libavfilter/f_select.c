@@ -192,7 +192,7 @@ static av_cold int init(AVFilterContext *ctx)
             return AVERROR(ENOMEM);
         pad.type = ctx->filter->inputs[0].type;
         pad.request_frame = request_frame;
-        if ((ret = ff_append_outpad(ctx, &pad)) < 0) {
+        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
             av_freep(&pad.name);
             return ret;
         }
@@ -324,6 +324,9 @@ static double get_concatdec_select(AVFrame *frame, int64_t pts)
     }
     return NAN;
 }
+
+#define D2TS(d)  (isnan(d) ? AV_NOPTS_VALUE : (int64_t)(d))
+#define TS2D(ts) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
 
 static void select_frame(AVFilterContext *ctx, AVFrame *frame)
 {
@@ -476,7 +479,7 @@ static const AVFilterPad avfilter_af_aselect_inputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_aselect = {
+AVFilter ff_af_aselect = {
     .name        = "aselect",
     .description = NULL_IF_CONFIG_SMALL("Select audio frames to pass in output."),
     .init        = aselect_init,
@@ -497,6 +500,7 @@ static int query_formats(AVFilterContext *ctx)
     if (!select->do_scene_detect) {
         return ff_default_query_formats(ctx);
     } else {
+        int ret;
         static const enum AVPixelFormat pix_fmts[] = {
             AV_PIX_FMT_RGB24, AV_PIX_FMT_BGR24, AV_PIX_FMT_RGBA,
             AV_PIX_FMT_ABGR, AV_PIX_FMT_BGRA, AV_PIX_FMT_GRAY8,
@@ -505,8 +509,15 @@ static int query_formats(AVFilterContext *ctx)
             AV_PIX_FMT_YUV420P10,
             AV_PIX_FMT_NONE
         };
-        return ff_set_common_formats_from_list(ctx, pix_fmts);
+        AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+
+        if (!fmts_list)
+            return AVERROR(ENOMEM);
+        ret = ff_set_common_formats(ctx, fmts_list);
+        if (ret < 0)
+            return ret;
     }
+    return 0;
 }
 
 DEFINE_OPTIONS(select, AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM);
@@ -532,7 +543,7 @@ static const AVFilterPad avfilter_vf_select_inputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_select = {
+AVFilter ff_vf_select = {
     .name          = "select",
     .description   = NULL_IF_CONFIG_SMALL("Select video frames to pass in output."),
     .init          = select_init,
