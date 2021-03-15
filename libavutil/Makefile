@@ -84,7 +84,6 @@ HEADERS = adler32.h                                                     \
           xtea.h                                                        \
           tea.h                                                         \
           tx.h                                                          \
-          film_grain_params.h                                           \
 
 HEADERS-$(CONFIG_LZO)                   += lzo.h
 
@@ -171,7 +170,6 @@ OBJS = adler32.o                                                        \
        tx_double.o                                                      \
        tx_int32.o                                                       \
        video_enc_params.o                                               \
-       film_grain_params.o                                              \
 
 
 OBJS-$(CONFIG_CUDA)                     += hwcontext_cuda.o

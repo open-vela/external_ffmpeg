@@ -461,8 +461,7 @@ static int gdv_decode_frame(AVCodecContext *avctx, void *data,
     GetByteContext *gb = &gdv->gb;
     PutByteContext *pb = &gdv->pb;
     AVFrame *frame = data;
-    int ret, i;
-    buffer_size_t pal_size;
+    int ret, i, pal_size;
     const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &pal_size);
     int compression;
     unsigned flags;
@@ -552,7 +551,7 @@ static int gdv_decode_frame(AVCodecContext *avctx, void *data,
 
     *got_frame = 1;
 
-    return avpkt->size;
+    return ret < 0 ? ret : avpkt->size;
 }
 
 static av_cold int gdv_decode_close(AVCodecContext *avctx)

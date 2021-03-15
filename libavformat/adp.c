@@ -75,9 +75,13 @@ static int adp_read_packet(AVFormatContext *s, AVPacket *pkt)
         return AVERROR_EOF;
 
     ret = av_get_packet(s->pb, pkt, size);
-    if (ret < 0)
-        return ret;
 
+    if (ret != size) {
+        if (ret < 0) {
+            return ret;
+        }
+        av_shrink_packet(pkt, ret);
+    }
     pkt->stream_index = 0;
 
     return ret;
