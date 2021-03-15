@@ -325,7 +325,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
     caps_desc.caps.ac_channels       = priv->channels;
     caps_desc.caps.ac_chmap          = priv->channel_layout ?
                                        priv->channel_layout :
-                                       ~(~0 << priv->channels);
+                                       ~(~0ul << priv->channels);
     caps_desc.caps.ac_controls.hw[0] = priv->sample_rate;
     caps_desc.caps.ac_controls.b[3]  = priv->sample_rate >> 16;
     caps_desc.caps.ac_controls.b[2]  = bps;
