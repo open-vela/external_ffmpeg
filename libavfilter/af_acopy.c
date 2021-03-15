@@ -62,7 +62,7 @@ static const AVFilterPad acopy_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_acopy = {
+AVFilter ff_af_acopy = {
     .name          = "acopy",
     .description   = NULL_IF_CONFIG_SMALL("Copy the input audio unchanged to the output."),
     .inputs        = acopy_inputs,

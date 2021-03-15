@@ -57,7 +57,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 #define REMOVE_GRAIN_SORT_AXIS       \
@@ -615,8 +618,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         memcpy(dst, src, s->planewidth[i]);
 
         td.in = in; td.out = out; td.plane = i;
-        ff_filter_execute(ctx, filter_slice, &td, NULL,
-                          FFMIN(s->planeheight[i], ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, filter_slice, &td, NULL,
+                               FFMIN(s->planeheight[i], ff_filter_get_nb_threads(ctx)));
 
         src = in->data[i] + (s->planeheight[i] - 1) * in->linesize[i];
         dst = out->data[i] + (s->planeheight[i] - 1) * out->linesize[i];
@@ -645,7 +648,7 @@ static const AVFilterPad removegrain_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_removegrain = {
+AVFilter ff_vf_removegrain = {
     .name          = "removegrain",
     .description   = NULL_IF_CONFIG_SMALL("Remove grain."),
     .priv_size     = sizeof(RemoveGrainContext),

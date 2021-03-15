@@ -64,6 +64,7 @@ static int query_formats(AVFilterContext *ctx)
             if (i != 4)
                 continue;
             if ((ret = ff_add_format(&formats, fmt)) < 0) {
+                ff_formats_unref(&formats);
                 return ret;
             }
         }
@@ -162,7 +163,7 @@ static const AVFilterPad shuffleplanes_outputs[] = {
     { NULL },
 };
 
-const AVFilter ff_vf_shuffleplanes = {
+AVFilter ff_vf_shuffleplanes = {
     .name         = "shuffleplanes",
     .description  = NULL_IF_CONFIG_SMALL("Shuffle video planes."),
     .priv_size    = sizeof(ShufflePlanesContext),

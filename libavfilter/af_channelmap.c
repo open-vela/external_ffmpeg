@@ -280,18 +280,28 @@ static av_cold int channelmap_init(AVFilterContext *ctx)
 static int channelmap_query_formats(AVFilterContext *ctx)
 {
     ChannelMapContext *s = ctx->priv;
+    AVFilterChannelLayouts *layouts;
     AVFilterChannelLayouts *channel_layouts = NULL;
     int ret;
 
-    if ((ret = ff_set_common_formats    (ctx,  ff_planar_sample_fmts()))  < 0 ||
-        (ret = ff_set_common_all_samplerates(ctx                              )) < 0 ||
-        (ret = ff_add_channel_layout(&channel_layouts, s->output_layout)) < 0 ||
-        (ret = ff_channel_layouts_ref(channel_layouts,
-                                      &ctx->outputs[0]->incfg.channel_layouts)) < 0)
-        return ret;
+    layouts = ff_all_channel_counts();
+    if (!layouts) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    if ((ret = ff_add_channel_layout     (&channel_layouts, s->output_layout                    )) < 0 ||
+        (ret = ff_set_common_formats     (ctx             , ff_planar_sample_fmts()             )) < 0 ||
+        (ret = ff_set_common_samplerates (ctx             , ff_all_samplerates()                )) < 0 ||
+        (ret = ff_channel_layouts_ref    (layouts         , &ctx->inputs[0]->out_channel_layouts)) < 0 ||
+        (ret = ff_channel_layouts_ref    (channel_layouts , &ctx->outputs[0]->in_channel_layouts)) < 0)
+            goto fail;
 
-    return ff_channel_layouts_ref(ff_all_channel_counts(),
-                                  &ctx->inputs[0]->outcfg.channel_layouts);
+    return 0;
+fail:
+    if (layouts)
+        av_freep(&layouts->channel_layouts);
+    av_freep(&layouts);
+    return ret;
 }
 
 static int channelmap_filter_frame(AVFilterLink *inlink, AVFrame *buf)
@@ -383,9 +393,9 @@ static const AVFilterPad avfilter_af_channelmap_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_AUDIO,
-        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame   = channelmap_filter_frame,
         .config_props   = channelmap_config_input,
+        .needs_writable = 1,
     },
     { NULL }
 };
@@ -398,7 +408,7 @@ static const AVFilterPad avfilter_af_channelmap_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_channelmap = {
+AVFilter ff_af_channelmap = {
     .name          = "channelmap",
     .description   = NULL_IF_CONFIG_SMALL("Remap audio channels."),
     .init          = channelmap_init,

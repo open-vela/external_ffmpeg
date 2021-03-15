@@ -23,8 +23,7 @@
 #ifndef AVFORMAT_RTPDEC_H
 #define AVFORMAT_RTPDEC_H
 
-#include "libavcodec/codec_id.h"
-#include "libavcodec/packet.h"
+#include "libavcodec/avcodec.h"
 #include "avformat.h"
 #include "rtp.h"
 #include "url.h"
@@ -135,6 +134,8 @@ struct RTPDynamicProtocolHandler {
     /** Parse handler for this dynamic packet */
     DynamicPayloadPacketHandlerProc parse_packet;
     int (*need_keyframe)(PayloadContext *context);
+
+    struct RTPDynamicProtocolHandler *next;
 };
 
 typedef struct RTPPacket {

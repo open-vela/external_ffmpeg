@@ -17,6 +17,8 @@
  */
 #include <string.h>
 
+#include "libavutil/avassert.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -231,7 +233,7 @@ static const AVFilterPad procamp_vaapi_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_procamp_vaapi = {
+AVFilter ff_vf_procamp_vaapi = {
     .name          = "procamp_vaapi",
     .description   = NULL_IF_CONFIG_SMALL("ProcAmp (color balance) adjustments for hue, saturation, brightness, contrast"),
     .priv_size     = sizeof(ProcampVAAPIContext),

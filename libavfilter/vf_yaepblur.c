@@ -83,7 +83,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
 }
 
 typedef struct ThreadData {
@@ -253,15 +253,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         td.height       = s->planeheight[plane];
         td.src          = in->data[plane];
         td.src_linesize = in->linesize[plane];
-        ff_filter_execute(ctx, s->pre_calculate_row, &td, NULL,
-                          FFMIN(td.height, nb_threads));
-        ff_filter_execute(ctx, pre_calculate_col, &td, NULL,
-                          FFMIN(td.width,  nb_threads));
+        ctx->internal->execute(ctx, s->pre_calculate_row, &td, NULL, FFMIN(td.height, nb_threads));
+        ctx->internal->execute(ctx, pre_calculate_col, &td, NULL, FFMIN(td.width,  nb_threads));
 
         td.dst          = out->data[plane];
         td.dst_linesize = out->linesize[plane];
-        ff_filter_execute(ctx, s->filter_slice, &td, NULL,
-                          FFMIN(td.height, nb_threads));
+        ctx->internal->execute(ctx, s->filter_slice, &td, NULL, FFMIN(td.height, nb_threads));
     }
 
     if (out != in)
@@ -326,7 +323,7 @@ static const AVFilterPad yaep_outputs[] = {
 #define OFFSET(x) offsetof(YAEPContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
-static const AVOption yaepblur_options[] = {
+static const AVOption yaep_options[] = {
     { "radius", "set window radius",    OFFSET(radius), AV_OPT_TYPE_INT, {.i64=3},   0, INT_MAX, .flags=FLAGS },
     { "r"     , "set window radius",    OFFSET(radius), AV_OPT_TYPE_INT, {.i64=3},   0, INT_MAX, .flags=FLAGS },
     { "planes", "set planes to filter", OFFSET(planes), AV_OPT_TYPE_INT, {.i64=1},   0,     0xF, .flags=FLAGS },
@@ -336,13 +333,13 @@ static const AVOption yaepblur_options[] = {
     { NULL }
 };
 
-AVFILTER_DEFINE_CLASS(yaepblur);
+AVFILTER_DEFINE_CLASS(yaep);
 
-const AVFilter ff_vf_yaepblur = {
+AVFilter ff_vf_yaepblur = {
     .name            = "yaepblur",
     .description     = NULL_IF_CONFIG_SMALL("Yet another edge preserving blur filter."),
     .priv_size       = sizeof(YAEPContext),
-    .priv_class      = &yaepblur_class,
+    .priv_class      = &yaep_class,
     .uninit          = uninit,
     .query_formats   = query_formats,
     .inputs          = yaep_inputs,

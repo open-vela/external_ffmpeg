@@ -77,7 +77,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_BGR24,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pixel_fmts);
+    AVFilterFormats *formats = ff_make_format_list(pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, formats);
 }
 
 typedef struct ThreadData_convert_frame
@@ -143,8 +146,7 @@ static void convert_frame(AVFilterContext *ctx, AVFrame *in, PhotosensitivityFra
     td.in = in;
     td.out = out;
     td.skip = skip;
-    ff_filter_execute(ctx, convert_frame_partial, &td, NULL,
-                      FFMIN(NUM_CELLS, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, convert_frame_partial, &td, NULL, FFMIN(NUM_CELLS, ff_filter_get_nb_threads(ctx)));
 }
 
 typedef struct ThreadData_blend_frame
@@ -183,8 +185,7 @@ static void blend_frame(AVFilterContext *ctx, AVFrame *target, AVFrame *source, 
     td.target = target;
     td.source = source;
     td.s_mul = (uint16_t)(factor * 0x100);
-    ff_filter_execute(ctx, blend_frame_partial, &td, NULL,
-                      FFMIN(ctx->outputs[0]->h, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, blend_frame_partial, &td, NULL, FFMIN(ctx->outputs[0]->h, ff_filter_get_nb_threads(ctx)));
 }
 
 static int get_badness(PhotosensitivityFrame *a, PhotosensitivityFrame *b)
@@ -328,7 +329,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_photosensitivity = {
+AVFilter ff_vf_photosensitivity = {
     .name          = "photosensitivity",
     .description   = NULL_IF_CONFIG_SMALL("Filter out photosensitive epilepsy seizure-inducing flashes."),
     .priv_size     = sizeof(PhotosensitivityContext),

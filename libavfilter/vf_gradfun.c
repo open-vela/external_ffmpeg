@@ -34,7 +34,7 @@
 
 #include "libavutil/imgutils.h"
 #include "libavutil/common.h"
-#include "libavutil/mem_internal.h"
+#include "libavutil/cpu.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
@@ -155,7 +155,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRP,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -248,7 +251,7 @@ static const AVFilterPad avfilter_vf_gradfun_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_gradfun = {
+AVFilter ff_vf_gradfun = {
     .name          = "gradfun",
     .description   = NULL_IF_CONFIG_SMALL("Debands video quickly using gradients."),
     .priv_size     = sizeof(GradFunContext),

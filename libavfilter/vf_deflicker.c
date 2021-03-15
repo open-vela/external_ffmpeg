@@ -115,7 +115,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA420P9, AV_PIX_FMT_YUVA420P10, AV_PIX_FMT_YUVA420P16,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pixel_fmts);
+    AVFilterFormats *formats = ff_make_format_list(pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, formats);
 }
 
 static int deflicker8(AVFilterContext *ctx,
@@ -463,7 +466,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_deflicker = {
+AVFilter ff_vf_deflicker = {
     .name          = "deflicker",
     .description   = NULL_IF_CONFIG_SMALL("Remove temporal frame luminance variations."),
     .priv_size     = sizeof(DeflickerContext),

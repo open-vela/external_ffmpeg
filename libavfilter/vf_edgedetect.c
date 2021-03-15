@@ -101,6 +101,7 @@ static int query_formats(AVFilterContext *ctx)
     static const enum AVPixelFormat wires_pix_fmts[] = {AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE};
     static const enum AVPixelFormat canny_pix_fmts[] = {AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV444P, AV_PIX_FMT_GBRP, AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE};
     static const enum AVPixelFormat colormix_pix_fmts[] = {AV_PIX_FMT_GBRP, AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE};
+    AVFilterFormats *fmts_list;
     const enum AVPixelFormat *pix_fmts = NULL;
 
     if (edgedetect->mode == MODE_WIRES) {
@@ -112,7 +113,10 @@ static int query_formats(AVFilterContext *ctx)
     } else {
         av_assert0(0);
     }
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -290,7 +294,7 @@ static void double_threshold(int low, int high, int w, int h,
                 continue;
             }
 
-            if (!(!i || i == w - 1 || !j || j == h - 1) &&
+            if ((!i || i == w - 1 || !j || j == h - 1) &&
                 src[i] > low &&
                 (src[-src_linesize + i-1] > high ||
                  src[-src_linesize + i  ] > high ||
@@ -427,7 +431,7 @@ static const AVFilterPad edgedetect_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_edgedetect = {
+AVFilter ff_vf_edgedetect = {
     .name          = "edgedetect",
     .description   = NULL_IF_CONFIG_SMALL("Detect and draw edge."),
     .priv_size     = sizeof(EdgeDetectContext),

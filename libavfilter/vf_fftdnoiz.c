@@ -18,6 +18,7 @@
 
 #include <float.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
@@ -135,7 +136,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRAP,     AV_PIX_FMT_GBRAP10,    AV_PIX_FMT_GBRAP12,    AV_PIX_FMT_GBRAP16,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 typedef struct ThreadData {
@@ -157,7 +161,7 @@ static void export_row8(FFTComplex *src, uint8_t *dst, int rw, float scale, int 
     int j;
 
     for (j = 0; j < rw; j++)
-        dst[j] = av_clip_uint8(lrintf(src[j].re * scale));
+        dst[j] = av_clip_uint8(src[j].re * scale + 0.5f);
 }
 
 static void import_row16(FFTComplex *dst, uint8_t *srcp, int rw)
@@ -681,7 +685,7 @@ static const AVFilterPad fftdnoiz_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_fftdnoiz = {
+AVFilter ff_vf_fftdnoiz = {
     .name          = "fftdnoiz",
     .description   = NULL_IF_CONFIG_SMALL("Denoise frames using 3D FFT."),
     .priv_size     = sizeof(FFTdnoizContext),

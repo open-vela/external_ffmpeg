@@ -413,7 +413,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_UYVY422,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int filter_frame(AVFilterLink *link, AVFrame *in)
@@ -470,17 +473,17 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
     td.c7 = color->yuv_convert[color->mode][2][2];
 
     if (in->format == AV_PIX_FMT_YUV444P)
-        ff_filter_execute(ctx, process_slice_yuv444p, &td, NULL,
-                          FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, process_slice_yuv444p, &td, NULL,
+                               FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
     else if (in->format == AV_PIX_FMT_YUV422P)
-        ff_filter_execute(ctx, process_slice_yuv422p, &td, NULL,
-                          FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, process_slice_yuv422p, &td, NULL,
+                               FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
     else if (in->format == AV_PIX_FMT_YUV420P)
-        ff_filter_execute(ctx, process_slice_yuv420p, &td, NULL,
-                          FFMIN(in->height / 2, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, process_slice_yuv420p, &td, NULL,
+                               FFMIN(in->height / 2, ff_filter_get_nb_threads(ctx)));
     else
-        ff_filter_execute(ctx, process_slice_uyvy422, &td, NULL,
-                          FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, process_slice_uyvy422, &td, NULL,
+                               FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
 
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
@@ -504,7 +507,7 @@ static const AVFilterPad colormatrix_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_colormatrix = {
+AVFilter ff_vf_colormatrix = {
     .name          = "colormatrix",
     .description   = NULL_IF_CONFIG_SMALL("Convert color matrix."),
     .priv_size     = sizeof(ColorMatrixContext),

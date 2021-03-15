@@ -58,7 +58,9 @@ static int query_formats(AVFilterContext *ctx)
                 (ret = ff_add_format(&formats, pix_fmt)) < 0)
                 return ret;
         }
-        return ff_set_common_formats(ctx, formats);
+        if ((ret = ff_formats_ref(formats, &ctx->inputs[0]->out_formats)) < 0 ||
+            (ret = ff_formats_ref(formats, &ctx->outputs[0]->in_formats)) < 0)
+            return ret;
     }
 
     return 0;
@@ -182,7 +184,7 @@ static const AVFilterPad avfilter_vf_fieldorder_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_fieldorder = {
+AVFilter ff_vf_fieldorder = {
     .name          = "fieldorder",
     .description   = NULL_IF_CONFIG_SMALL("Set the field order."),
     .priv_size     = sizeof(FieldOrderContext),

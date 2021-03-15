@@ -104,7 +104,7 @@ static const AVFilterPad vfrdet_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_vfrdet = {
+AVFilter ff_vf_vfrdet = {
     .name        = "vfrdet",
     .description = NULL_IF_CONFIG_SMALL("Variable frame rate detect filter."),
     .priv_size   = sizeof(VFRDETContext),

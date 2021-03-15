@@ -160,11 +160,20 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size, int tr
     if (AV_RB64(data->data) == PNGSIG)
         id = AV_CODEC_ID_PNG;
 
-    ret = ff_add_attached_pic(s, NULL, NULL, &data, 0);
-    if (ret < 0)
-        RETURN_ERROR(ret);
+    st = avformat_new_stream(s, NULL);
+    if (!st) {
+        RETURN_ERROR(AVERROR(ENOMEM));
+    }
 
-    st = s->streams[s->nb_streams - 1];
+    av_init_packet(&st->attached_pic);
+    st->attached_pic.buf          = data;
+    st->attached_pic.data         = data->data;
+    st->attached_pic.size         = len;
+    st->attached_pic.stream_index = st->index;
+    st->attached_pic.flags       |= AV_PKT_FLAG_KEY;
+
+    st->disposition      |= AV_DISPOSITION_ATTACHED_PIC;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
     st->codecpar->codec_id   = id;
     st->codecpar->width      = width;
     st->codecpar->height     = height;

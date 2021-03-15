@@ -56,7 +56,7 @@ static int crc_write_trailer(struct AVFormatContext *s)
     return 0;
 }
 
-const AVOutputFormat ff_crc_muxer = {
+AVOutputFormat ff_crc_muxer = {
     .name              = "crc",
     .long_name         = NULL_IF_CONFIG_SMALL("CRC testing"),
     .priv_data_size    = sizeof(CRCState),

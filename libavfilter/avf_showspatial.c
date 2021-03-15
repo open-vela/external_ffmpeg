@@ -114,17 +114,17 @@ static int query_formats(AVFilterContext *ctx)
     int ret;
 
     formats = ff_make_format_list(sample_fmts);
-    if ((ret = ff_formats_ref         (formats, &inlink->outcfg.formats        )) < 0 ||
+    if ((ret = ff_formats_ref         (formats, &inlink->out_formats        )) < 0 ||
         (ret = ff_add_channel_layout  (&layout, AV_CH_LAYOUT_STEREO         )) < 0 ||
-        (ret = ff_channel_layouts_ref (layout , &inlink->outcfg.channel_layouts)) < 0)
+        (ret = ff_channel_layouts_ref (layout , &inlink->out_channel_layouts)) < 0)
         return ret;
 
     formats = ff_all_samplerates();
-    if ((ret = ff_formats_ref(formats, &inlink->outcfg.samplerates)) < 0)
+    if ((ret = ff_formats_ref(formats, &inlink->out_samplerates)) < 0)
         return ret;
 
     formats = ff_make_format_list(pix_fmts);
-    if ((ret = ff_formats_ref(formats, &outlink->incfg.formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &outlink->in_formats)) < 0)
         return ret;
 
     return 0;
@@ -318,7 +318,7 @@ static int spatial_activate(AVFilterContext *ctx)
 
         av_assert0(fin->nb_samples == s->win_size);
 
-        ff_filter_execute(ctx, run_channel_fft, fin, NULL, 2);
+        ctx->internal->execute(ctx, run_channel_fft, fin, NULL, 2);
 
         ret = draw_spatial(inlink, fin);
 
@@ -358,7 +358,7 @@ static const AVFilterPad showspatial_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_avf_showspatial = {
+AVFilter ff_avf_showspatial = {
     .name          = "showspatial",
     .description   = NULL_IF_CONFIG_SMALL("Convert input audio to a spatial video output."),
     .uninit        = uninit,

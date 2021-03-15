@@ -42,9 +42,9 @@ static int hwmap_query_formats(AVFilterContext *avctx)
     int ret;
 
     if ((ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
-                              &avctx->inputs[0]->outcfg.formats)) < 0 ||
+                              &avctx->inputs[0]->out_formats)) < 0 ||
         (ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
-                              &avctx->outputs[0]->incfg.formats)) < 0)
+                              &avctx->outputs[0]->in_formats)) < 0)
         return ret;
 
     return 0;
@@ -404,7 +404,7 @@ static const AVFilterPad hwmap_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_buffer.video = hwmap_get_buffer,
+        .get_video_buffer = hwmap_get_buffer,
         .filter_frame     = hwmap_filter_frame,
     },
     { NULL }
@@ -419,7 +419,7 @@ static const AVFilterPad hwmap_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_hwmap = {
+AVFilter ff_vf_hwmap = {
     .name           = "hwmap",
     .description    = NULL_IF_CONFIG_SMALL("Map hardware frames"),
     .uninit         = hwmap_uninit,

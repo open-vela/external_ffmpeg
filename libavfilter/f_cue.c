@@ -114,7 +114,7 @@ static const AVFilterPad cue_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_cue = {
+AVFilter ff_vf_cue = {
     .name        = "cue",
     .description = NULL_IF_CONFIG_SMALL("Delay filtering to match a cue."),
     .priv_size   = sizeof(CueContext),
@@ -145,7 +145,7 @@ static const AVFilterPad acue_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_acue = {
+AVFilter ff_af_acue = {
     .name        = "acue",
     .description = NULL_IF_CONFIG_SMALL("Delay filtering to match a cue."),
     .priv_size   = sizeof(CueContext),

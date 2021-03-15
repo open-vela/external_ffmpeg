@@ -404,7 +404,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pixel_fmts_fftfilt);
+    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts_fftfilt);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static const AVFilterPad fftfilt_inputs[] = {
@@ -425,7 +428,7 @@ static const AVFilterPad fftfilt_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_fftfilt = {
+AVFilter ff_vf_fftfilt = {
     .name            = "fftfilt",
     .description     = NULL_IF_CONFIG_SMALL("Apply arbitrary expressions to pixels in frequency domain."),
     .priv_size       = sizeof(FFTFILTContext),

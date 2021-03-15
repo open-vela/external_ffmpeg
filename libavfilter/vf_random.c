@@ -139,7 +139,7 @@ static const AVFilterPad random_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_random = {
+AVFilter ff_vf_random = {
     .name        = "random",
     .description = NULL_IF_CONFIG_SMALL("Return random frames."),
     .priv_size   = sizeof(RandomContext),

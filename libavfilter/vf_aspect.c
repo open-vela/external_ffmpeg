@@ -185,7 +185,7 @@ static const AVFilterPad avfilter_vf_setdar_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_setdar = {
+AVFilter ff_vf_setdar = {
     .name        = "setdar",
     .description = NULL_IF_CONFIG_SMALL("Set the frame display aspect ratio."),
     .priv_size   = sizeof(AspectContext),
@@ -249,7 +249,7 @@ static const AVFilterPad avfilter_vf_setsar_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_setsar = {
+AVFilter ff_vf_setsar = {
     .name        = "setsar",
     .description = NULL_IF_CONFIG_SMALL("Set the pixel sample aspect ratio."),
     .priv_size   = sizeof(AspectContext),
