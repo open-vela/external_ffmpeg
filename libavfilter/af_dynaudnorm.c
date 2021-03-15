@@ -719,7 +719,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         cqueue_dequeue(s->is_enabled, &is_enabled);
 
         amplify_frame(s, out, is_enabled > 0.);
-        s->pts = out->pts + out->nb_samples;
         ret = ff_filter_frame(outlink, out);
     }
 
@@ -770,7 +769,7 @@ static int flush(AVFilterLink *outlink)
     } else if (s->queue.available) {
         AVFrame *out = ff_bufqueue_get(&s->queue);
 
-        s->pts = out->pts + out->nb_samples;
+        s->pts = out->pts;
         ret = ff_filter_frame(outlink, out);
     }
 
@@ -798,7 +797,7 @@ static int activate(AVFilterContext *ctx)
                 return ret;
         }
 
-        if (ff_inlink_check_available_samples(inlink, s->frame_len) > 0) {
+        if (ff_inlink_queued_samples(inlink) >= s->frame_len) {
             ff_filter_set_ready(ctx, 10);
             return 0;
         }

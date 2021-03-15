@@ -22,7 +22,6 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
-#include "internal.h"
 #include "buffer.h"
 #include "thread.h"
 
@@ -33,7 +32,7 @@
 
 struct AVBuffer {
     uint8_t *data; /**< data described by this buffer */
-    buffer_size_t size; /**< size of data in bytes */
+    int      size; /**< size of data in bytes */
 
     /**
      *  number of existing AVBufferRef instances referring to this buffer
@@ -90,10 +89,10 @@ struct AVBufferPool {
      */
     atomic_uint refcount;
 
-    buffer_size_t size;
+    int size;
     void *opaque;
-    AVBufferRef* (*alloc)(buffer_size_t size);
-    AVBufferRef* (*alloc2)(void *opaque, buffer_size_t size);
+    AVBufferRef* (*alloc)(int size);
+    AVBufferRef* (*alloc2)(void *opaque, int size);
     void         (*pool_free)(void *opaque);
 };
 

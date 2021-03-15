@@ -104,8 +104,10 @@ static av_cold int paf_video_init(AVCodecContext *avctx)
     c->video_size = avctx->width * avctx->height;
     for (i = 0; i < 4; i++) {
         c->frame[i] = av_mallocz(c->frame_size);
-        if (!c->frame[i])
+        if (!c->frame[i]) {
+            paf_video_close(avctx);
             return AVERROR(ENOMEM);
+        }
     }
 
     return 0;
@@ -417,5 +419,4 @@ AVCodec ff_paf_video_decoder = {
     .close          = paf_video_close,
     .decode         = paf_video_decode,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

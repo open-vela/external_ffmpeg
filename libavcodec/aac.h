@@ -34,7 +34,6 @@
 #include "aac_defines.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/fixed_dsp.h"
-#include "libavutil/mem_internal.h"
 #include "avcodec.h"
 #if !USE_FIXED
 #include "mdct15.h"
