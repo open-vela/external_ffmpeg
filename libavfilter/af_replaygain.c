@@ -359,6 +359,7 @@ static int config_input(AVFilterLink *inlink)
 
     s->yule_hist_i   = 20;
     s->butter_hist_i = 4;
+    inlink->partial_buf_size =
     inlink->min_samples =
     inlink->max_samples = inlink->sample_rate / 20;
 
@@ -603,7 +604,7 @@ static const AVFilterPad replaygain_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_replaygain = {
+AVFilter ff_af_replaygain = {
     .name          = "replaygain",
     .description   = NULL_IF_CONFIG_SMALL("ReplayGain scanner."),
     .query_formats = query_formats,

@@ -134,7 +134,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static AVFrame *alloc_frame(enum AVPixelFormat pixfmt, int w, int h)
@@ -596,8 +599,8 @@ static int filter_frame8(AVFilterLink *link, AVFrame *in)
         av_frame_make_writable(out);
     }
 
-    ff_filter_execute(ctx, compute_sat_hue_metrics8, &td_huesat,
-                      NULL, FFMIN(s->chromah, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, compute_sat_hue_metrics8, &td_huesat,
+                           NULL, FFMIN(s->chromah, ff_filter_get_nb_threads(ctx)));
 
     // Calculate luma histogram and difference with previous frame or field.
     memset(s->histy, 0, s->maxsize * sizeof(*s->histy));
@@ -645,8 +648,8 @@ static int filter_frame8(AVFilterLink *link, AVFrame *in)
                 .out = out != in && s->outfilter == fil ? out : NULL,
             };
             memset(s->jobs_rets, 0, s->nb_jobs * sizeof(*s->jobs_rets));
-            ff_filter_execute(ctx, filters_def[fil].process8,
-                              &td, s->jobs_rets, s->nb_jobs);
+            ctx->internal->execute(ctx, filters_def[fil].process8,
+                                   &td, s->jobs_rets, s->nb_jobs);
             for (i = 0; i < s->nb_jobs; i++)
                 filtot[fil] += s->jobs_rets[i];
         }
@@ -818,8 +821,8 @@ static int filter_frame16(AVFilterLink *link, AVFrame *in)
         av_frame_make_writable(out);
     }
 
-    ff_filter_execute(ctx, compute_sat_hue_metrics16, &td_huesat,
-                      NULL, FFMIN(s->chromah, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, compute_sat_hue_metrics16, &td_huesat,
+                           NULL, FFMIN(s->chromah, ff_filter_get_nb_threads(ctx)));
 
     // Calculate luma histogram and difference with previous frame or field.
     memset(s->histy, 0, s->maxsize * sizeof(*s->histy));
@@ -867,8 +870,8 @@ static int filter_frame16(AVFilterLink *link, AVFrame *in)
                 .out = out != in && s->outfilter == fil ? out : NULL,
             };
             memset(s->jobs_rets, 0, s->nb_jobs * sizeof(*s->jobs_rets));
-            ff_filter_execute(ctx, filters_def[fil].process16,
-                              &td, s->jobs_rets, s->nb_jobs);
+            ctx->internal->execute(ctx, filters_def[fil].process16,
+                                   &td, s->jobs_rets, s->nb_jobs);
             for (i = 0; i < s->nb_jobs; i++)
                 filtot[fil] += s->jobs_rets[i];
         }
@@ -1009,7 +1012,7 @@ static const AVFilterPad signalstats_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_signalstats = {
+AVFilter ff_vf_signalstats = {
     .name          = "signalstats",
     .description   = "Generate statistics from video analysis.",
     .init          = init,

@@ -90,7 +90,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 /**
@@ -455,8 +458,8 @@ static int nlmeans_plane(AVFilterContext *ctx, int w, int h, int p, int r,
                 compute_ssd_integral_image(&s->dsp, s->ii, s->ii_lz_32,
                                            src, src_linesize,
                                            offx, offy, e, w, h);
-                ff_filter_execute(ctx, nlmeans_slice, &td, NULL,
-                                  FFMIN(td.endy - td.starty, ff_filter_get_nb_threads(ctx)));
+                ctx->internal->execute(ctx, nlmeans_slice, &td, NULL,
+                                       FFMIN(td.endy - td.starty, ff_filter_get_nb_threads(ctx)));
             }
         }
     }
@@ -574,7 +577,7 @@ static const AVFilterPad nlmeans_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_nlmeans = {
+AVFilter ff_vf_nlmeans = {
     .name          = "nlmeans",
     .description   = NULL_IF_CONFIG_SMALL("Non-local means denoiser."),
     .priv_size     = sizeof(NLMeansContext),

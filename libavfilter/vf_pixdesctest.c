@@ -80,7 +80,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
     /* copy palette */
-    if (priv->pix_desc->flags & AV_PIX_FMT_FLAG_PAL)
+    if (priv->pix_desc->flags & AV_PIX_FMT_FLAG_PAL ||
+        ((priv->pix_desc->flags & FF_PSEUDOPAL) && out->data[1] && in->data[1]))
         memcpy(out->data[1], in->data[1], AVPALETTE_SIZE);
 
     for (c = 0; c < priv->pix_desc->nb_components; c++) {
@@ -124,7 +125,7 @@ static const AVFilterPad avfilter_vf_pixdesctest_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_pixdesctest = {
+AVFilter ff_vf_pixdesctest = {
     .name        = "pixdesctest",
     .description = NULL_IF_CONFIG_SMALL("Test pixel format definitions."),
     .priv_size   = sizeof(PixdescTestContext),

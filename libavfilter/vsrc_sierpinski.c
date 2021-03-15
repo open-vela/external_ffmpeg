@@ -78,7 +78,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int fill_sierpinski(SierpinskiContext *s, int x, int y)
@@ -191,8 +194,7 @@ static void draw_sierpinski(AVFilterContext *ctx, AVFrame *frame)
             s->pos_y--;
     }
 
-    ff_filter_execute(ctx, s->draw_slice, frame, NULL,
-                      FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, s->draw_slice, frame, NULL, FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
 }
 
 static int sierpinski_request_frame(AVFilterLink *link)
@@ -221,7 +223,7 @@ static const AVFilterPad sierpinski_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vsrc_sierpinski = {
+AVFilter ff_vsrc_sierpinski = {
     .name          = "sierpinski",
     .description   = NULL_IF_CONFIG_SMALL("Render a Sierpinski fractal."),
     .priv_size     = sizeof(SierpinskiContext),

@@ -60,21 +60,24 @@ typedef struct StackContext {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats = NULL;
+    AVFilterFormats *pix_fmts = NULL;
     StackContext *s = ctx->priv;
-    int ret;
+    int fmt, ret;
 
     if (s->fillcolor_enable) {
         return ff_set_common_formats(ctx, ff_draw_supported_pixel_formats(0));
     }
 
-    ret = ff_formats_pixdesc_filter(&formats, 0,
-                                    AV_PIX_FMT_FLAG_HWACCEL |
-                                    AV_PIX_FMT_FLAG_BITSTREAM |
-                                    AV_PIX_FMT_FLAG_PAL);
-    if (ret < 0)
-        return ret;
-    return ff_set_common_formats(ctx, formats);
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+        if (!(desc->flags & AV_PIX_FMT_FLAG_PAL ||
+              desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
+              desc->flags & AV_PIX_FMT_FLAG_BITSTREAM) &&
+            (ret = ff_add_format(&pix_fmts, fmt)) < 0)
+            return ret;
+    }
+
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -123,7 +126,7 @@ static av_cold int init(AVFilterContext *ctx)
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        if ((ret = ff_append_inpad(ctx, &pad)) < 0) {
+        if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0) {
             av_freep(&pad.name);
             return ret;
         }
@@ -179,8 +182,7 @@ static int process_frame(FFFrameSync *fs)
         ff_fill_rectangle(&s->draw, &s->color, out->data, out->linesize,
                           0, 0, outlink->w, outlink->h);
 
-    ff_filter_execute(ctx, process_slice, out, NULL,
-                      FFMIN(s->nb_inputs, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, process_slice, out, NULL, FFMIN(s->nb_inputs, ff_filter_get_nb_threads(ctx)));
 
     return ff_filter_frame(outlink, out);
 }
@@ -410,7 +412,7 @@ static const AVFilterPad outputs[] = {
 #define hstack_options stack_options
 AVFILTER_DEFINE_CLASS(hstack);
 
-const AVFilter ff_vf_hstack = {
+AVFilter ff_vf_hstack = {
     .name          = "hstack",
     .description   = NULL_IF_CONFIG_SMALL("Stack video inputs horizontally."),
     .priv_size     = sizeof(StackContext),
@@ -430,7 +432,7 @@ const AVFilter ff_vf_hstack = {
 #define vstack_options stack_options
 AVFILTER_DEFINE_CLASS(vstack);
 
-const AVFilter ff_vf_vstack = {
+AVFilter ff_vf_vstack = {
     .name          = "vstack",
     .description   = NULL_IF_CONFIG_SMALL("Stack video inputs vertically."),
     .priv_size     = sizeof(StackContext),
@@ -457,7 +459,7 @@ static const AVOption xstack_options[] = {
 
 AVFILTER_DEFINE_CLASS(xstack);
 
-const AVFilter ff_vf_xstack = {
+AVFilter ff_vf_xstack = {
     .name          = "xstack",
     .description   = NULL_IF_CONFIG_SMALL("Stack video inputs into custom layout."),
     .priv_size     = sizeof(StackContext),

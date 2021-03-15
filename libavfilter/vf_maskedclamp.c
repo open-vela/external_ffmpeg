@@ -29,7 +29,7 @@
 #include "maskedclamp.h"
 
 #define OFFSET(x) offsetof(MaskedClampContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
 typedef struct ThreadData {
     AVFrame *b, *o, *m, *d;
@@ -84,7 +84,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
 }
 
 static int maskedclamp_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
@@ -159,8 +159,8 @@ static int process_frame(FFFrameSync *fs)
         td.m = bright;
         td.d = out;
 
-        ff_filter_execute(ctx, maskedclamp_slice, &td, NULL,
-                          FFMIN(s->height[0], ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, maskedclamp_slice, &td, NULL, FFMIN(s->height[0],
+                                                                        ff_filter_get_nb_threads(ctx)));
     }
     out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, outlink->time_base);
 
@@ -316,7 +316,7 @@ static const AVFilterPad maskedclamp_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_maskedclamp = {
+AVFilter ff_vf_maskedclamp = {
     .name          = "maskedclamp",
     .description   = NULL_IF_CONFIG_SMALL("Clamp first stream with second stream and third stream."),
     .priv_size     = sizeof(MaskedClampContext),
@@ -327,5 +327,4 @@ const AVFilter ff_vf_maskedclamp = {
     .outputs       = maskedclamp_outputs,
     .priv_class    = &maskedclamp_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
-    .process_command = ff_filter_process_command,
 };

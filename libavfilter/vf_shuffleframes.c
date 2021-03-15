@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
@@ -155,7 +156,7 @@ static const AVFilterPad shuffleframes_outputs[] = {
     { NULL },
 };
 
-const AVFilter ff_vf_shuffleframes = {
+AVFilter ff_vf_shuffleframes = {
     .name          = "shuffleframes",
     .description   = NULL_IF_CONFIG_SMALL("Shuffle video frames."),
     .priv_size     = sizeof(ShuffleFramesContext),

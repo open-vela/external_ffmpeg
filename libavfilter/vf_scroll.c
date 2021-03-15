@@ -66,7 +66,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 typedef struct ThreadData {
@@ -128,8 +131,8 @@ static void scroll(AVFilterContext *ctx, AVFrame *in, AVFrame *out)
     s->pos_h[0] = s->pos_h[3] = h_pos * s->bytes;
 
     td.in = in; td.out = out;
-    ff_filter_execute(ctx, scroll_slice, &td, NULL,
-                      FFMIN(out->height, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, scroll_slice, &td, NULL,
+                           FFMIN(out->height, ff_filter_get_nb_threads(ctx)));
 
     s->h_pos += s->h_speed * in->width;
     s->v_pos += s->v_speed * in->height;
@@ -208,7 +211,7 @@ static const AVFilterPad scroll_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_vf_scroll = {
+AVFilter ff_vf_scroll = {
     .name          = "scroll",
     .description   = NULL_IF_CONFIG_SMALL("Scroll input video."),
     .priv_size     = sizeof(ScrollContext),

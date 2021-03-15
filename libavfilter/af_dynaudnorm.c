@@ -129,19 +129,32 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static inline int frame_size(int sample_rate, int frame_len_msec)
@@ -706,7 +719,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         cqueue_dequeue(s->is_enabled, &is_enabled);
 
         amplify_frame(s, out, is_enabled > 0.);
-        s->pts = out->pts + out->nb_samples;
         ret = ff_filter_frame(outlink, out);
     }
 
@@ -757,7 +769,7 @@ static int flush(AVFilterLink *outlink)
     } else if (s->queue.available) {
         AVFrame *out = ff_bufqueue_get(&s->queue);
 
-        s->pts = out->pts + out->nb_samples;
+        s->pts = out->pts;
         ret = ff_filter_frame(outlink, out);
     }
 
@@ -785,7 +797,7 @@ static int activate(AVFilterContext *ctx)
                 return ret;
         }
 
-        if (ff_inlink_check_available_samples(inlink, s->frame_len) > 0) {
+        if (ff_inlink_queued_samples(inlink) >= s->frame_len) {
             ff_filter_set_ready(ctx, 10);
             return 0;
         }
@@ -855,7 +867,7 @@ static const AVFilterPad avfilter_af_dynaudnorm_outputs[] = {
     { NULL }
 };
 
-const AVFilter ff_af_dynaudnorm = {
+AVFilter ff_af_dynaudnorm = {
     .name          = "dynaudnorm",
     .description   = NULL_IF_CONFIG_SMALL("Dynamic Audio Normalizer."),
     .query_formats = query_formats,
