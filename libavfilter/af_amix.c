@@ -357,6 +357,27 @@ static int update_timer(AVFilterContext *ctx, bool start)
 }
 
 /**
+ * Calculates the number of active inputs and determines EOF based on the
+ * duration option.
+ *
+ * @return 0 if mixing should continue, or AVERROR_EOF if mixing should stop.
+ */
+static int calc_active_inputs(MixContext *s)
+{
+    int i;
+    int active_inputs = 0;
+    for (i = 0; i < s->nb_inputs; i++)
+        active_inputs += !!(s->input_state[i] & INPUT_ON);
+    s->active_inputs = active_inputs;
+
+    if (!active_inputs || (s->duration_mode == DURATION_FIRST &&
+        s->first_input >= 0 && !(s->input_state[s->first_input] & INPUT_ON)) ||
+        (s->duration_mode == DURATION_SHORTEST && active_inputs != s->nb_inputs))
+        return AVERROR_EOF;
+    return 0;
+}
+
+/**
  * Read samples from the input FIFOs, mix, and write to the output link.
  */
 static int output_frame(AVFilterLink *outlink)
@@ -388,19 +409,17 @@ static int output_frame(AVFilterLink *outlink)
         for (i = 0; i < s->nb_inputs; i++) {
             if (i != s->first_input && s->input_state[i] & INPUT_ON) {
                 ns = av_audio_fifo_size(s->fifos[i]);
-                if (is_timeout(ctx) && ns == 0)
+                if (is_timeout(ctx) && ns == 0 && s->active_inputs > 1) {
                     s->input_state[i] = 0;
+                    calc_active_inputs(s);
+                }
                 else
                     nb_samples = FFMIN(nb_samples, ns);
             }
         }
-        if (nb_samples == INT_MAX) {
-            ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
-            return 0;
-        }
     }
 
-    if (nb_samples == 0)
+    if (nb_samples == 0 || nb_samples == INT_MAX)
         return 0;
 
     if (s->first_input >= 0) {
@@ -488,27 +507,6 @@ static int request_samples(AVFilterContext *ctx, int min_samples)
     return output_frame(ctx->outputs[0]);
 }
 
-/**
- * Calculates the number of active inputs and determines EOF based on the
- * duration option.
- *
- * @return 0 if mixing should continue, or AVERROR_EOF if mixing should stop.
- */
-static int calc_active_inputs(MixContext *s)
-{
-    int i;
-    int active_inputs = 0;
-    for (i = 0; i < s->nb_inputs; i++)
-        active_inputs += !!(s->input_state[i] & INPUT_ON);
-    s->active_inputs = active_inputs;
-
-    if (!active_inputs || (s->duration_mode == DURATION_FIRST &&
-        s->first_input >= 0 && !(s->input_state[s->first_input] & INPUT_ON)) ||
-        (s->duration_mode == DURATION_SHORTEST && active_inputs != s->nb_inputs))
-        return AVERROR_EOF;
-    return 0;
-}
-
 static void amix_fifo_reset(AVFilterContext *ctx)
 {
     AVFilterLink *link = ctx->outputs[0];
@@ -534,6 +532,7 @@ static int activate(AVFilterContext *ctx)
 
         if ((ret = ff_inlink_consume_frame(ctx->inputs[i], &buf)) > 0) {
             s->input_state[i] |= INPUT_ON;
+            calc_active_inputs(s);
             if (i == s->first_input) {
                 int64_t pts = av_rescale_q(buf->pts, inlink->time_base,
                                            outlink->time_base);
@@ -594,7 +593,8 @@ static int activate(AVFilterContext *ctx)
     if (ff_outlink_frame_wanted(outlink)) {
         int wanted_samples;
 
-        update_timer(ctx, true);
+        if (!s->timer_id)
+            update_timer(ctx, true);
 
         if (s->first_input < 0 || !(s->input_state[s->first_input] & INPUT_ON))
             return request_samples(ctx, s->timeout * s->sample_rate / 1000);
