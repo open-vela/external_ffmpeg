@@ -147,9 +147,12 @@ static int mpegps_read_header(AVFormatContext *s)
 static int64_t get_pts(AVIOContext *pb, int c)
 {
     uint8_t buf[5];
+    int ret;
 
     buf[0] = c < 0 ? avio_r8(pb) : c;
-    avio_read(pb, buf + 1, 4);
+    ret = avio_read(pb, buf + 1, 4);
+    if (ret < 4)
+        return AV_NOPTS_VALUE;
 
     return ff_parse_pes_pts(buf);
 }
@@ -619,7 +622,7 @@ skip:
         st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
         st->codecpar->sample_rate = 8000;
     }
-    st->request_probe     = request_probe;
+    st->internal->request_probe     = request_probe;
     st->need_parsing      = AVSTREAM_PARSE_FULL;
 
 found:
@@ -931,7 +934,7 @@ static int vobsub_read_packet(AVFormatContext *s, AVPacket *pkt)
         if (tmpq->current_sub_idx >= tmpq->nb_subs)
             continue;
 
-        ts = tmpq->subs[tmpq->current_sub_idx].pts;
+        ts = tmpq->subs[tmpq->current_sub_idx]->pts;
         if (ts < min_ts) {
             min_ts = ts;
             sid = i;
@@ -947,7 +950,7 @@ static int vobsub_read_packet(AVFormatContext *s, AVPacket *pkt)
     /* compute maximum packet size using the next packet position. This is
      * useful when the len in the header is non-sense */
     if (q->current_sub_idx < q->nb_subs) {
-        psize = q->subs[q->current_sub_idx].pos - pkt->pos;
+        psize = q->subs[q->current_sub_idx]->pos - pkt->pos;
     } else {
         int64_t fsize = avio_size(pb);
         psize = fsize < 0 ? 0xffff : fsize - pkt->pos;

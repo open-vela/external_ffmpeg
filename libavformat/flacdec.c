@@ -40,8 +40,8 @@ static void reset_index_position(int64_t metadata_head_size, AVStream *st)
 {
     /* the real seek index offset should be the size of metadata blocks with the offset in the frame blocks */
     int i;
-    for(i=0; i<st->nb_index_entries; i++) {
-        st->index_entries[i].pos += metadata_head_size;
+    for(i=0; i<st->internal->nb_index_entries; i++) {
+        st->internal->index_entries[i].pos += metadata_head_size;
     }
 }
 
@@ -259,7 +259,7 @@ static int flac_probe(const AVProbeData *p)
 static av_unused int64_t flac_read_timestamp(AVFormatContext *s, int stream_index,
                                              int64_t *ppos, int64_t pos_limit)
 {
-    AVPacket pkt;
+    AVPacket *pkt = s->internal->parse_pkt;
     AVStream *st = s->streams[stream_index];
     AVCodecParserContext *parser;
     int ret;
@@ -268,7 +268,6 @@ static av_unused int64_t flac_read_timestamp(AVFormatContext *s, int stream_inde
     if (avio_seek(s->pb, *ppos, SEEK_SET) < 0)
         return AV_NOPTS_VALUE;
 
-    av_init_packet(&pkt);
     parser = av_parser_init(st->codecpar->codec_id);
     if (!parser){
         return AV_NOPTS_VALUE;
@@ -279,20 +278,20 @@ static av_unused int64_t flac_read_timestamp(AVFormatContext *s, int stream_inde
         uint8_t *data;
         int size;
 
-        ret = ff_raw_read_partial_packet(s, &pkt);
+        ret = ff_raw_read_partial_packet(s, pkt);
         if (ret < 0){
             if (ret == AVERROR(EAGAIN))
                 continue;
             else {
-                av_packet_unref(&pkt);
-                av_assert1(!pkt.size);
+                av_packet_unref(pkt);
+                av_assert1(!pkt->size);
             }
         }
         av_parser_parse2(parser, st->internal->avctx,
-                         &data, &size, pkt.data, pkt.size,
-                         pkt.pts, pkt.dts, *ppos);
+                         &data, &size, pkt->data, pkt->size,
+                         pkt->pts, pkt->dts, *ppos);
 
-        av_packet_unref(&pkt);
+        av_packet_unref(pkt);
         if (size) {
             if (parser->pts != AV_NOPTS_VALUE){
                 // seeking may not have started from beginning of a frame
@@ -319,10 +318,10 @@ static int flac_seek(AVFormatContext *s, int stream_index, int64_t timestamp, in
     }
 
     index = av_index_search_timestamp(s->streams[0], timestamp, flags);
-    if(index<0 || index >= s->streams[0]->nb_index_entries)
+    if(index<0 || index >= s->streams[0]->internal->nb_index_entries)
         return -1;
 
-    e = s->streams[0]->index_entries[index];
+    e = s->streams[0]->internal->index_entries[index];
     pos = avio_seek(s->pb, e.pos, SEEK_SET);
     if (pos >= 0) {
         return 0;
