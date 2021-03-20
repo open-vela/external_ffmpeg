@@ -7,11 +7,14 @@ fate-adts-id3v1-demux: CMD = framecrc -f aac -i $(TARGET_SAMPLES)/aac/id3v1.aac 
 fate-adts-id3v2-demux: CMD = framecrc -f aac -i $(TARGET_SAMPLES)/aac/id3v2.aac -c:a copy
 fate-adts-id3v2-two-tags-demux: CMD = framecrc -i $(TARGET_SAMPLES)/aac/id3v2_two_tags.aac -c:a copy
 
+FATE_SAMPLES_DEMUX-$(CONFIG_AA_DEMUXER) += fate-aa-demux
+fate-aa-demux: CMD = framecrc -i $(TARGET_SAMPLES)/aa/bush.aa -c:a copy
+
 FATE_SAMPLES_DEMUX-$(CONFIG_AEA_DEMUXER) += fate-aea-demux
 fate-aea-demux: CMD = crc -i $(TARGET_SAMPLES)/aea/chirp.aea -c:a copy
 
-FATE_SAMPLES_DEMUX-$(CONFIG_AV1_DEMUXER) += fate-av1-annexb-demux
-fate-av1-annexb-demux: CMD = framecrc -i $(TARGET_SAMPLES)/av1/annexb.obu -c:v copy
+FATE_SAMPLES_DEMUX-$(call DEMDEC, AV1, AV1) += fate-av1-annexb-demux
+fate-av1-annexb-demux: CMD = framecrc -c:v av1 -i $(TARGET_SAMPLES)/av1/annexb.obu -c:v copy
 
 FATE_SAMPLES_DEMUX-$(CONFIG_AST_DEMUXER) += fate-ast
 fate-ast: CMD = crc -i $(TARGET_SAMPLES)/ast/demo11_02_partial.ast -c copy
@@ -129,6 +132,9 @@ fate-qcp-demux: CMD = crc -i $(TARGET_SAMPLES)/qcp/0036580847.QCP -c:a copy
 
 FATE_SAMPLES_DEMUX-$(CONFIG_R3D_DEMUXER) += fate-redcode-demux
 fate-redcode-demux: CMD = framecrc -i $(TARGET_SAMPLES)/r3d/4MB-sample.r3d -c:v copy -c:a copy
+
+FATE_SAMPLES_DEMUX-$(call ALLYES, S337M_DEMUXER DOLBY_E_PARSER FRAMECRC_MUXER) += fate-s337m-demux
+fate-s337m-demux: CMD = framecrc -i $(TARGET_SAMPLES)/dolby_e/16-11 -c copy -ss 2 -t 1
 
 FATE_SAMPLES_DEMUX-$(CONFIG_SIFF_DEMUXER) += fate-siff-demux
 fate-siff-demux: CMD = framecrc -i $(TARGET_SAMPLES)/SIFF/INTRO_B.VB -c copy

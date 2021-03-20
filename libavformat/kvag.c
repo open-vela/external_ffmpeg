@@ -83,7 +83,7 @@ static int kvag_read_header(AVFormatContext *s)
     par->bits_per_raw_sample    = 16;
     par->block_align            = 1;
     par->bit_rate               = par->channels *
-                                  par->sample_rate *
+                                  (uint64_t)par->sample_rate *
                                   par->bits_per_coded_sample;
 
     avpriv_set_pts_info(st, 64, 1, par->sample_rate);
@@ -110,12 +110,22 @@ static int kvag_read_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
+static int kvag_seek(AVFormatContext *s, int stream_index,
+                     int64_t pts, int flags)
+{
+    if (pts != 0)
+        return AVERROR(EINVAL);
+
+    return avio_seek(s->pb, KVAG_HEADER_SIZE, SEEK_SET);
+}
+
 AVInputFormat ff_kvag_demuxer = {
     .name           = "kvag",
     .long_name      = NULL_IF_CONFIG_SMALL("Simon & Schuster Interactive VAG"),
     .read_probe     = kvag_probe,
     .read_header    = kvag_read_header,
-    .read_packet    = kvag_read_packet
+    .read_packet    = kvag_read_packet,
+    .read_seek      = kvag_seek,
 };
 #endif
 
