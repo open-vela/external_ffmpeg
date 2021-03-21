@@ -72,8 +72,8 @@ static int parse_line(const char *line, int64_t *value, int64_t *value2)
                 fracval *= 10;
             for (;p2 - p1 > 7 + 1; p1++)
                 fracval /= 10;
-            if (intval > 0) intval += fracval;
-            else            intval -= fracval;
+            if (intval > 0) intval = av_sat_add64(intval, fracval);
+            else            intval = av_sat_sub64(intval, fracval);
             line += p2;
         } else
             line += p1;
@@ -147,8 +147,8 @@ static int mpsub_read_header(AVFormatContext *s)
     if (common_factor > 1) {
         common_factor = av_gcd(pts_info.num, common_factor);
         for (i = 0; i < mpsub->q.nb_subs; i++) {
-            mpsub->q.subs[i].pts      /= common_factor;
-            mpsub->q.subs[i].duration /= common_factor;
+            mpsub->q.subs[i]->pts      /= common_factor;
+            mpsub->q.subs[i]->duration /= common_factor;
         }
         pts_info.num /= common_factor;
     }

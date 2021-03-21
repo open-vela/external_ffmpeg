@@ -58,6 +58,7 @@ typedef struct TiffContext {
 
     /* JPEG decoding for DNG */
     AVCodecContext *avctx_mjpeg; // wrapper context for MJPEG
+    AVPacket *jpkt;              // encoded JPEG tile
     AVFrame *jpgframe;           // decoded JPEG tile
 
     int get_subimage;
@@ -79,6 +80,7 @@ typedef struct TiffContext {
     int fill_order;
     uint32_t res[4];
     int is_thumbnail;
+    unsigned last_tag;
 
     int is_bayer;
     uint8_t pattern[4];
@@ -131,8 +133,8 @@ static void free_geotags(TiffContext *const s)
 
 #define RET_GEOKEY(TYPE, array, element)\
     if (key >= TIFF_##TYPE##_KEY_ID_OFFSET &&\
-        key - TIFF_##TYPE##_KEY_ID_OFFSET < FF_ARRAY_ELEMS(ff_tiff_##array##_name_type_map))\
-        return ff_tiff_##array##_name_type_map[key - TIFF_##TYPE##_KEY_ID_OFFSET].element;
+        key - TIFF_##TYPE##_KEY_ID_OFFSET < FF_ARRAY_ELEMS(tiff_##array##_name_type_map))\
+        return tiff_##array##_name_type_map[key - TIFF_##TYPE##_KEY_ID_OFFSET].element;
 
 static const char *get_geokey_name(int key)
 {
@@ -179,8 +181,8 @@ static char *get_geokey_val(int key, int val)
 
 #define RET_GEOKEY_VAL(TYPE, array)\
     if (val >= TIFF_##TYPE##_OFFSET &&\
-        val - TIFF_##TYPE##_OFFSET < FF_ARRAY_ELEMS(ff_tiff_##array##_codes))\
-        return av_strdup(ff_tiff_##array##_codes[val - TIFF_##TYPE##_OFFSET]);
+        val - TIFF_##TYPE##_OFFSET < FF_ARRAY_ELEMS(tiff_##array##_codes))\
+        return av_strdup(tiff_##array##_codes[val - TIFF_##TYPE##_OFFSET]);
 
     switch (key) {
     case TIFF_GT_MODEL_TYPE_GEOKEY:
@@ -213,11 +215,11 @@ static char *get_geokey_val(int key, int val)
         RET_GEOKEY_VAL(PRIME_MERIDIAN, prime_meridian);
         break;
     case TIFF_PROJECTED_CS_TYPE_GEOKEY:
-        ap = av_strdup(search_keyval(ff_tiff_proj_cs_type_codes, FF_ARRAY_ELEMS(ff_tiff_proj_cs_type_codes), val));
+        ap = av_strdup(search_keyval(tiff_proj_cs_type_codes, FF_ARRAY_ELEMS(tiff_proj_cs_type_codes), val));
         if(ap) return ap;
         break;
     case TIFF_PROJECTION_GEOKEY:
-        ap = av_strdup(search_keyval(ff_tiff_projection_codes, FF_ARRAY_ELEMS(ff_tiff_projection_codes), val));
+        ap = av_strdup(search_keyval(tiff_projection_codes, FF_ARRAY_ELEMS(tiff_projection_codes), val));
         if(ap) return ap;
         break;
     case TIFF_PROJ_COORD_TRANS_GEOKEY:
@@ -709,7 +711,7 @@ static int tiff_unpack_strip(TiffContext *s, AVFrame *p, uint8_t *dst, int strid
             if (is_dng) {
                 int is_u16, pixel_size_bytes, pixel_size_bits, elements;
 
-                is_u16 = (s->bpp > 8);
+                is_u16 = (s->bpp / s->bppcount > 8);
                 pixel_size_bits = (is_u16 ? 16 : 8);
                 pixel_size_bytes = (is_u16 ? sizeof(uint16_t) : sizeof(uint8_t));
 
@@ -859,8 +861,11 @@ static void dng_blit(TiffContext *s, uint8_t *dst, int dst_stride,
             }
         } else {
             for (line = 0; line < height; line++) {
+                uint8_t *dst_u8 = dst;
+                const uint8_t *src_u8 = src;
+
                 for (col = 0; col < width; col++)
-                    *dst++ = dng_process_color8(*src++, s->dng_lut, s->black_level, scale_factor);
+                    *dst_u8++ = dng_process_color8(*src_u8++, s->dng_lut, s->black_level, scale_factor);
 
                 dst += dst_stride;
                 src += src_stride;
@@ -873,16 +878,18 @@ static int dng_decode_jpeg(AVCodecContext *avctx, AVFrame *frame,
                            int tile_byte_count, int dst_x, int dst_y, int w, int h)
 {
     TiffContext *s = avctx->priv_data;
-    AVPacket jpkt;
     uint8_t *dst_data, *src_data;
     uint32_t dst_offset; /* offset from dst buffer in pixels */
     int is_single_comp, is_u16, pixel_size;
     int ret;
 
+    if (tile_byte_count < 0 || tile_byte_count > bytestream2_get_bytes_left(&s->gb))
+        return AVERROR_INVALIDDATA;
+
     /* Prepare a packet and send to the MJPEG decoder */
-    av_init_packet(&jpkt);
-    jpkt.data = (uint8_t*)s->gb.buffer;
-    jpkt.size = tile_byte_count;
+    av_packet_unref(s->jpkt);
+    s->jpkt->data = (uint8_t*)s->gb.buffer;
+    s->jpkt->size = tile_byte_count;
 
     if (s->is_bayer) {
         MJpegDecodeContext *mjpegdecctx = s->avctx_mjpeg->priv_data;
@@ -891,7 +898,7 @@ static int dng_decode_jpeg(AVCodecContext *avctx, AVFrame *frame,
         mjpegdecctx->bayer = 1;
     }
 
-    ret = avcodec_send_packet(s->avctx_mjpeg, &jpkt);
+    ret = avcodec_send_packet(s->avctx_mjpeg, s->jpkt);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error submitting a packet for decoding\n");
         return ret;
@@ -908,12 +915,28 @@ static int dng_decode_jpeg(AVCodecContext *avctx, AVFrame *frame,
             return 0;
     }
 
+    is_u16 = (s->bpp > 8);
+
     /* Copy the outputted tile's pixels from 'jpgframe' to 'frame' (final buffer) */
 
-    /* See dng_blit for explanation */
-    is_single_comp = (s->avctx_mjpeg->width == w * 2 && s->avctx_mjpeg->height == h / 2);
+    if (s->jpgframe->width  != s->avctx_mjpeg->width  ||
+        s->jpgframe->height != s->avctx_mjpeg->height ||
+        s->jpgframe->format != s->avctx_mjpeg->pix_fmt)
+        return AVERROR_INVALIDDATA;
 
-    is_u16 = (s->bpp > 8);
+    /* See dng_blit for explanation */
+    if (s->avctx_mjpeg->width  == w * 2 &&
+        s->avctx_mjpeg->height == h / 2 &&
+        s->avctx_mjpeg->pix_fmt == AV_PIX_FMT_GRAY16LE) {
+        is_single_comp = 1;
+    } else if (s->avctx_mjpeg->width  >= w &&
+               s->avctx_mjpeg->height >= h &&
+               s->avctx_mjpeg->pix_fmt == (is_u16 ? AV_PIX_FMT_GRAY16 : AV_PIX_FMT_GRAY8)
+              ) {
+        is_single_comp = 0;
+    } else
+        return AVERROR_INVALIDDATA;
+
     pixel_size = (is_u16 ? sizeof(uint16_t) : sizeof(uint8_t));
 
     if (is_single_comp && !is_u16) {
@@ -941,7 +964,8 @@ static int dng_decode_jpeg(AVCodecContext *avctx, AVFrame *frame,
     return 0;
 }
 
-static int dng_decode_tiles(AVCodecContext *avctx, AVFrame *frame, AVPacket *avpkt)
+static int dng_decode_tiles(AVCodecContext *avctx, AVFrame *frame,
+                            const AVPacket *avpkt)
 {
     TiffContext *s = avctx->priv_data;
     int tile_idx;
@@ -1235,6 +1259,12 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
     if (ret < 0) {
         goto end;
     }
+    if (tag <= s->last_tag)
+        return AVERROR_INVALIDDATA;
+
+    // We ignore TIFF_STRIP_SIZE as it is sometimes in the logic but wrong order around TIFF_STRIP_OFFS
+    if (tag != TIFF_STRIP_SIZE)
+        s->last_tag = tag;
 
     off = bytestream2_tell(&s->gb);
     if (count == 1) {
@@ -1273,7 +1303,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         s->height = value;
         break;
     case TIFF_BPP:
-        if (count > 5U) {
+        if (count > 5 || count <= 0) {
             av_log(s->avctx, AV_LOG_ERROR,
                    "This format is not supported (bpp=%d, %d components)\n",
                    value, count);
@@ -1304,9 +1334,9 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
                    "Samples per pixel requires a single value, many provided\n");
             return AVERROR_INVALIDDATA;
         }
-        if (value > 5U) {
+        if (value > 5 || value <= 0) {
             av_log(s->avctx, AV_LOG_ERROR,
-                   "Samples per pixel %d is too large\n", value);
+                   "Invalid samples per pixel %d\n", value);
             return AVERROR_INVALIDDATA;
         }
         if (s->bppcount == 1)
@@ -1417,7 +1447,9 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             s->sub_ifd = ff_tget(&s->gb, TIFF_LONG, s->le); /** Only get the first SubIFD */
         break;
     case DNG_LINEARIZATION_TABLE:
-        for (int i = 0; i < FFMIN(count, 1 << s->bpp); i++)
+        if (count > FF_ARRAY_ELEMS(s->dng_lut))
+            return AVERROR_INVALIDDATA;
+        for (int i = 0; i < count; i++)
             s->dng_lut[i] = ff_tget(&s->gb, type, s->le);
         break;
     case DNG_BLACK_LEVEL:
@@ -1559,7 +1591,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         break;
     case TIFF_GEO_KEY_DIRECTORY:
         if (s->geotag_count) {
-            avpriv_request_sample(s->avctx, "Multiple geo key directories\n");
+            avpriv_request_sample(s->avctx, "Multiple geo key directories");
             return AVERROR_INVALIDDATA;
         }
         ADD_METADATA(1, "GeoTIFF_Version", NULL);
@@ -1651,9 +1683,6 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         }
         break;
     case TIFF_ICC_PROFILE:
-        if (type != TIFF_UNDEFINED)
-            return AVERROR_INVALIDDATA;
-
         gb_temp = s->gb;
         bytestream2_seek(&gb_temp, SEEK_SET, off);
 
@@ -1788,6 +1817,7 @@ again:
     s->is_tiled    = 0;
     s->is_jpeg     = 0;
     s->cur_page    = 0;
+    s->last_tag    = 0;
 
     for (i = 0; i < 65536; i++)
         s->dng_lut[i] = i;
@@ -1831,7 +1861,7 @@ again:
             return AVERROR_INVALIDDATA;
         }
         if (off <= last_off) {
-            avpriv_request_sample(s->avctx, "non increasing IFD offset\n");
+            avpriv_request_sample(s->avctx, "non increasing IFD offset");
             return AVERROR_INVALIDDATA;
         }
         if (off >= UINT_MAX - 14 || avpkt->size < off + 14) {
@@ -1866,8 +1896,14 @@ again:
     if (is_dng) {
         int bps;
 
+        if (s->bpp % s->bppcount)
+            return AVERROR_INVALIDDATA;
+        bps = s->bpp / s->bppcount;
+        if (bps < 8 || bps > 32)
+            return AVERROR_INVALIDDATA;
+
         if (s->white_level == 0)
-            s->white_level = (1 << s->bpp) - 1; /* Default value as per the spec */
+            s->white_level = (1LL << bps) - 1; /* Default value as per the spec */
 
         if (s->white_level <= s->black_level) {
             av_log(avctx, AV_LOG_ERROR, "BlackLevel (%"PRId32") must be less than WhiteLevel (%"PRId32")\n",
@@ -1875,11 +1911,6 @@ again:
             return AVERROR_INVALIDDATA;
         }
 
-        if (s->bpp % s->bppcount)
-            return AVERROR_INVALIDDATA;
-        bps = s->bpp / s->bppcount;
-        if (bps < 8 || bps > 32)
-            return AVERROR_INVALIDDATA;
         if (s->planar)
             return AVERROR_PATCHWELCOME;
     }
@@ -1893,15 +1924,17 @@ again:
     has_strip_bits = s->strippos || s->strips || s->stripoff || s->rps || s->sot || s->sstype || s->stripsize || s->stripsizesoff;
 
     if (has_tile_bits && has_strip_bits) {
-        av_log(avctx, AV_LOG_ERROR, "Tiled TIFF is not allowed to strip\n");
-        return AVERROR_INVALIDDATA;
+        int tiled_dng = s->is_tiled && is_dng;
+        av_log(avctx, tiled_dng ? AV_LOG_WARNING : AV_LOG_ERROR, "Tiled TIFF is not allowed to strip\n");
+        if (!tiled_dng)
+            return AVERROR_INVALIDDATA;
     }
 
     /* now we have the data and may start decoding */
     if ((ret = init_image(s, &frame)) < 0)
         return ret;
 
-    if (!s->is_tiled) {
+    if (!s->is_tiled || has_strip_bits) {
         if (s->strips == 1 && !s->stripsize) {
             av_log(avctx, AV_LOG_WARNING, "Image data size missing\n");
             s->stripsize = avpkt->size - s->stripoff;
@@ -2125,7 +2158,8 @@ static av_cold int tiff_init(AVCodecContext *avctx)
 
     /* Allocate JPEG frame */
     s->jpgframe = av_frame_alloc();
-    if (!s->jpgframe)
+    s->jpkt     = av_packet_alloc();
+    if (!s->jpgframe || !s->jpkt)
         return AVERROR(ENOMEM);
 
     /* Prepare everything needed for JPEG decoding */
@@ -2139,7 +2173,7 @@ static av_cold int tiff_init(AVCodecContext *avctx)
     s->avctx_mjpeg->flags2 = avctx->flags2;
     s->avctx_mjpeg->dct_algo = avctx->dct_algo;
     s->avctx_mjpeg->idct_algo = avctx->idct_algo;
-    ret = ff_codec_open2_recursive(s->avctx_mjpeg, codec, NULL);
+    ret = avcodec_open2(s->avctx_mjpeg, codec, NULL);
     if (ret < 0) {
         return ret;
     }
@@ -2161,6 +2195,7 @@ static av_cold int tiff_end(AVCodecContext *avctx)
     av_freep(&s->fax_buffer);
     s->fax_buffer_size = 0;
     av_frame_free(&s->jpgframe);
+    av_packet_free(&s->jpkt);
     avcodec_free_context(&s->avctx_mjpeg);
     return 0;
 }
@@ -2190,6 +2225,6 @@ AVCodec ff_tiff_decoder = {
     .close          = tiff_end,
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
     .priv_class     = &tiff_decoder_class,
 };
