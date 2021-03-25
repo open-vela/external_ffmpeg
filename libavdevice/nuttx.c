@@ -426,6 +426,8 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
 
 int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 {
+    int new, old = dq_count(&priv->bufferq);
+
     while (1) {
         struct audio_buf_desc_s buf_desc;
         struct ap_buffer_s *buffer;
@@ -460,7 +462,12 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
         nonblock = true;
     }
 
-    return dq_count(&priv->bufferq);
+    new = dq_count(&priv->bufferq);
+    if (new == priv->periods && new > old)
+        av_log(priv, AV_LOG_WARNING, "audio %s !\n",
+               priv->timefilter ? "capture overflow" : "playback underflow");
+
+    return new;
 }
 
 static int ff_nuttx_peek_buffer(NuttxPriv *priv, struct ap_buffer_s **buffer)
