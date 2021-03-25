@@ -32,7 +32,6 @@ extern "C" {
 
 extern "C" {
 #include "libavformat/avformat.h"
-#include "libavutil/internal.h"
 #include "libavutil/imgutils.h"
 #include "avdevice.h"
 }
@@ -313,8 +312,7 @@ static void construct_cc(AVFormatContext *avctx, struct decklink_ctx *ctx,
     uint16_t *cdp_words;
     uint16_t len;
     uint8_t cc_count;
-    buffer_size_t size;
-    int ret, i;
+    int size, ret, i;
 
     const uint8_t *data = av_packet_get_side_data(pkt, AV_PKT_DATA_A53_CC, &size);
     if (!data)
@@ -438,7 +436,7 @@ static int decklink_write_video_packet(AVFormatContext *avctx, AVPacket *pkt)
     AVFrame *avframe = NULL, *tmp = (AVFrame *)pkt->data;
     AVPacket *avpacket = NULL;
     decklink_frame *frame;
-    uint32_t buffered;
+    buffercount_type buffered;
     HRESULT hr;
 
     if (st->codecpar->codec_id == AV_CODEC_ID_WRAPPED_AVFRAME) {
@@ -527,7 +525,7 @@ static int decklink_write_audio_packet(AVFormatContext *avctx, AVPacket *pkt)
     struct decklink_cctx *cctx = (struct decklink_cctx *)avctx->priv_data;
     struct decklink_ctx *ctx = (struct decklink_ctx *)cctx->ctx;
     int sample_count = pkt->size / (ctx->channels << 1);
-    uint32_t buffered;
+    buffercount_type buffered;
 
     ctx->dlo->GetBufferedAudioSampleFrameCount(&buffered);
     if (pkt->pts > 1 && !buffered)
@@ -570,6 +568,7 @@ av_cold int ff_decklink_write_header(AVFormatContext *avctx)
 
     /* List available devices and exit. */
     if (ctx->list_devices) {
+        av_log(avctx, AV_LOG_WARNING, "The -list_devices option is deprecated and will be removed. Please use ffmpeg -sinks decklink instead.\n");
         ff_decklink_list_devices_legacy(avctx, 0, 1);
         return AVERROR_EXIT;
     }

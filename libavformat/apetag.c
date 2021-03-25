@@ -79,9 +79,10 @@ static int ape_tag_read_field(AVFormatContext *s)
         av_dict_set(&st->metadata, key, filename, 0);
 
         if ((id = ff_guess_image2_codec(filename)) != AV_CODEC_ID_NONE) {
+            AVPacket pkt;
             int ret;
 
-            ret = av_get_packet(s->pb, &st->attached_pic, size);
+            ret = av_get_packet(s->pb, &pkt, size);
             if (ret < 0) {
                 av_log(s, AV_LOG_ERROR, "Error reading cover art.\n");
                 return ret;
@@ -91,6 +92,7 @@ static int ape_tag_read_field(AVFormatContext *s)
             st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
             st->codecpar->codec_id   = id;
 
+            st->attached_pic              = pkt;
             st->attached_pic.stream_index = st->index;
             st->attached_pic.flags       |= AV_PKT_FLAG_KEY;
         } else {

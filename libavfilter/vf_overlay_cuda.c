@@ -157,11 +157,8 @@ static int overlay_cuda_blend(FFFrameSync *fs)
     if (ret < 0)
         return ret;
 
-    if (!input_main)
+    if (!input_main || !input_overlay)
         return AVERROR_BUG;
-
-    if (!input_overlay)
-        return ff_filter_frame(outlink, input_main);
 
     ret = av_frame_make_writable(input_main);
     if (ret < 0) {
