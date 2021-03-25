@@ -539,6 +539,12 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
     ff_h264chroma_init(&v->h264chroma, 8);
     ff_qpeldsp_init(&s->qdsp);
 
+    // Must happen after calling ff_vc1_decode_end
+    // to avoid de-allocating the sprite_output_frame
+    v->sprite_output_frame = av_frame_alloc();
+    if (!v->sprite_output_frame)
+        return AVERROR(ENOMEM);
+
     avctx->has_b_frames = !!avctx->max_b_frames;
 
     if (v->color_prim == 1 || v->color_prim == 5 || v->color_prim == 6)
@@ -571,15 +577,20 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
             v->sprite_height > 1 << 14 ||
             v->output_width  > 1 << 14 ||
             v->output_height > 1 << 14) {
-            return AVERROR_INVALIDDATA;
+            ret = AVERROR_INVALIDDATA;
+            goto error;
         }
 
         if ((v->sprite_width&1) || (v->sprite_height&1)) {
             avpriv_request_sample(avctx, "odd sprites support");
-            return AVERROR_PATCHWELCOME;
+            ret = AVERROR_PATCHWELCOME;
+            goto error;
         }
     }
     return 0;
+error:
+    av_frame_free(&v->sprite_output_frame);
+    return ret;
 }
 
 /** Close a VC1/WMV3 decoder
@@ -1136,11 +1147,6 @@ image:
         avctx->height = avctx->coded_height = v->output_height;
         if (avctx->skip_frame >= AVDISCARD_NONREF)
             goto end;
-        if (!v->sprite_output_frame &&
-            !(v->sprite_output_frame = av_frame_alloc())) {
-            ret = AVERROR(ENOMEM);
-            goto err;
-        }
 #if CONFIG_WMV3IMAGE_DECODER || CONFIG_VC1IMAGE_DECODER
         if ((ret = vc1_decode_sprites(v, &s->gb)) < 0)
             goto err;
@@ -1211,7 +1217,7 @@ AVCodec ff_vc1_decoder = {
     .flush          = ff_mpeg_flush,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .pix_fmts       = vc1_hwaccel_pixfmt_list_420,
-    .hw_configs     = (const AVCodecHWConfigInternal *const []) {
+    .hw_configs     = (const AVCodecHWConfigInternal*[]) {
 #if CONFIG_VC1_DXVA2_HWACCEL
                         HWACCEL_DXVA2(vc1),
 #endif
@@ -1248,7 +1254,7 @@ AVCodec ff_wmv3_decoder = {
     .flush          = ff_mpeg_flush,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .pix_fmts       = vc1_hwaccel_pixfmt_list_420,
-    .hw_configs     = (const AVCodecHWConfigInternal *const []) {
+    .hw_configs     = (const AVCodecHWConfigInternal*[]) {
 #if CONFIG_WMV3_DXVA2_HWACCEL
                         HWACCEL_DXVA2(wmv3),
 #endif

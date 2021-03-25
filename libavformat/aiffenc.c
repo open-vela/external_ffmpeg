@@ -23,7 +23,6 @@
 
 #include "libavutil/intfloat.h"
 #include "libavutil/opt.h"
-#include "libavcodec/packet_internal.h"
 #include "avformat.h"
 #include "internal.h"
 #include "aiff.h"
@@ -37,7 +36,7 @@ typedef struct AIFFOutputContext {
     int64_t frames;
     int64_t ssnd;
     int audio_stream_idx;
-    PacketList *pict_list, *pict_list_end;
+    AVPacketList *pict_list, *pict_list_end;
     int write_id3v2;
     int id3v2_version;
 } AIFFOutputContext;
@@ -48,7 +47,7 @@ static int put_id3v2_tags(AVFormatContext *s, AIFFOutputContext *aiff)
     uint64_t pos, end, size;
     ID3v2EncContext id3v2 = { 0 };
     AVIOContext *pb = s->pb;
-    PacketList *pict_list = aiff->pict_list;
+    AVPacketList *pict_list = aiff->pict_list;
 
     if (!s->metadata && !s->nb_chapters && !aiff->pict_list)
         return 0;
@@ -221,8 +220,8 @@ static int aiff_write_packet(AVFormatContext *s, AVPacket *pkt)
         if (s->streams[pkt->stream_index]->nb_frames >= 1)
             return 0;
 
-        return avpriv_packet_list_put(&aiff->pict_list, &aiff->pict_list_end,
-                                  pkt, av_packet_ref, 0);
+        return ff_packet_list_put(&aiff->pict_list, &aiff->pict_list_end,
+                                  pkt, FF_PACKETLIST_FLAG_REF_PACKET);
     }
 
     return 0;
@@ -273,7 +272,7 @@ static void aiff_deinit(AVFormatContext *s)
 {
     AIFFOutputContext *aiff = s->priv_data;
 
-    avpriv_packet_list_free(&aiff->pict_list, &aiff->pict_list_end);
+    ff_packet_list_free(&aiff->pict_list, &aiff->pict_list_end);
 }
 
 #define OFFSET(x) offsetof(AIFFOutputContext, x)
@@ -305,6 +304,6 @@ AVOutputFormat ff_aiff_muxer = {
     .write_packet      = aiff_write_packet,
     .write_trailer     = aiff_write_trailer,
     .deinit            = aiff_deinit,
-    .codec_tag         = ff_aiff_codec_tags_list,
+    .codec_tag         = (const AVCodecTag* const []){ ff_codec_aiff_tags, 0 },
     .priv_class        = &aiff_muxer_class,
 };

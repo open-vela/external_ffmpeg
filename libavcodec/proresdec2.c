@@ -29,8 +29,6 @@
 #define LONG_BITSTREAM_READER
 
 #include "libavutil/internal.h"
-#include "libavutil/mem_internal.h"
-
 #include "avcodec.h"
 #include "get_bits.h"
 #include "idctdsp.h"
@@ -291,7 +289,7 @@ static int decode_frame_header(ProresContext *ctx, const uint8_t *buf,
         }
         permute(ctx->qmat_chroma, ctx->prodsp.idct_permutation, ptr);
     } else {
-        memcpy(ctx->qmat_chroma, ctx->qmat_luma, 64);
+        memset(ctx->qmat_chroma, 4, 64);
     }
 
     return hdr_size;
@@ -820,7 +818,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
 
 AVCodec ff_prores_decoder = {
     .name           = "prores",
-    .long_name      = NULL_IF_CONFIG_SMALL("Apple ProRes (iCodec Pro)"),
+    .long_name      = NULL_IF_CONFIG_SMALL("ProRes (iCodec Pro)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PRORES,
     .priv_data_size = sizeof(ProresContext),

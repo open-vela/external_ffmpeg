@@ -23,15 +23,14 @@
 #include "avformat.h"
 #include "avio_internal.h"
 
-typedef struct MuxChain {
+struct MuxChain {
     AVFormatContext *mpegts_ctx;
     AVFormatContext *rtp_ctx;
-    AVPacket *pkt;
-} MuxChain;
+};
 
 static int rtp_mpegts_write_close(AVFormatContext *s)
 {
-    MuxChain *chain = s->priv_data;
+    struct MuxChain *chain = s->priv_data;
 
     if (chain->mpegts_ctx) {
         av_write_trailer(chain->mpegts_ctx);
@@ -42,15 +41,12 @@ static int rtp_mpegts_write_close(AVFormatContext *s)
         av_write_trailer(chain->rtp_ctx);
         avformat_free_context(chain->rtp_ctx);
     }
-
-    av_packet_free(&chain->pkt);
-
     return 0;
 }
 
 static int rtp_mpegts_write_header(AVFormatContext *s)
 {
-    MuxChain *chain = s->priv_data;
+    struct MuxChain *chain = s->priv_data;
     AVFormatContext *mpegts_ctx = NULL, *rtp_ctx = NULL;
     ff_const59 AVOutputFormat *mpegts_format = av_guess_format("mpegts", NULL, NULL);
     ff_const59 AVOutputFormat *rtp_format    = av_guess_format("rtp", NULL, NULL);
@@ -62,9 +58,6 @@ static int rtp_mpegts_write_header(AVFormatContext *s)
     mpegts_ctx = avformat_alloc_context();
     if (!mpegts_ctx)
         return AVERROR(ENOMEM);
-    chain->pkt = av_packet_alloc();
-    if (!chain->pkt)
-        goto fail;
     mpegts_ctx->oformat   = mpegts_format;
     mpegts_ctx->max_delay = s->max_delay;
     av_dict_copy(&mpegts_ctx->metadata, s->metadata, 0);
@@ -120,10 +113,10 @@ fail:
 
 static int rtp_mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    MuxChain *chain = s->priv_data;
+    struct MuxChain *chain = s->priv_data;
     int ret = 0, size;
     uint8_t *buf;
-    AVPacket *local_pkt = chain->pkt;
+    AVPacket local_pkt;
 
     if (!chain->mpegts_ctx->pb) {
         if ((ret = avio_open_dyn_buf(&chain->mpegts_ctx->pb)) < 0)
@@ -137,19 +130,19 @@ static int rtp_mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
         av_free(buf);
         return 0;
     }
-    av_packet_unref(local_pkt);
-    local_pkt->data         = buf;
-    local_pkt->size         = size;
-    local_pkt->stream_index = 0;
+    av_init_packet(&local_pkt);
+    local_pkt.data         = buf;
+    local_pkt.size         = size;
+    local_pkt.stream_index = 0;
     if (pkt->pts != AV_NOPTS_VALUE)
-        local_pkt->pts = av_rescale_q(pkt->pts,
+        local_pkt.pts = av_rescale_q(pkt->pts,
                                      s->streams[pkt->stream_index]->time_base,
                                      chain->rtp_ctx->streams[0]->time_base);
     if (pkt->dts != AV_NOPTS_VALUE)
-        local_pkt->dts = av_rescale_q(pkt->dts,
+        local_pkt.dts = av_rescale_q(pkt->dts,
                                      s->streams[pkt->stream_index]->time_base,
                                      chain->rtp_ctx->streams[0]->time_base);
-    ret = av_write_frame(chain->rtp_ctx, local_pkt);
+    ret = av_write_frame(chain->rtp_ctx, &local_pkt);
     av_free(buf);
 
     return ret;
@@ -158,7 +151,7 @@ static int rtp_mpegts_write_packet(AVFormatContext *s, AVPacket *pkt)
 AVOutputFormat ff_rtp_mpegts_muxer = {
     .name              = "rtp_mpegts",
     .long_name         = NULL_IF_CONFIG_SMALL("RTP/mpegts output format"),
-    .priv_data_size    = sizeof(MuxChain),
+    .priv_data_size    = sizeof(struct MuxChain),
     .audio_codec       = AV_CODEC_ID_AAC,
     .video_codec       = AV_CODEC_ID_MPEG4,
     .write_header      = rtp_mpegts_write_header,

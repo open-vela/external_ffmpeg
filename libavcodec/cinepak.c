@@ -40,7 +40,6 @@
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "decode.h"
 #include "internal.h"
 
 
@@ -478,7 +477,14 @@ static int cinepak_decode_frame(AVCodecContext *avctx,
         return ret;
 
     if (s->palette_video) {
-        s->frame->palette_has_changed = ff_copy_palette(s->pal, avpkt, avctx);
+        int size;
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
+        if (pal && size == AVPALETTE_SIZE) {
+            s->frame->palette_has_changed = 1;
+            memcpy(s->pal, pal, AVPALETTE_SIZE);
+        } else if (pal) {
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
+        }
     }
 
     if ((ret = cinepak_decode(s)) < 0) {
@@ -516,5 +522,4 @@ AVCodec ff_cinepak_decoder = {
     .close          = cinepak_decode_end,
     .decode         = cinepak_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

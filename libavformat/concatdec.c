@@ -113,8 +113,7 @@ static int add_file(AVFormatContext *avf, char *filename, ConcatFile **rfile,
     ConcatFile *file;
     char *url = NULL;
     const char *proto;
-    const char *ptr;
-    size_t url_len;
+    size_t url_len, proto_len;
     int ret;
 
     if (cat->safe > 0 && !safe_filename(filename)) {
@@ -123,8 +122,9 @@ static int add_file(AVFormatContext *avf, char *filename, ConcatFile **rfile,
     }
 
     proto = avio_find_protocol_name(filename);
-    if (proto && av_strstart(filename, proto, &ptr) &&
-        (*ptr == ':' || *ptr == ',')) {
+    proto_len = proto ? strlen(proto) : 0;
+    if (proto && !memcmp(filename, proto, proto_len) &&
+        (filename[proto_len] == ':' || filename[proto_len] == ',')) {
         url = filename;
         filename = NULL;
     } else {
@@ -626,7 +626,7 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &st->time_base),
            av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base));
     if (cat->cur_file->metadata) {
-        buffer_size_t metadata_len;
+        int metadata_len;
         char* packed_metadata = av_packet_pack_dictionary(cat->cur_file->metadata, &metadata_len);
         if (!packed_metadata)
             return AVERROR(ENOMEM);

@@ -67,11 +67,15 @@ static av_cold int hcom_init(AVCodecContext *avctx)
         if (s->dict[i].l >= 0 &&
             (s->dict[i].l >= s->dict_entries ||
              s->dict[i].r >= s->dict_entries ||
-             s->dict[i].r < 0 ))
+             s->dict[i].r < 0 )) {
+            av_freep(&s->dict);
             return AVERROR_INVALIDDATA;
+        }
     }
-    if (s->dict[0].l < 0)
+    if (s->dict[0].l < 0) {
+        av_freep(&s->dict);
         return AVERROR_INVALIDDATA;
+    }
 
     avctx->sample_fmt = AV_SAMPLE_FMT_U8;
     s->dict_entry = 0;
@@ -144,5 +148,4 @@ AVCodec ff_hcom_decoder = {
     .close          = hcom_close,
     .decode         = hcom_decode,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
