@@ -92,10 +92,10 @@ static inline void bwf_write_bext_string(AVFormatContext *s, const char *key, in
     AVDictionaryEntry *tag;
     size_t len = 0;
 
-    if (tag = av_dict_get(s->metadata, key, NULL, 0)) {
+    if ((tag = av_dict_get(s->metadata, key, NULL, 0))) {
         len = strlen(tag->value);
         len = FFMIN(len, maxlen);
-        avio_write(s->pb, tag->value, len);
+        avio_write(s->pb, (unsigned char *)tag->value, len);
     }
 
     ffio_fill(s->pb, 0, maxlen - len);
@@ -113,20 +113,20 @@ static void bwf_write_bext_chunk(AVFormatContext *s)
     bwf_write_bext_string(s, "origination_date", 10);
     bwf_write_bext_string(s, "origination_time", 8);
 
-    if (tmp_tag = av_dict_get(s->metadata, "time_reference", NULL, 0))
+    if ((tmp_tag = av_dict_get(s->metadata, "time_reference", NULL, 0)))
         time_reference = strtoll(tmp_tag->value, NULL, 10);
     avio_wl64(s->pb, time_reference);
     avio_wl16(s->pb, 1);  // set version to 1
 
     if ((tmp_tag = av_dict_get(s->metadata, "umid", NULL, 0)) && strlen(tmp_tag->value) > 2) {
-        unsigned char umidpart_str[17] = {0};
+        char umidpart_str[17] = {0};
         int64_t i;
         uint64_t umidpart;
         size_t len = strlen(tmp_tag->value+2);
 
         for (i = 0; i < len/16; i++) {
             memcpy(umidpart_str, tmp_tag->value + 2 + (i*16), 16);
-            umidpart = strtoll(umidpart_str, NULL, 16);
+            umidpart = strtoll((char *)umidpart_str, NULL, 16);
             avio_wb64(s->pb, umidpart);
         }
         ffio_fill(s->pb, 0, 64 - i*8);
@@ -135,7 +135,7 @@ static void bwf_write_bext_chunk(AVFormatContext *s)
 
     ffio_fill(s->pb, 0, 190); // Reserved
 
-    if (tmp_tag = av_dict_get(s->metadata, "coding_history", NULL, 0))
+    if ((tmp_tag = av_dict_get(s->metadata, "coding_history", NULL, 0)))
         avio_put_str(s->pb, tmp_tag->value);
 
     ff_end_tag(s->pb, bext);
@@ -279,7 +279,7 @@ static int peak_write_chunk(AVFormatContext *s)
     avio_wl32(pb, wav->peak_num_frames);        /* number of peak frames */
     avio_wl32(pb, -1);                          /* audio sample frame position (not implemented) */
     avio_wl32(pb, 128);                         /* equal to size of header */
-    avio_write(pb, timestamp, 28);              /* ASCII time stamp */
+    avio_write(pb, (unsigned char *)timestamp, 28);              /* ASCII time stamp */
     ffio_fill(pb, 0, 60);
 
     avio_write(pb, wav->peak_output, wav->peak_outbuf_bytes);
@@ -304,18 +304,18 @@ static int wav_write_header(AVFormatContext *s)
     }
 
     if (wav->rf64 == RF64_ALWAYS) {
-        ffio_wfourcc(pb, "RF64");
+        ffio_wfourcc(pb, (const uint8_t *)"RF64");
         avio_wl32(pb, -1); /* RF64 chunk size: use size in ds64 */
     } else {
-        ffio_wfourcc(pb, "RIFF");
+        ffio_wfourcc(pb, (const uint8_t *)"RIFF");
         avio_wl32(pb, -1); /* file length */
     }
 
-    ffio_wfourcc(pb, "WAVE");
+    ffio_wfourcc(pb, (const uint8_t *)"WAVE");
 
     if (wav->rf64 != RF64_NEVER) {
         /* write empty ds64 chunk or JUNK chunk to reserve space for ds64 */
-        ffio_wfourcc(pb, wav->rf64 == RF64_ALWAYS ? "ds64" : "JUNK");
+        ffio_wfourcc(pb, wav->rf64 == RF64_ALWAYS ? (const uint8_t *)"ds64" : (const uint8_t *)"JUNK");
         avio_wl32(pb, 28); /* chunk size */
         wav->ds64 = avio_tell(pb);
         ffio_fill(pb, 0, 28);
@@ -453,12 +453,12 @@ static int wav_write_trailer(AVFormatContext *s)
         if (rf64) {
             /* overwrite RIFF with RF64 */
             avio_seek(pb, 0, SEEK_SET);
-            ffio_wfourcc(pb, "RF64");
+            ffio_wfourcc(pb, (const uint8_t *)"RF64");
             avio_wl32(pb, -1);
 
             /* write ds64 chunk (overwrite JUNK if rf64 == RF64_AUTO) */
             avio_seek(pb, wav->ds64 - 8, SEEK_SET);
-            ffio_wfourcc(pb, "ds64");
+            ffio_wfourcc(pb, (const uint8_t *)"ds64");
             avio_wl32(pb, 28);                  /* ds64 chunk size */
             avio_wl64(pb, file_size - 8);       /* RF64 chunk size */
             avio_wl64(pb, data_size);           /* data chunk size */
