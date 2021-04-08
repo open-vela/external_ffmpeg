@@ -107,7 +107,7 @@ static int64_t next_tag(AVIOContext *pb, uint32_t *tag, int big_endian)
 /* RIFF chunks are always at even offsets relative to where they start. */
 static int64_t wav_seek_tag(WAVDemuxContext * wav, AVIOContext *s, int64_t offset, int whence)
 {
-    offset += offset < INT64_MAX && offset + wav->unaligned & 1;
+    offset += (offset < INT64_MAX) && ((offset + wav->unaligned) & 1);
 
     return avio_seek(s, offset, whence);
 }
@@ -115,7 +115,7 @@ static int64_t wav_seek_tag(WAVDemuxContext * wav, AVIOContext *s, int64_t offse
 /* return the size of the found tag */
 static int64_t find_tag(WAVDemuxContext * wav, AVIOContext *pb, uint32_t tag1)
 {
-    unsigned int tag;
+    uint32_t tag;
     int64_t size;
 
     for (;;) {
@@ -233,7 +233,7 @@ static inline int wav_parse_bext_string(AVFormatContext *s, const char *key,
     int ret;
 
     av_assert0(length < sizeof(temp));
-    if ((ret = avio_read(s->pb, temp, length)) != length)
+    if ((ret = avio_read(s->pb, (uint8_t *)temp, length)) != length)
         return ret < 0 ? ret : AVERROR_INVALIDDATA;
 
     temp[length] = 0;
@@ -303,7 +303,7 @@ static int wav_parse_bext_tag(AVFormatContext *s, int64_t size)
         if (!(coding_history = av_malloc(size + 1)))
             return AVERROR(ENOMEM);
 
-        if ((ret = avio_read(s->pb, coding_history, size)) != size) {
+        if ((ret = avio_read(s->pb, (uint8_t *)coding_history, size)) != size) {
             av_free(coding_history);
             return ret < 0 ? ret : AVERROR_INVALIDDATA;
         }
@@ -862,7 +862,7 @@ static int w64_read_header(AVFormatContext *s)
                     break;
 
                 chunk_key[4] = 0;
-                avio_read(pb, chunk_key, 4);
+                avio_read(pb, (uint8_t *)chunk_key, 4);
                 chunk_size = avio_rl32(pb);
                 if (chunk_size == UINT32_MAX)
                     return AVERROR_INVALIDDATA;
