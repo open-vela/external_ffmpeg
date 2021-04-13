@@ -60,9 +60,11 @@ static void vector_fmul_add_c(int *dst, const int *src0, const int *src1, const 
 static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, int len)
 {
     int i;
+    int32_t accu;
 
-    for (i = 0; i < len; i++){
-        dst[i] += ((int32_t)src[i] * mul + 0x4000) >> 15;
+    for (i = 0; i < len; i++) {
+        accu   = (int32_t)src[i] * mul;
+        dst[i] = av_clip_int16(dst[i] + ((accu + 0x4000) >> 15));
     }
 }
 
