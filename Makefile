@@ -92,6 +92,7 @@ ifeq ($(CONFIG_FFPROBE), yes)
 endif
 
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" .}
+CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/uORB}
 CFLAGS += -DHAVE_AV_CONFIG_H
 
 libavutil/ffversion.h .version:
