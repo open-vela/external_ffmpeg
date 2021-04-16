@@ -45,6 +45,7 @@ OBJS-$(CONFIG_PULSE_OUTDEV)              += pulse_audio_enc.o \
 OBJS-$(CONFIG_SDL2_OUTDEV)               += sdl2.o
 OBJS-$(CONFIG_SNDIO_INDEV)               += sndio_dec.o sndio.o
 OBJS-$(CONFIG_SNDIO_OUTDEV)              += sndio_enc.o sndio.o
+OBJS-$(CONFIG_UORB_OUTDEV)               += uorb_enc.o
 OBJS-$(CONFIG_V4L2_INDEV)                += v4l2.o v4l2-common.o timefilter.o
 OBJS-$(CONFIG_V4L2_OUTDEV)               += v4l2enc.o v4l2-common.o
 OBJS-$(CONFIG_VFWCAP_INDEV)              += vfwcap.o

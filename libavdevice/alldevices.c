@@ -51,6 +51,7 @@ extern AVOutputFormat ff_pulse_muxer;
 extern AVOutputFormat ff_sdl2_muxer;
 extern AVInputFormat  ff_sndio_demuxer;
 extern AVOutputFormat ff_sndio_muxer;
+extern AVOutputFormat ff_uorb_muxer;
 extern AVInputFormat  ff_v4l2_demuxer;
 extern AVOutputFormat ff_v4l2_muxer;
 extern AVInputFormat  ff_vfwcap_demuxer;
