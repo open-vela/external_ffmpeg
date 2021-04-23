@@ -158,7 +158,7 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
         return ret;
     }
 
-    dts = av_gettime();
+    dts = av_gettime_relative();
     pkt->pts = ff_timefilter_update(priv->timefilter, dts, ret / priv->frame_size);
     pkt->size = ret;
 
