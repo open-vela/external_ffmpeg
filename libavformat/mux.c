@@ -533,7 +533,8 @@ int avformat_write_header(AVFormatContext *s, AVDictionary **options)
     return streams_already_initialized;
 
 fail:
-    deinit_muxer(s);
+    if (!already_initialized)
+        deinit_muxer(s);
     return ret;
 }
 
