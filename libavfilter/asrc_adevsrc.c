@@ -164,7 +164,6 @@ static int adevsrc_activate(AVFilterContext *ctx)
     AVFilterLink *link = ctx->outputs[0];
     ADevSrcPriv *priv = ctx->priv;
     AVFrame *frame = NULL;
-    int64_t pts;
     int ret;
 
     ret = ff_outlink_get_status(link);
@@ -349,11 +348,12 @@ static int adevsrc_config_props(AVFilterLink *link)
     ADevSrcPriv *priv = ctx->priv;
     AVDictionary *fmt_opt = NULL;
 
+    if (!link->channel_layout)
+        link->channel_layout = av_get_default_channel_layout(link->channels);
+
     av_dict_set_int(&fmt_opt, "sample_rate", link->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "channels", link->channels, 0);
-
-    if (link->channel_layout)
-        av_dict_set_int(&fmt_opt, "channel_layout", link->channel_layout, 0);
+    av_dict_set_int(&fmt_opt, "channel_layout", link->channel_layout, 0);
 
     av_opt_set_dict(priv->fmt_ctx->priv_data, &fmt_opt);
     av_dict_free(&fmt_opt);
