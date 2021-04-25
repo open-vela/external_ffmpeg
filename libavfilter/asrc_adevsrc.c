@@ -72,6 +72,9 @@ static int adevsrc_start(AVFilterContext *ctx)
     if (!st)
         goto out;
 
+    st->time_base = (AVRational){ 1, link->sample_rate };
+    st->cur_dts = AV_NOPTS_VALUE;
+
     /* Find decoder for the stream */
     dec = avcodec_find_decoder(st->codecpar->codec_id);
     if (!dec)
