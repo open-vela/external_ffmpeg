@@ -191,7 +191,7 @@ static int adevsrc_activate(AVFilterContext *ctx)
         else if (ret != AVERROR(EAGAIN))
             goto out;
 
-        ret = av_read_frame(priv->fmt_ctx, pkt);
+        ret = ff_read_packet(priv->fmt_ctx, pkt);
         if (ret < 0)
             goto out;
 
