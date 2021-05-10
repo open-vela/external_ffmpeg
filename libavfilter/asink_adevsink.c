@@ -88,6 +88,7 @@ static int adevsink_start(AVFilterContext *ctx)
     }
 
     st->time_base = (AVRational){ 1, inlink->sample_rate };
+    st->cur_dts = AV_NOPTS_VALUE;
     avcodec_parameters_from_context(st->codecpar, priv->enc_ctx);
 
     ret = avformat_write_header(priv->fmt_ctx, NULL);
@@ -179,8 +180,10 @@ static int adevsink_output_packet(AVFilterContext *ctx)
         }
     }
 
-    if (ret == AVERROR_EOF)
+    if (ret == AVERROR_EOF) {
+        ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
         adevsink_stop(ctx);
+    }
 
     return ret;
 }
@@ -190,13 +193,20 @@ static int adevsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
     ADevSinkPriv *priv = ctx->priv;
     int ret;
 
-    ret = adevsink_start(ctx);
-    if (ret < 0)
-        return ret;
+    if (frame) {
+        ret = adevsink_start(ctx);
+        if (ret < 0) {
+            if (ret == AVERROR_EOF)
+                ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
+            return ret;
+        }
+    }
 
-    ret = avcodec_send_frame(priv->enc_ctx, frame);
-    if (ret < 0)
-        return ret;
+    if (priv->enc_ctx) {
+        ret = avcodec_send_frame(priv->enc_ctx, frame);
+        if (ret < 0)
+            return ret;
+    }
 
     return adevsink_output_packet(ctx);
 }
@@ -324,6 +334,21 @@ static int adevsink_query_formats(AVFilterContext *ctx)
         ret = ff_set_common_channel_layouts(ctx, layouts);
         if (ret < 0)
             goto out;
+    } else {
+        ret = av_opt_query_ranges(&ranges, caps, "channel_layout", AV_OPT_MULTI_COMPONENT_RANGE);
+        if (ret >= 0) {
+            for (i = 0; i < ranges->nb_ranges; i++) {
+                ret = ff_add_channel_layout(&layouts, ranges->range[i]->value_min);
+                if (ret < 0)
+                    goto out;
+            }
+
+            av_opt_freep_ranges(&ranges);
+
+            ret = ff_set_common_channel_layouts(ctx, layouts);
+            if (ret < 0)
+                goto out;
+        }
     }
 
     ret = 0;
@@ -340,7 +365,15 @@ static int adevsink_process_command(AVFilterContext *ctx,
 {
     ADevSinkPriv *priv = ctx->priv;
 
-    if (!strcmp(cmd, "volume")) {
+    if (!strcmp(cmd, "start")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                    AV_APP_TO_DEV_PLAY,
+                                    res, res_len);
+    } else if (!strcmp(cmd, "stop")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                    AV_APP_TO_DEV_PAUSE,
+                                    res, res_len);
+    } else if (!strcmp(cmd, "volume")) {
         double volume;
         int ret;
 
@@ -369,6 +402,16 @@ static int adevsink_process_command(AVFilterContext *ctx,
     }
 }
 
+static const struct AVClass* adevsink_child_class_next(const struct AVClass *prev)
+{
+    if (!prev)
+        return avformat_get_class();
+    else if (prev == avformat_get_class())
+        return avcodec_get_class();
+    else
+        return NULL;
+}
+
 static void* adevsink_child_next(void *obj, void *prev)
 {
     ADevSinkPriv *priv = obj;
@@ -390,12 +433,13 @@ static const AVOption adevsink_options[] = {
 };
 
 static const AVClass adevsink_class = {
-    .class_name = "adevsink_class",
-    .item_name  = av_default_item_name,
-    .option     = adevsink_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_FILTER,
-    .child_next = adevsink_child_next,
+    .class_name       = "adevsink_class",
+    .item_name        = av_default_item_name,
+    .option           = adevsink_options,
+    .version          = LIBAVUTIL_VERSION_INT,
+    .category         = AV_CLASS_CATEGORY_FILTER,
+    .child_next       = adevsink_child_next,
+    .child_class_next = adevsink_child_class_next,
 };
 
 static const AVFilterPad adevsink_inputs[] = {
