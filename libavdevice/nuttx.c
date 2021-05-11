@@ -199,7 +199,6 @@ int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback
         struct dirent *entryp = readdir(dirp);
         struct audio_caps_s caps;
         char str[32];
-        int fd;
 
         if (!entryp)
             break;
@@ -316,6 +315,9 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
     struct ap_buffer_info_s buf_info;
     int bps, x, ret;
 
+    if (priv->running || priv->flushing)
+        return AVERROR(EAGAIN);
+
     bps = av_get_bits_per_sample(priv->codec);
     priv->frame_size = bps * priv->channels / 8;
 
@@ -397,9 +399,7 @@ out:
 void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
 {
     struct audio_buf_desc_s buf_desc;
-    struct audio_msg_s msg;
     int dc = dq_count(&priv->bufferq);
-    int ret, i;
 
     if (!priv->running && !priv->flushing && dc > 0 && dc < priv->periods) {
         ioctl(priv->fd, AUDIOIOC_START, 0);

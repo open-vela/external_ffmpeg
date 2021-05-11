@@ -49,7 +49,6 @@ static int nuttx_init(struct AVFormatContext *s1)
 static void nuttx_deinit(struct AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
-    int ret;
 
     if (priv->lastpkt)
         av_packet_free(&priv->lastpkt);
@@ -170,8 +169,7 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
             int ret;
 
             ret = ff_nuttx_poll_available(priv, true);
-            if (ret > 0)
-                avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
 
             return ret;
         }
