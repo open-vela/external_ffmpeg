@@ -72,8 +72,7 @@ static int nuttx_control_message(struct AVFormatContext *s1,
             int ret;
 
             ret = ff_nuttx_poll_available(priv, true);
-            if (ret > 0)
-                avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
 
             return ret;
         }
