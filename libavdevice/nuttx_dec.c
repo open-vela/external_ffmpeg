@@ -115,19 +115,7 @@ static int nuttx_read_header(AVFormatContext *s1)
     st->codecpar->channel_layout = priv->channel_layout;
     avpriv_set_pts_info(st, 64, 1, 1000000);  /* 64 bits pts in us */
 
-    /* microseconds instead of seconds, MHz instead of Hz */
-    priv->timefilter = ff_timefilter_new(1000000.0 / priv->sample_rate,
-                                         priv->period_bytes / priv->frame_size,
-                                         1.5E-6);
-    if (!priv->timefilter)
-        goto fail;
-
     return 0;
-
-fail:
-    ff_nuttx_close(priv, true);
-    ff_free_stream(s1, st);
-    return AVERROR(ENOMEM);
 }
 
 static int nuttx_read_close(AVFormatContext *s1)
@@ -135,7 +123,6 @@ static int nuttx_read_close(AVFormatContext *s1)
     NuttxPriv *priv = s1->priv_data;
     AVStream *st = s1->streams[0];
 
-    ff_timefilter_destroy(priv->timefilter);
     ff_nuttx_close(priv, priv->nonblock);
     ff_free_stream(s1, st);
 
@@ -145,7 +132,6 @@ static int nuttx_read_close(AVFormatContext *s1)
 static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
 {
     NuttxPriv *priv = s1->priv_data;
-    int64_t dts;
     int ret;
 
     ret = av_new_packet(pkt, priv->period_bytes);
@@ -158,9 +144,9 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
         return ret;
     }
 
-    dts = av_gettime_relative();
-    pkt->pts = ff_timefilter_update(priv->timefilter, dts, ret / priv->frame_size);
     pkt->size = ret;
+    priv->captured += ret;
+    pkt->pts = priv->captured * 1000000 / (priv->frame_size * priv->sample_rate);
 
     return 0;
 }

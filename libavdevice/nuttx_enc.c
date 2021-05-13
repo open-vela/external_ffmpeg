@@ -266,6 +266,6 @@ AVOutputFormat ff_nuttx_muxer = {
     .create_device_capabilities = nuttx_create_device_capabilities,
     .free_device_capabilities   = nuttx_free_device_capabilities,
     .get_device_list            = nuttx_get_device_list,
-    .flags                      = AVFMT_NOFILE,
+    .flags                      = AVFMT_NOFILE|AVFMT_TS_NONSTRICT,
     .priv_class                 = &nuttx_muxer_class,
 };
