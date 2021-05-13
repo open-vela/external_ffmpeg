@@ -32,7 +32,6 @@
 #include <mqueue.h>
 
 #include "libavutil/log.h"
-#include "timefilter.h"
 #include "avdevice.h"
 
 typedef struct NuttxPriv {
@@ -62,8 +61,7 @@ typedef struct NuttxPriv {
     dq_queue_t bufferq;
 
     AVPacket   *lastpkt;
-
-    TimeFilter *timefilter;
+    int64_t    captured;
 } NuttxPriv;
 
 int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
