@@ -1439,9 +1439,11 @@ test_pkg_config(){
     funcs="$4"
     shift 4
     disable $name
-    test_cmd $pkg_config --exists --print-errors $pkg_version || return
-    pkg_cflags=$($pkg_config --cflags $pkg_config_flags $pkg)
-    pkg_libs=$($pkg_config --libs $pkg_config_flags $pkg)
+    if [ $pkg_config != false ]; then
+        test_cmd $pkg_config --exists --print-errors $pkg_version || return
+        pkg_cflags=$($pkg_config --cflags $pkg_config_flags $pkg)
+        pkg_libs=$($pkg_config --libs $pkg_config_flags $pkg)
+    fi
     check_func_headers "$headers" "$funcs" $pkg_cflags $pkg_libs "$@" &&
         enable $name &&
         set_sanitized "${name}_cflags"    $pkg_cflags &&
