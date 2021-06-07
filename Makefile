@@ -93,6 +93,7 @@ endif
 
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" .}
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/uORB}
+CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/opus/include}
 CFLAGS += -DHAVE_AV_CONFIG_H
 
 libavutil/ffversion.h .version:
