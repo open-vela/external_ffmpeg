@@ -220,15 +220,19 @@ static void calculate_scales(MixContext *s, int nb_samples)
 {
     float weight_sum = 0.f;
     int i;
+    int ninput_on = 0;
 
     for (i = 0; i < s->nb_inputs; i++)
-        if (s->input_state[i] & INPUT_ON)
+        if (s->input_state[i] & INPUT_ON) {
             weight_sum += FFABS(s->weights[i]);
+            ninput_on++;
+        }
 
     for (i = 0; i < s->nb_inputs; i++) {
         if (s->input_state[i] & INPUT_ON) {
             if (s->scale_norm[i] > weight_sum / FFABS(s->weights[i])) {
                 s->scale_norm[i] -= ((s->weight_sum / FFABS(s->weights[i])) / s->nb_inputs) *
+                                    ((float)(s->nb_inputs - ninput_on) / ninput_on) *
                                     nb_samples / (s->dropout_transition * s->sample_rate);
                 s->scale_norm[i] = FFMAX(s->scale_norm[i], weight_sum / FFABS(s->weights[i]));
             }
