@@ -107,6 +107,7 @@ typedef enum {
 /*****************************************************************************
  *  Functions
  *****************************************************************************/
+static int ff_a2dp_open_path(A2dpPriv *a2dp, const char *path);
 
 void ff_a2dp_socket_disconnect(int socket_fd)
 {
@@ -119,8 +120,12 @@ static int ff_a2dp_socket_connect(const char *path, bool nonblock)
 {
     struct sockaddr_un addr;
     int socket_fd;
+    int flags = SOCK_STREAM | SOCK_CLOEXEC;
 
-    socket_fd = socket(AF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (nonblock)
+        flags |= SOCK_NONBLOCK;
+
+    socket_fd = socket(AF_LOCAL, flags, 0);
     if (socket_fd < 0)
         return socket_fd;
 
@@ -138,13 +143,8 @@ static int ff_a2dp_socket_connect(const char *path, bool nonblock)
 
 static ssize_t ff_a2dp_receive_ctrl(A2dpPriv *a2dp, void* buffer, size_t length)
 {
-    int flags = MSG_NOSIGNAL;
-
-    if (a2dp->nonblock)
-        flags |= MSG_DONTWAIT;
-
     assert(a2dp->ctrl_fd > 0);
-    return recv(a2dp->ctrl_fd, buffer, length, flags);
+    return recv(a2dp->ctrl_fd, buffer, length, MSG_NOSIGNAL);
 }
 
 static int ff_a2dp_send_ctrl(A2dpPriv *a2dp, const void* buffer, size_t length)
@@ -181,13 +181,14 @@ static int ff_a2dp_send_command(A2dpPriv *a2dp, tA2DP_CTRL_CMD cmd)
 {
     int  ret;
     char ack;
-    int  flags = MSG_NOSIGNAL;
 
-    if (a2dp->nonblock)
-        flags |= MSG_DONTWAIT;
+    if (a2dp->ctrl_fd == A2DP_AUDIO_DISCONNECTED){
+        ret = ff_a2dp_open_path(a2dp,A2DP_CTRL_PATH);
+        if (ret < 0)
+            return AVERROR(EAGAIN);
+    }
 
-    assert(a2dp->ctrl_fd > 0);
-    ret = send(a2dp->ctrl_fd, &cmd, 1, flags);
+    ret = send(a2dp->ctrl_fd, &cmd, 1, MSG_NOSIGNAL);
     if (ret > 0)
         ret = ff_a2dp_receive_ctrl(a2dp, &ack, 1);
 
@@ -261,13 +262,14 @@ void ff_a2dp_deinit_path(A2dpPriv *a2dp)
 
 static int ff_a2dp_socket_read(int socket_fd, void* p, size_t len, bool nonblock)
 {
-    int flags = MSG_NOSIGNAL;
-
-    if (nonblock)
-        flags |= MSG_DONTWAIT;
-
     assert(socket_fd > 0);
-    return recv(socket_fd, p, len, flags);
+    return recv(socket_fd, p, len, MSG_NOSIGNAL);
+}
+
+static int ff_a2dp_socket_write(int socket_fd, const void* p, size_t len, bool nonblock)
+{
+    assert(socket_fd > 0);
+    return send(socket_fd, p, len, MSG_NOSIGNAL);
 }
 
 int ff_a2dp_read_buffer(A2dpPriv *a2dp, void* buffer, size_t bytes)
@@ -286,6 +288,33 @@ int ff_a2dp_read_buffer(A2dpPriv *a2dp, void* buffer, size_t bytes)
             ret = AVERROR_EOF;
         }
         else
+            ret = AVERROR(errno);
+    }
+
+    return ret;
+}
+
+int ff_a2dp_write_buffer(A2dpPriv *a2dp, void* buffer, size_t bytes)
+{
+    int ret;
+
+    if (a2dp->ctrl_fd == A2DP_AUDIO_DISCONNECTED)
+        return AVERROR_EOF;
+
+    if (a2dp->data_fd == A2DP_AUDIO_DISCONNECTED) {
+        ret = ff_a2dp_open_path(a2dp,A2DP_DATA_PATH);
+        if (ret < 0)
+            return AVERROR(EAGAIN);
+    }
+
+    ret = ff_a2dp_socket_write(a2dp->data_fd, buffer, bytes, a2dp->nonblock);
+    if (ret <= 0) {
+        if (errno == ECONNRESET) {
+            ff_a2dp_socket_disconnect(a2dp->data_fd);
+            a2dp->data_fd = A2DP_AUDIO_DISCONNECTED;
+            a2dp->state = AUDIO_A2DP_STATE_STOPPED;
+            ret = AVERROR_EOF;
+        } else
             ret = AVERROR(errno);
     }
 
@@ -331,10 +360,20 @@ static int ff_a2dp_write_audio_config(A2dpPriv *a2dp, tA2DP_CTRL_CMD cmd)
     if (ret < 0)
             return -1;
 
-    if (a2dp->frame_size >= 2 && a2dp->frame_size <= 4) {
-        bits_per_sample = 1 << (a2dp->frame_size - 2);
-    } else
-        return -1;
+    switch (a2dp->bit_per_sample) {
+        case 16:
+            bits_per_sample = BTAV_A2DP_CODEC_BITS_PER_SAMPLE_16;
+            break;
+        case 24:
+            bits_per_sample = BTAV_A2DP_CODEC_BITS_PER_SAMPLE_24;
+            break;
+        case 32:
+            bits_per_sample = BTAV_A2DP_CODEC_BITS_PER_SAMPLE_32;
+            break;
+        default:
+            bits_per_sample = BTAV_A2DP_CODEC_BITS_PER_SAMPLE_16;
+            break;
+    }
 
     ret = ff_a2dp_send_ctrl(a2dp, &bits_per_sample, sizeof(bits_per_sample));
     if (ret < 0)
@@ -383,7 +422,101 @@ int ff_a2dp_read_input_config(A2dpPriv *a2dp)
     return ret;
 }
 
-int ff_a2dp_data_arrived(A2dpPriv *a2dp, int path, tA2DP_CTRL_CMD *command)
+int ff_a2dp_read_output_config(A2dpPriv *a2dp)
+{
+    btav_a2dp_codec_index_t codec_type;
+    btav_a2dp_codec_sample_rate_t sample_rate;
+    btav_a2dp_codec_channel_mode_t channel_mode;
+    btav_a2dp_codec_bits_per_sample_t bits_per_sample;
+    uint32_t bit_rate;
+    int ret;
+
+    // Receive the current codec config
+    ret = ff_a2dp_send_command(a2dp, A2DP_CTRL_GET_OUTPUT_AUDIO_CONFIG);
+    if (ret > 0)
+        ret = ff_a2dp_receive_ctrl(a2dp, &codec_type,
+            sizeof(btav_a2dp_codec_index_t));
+
+    if (ret > 0)
+        ret = ff_a2dp_receive_ctrl(a2dp, &sample_rate,
+            sizeof(btav_a2dp_codec_sample_rate_t));
+
+    if (ret > 0)
+        ret = ff_a2dp_receive_ctrl(a2dp, &bits_per_sample,
+            sizeof(btav_a2dp_codec_bits_per_sample_t));
+
+    if (ret > 0)
+        ret = ff_a2dp_receive_ctrl(a2dp, &channel_mode,
+            sizeof(btav_a2dp_codec_channel_mode_t));
+
+    if (ret > 0)
+        ret = ff_a2dp_receive_ctrl(a2dp, &a2dp->bit_rate ,
+            sizeof(uint32_t));
+
+    // Check the codec type
+    if (codec_type == BTAV_A2DP_CODEC_INDEX_SOURCE_SBC)
+        a2dp->codec_id = AV_NE(AV_CODEC_ID_SBC, AV_CODEC_ID_SBC);
+    else
+        return -1;
+
+    // Check the codec sample rate
+    switch (sample_rate) {
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_44100:
+            a2dp->sample_rate = 44100;
+            break;
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_48000:
+            a2dp->sample_rate = 48000;
+            break;
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_88200:
+            a2dp->sample_rate = 88200;
+            break;
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_96000:
+            a2dp->sample_rate = 96000;
+            break;
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_176400:
+            a2dp->sample_rate = 176400;
+            break;
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_192000:
+            a2dp->sample_rate = 192000;
+            break;
+        case BTAV_A2DP_CODEC_SAMPLE_RATE_NONE:
+        default:
+            return -1;
+    }
+
+    // Check the codec config bits per sample
+    switch (bits_per_sample) {
+        case BTAV_A2DP_CODEC_BITS_PER_SAMPLE_16:
+            a2dp->bit_per_sample = 16;
+            break;
+        case BTAV_A2DP_CODEC_BITS_PER_SAMPLE_24:
+            a2dp->bit_per_sample = 24;
+            break;
+        case BTAV_A2DP_CODEC_BITS_PER_SAMPLE_32:
+            a2dp->bit_per_sample = 32;
+            break;
+        case BTAV_A2DP_CODEC_BITS_PER_SAMPLE_NONE:
+        default:
+            return -1;
+    }
+
+    // Check the codec config channel mode
+    switch (channel_mode) {
+        case BTAV_A2DP_CODEC_CHANNEL_MODE_MONO:
+            a2dp->channels = 1;
+            break;
+        case BTAV_A2DP_CODEC_CHANNEL_MODE_STEREO:
+            a2dp->channels = 2;
+            break;
+        case BTAV_A2DP_CODEC_CHANNEL_MODE_NONE:
+        default:
+            return -1;
+    }
+
+    return ret;
+}
+
+int ff_a2dp_data_arrived(A2dpPriv *a2dp, int path,tA2DP_CTRL_CMD *command)
 {
     int ret = 0;
 
@@ -409,17 +542,42 @@ int ff_a2dp_ctrl_arrived(A2dpPriv *a2dp, tA2DP_CTRL_CMD command)
     return ff_a2dp_send_command(a2dp, command);
 }
 
+int ff_a2dp_resp_arrived(A2dpPriv *a2dp)
+{
+    char ack;
+    int ret = 0;
+
+    ret = ff_a2dp_receive_ctrl(a2dp, &ack, 1);
+
+    if (ack != A2DP_CTRL_ACK_SUCCESS) {
+        ret = AVERROR(EAGAIN);
+    }
+
+    return ret;
+}
+
 int ff_a2dp_open(AVFormatContext *ctx)
 {
     A2dpPriv *a2dp = ctx->priv_data;
     int ret = 0;
 
-    assert(a2dp->ctrl_fd > 0 && a2dp->data_fd > 0);
-
     if (!a2dp->playback)
         ret = ff_a2dp_read_input_config(a2dp);
-    else
-        ret = ff_a2dp_write_audio_config(a2dp, A2DP_CTRL_SET_OUTPUT_AUDIO_CONFIG);
+    else {
+        if (a2dp->state == AUDIO_A2DP_STATE_STOPPED) {
+            ret = ff_a2dp_write_audio_config(a2dp, A2DP_CTRL_SET_OUTPUT_AUDIO_CONFIG);
+            if (ret < 0)
+                return AVERROR(EAGAIN);
+            ret = ff_a2dp_send_command(a2dp, A2DP_CTRL_CMD_START);
+            if (ret > 0) {
+                a2dp->state = AUDIO_A2DP_STATE_STARTED;
+            } else {
+                a2dp->state = AUDIO_A2DP_STATE_STARTING;
+                return AVERROR(EAGAIN);
+            }
+        } else if (a2dp->state == AUDIO_A2DP_STATE_STARTING)
+            return AVERROR(EAGAIN);
+    }
 
     return ret;
 }

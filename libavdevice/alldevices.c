@@ -25,6 +25,7 @@
 
 /* devices */
 extern AVInputFormat  ff_a2dp_demuxer;
+extern AVOutputFormat ff_a2dp_muxer;
 extern AVInputFormat  ff_alsa_demuxer;
 extern AVOutputFormat ff_alsa_muxer;
 extern AVInputFormat  ff_android_camera_demuxer;
