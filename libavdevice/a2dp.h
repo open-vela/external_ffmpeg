@@ -34,6 +34,12 @@
 
 #define A2DP_AUDIO_DISCONNECTED      (-1)
 
+typedef enum {
+    AUDIO_A2DP_STATE_STOPPED,
+    AUDIO_A2DP_STATE_STARTING,
+    AUDIO_A2DP_STATE_STARTED,
+} a2dp_state_t;
+
 typedef struct A2dpPriv {
     AVClass       *class;
     AVStream      *st;
@@ -43,12 +49,16 @@ typedef struct A2dpPriv {
     int            frame_size;   ///< bytes per sample * channels
     uint32_t       sample_rate;
     uint8_t        channels;
+    uint8_t        bit_per_sample;
+    uint32_t       bit_rate;
     bool           nonblock;
     bool           playback;
     bool           app_start;
     int            ctrl_fd;
     int            data_fd;
     enum AVCodecID codec_id;
+    a2dp_state_t   state;
+    AVPacket       *lastpkt;
 
     int            available;
 } A2dpPriv;
@@ -88,6 +98,8 @@ void ff_a2dp_socket_disconnect(int socket_fd);
 int ff_a2dp_ctrl_arrived(A2dpPriv *a2dp, tA2DP_CTRL_CMD command);
 int ff_a2dp_data_arrived(A2dpPriv *a2dp, int path, tA2DP_CTRL_CMD *command);
 int ff_a2dp_read_input_config(A2dpPriv *a2dp);
+int ff_a2dp_read_output_config(A2dpPriv *a2dp);
 ssize_t ff_a2dp_read_buffer(A2dpPriv *a2dp, void* buffer, size_t bytes);
-
+ssize_t ff_a2dp_write_buffer(A2dpPriv *a2dp, void* buffer, size_t bytes);
+int ff_a2dp_resp_arrived(A2dpPriv *a2dp);
 #endif /* AVDEVICE_A2DP_H */
