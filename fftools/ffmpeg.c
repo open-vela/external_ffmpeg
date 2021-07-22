@@ -4881,6 +4881,7 @@ static void init_global_value(void)
     main_return_code = 0;
 }
 
+int main(int argc, char **argv);
 int main(int argc, char **argv)
 {
     int i, ret;

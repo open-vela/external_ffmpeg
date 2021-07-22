@@ -1651,7 +1651,7 @@ static int mp_decode_frame(MPADecodeContext *s, OUT_INT **samples,
                                         &(s->synth_buf_offset[ch]),
                                         RENAME(ff_mpa_synth_window),
                                         &s->dither_state, samples_ptr,
-                                        sample_stride, s->sb_samples[ch][i]);
+                                        sample_stride, (int32_t *)s->sb_samples[ch][i]);
             samples_ptr += 32 * sample_stride;
         }
     }
