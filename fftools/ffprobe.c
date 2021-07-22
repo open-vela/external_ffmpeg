@@ -3659,6 +3659,7 @@ static void init_global_value(void)
             do_show_##varname = 1;                                      \
     } while (0)
 
+int main(int argc, char **argv);
 int main(int argc, char **argv)
 {
     const Writer *w;

@@ -32,7 +32,7 @@ int ff_raw_write_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
-static int force_one_stream(AVFormatContext *s)
+av_unused static int force_one_stream(AVFormatContext *s)
 {
     if (s->nb_streams != 1) {
         av_log(s, AV_LOG_ERROR, "%s files have exactly one stream\n",

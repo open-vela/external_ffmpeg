@@ -3350,7 +3350,7 @@ static void init_global_value(void)
     file_overwrite     = 0;
     no_file_overwrite  = 0;
     do_psnr            = 0;
-    input_sync;
+    input_sync         = 0;
     input_stream_potentially_available = 0;
     ignore_unknown_streams = 0;
     copy_unknown_streams = 0;

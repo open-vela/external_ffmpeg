@@ -185,7 +185,7 @@ void RENAME(ff_mpa_synth_filter)(MPADSPContext *s, MPA_INT *synth_buf_ptr,
     offset = *synth_buf_offset;
     synth_buf = synth_buf_ptr + offset;
 
-    s->RENAME(dct32)(synth_buf, sb_samples);
+    s->RENAME(dct32)((INTFLOAT *)synth_buf, (const INTFLOAT *)sb_samples);
     s->RENAME(apply_window)(synth_buf, window, dither_state, samples, incr);
 
     offset = (offset - 32) & 511;

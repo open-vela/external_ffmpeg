@@ -251,7 +251,7 @@ typedef struct AC3DecodeContext {
 ///@}
 } AC3DecodeContext;
 
-#ifdef CONFIG_EAC3_DECODER
+#if CONFIG_EAC3_DECODER
 /**
  * Parse the E-AC-3 frame header.
  * This parses both the bit stream info and audio frame header.
