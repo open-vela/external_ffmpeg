@@ -350,12 +350,14 @@ static int parse_frame_header(AC3DecodeContext *s)
         s->skip_syntax           = 1;
         memset(s->channel_uses_aht, 0, sizeof(s->channel_uses_aht));
         return ac3_parse_header(s);
-    } else if (CONFIG_EAC3_DECODER) {
+    } else {
+#if CONFIG_EAC3_DECODER
         s->eac3 = 1;
         return ff_eac3_parse_header(s);
-    } else {
+#else
         av_log(s->avctx, AV_LOG_ERROR, "E-AC-3 support not compiled in\n");
         return AVERROR(ENOSYS);
+#endif
     }
 }
 
@@ -516,7 +518,7 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
     int end_freq   = s->end_freq[ch_index];
     uint8_t *baps  = s->bap[ch_index];
     int8_t *exps   = s->dexps[ch_index];
-    int32_t *coeffs = s->fixed_coeffs[ch_index];
+    int *coeffs    = s->fixed_coeffs[ch_index];
     int dither     = (ch_index == CPL_CH) || s->dither_flag[ch_index];
     GetBitContext *gbc = &s->gbc;
     int freq;
@@ -613,8 +615,10 @@ static inline void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk,
         /* if AHT is used, mantissas for all blocks are encoded in the first
            block of the frame. */
         int bin;
-        if (CONFIG_EAC3_DECODER && !blk)
+#if CONFIG_EAC3_DECODER
+        if (!blk)
             ff_eac3_decode_transform_coeffs_aht_ch(s, ch);
+#endif
         for (bin = s->start_freq[ch]; bin < s->end_freq[ch]; bin++) {
             s->fixed_coeffs[ch][bin] = s->pre_mantissa[ch][bin][blk] >> s->dexps[ch][bin];
         }
@@ -1404,14 +1408,16 @@ static int decode_audio_block(AC3DecodeContext *s, int blk, int offset)
           gain = gain * s->level_gain[audio_channel];
         gain *= 1.0 / 4194304.0f;
         s->fmt_conv.int32_to_float_fmul_scalar(s->transform_coeffs[ch],
-                                               s->fixed_coeffs[ch], gain, 256);
+                                               (int32_t *)s->fixed_coeffs[ch], gain, 256);
 #endif
     }
 
+#if CONFIG_EAC3_DECODER
     /* apply spectral extension to high frequency bins */
-    if (CONFIG_EAC3_DECODER && s->spx_in_use) {
+    if (s->spx_in_use) {
         ff_eac3_apply_spectral_extension(s);
     }
+#endif
 
     /* downmix and MDCT. order depends on whether block switching is used for
        any channel in this block. this is because coefficients for the long

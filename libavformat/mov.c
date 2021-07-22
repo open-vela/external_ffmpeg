@@ -4308,6 +4308,7 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             return ret;
     }
 
+#if CONFIG_H261_DECODER || CONFIG_H263_DECODER || CONFIG_MPEG4_DECODER
     switch (st->codecpar->codec_id) {
 #if CONFIG_H261_DECODER
     case AV_CODEC_ID_H261:
@@ -4322,6 +4323,7 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         st->codecpar->height= 0;
         break;
     }
+#endif
 
     // If the duration of the mp3 packets is not constant, then they could need a parser
     if (st->codecpar->codec_id == AV_CODEC_ID_MP3

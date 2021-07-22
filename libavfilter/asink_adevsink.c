@@ -264,10 +264,11 @@ static int adevsink_query_formats(AVFilterContext *ctx)
                 if (!codec)
                     return AVERROR(EINVAL);
 
-                while (codec->sample_fmts[n] != AV_SAMPLE_FMT_NONE)
+                while (codec->sample_fmts[n] != AV_SAMPLE_FMT_NONE) {
                     ret = ff_add_format(&formats, codec->sample_fmts[n++]);
                     if (ret < 0)
                         goto out;
+                }
             } else {
                 ret = ff_add_format(&formats, fmt);
                 if (ret < 0)
