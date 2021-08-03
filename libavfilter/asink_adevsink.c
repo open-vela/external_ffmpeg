@@ -193,15 +193,6 @@ static int adevsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
     ADevSinkPriv *priv = ctx->priv;
     int ret;
 
-    if (frame) {
-        ret = adevsink_start(ctx);
-        if (ret < 0) {
-            if (ret == AVERROR_EOF)
-                ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
-            return ret;
-        }
-    }
-
     if (priv->enc_ctx) {
         ret = avcodec_send_frame(priv->enc_ctx, frame);
         if (ret < 0)
@@ -223,15 +214,27 @@ static int adevsink_activate(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
-    ret = ff_inlink_consume_frame(inlink, &frame);
-    if (ret < 0)
-        return ret;
-    else if (ret > 0) {
-        ret = adevsink_send_frame(ctx, frame);
-        av_frame_free(&frame);
-        if (ret >= 0)
-            ff_filter_set_ready(ctx, 100);
-        return ret;
+    if (ff_inlink_check_available_frame(inlink)) {
+        ret = adevsink_start(ctx);
+        if (ret < 0) {
+            if (ret == AVERROR_EOF)
+                ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
+            return ret;
+        }
+
+        if (priv->enc_ctx->frame_size)
+            ret = ff_inlink_consume_samples(inlink, priv->enc_ctx->frame_size, priv->enc_ctx->frame_size, &frame);
+        else
+            ret = ff_inlink_consume_frame(inlink, &frame);
+        if (ret < 0)
+            return ret;
+        else if (ret > 0) {
+            ret = adevsink_send_frame(ctx, frame);
+            av_frame_free(&frame);
+            if (ret >= 0)
+                ff_filter_set_ready(ctx, 100);
+            return ret;
+        }
     }
 
     ff_inlink_acknowledge_status(inlink, &ret, &pts);
