@@ -192,6 +192,16 @@ enum AVAppToDevMessageType {
     AV_APP_TO_DEV_GET_MUTE   = MKBETAG('G', 'M', 'U', 'T'),
 
     /**
+     * Get format request
+     *
+     * Get device fromat request info, e.g. BT device need
+     * compressed data, request specific bitrate, blocks...
+     *
+     * data: AVDictionary **: list of options.
+     */
+    AV_APP_TO_DEV_GET_FORMAT_REQUEST = MKBETAG('G','F','R','Q'),
+
+    /**
      * Get fd for poll.
      *
      * Get device fd for polling.
