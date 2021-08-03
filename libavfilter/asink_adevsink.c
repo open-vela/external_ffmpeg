@@ -61,6 +61,7 @@ static int adevsink_start(AVFilterContext *ctx)
     AVFilterLink *inlink = ctx->inputs[0];
     ADevSinkPriv *priv = ctx->priv;
     AVStream *st = priv->fmt_ctx->streams[0];
+    AVDictionary *fmt_opt = NULL;
     AVCodec *enc;
     int ret;
 
@@ -81,7 +82,12 @@ static int adevsink_start(AVFilterContext *ctx)
     priv->enc_ctx->channel_layout = inlink->channel_layout;
     priv->enc_ctx->channels       = inlink->channels;
 
-    ret = avcodec_open2(priv->enc_ctx, enc, NULL);
+    avdevice_app_to_dev_control_message(priv->fmt_ctx,
+            AV_APP_TO_DEV_GET_FORMAT_REQUEST,
+            &fmt_opt, sizeof(AVDictionary *));
+
+    ret = avcodec_open2(priv->enc_ctx, enc, &fmt_opt);
+    av_dict_free(&fmt_opt);
     if (ret < 0) {
         avcodec_free_context(&priv->enc_ctx);
         return ret;
