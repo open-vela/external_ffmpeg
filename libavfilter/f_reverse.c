@@ -133,7 +133,7 @@ static const AVFilterPad reverse_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_reverse = {
+const AVFilter ff_vf_reverse = {
     .name        = "reverse",
     .description = NULL_IF_CONFIG_SMALL("Reverse a clip."),
     .priv_size   = sizeof(ReverseContext),
@@ -149,14 +149,7 @@ AVFilter ff_vf_reverse = {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats;
-    AVFilterChannelLayouts *layouts;
-    int ret;
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
@@ -164,10 +157,7 @@ static int query_formats(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static void reverse_samples_planar(AVFrame *out)
@@ -279,8 +269,8 @@ static const AVFilterPad areverse_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_AUDIO,
+        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame   = filter_frame,
-        .needs_writable = 1,
     },
     { NULL }
 };
@@ -294,7 +284,7 @@ static const AVFilterPad areverse_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_areverse = {
+const AVFilter ff_af_areverse = {
     .name          = "areverse",
     .description   = NULL_IF_CONFIG_SMALL("Reverse an audio clip."),
     .query_formats = query_formats,

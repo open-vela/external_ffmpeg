@@ -251,7 +251,6 @@ static int query_formats(AVFilterContext *ctx)
     PanContext *pan = ctx->priv;
     AVFilterLink *inlink  = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterFormats *formats = NULL;
     AVFilterChannelLayouts *layouts;
     int ret;
 
@@ -260,13 +259,12 @@ static int query_formats(AVFilterContext *ctx)
     if ((ret = ff_set_common_formats(ctx, ff_all_formats(AVMEDIA_TYPE_AUDIO))) < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+    if ((ret = ff_set_common_all_samplerates(ctx)) < 0)
         return ret;
 
     // inlink supports any channel layout
     layouts = ff_all_channel_counts();
-    if ((ret = ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts)) < 0)
+    if ((ret = ff_channel_layouts_ref(layouts, &inlink->outcfg.channel_layouts)) < 0)
         return ret;
 
     // outlink supports only requested output channel layout
@@ -275,7 +273,7 @@ static int query_formats(AVFilterContext *ctx)
                           pan->out_channel_layout ? pan->out_channel_layout :
                           FF_COUNT2LAYOUT(pan->nb_output_channels))) < 0)
         return ret;
-    return ff_channel_layouts_ref(layouts, &outlink->in_channel_layouts);
+    return ff_channel_layouts_ref(layouts, &outlink->incfg.channel_layouts);
 }
 
 static int config_props(AVFilterLink *link)
@@ -448,7 +446,7 @@ static const AVFilterPad pan_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_pan = {
+const AVFilter ff_af_pan = {
     .name          = "pan",
     .description   = NULL_IF_CONFIG_SMALL("Remix channels with coefficients (panning)."),
     .priv_size     = sizeof(PanContext),

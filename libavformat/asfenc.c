@@ -258,6 +258,10 @@ static const AVCodecTag codec_asf_bmp_tags[] = {
     { AV_CODEC_ID_NONE,      0 },
 };
 
+static const AVCodecTag *const asf_codec_tags[] = {
+        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, NULL
+};
+
 #define PREROLL_TIME 3100
 
 static void put_str16(AVIOContext *s, const char *tag)
@@ -682,7 +686,7 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
             avio_wl16(pb, 40 + par->extradata_size); /* size */
 
             /* BITMAPINFOHEADER header */
-            ff_put_bmp_header(pb, par, 1, 0);
+            ff_put_bmp_header(pb, par, 1, 0, 0);
         }
         end_header(pb, hpos);
     }
@@ -1150,15 +1154,15 @@ static const AVOption asf_options[] = {
     { NULL },
 };
 
-#if CONFIG_ASF_MUXER
 static const AVClass asf_muxer_class = {
-    .class_name     = "ASF muxer",
+    .class_name     = "ASF (stream) muxer",
     .item_name      = av_default_item_name,
     .option         = asf_options,
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-AVOutputFormat ff_asf_muxer = {
+#if CONFIG_ASF_MUXER
+const AVOutputFormat ff_asf_muxer = {
     .name           = "asf",
     .long_name      = NULL_IF_CONFIG_SMALL("ASF (Advanced / Active Streaming Format)"),
     .mime_type      = "video/x-ms-asf",
@@ -1170,22 +1174,13 @@ AVOutputFormat ff_asf_muxer = {
     .write_packet   = asf_write_packet,
     .write_trailer  = asf_write_trailer,
     .flags          = AVFMT_GLOBALHEADER,
-    .codec_tag      = (const AVCodecTag * const []) {
-        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, 0
-    },
+    .codec_tag      = asf_codec_tags,
     .priv_class        = &asf_muxer_class,
 };
 #endif /* CONFIG_ASF_MUXER */
 
 #if CONFIG_ASF_STREAM_MUXER
-static const AVClass asf_stream_muxer_class = {
-    .class_name     = "ASF stream muxer",
-    .item_name      = av_default_item_name,
-    .option         = asf_options,
-    .version        = LIBAVUTIL_VERSION_INT,
-};
-
-AVOutputFormat ff_asf_stream_muxer = {
+const AVOutputFormat ff_asf_stream_muxer = {
     .name           = "asf_stream",
     .long_name      = NULL_IF_CONFIG_SMALL("ASF (Advanced / Active Streaming Format)"),
     .mime_type      = "video/x-ms-asf",
@@ -1197,9 +1192,7 @@ AVOutputFormat ff_asf_stream_muxer = {
     .write_packet   = asf_write_packet,
     .write_trailer  = asf_write_trailer,
     .flags          = AVFMT_GLOBALHEADER,
-    .codec_tag      = (const AVCodecTag * const []) {
-        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, 0
-    },
-    .priv_class        = &asf_stream_muxer_class,
+    .codec_tag      = asf_codec_tags,
+    .priv_class     = &asf_muxer_class,
 };
 #endif /* CONFIG_ASF_STREAM_MUXER */

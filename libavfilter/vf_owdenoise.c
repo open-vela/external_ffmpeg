@@ -30,6 +30,7 @@
 
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
 #include "internal.h"
@@ -308,10 +309,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -364,7 +362,7 @@ static const AVFilterPad owdenoise_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_owdenoise = {
+const AVFilter ff_vf_owdenoise = {
     .name          = "owdenoise",
     .description   = NULL_IF_CONFIG_SMALL("Denoise using wavelets."),
     .priv_size     = sizeof(OWDenoiseContext),

@@ -183,28 +183,15 @@ static av_cold int query_formats(AVFilterContext *ctx)
     int sample_rates[] = { sine->sample_rate, -1 };
     static const enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_S16,
                                                        AV_SAMPLE_FMT_NONE };
-    AVFilterFormats *formats;
-    AVFilterChannelLayouts *layouts;
-    int ret;
-
-    formats = ff_make_format_list(sample_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_formats (ctx, formats);
+    int ret = ff_set_common_formats_from_list(ctx, sample_fmts);
     if (ret < 0)
         return ret;
 
-    layouts = avfilter_make_format64_list(chlayouts);
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    ret = ff_set_common_channel_layouts_from_list(ctx, chlayouts);
     if (ret < 0)
         return ret;
 
-    formats = ff_make_format_list(sample_rates);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_samplerates_from_list(ctx, sample_rates);
 }
 
 static av_cold int config_props(AVFilterLink *outlink)
@@ -247,7 +234,7 @@ static int request_frame(AVFilterLink *outlink)
         samples[i] = sine->sin[sine->phi >> (32 - LOG_PERIOD)];
         sine->phi += sine->dphi;
         if (sine->beep_index < sine->beep_length) {
-            samples[i] += sine->sin[sine->phi_beep >> (32 - LOG_PERIOD)] << 1;
+            samples[i] += sine->sin[sine->phi_beep >> (32 - LOG_PERIOD)] * 2;
             sine->phi_beep += sine->dphi_beep;
         }
         if (++sine->beep_index == sine->beep_period)
@@ -269,7 +256,7 @@ static const AVFilterPad sine_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_asrc_sine = {
+const AVFilter ff_asrc_sine = {
     .name          = "sine",
     .description   = NULL_IF_CONFIG_SMALL("Generate sine wave audio signal."),
     .query_formats = query_formats,

@@ -81,7 +81,7 @@ struct voice_entry {
     void (*unregister_fn)(cst_voice *);
     cst_voice *voice;
     unsigned usage_count;
-} voice_entry;
+};
 
 #define MAKE_VOICE_STRUCTURE(voice_name) {             \
     .name          =                      #voice_name, \
@@ -274,7 +274,7 @@ static const AVFilterPad flite_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_asrc_flite = {
+const AVFilter ff_asrc_flite = {
     .name          = "flite",
     .description   = NULL_IF_CONFIG_SMALL("Synthesize voice from text using libflite."),
     .query_formats = query_formats,

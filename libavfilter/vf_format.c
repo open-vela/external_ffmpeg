@@ -129,12 +129,8 @@ static av_cold int init(AVFilterContext *ctx)
 static int query_formats(AVFilterContext *ctx)
 {
     FormatContext *s = ctx->priv;
-    AVFilterFormats *formats = ff_make_format_list(s->formats);
 
-    if (!formats)
-        return AVERROR(ENOMEM);
-
-    return ff_set_common_formats(ctx, formats);
+    return ff_set_common_formats_from_list(ctx, s->formats);
 }
 
 
@@ -153,7 +149,7 @@ static const AVFilterPad avfilter_vf_format_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = ff_null_get_video_buffer,
+        .get_buffer.video = ff_null_get_video_buffer,
     },
     { NULL }
 };
@@ -166,7 +162,7 @@ static const AVFilterPad avfilter_vf_format_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_format = {
+const AVFilter ff_vf_format = {
     .name          = "format",
     .description   = NULL_IF_CONFIG_SMALL("Convert the input video to one of the specified pixel formats."),
 
@@ -192,7 +188,7 @@ static const AVFilterPad avfilter_vf_noformat_inputs[] = {
     {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = ff_null_get_video_buffer,
+        .get_buffer.video = ff_null_get_video_buffer,
     },
     { NULL }
 };
@@ -205,7 +201,7 @@ static const AVFilterPad avfilter_vf_noformat_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_noformat = {
+const AVFilter ff_vf_noformat = {
     .name          = "noformat",
     .description   = NULL_IF_CONFIG_SMALL("Force libavfilter not to use any of the specified pixel formats for the input to the next filter."),
 

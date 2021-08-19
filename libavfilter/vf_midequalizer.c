@@ -83,7 +83,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int process_frame(FFFrameSync *fs)
@@ -375,7 +375,7 @@ static const AVFilterPad midequalizer_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_midequalizer = {
+const AVFilter ff_vf_midequalizer = {
     .name          = "midequalizer",
     .description   = NULL_IF_CONFIG_SMALL("Apply Midway Equalization."),
     .priv_size     = sizeof(MidEqualizerContext),

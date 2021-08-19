@@ -78,7 +78,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static void displace_planar(DisplaceContext *s, const AVFrame *in,
@@ -400,7 +400,7 @@ static const AVFilterPad displace_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_displace = {
+const AVFilter ff_vf_displace = {
     .name          = "displace",
     .description   = NULL_IF_CONFIG_SMALL("Displace pixels."),
     .priv_size     = sizeof(DisplaceContext),

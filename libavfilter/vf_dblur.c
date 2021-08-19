@@ -40,7 +40,6 @@ typedef struct DBlurContext {
     int planeheight[4];
     float *buffer;
     int nb_planes;
-    void (*horiz_slice)(float *buffer, int width, int height, int steps, float nu, float bscale);
 } DBlurContext;
 
 #define OFFSET(x) offsetof(DBlurContext, x)
@@ -137,7 +136,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -293,7 +292,7 @@ static const AVFilterPad dblur_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_dblur = {
+const AVFilter ff_vf_dblur = {
     .name          = "dblur",
     .description   = NULL_IF_CONFIG_SMALL("Apply Directional Blur filter."),
     .priv_size     = sizeof(DBlurContext),

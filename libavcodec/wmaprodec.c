@@ -92,6 +92,9 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem_internal.h"
+#include "libavutil/thread.h"
+
 #include "avcodec.h"
 #include "internal.h"
 #include "get_bits.h"
@@ -307,6 +310,38 @@ static av_cold int get_rate(AVCodecContext *avctx)
     return avctx->sample_rate;
 }
 
+static av_cold void decode_init_static(void)
+{
+    INIT_VLC_STATIC(&sf_vlc, SCALEVLCBITS, HUFF_SCALE_SIZE,
+                    scale_huffbits, 1, 1,
+                    scale_huffcodes, 2, 2, 616);
+    INIT_VLC_STATIC(&sf_rl_vlc, VLCBITS, HUFF_SCALE_RL_SIZE,
+                    scale_rl_huffbits, 1, 1,
+                    scale_rl_huffcodes, 4, 4, 1406);
+    INIT_VLC_STATIC(&coef_vlc[0], VLCBITS, HUFF_COEF0_SIZE,
+                    coef0_huffbits, 1, 1,
+                    coef0_huffcodes, 4, 4, 2108);
+    INIT_VLC_STATIC(&coef_vlc[1], VLCBITS, HUFF_COEF1_SIZE,
+                    coef1_huffbits, 1, 1,
+                    coef1_huffcodes, 4, 4, 3912);
+    INIT_VLC_STATIC(&vec4_vlc, VLCBITS, HUFF_VEC4_SIZE,
+                    vec4_huffbits, 1, 1,
+                    vec4_huffcodes, 2, 2, 604);
+    INIT_VLC_STATIC(&vec2_vlc, VLCBITS, HUFF_VEC2_SIZE,
+                    vec2_huffbits, 1, 1,
+                    vec2_huffcodes, 2, 2, 562);
+    INIT_VLC_STATIC(&vec1_vlc, VLCBITS, HUFF_VEC1_SIZE,
+                    vec1_huffbits, 1, 1,
+                    vec1_huffcodes, 2, 2, 562);
+
+    /** calculate sine values for the decorrelation matrix */
+    for (int i = 0; i < 33; i++)
+        sin64[i] = sin(i * M_PI / 64.0);
+
+    for (int i = WMAPRO_BLOCK_MIN_BITS; i <= WMAPRO_BLOCK_MAX_BITS; i++)
+        ff_init_ff_sine_windows(i);
+}
+
 /**
  *@brief Initialize the decoder.
  *@param avctx codec context
@@ -314,9 +349,10 @@ static av_cold int get_rate(AVCodecContext *avctx)
  */
 static av_cold int decode_init(WMAProDecodeCtx *s, AVCodecContext *avctx, int num_stream)
 {
+    static AVOnce init_static_once = AV_ONCE_INIT;
     uint8_t *edata_ptr = avctx->extradata;
     unsigned int channel_mask;
-    int i, bits;
+    int i, bits, ret;
     int log2_max_num_subframes;
     int num_possible_block_sizes;
 
@@ -458,34 +494,6 @@ static av_cold int decode_init(WMAProDecodeCtx *s, AVCodecContext *avctx, int nu
         }
     }
 
-    INIT_VLC_STATIC(&sf_vlc, SCALEVLCBITS, HUFF_SCALE_SIZE,
-                    scale_huffbits, 1, 1,
-                    scale_huffcodes, 2, 2, 616);
-
-    INIT_VLC_STATIC(&sf_rl_vlc, VLCBITS, HUFF_SCALE_RL_SIZE,
-                    scale_rl_huffbits, 1, 1,
-                    scale_rl_huffcodes, 4, 4, 1406);
-
-    INIT_VLC_STATIC(&coef_vlc[0], VLCBITS, HUFF_COEF0_SIZE,
-                    coef0_huffbits, 1, 1,
-                    coef0_huffcodes, 4, 4, 2108);
-
-    INIT_VLC_STATIC(&coef_vlc[1], VLCBITS, HUFF_COEF1_SIZE,
-                    coef1_huffbits, 1, 1,
-                    coef1_huffcodes, 4, 4, 3912);
-
-    INIT_VLC_STATIC(&vec4_vlc, VLCBITS, HUFF_VEC4_SIZE,
-                    vec4_huffbits, 1, 1,
-                    vec4_huffcodes, 2, 2, 604);
-
-    INIT_VLC_STATIC(&vec2_vlc, VLCBITS, HUFF_VEC2_SIZE,
-                    vec2_huffbits, 1, 1,
-                    vec2_huffcodes, 2, 2, 562);
-
-    INIT_VLC_STATIC(&vec1_vlc, VLCBITS, HUFF_VEC1_SIZE,
-                    vec1_huffbits, 1, 1,
-                    vec1_huffcodes, 2, 2, 562);
-
     /** calculate number of scale factor bands and their offsets
         for every possible block size */
     for (i = 0; i < num_possible_block_sizes; i++) {
@@ -541,15 +549,17 @@ static av_cold int decode_init(WMAProDecodeCtx *s, AVCodecContext *avctx, int nu
         return AVERROR(ENOMEM);
 
     /** init MDCT, FIXME: only init needed sizes */
-    for (i = 0; i < WMAPRO_BLOCK_SIZES; i++)
-        ff_mdct_init(&s->mdct_ctx[i], WMAPRO_BLOCK_MIN_BITS+1+i, 1,
-                     1.0 / (1 << (WMAPRO_BLOCK_MIN_BITS + i - 1))
-                     / (1ll << (s->bits_per_sample - 1)));
+    for (int i = 0; i < WMAPRO_BLOCK_SIZES; i++) {
+        ret = ff_mdct_init(&s->mdct_ctx[i], WMAPRO_BLOCK_MIN_BITS + 1 + i, 1,
+                           1.0 / (1 << (WMAPRO_BLOCK_MIN_BITS + i - 1))
+                           / (1ll << (s->bits_per_sample - 1)));
+        if (ret < 0)
+            return ret;
+    }
 
     /** init MDCT windows: simple sine window */
     for (i = 0; i < WMAPRO_BLOCK_SIZES; i++) {
         const int win_idx = WMAPRO_BLOCK_MAX_BITS - i;
-        ff_init_ff_sine_windows(win_idx);
         s->windows[WMAPRO_BLOCK_SIZES - i - 1] = ff_sine_windows[win_idx];
     }
 
@@ -561,14 +571,12 @@ static av_cold int decode_init(WMAProDecodeCtx *s, AVCodecContext *avctx, int nu
         s->subwoofer_cutoffs[i] = av_clip(cutoff, 4, block_size);
     }
 
-    /** calculate sine values for the decorrelation matrix */
-    for (i = 0; i < 33; i++)
-        sin64[i] = sin(i*M_PI / 64.0);
-
     if (avctx->debug & FF_DEBUG_BITSTREAM)
         dump_context(s);
 
     avctx->channel_layout = channel_mask;
+
+    ff_thread_once(&init_static_once, decode_init_static);
 
     return 0;
 }
@@ -1579,14 +1587,14 @@ static void save_bits(WMAProDecodeCtx *s, GetBitContext* gb, int len,
 
     s->num_saved_bits += len;
     if (!append) {
-        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
+        ff_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
                      s->num_saved_bits);
     } else {
         int align = 8 - (get_bits_count(gb) & 7);
         align = FFMIN(align, len);
         put_bits(&s->pb, align, get_bits(gb, align));
         len -= align;
-        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
+        ff_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
     }
     skip_bits_long(gb, len);
 
@@ -1719,6 +1727,12 @@ static int decode_packet(AVCodecContext *avctx, WMAProDecodeCtx *s,
         }
     } else {
         int frame_size;
+
+        if (avpkt->size < s->next_packet_start) {
+            s->packet_loss = 1;
+            return AVERROR_INVALIDDATA;
+        }
+
         s->buf_bit_size = (avpkt->size - s->next_packet_start) << 3;
         init_get_bits(gb, avpkt->data, s->buf_bit_size);
         skip_bits(gb, s->packet_offset);
@@ -1997,7 +2011,7 @@ static void xma_flush(AVCodecContext *avctx)
 /**
  *@brief wmapro decoder
  */
-AVCodec ff_wmapro_decoder = {
+const AVCodec ff_wmapro_decoder = {
     .name           = "wmapro",
     .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Audio 9 Professional"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -2007,13 +2021,13 @@ AVCodec ff_wmapro_decoder = {
     .close          = wmapro_decode_end,
     .decode         = wmapro_decode_packet,
     .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .flush          = wmapro_flush,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
 
-AVCodec ff_xma1_decoder = {
+const AVCodec ff_xma1_decoder = {
     .name           = "xma1",
     .long_name      = NULL_IF_CONFIG_SMALL("Xbox Media Audio 1"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -2023,12 +2037,12 @@ AVCodec ff_xma1_decoder = {
     .close          = xma_decode_end,
     .decode         = xma_decode_packet,
     .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
 
-AVCodec ff_xma2_decoder = {
+const AVCodec ff_xma2_decoder = {
     .name           = "xma2",
     .long_name      = NULL_IF_CONFIG_SMALL("Xbox Media Audio 2"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -2039,7 +2053,7 @@ AVCodec ff_xma2_decoder = {
     .decode         = xma_decode_packet,
     .flush          = xma_flush,
     .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

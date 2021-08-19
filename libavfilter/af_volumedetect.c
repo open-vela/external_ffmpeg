@@ -40,21 +40,11 @@ static int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_S16P,
         AV_SAMPLE_FMT_NONE
     };
-    AVFilterFormats *formats;
-    AVFilterChannelLayouts *layouts;
-    int ret;
-
-    if (!(formats = ff_make_format_list(sample_fmts)))
-        return AVERROR(ENOMEM);
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_formats(ctx, formats);
+    return ff_set_common_formats_from_list(ctx, sample_fmts);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *samples)
@@ -155,7 +145,7 @@ static const AVFilterPad volumedetect_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_volumedetect = {
+const AVFilter ff_af_volumedetect = {
     .name          = "volumedetect",
     .description   = NULL_IF_CONFIG_SMALL("Detect audio volume."),
     .priv_size     = sizeof(VolDetectContext),

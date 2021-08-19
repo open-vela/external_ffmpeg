@@ -71,7 +71,7 @@ static const AVOption vaguedenoiser_options[] = {
     { "method",    "set filtering method",     OFFSET(method),    AV_OPT_TYPE_INT,   {.i64=2 },  0, 2,      FLAGS, "method" },
         { "hard",   "hard thresholding",       0,                 AV_OPT_TYPE_CONST, {.i64=0},   0, 0,      FLAGS, "method" },
         { "soft",   "soft thresholding",       0,                 AV_OPT_TYPE_CONST, {.i64=1},   0, 0,      FLAGS, "method" },
-        { "garrote", "garotte thresholding",   0,                 AV_OPT_TYPE_CONST, {.i64=2},   0, 0,      FLAGS, "method" },
+        { "garrote", "garrote thresholding",   0,                 AV_OPT_TYPE_CONST, {.i64=2},   0, 0,      FLAGS, "method" },
     { "nsteps",    "set number of steps",      OFFSET(nsteps),    AV_OPT_TYPE_INT,   {.i64=6 },  1, 32,     FLAGS },
     { "percent", "set percent of full denoising", OFFSET(percent),AV_OPT_TYPE_FLOAT, {.dbl=85},  0,100,     FLAGS },
     { "planes",    "set planes to filter",     OFFSET(planes),    AV_OPT_TYPE_INT,   {.i64=15 }, 0, 15,     FLAGS },
@@ -132,10 +132,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRAP,     AV_PIX_FMT_GBRAP10,    AV_PIX_FMT_GBRAP12,    AV_PIX_FMT_GBRAP16,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -610,7 +607,7 @@ static const AVFilterPad vaguedenoiser_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_vaguedenoiser = {
+const AVFilter ff_vf_vaguedenoiser = {
     .name          = "vaguedenoiser",
     .description   = NULL_IF_CONFIG_SMALL("Apply a Wavelet based Denoiser."),
     .priv_size     = sizeof(VagueDenoiserContext),
