@@ -260,7 +260,7 @@ static int wsvqa_read_packet(AVFormatContext *s,
     return ret;
 }
 
-const AVInputFormat ff_wsvqa_demuxer = {
+AVInputFormat ff_wsvqa_demuxer = {
     .name           = "wsvqa",
     .long_name      = NULL_IF_CONFIG_SMALL("Westwood Studios VQA"),
     .priv_data_size = sizeof(WsVqaDemuxContext),

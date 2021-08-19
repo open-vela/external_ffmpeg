@@ -22,6 +22,7 @@
 
 #include "libavutil/opt.h"
 #include "libavutil/eval.h"
+#include "libavutil/avassert.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
 #include "formats.h"
@@ -135,7 +136,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GRAY8,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static double get_natural_factor(const VignetteContext *s, int x, int y)
@@ -150,6 +154,9 @@ static double get_natural_factor(const VignetteContext *s, int x, int y)
         return (c*c)*(c*c); // do not remove braces, it helps compilers
     }
 }
+
+#define TS2D(ts)     ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static void update_context(VignetteContext *s, AVFilterLink *inlink, AVFrame *frame)
 {
@@ -327,6 +334,7 @@ static const AVFilterPad vignette_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad vignette_outputs[] = {
@@ -334,17 +342,18 @@ static const AVFilterPad vignette_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_vignette = {
+AVFilter ff_vf_vignette = {
     .name          = "vignette",
     .description   = NULL_IF_CONFIG_SMALL("Make or reverse a vignette effect."),
     .priv_size     = sizeof(VignetteContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(vignette_inputs),
-    FILTER_OUTPUTS(vignette_outputs),
+    .inputs        = vignette_inputs,
+    .outputs       = vignette_outputs,
     .priv_class    = &vignette_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

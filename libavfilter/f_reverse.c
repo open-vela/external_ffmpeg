@@ -121,6 +121,7 @@ static const AVFilterPad reverse_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad reverse_outputs[] = {
@@ -129,16 +130,17 @@ static const AVFilterPad reverse_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .request_frame = request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_reverse = {
+AVFilter ff_vf_reverse = {
     .name        = "reverse",
     .description = NULL_IF_CONFIG_SMALL("Reverse a clip."),
     .priv_size   = sizeof(ReverseContext),
     .init        = init,
     .uninit      = uninit,
-    FILTER_INPUTS(reverse_inputs),
-    FILTER_OUTPUTS(reverse_outputs),
+    .inputs      = reverse_inputs,
+    .outputs     = reverse_outputs,
 };
 
 #endif /* CONFIG_REVERSE_FILTER */
@@ -147,7 +149,14 @@ const AVFilter ff_vf_reverse = {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    int ret = ff_set_common_all_channel_counts(ctx);
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
@@ -155,7 +164,10 @@ static int query_formats(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static void reverse_samples_planar(AVFrame *out)
@@ -267,9 +279,10 @@ static const AVFilterPad areverse_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_AUDIO,
-        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame   = filter_frame,
+        .needs_writable = 1,
     },
+    { NULL }
 };
 
 static const AVFilterPad areverse_outputs[] = {
@@ -278,17 +291,18 @@ static const AVFilterPad areverse_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .request_frame = areverse_request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_areverse = {
+AVFilter ff_af_areverse = {
     .name          = "areverse",
     .description   = NULL_IF_CONFIG_SMALL("Reverse an audio clip."),
     .query_formats = query_formats,
     .priv_size     = sizeof(ReverseContext),
     .init          = init,
     .uninit        = uninit,
-    FILTER_INPUTS(areverse_inputs),
-    FILTER_OUTPUTS(areverse_outputs),
+    .inputs        = areverse_inputs,
+    .outputs       = areverse_outputs,
 };
 
 #endif /* CONFIG_AREVERSE_FILTER */
