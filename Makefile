@@ -18,14 +18,10 @@ include $(APPDIR)/Make.defs
 
 SBINDIR   := $(BINDIR)
 SINCDIR   := $(INCDIR)
-SCFLAGS   := $(CFLAGS)
-SCXXFLAGS := $(CXXFLAGS)
 SAR       := $(AR)
 -include ffbuild/config.mak
 BINDIR    := $(SBINDIR)
 INCDIR    := $(SINCDIR)
-CFLAGS    := $(SCFLAGS)
-CXXFLAGS  := $(SCXXFLAGS)
 AR        := $(SAR)
 
 CSRCS     :=
@@ -94,7 +90,9 @@ endif
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" .}
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/uORB}
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/opus/include}
-CFLAGS += -DHAVE_AV_CONFIG_H
+CFLAGS += $(CFLAGS_HEADERS) -DHAVE_AV_CONFIG_H
+
+EXTRA := $(filter-out -W%, $(CFLAGS))
 
 libavutil/ffversion.h .version:
 	$(Q)ffbuild/version.sh . libavutil/ffversion.h $(EXTRA_VERSION)
@@ -119,8 +117,8 @@ config.h:
 		--disable-videotoolbox  --disable-x86asm                \
 		--disable-xop           --disable-pthreads              \
 		--enable-version3       --enable-small                  \
-		--extra-cflags="$(CFLAGS)" --extra-ldflags="$(CFLAGS)"  \
-		--ld=echo               $(CFG_CMDS)                     \
+		--extra-cflags="$(EXTRA)" --extra-ldflags="$(CFLAGS)"   \
+		--ld=echo --pkg-config=false assert_level=3 $(CFG_CMDS) \
 		"$(CONFIG_LIB_FFMPEG_CONFIGURATION)"
 
 context:: config.h libavutil/ffversion.h
