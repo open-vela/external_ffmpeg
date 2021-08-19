@@ -32,7 +32,7 @@
 #include "id3v1.h"
 #include "replaygain.h"
 
-#include "libavcodec/avcodec.h"
+#include "libavcodec/codec_id.h"
 #include "libavcodec/mpegaudiodecheader.h"
 
 #define XING_FLAG_FRAMES 0x01
@@ -255,13 +255,13 @@ static void mp3_parse_info_tag(AVFormatContext *s, AVStream *st,
 
         mp3->start_pad = v>>12;
         mp3->  end_pad = v&4095;
-        st->start_skip_samples = mp3->start_pad + 528 + 1;
+        st->internal->start_skip_samples = mp3->start_pad + 528 + 1;
         if (mp3->frames) {
-            st->first_discard_sample = -mp3->end_pad + 528 + 1 + mp3->frames * (int64_t)spf;
-            st->last_discard_sample = mp3->frames * (int64_t)spf;
+            st->internal->first_discard_sample = -mp3->end_pad + 528 + 1 + mp3->frames * (int64_t)spf;
+            st->internal->last_discard_sample = mp3->frames * (int64_t)spf;
         }
         if (!st->start_time)
-            st->start_time = av_rescale_q(st->start_skip_samples,
+            st->start_time = av_rescale_q(st->internal->start_skip_samples,
                                             (AVRational){1, c->sample_rate},
                                             st->time_base);
         av_log(s, AV_LOG_DEBUG, "pad %d %d\n", mp3->start_pad, mp3->  end_pad);
@@ -374,7 +374,7 @@ static int mp3_read_header(AVFormatContext *s)
 
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id = AV_CODEC_ID_MP3;
-    st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+    st->internal->need_parsing = AVSTREAM_PARSE_FULL_RAW;
     st->start_time = 0;
 
     // lcm of all mp3 sample rates
@@ -431,8 +431,8 @@ static int mp3_read_header(AVFormatContext *s)
     }
 
     // the seek index is relative to the end of the xing vbr headers
-    for (i = 0; i < st->nb_index_entries; i++)
-        st->index_entries[i].pos += avio_tell(s->pb);
+    for (i = 0; i < st->internal->nb_index_entries; i++)
+        st->internal->index_entries[i].pos += avio_tell(s->pb);
 
     /* the parameters will be extracted from the compressed bitstream */
     return 0;
@@ -567,7 +567,7 @@ static int mp3_seek(AVFormatContext *s, int stream_index, int64_t timestamp,
         if (ret < 0)
             return ret;
 
-        ie = &st->index_entries[ret];
+        ie = &st->internal->index_entries[ret];
     } else if (fast_seek && st->duration > 0 && filesize > 0) {
         if (!mp3->is_cbr)
             av_log(s, AV_LOG_WARNING, "Using scaling to seek VBR MP3; may be imprecise.\n");
@@ -589,7 +589,7 @@ static int mp3_seek(AVFormatContext *s, int stream_index, int64_t timestamp,
         ie1.timestamp = frame_duration * av_rescale(best_pos - s->internal->data_offset, mp3->frames, mp3->header_filesize);
     }
 
-    ff_update_cur_dts(s, st, ie->timestamp);
+    avpriv_update_cur_dts(s, st, ie->timestamp);
     return 0;
 }
 
@@ -606,7 +606,7 @@ static const AVClass demuxer_class = {
     .category   = AV_CLASS_CATEGORY_DEMUXER,
 };
 
-AVInputFormat ff_mp3_demuxer = {
+const AVInputFormat ff_mp3_demuxer = {
     .name           = "mp3",
     .long_name      = NULL_IF_CONFIG_SMALL("MP2/3 (MPEG audio layer 2/3)"),
     .read_probe     = mp3_read_probe,

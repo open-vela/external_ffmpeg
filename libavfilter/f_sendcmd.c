@@ -475,9 +475,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->intervals);
 }
 
-#define TS2D(ts) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts)*av_q2d(tb))
-
 static int filter_frame(AVFilterLink *inlink, AVFrame *ref)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -597,7 +594,7 @@ static const AVFilterPad sendcmd_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_sendcmd = {
+const AVFilter ff_vf_sendcmd = {
     .name        = "sendcmd",
     .description = NULL_IF_CONFIG_SMALL("Send commands to filters."),
     .init        = init,
@@ -632,7 +629,7 @@ static const AVFilterPad asendcmd_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_asendcmd = {
+const AVFilter ff_af_asendcmd = {
     .name        = "asendcmd",
     .description = NULL_IF_CONFIG_SMALL("Send commands to filters."),
     .init        = init,

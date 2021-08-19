@@ -146,7 +146,8 @@ static int blend_frames(AVFilterContext *ctx, int interpolate)
         av_frame_copy_props(s->work, s->f0);
 
         ff_dlog(ctx, "blend_frames() INTERPOLATE to create work frame\n");
-        ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(FFMAX(1, outlink->h >> 2), ff_filter_get_nb_threads(ctx)));
+        ff_filter_execute(ctx, filter_slice, &td, NULL,
+                          FFMIN(FFMAX(1, outlink->h >> 2), ff_filter_get_nb_threads(ctx)));
         return 1;
     }
     return 0;
@@ -170,7 +171,9 @@ static int process_work_frame(AVFilterContext *ctx)
         return 0;
 
     if (!s->f0) {
-        s->work = av_frame_clone(s->f1);
+        av_assert1(s->flush);
+        s->work = s->f1;
+        s->f1 = NULL;
     } else {
         if (work_pts >= s->pts1 + s->delta && s->flush)
             return 0;
@@ -229,10 +232,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 #define BLEND_FRAME_FUNC(nbits)                         \
@@ -439,7 +439,7 @@ static const AVFilterPad framerate_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_framerate = {
+const AVFilter ff_vf_framerate = {
     .name          = "framerate",
     .description   = NULL_IF_CONFIG_SMALL("Upsamples or downsamples progressive source between specified frame rates."),
     .priv_size     = sizeof(FrameRateContext),

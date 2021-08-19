@@ -134,7 +134,7 @@ static int query_formats(AVFilterContext *ctx)
     int ret;
 
     AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if ((ret = ff_formats_ref(fmts_list, &outlink->in_formats)) < 0)
+    if ((ret = ff_formats_ref(fmts_list, &outlink->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -471,7 +471,7 @@ static const AVFilterPad drawgraph_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_drawgraph = {
+const AVFilter ff_vf_drawgraph = {
     .name          = "drawgraph",
     .description   = NULL_IF_CONFIG_SMALL("Draw a graph using input video metadata."),
     .priv_size     = sizeof(DrawGraphContext),
@@ -509,7 +509,7 @@ static const AVFilterPad adrawgraph_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_avf_adrawgraph = {
+const AVFilter ff_avf_adrawgraph = {
     .name          = "adrawgraph",
     .description   = NULL_IF_CONFIG_SMALL("Draw a graph using input audio metadata."),
     .priv_size     = sizeof(DrawGraphContext),

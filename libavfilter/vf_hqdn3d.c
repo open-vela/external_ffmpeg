@@ -179,7 +179,7 @@ static void precalc_coefs(double dist25, int depth, int16_t *ct)
 
     gamma = log(0.25) / log(1.0 - FFMIN(dist25,252.0)/255.0 - 0.00001);
 
-    for (i = -256<<LUT_BITS; i < 256<<LUT_BITS; i++) {
+    for (i = -(256<<LUT_BITS); i < 256<<LUT_BITS; i++) {
         double f = ((i<<(9-LUT_BITS)) + (1<<(8-LUT_BITS)) - 1) / 512.0; // midpoint of the bin
         simil = FFMAX(0, 1.0 - fabs(f) / 255.0);
         C = pow(simil, gamma) * 256.0 * f;
@@ -244,10 +244,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static void calc_coefs(AVFilterContext *ctx)
@@ -340,7 +337,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     td.out = out;
     td.direct = direct;
     /* one thread per plane */
-    ctx->internal->execute(ctx, do_denoise, &td, NULL, 3);
+    ff_filter_execute(ctx, do_denoise, &td, NULL, 3);
 
     if (ctx->is_disabled) {
         av_frame_free(&out);
@@ -398,7 +395,7 @@ static const AVFilterPad avfilter_vf_hqdn3d_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_hqdn3d = {
+const AVFilter ff_vf_hqdn3d = {
     .name          = "hqdn3d",
     .description   = NULL_IF_CONFIG_SMALL("Apply a High Quality 3D Denoiser."),
     .priv_size     = sizeof(HQDN3DContext),

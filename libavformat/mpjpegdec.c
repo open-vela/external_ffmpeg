@@ -328,18 +328,18 @@ static int mpjpeg_read_packet(AVFormatContext *s, AVPacket *pkt)
         ret = av_get_packet(s->pb, pkt, size);
     } else {
         /* no size was given -- we read until the next boundary or end-of-file */
-        int remaining = 0, len;
+        int len;
 
         const int read_chunk = 2048;
 
         pkt->pos  = avio_tell(s->pb);
 
-        while ((ret = ffio_ensure_seekback(s->pb, read_chunk - remaining)) >= 0 && /* we may need to return as much as all we've read back to the buffer */
-               (ret = av_append_packet(s->pb, pkt, read_chunk - remaining)) >= 0) {
+        while ((ret = ffio_ensure_seekback(s->pb, read_chunk)) >= 0 && /* we may need to return as much as all we've read back to the buffer */
+               (ret = av_append_packet(s->pb, pkt, read_chunk)) >= 0) {
             /* scan the new data */
             char *start;
 
-            len = ret + remaining;
+            len = ret;
             start = pkt->data + pkt->size - len;
             do {
                 if (!memcmp(start, mpjpeg->searchstr, mpjpeg->searchstr_len)) {
@@ -351,7 +351,8 @@ static int mpjpeg_read_packet(AVFormatContext *s, AVPacket *pkt)
                 len--;
                 start++;
             } while (len >= mpjpeg->searchstr_len);
-            remaining = len;
+            avio_seek(s->pb, -len, SEEK_CUR);
+            pkt->size -= len;
         }
 
         /* error or EOF occurred */
@@ -379,7 +380,7 @@ static const AVClass mpjpeg_demuxer_class = {
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-AVInputFormat ff_mpjpeg_demuxer = {
+const AVInputFormat ff_mpjpeg_demuxer = {
     .name              = "mpjpeg",
     .long_name         = NULL_IF_CONFIG_SMALL("MIME multipart JPEG"),
     .mime_type         = "multipart/x-mixed-replace",

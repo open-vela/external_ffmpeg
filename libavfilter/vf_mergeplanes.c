@@ -96,7 +96,7 @@ static av_cold int init(AVFilterContext *ctx)
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0){
+        if ((ret = ff_append_inpad(ctx, &pad)) < 0){
             av_freep(&pad.name);
             return ret;
         }
@@ -122,12 +122,12 @@ static int query_formats(AVFilterContext *ctx)
     }
 
     for (i = 0; i < s->nb_inputs; i++)
-        if ((ret = ff_formats_ref(formats, &ctx->inputs[i]->out_formats)) < 0)
+        if ((ret = ff_formats_ref(formats, &ctx->inputs[i]->outcfg.formats)) < 0)
             return ret;
 
     formats = NULL;
     if ((ret = ff_add_format(&formats, s->out_fmt)) < 0 ||
-        (ret = ff_formats_ref(formats, &ctx->outputs[0]->in_formats)) < 0)
+        (ret = ff_formats_ref(formats, &ctx->outputs[0]->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -296,7 +296,7 @@ static const AVFilterPad mergeplanes_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_mergeplanes = {
+const AVFilter ff_vf_mergeplanes = {
     .name          = "mergeplanes",
     .description   = NULL_IF_CONFIG_SMALL("Merge planes."),
     .priv_size     = sizeof(MergePlanesContext),

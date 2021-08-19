@@ -73,10 +73,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *formats = ff_make_format_list(pixfmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, formats);
+    return ff_set_common_formats_from_list(ctx, pixfmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -193,7 +190,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_entropy = {
+const AVFilter ff_vf_entropy = {
     .name           = "entropy",
     .description    = NULL_IF_CONFIG_SMALL("Measure video frames entropy."),
     .priv_size      = sizeof(EntropyContext),

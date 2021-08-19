@@ -115,25 +115,15 @@ static int query_formats(AVFilterContext *ctx)
     AVFilterFormats *pix_formats = NULL, *map_formats = NULL;
     int ret;
 
-    if (!(pix_formats = ff_make_format_list(s->format ? gray_pix_fmts : pix_fmts)) ||
-        !(map_formats = ff_make_format_list(map_fmts))) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
-    if ((ret = ff_formats_ref(pix_formats, &ctx->inputs[0]->out_formats)) < 0 ||
-        (ret = ff_formats_ref(map_formats, &ctx->inputs[1]->out_formats)) < 0 ||
-        (ret = ff_formats_ref(map_formats, &ctx->inputs[2]->out_formats)) < 0 ||
-        (ret = ff_formats_ref(pix_formats, &ctx->outputs[0]->in_formats)) < 0)
-        goto fail;
-    return 0;
-fail:
-    if (pix_formats)
-        av_freep(&pix_formats->formats);
-    av_freep(&pix_formats);
-    if (map_formats)
-        av_freep(&map_formats->formats);
-    av_freep(&map_formats);
-    return ret;
+    pix_formats = ff_make_format_list(s->format ? gray_pix_fmts : pix_fmts);
+    if ((ret = ff_formats_ref(pix_formats, &ctx->inputs[0]->outcfg.formats)) < 0 ||
+        (ret = ff_formats_ref(pix_formats, &ctx->outputs[0]->incfg.formats)) < 0)
+        return ret;
+
+    map_formats = ff_make_format_list(map_fmts);
+    if ((ret = ff_formats_ref(map_formats, &ctx->inputs[1]->outcfg.formats)) < 0)
+        return ret;
+    return ff_formats_ref(map_formats, &ctx->inputs[2]->outcfg.formats);
 }
 
 /**
@@ -312,7 +302,8 @@ static int process_frame(FFFrameSync *fs)
         td.nb_planes = s->nb_planes;
         td.nb_components = s->nb_components;
         td.step = s->step;
-        ctx->internal->execute(ctx, s->remap_slice, &td, NULL, FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
+        ff_filter_execute(ctx, s->remap_slice, &td, NULL,
+                          FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
     }
     out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, outlink->time_base);
 
@@ -408,7 +399,7 @@ static const AVFilterPad remap_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_remap = {
+const AVFilter ff_vf_remap = {
     .name          = "remap",
     .description   = NULL_IF_CONFIG_SMALL("Remap pixels."),
     .priv_size     = sizeof(RemapContext),

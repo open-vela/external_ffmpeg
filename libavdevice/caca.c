@@ -180,7 +180,7 @@ static int caca_write_header(AVFormatContext *s)
     if (!c->window_title)
         c->window_title = av_strdup(s->url);
     caca_set_display_title(c->display, c->window_title);
-    caca_set_display_time(c->display, av_rescale_q(1, st->codec->time_base, AV_TIME_BASE_Q));
+    caca_set_display_time(c->display, av_rescale_q(1, st->time_base, AV_TIME_BASE_Q));
 
     return 0;
 
@@ -227,7 +227,7 @@ static const AVClass caca_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT,
 };
 
-AVOutputFormat ff_caca_muxer = {
+const AVOutputFormat ff_caca_muxer = {
     .name           = "caca",
     .long_name      = NULL_IF_CONFIG_SMALL("caca (color ASCII art) output device"),
     .priv_data_size = sizeof(CACAContext),

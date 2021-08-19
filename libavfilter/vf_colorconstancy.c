@@ -366,7 +366,8 @@ get_deriv(AVFilterContext *ctx, ThreadData *td, int ord, int dir,
     td->meta_data[INDEX_DIR] = dir;
     td->meta_data[INDEX_SRC] = src;
     td->meta_data[INDEX_DST] = dst;
-    ctx->internal->execute(ctx, slice_get_derivative, td, NULL, FFMIN(dim, nb_threads));
+    ff_filter_execute(ctx, slice_get_derivative, td,
+                      NULL, FFMIN(dim, nb_threads));
 }
 
 /**
@@ -500,10 +501,10 @@ static int filter_grey_edge(AVFilterContext *ctx, AVFrame *in)
     }
     get_derivative(ctx, &td);
     if (difford > 0) {
-        ctx->internal->execute(ctx, slice_normalize, &td, NULL, nb_jobs);
+        ff_filter_execute(ctx, slice_normalize, &td, NULL, nb_jobs);
     }
 
-    ctx->internal->execute(ctx, filter_slice_grey_edge, &td, NULL, nb_jobs);
+    ff_filter_execute(ctx, filter_slice_grey_edge, &td, NULL, nb_jobs);
     if (!minknorm) {
         for (plane = 0; plane < NUM_PLANES; ++plane) {
             white[plane] = 0; // All values are absolute
@@ -631,7 +632,7 @@ static void chromatic_adaptation(AVFilterContext *ctx, AVFrame *in, AVFrame *out
 
     td.in  = in;
     td.out = out;
-    ctx->internal->execute(ctx, diagonal_transformation, &td, NULL, nb_jobs);
+    ff_filter_execute(ctx, diagonal_transformation, &td, NULL, nb_jobs);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -643,7 +644,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -747,7 +748,7 @@ static const AVOption greyedge_options[] = {
 
 AVFILTER_DEFINE_CLASS(greyedge);
 
-AVFilter ff_vf_greyedge = {
+const AVFilter ff_vf_greyedge = {
     .name          = GREY_EDGE,
     .description   = NULL_IF_CONFIG_SMALL("Estimates scene illumination by grey edge assumption."),
     .priv_size     = sizeof(ColorConstancyContext),
