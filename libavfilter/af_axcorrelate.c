@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/audio_fifo.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
@@ -48,19 +49,32 @@ typedef struct AudioXCorrelateContext {
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_FLTP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static float mean_sum(const float *in, int size)
@@ -326,6 +340,7 @@ static const AVFilterPad inputs[] = {
         .name = "axcorrelate1",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -334,6 +349,7 @@ static const AVFilterPad outputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_output,
     },
+    { NULL }
 };
 
 #define AF AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
@@ -349,7 +365,7 @@ static const AVOption axcorrelate_options[] = {
 
 AVFILTER_DEFINE_CLASS(axcorrelate);
 
-const AVFilter ff_af_axcorrelate = {
+AVFilter ff_af_axcorrelate = {
     .name           = "axcorrelate",
     .description    = NULL_IF_CONFIG_SMALL("Cross-correlate two audio streams."),
     .priv_size      = sizeof(AudioXCorrelateContext),
@@ -357,6 +373,6 @@ const AVFilter ff_af_axcorrelate = {
     .query_formats  = query_formats,
     .activate       = activate,
     .uninit         = uninit,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
+    .inputs         = inputs,
+    .outputs        = outputs,
 };
