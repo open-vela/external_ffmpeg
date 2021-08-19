@@ -216,10 +216,12 @@ static void averageiir2d(AVFilterContext *ctx, AVFrame *in, AVFrame *out, int pl
     td.height = height;
     td.ptr = in->data[plane];
     td.linesize = in->linesize[plane];
-    ctx->internal->execute(ctx, s->filter_horizontally, &td, NULL, FFMIN(height, nb_threads));
+    ff_filter_execute(ctx, s->filter_horizontally, &td,
+                      NULL, FFMIN(height, nb_threads));
     td.ptr = out->data[plane];
     td.linesize = out->linesize[plane];
-    ctx->internal->execute(ctx, s->filter_vertically, &td, NULL, FFMIN(width, nb_threads));
+    ff_filter_execute(ctx, s->filter_vertically, &td,
+                      NULL, FFMIN(width, nb_threads));
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -246,7 +248,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -313,7 +315,7 @@ static const AVFilterPad avgblur_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_avgblur = {
+const AVFilter ff_vf_avgblur = {
     .name          = "avgblur",
     .description   = NULL_IF_CONFIG_SMALL("Apply Average Blur filter."),
     .priv_size     = sizeof(AverageBlurContext),

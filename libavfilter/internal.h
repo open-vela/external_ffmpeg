@@ -27,13 +27,9 @@
 #include "libavutil/internal.h"
 #include "avfilter.h"
 #include "formats.h"
-#include "framepool.h"
 #include "framequeue.h"
-#include "thread.h"
 #include "version.h"
 #include "video.h"
-#include "libavcodec/avcodec.h"
-#include "libavcodec/internal.h"
 
 typedef struct AVFilterCommand {
     double time;                ///< time expressed in seconds
@@ -65,20 +61,31 @@ struct AVFilterPad {
     enum AVMediaType type;
 
     /**
-     * Callback function to get a video buffer. If NULL, the filter system will
-     * use ff_default_get_video_buffer().
+     * The filter expects writable frames from its input link,
+     * duplicating data buffers if needed.
      *
-     * Input video pads only.
+     * input pads only.
      */
-    AVFrame *(*get_video_buffer)(AVFilterLink *link, int w, int h);
+#define AVFILTERPAD_FLAG_NEEDS_WRITABLE                  (1 << 0)
 
     /**
-     * Callback function to get an audio buffer. If NULL, the filter system will
-     * use ff_default_get_audio_buffer().
-     *
-     * Input audio pads only.
+     * A combination of AVFILTERPAD_FLAG_* flags.
      */
-    AVFrame *(*get_audio_buffer)(AVFilterLink *link, int nb_samples);
+    int flags;
+
+    /**
+     * Callback functions to get a video/audio buffers. If NULL,
+     * the filter system will use ff_default_get_video_buffer() for video
+     * and ff_default_get_audio_buffer() for audio.
+     *
+     * The state of the union is determined by type.
+     *
+     * Input pads only.
+     */
+    union {
+        AVFrame *(*video)(AVFilterLink *link, int w, int h);
+        AVFrame *(*audio)(AVFilterLink *link, int nb_samples);
+    } get_buffer;
 
     /**
      * Filtering callback. This is where a filter receives a frame with
@@ -116,22 +123,6 @@ struct AVFilterPad {
      * and another value on error.
      */
     int (*config_props)(AVFilterLink *link);
-
-    /**
-     * The filter expects a fifo to be inserted on its input link,
-     * typically because it has a delay.
-     *
-     * input pads only.
-     */
-    int needs_fifo;
-
-    /**
-     * The filter expects writable frames from its input link,
-     * duplicating data buffers if needed.
-     *
-     * input pads only.
-     */
-    int needs_writable;
 };
 
 struct AVFilterGraphInternal {
@@ -143,6 +134,12 @@ struct AVFilterGraphInternal {
 struct AVFilterInternal {
     avfilter_execute_func *execute;
 };
+
+static av_always_inline int ff_filter_execute(AVFilterContext *ctx, avfilter_action_func *func,
+                                              void *arg, int *ret, int nb_jobs)
+{
+    return ctx->internal->execute(ctx, func, arg, ret, nb_jobs);
+}
 
 /**
  * Tell if an integer is contained in the provided -1-terminated list of integers.
@@ -180,28 +177,6 @@ av_warn_unused_result
 int ff_parse_sample_rate(int *ret, const char *arg, void *log_ctx);
 
 /**
- * Parse a time base.
- *
- * @param ret unsigned AVRational pointer to where the value should be written
- * @param arg string to parse
- * @param log_ctx log context
- * @return >= 0 in case of success, a negative AVERROR code on error
- */
-av_warn_unused_result
-int ff_parse_time_base(AVRational *ret, const char *arg, void *log_ctx);
-
-/**
- * Parse a sample format name or a corresponding integer representation.
- *
- * @param ret integer pointer to where the value should be written
- * @param arg string to parse
- * @param log_ctx log context
- * @return >= 0 in case of success, a negative AVERROR code on error
- */
-av_warn_unused_result
-int ff_parse_sample_format(int *ret, const char *arg, void *log_ctx);
-
-/**
  * Parse a channel layout or a corresponding integer representation.
  *
  * @param ret 64bit integer pointer to where the value should be written.
@@ -234,6 +209,10 @@ void ff_avfilter_link_set_out_status(AVFilterLink *link, int status, int64_t pts
 
 void ff_command_queue_pop(AVFilterContext *filter);
 
+#define D2TS(d)      (isnan(d) ? AV_NOPTS_VALUE : (int64_t)(d))
+#define TS2D(ts)     ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
+
 /* misc trace functions */
 
 #define FF_TPRINTF_START(ctx, func) ff_tlog(NULL, "%-16s: ", #func)
@@ -247,34 +226,29 @@ void ff_tlog_link(void *ctx, AVFilterLink *link, int end);
 /**
  * Insert a new pad.
  *
- * @param idx Insertion point. Pad is inserted at the end if this point
- *            is beyond the end of the list of pads.
  * @param count Pointer to the number of pads in the list
- * @param padidx_off Offset within an AVFilterLink structure to the element
- *                   to increment when inserting a new pad causes link
- *                   numbering to change
  * @param pads Pointer to the pointer to the beginning of the list of pads
  * @param links Pointer to the pointer to the beginning of the list of links
  * @param newpad The new pad to add. A copy is made when adding.
  * @return >= 0 in case of success, a negative AVERROR code on error
  */
-int ff_insert_pad(unsigned idx, unsigned *count, size_t padidx_off,
+int ff_append_pad(unsigned *count,
                    AVFilterPad **pads, AVFilterLink ***links,
                    AVFilterPad *newpad);
 
 /** Insert a new input pad for the filter. */
-static inline int ff_insert_inpad(AVFilterContext *f, unsigned index,
+static inline int ff_append_inpad(AVFilterContext *f,
                                    AVFilterPad *p)
 {
-    return ff_insert_pad(index, &f->nb_inputs, offsetof(AVFilterLink, dstpad),
+    return ff_append_pad(&f->nb_inputs,
                   &f->input_pads, &f->inputs, p);
 }
 
 /** Insert a new output pad for the filter. */
-static inline int ff_insert_outpad(AVFilterContext *f, unsigned index,
+static inline int ff_append_outpad(AVFilterContext *f,
                                     AVFilterPad *p)
 {
-    return ff_insert_pad(index, &f->nb_outputs, offsetof(AVFilterLink, srcpad),
+    return ff_append_pad(&f->nb_outputs,
                   &f->output_pads, &f->outputs, p);
 }
 
@@ -370,30 +344,16 @@ void ff_filter_graph_remove_filter(AVFilterGraph *graph, AVFilterContext *filter
 int ff_filter_graph_run_once(AVFilterGraph *graph);
 
 /**
- * Normalize the qscale factor
- * FIXME the H264 qscale is a log based scale, mpeg1/2 is not, the code below
- *       cannot be optimal
- */
-static inline int ff_norm_qscale(int qscale, int type)
-{
-    switch (type) {
-    case FF_QSCALE_TYPE_MPEG1: return qscale;
-    case FF_QSCALE_TYPE_MPEG2: return qscale >> 1;
-    case FF_QSCALE_TYPE_H264:  return qscale >> 2;
-    case FF_QSCALE_TYPE_VP56:  return (63 - qscale + 2) >> 2;
-    }
-    return qscale;
-}
-
-/**
  * Get number of threads for current filter instance.
  * This number is always same or less than graph->nb_threads.
  */
-int ff_filter_get_nb_threads(AVFilterContext *ctx);
+int ff_filter_get_nb_threads(AVFilterContext *ctx) av_pure;
 
 /**
  * Generic processing of user supplied commands that are set
  * in the same way as the filter options.
+ * NOTE: 'enable' option is handled separately, and not by
+ * this function.
  */
 int ff_filter_process_command(AVFilterContext *ctx, const char *cmd,
                               const char *arg, char *res, int res_len, int flags);

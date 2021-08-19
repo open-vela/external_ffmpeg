@@ -17,10 +17,8 @@
  */
 #include <float.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
-#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -258,7 +256,7 @@ static const AVFilterPad transpose_opencl_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = get_video_buffer,
+        .get_buffer.video = get_video_buffer,
         .filter_frame = &transpose_opencl_filter_frame,
         .config_props = &ff_opencl_filter_config_input,
     },
@@ -274,7 +272,7 @@ static const AVFilterPad transpose_opencl_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_transpose_opencl = {
+const AVFilter ff_vf_transpose_opencl = {
     .name           = "transpose_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Transpose input video"),
     .priv_size      = sizeof(TransposeOpenCLContext),

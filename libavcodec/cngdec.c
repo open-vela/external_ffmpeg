@@ -161,7 +161,7 @@ static int cng_decode_frame(AVCodecContext *avctx, void *data,
     return buf_size;
 }
 
-AVCodec ff_comfortnoise_decoder = {
+const AVCodec ff_comfortnoise_decoder = {
     .name           = "comfortnoise",
     .long_name      = NULL_IF_CONFIG_SMALL("RFC 3389 comfort noise generator"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -173,7 +173,7 @@ AVCodec ff_comfortnoise_decoder = {
     .close          = cng_decode_close,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };

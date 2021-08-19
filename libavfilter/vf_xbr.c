@@ -29,7 +29,6 @@
  */
 
 #include "libavutil/opt.h"
-#include "libavutil/avassert.h"
 #include "libavutil/pixdesc.h"
 #include "internal.h"
 
@@ -347,10 +346,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_0RGB32, AV_PIX_FMT_NONE,
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -371,7 +367,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     td.in = in;
     td.out = out;
     td.rgbtoyuv = s->rgbtoyuv;
-    ctx->internal->execute(ctx, s->func, &td, NULL, FFMIN(inlink->h, ff_filter_get_nb_threads(ctx)));
+    ff_filter_execute(ctx, s->func, &td, NULL,
+                      FFMIN(inlink->h, ff_filter_get_nb_threads(ctx)));
 
     out->width  = outlink->w;
     out->height = outlink->h;
@@ -425,7 +422,7 @@ static const AVFilterPad xbr_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_xbr = {
+const AVFilter ff_vf_xbr = {
     .name          = "xbr",
     .description   = NULL_IF_CONFIG_SMALL("Scale the input using xBR algorithm."),
     .inputs        = xbr_inputs,

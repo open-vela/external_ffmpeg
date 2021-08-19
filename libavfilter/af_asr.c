@@ -20,7 +20,6 @@
 
 #include <pocketsphinx/pocketsphinx.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
@@ -134,7 +133,7 @@ static int query_formats(AVFilterContext *ctx)
         (ret = ff_set_common_formats         (ctx     , formats                           )) < 0 ||
         (ret = ff_add_channel_layout         (&layout , AV_CH_LAYOUT_MONO                 )) < 0 ||
         (ret = ff_set_common_channel_layouts (ctx     , layout                            )) < 0 ||
-        (ret = ff_set_common_samplerates     (ctx     , ff_make_format_list(sample_rates) )) < 0)
+        (ret = ff_set_common_samplerates_from_list(ctx, sample_rates     )) < 0)
         return ret;
 
     return 0;
@@ -168,7 +167,7 @@ static const AVFilterPad asr_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_asr = {
+const AVFilter ff_af_asr = {
     .name          = "asr",
     .description   = NULL_IF_CONFIG_SMALL("Automatic Speech Recognition."),
     .priv_size     = sizeof(ASRContext),

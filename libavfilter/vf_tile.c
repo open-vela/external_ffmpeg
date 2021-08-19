@@ -63,7 +63,7 @@ static const AVOption tile_options[] = {
     { "color",   "set the color of the unused area", OFFSET(rgba_color), AV_OPT_TYPE_COLOR, {.str = "black"}, .flags = FLAGS },
     { "overlap", "set how many frames to overlap for each render", OFFSET(overlap),
         AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS },
-    { "init_padding", " set how many frames to initially pad", OFFSET(init_padding),
+    { "init_padding", "set how many frames to initially pad", OFFSET(init_padding),
         AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS },
     { NULL }
 };
@@ -285,7 +285,7 @@ static const AVFilterPad tile_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_tile = {
+const AVFilter ff_vf_tile = {
     .name          = "tile",
     .description   = NULL_IF_CONFIG_SMALL("Tile several successive frames together."),
     .init          = init,

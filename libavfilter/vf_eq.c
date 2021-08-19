@@ -243,13 +243,8 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV444P,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts_eq);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pixel_fmts_eq);
 }
-
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
@@ -379,7 +374,7 @@ static const AVOption eq_options[] = {
 
 AVFILTER_DEFINE_CLASS(eq);
 
-AVFilter ff_vf_eq = {
+const AVFilter ff_vf_eq = {
     .name            = "eq",
     .description     = NULL_IF_CONFIG_SMALL("Adjust brightness, contrast, gamma, and saturation."),
     .priv_size       = sizeof(EQContext),

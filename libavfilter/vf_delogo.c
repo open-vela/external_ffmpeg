@@ -55,7 +55,6 @@ enum var_name {
     VAR_T,
     VAR_VARS_NB
 };
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int set_expr(AVExpr **pexpr, const char *expr, const char *option, void *log_ctx)
 {
@@ -235,10 +234,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA420P, AV_PIX_FMT_GRAY8,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -399,7 +395,7 @@ static const AVFilterPad avfilter_vf_delogo_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_delogo = {
+const AVFilter ff_vf_delogo = {
     .name          = "delogo",
     .description   = NULL_IF_CONFIG_SMALL("Remove logo from input video."),
     .priv_size     = sizeof(DelogoContext),

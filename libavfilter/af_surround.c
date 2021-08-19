@@ -175,7 +175,7 @@ static int query_formats(AVFilterContext *ctx)
     if (ret)
         return ret;
 
-    ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->in_channel_layouts);
+    ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->incfg.channel_layouts);
     if (ret)
         return ret;
 
@@ -184,14 +184,11 @@ static int query_formats(AVFilterContext *ctx)
     if (ret)
         return ret;
 
-    ret = ff_channel_layouts_ref(layouts, &ctx->inputs[0]->out_channel_layouts);
+    ret = ff_channel_layouts_ref(layouts, &ctx->inputs[0]->outcfg.channel_layouts);
     if (ret)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -1589,7 +1586,7 @@ static int filter_frame(AVFilterLink *inlink)
     if (ret < 0)
         return ret;
 
-    ctx->internal->execute(ctx, fft_channel, NULL, NULL, inlink->channels);
+    ff_filter_execute(ctx, fft_channel, NULL, NULL, inlink->channels);
 
     s->filter(ctx);
 
@@ -1597,7 +1594,7 @@ static int filter_frame(AVFilterLink *inlink)
     if (!out)
         return AVERROR(ENOMEM);
 
-    ctx->internal->execute(ctx, ifft_channel, out, NULL, outlink->channels);
+    ff_filter_execute(ctx, ifft_channel, out, NULL, outlink->channels);
 
     out->pts = s->pts;
     if (s->pts != AV_NOPTS_VALUE)
@@ -1785,7 +1782,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_surround = {
+const AVFilter ff_af_surround = {
     .name           = "surround",
     .description    = NULL_IF_CONFIG_SMALL("Apply audio surround upmix filter."),
     .query_formats  = query_formats,

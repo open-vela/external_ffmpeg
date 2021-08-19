@@ -28,7 +28,7 @@
 #include "framesync.h"
 
 #define OFFSET(x) offsetof(MaskedMinMaxContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 typedef struct ThreadData {
     AVFrame *src, *f1, *f2, *dst;
@@ -50,7 +50,7 @@ typedef struct MaskedMinMaxContext {
 } MaskedMinMaxContext;
 
 static const AVOption maskedminmax_options[] = {
-    { "planes",     "set planes",     OFFSET(planes),     AV_OPT_TYPE_INT, {.i64=0xF}, 0, 0xF,        FLAGS },
+    { "planes", "set planes", OFFSET(planes), AV_OPT_TYPE_INT, {.i64=0xF}, 0, 0xF, FLAGS },
     { NULL }
 };
 
@@ -87,7 +87,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static void maskedmin8(const uint8_t *src, uint8_t *dst, const uint8_t *f1, const uint8_t *f2, int w)
@@ -221,8 +221,8 @@ static int process_frame(FFFrameSync *fs)
         td.f2 = f2;
         td.dst = out;
 
-        ctx->internal->execute(ctx, maskedminmax_slice, &td, NULL, FFMIN(s->planeheight[0],
-                                                                   ff_filter_get_nb_threads(ctx)));
+        ff_filter_execute(ctx, maskedminmax_slice, &td, NULL,
+                          FFMIN(s->planeheight[0], ff_filter_get_nb_threads(ctx)));
     }
     out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, outlink->time_base);
 
@@ -328,7 +328,7 @@ static const AVFilterPad maskedminmax_outputs[] = {
 #define maskedmin_options maskedminmax_options
 AVFILTER_DEFINE_CLASS(maskedmin);
 
-AVFilter ff_vf_maskedmin = {
+const AVFilter ff_vf_maskedmin = {
     .name          = "maskedmin",
     .description   = NULL_IF_CONFIG_SMALL("Apply filtering with minimum difference of two streams."),
     .priv_class    = &maskedmin_class,
@@ -340,12 +340,13 @@ AVFilter ff_vf_maskedmin = {
     .inputs        = maskedminmax_inputs,
     .outputs       = maskedminmax_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = ff_filter_process_command,
 };
 
 #define maskedmax_options maskedminmax_options
 AVFILTER_DEFINE_CLASS(maskedmax);
 
-AVFilter ff_vf_maskedmax = {
+const AVFilter ff_vf_maskedmax = {
     .name          = "maskedmax",
     .description   = NULL_IF_CONFIG_SMALL("Apply filtering with maximum difference of two streams."),
     .priv_class    = &maskedmax_class,
@@ -357,4 +358,5 @@ AVFilter ff_vf_maskedmax = {
     .inputs        = maskedminmax_inputs,
     .outputs       = maskedminmax_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = ff_filter_process_command,
 };

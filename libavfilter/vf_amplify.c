@@ -78,10 +78,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRAP,     AV_PIX_FMT_GBRAP10,    AV_PIX_FMT_GBRAP12,    AV_PIX_FMT_GBRAP16,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *formats = ff_make_format_list(pixel_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, formats);
+    return ff_set_common_formats_from_list(ctx, pixel_fmts);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -267,7 +264,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
         td.out = out;
         td.in = s->frames;
-        ctx->internal->execute(ctx, amplify_frame, &td, NULL, FFMIN(s->height[1], ff_filter_get_nb_threads(ctx)));
+        ff_filter_execute(ctx, amplify_frame, &td, NULL,
+                          FFMIN(s->height[1], ff_filter_get_nb_threads(ctx)));
     } else {
         out = av_frame_clone(s->frames[s->radius]);
         if (!out)
@@ -313,7 +311,7 @@ static const AVFilterPad outputs[] = {
 
 AVFILTER_DEFINE_CLASS(amplify);
 
-AVFilter ff_vf_amplify = {
+const AVFilter ff_vf_amplify = {
     .name          = "amplify",
     .description   = NULL_IF_CONFIG_SMALL("Amplify changes between successive video frames."),
     .priv_size     = sizeof(AmplifyContext),
