@@ -20,6 +20,7 @@
 
 #include <float.h> /* FLT_MAX */
 
+#include "libavutil/cpu.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
 #include "internal.h"
@@ -395,7 +396,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA444P,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -425,6 +429,7 @@ static const AVFilterPad idet_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad idet_outputs[] = {
@@ -433,16 +438,17 @@ static const AVFilterPad idet_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .request_frame = request_frame
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_idet = {
+AVFilter ff_vf_idet = {
     .name          = "idet",
     .description   = NULL_IF_CONFIG_SMALL("Interlace detect Filter."),
     .priv_size     = sizeof(IDETContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(idet_inputs),
-    FILTER_OUTPUTS(idet_outputs),
+    .inputs        = idet_inputs,
+    .outputs       = idet_outputs,
     .priv_class    = &idet_class,
 };
