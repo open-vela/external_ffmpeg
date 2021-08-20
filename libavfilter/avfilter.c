@@ -43,8 +43,6 @@
 #include "formats.h"
 #include "internal.h"
 
-#define AVERROR_EOFB    FFERRTAG( 'E','O','F','B') ///< End of file back
-
 #include "libavutil/ffversion.h"
 const char av_filter_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
 
@@ -415,14 +413,15 @@ int ff_request_frame(AVFilterLink *link)
 {
     FF_TPRINTF_START(NULL, request_frame); ff_tlog_link(NULL, link, 1);
 
-    if (link->status_out && link->status_out != AVERROR_EOFB)
+    av_assert1(!link->dst->filter->activate);
+    if (link->status_out)
         return link->status_out;
     if (link->status_in) {
         if (ff_framequeue_queued_frames(&link->fifo)) {
             av_assert1(!link->frame_wanted_out);
             av_assert1(link->dst->ready >= 300);
             return 0;
-        } else if (link->status_in != AVERROR_EOFB) {
+        } else {
             /* Acknowledge status change. Filters using ff_request_frame() will
                handle the change automatically. Filters can also check the
                status directly but none do yet. */
@@ -430,7 +429,6 @@ int ff_request_frame(AVFilterLink *link)
             return link->status_out;
         }
     }
-    link->status_in = link->status_out = 0;
     link->frame_wanted_out = 1;
     ff_filter_set_ready(link->src, 100);
     return 0;
@@ -1081,7 +1079,7 @@ fail:
 
 int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
-    int ret = AVERROR_PATCHWELCOME;
+    int ret;
     FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); ff_tlog_ref(NULL, frame, 1);
 
     /* Consistency checks */
@@ -1114,25 +1112,20 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
         }
     }
 
-    if ((link->status_in && link->status_in != AVERROR_EOF) ||
-            (link->status_out && link->status_out != AVERROR_EOF)) {
-        ret = AVERROR_EOF;
-        goto error;
-    }
-
-    link->status_in = link->status_out = 0;
     link->frame_blocked_in = link->frame_wanted_out = 0;
     link->frame_count_in++;
     filter_unblock(link->dst);
     ret = ff_framequeue_add(&link->fifo, frame);
-    if (ret < 0)
-        goto error;
+    if (ret < 0) {
+        av_frame_free(&frame);
+        return ret;
+    }
     ff_filter_set_ready(link->dst, 300);
     return 0;
 
 error:
     av_frame_free(&frame);
-    return ret;
+    return AVERROR_PATCHWELCOME;
 }
 
 static int samples_ready(AVFilterLink *link, unsigned min)
@@ -1270,16 +1263,6 @@ static int ff_filter_activate_default(AVFilterContext *filter)
 {
     unsigned i;
 
-    for (i = 0; i < filter->nb_outputs; i++) {
-        if (filter->outputs[i]->status_in == 0 ||
-                filter->outputs[i]->status_in == AVERROR_EOF)
-            break;
-    }
-    if (i && i == filter->nb_outputs) {
-        for (i = 0; i < filter->nb_inputs; i++)
-            ff_inlink_set_status(filter->inputs[i], filter->outputs[0]->status_in);
-        return filter->outputs[0]->status_in;
-    }
     for (i = 0; i < filter->nb_inputs; i++) {
         if (samples_ready(filter->inputs[i], filter->inputs[i]->min_samples)) {
             return ff_filter_frame_to_filter(filter->inputs[i]);
@@ -1455,9 +1438,9 @@ int ff_inlink_acknowledge_status(AVFilterLink *link, int *rstatus, int64_t *rpts
     *rpts = link->current_pts;
     if (ff_framequeue_queued_frames(&link->fifo))
         return *rstatus = 0;
-    if (link->status_out && link->status_out != AVERROR_EOFB)
+    if (link->status_out)
         return *rstatus = link->status_out;
-    if (!link->status_in || link->status_in == AVERROR_EOFB)
+    if (!link->status_in)
         return *rstatus = 0;
     *rstatus = link->status_out = link->status_in;
     ff_update_link_current_pts(link, link->status_in_pts);
@@ -1623,19 +1606,14 @@ int ff_inlink_evaluate_timeline_at_frame(AVFilterLink *link, const AVFrame *fram
 
 void ff_inlink_request_frame(AVFilterLink *link)
 {
-    if ((link->status_in && link->status_in != AVERROR_EOFB) ||
-            (link->status_out && link->status_out != AVERROR_EOFB))
-        return;
-    link->status_in = 0;
-    link->status_out = 0;
+    av_assert1(!link->status_in);
+    av_assert1(!link->status_out);
     link->frame_wanted_out = 1;
     ff_filter_set_ready(link->src, 100);
 }
 
 void ff_inlink_set_status(AVFilterLink *link, int status)
 {
-    if (status == AVERROR_EOF)
-        status = AVERROR_EOFB;
     if (link->status_out)
         return;
     link->frame_wanted_out = 0;
@@ -1651,12 +1629,7 @@ void ff_inlink_set_status(AVFilterLink *link, int status)
 
 int ff_outlink_get_status(AVFilterLink *link)
 {
-    if (link->status_in == AVERROR_EOFB)
-        return AVERROR_EOF;
-    else if (link->status_in == AVERROR_EOF)
-        return 0;
-    else
-        return link->status_in;
+    return link->status_in;
 }
 
 const AVClass *avfilter_get_class(void)
