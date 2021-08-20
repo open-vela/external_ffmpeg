@@ -166,6 +166,8 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
     link->type    = src->output_pads[srcpad].type;
     av_assert0(AV_PIX_FMT_NONE == -1 && AV_SAMPLE_FMT_NONE == -1);
     link->format  = -1;
+    link->status_in  = AVERROR_EOF;
+    link->status_out = AVERROR_EOF;
     ff_framequeue_init(&link->fifo, &src->graph->internal->frame_queues);
 
     return 0;
@@ -210,6 +212,21 @@ static void filter_unblock(AVFilterContext *filter)
         filter->outputs[i]->frame_blocked_in = 0;
 }
 
+void ff_avfilter_link_unref_formats(AVFilterLink *link)
+{
+    ff_formats_unref(&link->in_formats);
+    ff_formats_unref(&link->out_formats);
+    ff_formats_unref(&link->in_samplerates);
+    ff_formats_unref(&link->out_samplerates);
+    ff_channel_layouts_unref(&link->in_channel_layouts);
+    ff_channel_layouts_unref(&link->out_channel_layouts);
+
+    link->format         = -1;
+    link->channel_layout = 0;
+    link->channels       = 0;
+    link->sample_rate    = 0;
+    link->init_state     = AVLINK_UNINIT;
+}
 
 void ff_avfilter_link_set_in_status(AVFilterLink *link, int status, int64_t pts)
 {
@@ -289,7 +306,8 @@ int avfilter_config_links(AVFilterContext *filter)
         AVFilterLink *link = filter->inputs[i];
         AVFilterLink *inlink;
 
-        if (!link) continue;
+        if (!link || !link->in_formats || !link->out_formats)
+            continue;
         if (!link->src || !link->dst) {
             av_log(filter, AV_LOG_ERROR,
                    "Not all input and output are properly linked (%d).\n", i);
@@ -302,6 +320,11 @@ int avfilter_config_links(AVFilterContext *filter)
 
         switch (link->init_state) {
         case AVLINK_INIT:
+            /* For part graph re-negotiation.
+               For example: output-filter link has config_props(),
+               but the input-filter still need config_props(). */
+            if ((ret = avfilter_config_links(link->src)) < 0)
+                return ret;
             continue;
         case AVLINK_STARTINIT:
             av_log(filter, AV_LOG_INFO, "circular filter chain detected\n");
@@ -412,6 +435,9 @@ void ff_tlog_link(void *ctx, AVFilterLink *link, int end)
 int ff_request_frame(AVFilterLink *link)
 {
     FF_TPRINTF_START(NULL, request_frame); ff_tlog_link(NULL, link, 1);
+
+    if (!link->out_formats)
+        return AVERROR_EOF;
 
     av_assert1(!link->dst->filter->activate);
     if (link->status_out)
@@ -735,12 +761,7 @@ static void free_link(AVFilterLink *link)
 
     av_buffer_unref(&link->hw_frames_ctx);
 
-    ff_formats_unref(&link->in_formats);
-    ff_formats_unref(&link->out_formats);
-    ff_formats_unref(&link->in_samplerates);
-    ff_formats_unref(&link->out_samplerates);
-    ff_channel_layouts_unref(&link->in_channel_layouts);
-    ff_channel_layouts_unref(&link->out_channel_layouts);
+    ff_avfilter_link_unref_formats(link);
     avfilter_link_free(&link);
 }
 
@@ -1082,6 +1103,9 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
     int ret;
     FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); ff_tlog_ref(NULL, frame, 1);
 
+    if (!link->in_formats)
+        return AVERROR_EOF;
+
     /* Consistency checks */
     if (link->type == AVMEDIA_TYPE_VIDEO) {
         if (strcmp(link->dst->filter->name, "buffersink") &&
@@ -1200,6 +1224,9 @@ static int ff_filter_frame_to_filter(AVFilterLink *link)
     AVFrame *frame = NULL;
     AVFilterContext *dst = link->dst;
     int ret;
+
+    if (!link->in_formats)
+        return AVERROR_EOF;
 
     av_assert1(ff_framequeue_queued_frames(&link->fifo));
     ret = link->min_samples ?
@@ -1615,6 +1642,9 @@ int ff_inlink_evaluate_timeline_at_frame(AVFilterLink *link, const AVFrame *fram
 
 void ff_inlink_request_frame(AVFilterLink *link)
 {
+    if (!link->out_formats)
+        return;
+
     av_assert1(!link->status_in);
     av_assert1(!link->status_out);
     link->frame_wanted_out = 1;
