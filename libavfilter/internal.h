@@ -232,6 +232,11 @@ void ff_avfilter_link_set_in_status(AVFilterLink *link, int status, int64_t pts)
  */
 void ff_avfilter_link_set_out_status(AVFilterLink *link, int status, int64_t pts);
 
+/**
+ * Unref the link formats.
+ */
+void ff_avfilter_link_unref_formats(AVFilterLink *link);
+
 void ff_command_queue_pop(AVFilterContext *filter);
 
 /* misc trace functions */

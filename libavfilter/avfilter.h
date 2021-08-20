@@ -642,6 +642,12 @@ struct AVFilterLink {
      */
     int status_out;
 
+    /**
+     * Link skip.
+     * Used for re-negotiation to skip link if this flag set.
+     */
+    int skip;
+
 #endif /* FF_INTERNAL_FIELDS */
 
 };
@@ -997,6 +1003,15 @@ enum {
  * @return >= 0 in case of success, a negative AVERROR code otherwise
  */
 int avfilter_graph_config(AVFilterGraph *graphctx, void *log_ctx);
+
+/**
+ * Check validity and reconfigure all the links and formats in the graph.
+ *
+ * @param graphctx the filter graph
+ * @param log_ctx context used for logging
+ * @return >= 0 in case of success, a negative AVERROR code otherwise
+ */
+int avfilter_graph_reconfig(AVFilterGraph *graphctx, void *log_ctx);
 
 /**
  * Free a graph, destroy its links, and set *graph to NULL.
