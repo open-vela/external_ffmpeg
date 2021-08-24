@@ -47,14 +47,14 @@ typedef struct MaskFunContext {
 } MaskFunContext;
 
 #define OFFSET(x) offsetof(MaskFunContext, x)
-#define VF AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+#define VFT AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption maskfun_options[] = {
-    { "low",    "set low threshold",  OFFSET(low),    AV_OPT_TYPE_INT, {.i64=10},  0, UINT16_MAX, VF },
-    { "high",   "set high threshold", OFFSET(high),   AV_OPT_TYPE_INT, {.i64=10},  0, UINT16_MAX, VF },
-    { "planes", "set planes",         OFFSET(planes), AV_OPT_TYPE_INT, {.i64=0xF}, 0, 0xF,        VF },
-    { "fill",   "set fill value",     OFFSET(fill),   AV_OPT_TYPE_INT, {.i64=0},   0, UINT16_MAX, VF },
-    { "sum",    "set sum value",      OFFSET(sum),    AV_OPT_TYPE_INT, {.i64=10},  0, UINT16_MAX, VF },
+    { "low",    "set low threshold",  OFFSET(low),    AV_OPT_TYPE_INT, {.i64=10},  0, UINT16_MAX, VFT },
+    { "high",   "set high threshold", OFFSET(high),   AV_OPT_TYPE_INT, {.i64=10},  0, UINT16_MAX, VFT },
+    { "planes", "set planes",         OFFSET(planes), AV_OPT_TYPE_INT, {.i64=0xF}, 0, 0xF,        VFT },
+    { "fill",   "set fill value",     OFFSET(fill),   AV_OPT_TYPE_INT, {.i64=0},   0, UINT16_MAX, VFT },
+    { "sum",    "set sum value",      OFFSET(sum),    AV_OPT_TYPE_INT, {.i64=10},  0, UINT16_MAX, VFT },
     { NULL }
 };
 
@@ -83,7 +83,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
@@ -105,8 +105,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         return ff_filter_frame(outlink, out);
     }
 
-    ctx->internal->execute(ctx, s->maskfun, frame, NULL,
-                           FFMIN(s->height[1], ff_filter_get_nb_threads(ctx)));
+    ff_filter_execute(ctx, s->maskfun, frame, NULL,
+                      FFMIN(s->height[1], ff_filter_get_nb_threads(ctx)));
 
     return ff_filter_frame(outlink, frame);
 }
@@ -182,6 +182,45 @@ static int maskfun##name(AVFilterContext *ctx, void *arg,    \
 MASKFUN(8, uint8_t, 1)
 MASKFUN(16, uint16_t, 2)
 
+static void fill_frame(AVFilterContext *ctx)
+{
+    MaskFunContext *s = ctx->priv;
+
+    s->fill = FFMIN(s->fill, s->max);
+    if (s->depth == 8) {
+        for (int p = 0; p < s->nb_planes; p++) {
+            uint8_t *dst = s->empty->data[p];
+
+            for (int y = 0; y < s->height[p]; y++) {
+                memset(dst, s->fill, s->width[p]);
+                dst += s->empty->linesize[p];
+            }
+        }
+    } else {
+        for (int p = 0; p < s->nb_planes; p++) {
+            uint16_t *dst = (uint16_t *)s->empty->data[p];
+
+            for (int y = 0; y < s->height[p]; y++) {
+                for (int x = 0; x < s->width[p]; x++)
+                    dst[x] = s->fill;
+                dst += s->empty->linesize[p] / 2;
+            }
+        }
+    }
+}
+
+static void set_max_sum(AVFilterContext *ctx)
+{
+    MaskFunContext *s = ctx->priv;
+
+    s->max_sum = 0;
+    for (int p = 0; p < s->nb_planes; p++) {
+        if (!((1 << p) & s->planes))
+            continue;
+        s->max_sum += (uint64_t)s->sum * s->width[p] * s->height[p];
+    }
+}
+
 static int config_input(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -203,7 +242,6 @@ static int config_input(AVFilterLink *inlink)
 
     s->depth = desc->comp[0].depth;
     s->max = (1 << s->depth) - 1;
-    s->fill = FFMIN(s->fill, s->max);
 
     if (s->depth == 8) {
         s->maskfun = maskfun8;
@@ -217,33 +255,30 @@ static int config_input(AVFilterLink *inlink)
     if (!s->empty)
         return AVERROR(ENOMEM);
 
-    if (s->depth == 8) {
-        for (int p = 0; p < s->nb_planes; p++) {
-            uint8_t *dst = s->empty->data[p];
+    fill_frame(ctx);
 
-            for (int y = 0; y < s->height[p]; y++) {
-                memset(dst, s->fill, s->width[p]);
-                dst += s->empty->linesize[p];
-            }
-        }
-    } else {
-        for (int p = 0; p < s->nb_planes; p++) {
-            uint16_t *dst = (uint16_t *)s->empty->data[p];
+    set_max_sum(ctx);
 
-            for (int y = 0; y < s->height[p]; y++) {
-                for (int x = 0; x < s->width[p]; x++)
-                    dst[x] = s->fill;
-                dst += s->empty->linesize[p] / 2;
-            }
-        }
-    }
+    return 0;
+}
 
-    s->max_sum = 0;
-    for (int p = 0; p < s->nb_planes; p++) {
-        if (!((1 << p) & s->planes))
-            continue;
-        s->max_sum += (uint64_t)s->sum * s->width[p] * s->height[p];
-    }
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                           char *res, int res_len, int flags)
+{
+    MaskFunContext *s = ctx->priv;
+    int fill = s->fill;
+    int sum = s->sum;
+    int ret;
+
+    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+    if (ret < 0)
+        return ret;
+
+    if (sum != s->sum)
+        set_max_sum(ctx);
+
+    if (fill != s->fill)
+        fill_frame(ctx);
 
     return 0;
 }
@@ -259,11 +294,10 @@ static const AVFilterPad maskfun_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_VIDEO,
+        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame   = filter_frame,
         .config_props   = config_input,
-        .needs_writable = 1,
     },
-    { NULL }
 };
 
 static const AVFilterPad maskfun_outputs[] = {
@@ -271,17 +305,17 @@ static const AVFilterPad maskfun_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_maskfun = {
+const AVFilter ff_vf_maskfun = {
     .name          = "maskfun",
     .description   = NULL_IF_CONFIG_SMALL("Create Mask."),
     .priv_size     = sizeof(MaskFunContext),
     .query_formats = query_formats,
     .uninit        = uninit,
-    .inputs        = maskfun_inputs,
-    .outputs       = maskfun_outputs,
+    FILTER_INPUTS(maskfun_inputs),
+    FILTER_OUTPUTS(maskfun_outputs),
     .priv_class    = &maskfun_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
 };

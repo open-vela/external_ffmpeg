@@ -236,7 +236,7 @@ typedef struct ASFContext {
     int64_t packet_timestamp_end;
     unsigned int packet_nb_payloads;
     uint8_t packet_buf[PACKET_SIZE_MAX];
-    AVIOContext pb;
+    FFIOContext pb;
     /* only for reading */
     uint64_t data_offset;                ///< beginning of the first data packet
 
@@ -256,6 +256,10 @@ static const AVCodecTag codec_asf_bmp_tags[] = {
     { AV_CODEC_ID_MPEG4,     MKTAG('M', 'P', '4', 'S') },
     { AV_CODEC_ID_MSMPEG4V3, MKTAG('M', 'P', '4', '3') },
     { AV_CODEC_ID_NONE,      0 },
+};
+
+static const AVCodecTag *const asf_codec_tags[] = {
+        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, NULL
 };
 
 #define PREROLL_TIME 3100
@@ -325,10 +329,9 @@ static int64_t unix_to_file_time(int64_t ti)
 
 static int32_t get_send_time(ASFContext *asf, int64_t pres_time, uint64_t *offset)
 {
-    int i;
     int32_t send_time = 0;
     *offset = asf->data_offset + DATA_HEADER_SIZE;
-    for (i = 0; i < asf->next_start_sec; i++) {
+    for (int i = 0; i < asf->next_start_sec; i++) {
         if (pres_time <= asf->index_ptr[i].send_time)
             break;
         send_time = asf->index_ptr[i].send_time;
@@ -342,7 +345,6 @@ static int asf_write_markers(AVFormatContext *s)
 {
     ASFContext *asf = s->priv_data;
     AVIOContext *pb = s->pb;
-    int i;
     AVRational scale = {1, 10000000};
     int64_t hpos = put_header(pb, &ff_asf_marker_header);
 
@@ -351,7 +353,7 @@ static int asf_write_markers(AVFormatContext *s)
     avio_wl16(pb, 0);                  // ASF spec mandates 0 for this
     avio_wl16(pb, 0);                  // name length 0, no name given
 
-    for (i = 0; i < s->nb_chapters; i++) {
+    for (unsigned i = 0; i < s->nb_chapters; i++) {
         AVChapter *c = s->chapters[i];
         AVDictionaryEntry *t = av_dict_get(c->metadata, "title", NULL, 0);
         int64_t pres_time = av_rescale_q(c->start, c->time_base, scale);
@@ -388,10 +390,9 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
     ASFContext *asf = s->priv_data;
     AVIOContext *pb = s->pb;
     AVDictionaryEntry *tags[5];
-    int header_size, n, extra_size, extra_size2, wav_extra_size;
+    int header_size, extra_size, extra_size2, wav_extra_size;
     int has_title, has_aspect_ratio = 0;
     int metadata_count;
-    AVCodecParameters *par;
     int64_t header_offset, cur_pos, hpos;
     int bit_rate;
     int64_t duration;
@@ -416,9 +417,10 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
     metadata_count = av_dict_count(s->metadata);
 
     bit_rate = 0;
-    for (n = 0; n < s->nb_streams; n++) {
+    for (unsigned n = 0; n < s->nb_streams; n++) {
+        AVStream *const st = s->streams[n];
+        AVCodecParameters *const par = st->codecpar;
         AVDictionaryEntry *entry;
-        par = s->streams[n]->codecpar;
 
         avpriv_set_pts_info(s->streams[n], 32, 1, 1000); /* 32 bit pts in ms */
 
@@ -485,18 +487,17 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
     avio_wl32(pb, 0); /* length, to be filled later */
     if (asf->nb_languages) {
         int64_t hpos2;
-        int i;
         int nb_audio_languages = 0;
 
         hpos2 = put_header(pb, &ff_asf_language_guid);
         avio_wl16(pb, asf->nb_languages);
-        for (i = 0; i < asf->nb_languages; i++) {
+        for (int i = 0; i < asf->nb_languages; i++) {
             avio_w8(pb, 6);
             avio_put_str16le(pb, asf->languages[i]);
         }
         end_header(pb, hpos2);
 
-        for (i = 0; i < asf->nb_languages; i++)
+        for (int i = 0; i < asf->nb_languages; i++)
             if (audio_language_counts[i])
                 nb_audio_languages++;
 
@@ -504,10 +505,10 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
             hpos2 = put_header(pb, &ff_asf_group_mutual_exclusion_object);
             ff_put_guid(pb, &ff_asf_mutex_language);
             avio_wl16(pb, nb_audio_languages);
-            for (i = 0; i < asf->nb_languages; i++) {
+            for (int i = 0; i < asf->nb_languages; i++) {
                 if (audio_language_counts[i]) {
                     avio_wl16(pb, audio_language_counts[i]);
-                    for (n = 0; n < s->nb_streams; n++)
+                    for (unsigned n = 0; n < s->nb_streams; n++)
                         if (asf->streams[n].stream_language_index == i && s->streams[n]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
                             avio_wl16(pb, n + 1);
                 }
@@ -515,7 +516,7 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
             end_header(pb, hpos2);
         }
 
-        for (n = 0; n < s->nb_streams; n++) {
+        for (unsigned n = 0; n < s->nb_streams; n++) {
             int64_t es_pos;
             if (asf->streams[n].stream_language_index > 127)
                 continue;
@@ -542,8 +543,8 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
         int64_t hpos2;
         hpos2 = put_header(pb, &ff_asf_metadata_header);
         avio_wl16(pb, 2 * has_aspect_ratio);
-        for (n = 0; n < s->nb_streams; n++) {
-            par = s->streams[n]->codecpar;
+        for (unsigned n = 0; n < s->nb_streams; n++) {
+            AVCodecParameters *const par = s->streams[n]->codecpar;
             if (   par->codec_type == AVMEDIA_TYPE_VIDEO
                 && par->sample_aspect_ratio.num > 0
                 && par->sample_aspect_ratio.den > 0) {
@@ -588,7 +589,7 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
 
         hpos = put_header(pb, &ff_asf_comment_header);
 
-        for (n = 0; n < FF_ARRAY_ELEMS(tags); n++) {
+        for (size_t n = 0; n < FF_ARRAY_ELEMS(tags); n++) {
             len = tags[n] ? avio_put_str16le(dyn_buf, tags[n]->value) : 0;
             avio_wl16(pb, len);
         }
@@ -615,11 +616,11 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
             return ret;
     }
     /* stream headers */
-    for (n = 0; n < s->nb_streams; n++) {
+    for (unsigned n = 0; n < s->nb_streams; n++) {
+        AVCodecParameters *const par = s->streams[n]->codecpar;
         int64_t es_pos;
         //        ASFStream *stream = &asf->streams[n];
 
-        par                 = s->streams[n]->codecpar;
         asf->streams[n].num = n + 1;
         asf->streams[n].seq = 1;
 
@@ -682,7 +683,7 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
             avio_wl16(pb, 40 + par->extradata_size); /* size */
 
             /* BITMAPINFOHEADER header */
-            ff_put_bmp_header(pb, par, 1, 0);
+            ff_put_bmp_header(pb, par, 1, 0, 0);
         }
         end_header(pb, hpos);
     }
@@ -692,12 +693,10 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
     hpos = put_header(pb, &ff_asf_codec_comment_header);
     ff_put_guid(pb, &ff_asf_codec_comment1_header);
     avio_wl32(pb, s->nb_streams);
-    for (n = 0; n < s->nb_streams; n++) {
-        const AVCodecDescriptor *codec_desc;
+    for (unsigned n = 0; n < s->nb_streams; n++) {
+        AVCodecParameters *const par = s->streams[n]->codecpar;
+        const AVCodecDescriptor *const codec_desc = avcodec_descriptor_get(par->codec_id);
         const char *desc;
-
-        par  = s->streams[n]->codecpar;
-        codec_desc = avcodec_descriptor_get(par->codec_id);
 
         if (par->codec_type == AVMEDIA_TYPE_AUDIO)
             avio_wl16(pb, 2);
@@ -828,7 +827,7 @@ static int put_payload_parsing_info(AVFormatContext *s,
 {
     ASFContext *asf = s->priv_data;
     AVIOContext *pb = s->pb;
-    int ppi_size, i;
+    int ppi_size;
     int64_t start = avio_tell(pb);
 
     int iLengthTypeFlags = ASF_PPI_LENGTH_TYPE_FLAGS;
@@ -839,7 +838,7 @@ static int put_payload_parsing_info(AVFormatContext *s,
     av_assert0(padsize >= 0);
 
     avio_w8(pb, ASF_PACKET_ERROR_CORRECTION_FLAGS);
-    for (i = 0; i < ASF_PACKET_ERROR_CORRECTION_DATA_SIZE; i++)
+    for (int i = 0; i < ASF_PACKET_ERROR_CORRECTION_DATA_SIZE; i++)
         avio_w8(pb, 0x0);
 
     if (asf->multi_payloads_present)
@@ -907,7 +906,7 @@ static void put_payload_header(AVFormatContext *s, ASFStream *stream,
                                int m_obj_offset, int payload_len, int flags)
 {
     ASFContext *asf = s->priv_data;
-    AVIOContext *pb = &asf->pb;
+    AVIOContext *const pb = &asf->pb.pub;
     int val;
 
     val = stream->num;
@@ -979,7 +978,7 @@ static void put_frame(AVFormatContext *s, ASFStream *stream, AVStream *avst,
 
             put_payload_header(s, stream, timestamp + PREROLL_TIME,
                                m_obj_size, m_obj_offset, payload_len, flags);
-            avio_write(&asf->pb, buf, payload_len);
+            avio_write(&asf->pb.pub, buf, payload_len);
 
             if (asf->multi_payloads_present)
                 asf->packet_size_left -= (payload_len + PAYLOAD_HEADER_SIZE_MULTIPLE_PAYLOADS);
@@ -1011,8 +1010,6 @@ static int update_index(AVFormatContext *s, int start_sec,
     ASFContext *asf = s->priv_data;
 
     if (start_sec > asf->next_start_sec) {
-        int i;
-
         if (!asf->next_start_sec) {
             asf->next_packet_number = packet_number;
             asf->next_packet_count  = packet_count;
@@ -1029,7 +1026,7 @@ static int update_index(AVFormatContext *s, int start_sec,
                 return err;
             }
         }
-        for (i = asf->next_start_sec; i < start_sec; i++) {
+        for (int i = asf->next_start_sec; i < start_sec; i++) {
             asf->index_ptr[i].packet_number = asf->next_packet_number;
             asf->index_ptr[i].packet_count  = asf->next_packet_count;
             asf->index_ptr[i].send_time     = asf->next_start_sec * INT64_C(10000000);
@@ -1098,7 +1095,6 @@ static int asf_write_index(AVFormatContext *s, const ASFIndex *index,
                            uint16_t max, uint32_t count)
 {
     AVIOContext *pb = s->pb;
-    int i;
 
     ff_put_guid(pb, &ff_asf_simple_index_header);
     avio_wl64(pb, 24 + 16 + 8 + 4 + 4 + (4 + 2) * count);
@@ -1106,7 +1102,7 @@ static int asf_write_index(AVFormatContext *s, const ASFIndex *index,
     avio_wl64(pb, ASF_INDEXED_INTERVAL);
     avio_wl32(pb, max);
     avio_wl32(pb, count);
-    for (i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < count; i++) {
         avio_wl32(pb, index[i].packet_number);
         avio_wl16(pb, index[i].packet_count);
     }
@@ -1121,7 +1117,7 @@ static int asf_write_trailer(AVFormatContext *s)
     int ret;
 
     /* flush the current packet */
-    if (asf->pb.buf_ptr > asf->pb.buffer)
+    if (asf->pb.pub.buf_ptr > asf->pb.pub.buffer)
         flush_packet(s);
 
     /* write index */
@@ -1150,15 +1146,15 @@ static const AVOption asf_options[] = {
     { NULL },
 };
 
-#if CONFIG_ASF_MUXER
 static const AVClass asf_muxer_class = {
-    .class_name     = "ASF muxer",
+    .class_name     = "ASF (stream) muxer",
     .item_name      = av_default_item_name,
     .option         = asf_options,
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-AVOutputFormat ff_asf_muxer = {
+#if CONFIG_ASF_MUXER
+const AVOutputFormat ff_asf_muxer = {
     .name           = "asf",
     .long_name      = NULL_IF_CONFIG_SMALL("ASF (Advanced / Active Streaming Format)"),
     .mime_type      = "video/x-ms-asf",
@@ -1170,22 +1166,13 @@ AVOutputFormat ff_asf_muxer = {
     .write_packet   = asf_write_packet,
     .write_trailer  = asf_write_trailer,
     .flags          = AVFMT_GLOBALHEADER,
-    .codec_tag      = (const AVCodecTag * const []) {
-        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, 0
-    },
+    .codec_tag      = asf_codec_tags,
     .priv_class        = &asf_muxer_class,
 };
 #endif /* CONFIG_ASF_MUXER */
 
 #if CONFIG_ASF_STREAM_MUXER
-static const AVClass asf_stream_muxer_class = {
-    .class_name     = "ASF stream muxer",
-    .item_name      = av_default_item_name,
-    .option         = asf_options,
-    .version        = LIBAVUTIL_VERSION_INT,
-};
-
-AVOutputFormat ff_asf_stream_muxer = {
+const AVOutputFormat ff_asf_stream_muxer = {
     .name           = "asf_stream",
     .long_name      = NULL_IF_CONFIG_SMALL("ASF (Advanced / Active Streaming Format)"),
     .mime_type      = "video/x-ms-asf",
@@ -1197,9 +1184,7 @@ AVOutputFormat ff_asf_stream_muxer = {
     .write_packet   = asf_write_packet,
     .write_trailer  = asf_write_trailer,
     .flags          = AVFMT_GLOBALHEADER,
-    .codec_tag      = (const AVCodecTag * const []) {
-        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, 0
-    },
-    .priv_class        = &asf_stream_muxer_class,
+    .codec_tag      = asf_codec_tags,
+    .priv_class     = &asf_muxer_class,
 };
 #endif /* CONFIG_ASF_STREAM_MUXER */

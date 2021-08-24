@@ -40,7 +40,6 @@ typedef struct DBlurContext {
     int planeheight[4];
     float *buffer;
     int nb_planes;
-    void (*horiz_slice)(float *buffer, int width, int height, int steps, float nu, float bscale);
 } DBlurContext;
 
 #define OFFSET(x) offsetof(DBlurContext, x)
@@ -137,7 +136,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -282,7 +281,6 @@ static const AVFilterPad dblur_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad dblur_outputs[] = {
@@ -290,18 +288,17 @@ static const AVFilterPad dblur_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_dblur = {
+const AVFilter ff_vf_dblur = {
     .name          = "dblur",
     .description   = NULL_IF_CONFIG_SMALL("Apply Directional Blur filter."),
     .priv_size     = sizeof(DBlurContext),
     .priv_class    = &dblur_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = dblur_inputs,
-    .outputs       = dblur_outputs,
+    FILTER_INPUTS(dblur_inputs),
+    FILTER_OUTPUTS(dblur_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
     .process_command = ff_filter_process_command,
 };
