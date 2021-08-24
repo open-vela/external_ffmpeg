@@ -327,6 +327,7 @@ static const AVFilterPad convolution_opencl_inputs[] = {
         .filter_frame = &convolution_opencl_filter_frame,
         .config_props = &ff_opencl_filter_config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad convolution_opencl_outputs[] = {
@@ -335,6 +336,7 @@ static const AVFilterPad convolution_opencl_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_opencl_filter_config_output,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(ConvolutionOpenCLContext, x)
@@ -360,7 +362,7 @@ static const AVOption convolution_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(convolution_opencl);
 
-const AVFilter ff_vf_convolution_opencl = {
+AVFilter ff_vf_convolution_opencl = {
     .name           = "convolution_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply convolution mask to input video"),
     .priv_size      = sizeof(ConvolutionOpenCLContext),
@@ -368,8 +370,8 @@ const AVFilter ff_vf_convolution_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &convolution_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(convolution_opencl_inputs),
-    FILTER_OUTPUTS(convolution_opencl_outputs),
+    .inputs         = convolution_opencl_inputs,
+    .outputs        = convolution_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
 
@@ -386,7 +388,7 @@ static const AVOption sobel_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(sobel_opencl);
 
-const AVFilter ff_vf_sobel_opencl = {
+AVFilter ff_vf_sobel_opencl = {
     .name           = "sobel_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply sobel operator"),
     .priv_size      = sizeof(ConvolutionOpenCLContext),
@@ -394,8 +396,8 @@ const AVFilter ff_vf_sobel_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &convolution_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(convolution_opencl_inputs),
-    FILTER_OUTPUTS(convolution_opencl_outputs),
+    .inputs         = convolution_opencl_inputs,
+    .outputs        = convolution_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
 
@@ -412,7 +414,7 @@ static const AVOption prewitt_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(prewitt_opencl);
 
-const AVFilter ff_vf_prewitt_opencl = {
+AVFilter ff_vf_prewitt_opencl = {
     .name           = "prewitt_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply prewitt operator"),
     .priv_size      = sizeof(ConvolutionOpenCLContext),
@@ -420,8 +422,8 @@ const AVFilter ff_vf_prewitt_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &convolution_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(convolution_opencl_inputs),
-    FILTER_OUTPUTS(convolution_opencl_outputs),
+    .inputs         = convolution_opencl_inputs,
+    .outputs        = convolution_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
 
@@ -438,7 +440,7 @@ static const AVOption roberts_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(roberts_opencl);
 
-const AVFilter ff_vf_roberts_opencl = {
+AVFilter ff_vf_roberts_opencl = {
     .name           = "roberts_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply roberts operator"),
     .priv_size      = sizeof(ConvolutionOpenCLContext),
@@ -446,8 +448,8 @@ const AVFilter ff_vf_roberts_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &convolution_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(convolution_opencl_inputs),
-    FILTER_OUTPUTS(convolution_opencl_outputs),
+    .inputs         = convolution_opencl_inputs,
+    .outputs        = convolution_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
 

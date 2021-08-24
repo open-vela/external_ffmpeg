@@ -25,7 +25,6 @@
  */
 
 #include "avcodec.h"
-#include "encode.h"
 #include "internal.h"
 #include "bytestream.h"
 #include "libavutil/lfg.h"
@@ -77,7 +76,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int skips = 0;
     int quality = 24;
 
-    if ((ret = ff_alloc_packet(avctx, pkt, avctx->width*avctx->height*9 + AV_INPUT_BUFFER_MIN_SIZE)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, avctx->width*avctx->height*9 + AV_INPUT_BUFFER_MIN_SIZE, 0)) < 0)
         return ret;
     dst= buf= pkt->data;
 
@@ -293,7 +292,7 @@ static av_cold int encode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_msvideo1_encoder = {
+AVCodec ff_msvideo1_encoder = {
     .name           = "msvideo1",
     .long_name = NULL_IF_CONFIG_SMALL("Microsoft Video-1"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -303,5 +302,4 @@ const AVCodec ff_msvideo1_encoder = {
     .encode2        = encode_frame,
     .close          = encode_end,
     .pix_fmts = (const enum AVPixelFormat[]){AV_PIX_FMT_RGB555, AV_PIX_FMT_NONE},
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

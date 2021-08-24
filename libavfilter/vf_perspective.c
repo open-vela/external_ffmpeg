@@ -103,7 +103,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRAP, AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static inline double get_coeff(double d)
@@ -476,8 +479,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
                          .h = s->height[plane],
                          .hsub = hsub,
                          .vsub = vsub };
-        ff_filter_execute(ctx, s->perspective, &td, NULL,
-                          FFMIN(td.h, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, s->perspective, &td, NULL, FFMIN(td.h, ff_filter_get_nb_threads(ctx)));
     }
 
     av_frame_free(&frame);
@@ -498,6 +500,7 @@ static const AVFilterPad perspective_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad perspective_outputs[] = {
@@ -505,17 +508,18 @@ static const AVFilterPad perspective_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_perspective = {
+AVFilter ff_vf_perspective = {
     .name          = "perspective",
     .description   = NULL_IF_CONFIG_SMALL("Correct the perspective of video."),
     .priv_size     = sizeof(PerspectiveContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(perspective_inputs),
-    FILTER_OUTPUTS(perspective_outputs),
+    .inputs        = perspective_inputs,
+    .outputs       = perspective_outputs,
     .priv_class    = &perspective_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };
