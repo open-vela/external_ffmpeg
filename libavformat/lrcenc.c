@@ -140,7 +140,7 @@ static int lrc_write_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
-const AVOutputFormat ff_lrc_muxer = {
+AVOutputFormat ff_lrc_muxer = {
     .name           = "lrc",
     .long_name      = NULL_IF_CONFIG_SMALL("LRC lyrics"),
     .extensions     = "lrc",

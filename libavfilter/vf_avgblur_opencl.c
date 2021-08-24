@@ -311,6 +311,7 @@ static const AVFilterPad avgblur_opencl_inputs[] = {
         .filter_frame = &avgblur_opencl_filter_frame,
         .config_props = &ff_opencl_filter_config_input,
     },
+    { NULL }
 };
 
 
@@ -320,6 +321,7 @@ static const AVFilterPad avgblur_opencl_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_opencl_filter_config_output,
     },
+    { NULL }
 };
 
 
@@ -338,7 +340,7 @@ static const AVOption avgblur_opencl_options[] = {
 AVFILTER_DEFINE_CLASS(avgblur_opencl);
 
 
-const AVFilter ff_vf_avgblur_opencl = {
+AVFilter ff_vf_avgblur_opencl = {
     .name           = "avgblur_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply average blur filter"),
     .priv_size      = sizeof(AverageBlurOpenCLContext),
@@ -346,8 +348,8 @@ const AVFilter ff_vf_avgblur_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &avgblur_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(avgblur_opencl_inputs),
-    FILTER_OUTPUTS(avgblur_opencl_outputs),
+    .inputs         = avgblur_opencl_inputs,
+    .outputs        = avgblur_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
 
@@ -377,7 +379,7 @@ static const AVOption boxblur_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(boxblur_opencl);
 
-const AVFilter ff_vf_boxblur_opencl = {
+AVFilter ff_vf_boxblur_opencl = {
     .name           = "boxblur_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply boxblur filter to input video"),
     .priv_size      = sizeof(AverageBlurOpenCLContext),
@@ -385,8 +387,8 @@ const AVFilter ff_vf_boxblur_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &avgblur_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(avgblur_opencl_inputs),
-    FILTER_OUTPUTS(avgblur_opencl_outputs),
+    .inputs         = avgblur_opencl_inputs,
+    .outputs        = avgblur_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
 
