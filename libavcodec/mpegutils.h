@@ -26,6 +26,7 @@
 #include "libavutil/frame.h"
 
 #include "avcodec.h"
+#include "version.h"
 
 /**
  * Return value for header parsers if frame is not coded.
@@ -124,7 +125,6 @@ enum OutputFormat {
     FMT_H261,
     FMT_H263,
     FMT_MJPEG,
-    FMT_SPEEDHQ,
 };
 
 
