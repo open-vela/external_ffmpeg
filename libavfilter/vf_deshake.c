@@ -330,8 +330,9 @@ static int deshake_transform_c(AVFilterContext *ctx,
 
     for (i = 0; i < 3; i++) {
         // Transform the luma and chroma planes
-        ret = avfilter_transform(in->data[i], out->data[i], in->linesize[i], out->linesize[i],
-                                 plane_w[i], plane_h[i], matrixs[i], interpolate, fill);
+        ret = ff_affine_transform(in->data[i], out->data[i], in->linesize[i],
+                                  out->linesize[i], plane_w[i], plane_h[i],
+                                  matrixs[i], interpolate, fill);
         if (ret < 0)
             return ret;
     }
@@ -378,10 +379,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV440P,  AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ422P,
         AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ440P, AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_props(AVFilterLink *link)
@@ -539,7 +537,6 @@ static const AVFilterPad deshake_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
-    { NULL }
 };
 
 static const AVFilterPad deshake_outputs[] = {
@@ -547,17 +544,16 @@ static const AVFilterPad deshake_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_deshake = {
+const AVFilter ff_vf_deshake = {
     .name          = "deshake",
     .description   = NULL_IF_CONFIG_SMALL("Stabilize shaky video."),
     .priv_size     = sizeof(DeshakeContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = deshake_inputs,
-    .outputs       = deshake_outputs,
+    FILTER_INPUTS(deshake_inputs),
+    FILTER_OUTPUTS(deshake_outputs),
     .priv_class    = &deshake_class,
 };

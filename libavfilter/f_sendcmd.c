@@ -475,9 +475,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->intervals);
 }
 
-#define TS2D(ts) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts)*av_q2d(tb))
-
 static int filter_frame(AVFilterLink *inlink, AVFrame *ref)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -586,7 +583,6 @@ static const AVFilterPad sendcmd_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad sendcmd_outputs[] = {
@@ -594,17 +590,16 @@ static const AVFilterPad sendcmd_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_sendcmd = {
+const AVFilter ff_vf_sendcmd = {
     .name        = "sendcmd",
     .description = NULL_IF_CONFIG_SMALL("Send commands to filters."),
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(SendCmdContext),
-    .inputs      = sendcmd_inputs,
-    .outputs     = sendcmd_outputs,
+    FILTER_INPUTS(sendcmd_inputs),
+    FILTER_OUTPUTS(sendcmd_outputs),
     .priv_class  = &sendcmd_class,
 };
 
@@ -621,7 +616,6 @@ static const AVFilterPad asendcmd_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad asendcmd_outputs[] = {
@@ -629,17 +623,16 @@ static const AVFilterPad asendcmd_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
-AVFilter ff_af_asendcmd = {
+const AVFilter ff_af_asendcmd = {
     .name        = "asendcmd",
     .description = NULL_IF_CONFIG_SMALL("Send commands to filters."),
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(SendCmdContext),
-    .inputs      = asendcmd_inputs,
-    .outputs     = asendcmd_outputs,
+    FILTER_INPUTS(asendcmd_inputs),
+    FILTER_OUTPUTS(asendcmd_outputs),
     .priv_class  = &asendcmd_class,
 };
 

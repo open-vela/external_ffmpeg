@@ -19,7 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
@@ -36,6 +35,12 @@ typedef struct ThreadData {
     int offset_y;
     int offset_x;
 } ThreadData;
+
+enum FitMode {
+    FM_NONE,
+    FM_SIZE,
+    NB_FITMODES
+};
 
 enum FilterType {
     LOWPASS,
@@ -114,6 +119,7 @@ typedef struct WaveformContext {
     int            rgb;
     float          ftint[2];
     int            tint[2];
+    int            fitmode;
 
     int (*waveform_slice)(AVFilterContext *ctx, void *arg,
                           int jobnr, int nb_jobs);
@@ -185,6 +191,10 @@ static const AVOption waveform_options[] = {
     { "t0",    "set 1st tint", OFFSET(ftint[0]), AV_OPT_TYPE_FLOAT, {.dbl=0}, -1, 1, FLAGS},
     { "tint1", "set 2nd tint", OFFSET(ftint[1]), AV_OPT_TYPE_FLOAT, {.dbl=0}, -1, 1, FLAGS},
     { "t1",    "set 2nd tint", OFFSET(ftint[1]), AV_OPT_TYPE_FLOAT, {.dbl=0}, -1, 1, FLAGS},
+    { "fitmode", "set fit mode", OFFSET(fitmode), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_FITMODES-1, FLAGS, "fitmode" },
+    { "fm", "set fit mode", OFFSET(fitmode), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_FITMODES-1, FLAGS, "fitmode" },
+        { "none", NULL, 0, AV_OPT_TYPE_CONST, {.i64=FM_NONE}, 0, 0, FLAGS, "fitmode" },
+        { "size", NULL, 0, AV_OPT_TYPE_CONST, {.i64=FM_SIZE}, 0, 0, FLAGS, "fitmode" },
     { NULL }
 };
 
@@ -303,13 +313,6 @@ static const enum AVPixelFormat out_gray12_lowpass_pix_fmts[] = {
     AV_PIX_FMT_NONE
 };
 
-static const enum AVPixelFormat flat_pix_fmts[] = {
-    AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUVJ444P,
-    AV_PIX_FMT_YUV444P9, AV_PIX_FMT_YUV444P10,
-    AV_PIX_FMT_YUV444P12,
-    AV_PIX_FMT_NONE
-};
-
 static int query_formats(AVFilterContext *ctx)
 {
     WaveformContext *s = ctx->priv;
@@ -319,8 +322,8 @@ static int query_formats(AVFilterContext *ctx)
     AVFilterFormats *avff, *avff2;
     int depth, depth2, rgb, i, ret, ncomp, ncomp2;
 
-    if (!ctx->inputs[0]->in_formats ||
-        !ctx->inputs[0]->in_formats->nb_formats) {
+    if (!ctx->inputs[0]->incfg.formats ||
+        !ctx->inputs[0]->incfg.formats->nb_formats) {
         return AVERROR(EAGAIN);
     }
 
@@ -336,13 +339,13 @@ static int query_formats(AVFilterContext *ctx)
     default: return AVERROR_BUG;
     }
 
-    if (!ctx->inputs[0]->out_formats) {
-        if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &ctx->inputs[0]->out_formats)) < 0)
+    if (!ctx->inputs[0]->outcfg.formats) {
+        if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0)
             return ret;
     }
 
-    avff = ctx->inputs[0]->in_formats;
-    avff2 = ctx->inputs[0]->out_formats;
+    avff = ctx->inputs[0]->incfg.formats;
+    avff2 = ctx->inputs[0]->outcfg.formats;
     desc = av_pix_fmt_desc_get(avff->formats[0]);
     desc2 = av_pix_fmt_desc_get(avff2->formats[0]);
     ncomp = desc->nb_components;
@@ -385,7 +388,7 @@ static int query_formats(AVFilterContext *ctx)
         out_pix_fmts = out_yuv12_lowpass_pix_fmts;
     else
         return AVERROR(EAGAIN);
-    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->in_formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -3365,7 +3368,20 @@ static int config_output(AVFilterLink *outlink)
         }
     }
 
-    outlink->sample_aspect_ratio = (AVRational){1,1};
+    switch (s->fitmode) {
+    case FM_NONE:
+        outlink->sample_aspect_ratio = (AVRational){ 1, 1 };
+        break;
+    case FM_SIZE:
+        if (s->mode)
+            outlink->sample_aspect_ratio = (AVRational){ s->size * comp, inlink->h };
+        else
+            outlink->sample_aspect_ratio = (AVRational){ inlink->w, s->size * comp };
+        break;
+    }
+
+    av_reduce(&outlink->sample_aspect_ratio.num, &outlink->sample_aspect_ratio.den,
+               outlink->sample_aspect_ratio.num,  outlink->sample_aspect_ratio.den, INT_MAX);
 
     return 0;
 }
@@ -3424,7 +3440,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             td.component = k;
             td.offset_y = offset_y;
             td.offset_x = offset_x;
-            ctx->internal->execute(ctx, s->waveform_slice, &td, NULL, ff_filter_get_nb_threads(ctx));
+            ff_filter_execute(ctx, s->waveform_slice, &td, NULL,
+                              ff_filter_get_nb_threads(ctx));
             switch (s->filter) {
             case LOWPASS:
                 if (s->bits <= 8)
@@ -3468,6 +3485,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     s->graticulef(s, out);
 
     av_frame_free(&in);
+    out->sample_aspect_ratio = outlink->sample_aspect_ratio;
     return ff_filter_frame(outlink, out);
 }
 
@@ -3485,7 +3503,6 @@ static const AVFilterPad inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -3494,17 +3511,16 @@ static const AVFilterPad outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_waveform = {
+const AVFilter ff_vf_waveform = {
     .name          = "waveform",
     .description   = NULL_IF_CONFIG_SMALL("Video waveform monitor."),
     .priv_size     = sizeof(WaveformContext),
     .priv_class    = &waveform_class,
     .query_formats = query_formats,
     .uninit        = uninit,
-    .inputs        = inputs,
-    .outputs       = outputs,
+    FILTER_INPUTS(inputs),
+    FILTER_OUTPUTS(outputs),
     .flags         = AVFILTER_FLAG_SLICE_THREADS,
 };
