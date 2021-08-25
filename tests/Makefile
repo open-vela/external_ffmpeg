@@ -157,7 +157,6 @@ include $(SRC_PATH)/tests/fate/indeo.mak
 include $(SRC_PATH)/tests/fate/libavcodec.mak
 include $(SRC_PATH)/tests/fate/libavdevice.mak
 include $(SRC_PATH)/tests/fate/libavformat.mak
-include $(SRC_PATH)/tests/fate/libavresample.mak
 include $(SRC_PATH)/tests/fate/libavutil.mak
 include $(SRC_PATH)/tests/fate/libswresample.mak
 include $(SRC_PATH)/tests/fate/libswscale.mak
@@ -222,6 +221,7 @@ $(FATE_FFPROBE) $(FATE_FFMPEG_FFPROBE) $(FATE_SAMPLES_FFPROBE) $(FATE_SAMPLES_FF
 
 $(FATE_SAMPLES_FASTSTART): tools/qt-faststart$(EXESUF)
 $(FATE_SAMPLES_DUMP_DATA): tools/venc_data_dump$(EXESUF)
+$(FATE_SAMPLES_SCALE_SLICE): tools/scale_slice_test$(EXESUF)
 
 ifdef SAMPLES
 FATE += $(FATE_EXTERN)

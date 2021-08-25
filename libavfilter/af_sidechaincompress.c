@@ -25,7 +25,6 @@
  */
 
 #include "libavutil/audio_fifo.h"
-#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -298,7 +297,6 @@ static int activate(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats;
     AVFilterChannelLayouts *layouts = NULL;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBL,
@@ -306,29 +304,27 @@ static int query_formats(AVFilterContext *ctx)
     };
     int ret, i;
 
-    if (!ctx->inputs[0]->in_channel_layouts ||
-        !ctx->inputs[0]->in_channel_layouts->nb_channel_layouts) {
+    if (!ctx->inputs[0]->incfg.channel_layouts ||
+        !ctx->inputs[0]->incfg.channel_layouts->nb_channel_layouts) {
         av_log(ctx, AV_LOG_WARNING,
                "No channel layout for input 1\n");
             return AVERROR(EAGAIN);
     }
 
-    if ((ret = ff_add_channel_layout(&layouts, ctx->inputs[0]->in_channel_layouts->channel_layouts[0])) < 0 ||
-        (ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->in_channel_layouts)) < 0)
+    if ((ret = ff_add_channel_layout(&layouts, ctx->inputs[0]->incfg.channel_layouts->channel_layouts[0])) < 0 ||
+        (ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->incfg.channel_layouts)) < 0)
         return ret;
 
     for (i = 0; i < 2; i++) {
         layouts = ff_all_channel_counts();
-        if ((ret = ff_channel_layouts_ref(layouts, &ctx->inputs[i]->out_channel_layouts)) < 0)
+        if ((ret = ff_channel_layouts_ref(layouts, &ctx->inputs[i]->outcfg.channel_layouts)) < 0)
             return ret;
     }
 
-    formats = ff_make_format_list(sample_fmts);
-    if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+    if ((ret = ff_set_common_formats_from_list(ctx, sample_fmts)) < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static int config_output(AVFilterLink *outlink)
@@ -375,7 +371,6 @@ static const AVFilterPad sidechaincompress_inputs[] = {
         .name           = "sidechain",
         .type           = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
 static const AVFilterPad sidechaincompress_outputs[] = {
@@ -384,10 +379,9 @@ static const AVFilterPad sidechaincompress_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_af_sidechaincompress = {
+const AVFilter ff_af_sidechaincompress = {
     .name           = "sidechaincompress",
     .description    = NULL_IF_CONFIG_SMALL("Sidechain compressor."),
     .priv_size      = sizeof(SidechainCompressContext),
@@ -395,8 +389,8 @@ AVFilter ff_af_sidechaincompress = {
     .query_formats  = query_formats,
     .activate       = activate,
     .uninit         = uninit,
-    .inputs         = sidechaincompress_inputs,
-    .outputs        = sidechaincompress_outputs,
+    FILTER_INPUTS(sidechaincompress_inputs),
+    FILTER_OUTPUTS(sidechaincompress_outputs),
     .process_command = process_command,
 };
 #endif  /* CONFIG_SIDECHAINCOMPRESS_FILTER */
@@ -434,32 +428,19 @@ static int acompressor_filter_frame(AVFilterLink *inlink, AVFrame *in)
 
 static int acompressor_query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats;
-    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBL,
         AV_SAMPLE_FMT_NONE
     };
-    int ret;
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
-    formats = ff_make_format_list(sample_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
     if (ret < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 #define acompressor_options options
@@ -471,7 +452,6 @@ static const AVFilterPad acompressor_inputs[] = {
         .type           = AVMEDIA_TYPE_AUDIO,
         .filter_frame   = acompressor_filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad acompressor_outputs[] = {
@@ -480,17 +460,16 @@ static const AVFilterPad acompressor_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = compressor_config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_af_acompressor = {
+const AVFilter ff_af_acompressor = {
     .name           = "acompressor",
     .description    = NULL_IF_CONFIG_SMALL("Audio compressor."),
     .priv_size      = sizeof(SidechainCompressContext),
     .priv_class     = &acompressor_class,
     .query_formats  = acompressor_query_formats,
-    .inputs         = acompressor_inputs,
-    .outputs        = acompressor_outputs,
+    FILTER_INPUTS(acompressor_inputs),
+    FILTER_OUTPUTS(acompressor_outputs),
     .process_command = process_command,
 };
 #endif  /* CONFIG_ACOMPRESSOR_FILTER */
