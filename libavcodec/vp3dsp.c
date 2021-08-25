@@ -24,12 +24,15 @@
  * source code.
  */
 
+#include <string.h>
+
+#include "config.h"
 #include "libavutil/attributes.h"
 #include "libavutil/common.h"
+#include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/avassert.h"
 
-#include "avcodec.h"
 #include "rnd_avg.h"
 #include "vp3dsp.h"
 
@@ -490,5 +493,5 @@ void ff_vp3dsp_set_bounding_values(int * bounding_values_array, int filter_limit
     }
     if (value)
         bounding_values[128] = value;
-    bounding_values[129] = bounding_values[130] = filter_limit * 0x02020202;
+    bounding_values[129] = bounding_values[130] = filter_limit * 0x02020202U;
 }
