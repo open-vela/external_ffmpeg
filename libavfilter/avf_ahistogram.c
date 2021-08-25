@@ -99,17 +99,17 @@ static int query_formats(AVFilterContext *ctx)
     int ret = AVERROR(EINVAL);
 
     formats = ff_make_format_list(sample_fmts);
-    if ((ret = ff_formats_ref         (formats, &inlink->out_formats        )) < 0 ||
+    if ((ret = ff_formats_ref         (formats, &inlink->outcfg.formats        )) < 0 ||
         (layouts = ff_all_channel_counts()) == NULL ||
-        (ret = ff_channel_layouts_ref (layouts, &inlink->out_channel_layouts)) < 0)
+        (ret = ff_channel_layouts_ref (layouts, &inlink->outcfg.channel_layouts)) < 0)
         return ret;
 
     formats = ff_all_samplerates();
-    if ((ret = ff_formats_ref(formats, &inlink->out_samplerates)) < 0)
+    if ((ret = ff_formats_ref(formats, &inlink->outcfg.samplerates)) < 0)
         return ret;
 
     formats = ff_make_format_list(pix_fmts);
-    if ((ret = ff_formats_ref(formats, &outlink->in_formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &outlink->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -412,7 +412,6 @@ static const AVFilterPad ahistogram_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad ahistogram_outputs[] = {
@@ -421,17 +420,16 @@ static const AVFilterPad ahistogram_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_avf_ahistogram = {
+const AVFilter ff_avf_ahistogram = {
     .name          = "ahistogram",
     .description   = NULL_IF_CONFIG_SMALL("Convert input audio to histogram video output."),
     .uninit        = uninit,
     .query_formats = query_formats,
     .priv_size     = sizeof(AudioHistogramContext),
     .activate      = activate,
-    .inputs        = ahistogram_inputs,
-    .outputs       = ahistogram_outputs,
+    FILTER_INPUTS(ahistogram_inputs),
+    FILTER_OUTPUTS(ahistogram_outputs),
     .priv_class    = &ahistogram_class,
 };

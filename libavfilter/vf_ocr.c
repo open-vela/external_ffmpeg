@@ -43,7 +43,7 @@ typedef struct OCRContext {
 static const AVOption ocr_options[] = {
     { "datapath",  "set datapath",            OFFSET(datapath),  AV_OPT_TYPE_STRING, {.str=NULL},  0, 0, FLAGS },
     { "language",  "set language",            OFFSET(language),  AV_OPT_TYPE_STRING, {.str="eng"}, 0, 0, FLAGS },
-    { "whitelist", "set character whitelist", OFFSET(whitelist), AV_OPT_TYPE_STRING, {.str="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.:;,-+_!?\"'[]{}()<>|/\\=*&%$#@!~"}, 0, 0, FLAGS },
+    { "whitelist", "set character whitelist", OFFSET(whitelist), AV_OPT_TYPE_STRING, {.str="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.:;,-+_!?\"'[]{}()<>|/\\=*&%$#@!~ "}, 0, 0, FLAGS },
     { "blacklist", "set character blacklist", OFFSET(blacklist), AV_OPT_TYPE_STRING, {.str=""},    0, 0, FLAGS },
     { NULL }
 };
@@ -87,10 +87,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -135,7 +132,6 @@ static const AVFilterPad ocr_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad ocr_outputs[] = {
@@ -143,10 +139,9 @@ static const AVFilterPad ocr_outputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_ocr = {
+const AVFilter ff_vf_ocr = {
     .name          = "ocr",
     .description   = NULL_IF_CONFIG_SMALL("Optical Character Recognition."),
     .priv_size     = sizeof(OCRContext),
@@ -154,6 +149,6 @@ AVFilter ff_vf_ocr = {
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    .inputs        = ocr_inputs,
-    .outputs       = ocr_outputs,
+    FILTER_INPUTS(ocr_inputs),
+    FILTER_OUTPUTS(ocr_outputs),
 };
