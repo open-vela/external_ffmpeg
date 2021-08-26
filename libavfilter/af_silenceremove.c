@@ -69,16 +69,16 @@ typedef struct SilenceRemoveContext {
     int64_t stop_silence_opt;
     int stop_mode;
 
-    AVFrame *start_holdoff;
-    AVFrame *start_silence_hold;
+    double *start_holdoff;
+    double *start_silence_hold;
     size_t start_holdoff_offset;
     size_t start_holdoff_end;
     size_t start_silence_offset;
     size_t start_silence_end;
     int    start_found_periods;
 
-    AVFrame *stop_holdoff;
-    AVFrame *stop_silence_hold;
+    double *stop_holdoff;
+    double *stop_silence_hold;
     size_t stop_holdoff_offset;
     size_t stop_holdoff_end;
     size_t stop_silence_offset;
@@ -86,8 +86,9 @@ typedef struct SilenceRemoveContext {
     int    stop_found_periods;
 
     double window_ratio;
-    AVFrame *window;
-    int window_offset;
+    double *window;
+    double *window_current;
+    double *window_end;
     int window_size;
     double sum;
 
@@ -95,10 +96,8 @@ typedef struct SilenceRemoveContext {
     int64_t next_pts;
 
     int detection;
-    void (*update)(struct SilenceRemoveContext *s, AVFrame *frame, int ch, int offset);
-    double (*compute)(struct SilenceRemoveContext *s, AVFrame *frame, int ch, int offset);
-    void (*copy)(struct SilenceRemoveContext *s, AVFrame *out, AVFrame *in,
-                 int ch, int out_offset, int in_offset);
+    void (*update)(struct SilenceRemoveContext *s, double sample);
+    double(*compute)(struct SilenceRemoveContext *s, double sample);
 } SilenceRemoveContext;
 
 #define OFFSET(x) offsetof(SilenceRemoveContext, x)
@@ -126,260 +125,48 @@ static const AVOption silenceremove_options[] = {
 
 AVFILTER_DEFINE_CLASS(silenceremove);
 
-static void copy_double(SilenceRemoveContext *s, AVFrame *out, AVFrame *in,
-                        int ch, int out_offset, int in_offset)
+static double compute_peak(SilenceRemoveContext *s, double sample)
 {
-    const double *srcp = (const double *)in->data[0];
-    const double src = srcp[in->channels * in_offset + ch];
-    double *dstp = (double *)out->data[0];
-
-    dstp[out->channels * out_offset + ch] = src;
-}
-
-static void copy_doublep(SilenceRemoveContext *s, AVFrame *out, AVFrame *in,
-                         int ch, int out_offset, int in_offset)
-{
-    const double *srcp = (const double *)in->extended_data[ch];
-    const double src = srcp[in_offset];
-    double *dstp = (double *)out->extended_data[ch];
-
-    dstp[out_offset] = src;
-}
-
-static void copy_float(SilenceRemoveContext *s, AVFrame *out, AVFrame *in,
-                       int ch, int out_offset, int in_offset)
-{
-    const float *srcp = (const float *)in->data[0];
-    const float src = srcp[in->channels * in_offset + ch];
-    float *dstp = (float *)out->data[0];
-
-    dstp[out->channels * out_offset + ch] = src;
-}
-
-static void copy_floatp(SilenceRemoveContext *s, AVFrame *out, AVFrame *in,
-                        int ch, int out_offset, int in_offset)
-{
-    const float *srcp = (const float *)in->extended_data[ch];
-    const float src = srcp[in_offset];
-    float *dstp = (float *)out->extended_data[ch];
-
-    dstp[out_offset] = src;
-}
-
-static double compute_peak_double(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const double *samples = (const double *)frame->data[0];
-    const double *wsamples = (const double *)s->window->data[0];
-    double sample = samples[frame->channels * offset + ch];
-    double wsample = wsamples[frame->channels * s->window_offset + ch];
     double new_sum;
 
     new_sum  = s->sum;
-    new_sum -= wsample;
+    new_sum -= *s->window_current;
     new_sum += fabs(sample);
 
     return new_sum / s->window_size;
 }
 
-static void update_peak_double(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
+static void update_peak(SilenceRemoveContext *s, double sample)
 {
-    const double *samples = (const double *)frame->data[0];
-    double *wsamples = (double *)s->window->data[0];
-    double sample = samples[frame->channels * offset + ch];
-    double *wsample = &wsamples[frame->channels * s->window_offset + ch];
+    s->sum -= *s->window_current;
+    *s->window_current = fabs(sample);
+    s->sum += *s->window_current;
 
-    s->sum -= *wsample;
-    *wsample = fabs(sample);
-    s->sum += *wsample;
+    s->window_current++;
+    if (s->window_current >= s->window_end)
+        s->window_current = s->window;
 }
 
-static double compute_peak_float(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
+static double compute_rms(SilenceRemoveContext *s, double sample)
 {
-    const float *samples = (const float *)frame->data[0];
-    const float *wsamples = (const float *)s->window->data[0];
-    float sample = samples[frame->channels * offset + ch];
-    float wsample = wsamples[frame->channels * s->window_offset + ch];
-    float new_sum;
-
-    new_sum  = s->sum;
-    new_sum -= wsample;
-    new_sum += fabsf(sample);
-
-    return new_sum / s->window_size;
-}
-
-static void update_peak_float(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->data[0];
-    float *wsamples = (float *)s->window->data[0];
-    float sample = samples[frame->channels * offset + ch];
-    float *wsample = &wsamples[frame->channels * s->window_offset + ch];
-
-    s->sum -= *wsample;
-    *wsample = fabsf(sample);
-    s->sum += *wsample;
-}
-
-static double compute_rms_double(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const double *samples = (const double *)frame->data[0];
-    const double *wsamples = (const double *)s->window->data[0];
-    double sample = samples[frame->channels * offset + ch];
-    double wsample = wsamples[frame->channels * s->window_offset + ch];
     double new_sum;
 
     new_sum  = s->sum;
-    new_sum -= wsample;
+    new_sum -= *s->window_current;
     new_sum += sample * sample;
 
     return sqrt(new_sum / s->window_size);
 }
 
-static void update_rms_double(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
+static void update_rms(SilenceRemoveContext *s, double sample)
 {
-    const double *samples = (const double *)frame->data[0];
-    double *wsamples = (double *)s->window->data[0];
-    double sample = samples[frame->channels * offset + ch];
-    double *wsample = &wsamples[frame->channels * s->window_offset + ch];
+    s->sum -= *s->window_current;
+    *s->window_current = sample * sample;
+    s->sum += *s->window_current;
 
-    s->sum -= *wsample;
-    *wsample = sample * sample;
-    s->sum += *wsample;
-}
-
-static double compute_rms_float(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->data[0];
-    const float *wsamples = (const float *)s->window->data[0];
-    float sample = samples[frame->channels * offset + ch];
-    float wsample = wsamples[frame->channels * s->window_offset + ch];
-    float new_sum;
-
-    new_sum  = s->sum;
-    new_sum -= wsample;
-    new_sum += sample * sample;
-
-    return sqrtf(new_sum / s->window_size);
-}
-
-static void update_rms_float(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->data[0];
-    float sample = samples[frame->channels * offset + ch];
-    float *wsamples = (float *)s->window->data[0];
-    float *wsample = &wsamples[frame->channels * s->window_offset + ch];
-
-    s->sum -= *wsample;
-    *wsample = sample * sample;
-    s->sum += *wsample;
-}
-
-static double compute_peak_doublep(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const double *samples = (const double *)frame->extended_data[ch];
-    const double *wsamples = (const double *)s->window->extended_data[ch];
-    double sample = samples[offset];
-    double wsample = wsamples[s->window_offset];
-    double new_sum;
-
-    new_sum  = s->sum;
-    new_sum -= wsample;
-    new_sum += fabs(sample);
-
-    return new_sum / s->window_size;
-}
-
-static void update_peak_doublep(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const double *samples = (const double *)frame->extended_data[ch];
-    double *wsamples = (double *)s->window->extended_data[ch];
-    double sample = samples[offset];
-    double *wsample = &wsamples[s->window_offset];
-
-    s->sum -= *wsample;
-    *wsample = fabs(sample);
-    s->sum += *wsample;
-}
-
-static double compute_peak_floatp(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->extended_data[ch];
-    const float *wsamples = (const float *)s->window->extended_data[ch];
-    float sample = samples[offset];
-    float wsample = wsamples[s->window_offset];
-    float new_sum;
-
-    new_sum  = s->sum;
-    new_sum -= wsample;
-    new_sum += fabsf(sample);
-
-    return new_sum / s->window_size;
-}
-
-static void update_peak_floatp(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->extended_data[ch];
-    float *wsamples = (float *)s->window->extended_data[ch];
-    float sample = samples[offset];
-    float *wsample = &wsamples[s->window_offset];
-
-    s->sum -= *wsample;
-    *wsample = fabsf(sample);
-    s->sum += *wsample;
-}
-
-static double compute_rms_doublep(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const double *samples = (const double *)frame->extended_data[ch];
-    const double *wsamples = (const double *)s->window->extended_data[ch];
-    double sample = samples[offset];
-    double wsample = wsamples[s->window_offset];
-    double new_sum;
-
-    new_sum  = s->sum;
-    new_sum -= wsample;
-    new_sum += sample * sample;
-
-    return sqrt(new_sum / s->window_size);
-}
-
-static void update_rms_doublep(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const double *samples = (const double *)frame->extended_data[ch];
-    double *wsamples = (double *)s->window->extended_data[ch];
-    double sample = samples[offset];
-    double *wsample = &wsamples[s->window_offset];
-
-    s->sum -= *wsample;
-    *wsample = sample * sample;
-    s->sum += *wsample;
-}
-
-static double compute_rms_floatp(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->extended_data[ch];
-    const float *wsamples = (const float *)s->window->extended_data[ch];
-    float sample = samples[offset];
-    float wsample = wsamples[s->window_offset];
-    float new_sum;
-
-    new_sum  = s->sum;
-    new_sum -= wsample;
-    new_sum += sample * sample;
-
-    return sqrtf(new_sum / s->window_size);
-}
-
-static void update_rms_floatp(SilenceRemoveContext *s, AVFrame *frame, int ch, int offset)
-{
-    const float *samples = (const float *)frame->extended_data[ch];
-    float *wsamples = (float *)s->window->extended_data[ch];
-    float sample = samples[offset];
-    float *wsample = &wsamples[s->window_offset];
-
-    s->sum -= *wsample;
-    *wsample = sample * sample;
-    s->sum += *wsample;
+    s->window_current++;
+    if (s->window_current >= s->window_end)
+        s->window_current = s->window;
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -391,15 +178,26 @@ static av_cold int init(AVFilterContext *ctx)
         s->restart = 1;
     }
 
+    switch (s->detection) {
+    case D_PEAK:
+        s->update = update_peak;
+        s->compute = compute_peak;
+        break;
+    case D_RMS:
+        s->update = update_rms;
+        s->compute = compute_rms;
+        break;
+    }
+
     return 0;
 }
 
 static void clear_window(SilenceRemoveContext *s)
 {
-    av_samples_set_silence(s->window->extended_data, 0, s->window_size,
-                           s->window->channels, s->window->format);
+    memset(s->window, 0, s->window_size * sizeof(*s->window));
 
-    s->window_offset = 0;
+    s->window_current = s->window;
+    s->window_end = s->window + s->window_size;
     s->sum = 0;
 }
 
@@ -409,8 +207,8 @@ static int config_input(AVFilterLink *inlink)
     SilenceRemoveContext *s = ctx->priv;
 
     s->next_pts = AV_NOPTS_VALUE;
-    s->window_size = FFMAX((inlink->sample_rate * s->window_ratio), 1);
-    s->window = ff_get_audio_buffer(ctx->outputs[0], s->window_size);
+    s->window_size = FFMAX((inlink->sample_rate * s->window_ratio), 1) * inlink->channels;
+    s->window = av_malloc_array(s->window_size, sizeof(*s->window));
     if (!s->window)
         return AVERROR(ENOMEM);
 
@@ -425,13 +223,15 @@ static int config_input(AVFilterLink *inlink)
     s->stop_silence   = av_rescale(s->stop_silence_opt, inlink->sample_rate,
                                    AV_TIME_BASE);
 
-    s->start_holdoff = ff_get_audio_buffer(ctx->outputs[0],
-                                           FFMAX(s->start_duration, 1));
+    s->start_holdoff = av_malloc_array(FFMAX(s->start_duration, 1),
+                                       sizeof(*s->start_holdoff) *
+                                       inlink->channels);
     if (!s->start_holdoff)
         return AVERROR(ENOMEM);
 
-    s->start_silence_hold = ff_get_audio_buffer(ctx->outputs[0],
-                                                FFMAX(s->start_silence, 1));
+    s->start_silence_hold = av_malloc_array(FFMAX(s->start_silence, 1),
+                                            sizeof(*s->start_silence_hold) *
+                                            inlink->channels);
     if (!s->start_silence_hold)
         return AVERROR(ENOMEM);
 
@@ -439,13 +239,15 @@ static int config_input(AVFilterLink *inlink)
     s->start_holdoff_end    = 0;
     s->start_found_periods  = 0;
 
-    s->stop_holdoff = ff_get_audio_buffer(ctx->outputs[0],
-                                          FFMAX(s->stop_duration, 1));
+    s->stop_holdoff = av_malloc_array(FFMAX(s->stop_duration, 1),
+                                      sizeof(*s->stop_holdoff) *
+                                      inlink->channels);
     if (!s->stop_holdoff)
         return AVERROR(ENOMEM);
 
-    s->stop_silence_hold = ff_get_audio_buffer(ctx->outputs[0],
-                                               FFMAX(s->stop_silence, 1));
+    s->stop_silence_hold = av_malloc_array(FFMAX(s->stop_silence, 1),
+                                           sizeof(*s->stop_silence_hold) *
+                                           inlink->channels);
     if (!s->stop_silence_hold)
         return AVERROR(ENOMEM);
 
@@ -458,61 +260,6 @@ static int config_input(AVFilterLink *inlink)
     else
         s->mode = SILENCE_COPY;
 
-    switch (inlink->format) {
-    case AV_SAMPLE_FMT_DBL:
-        s->copy = copy_double;
-        switch (s->detection) {
-            case D_PEAK:
-                s->update = update_peak_double;
-                s->compute = compute_peak_double;
-                break;
-            case D_RMS:
-                s->update = update_rms_double;
-                s->compute = compute_rms_double;
-                break;
-        }
-        break;
-    case AV_SAMPLE_FMT_FLT:
-        s->copy = copy_float;
-        switch (s->detection) {
-            case D_PEAK:
-                s->update = update_peak_float;
-                s->compute = compute_peak_float;
-                break;
-            case D_RMS:
-                s->update = update_rms_float;
-                s->compute = compute_rms_float;
-                break;
-        }
-        break;
-    case AV_SAMPLE_FMT_DBLP:
-        s->copy = copy_doublep;
-        switch (s->detection) {
-            case D_PEAK:
-                s->update = update_peak_doublep;
-                s->compute = compute_peak_doublep;
-                break;
-            case D_RMS:
-                s->update = update_rms_doublep;
-                s->compute = compute_rms_doublep;
-                break;
-        }
-        break;
-    case AV_SAMPLE_FMT_FLTP:
-        s->copy = copy_floatp;
-        switch (s->detection) {
-            case D_PEAK:
-                s->update = update_peak_floatp;
-                s->compute = compute_peak_floatp;
-                break;
-            case D_RMS:
-                s->update = update_rms_floatp;
-                s->compute = compute_rms_floatp;
-                break;
-        }
-        break;
-    }
-
     return 0;
 }
 
@@ -523,7 +270,7 @@ static void flush(SilenceRemoveContext *s,
     AVFrame *silence;
 
     if (*nb_samples_written) {
-        out->nb_samples = *nb_samples_written;
+        out->nb_samples = *nb_samples_written / outlink->channels;
 
         out->pts = s->next_pts;
         s->next_pts += av_rescale_q(out->nb_samples,
@@ -541,24 +288,22 @@ static void flush(SilenceRemoveContext *s,
     if (s->stop_silence_end <= 0 || !flush_silence)
         return;
 
-    silence = ff_get_audio_buffer(outlink, s->stop_silence_end);
+    silence = ff_get_audio_buffer(outlink, s->stop_silence_end / outlink->channels);
     if (!silence) {
         *ret = AVERROR(ENOMEM);
         return;
     }
 
     if (s->stop_silence_offset < s->stop_silence_end) {
-        av_samples_copy(silence->extended_data, s->stop_silence_hold->extended_data, 0,
-                        s->stop_silence_offset,
-                        s->stop_silence_end - s->stop_silence_offset,
-                        outlink->channels, outlink->format);
+        memcpy(silence->data[0],
+               &s->stop_silence_hold[s->stop_silence_offset],
+               (s->stop_silence_end - s->stop_silence_offset) * sizeof(double));
     }
 
     if (s->stop_silence_offset > 0) {
-        av_samples_copy(silence->extended_data, s->stop_silence_hold->extended_data,
-                        s->stop_silence_end - s->stop_silence_offset,
-                        0, s->stop_silence_offset,
-                        outlink->channels, outlink->format);
+        memcpy(silence->data[0] + (s->stop_silence_end - s->stop_silence_offset) * sizeof(double),
+               &s->stop_silence_hold[0],
+               s->stop_silence_offset * sizeof(double));
     }
 
     s->stop_silence_offset = 0;
@@ -579,6 +324,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     SilenceRemoveContext *s = ctx->priv;
     int i, j, threshold, ret = 0;
     int nbs, nb_samples_read, nb_samples_written;
+    double *obuf, *ibuf = (double *)in->data[0];
     AVFrame *out;
 
     nb_samples_read = nb_samples_written = 0;
@@ -589,7 +335,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     switch (s->mode) {
     case SILENCE_TRIM:
 silence_trim:
-        nbs = in->nb_samples - nb_samples_read;
+        nbs = in->nb_samples - nb_samples_read / outlink->channels;
         if (!nbs)
             break;
 
@@ -597,28 +343,23 @@ silence_trim:
             if (s->start_mode == T_ANY) {
                 threshold = 0;
                 for (j = 0; j < outlink->channels; j++) {
-                    threshold |= s->compute(s, in, j, nb_samples_read) > s->start_threshold;
+                    threshold |= s->compute(s, ibuf[j]) > s->start_threshold;
                 }
             } else {
                 threshold = 1;
                 for (j = 0; j < outlink->channels; j++) {
-                    threshold &= s->compute(s, in, j, nb_samples_read) > s->start_threshold;
+                    threshold &= s->compute(s, ibuf[j]) > s->start_threshold;
                 }
             }
 
             if (threshold) {
                 for (j = 0; j < outlink->channels; j++) {
-                    s->update(s, in, j, nb_samples_read);
-                    s->copy(s, s->start_holdoff, in, j, s->start_holdoff_end, nb_samples_read);
+                    s->update(s, *ibuf);
+                    s->start_holdoff[s->start_holdoff_end++] = *ibuf++;
                 }
+                nb_samples_read += outlink->channels;
 
-                s->window_offset++;
-                if (s->window_offset >= s->window_size)
-                    s->window_offset = 0;
-                s->start_holdoff_end++;
-                nb_samples_read++;
-
-                if (s->start_holdoff_end >= s->start_duration) {
+                if (s->start_holdoff_end >= s->start_duration * outlink->channels) {
                     if (++s->start_found_periods >= s->start_periods) {
                         s->mode = SILENCE_TRIM_FLUSH;
                         goto silence_trim_flush;
@@ -633,22 +374,18 @@ silence_trim:
                 s->start_holdoff_end = 0;
 
                 for (j = 0; j < outlink->channels; j++) {
-                    s->update(s, in, j, nb_samples_read);
-                    if (s->start_silence)
-                        s->copy(s, s->start_silence_hold, in, j, s->start_silence_offset, nb_samples_read);
+                    s->update(s, ibuf[j]);
+                    if (s->start_silence) {
+                        s->start_silence_hold[s->start_silence_offset++] = ibuf[j];
+                        s->start_silence_end = FFMIN(s->start_silence_end + 1, outlink->channels * s->start_silence);
+                        if (s->start_silence_offset >= outlink->channels * s->start_silence) {
+                            s->start_silence_offset = 0;
+                        }
+                    }
                 }
 
-                s->window_offset++;
-                if (s->window_offset >= s->window_size)
-                    s->window_offset = 0;
-                nb_samples_read++;
-                s->start_silence_offset++;
-
-                if (s->start_silence) {
-                    s->start_silence_end = FFMIN(s->start_silence_end + 1, s->start_silence);
-                    if (s->start_silence_offset >= s->start_silence)
-                        s->start_silence_offset = 0;
-                }
+                ibuf += outlink->channels;
+                nb_samples_read += outlink->channels;
             }
         }
         break;
@@ -656,10 +393,11 @@ silence_trim:
     case SILENCE_TRIM_FLUSH:
 silence_trim_flush:
         nbs  = s->start_holdoff_end - s->start_holdoff_offset;
+        nbs -= nbs % outlink->channels;
         if (!nbs)
             break;
 
-        out = ff_get_audio_buffer(outlink, nbs + s->start_silence_end);
+        out = ff_get_audio_buffer(outlink, nbs / outlink->channels + s->start_silence_end / outlink->channels);
         if (!out) {
             av_frame_free(&in);
             return AVERROR(ENOMEM);
@@ -667,24 +405,21 @@ silence_trim_flush:
 
         if (s->start_silence_end > 0) {
             if (s->start_silence_offset < s->start_silence_end) {
-                av_samples_copy(out->extended_data, s->start_silence_hold->extended_data, 0,
-                                s->start_silence_offset,
-                                s->start_silence_end - s->start_silence_offset,
-                                outlink->channels, outlink->format);
+                memcpy(out->data[0],
+                       &s->start_silence_hold[s->start_silence_offset],
+                       (s->start_silence_end - s->start_silence_offset) * sizeof(double));
             }
 
             if (s->start_silence_offset > 0) {
-                av_samples_copy(out->extended_data, s->start_silence_hold->extended_data,
-                                s->start_silence_end - s->start_silence_offset,
-                                0, s->start_silence_offset,
-                                outlink->channels, outlink->format);
+                memcpy(out->data[0] + (s->start_silence_end - s->start_silence_offset) * sizeof(double),
+                       &s->start_silence_hold[0],
+                       s->start_silence_offset * sizeof(double));
             }
         }
 
-        av_samples_copy(out->extended_data, s->start_holdoff->extended_data,
-                        s->start_silence_end,
-                        s->start_holdoff_offset, nbs,
-                        outlink->channels, outlink->format);
+        memcpy(out->data[0] + s->start_silence_end * sizeof(double),
+               &s->start_holdoff[s->start_holdoff_offset],
+               nbs * sizeof(double));
 
         out->pts = s->next_pts;
         s->next_pts += av_rescale_q(out->nb_samples,
@@ -707,7 +442,7 @@ silence_trim_flush:
 
     case SILENCE_COPY:
 silence_copy:
-        nbs = in->nb_samples - nb_samples_read;
+        nbs = in->nb_samples - nb_samples_read / outlink->channels;
         if (!nbs)
             break;
 
@@ -716,18 +451,19 @@ silence_copy:
             av_frame_free(&in);
             return AVERROR(ENOMEM);
         }
+        obuf = (double *)out->data[0];
 
         if (s->stop_periods) {
             for (i = 0; i < nbs; i++) {
                 if (s->stop_mode == T_ANY) {
                     threshold = 0;
                     for (j = 0; j < outlink->channels; j++) {
-                        threshold |= s->compute(s, in, j, nb_samples_read) > s->stop_threshold;
+                        threshold |= s->compute(s, ibuf[j]) > s->stop_threshold;
                     }
                 } else {
                     threshold = 1;
                     for (j = 0; j < outlink->channels; j++) {
-                        threshold &= s->compute(s, in, j, nb_samples_read) > s->stop_threshold;
+                        threshold &= s->compute(s, ibuf[j]) > s->stop_threshold;
                     }
                 }
 
@@ -737,36 +473,27 @@ silence_copy:
                     goto silence_copy_flush;
                 } else if (threshold) {
                     for (j = 0; j < outlink->channels; j++) {
-                        s->update(s, in, j, nb_samples_read);
-                        s->copy(s, out, in, j, nb_samples_written, nb_samples_read);
+                        s->update(s, *ibuf);
+                        *obuf++ = *ibuf++;
                     }
-
-                    s->window_offset++;
-                    if (s->window_offset >= s->window_size)
-                        s->window_offset = 0;
-                    nb_samples_read++;
-                    nb_samples_written++;
+                    nb_samples_read    += outlink->channels;
+                    nb_samples_written += outlink->channels;
                 } else if (!threshold) {
                     for (j = 0; j < outlink->channels; j++) {
-                        s->update(s, in, j, nb_samples_read);
+                        s->update(s, *ibuf);
                         if (s->stop_silence) {
-                            s->copy(s, s->stop_silence_hold, in, j, s->stop_silence_offset, nb_samples_read);
-                            s->stop_silence_end = FFMIN(s->stop_silence_end + 1, s->stop_silence);
-                            if (s->stop_silence_offset >= s->stop_silence) {
+                            s->stop_silence_hold[s->stop_silence_offset++] = *ibuf;
+                            s->stop_silence_end = FFMIN(s->stop_silence_end + 1, outlink->channels * s->stop_silence);
+                            if (s->stop_silence_offset >= outlink->channels * s->stop_silence) {
                                 s->stop_silence_offset = 0;
                             }
                         }
 
-                        s->copy(s, s->stop_holdoff, in, j, s->stop_holdoff_end, nb_samples_read);
+                        s->stop_holdoff[s->stop_holdoff_end++] = *ibuf++;
                     }
+                    nb_samples_read += outlink->channels;
 
-                    s->window_offset++;
-                    if (s->window_offset >= s->window_size)
-                        s->window_offset = 0;
-                    nb_samples_read++;
-                    s->stop_holdoff_end++;
-
-                    if (s->stop_holdoff_end >= s->stop_duration) {
+                    if (s->stop_holdoff_end >= s->stop_duration * outlink->channels) {
                         if (++s->stop_found_periods >= s->stop_periods) {
                             s->stop_holdoff_offset = 0;
                             s->stop_holdoff_end = 0;
@@ -796,10 +523,7 @@ silence_copy:
             }
             flush(s, out, outlink, &nb_samples_written, &ret, 0);
         } else {
-            av_samples_copy(out->extended_data, in->extended_data,
-                            nb_samples_written,
-                            nb_samples_read, nbs,
-                            outlink->channels, outlink->format);
+            memcpy(obuf, ibuf, sizeof(double) * nbs * outlink->channels);
 
             out->pts = s->next_pts;
             s->next_pts += av_rescale_q(out->nb_samples,
@@ -813,19 +537,18 @@ silence_copy:
     case SILENCE_COPY_FLUSH:
 silence_copy_flush:
         nbs  = s->stop_holdoff_end - s->stop_holdoff_offset;
+        nbs -= nbs % outlink->channels;
         if (!nbs)
             break;
 
-        out = ff_get_audio_buffer(outlink, nbs);
+        out = ff_get_audio_buffer(outlink, nbs / outlink->channels);
         if (!out) {
             av_frame_free(&in);
             return AVERROR(ENOMEM);
         }
 
-        av_samples_copy(out->extended_data, s->stop_holdoff->extended_data, 0,
-                        s->stop_holdoff_offset, nbs,
-                        outlink->channels, outlink->format);
-
+        memcpy(out->data[0], &s->stop_holdoff[s->stop_holdoff_offset],
+               nbs * sizeof(double));
         s->stop_holdoff_offset += nbs;
 
         out->pts = s->next_pts;
@@ -867,13 +590,12 @@ static int request_frame(AVFilterLink *outlink)
         if (nbs) {
             AVFrame *frame;
 
-            frame = ff_get_audio_buffer(outlink, nbs);
+            frame = ff_get_audio_buffer(outlink, nbs / outlink->channels);
             if (!frame)
                 return AVERROR(ENOMEM);
 
-            av_samples_copy(frame->extended_data, s->stop_holdoff->extended_data, 0,
-                            s->stop_holdoff_offset, nbs,
-                            outlink->channels, outlink->format);
+            memcpy(frame->data[0], &s->stop_holdoff[s->stop_holdoff_offset],
+                   nbs * sizeof(double));
 
             frame->pts = s->next_pts;
             s->next_pts += av_rescale_q(frame->nb_samples,
@@ -889,31 +611,42 @@ static int request_frame(AVFilterLink *outlink)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
     static const enum AVSampleFormat sample_fmts[] = {
-        AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_FLTP,
-        AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP,
-        AV_SAMPLE_FMT_NONE
+        AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
     SilenceRemoveContext *s = ctx->priv;
 
-    av_frame_free(&s->start_holdoff);
-    av_frame_free(&s->start_silence_hold);
-    av_frame_free(&s->stop_holdoff);
-    av_frame_free(&s->stop_silence_hold);
-    av_frame_free(&s->window);
+    av_freep(&s->start_holdoff);
+    av_freep(&s->start_silence_hold);
+    av_freep(&s->stop_holdoff);
+    av_freep(&s->stop_silence_hold);
+    av_freep(&s->window);
 }
 
 static const AVFilterPad silenceremove_inputs[] = {
@@ -923,6 +656,7 @@ static const AVFilterPad silenceremove_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad silenceremove_outputs[] = {
@@ -931,9 +665,10 @@ static const AVFilterPad silenceremove_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .request_frame = request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_silenceremove = {
+AVFilter ff_af_silenceremove = {
     .name          = "silenceremove",
     .description   = NULL_IF_CONFIG_SMALL("Remove silence."),
     .priv_size     = sizeof(SilenceRemoveContext),
@@ -941,6 +676,6 @@ const AVFilter ff_af_silenceremove = {
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(silenceremove_inputs),
-    FILTER_OUTPUTS(silenceremove_outputs),
+    .inputs        = silenceremove_inputs,
+    .outputs       = silenceremove_outputs,
 };

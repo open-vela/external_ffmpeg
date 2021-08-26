@@ -27,6 +27,7 @@
 #include "libavutil/eval.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/avstring.h"
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mathematics.h"
 
@@ -380,12 +381,12 @@ static int overlay_qsv_query_formats(AVFilterContext *ctx)
     };
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        ret = ff_formats_ref(ff_make_format_list(main_in_fmts), &ctx->inputs[i]->outcfg.formats);
+        ret = ff_formats_ref(ff_make_format_list(main_in_fmts), &ctx->inputs[i]->out_formats);
         if (ret < 0)
             return ret;
     }
 
-    ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats);
+    ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->in_formats);
     if (ret < 0)
         return ret;
 
@@ -397,12 +398,15 @@ static const AVFilterPad overlay_qsv_inputs[] = {
         .name          = "main",
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_main_input,
+        .needs_fifo    = 1,
     },
     {
         .name          = "overlay",
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_overlay_input,
+        .needs_fifo    = 1,
     },
+    { NULL }
 };
 
 static const AVFilterPad overlay_qsv_outputs[] = {
@@ -411,9 +415,10 @@ static const AVFilterPad overlay_qsv_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_overlay_qsv = {
+AVFilter ff_vf_overlay_qsv = {
     .name           = "overlay_qsv",
     .description    = NULL_IF_CONFIG_SMALL("Quick Sync Video overlay."),
     .priv_size      = sizeof(QSVOverlayContext),
@@ -422,8 +427,8 @@ const AVFilter ff_vf_overlay_qsv = {
     .init           = overlay_qsv_init,
     .uninit         = overlay_qsv_uninit,
     .activate       = activate,
-    FILTER_INPUTS(overlay_qsv_inputs),
-    FILTER_OUTPUTS(overlay_qsv_outputs),
+    .inputs         = overlay_qsv_inputs,
+    .outputs        = overlay_qsv_outputs,
     .priv_class     = &overlay_qsv_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

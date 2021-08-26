@@ -65,19 +65,32 @@ AVFILTER_DEFINE_CLASS(compensationdelay);
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterChannelLayouts *layouts;
+    AVFilterFormats *formats;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -114,7 +127,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     const unsigned delay = s->delay;
     const double dry = s->dry;
     const double wet = s->wet;
-    unsigned r_ptr, w_ptr = 0;
+    unsigned r_ptr, w_ptr;
     AVFrame *out;
     int n, ch;
 
@@ -162,6 +175,7 @@ static const AVFilterPad compensationdelay_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad compensationdelay_outputs[] = {
@@ -169,15 +183,16 @@ static const AVFilterPad compensationdelay_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_compensationdelay = {
+AVFilter ff_af_compensationdelay = {
     .name          = "compensationdelay",
     .description   = NULL_IF_CONFIG_SMALL("Audio Compensation Delay Line."),
     .query_formats = query_formats,
     .priv_size     = sizeof(CompensationDelayContext),
     .priv_class    = &compensationdelay_class,
     .uninit        = uninit,
-    FILTER_INPUTS(compensationdelay_inputs),
-    FILTER_OUTPUTS(compensationdelay_outputs),
+    .inputs        = compensationdelay_inputs,
+    .outputs       = compensationdelay_outputs,
 };

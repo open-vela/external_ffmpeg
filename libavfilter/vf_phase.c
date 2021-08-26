@@ -74,7 +74,7 @@ typedef struct PhaseContext {
 } PhaseContext;
 
 #define OFFSET(x) offsetof(PhaseContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 #define CONST(name, help, val, unit) { name, help, 0, AV_OPT_TYPE_CONST, {.i64=val}, 0, 0, FLAGS, unit }
 
 static const AVOption phase_options[] = {
@@ -125,7 +125,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -221,6 +224,7 @@ static const AVFilterPad phase_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad phase_outputs[] = {
@@ -228,17 +232,17 @@ static const AVFilterPad phase_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_phase = {
+AVFilter ff_vf_phase = {
     .name          = "phase",
     .description   = NULL_IF_CONFIG_SMALL("Phase shift fields."),
     .priv_size     = sizeof(PhaseContext),
     .priv_class    = &phase_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(phase_inputs),
-    FILTER_OUTPUTS(phase_outputs),
+    .inputs        = phase_inputs,
+    .outputs       = phase_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
-    .process_command = ff_filter_process_command,
 };

@@ -207,6 +207,9 @@ static int update_size(AVCodecContext *avctx, int w, int h)
 
         switch (s->pix_fmt) {
         case AV_PIX_FMT_YUV420P:
+#if CONFIG_VP9_VDPAU_HWACCEL
+            *fmtp++ = AV_PIX_FMT_VDPAU;
+#endif
         case AV_PIX_FMT_YUV420P10:
 #if CONFIG_VP9_DXVA2_HWACCEL
             *fmtp++ = AV_PIX_FMT_DXVA2_VLD;
@@ -221,9 +224,6 @@ static int update_size(AVCodecContext *avctx, int w, int h)
 #if CONFIG_VP9_VAAPI_HWACCEL
             *fmtp++ = AV_PIX_FMT_VAAPI;
 #endif
-#if CONFIG_VP9_VDPAU_HWACCEL
-            *fmtp++ = AV_PIX_FMT_VDPAU;
-#endif
             break;
         case AV_PIX_FMT_YUV420P12:
 #if CONFIG_VP9_NVDEC_HWACCEL
@@ -231,9 +231,6 @@ static int update_size(AVCodecContext *avctx, int w, int h)
 #endif
 #if CONFIG_VP9_VAAPI_HWACCEL
             *fmtp++ = AV_PIX_FMT_VAAPI;
-#endif
-#if CONFIG_VP9_VDPAU_HWACCEL
-            *fmtp++ = AV_PIX_FMT_VDPAU;
 #endif
             break;
         }
@@ -1572,6 +1569,11 @@ static int vp9_decode_frame(AVCodecContext *avctx, void *frame,
         if ((ret = av_frame_ref(frame, s->s.refs[ref].f)) < 0)
             return ret;
         ((AVFrame *)frame)->pts = pkt->pts;
+#if FF_API_PKT_PTS
+FF_DISABLE_DEPRECATION_WARNINGS
+        ((AVFrame *)frame)->pkt_pts = pkt->pts;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
         ((AVFrame *)frame)->pkt_dts = pkt->dts;
         for (i = 0; i < 8; i++) {
             if (s->next_refs[i].f->buf[0])
@@ -1790,6 +1792,32 @@ static void vp9_decode_flush(AVCodecContext *avctx)
         ff_thread_release_buffer(avctx, &s->s.refs[i]);
 }
 
+static int init_frames(AVCodecContext *avctx)
+{
+    VP9Context *s = avctx->priv_data;
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        s->s.frames[i].tf.f = av_frame_alloc();
+        if (!s->s.frames[i].tf.f) {
+            vp9_decode_free(avctx);
+            av_log(avctx, AV_LOG_ERROR, "Failed to allocate frame buffer %d\n", i);
+            return AVERROR(ENOMEM);
+        }
+    }
+    for (i = 0; i < 8; i++) {
+        s->s.refs[i].f = av_frame_alloc();
+        s->next_refs[i].f = av_frame_alloc();
+        if (!s->s.refs[i].f || !s->next_refs[i].f) {
+            vp9_decode_free(avctx);
+            av_log(avctx, AV_LOG_ERROR, "Failed to allocate frame buffer %d\n", i);
+            return AVERROR(ENOMEM);
+        }
+    }
+
+    return 0;
+}
+
 static av_cold int vp9_decode_init(AVCodecContext *avctx)
 {
     VP9Context *s = avctx->priv_data;
@@ -1797,18 +1825,7 @@ static av_cold int vp9_decode_init(AVCodecContext *avctx)
     s->last_bpp = 0;
     s->s.h.filter.sharpness = -1;
 
-    for (int i = 0; i < 3; i++) {
-        s->s.frames[i].tf.f = av_frame_alloc();
-        if (!s->s.frames[i].tf.f)
-            return AVERROR(ENOMEM);
-    }
-    for (int i = 0; i < 8; i++) {
-        s->s.refs[i].f      = av_frame_alloc();
-        s->next_refs[i].f   = av_frame_alloc();
-        if (!s->s.refs[i].f || !s->next_refs[i].f)
-            return AVERROR(ENOMEM);
-    }
-    return 0;
+    return init_frames(avctx);
 }
 
 #if HAVE_THREADS
@@ -1858,7 +1875,7 @@ static int vp9_decode_update_thread_context(AVCodecContext *dst, const AVCodecCo
 }
 #endif
 
-const AVCodec ff_vp9_decoder = {
+AVCodec ff_vp9_decoder = {
     .name                  = "vp9",
     .long_name             = NULL_IF_CONFIG_SMALL("Google VP9"),
     .type                  = AVMEDIA_TYPE_VIDEO,
@@ -1868,14 +1885,13 @@ const AVCodec ff_vp9_decoder = {
     .close                 = vp9_decode_free,
     .decode                = vp9_decode_frame,
     .capabilities          = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP |
-                             FF_CODEC_CAP_SLICE_THREAD_HAS_MF |
+    .caps_internal         = FF_CODEC_CAP_SLICE_THREAD_HAS_MF |
                              FF_CODEC_CAP_ALLOCATE_PROGRESS,
     .flush                 = vp9_decode_flush,
     .update_thread_context = ONLY_IF_THREADS_ENABLED(vp9_decode_update_thread_context),
     .profiles              = NULL_IF_CONFIG_SMALL(ff_vp9_profiles),
     .bsfs                  = "vp9_superframe_split",
-    .hw_configs            = (const AVCodecHWConfigInternal *const []) {
+    .hw_configs            = (const AVCodecHWConfigInternal*[]) {
 #if CONFIG_VP9_DXVA2_HWACCEL
                                HWACCEL_DXVA2(vp9),
 #endif

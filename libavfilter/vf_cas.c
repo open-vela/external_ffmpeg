@@ -193,8 +193,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     av_frame_copy_props(out, in);
 
     s->in = in;
-    ff_filter_execute(ctx, s->do_slice, out, NULL,
-                      FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, s->do_slice, out, NULL,
+                           FFMIN(in->height, ff_filter_get_nb_threads(ctx)));
     av_frame_free(&in);
     s->in = NULL;
 
@@ -230,7 +230,13 @@ static av_cold int query_formats(AVFilterContext *avctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(avctx, pixel_fmts);
+    AVFilterFormats *formats = NULL;
+
+    formats = ff_make_format_list(pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+
+    return ff_set_common_formats(avctx, formats);
 }
 
 static av_cold int config_input(AVFilterLink *inlink)
@@ -258,6 +264,7 @@ static const AVFilterPad cas_inputs[] = {
         .filter_frame   = filter_frame,
         .config_props   = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad cas_outputs[] = {
@@ -265,6 +272,7 @@ static const AVFilterPad cas_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(CASContext, x)
@@ -278,14 +286,14 @@ static const AVOption cas_options[] = {
 
 AVFILTER_DEFINE_CLASS(cas);
 
-const AVFilter ff_vf_cas = {
+AVFilter ff_vf_cas = {
     .name          = "cas",
     .description   = NULL_IF_CONFIG_SMALL("Contrast Adaptive Sharpen."),
     .priv_size     = sizeof(CASContext),
     .priv_class    = &cas_class,
     .query_formats = query_formats,
-    FILTER_INPUTS(cas_inputs),
-    FILTER_OUTPUTS(cas_outputs),
+    .inputs        = cas_inputs,
+    .outputs       = cas_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
     .process_command = ff_filter_process_command,
 };
