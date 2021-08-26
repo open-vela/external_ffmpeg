@@ -24,12 +24,11 @@
 #define CGROUPS (int [3]){ 32, 32, 1 }
 
 typedef struct ChromaticAberrationVulkanContext {
-    FFVulkanContext vkctx;
+    VulkanFilterContext vkctx;
 
     int initialized;
-    FFVkQueueFamilyCtx qf;
     FFVkExecContext *exec;
-    FFVulkanPipeline *pl;
+    VulkanPipeline *pl;
 
     /* Shader updators, must be in the main filter struct */
     VkDescriptorImageInfo input_images[3];
@@ -68,18 +67,18 @@ static const char distort_chroma_kernel[] = {
 static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
 {
     int err;
-    FFVkSampler *sampler;
     ChromaticAberrationVulkanContext *s = ctx->priv;
-    const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
-
-    ff_vk_qf_init(ctx, &s->qf, VK_QUEUE_COMPUTE_BIT, 0);
 
     /* Create a sampler */
-    sampler = ff_vk_init_sampler(ctx, 0, VK_FILTER_LINEAR);
+    VkSampler *sampler = ff_vk_init_sampler(ctx, 0, VK_FILTER_LINEAR);
     if (!sampler)
         return AVERROR_EXTERNAL;
 
-    s->pl = ff_vk_create_pipeline(ctx, &s->qf);
+    s->vkctx.queue_family_idx = s->vkctx.hwctx->queue_family_comp_index;
+    s->vkctx.queue_count = GET_QUEUE_COUNT(s->vkctx.hwctx, 0, 1, 0);
+    s->vkctx.cur_queue_idx = av_get_random_seed() % s->vkctx.queue_count;
+
+    s->pl = ff_vk_create_pipeline(ctx);
     if (!s->pl)
         return AVERROR(ENOMEM);
 
@@ -88,7 +87,8 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     s->opts.dist[1] = (s->opts.dist[1] / 100.0f) + 1.0f;
 
     { /* Create the shader */
-        FFVulkanDescriptorSetBinding desc_i[2] = {
+        const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
+        VulkanDescriptorSetBinding desc_i[2] = {
             {
                 .name       = "input_img",
                 .type       = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -96,7 +96,7 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
                 .elems      = planes,
                 .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
                 .updater    = s->input_images,
-                .sampler    = sampler,
+                .samplers   = DUP_SAMPLER_ARRAY4(*sampler),
             },
             {
                 .name       = "output_img",
@@ -110,8 +110,8 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
             },
         };
 
-        FFSPIRVShader *shd = ff_vk_init_shader(ctx, s->pl, "chromaber_compute",
-                                               VK_SHADER_STAGE_COMPUTE_BIT);
+        SPIRVShader *shd = ff_vk_init_shader(ctx, s->pl, "chromaber_compute",
+                                             VK_SHADER_STAGE_COMPUTE_BIT);
         if (!shd)
             return AVERROR(ENOMEM);
 
@@ -159,7 +159,7 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     RET(ff_vk_init_compute_pipeline(ctx, s->pl));
 
     /* Execution context */
-    RET(ff_vk_create_exec_ctx(ctx, &s->exec, &s->qf));
+    RET(ff_vk_create_exec_ctx(ctx, &s->exec));
 
     s->initialized = 1;
 
@@ -174,7 +174,6 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f, AVFrame *in_f)
     int err = 0;
     VkCommandBuffer cmd_buf;
     ChromaticAberrationVulkanContext *s = avctx->priv;
-    FFVulkanFunctions *vk = &s->vkctx.vkfn;
     AVVkFrame *in = (AVVkFrame *)in_f->data[0];
     AVVkFrame *out = (AVVkFrame *)out_f->data[0];
     int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
@@ -230,9 +229,9 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f, AVFrame *in_f)
             },
         };
 
-        vk->CmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                               0, NULL, 0, NULL, FF_ARRAY_ELEMS(bar), bar);
+        vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+                             0, NULL, 0, NULL, FF_ARRAY_ELEMS(bar), bar);
 
         in->layout[i]  = bar[0].newLayout;
         in->access[i]  = bar[0].dstAccessMask;
@@ -246,9 +245,9 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f, AVFrame *in_f)
     ff_vk_update_push_exec(avctx, s->exec, VK_SHADER_STAGE_COMPUTE_BIT,
                            0, sizeof(s->opts), &s->opts);
 
-    vk->CmdDispatch(cmd_buf,
-                    FFALIGN(s->vkctx.output_width,  CGROUPS[0])/CGROUPS[0],
-                    FFALIGN(s->vkctx.output_height, CGROUPS[1])/CGROUPS[1], 1);
+    vkCmdDispatch(cmd_buf,
+                  FFALIGN(s->vkctx.output_width,  CGROUPS[0])/CGROUPS[0],
+                  FFALIGN(s->vkctx.output_height, CGROUPS[1])/CGROUPS[1], 1);
 
     ff_vk_add_exec_dep(avctx, s->exec, in_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
     ff_vk_add_exec_dep(avctx, s->exec, out_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
@@ -256,8 +255,6 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f, AVFrame *in_f)
     err = ff_vk_submit_exec_queue(avctx, s->exec);
     if (err)
         return err;
-
-    ff_vk_qf_rotate(&s->qf);
 
     return err;
 
@@ -324,6 +321,7 @@ static const AVFilterPad chromaber_vulkan_inputs[] = {
         .filter_frame = &chromaber_vulkan_filter_frame,
         .config_props = &ff_vk_filter_config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad chromaber_vulkan_outputs[] = {
@@ -332,17 +330,18 @@ static const AVFilterPad chromaber_vulkan_outputs[] = {
         .type = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_vk_filter_config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_chromaber_vulkan = {
+AVFilter ff_vf_chromaber_vulkan = {
     .name           = "chromaber_vulkan",
     .description    = NULL_IF_CONFIG_SMALL("Offset chroma of input video (chromatic aberration)"),
     .priv_size      = sizeof(ChromaticAberrationVulkanContext),
     .init           = &ff_vk_filter_init,
     .uninit         = &chromaber_vulkan_uninit,
-    FILTER_INPUTS(chromaber_vulkan_inputs),
-    FILTER_OUTPUTS(chromaber_vulkan_outputs),
-    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .query_formats  = &ff_vk_filter_query_formats,
+    .inputs         = chromaber_vulkan_inputs,
+    .outputs        = chromaber_vulkan_outputs,
     .priv_class     = &chromaber_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

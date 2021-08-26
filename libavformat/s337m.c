@@ -20,7 +20,6 @@
 
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
-#include "internal.h"
 #include "spdif.h"
 
 #define MARKER_16LE         0x72F81F4E
@@ -148,6 +147,7 @@ static int s337m_read_packet(AVFormatContext *s, AVPacket *pkt)
     uint64_t state = 0;
     int ret, data_type, data_size, offset;
     enum AVCodecID codec;
+    int64_t pos;
 
     while (!IS_LE_MARKER(state)) {
         state = (state << 8) | avio_r8(pb);
@@ -163,11 +163,19 @@ static int s337m_read_packet(AVFormatContext *s, AVPacket *pkt)
         data_size = avio_rl24(pb);
     }
 
+    pos = avio_tell(pb);
+
     if ((ret = s337m_get_offset_and_codec(s, state, data_type, data_size, &offset, &codec)) < 0)
         return ret;
 
-    if ((ret = av_get_packet(pb, pkt, offset)) != offset)
-        return ret < 0 ? ret : AVERROR_EOF;
+    if ((ret = av_new_packet(pkt, offset)) < 0)
+        return ret;
+
+    pkt->pos = pos;
+
+    if (avio_read(pb, pkt->data, pkt->size) < pkt->size) {
+        return AVERROR_EOF;
+    }
 
     if (IS_16LE_MARKER(state))
         ff_spdif_bswap_buf16((uint16_t *)pkt->data, (uint16_t *)pkt->data, pkt->size >> 1);
@@ -181,13 +189,12 @@ static int s337m_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
         st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codecpar->codec_id   = codec;
-        ffstream(st)->need_parsing = AVSTREAM_PARSE_HEADERS;
     }
 
     return 0;
 }
 
-const AVInputFormat ff_s337m_demuxer = {
+AVInputFormat ff_s337m_demuxer = {
     .name           = "s337m",
     .long_name      = NULL_IF_CONFIG_SMALL("SMPTE 337M"),
     .read_probe     = s337m_probe,
