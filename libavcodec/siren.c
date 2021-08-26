@@ -21,10 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/tx.h"
 #include "libavutil/float_dsp.h"
-#include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -343,18 +341,17 @@ static const float mlt_quant[7][14] = {
     { 0.0f, 1.964f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 };
 
-static const float noise_category5[21] = {
+static const float noise_category5[20] = {
     0.70711f, 0.6179f, 0.5005f, 0.3220f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f,
     0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f, 0.17678f
 };
 
-static const float noise_category6[21] = {
+static const float noise_category6[20] = {
     0.70711f, 0.5686f, 0.3563f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f,
     0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f
 };
 
 #define FRAME_SIZE 320
-#define REGION_SIZE 20
 
 typedef struct SirenContext {
     GetBitContext gb;
@@ -364,6 +361,7 @@ typedef struct SirenContext {
     int number_of_regions;
     int scale_factor;
     int sample_rate_bits;
+    int region_size;
 
     unsigned dw1, dw2, dw3, dw4;
 
@@ -404,6 +402,7 @@ static av_cold int siren_init(AVCodecContext *avctx)
     s->esf_adjustment = 7;
     s->number_of_regions = 14;
     s->scale_factor = 22;
+    s->region_size = 20;
     s->dw1 = s->dw2 = s->dw3 = s->dw4 = 1;
 
     for (i = 0; i < 64; i++) {
@@ -575,7 +574,7 @@ static int decode_vector(SirenContext *s, int number_of_regions,
 
     for (region = 0; region < number_of_regions; region++) {
         category = power_categories[region];
-        coefs_ptr = coefs + (region * REGION_SIZE);
+        coefs_ptr = coefs + (region * s->region_size);
 
         if (category >= 0 && category < 7) {
             decoder_tree = decoder_tables[category];
@@ -624,27 +623,32 @@ static int decode_vector(SirenContext *s, int number_of_regions,
             }
         }
 
-        coefs_ptr = coefs + (region * REGION_SIZE);
+        coefs_ptr = coefs + (region * s->region_size);
 
-        if (category == 5 || category == 6) {
+        if (category == 5) {
             i = 0;
-            for (j = 0; j < REGION_SIZE; j++) {
+            for (j = 0; j < s->region_size; j++) {
                 if (*coefs_ptr != 0)
                     i++;
                 coefs_ptr++;
             }
 
-            if (category == 5) {
-                noise = decoder_standard_deviation[region] * noise_category5[i];
-            } else
-                noise = decoder_standard_deviation[region] * noise_category6[i];
+            noise = decoder_standard_deviation[region] * noise_category5[i];
+        } else if (category == 6) {
+            i = 0;
+            for (j = 0; j < s->region_size; j++) {
+                if (*coefs_ptr++ != 0)
+                    i++;
+            }
+
+            noise = decoder_standard_deviation[region] * noise_category6[i];
         } else if (category == 7) {
             noise = decoder_standard_deviation[region] * 0.70711f;
         } else {
             noise = 0;
         }
 
-        coefs_ptr = coefs + (region * REGION_SIZE);
+        coefs_ptr = coefs + (region * s->region_size);
 
         if (category == 5 || category == 6 || category == 7) {
             dw1 = get_dw(s);
@@ -760,7 +764,7 @@ static av_cold int siren_close(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_siren_decoder = {
+AVCodec ff_siren_decoder = {
     .name           = "siren",
     .long_name      = NULL_IF_CONFIG_SMALL("Siren"),
     .priv_data_size = sizeof(SirenContext),
@@ -770,8 +774,7 @@ const AVCodec ff_siren_decoder = {
     .close          = siren_close,
     .decode         = siren_decode,
     .flush          = siren_flush,
-    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
-                      AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };

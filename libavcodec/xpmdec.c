@@ -436,7 +436,7 @@ static av_cold int xpm_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_xpm_decoder = {
+AVCodec ff_xpm_decoder = {
     .name           = "xpm",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_XPM,
