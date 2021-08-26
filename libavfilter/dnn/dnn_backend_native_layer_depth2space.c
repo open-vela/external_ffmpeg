@@ -24,9 +24,10 @@
  */
 
 #include "dnn_backend_native.h"
+#include "libavutil/avassert.h"
 #include "dnn_backend_native_layer_depth2space.h"
 
-int ff_dnn_load_layer_depth2space(Layer *layer, AVIOContext *model_file_context, int file_size, int operands_num)
+int dnn_load_layer_depth2space(Layer *layer, AVIOContext *model_file_context, int file_size, int operands_num)
 {
     DepthToSpaceParams *params;
     int dnn_size = 0;
@@ -48,11 +49,11 @@ int ff_dnn_load_layer_depth2space(Layer *layer, AVIOContext *model_file_context,
     return dnn_size;
 }
 
-int ff_dnn_execute_layer_depth2space(DnnOperand *operands, const int32_t *input_operand_indexes,
-                                     int32_t output_operand_index, const void *parameters, NativeContext *ctx)
+int dnn_execute_layer_depth2space(DnnOperand *operands, const int32_t *input_operand_indexes,
+                                  int32_t output_operand_index, const void *parameters)
 {
     float *output;
-    const DepthToSpaceParams *params = parameters;
+    const DepthToSpaceParams *params = (const DepthToSpaceParams *)parameters;
     int block_size = params->block_size;
     int32_t input_operand_index = input_operand_indexes[0];
     int number = operands[input_operand_index].dims[0];
@@ -73,16 +74,10 @@ int ff_dnn_execute_layer_depth2space(DnnOperand *operands, const int32_t *input_
     output_operand->dims[2] = width * block_size;
     output_operand->dims[3] = new_channels;
     output_operand->data_type = operands[input_operand_index].data_type;
-    output_operand->length = ff_calculate_operand_data_length(output_operand);
-    if (output_operand->length <= 0) {
-        av_log(ctx, AV_LOG_ERROR, "The output data length overflow\n");
-        return DNN_ERROR;
-    }
+    output_operand->length = calculate_operand_data_length(output_operand);
     output_operand->data = av_realloc(output_operand->data, output_operand->length);
-    if (!output_operand->data) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to reallocate memory for output\n");
-        return DNN_ERROR;
-    }
+    if (!output_operand->data)
+        return -1;
     output = output_operand->data;
 
     for (y = 0; y < height; ++y){

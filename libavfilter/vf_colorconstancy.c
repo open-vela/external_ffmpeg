@@ -366,8 +366,7 @@ get_deriv(AVFilterContext *ctx, ThreadData *td, int ord, int dir,
     td->meta_data[INDEX_DIR] = dir;
     td->meta_data[INDEX_SRC] = src;
     td->meta_data[INDEX_DST] = dst;
-    ff_filter_execute(ctx, slice_get_derivative, td,
-                      NULL, FFMIN(dim, nb_threads));
+    ctx->internal->execute(ctx, slice_get_derivative, td, NULL, FFMIN(dim, nb_threads));
 }
 
 /**
@@ -501,10 +500,10 @@ static int filter_grey_edge(AVFilterContext *ctx, AVFrame *in)
     }
     get_derivative(ctx, &td);
     if (difford > 0) {
-        ff_filter_execute(ctx, slice_normalize, &td, NULL, nb_jobs);
+        ctx->internal->execute(ctx, slice_normalize, &td, NULL, nb_jobs);
     }
 
-    ff_filter_execute(ctx, filter_slice_grey_edge, &td, NULL, nb_jobs);
+    ctx->internal->execute(ctx, filter_slice_grey_edge, &td, NULL, nb_jobs);
     if (!minknorm) {
         for (plane = 0; plane < NUM_PLANES; ++plane) {
             white[plane] = 0; // All values are absolute
@@ -632,7 +631,7 @@ static void chromatic_adaptation(AVFilterContext *ctx, AVFrame *in, AVFrame *out
 
     td.in  = in;
     td.out = out;
-    ff_filter_execute(ctx, diagonal_transformation, &td, NULL, nb_jobs);
+    ctx->internal->execute(ctx, diagonal_transformation, &td, NULL, nb_jobs);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -644,7 +643,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -726,6 +725,7 @@ static const AVFilterPad colorconstancy_inputs[] = {
         .config_props = config_props,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad colorconstancy_outputs[] = {
@@ -733,6 +733,7 @@ static const AVFilterPad colorconstancy_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 #if CONFIG_GREYEDGE_FILTER
@@ -746,15 +747,15 @@ static const AVOption greyedge_options[] = {
 
 AVFILTER_DEFINE_CLASS(greyedge);
 
-const AVFilter ff_vf_greyedge = {
+AVFilter ff_vf_greyedge = {
     .name          = GREY_EDGE,
     .description   = NULL_IF_CONFIG_SMALL("Estimates scene illumination by grey edge assumption."),
     .priv_size     = sizeof(ColorConstancyContext),
     .priv_class    = &greyedge_class,
     .query_formats = query_formats,
     .uninit        = uninit,
-    FILTER_INPUTS(colorconstancy_inputs),
-    FILTER_OUTPUTS(colorconstancy_outputs),
+    .inputs        = colorconstancy_inputs,
+    .outputs       = colorconstancy_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };
 
