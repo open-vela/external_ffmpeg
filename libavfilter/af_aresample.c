@@ -232,7 +232,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamplesref)
     if (n_out <= 0) {
         av_frame_free(&outsamplesref);
         av_frame_free(&insamplesref);
-        return 0;
+        return ff_request_frame(inlink);
     }
 
     aresample->more_data = outsamplesref->nb_samples == n_out; // Indicate that there is probably more data in our buffers
