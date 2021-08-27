@@ -1263,6 +1263,15 @@ static int ff_filter_activate_default(AVFilterContext *filter)
 {
     unsigned i;
 
+    for (i = 0; i < filter->nb_outputs; i++) {
+        if (filter->outputs[i]->status_in == 0)
+            break;
+    }
+    if (filter->nb_outputs && i == filter->nb_outputs) {
+        for (i = 0; i < filter->nb_inputs; i++)
+            ff_inlink_set_status(filter->inputs[i], filter->outputs[0]->status_in);
+        return filter->outputs[0]->status_in;
+    }
     for (i = 0; i < filter->nb_inputs; i++) {
         if (samples_ready(filter->inputs[i], filter->inputs[i]->min_samples)) {
             return ff_filter_frame_to_filter(filter->inputs[i]);
