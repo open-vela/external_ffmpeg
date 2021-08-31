@@ -18,13 +18,11 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
 #include "libavutil/tx.h"
 #include "audio.h"
 #include "avfilter.h"
-#include "filters.h"
 #include "internal.h"
 #include "window_func.h"
 
@@ -135,15 +133,29 @@ static av_cold int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_FLT,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
+    int ret;
+
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats (ctx, formats);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_channel_layouts_from_list(ctx, chlayouts);
+    layouts = avfilter_make_format64_list(chlayouts);
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_samplerates_from_list(ctx, sample_rates);
+    formats = ff_make_format_list(sample_rates);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static int parse_string(char *str, float **items, int *nb_items, int *items_size)
@@ -274,21 +286,16 @@ static av_cold int config_output(AVFilterLink *outlink)
     return 0;
 }
 
-static int activate(AVFilterContext *ctx)
+static int request_frame(AVFilterLink *outlink)
 {
-    AVFilterLink *outlink = ctx->outputs[0];
+    AVFilterContext *ctx = outlink->src;
     AudioFIRSourceContext *s = ctx->priv;
     AVFrame *frame;
     int nb_samples;
 
-    if (!ff_outlink_frame_wanted(outlink))
-        return FFERROR_NOT_READY;
-
     nb_samples = FFMIN(s->nb_samples, s->nb_taps - s->pts);
-    if (nb_samples <= 0) {
-        ff_outlink_set_status(outlink, AVERROR_EOF, s->pts);
-        return 0;
-    }
+    if (!nb_samples)
+        return AVERROR_EOF;
 
     if (!(frame = ff_get_audio_buffer(outlink, nb_samples)))
         return AVERROR(ENOMEM);
@@ -304,19 +311,20 @@ static const AVFilterPad afirsrc_outputs[] = {
     {
         .name          = "default",
         .type          = AVMEDIA_TYPE_AUDIO,
+        .request_frame = request_frame,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_asrc_afirsrc = {
+AVFilter ff_asrc_afirsrc = {
     .name          = "afirsrc",
     .description   = NULL_IF_CONFIG_SMALL("Generate a FIR coefficients audio stream."),
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    .activate      = activate,
     .priv_size     = sizeof(AudioFIRSourceContext),
     .inputs        = NULL,
-    FILTER_OUTPUTS(afirsrc_outputs),
+    .outputs       = afirsrc_outputs,
     .priv_class    = &afirsrc_class,
 };

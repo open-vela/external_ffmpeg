@@ -277,7 +277,6 @@ typedef struct MOVContext {
     int moov_retry;
     int use_mfra_for;
     int has_looked_for_mfra;
-    int use_tfdt;
     MOVFragmentIndex frag_index;
     int atom_depth;
     unsigned int aax_mode;  ///< 'aax' file has been detected
@@ -287,17 +286,11 @@ typedef struct MOVContext {
     int activation_bytes_size;
     void *audible_fixed_key;
     int audible_fixed_key_size;
-    void *audible_key;
-    int audible_key_size;
-    void *audible_iv;
-    int audible_iv_size;
     struct AVAES *aes_decrypt;
     uint8_t *decryption_key;
     int decryption_key_len;
     int enable_drefs;
     int32_t movie_display_matrix[3][3]; ///< display matrix from mvhd
-    int have_read_mfra_size;
-    uint32_t mfra_size;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);
@@ -386,8 +379,5 @@ static inline enum AVCodecID ff_mov_get_lpcm_codec_id(int bps, int flags)
      */
     return ff_get_pcm_codec_id(bps, flags & 1, flags & 2, flags & 4 ? -1 : 0);
 }
-
-#define MOV_ISMV_TTML_TAG MKTAG('d', 'f', 'x', 'p')
-#define MOV_MP4_TTML_TAG  MKTAG('s', 't', 'p', 'p')
 
 #endif /* AVFORMAT_ISOM_H */
