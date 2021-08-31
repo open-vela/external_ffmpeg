@@ -124,10 +124,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int alloc_sws_context(FilterParam *f, int width, int height, unsigned int flags)
@@ -280,7 +277,6 @@ static const AVFilterPad smartblur_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
-    { NULL }
 };
 
 static const AVFilterPad smartblur_outputs[] = {
@@ -288,18 +284,17 @@ static const AVFilterPad smartblur_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_smartblur = {
+const AVFilter ff_vf_smartblur = {
     .name          = "smartblur",
     .description   = NULL_IF_CONFIG_SMALL("Blur the input video without impacting the outlines."),
     .priv_size     = sizeof(SmartblurContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = smartblur_inputs,
-    .outputs       = smartblur_outputs,
+    FILTER_INPUTS(smartblur_inputs),
+    FILTER_OUTPUTS(smartblur_outputs),
     .priv_class    = &smartblur_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

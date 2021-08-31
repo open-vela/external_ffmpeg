@@ -300,7 +300,7 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
         frame->data[0] += s->y * frame->linesize[0];
         frame->data[0] += s->x * s->max_step[0];
 
-        if (!(desc->flags & AV_PIX_FMT_FLAG_PAL || desc->flags & FF_PSEUDOPAL)) {
+        if (!(desc->flags & AV_PIX_FMT_FLAG_PAL)) {
             for (i = 1; i < 3; i ++) {
                 if (frame->data[i]) {
                     frame->data[i] += (s->y >> s->vsub) * frame->linesize[i];
@@ -380,7 +380,6 @@ static const AVFilterPad avfilter_vf_crop_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_crop_outputs[] = {
@@ -389,17 +388,16 @@ static const AVFilterPad avfilter_vf_crop_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_crop = {
+const AVFilter ff_vf_crop = {
     .name            = "crop",
     .description     = NULL_IF_CONFIG_SMALL("Crop the input video."),
     .priv_size       = sizeof(CropContext),
     .priv_class      = &crop_class,
     .query_formats   = query_formats,
     .uninit          = uninit,
-    .inputs          = avfilter_vf_crop_inputs,
-    .outputs         = avfilter_vf_crop_outputs,
+    FILTER_INPUTS(avfilter_vf_crop_inputs),
+    FILTER_OUTPUTS(avfilter_vf_crop_outputs),
     .process_command = process_command,
 };
