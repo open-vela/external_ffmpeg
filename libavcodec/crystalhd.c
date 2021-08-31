@@ -537,6 +537,11 @@ static inline CopyRet copy_frame(AVCodecContext *avctx,
         frame->top_field_first = !bottom_first;
 
     frame->pts = pkt_pts;
+#if FF_API_PKT_PTS
+FF_DISABLE_DEPRECATION_WARNINGS
+    frame->pkt_pts = pkt_pts;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     frame->pkt_pos = -1;
     frame->pkt_duration = 0;
@@ -652,6 +657,7 @@ static int crystalhd_decode_packet(AVCodecContext *avctx, const AVPacket *avpkt)
     BC_STATUS bc_ret;
     CHDContext *priv   = avctx->priv_data;
     HANDLE dev         = priv->dev;
+    AVPacket filtered_packet = { 0 };
     int ret = 0;
 
     av_log(avctx, AV_LOG_VERBOSE, "CrystalHD: decode_packet\n");
@@ -694,6 +700,7 @@ static int crystalhd_decode_packet(AVCodecContext *avctx, const AVPacket *avpkt)
         goto exit;
     }
  exit:
+    av_packet_unref(&filtered_packet);
     return ret;
 }
 
@@ -767,7 +774,7 @@ static int crystalhd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         .option = options, \
         .version = LIBAVUTIL_VERSION_INT, \
     }; \
-    const AVCodec ff_##x##_crystalhd_decoder = { \
+    AVCodec ff_##x##_crystalhd_decoder = { \
         .name           = #x "_crystalhd", \
         .long_name      = NULL_IF_CONFIG_SMALL("CrystalHD " #X " decoder"), \
         .type           = AVMEDIA_TYPE_VIDEO, \
@@ -780,7 +787,6 @@ static int crystalhd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         .flush          = flush, \
         .bsfs           = bsf_name, \
         .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_HARDWARE, \
-        .caps_internal  = FF_CODEC_CAP_SETS_FRAME_PROPS, \
         .pix_fmts       = (const enum AVPixelFormat[]){AV_PIX_FMT_YUYV422, AV_PIX_FMT_NONE}, \
         .wrapper_name   = "crystalhd", \
     };

@@ -197,6 +197,7 @@ extern const VkComponentMapping ff_comp_identity_map;
 /**
  * General lavfi IO functions
  */
+int  ff_vk_filter_query_formats        (AVFilterContext *avctx);
 int  ff_vk_filter_init                 (AVFilterContext *avctx);
 int  ff_vk_filter_config_input         (AVFilterLink   *inlink);
 int  ff_vk_filter_config_output        (AVFilterLink  *outlink);
