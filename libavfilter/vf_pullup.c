@@ -64,7 +64,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 #define ABS(a) (((a) ^ ((a) >> 31)) - ((a) >> 31))
@@ -750,6 +753,7 @@ static const AVFilterPad pullup_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad pullup_outputs[] = {
@@ -757,15 +761,16 @@ static const AVFilterPad pullup_outputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_pullup = {
+AVFilter ff_vf_pullup = {
     .name          = "pullup",
     .description   = NULL_IF_CONFIG_SMALL("Pullup from field sequence to frames."),
     .priv_size     = sizeof(PullupContext),
     .priv_class    = &pullup_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(pullup_inputs),
-    FILTER_OUTPUTS(pullup_outputs),
+    .inputs        = pullup_inputs,
+    .outputs       = pullup_outputs,
 };
