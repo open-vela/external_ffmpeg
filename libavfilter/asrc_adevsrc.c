@@ -27,8 +27,8 @@
 #include <libavformat/internal.h>
 #include <libavcodec/avcodec.h>
 
-#include "filters.h"
 #include "avfilter.h"
+#include "filters.h"
 #include "internal.h"
 
 typedef struct ADevSrcPriv {
@@ -55,7 +55,6 @@ static void adevsrc_stop(AVFilterContext *ctx)
 
 static int adevsrc_start(AVFilterContext *ctx)
 {
-    AVFilterLink *link = ctx->outputs[0];
     ADevSrcPriv *priv = ctx->priv;
     AVStream *st;
     AVCodec *dec;
@@ -72,7 +71,7 @@ static int adevsrc_start(AVFilterContext *ctx)
     if (!st)
         goto out;
 
-    st->time_base = (AVRational){ 1, link->sample_rate };
+    st->time_base = (AVRational){ 1, st->codecpar->sample_rate };
     st->cur_dts = AV_NOPTS_VALUE;
 
     /* Find decoder for the stream */
@@ -87,9 +86,6 @@ static int adevsrc_start(AVFilterContext *ctx)
         goto out;
     }
 
-    av_opt_set_sample_fmt(priv->dec_ctx, "request_sample_fmt",
-                          link->format, AV_OPT_SEARCH_CHILDREN);
-
     /* Copy codec parameters from input stream to output codec context */
     ret = avcodec_parameters_to_context(priv->dec_ctx, st->codecpar);
     if (ret < 0)
@@ -100,7 +96,7 @@ static int adevsrc_start(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    return 0;
+    return avfilter_graph_reconfig(ctx->graph, NULL);
 out:
     adevsrc_stop(ctx);
     return ret;
@@ -118,8 +114,12 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
     AVFilterContext *ctx = av_format_get_opaque(s);
     ADevSrcPriv *priv = ctx->priv;
 
-    if (type == AV_DEV_TO_APP_BUFFER_READABLE)
-        avdevsrc_force_request(ctx);
+    if (type == AV_DEV_TO_APP_BUFFER_READABLE) {
+        if (priv->dec_ctx)
+            ff_filter_set_ready(ctx, 300);
+        else
+            avdevsrc_force_request(ctx);
+    }
 
     return 0;
 }
@@ -213,7 +213,8 @@ out:
     if (ret == AVERROR_EOF) {
         adevsrc_stop(ctx);
         ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
-    }
+    } else if (ret < 0 && ret != AVERROR(EAGAIN))
+        ff_filter_set_ready(ctx, 300);
 
     return ret;
 }
@@ -233,9 +234,6 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
                 priv->fmt_ctx,
                 AV_APP_TO_DEV_POLL_AVAILABLE,
                 res, res_len);
-    } else if (!strcmp(cmd, "start")) {
-        avdevsrc_force_request(ctx);
-        return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
@@ -252,8 +250,39 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     int ret, i;
 
     ret = avdevice_capabilities_create(&caps, priv->fmt_ctx, NULL);
-    if (ret < 0)
+    if (ret < 0) {
+        AVCodecContext *codec_ctx = priv->dec_ctx;
+
+        if (ret != AVERROR(ENOSYS))
+            return ret;
+
+        if (!codec_ctx)
+            return FFERROR_NOT_READY;
+
+        if ((ret = ff_add_format(&formats, codec_ctx->sample_fmt)) < 0)
+            return ret;
+
+        if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+            return ret;
+
+        if (!codec_ctx->channel_layout)
+            codec_ctx->channel_layout = av_get_default_channel_layout(codec_ctx->channels);
+
+        if ((ret = ff_add_channel_layout(&layouts, codec_ctx->channel_layout)) < 0)
+            return ret;
+
+        if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
+            return ret;
+
+        formats = NULL;
+        if ((ret = ff_add_format(&formats, codec_ctx->sample_rate)) < 0)
+            return ret;
+
+        if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+            return ret;
+
         return 0;
+    }
 
     ret = av_opt_query_ranges(&ranges, caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
     if (ret < 0) {
