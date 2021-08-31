@@ -94,8 +94,10 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
     AVFilterContext *ctx = link->dst;
     int ret;
 
-    if (ret = ff_filter_execute(ctx, do_despill_slice, frame, NULL,
-                                FFMIN(frame->height, ff_filter_get_nb_threads(ctx))))
+    if (ret = av_frame_make_writable(frame))
+        return ret;
+
+    if (ret = ctx->internal->execute(ctx, do_despill_slice, frame, NULL, FFMIN(frame->height, ff_filter_get_nb_threads(ctx))))
         return ret;
 
     return ff_filter_frame(ctx->outputs[0], frame);
@@ -123,17 +125,22 @@ static av_cold int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_BGRA,
         AV_PIX_FMT_NONE
     };
+    AVFilterFormats *formats = NULL;
 
-    return ff_set_common_formats_from_list(ctx, pixel_fmts);
+    formats = ff_make_format_list(pixel_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+
+    return ff_set_common_formats(ctx, formats);
 }
 
 static const AVFilterPad despill_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
-        .flags        = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad despill_outputs[] = {
@@ -142,10 +149,11 @@ static const AVFilterPad despill_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(DespillContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption despill_options[] = {
     { "type",       "set the screen type",     OFFSET(type),        AV_OPT_TYPE_INT,     {.i64=0},     0,   1, FLAGS, "type" },
@@ -163,14 +171,13 @@ static const AVOption despill_options[] = {
 
 AVFILTER_DEFINE_CLASS(despill);
 
-const AVFilter ff_vf_despill = {
+AVFilter ff_vf_despill = {
     .name          = "despill",
     .description   = NULL_IF_CONFIG_SMALL("Despill video."),
     .priv_size     = sizeof(DespillContext),
     .priv_class    = &despill_class,
     .query_formats = query_formats,
-    FILTER_INPUTS(despill_inputs),
-    FILTER_OUTPUTS(despill_outputs),
-    .process_command = ff_filter_process_command,
+    .inputs        = despill_inputs,
+    .outputs       = despill_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };
