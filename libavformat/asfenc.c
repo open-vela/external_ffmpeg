@@ -236,7 +236,7 @@ typedef struct ASFContext {
     int64_t packet_timestamp_end;
     unsigned int packet_nb_payloads;
     uint8_t packet_buf[PACKET_SIZE_MAX];
-    AVIOContext pb;
+    FFIOContext pb;
     /* only for reading */
     uint64_t data_offset;                ///< beginning of the first data packet
 
@@ -256,6 +256,10 @@ static const AVCodecTag codec_asf_bmp_tags[] = {
     { AV_CODEC_ID_MPEG4,     MKTAG('M', 'P', '4', 'S') },
     { AV_CODEC_ID_MSMPEG4V3, MKTAG('M', 'P', '4', '3') },
     { AV_CODEC_ID_NONE,      0 },
+};
+
+static const AVCodecTag *const asf_codec_tags[] = {
+        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, NULL
 };
 
 #define PREROLL_TIME 3100
@@ -682,7 +686,7 @@ static int asf_write_header1(AVFormatContext *s, int64_t file_size,
             avio_wl16(pb, 40 + par->extradata_size); /* size */
 
             /* BITMAPINFOHEADER header */
-            ff_put_bmp_header(pb, par, 1, 0);
+            ff_put_bmp_header(pb, par, 1, 0, 0);
         }
         end_header(pb, hpos);
     }
@@ -907,7 +911,7 @@ static void put_payload_header(AVFormatContext *s, ASFStream *stream,
                                int m_obj_offset, int payload_len, int flags)
 {
     ASFContext *asf = s->priv_data;
-    AVIOContext *pb = &asf->pb;
+    AVIOContext *const pb = &asf->pb.pub;
     int val;
 
     val = stream->num;
@@ -979,7 +983,7 @@ static void put_frame(AVFormatContext *s, ASFStream *stream, AVStream *avst,
 
             put_payload_header(s, stream, timestamp + PREROLL_TIME,
                                m_obj_size, m_obj_offset, payload_len, flags);
-            avio_write(&asf->pb, buf, payload_len);
+            avio_write(&asf->pb.pub, buf, payload_len);
 
             if (asf->multi_payloads_present)
                 asf->packet_size_left -= (payload_len + PAYLOAD_HEADER_SIZE_MULTIPLE_PAYLOADS);
@@ -1121,7 +1125,7 @@ static int asf_write_trailer(AVFormatContext *s)
     int ret;
 
     /* flush the current packet */
-    if (asf->pb.buf_ptr > asf->pb.buffer)
+    if (asf->pb.pub.buf_ptr > asf->pb.pub.buffer)
         flush_packet(s);
 
     /* write index */
@@ -1150,15 +1154,15 @@ static const AVOption asf_options[] = {
     { NULL },
 };
 
-#if CONFIG_ASF_MUXER
 static const AVClass asf_muxer_class = {
-    .class_name     = "ASF muxer",
+    .class_name     = "ASF (stream) muxer",
     .item_name      = av_default_item_name,
     .option         = asf_options,
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-AVOutputFormat ff_asf_muxer = {
+#if CONFIG_ASF_MUXER
+const AVOutputFormat ff_asf_muxer = {
     .name           = "asf",
     .long_name      = NULL_IF_CONFIG_SMALL("ASF (Advanced / Active Streaming Format)"),
     .mime_type      = "video/x-ms-asf",
@@ -1170,22 +1174,13 @@ AVOutputFormat ff_asf_muxer = {
     .write_packet   = asf_write_packet,
     .write_trailer  = asf_write_trailer,
     .flags          = AVFMT_GLOBALHEADER,
-    .codec_tag      = (const AVCodecTag * const []) {
-        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, 0
-    },
+    .codec_tag      = asf_codec_tags,
     .priv_class        = &asf_muxer_class,
 };
 #endif /* CONFIG_ASF_MUXER */
 
 #if CONFIG_ASF_STREAM_MUXER
-static const AVClass asf_stream_muxer_class = {
-    .class_name     = "ASF stream muxer",
-    .item_name      = av_default_item_name,
-    .option         = asf_options,
-    .version        = LIBAVUTIL_VERSION_INT,
-};
-
-AVOutputFormat ff_asf_stream_muxer = {
+const AVOutputFormat ff_asf_stream_muxer = {
     .name           = "asf_stream",
     .long_name      = NULL_IF_CONFIG_SMALL("ASF (Advanced / Active Streaming Format)"),
     .mime_type      = "video/x-ms-asf",
@@ -1197,9 +1192,7 @@ AVOutputFormat ff_asf_stream_muxer = {
     .write_packet   = asf_write_packet,
     .write_trailer  = asf_write_trailer,
     .flags          = AVFMT_GLOBALHEADER,
-    .codec_tag      = (const AVCodecTag * const []) {
-        codec_asf_bmp_tags, ff_codec_bmp_tags, ff_codec_wav_tags, 0
-    },
-    .priv_class        = &asf_stream_muxer_class,
+    .codec_tag      = asf_codec_tags,
+    .priv_class     = &asf_muxer_class,
 };
 #endif /* CONFIG_ASF_STREAM_MUXER */
