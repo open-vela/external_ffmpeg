@@ -34,6 +34,8 @@
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
 
+#include "libavcodec/avcodec.h"
+
 #include "avdevice.h"
 #include "libavformat/internal.h"
 
@@ -130,7 +132,7 @@ static const AVClass oss_demuxer_class = {
     .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
 };
 
-const AVInputFormat ff_oss_demuxer = {
+AVInputFormat ff_oss_demuxer = {
     .name           = "oss",
     .long_name      = NULL_IF_CONFIG_SMALL("OSS (Open Sound System) capture"),
     .priv_data_size = sizeof(OSSAudioData),

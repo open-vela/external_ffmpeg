@@ -21,6 +21,7 @@
  */
 
 #include "libavutil/intreadwrite.h"
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
 #include "libavutil/log.h"
@@ -77,7 +78,7 @@ static int write_muxed_file(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
     VideoMuxData *img = s->priv_data;
     AVCodecParameters *par = s->streams[pkt->stream_index]->codecpar;
     AVStream *st;
-    AVPacket *const pkt2 = ffformatcontext(s)->pkt;
+    AVPacket pkt2;
     AVFormatContext *fmt = NULL;
     int ret;
 
@@ -94,17 +95,17 @@ static int write_muxed_file(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
 
     fmt->pb = pb;
 
-    ret = av_packet_ref(pkt2, pkt);
+    ret = av_packet_ref(&pkt2, pkt);
     if (ret < 0)
         goto out;
-    pkt2->stream_index = 0;
+    pkt2.stream_index = 0;
 
     if ((ret = avcodec_parameters_copy(st->codecpar, par))     < 0 ||
         (ret = avformat_write_header(fmt, NULL))               < 0 ||
-        (ret = av_interleaved_write_frame(fmt, pkt2))         < 0 ||
+        (ret = av_interleaved_write_frame(fmt, &pkt2))         < 0 ||
         (ret = av_write_trailer(fmt))) {}
 
-    av_packet_unref(pkt2);
+    av_packet_unref(&pkt2);
 out:
     avformat_free_context(fmt);
     return ret;
@@ -256,10 +257,10 @@ static const AVClass img2mux_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVOutputFormat ff_image2_muxer = {
+AVOutputFormat ff_image2_muxer = {
     .name           = "image2",
     .long_name      = NULL_IF_CONFIG_SMALL("image2 sequence"),
-    .extensions     = "bmp,dpx,exr,jls,jpeg,jpg,ljpg,pam,pbm,pcx,pfm,pgm,pgmyuv,png,"
+    .extensions     = "bmp,dpx,jls,jpeg,jpg,ljpg,pam,pbm,pcx,pgm,pgmyuv,png,"
                       "ppm,sgi,tga,tif,tiff,jp2,j2c,j2k,xwd,sun,ras,rs,im1,im8,im24,"
                       "sunras,xbm,xface,pix,y",
     .priv_data_size = sizeof(VideoMuxData),
@@ -272,7 +273,7 @@ const AVOutputFormat ff_image2_muxer = {
 };
 #endif
 #if CONFIG_IMAGE2PIPE_MUXER
-const AVOutputFormat ff_image2pipe_muxer = {
+AVOutputFormat ff_image2pipe_muxer = {
     .name           = "image2pipe",
     .long_name      = NULL_IF_CONFIG_SMALL("piped image2 sequence"),
     .priv_data_size = sizeof(VideoMuxData),
