@@ -243,8 +243,13 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV444P,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pixel_fmts_eq);
+    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts_eq);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
+
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
@@ -335,6 +340,7 @@ static const AVFilterPad eq_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad eq_outputs[] = {
@@ -342,6 +348,7 @@ static const AVFilterPad eq_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(EQContext, x)
@@ -372,13 +379,13 @@ static const AVOption eq_options[] = {
 
 AVFILTER_DEFINE_CLASS(eq);
 
-const AVFilter ff_vf_eq = {
+AVFilter ff_vf_eq = {
     .name            = "eq",
     .description     = NULL_IF_CONFIG_SMALL("Adjust brightness, contrast, gamma, and saturation."),
     .priv_size       = sizeof(EQContext),
     .priv_class      = &eq_class,
-    FILTER_INPUTS(eq_inputs),
-    FILTER_OUTPUTS(eq_outputs),
+    .inputs          = eq_inputs,
+    .outputs         = eq_outputs,
     .process_command = process_command,
     .query_formats   = query_formats,
     .init            = initialize,

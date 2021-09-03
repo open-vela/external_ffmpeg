@@ -111,7 +111,7 @@ static int scc_write_packet(AVFormatContext *avf, AVPacket *pkt)
     return 0;
 }
 
-const AVOutputFormat ff_scc_muxer = {
+AVOutputFormat ff_scc_muxer = {
     .name           = "scc",
     .long_name      = NULL_IF_CONFIG_SMALL("Scenarist Closed Captions"),
     .extensions     = "scc",

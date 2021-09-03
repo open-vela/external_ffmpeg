@@ -84,7 +84,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -132,9 +132,8 @@ static uint64_t get_block_sum(StreamContext *sc, uint64_t intpic[32][32], const 
     return sum;
 }
 
-static int cmp(const void *x, const void *y)
+static int cmp(const uint64_t *a, const uint64_t *b)
 {
-    const uint64_t *a = x, *b = y;
     return *a < *b ? -1 : ( *a > *b ? 1 : 0 );
 }
 
@@ -292,7 +291,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
         }
 
         /* get threshold */
-        qsort(sortsignature, elemcat->elem_count, sizeof(uint64_t), cmp);
+        qsort(sortsignature, elemcat->elem_count, sizeof(uint64_t), (void*) cmp);
         th = sortsignature[(int) (elemcat->elem_count*0.333)];
 
         /* ternarize */
@@ -318,7 +317,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
     }
 
     /* confidence */
-    qsort(conflist, DIFFELEM_SIZE, sizeof(uint64_t), cmp);
+    qsort(conflist, DIFFELEM_SIZE, sizeof(uint64_t), (void*) cmp);
     fs->confidence = FFMIN(conflist[DIFFELEM_SIZE/2], 255);
 
     /* coarsesignature */
@@ -560,8 +559,9 @@ static int binary_export(AVFilterContext *ctx, StreamContext *sc, const char* fi
         }
     }
 
+    avpriv_align_put_bits(&buf);
     flush_put_bits(&buf);
-    fwrite(buffer, 1, put_bytes_output(&buf), f);
+    fwrite(buffer, 1, put_bits_count(&buf)/8, f);
     fclose(f);
     av_freep(&buffer);
     return 0;
@@ -664,8 +664,6 @@ static av_cold int init(AVFilterContext *ctx)
 
         if (!pad.name)
             return AVERROR(ENOMEM);
-        if ((ret = ff_append_inpad_free_name(ctx, &pad)) < 0)
-            return ret;
 
         sc = &(sic->streamcontexts[i]);
 
@@ -682,6 +680,11 @@ static av_cold int init(AVFilterContext *ctx)
         sc->coarseend = sc->coarsesiglist;
         sc->coarsecount = 0;
         sc->midcoarse = 0;
+
+        if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0) {
+            av_freep(&pad.name);
+            return ret;
+        }
     }
 
     /* check filename */
@@ -751,9 +754,10 @@ static const AVFilterPad signature_outputs[] = {
         .request_frame = request_frame,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_signature = {
+AVFilter ff_vf_signature = {
     .name          = "signature",
     .description   = NULL_IF_CONFIG_SMALL("Calculate the MPEG-7 video signature"),
     .priv_size     = sizeof(SignatureContext),
@@ -761,7 +765,7 @@ const AVFilter ff_vf_signature = {
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_OUTPUTS(signature_outputs),
+    .outputs       = signature_outputs,
     .inputs        = NULL,
     .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

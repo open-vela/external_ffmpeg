@@ -87,7 +87,7 @@ static int h263_parse(AVCodecParserContext *s,
     return next;
 }
 
-const AVCodecParser ff_h263_parser = {
+AVCodecParser ff_h263_parser = {
     .codec_ids      = { AV_CODEC_ID_H263 },
     .priv_data_size = sizeof(ParseContext),
     .parser_parse   = h263_parse,

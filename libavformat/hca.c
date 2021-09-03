@@ -113,7 +113,7 @@ static int hca_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ret;
 }
 
-const AVInputFormat ff_hca_demuxer = {
+AVInputFormat ff_hca_demuxer = {
     .name           = "hca",
     .long_name      = NULL_IF_CONFIG_SMALL("CRI HCA"),
     .read_probe     = hca_probe,
