@@ -60,60 +60,63 @@ typedef struct ThreadData {
     FilterParams *param;
 } ThreadData;
 
+#define COMMON_OPTIONS \
+    { "c0_mode", "set component #0 blend mode", OFFSET(params[0].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode"},\
+    { "c1_mode", "set component #1 blend mode", OFFSET(params[1].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode"},\
+    { "c2_mode", "set component #2 blend mode", OFFSET(params[2].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode"},\
+    { "c3_mode", "set component #3 blend mode", OFFSET(params[3].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode"},\
+    { "all_mode", "set blend mode for all components", OFFSET(all_mode), AV_OPT_TYPE_INT, {.i64=-1},-1, BLEND_NB-1, FLAGS, "mode"},\
+    { "addition",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_ADDITION},   0, 0, FLAGS, "mode" },\
+    { "addition128","", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINMERGE}, 0, 0, FLAGS, "mode" },\
+    { "grainmerge", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINMERGE}, 0, 0, FLAGS, "mode" },\
+    { "and",        "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_AND},        0, 0, FLAGS, "mode" },\
+    { "average",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_AVERAGE},    0, 0, FLAGS, "mode" },\
+    { "burn",       "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_BURN},       0, 0, FLAGS, "mode" },\
+    { "darken",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DARKEN},     0, 0, FLAGS, "mode" },\
+    { "difference", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DIFFERENCE}, 0, 0, FLAGS, "mode" },\
+    { "difference128", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINEXTRACT}, 0, 0, FLAGS, "mode" },\
+    { "grainextract", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINEXTRACT}, 0, 0, FLAGS, "mode" },\
+    { "divide",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DIVIDE},     0, 0, FLAGS, "mode" },\
+    { "dodge",      "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DODGE},      0, 0, FLAGS, "mode" },\
+    { "exclusion",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_EXCLUSION},  0, 0, FLAGS, "mode" },\
+    { "extremity",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_EXTREMITY},  0, 0, FLAGS, "mode" },\
+    { "freeze",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_FREEZE},     0, 0, FLAGS, "mode" },\
+    { "glow",       "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GLOW},       0, 0, FLAGS, "mode" },\
+    { "hardlight",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_HARDLIGHT},  0, 0, FLAGS, "mode" },\
+    { "hardmix",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_HARDMIX},    0, 0, FLAGS, "mode" },\
+    { "heat",       "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_HEAT},       0, 0, FLAGS, "mode" },\
+    { "lighten",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_LIGHTEN},    0, 0, FLAGS, "mode" },\
+    { "linearlight","", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_LINEARLIGHT},0, 0, FLAGS, "mode" },\
+    { "multiply",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_MULTIPLY},   0, 0, FLAGS, "mode" },\
+    { "multiply128","", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_MULTIPLY128},0, 0, FLAGS, "mode" },\
+    { "negation",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_NEGATION},   0, 0, FLAGS, "mode" },\
+    { "normal",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_NORMAL},     0, 0, FLAGS, "mode" },\
+    { "or",         "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_OR},         0, 0, FLAGS, "mode" },\
+    { "overlay",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_OVERLAY},    0, 0, FLAGS, "mode" },\
+    { "phoenix",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_PHOENIX},    0, 0, FLAGS, "mode" },\
+    { "pinlight",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_PINLIGHT},   0, 0, FLAGS, "mode" },\
+    { "reflect",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_REFLECT},    0, 0, FLAGS, "mode" },\
+    { "screen",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SCREEN},     0, 0, FLAGS, "mode" },\
+    { "softlight",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SOFTLIGHT},  0, 0, FLAGS, "mode" },\
+    { "subtract",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SUBTRACT},   0, 0, FLAGS, "mode" },\
+    { "vividlight", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_VIVIDLIGHT}, 0, 0, FLAGS, "mode" },\
+    { "xor",        "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_XOR},        0, 0, FLAGS, "mode" },\
+    { "c0_expr",  "set color component #0 expression", OFFSET(params[0].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },\
+    { "c1_expr",  "set color component #1 expression", OFFSET(params[1].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },\
+    { "c2_expr",  "set color component #2 expression", OFFSET(params[2].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },\
+    { "c3_expr",  "set color component #3 expression", OFFSET(params[3].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },\
+    { "all_expr", "set expression for all color components", OFFSET(all_expr), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },\
+    { "c0_opacity",  "set color component #0 opacity", OFFSET(params[0].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },\
+    { "c1_opacity",  "set color component #1 opacity", OFFSET(params[1].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },\
+    { "c2_opacity",  "set color component #2 opacity", OFFSET(params[2].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },\
+    { "c3_opacity",  "set color component #3 opacity", OFFSET(params[3].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },\
+    { "all_opacity", "set opacity for all color components", OFFSET(all_opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS}
+
 #define OFFSET(x) offsetof(BlendContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption blend_options[] = {
-    { "c0_mode", "set component #0 blend mode", OFFSET(params[0].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode" },
-    { "c1_mode", "set component #1 blend mode", OFFSET(params[1].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode" },
-    { "c2_mode", "set component #2 blend mode", OFFSET(params[2].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode" },
-    { "c3_mode", "set component #3 blend mode", OFFSET(params[3].mode), AV_OPT_TYPE_INT, {.i64=0}, 0, BLEND_NB-1, FLAGS, "mode" },
-    { "all_mode", "set blend mode for all components", OFFSET(all_mode), AV_OPT_TYPE_INT, {.i64=-1},-1, BLEND_NB-1, FLAGS, "mode" },
-    { "addition",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_ADDITION},   0, 0, FLAGS, "mode" },
-    { "addition128","", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINMERGE}, 0, 0, FLAGS, "mode" },
-    { "grainmerge", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINMERGE}, 0, 0, FLAGS, "mode" },
-    { "and",        "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_AND},        0, 0, FLAGS, "mode" },
-    { "average",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_AVERAGE},    0, 0, FLAGS, "mode" },
-    { "burn",       "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_BURN},       0, 0, FLAGS, "mode" },
-    { "darken",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DARKEN},     0, 0, FLAGS, "mode" },
-    { "difference", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DIFFERENCE}, 0, 0, FLAGS, "mode" },
-    { "difference128", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINEXTRACT}, 0, 0, FLAGS, "mode" },
-    { "grainextract", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GRAINEXTRACT}, 0, 0, FLAGS, "mode" },
-    { "divide",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DIVIDE},     0, 0, FLAGS, "mode" },
-    { "dodge",      "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_DODGE},      0, 0, FLAGS, "mode" },
-    { "exclusion",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_EXCLUSION},  0, 0, FLAGS, "mode" },
-    { "extremity",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_EXTREMITY},  0, 0, FLAGS, "mode" },
-    { "freeze",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_FREEZE},     0, 0, FLAGS, "mode" },
-    { "glow",       "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_GLOW},       0, 0, FLAGS, "mode" },
-    { "hardlight",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_HARDLIGHT},  0, 0, FLAGS, "mode" },
-    { "hardmix",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_HARDMIX},    0, 0, FLAGS, "mode" },
-    { "heat",       "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_HEAT},       0, 0, FLAGS, "mode" },
-    { "lighten",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_LIGHTEN},    0, 0, FLAGS, "mode" },
-    { "linearlight","", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_LINEARLIGHT},0, 0, FLAGS, "mode" },
-    { "multiply",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_MULTIPLY},   0, 0, FLAGS, "mode" },
-    { "multiply128","", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_MULTIPLY128},0, 0, FLAGS, "mode" },
-    { "negation",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_NEGATION},   0, 0, FLAGS, "mode" },
-    { "normal",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_NORMAL},     0, 0, FLAGS, "mode" },
-    { "or",         "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_OR},         0, 0, FLAGS, "mode" },
-    { "overlay",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_OVERLAY},    0, 0, FLAGS, "mode" },
-    { "phoenix",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_PHOENIX},    0, 0, FLAGS, "mode" },
-    { "pinlight",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_PINLIGHT},   0, 0, FLAGS, "mode" },
-    { "reflect",    "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_REFLECT},    0, 0, FLAGS, "mode" },
-    { "screen",     "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SCREEN},     0, 0, FLAGS, "mode" },
-    { "softlight",  "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SOFTLIGHT},  0, 0, FLAGS, "mode" },
-    { "subtract",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SUBTRACT},   0, 0, FLAGS, "mode" },
-    { "vividlight", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_VIVIDLIGHT}, 0, 0, FLAGS, "mode" },
-    { "xor",        "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_XOR},        0, 0, FLAGS, "mode" },
-    { "c0_expr",  "set color component #0 expression", OFFSET(params[0].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
-    { "c1_expr",  "set color component #1 expression", OFFSET(params[1].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
-    { "c2_expr",  "set color component #2 expression", OFFSET(params[2].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
-    { "c3_expr",  "set color component #3 expression", OFFSET(params[3].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
-    { "all_expr", "set expression for all color components", OFFSET(all_expr), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
-    { "c0_opacity",  "set color component #0 opacity", OFFSET(params[0].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },
-    { "c1_opacity",  "set color component #1 opacity", OFFSET(params[1].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },
-    { "c2_opacity",  "set color component #2 opacity", OFFSET(params[2].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },
-    { "c3_opacity",  "set color component #3 opacity", OFFSET(params[3].opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },
-    { "all_opacity", "set opacity for all color components", OFFSET(all_opacity), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS },
+    COMMON_OPTIONS,
     { NULL }
 };
 
@@ -147,12 +150,12 @@ static void blend_normal_8bit(const uint8_t *top, ptrdiff_t top_linesize,
                               ptrdiff_t width, ptrdiff_t height,
                               FilterParams *param, double *values, int starty)
 {
-    const float opacity = param->opacity;
+    const double opacity = param->opacity;
     int i, j;
 
     for (i = 0; i < height; i++) {
         for (j = 0; j < width; j++) {
-            dst[j] = top[j] * opacity + bottom[j] * (1.f - opacity);
+            dst[j] = top[j] * opacity + bottom[j] * (1. - opacity);
         }
         dst    += dst_linesize;
         top    += top_linesize;
@@ -169,7 +172,7 @@ static void blend_normal_16bit(const uint8_t *_top, ptrdiff_t top_linesize,
     const uint16_t *top = (uint16_t*)_top;
     const uint16_t *bottom = (uint16_t*)_bottom;
     uint16_t *dst = (uint16_t*)_dst;
-    const float opacity = param->opacity;
+    const double opacity = param->opacity;
     int i, j;
     dst_linesize /= 2;
     top_linesize /= 2;
@@ -177,7 +180,7 @@ static void blend_normal_16bit(const uint8_t *_top, ptrdiff_t top_linesize,
 
     for (i = 0; i < height; i++) {
         for (j = 0; j < width; j++) {
-            dst[j] = top[j] * opacity + bottom[j] * (1.f - opacity);
+            dst[j] = top[j] * opacity + bottom[j] * (1. - opacity);
         }
         dst    += dst_linesize;
         top    += top_linesize;
@@ -194,7 +197,7 @@ static void blend_normal_32bit(const uint8_t *_top, ptrdiff_t top_linesize,
     const float *top = (float*)_top;
     const float *bottom = (float*)_bottom;
     float *dst = (float*)_dst;
-    const float opacity = param->opacity;
+    const double opacity = param->opacity;
     int i, j;
     dst_linesize /= 4;
     top_linesize /= 4;
@@ -202,7 +205,7 @@ static void blend_normal_32bit(const uint8_t *_top, ptrdiff_t top_linesize,
 
     for (i = 0; i < height; i++) {
         for (j = 0; j < width; j++) {
-            dst[j] = top[j] * opacity + bottom[j] * (1.f - opacity);
+            dst[j] = top[j] * opacity + bottom[j] * (1. - opacity);
         }
         dst    += dst_linesize;
         top    += top_linesize;
@@ -217,7 +220,7 @@ static void blend_## name##_8bit(const uint8_t *top, ptrdiff_t top_linesize,    
                                  ptrdiff_t width, ptrdiff_t height,                \
                                  FilterParams *param, double *values, int starty) \
 {                                                                              \
-    const float opacity = param->opacity;                                      \
+    double opacity = param->opacity;                                           \
     int i, j;                                                                  \
                                                                                \
     for (i = 0; i < height; i++) {                                             \
@@ -240,7 +243,7 @@ static void blend_## name##_##depth##bit(const uint8_t *_top, ptrdiff_t top_line
     const uint16_t *top = (const uint16_t*)_top;                               \
     const uint16_t *bottom = (const uint16_t*)_bottom;                         \
     uint16_t *dst = (uint16_t*)_dst;                                           \
-    const float opacity = param->opacity;                                      \
+    double opacity = param->opacity;                                           \
     int i, j;                                                                  \
     dst_linesize /= 2;                                                         \
     top_linesize /= 2;                                                         \
@@ -266,7 +269,7 @@ static void blend_## name##_##depth##bit(const uint8_t *_top, ptrdiff_t top_line
     const float *top = (const float*)_top;                                     \
     const float *bottom = (const float*)_bottom;                               \
     float *dst = (float*)_dst;                                                 \
-    const float opacity = param->opacity;                                      \
+    double opacity = param->opacity;                                           \
     int i, j;                                                                  \
     dst_linesize /= 4;                                                         \
     top_linesize /= 4;                                                         \
@@ -624,8 +627,7 @@ static AVFrame *blend_frame(AVFilterContext *ctx, AVFrame *top_buf,
                           .w = outw, .h = outh, .param = param, .plane = plane,
                           .inlink = inlink };
 
-        ff_filter_execute(ctx, filter_slice, &td, NULL,
-                          FFMIN(outh, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(outh, ff_filter_get_nb_threads(ctx)));
     }
 
     if (!s->tblend)
@@ -681,7 +683,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -778,45 +783,13 @@ void ff_blend_init(FilterParams *param, int depth)
         ff_blend_init_x86(param, depth);
 }
 
-static int config_params(AVFilterContext *ctx)
-{
-    BlendContext *s = ctx->priv;
-    int ret;
-
-    for (int plane = 0; plane < FF_ARRAY_ELEMS(s->params); plane++) {
-        FilterParams *param = &s->params[plane];
-
-        if (s->all_mode >= 0)
-            param->mode = s->all_mode;
-        if (s->all_opacity < 1)
-            param->opacity = s->all_opacity;
-
-        ff_blend_init(param, s->depth);
-
-        if (s->all_expr && !param->expr_str) {
-            param->expr_str = av_strdup(s->all_expr);
-            if (!param->expr_str)
-                return AVERROR(ENOMEM);
-        }
-        if (param->expr_str) {
-            ret = av_expr_parse(&param->e, param->expr_str, var_names,
-                                NULL, NULL, NULL, NULL, 0, ctx);
-            if (ret < 0)
-                return ret;
-            param->blend = s->depth > 8 ? s->depth > 16 ? blend_expr_32bit : blend_expr_16bit : blend_expr_8bit;
-        }
-    }
-
-    return 0;
-}
-
 static int config_output(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
     AVFilterLink *toplink = ctx->inputs[TOP];
     BlendContext *s = ctx->priv;
     const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(toplink->format);
-    int ret;
+    int ret, plane;
 
     if (!s->tblend) {
         AVFilterLink *bottomlink = ctx->inputs[BOTTOM];
@@ -851,9 +824,29 @@ static int config_output(AVFilterLink *outlink)
         if ((ret = ff_framesync_init_dualinput(&s->fs, ctx)) < 0)
             return ret;
 
-    ret = config_params(ctx);
-    if (ret < 0)
-        return ret;
+    for (plane = 0; plane < FF_ARRAY_ELEMS(s->params); plane++) {
+        FilterParams *param = &s->params[plane];
+
+        if (s->all_mode >= 0)
+            param->mode = s->all_mode;
+        if (s->all_opacity < 1)
+            param->opacity = s->all_opacity;
+
+        ff_blend_init(param, s->depth);
+
+        if (s->all_expr && !param->expr_str) {
+            param->expr_str = av_strdup(s->all_expr);
+            if (!param->expr_str)
+                return AVERROR(ENOMEM);
+        }
+        if (param->expr_str) {
+            ret = av_expr_parse(&param->e, param->expr_str, var_names,
+                                NULL, NULL, NULL, NULL, 0, ctx);
+            if (ret < 0)
+                return ret;
+            param->blend = s->depth > 8 ? s->depth > 16 ? blend_expr_32bit : blend_expr_16bit : blend_expr_8bit;
+        }
+    }
 
     if (s->tblend)
         return 0;
@@ -862,18 +855,6 @@ static int config_output(AVFilterLink *outlink)
     outlink->time_base = s->fs.time_base;
 
     return ret;
-}
-
-static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
-                           char *res, int res_len, int flags)
-{
-    int ret;
-
-    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-    if (ret < 0)
-        return ret;
-
-    return config_params(ctx);
 }
 
 #if CONFIG_BLEND_FILTER
@@ -892,6 +873,7 @@ static const AVFilterPad blend_inputs[] = {
         .name          = "bottom",
         .type          = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 static const AVFilterPad blend_outputs[] = {
@@ -900,9 +882,10 @@ static const AVFilterPad blend_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_blend = {
+AVFilter ff_vf_blend = {
     .name          = "blend",
     .description   = NULL_IF_CONFIG_SMALL("Blend two video frames into each other."),
     .preinit       = blend_framesync_preinit,
@@ -911,11 +894,10 @@ const AVFilter ff_vf_blend = {
     .priv_size     = sizeof(BlendContext),
     .query_formats = query_formats,
     .activate      = activate,
-    FILTER_INPUTS(blend_inputs),
-    FILTER_OUTPUTS(blend_outputs),
+    .inputs        = blend_inputs,
+    .outputs       = blend_outputs,
     .priv_class    = &blend_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
-    .process_command = process_command,
 };
 
 #endif
@@ -943,7 +925,11 @@ static int tblend_filter_frame(AVFilterLink *inlink, AVFrame *frame)
     return 0;
 }
 
-#define tblend_options blend_options
+static const AVOption tblend_options[] = {
+    COMMON_OPTIONS,
+    { NULL }
+};
+
 AVFILTER_DEFINE_CLASS(tblend);
 
 static const AVFilterPad tblend_inputs[] = {
@@ -952,6 +938,7 @@ static const AVFilterPad tblend_inputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .filter_frame  = tblend_filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad tblend_outputs[] = {
@@ -960,9 +947,10 @@ static const AVFilterPad tblend_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_tblend = {
+AVFilter ff_vf_tblend = {
     .name          = "tblend",
     .description   = NULL_IF_CONFIG_SMALL("Blend successive frames."),
     .priv_size     = sizeof(BlendContext),
@@ -970,10 +958,9 @@ const AVFilter ff_vf_tblend = {
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    FILTER_INPUTS(tblend_inputs),
-    FILTER_OUTPUTS(tblend_outputs),
+    .inputs        = tblend_inputs,
+    .outputs       = tblend_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
-    .process_command = process_command,
 };
 
 #endif

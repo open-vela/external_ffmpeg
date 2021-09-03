@@ -18,12 +18,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "audio.h"
 #include "avfilter.h"
 #include "internal.h"
-#include "filters.h"
 #include "window_func.h"
 
 typedef struct HilbertContext {
@@ -103,15 +101,29 @@ static av_cold int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_FLT,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
+    int ret;
+
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats (ctx, formats);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_channel_layouts_from_list(ctx, chlayouts);
+    layouts = avfilter_make_format64_list(chlayouts);
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_samplerates_from_list(ctx, sample_rates);
+    formats = ff_make_format_list(sample_rates);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static av_cold int config_props(AVFilterLink *outlink)
@@ -144,21 +156,16 @@ static av_cold int config_props(AVFilterLink *outlink)
     return 0;
 }
 
-static int activate(AVFilterContext *ctx)
+static int request_frame(AVFilterLink *outlink)
 {
-    AVFilterLink *outlink = ctx->outputs[0];
+    AVFilterContext *ctx = outlink->src;
     HilbertContext *s = ctx->priv;
     AVFrame *frame;
     int nb_samples;
 
-    if (!ff_outlink_frame_wanted(outlink))
-        return FFERROR_NOT_READY;
-
     nb_samples = FFMIN(s->nb_samples, s->nb_taps - s->pts);
-    if (nb_samples <= 0) {
-        ff_outlink_set_status(outlink, AVERROR_EOF, s->pts);
-        return 0;
-    }
+    if (!nb_samples)
+        return AVERROR_EOF;
 
     if (!(frame = ff_get_audio_buffer(outlink, nb_samples)))
         return AVERROR(ENOMEM);
@@ -174,19 +181,20 @@ static const AVFilterPad hilbert_outputs[] = {
     {
         .name          = "default",
         .type          = AVMEDIA_TYPE_AUDIO,
+        .request_frame = request_frame,
         .config_props  = config_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_asrc_hilbert = {
+AVFilter ff_asrc_hilbert = {
     .name          = "hilbert",
     .description   = NULL_IF_CONFIG_SMALL("Generate a Hilbert transform FIR coefficients."),
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    .activate      = activate,
     .priv_size     = sizeof(HilbertContext),
     .inputs        = NULL,
-    FILTER_OUTPUTS(hilbert_outputs),
+    .outputs       = hilbert_outputs,
     .priv_class    = &hilbert_class,
 };

@@ -50,7 +50,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pixel_fmts_eq);
+    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts_eq);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -167,6 +170,7 @@ static const AVFilterPad repeatfields_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad repeatfields_outputs[] = {
@@ -174,14 +178,15 @@ static const AVFilterPad repeatfields_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_repeatfields = {
+AVFilter ff_vf_repeatfields = {
     .name          = "repeatfields",
     .description   = NULL_IF_CONFIG_SMALL("Hard repeat fields based on MPEG repeat field flag."),
     .priv_size     = sizeof(RepeatFieldsContext),
     .uninit        = uninit,
-    FILTER_INPUTS(repeatfields_inputs),
-    FILTER_OUTPUTS(repeatfields_outputs),
+    .inputs        = repeatfields_inputs,
+    .outputs       = repeatfields_outputs,
     .query_formats = query_formats,
 };
