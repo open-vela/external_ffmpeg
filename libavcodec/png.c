@@ -18,9 +18,7 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#include <stdint.h>
-#include "libavutil/mem.h"
+#include "avcodec.h"
 #include "png.h"
 
 /* Mask to determine which y pixels are valid in a pass */
