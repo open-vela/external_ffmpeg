@@ -133,6 +133,7 @@ static int adevsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
         return ret;
 
     priv->fmt_ctx->flags |= AVFMT_FLAG_NONBLOCK;
+    priv->fmt_ctx->oformat->flags |= AVFMT_NOTIMESTAMPS;
 
     av_format_set_opaque(priv->fmt_ctx, ctx);
     av_format_set_control_message_cb(priv->fmt_ctx, adevsink_control_message);
