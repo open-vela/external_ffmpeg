@@ -422,6 +422,13 @@ struct AVFilterContext {
      * configured.
      */
     int extra_hw_frames;
+
+    /**
+     * Opaque user data. May be set by the caller to an arbitrary value, e.g. to
+     * be used from callbacks.
+     * Libavfilter will not touch this field in any way.
+     */
+    void *opaque;
 };
 
 /**
