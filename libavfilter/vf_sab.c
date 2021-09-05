@@ -65,10 +65,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 #define RADIUS_MIN 0.1
@@ -312,7 +309,6 @@ static const AVFilterPad sab_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
-    { NULL }
 };
 
 static const AVFilterPad sab_outputs[] = {
@@ -320,18 +316,17 @@ static const AVFilterPad sab_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_sab = {
+const AVFilter ff_vf_sab = {
     .name          = "sab",
     .description   = NULL_IF_CONFIG_SMALL("Apply shape adaptive blur."),
     .priv_size     = sizeof(SabContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = sab_inputs,
-    .outputs       = sab_outputs,
+    FILTER_INPUTS(sab_inputs),
+    FILTER_OUTPUTS(sab_outputs),
     .priv_class    = &sab_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };
