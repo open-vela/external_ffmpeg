@@ -130,13 +130,13 @@ static int get_sindex(AVFormatContext *s, int id, int format) {
         case 20:
             st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
             st->codecpar->codec_id = AV_CODEC_ID_MPEG2VIDEO;
-            st->need_parsing = AVSTREAM_PARSE_HEADERS; //get keyframe flag etc.
+            st->internal->need_parsing = AVSTREAM_PARSE_HEADERS; //get keyframe flag etc.
             break;
         case 22:
         case 23:
             st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
             st->codecpar->codec_id = AV_CODEC_ID_MPEG1VIDEO;
-            st->need_parsing = AVSTREAM_PARSE_HEADERS; //get keyframe flag etc.
+            st->internal->need_parsing = AVSTREAM_PARSE_HEADERS; //get keyframe flag etc.
             break;
         case 9:
             st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
@@ -169,7 +169,7 @@ static int get_sindex(AVFormatContext *s, int id, int format) {
         case 29: /* AVCHD */
             st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
             st->codecpar->codec_id = AV_CODEC_ID_H264;
-            st->need_parsing = AVSTREAM_PARSE_HEADERS;
+            st->internal->need_parsing = AVSTREAM_PARSE_HEADERS;
             break;
         // timecode tracks:
         case 7:
@@ -285,9 +285,12 @@ static void gxf_track_tags(AVIOContext *pb, int *len, struct gxf_stream_info *si
 static void gxf_read_index(AVFormatContext *s, int pkt_len) {
     AVIOContext *pb = s->pb;
     AVStream *st;
-    uint32_t fields_per_map = avio_rl32(pb);
-    uint32_t map_cnt = avio_rl32(pb);
+    uint32_t fields_per_map, map_cnt;
     int i;
+    if (pkt_len < 8)
+        return;
+    fields_per_map = avio_rl32(pb);
+    map_cnt = avio_rl32(pb);
     pkt_len -= 8;
     if ((s->flags & AVFMT_FLAG_IGNIDX) || !s->streams) {
         avio_skip(pb, pkt_len);
@@ -572,9 +575,9 @@ static int gxf_seek(AVFormatContext *s, int stream_index, int64_t timestamp, int
                                     AVSEEK_FLAG_ANY | AVSEEK_FLAG_BACKWARD);
     if (idx < 0)
         return -1;
-    pos = st->index_entries[idx].pos;
-    if (idx < st->nb_index_entries - 2)
-        maxlen = st->index_entries[idx + 2].pos - pos;
+    pos = st->internal->index_entries[idx].pos;
+    if (idx < st->internal->nb_index_entries - 2)
+        maxlen = st->internal->index_entries[idx + 2].pos - pos;
     maxlen = FFMAX(maxlen, 200 * 1024);
     res = avio_seek(s->pb, pos, SEEK_SET);
     if (res < 0)
@@ -596,7 +599,7 @@ static int64_t gxf_read_timestamp(AVFormatContext *s, int stream_index,
     return res;
 }
 
-AVInputFormat ff_gxf_demuxer = {
+const AVInputFormat ff_gxf_demuxer = {
     .name           = "gxf",
     .long_name      = NULL_IF_CONFIG_SMALL("GXF (General eXchange Format)"),
     .priv_data_size = sizeof(struct gxf_stream_info),
