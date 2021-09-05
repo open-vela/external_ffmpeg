@@ -83,12 +83,13 @@ static int h264_find_frame_end(H264ParseContext *p, const uint8_t *buf,
 
     for (i = 0; i < buf_size; i++) {
         if (i >= next_avc) {
-            int nalsize = 0;
+            int64_t nalsize = 0;
             i = next_avc;
             for (j = 0; j < p->nal_length_size; j++)
                 nalsize = (nalsize << 8) | buf[i++];
-            if (nalsize <= 0 || nalsize > buf_size - i) {
-                av_log(logctx, AV_LOG_ERROR, "AVC-parser: nal size %d remaining %d\n", nalsize, buf_size - i);
+            if (!nalsize || nalsize > buf_size - i) {
+                av_log(logctx, AV_LOG_ERROR, "AVC-parser: nal size %"PRId64" "
+                       "remaining %d\n", nalsize, buf_size - i);
                 return buf_size;
             }
             next_avc = i + nalsize;
@@ -644,43 +645,6 @@ static int h264_parse(AVCodecParserContext *s,
     return next;
 }
 
-static int h264_split(AVCodecContext *avctx,
-                      const uint8_t *buf, int buf_size)
-{
-    uint32_t state = -1;
-    int has_sps    = 0;
-    int has_pps    = 0;
-    const uint8_t *ptr = buf, *end = buf + buf_size;
-    int nalu_type;
-
-    while (ptr < end) {
-        ptr = avpriv_find_start_code(ptr, end, &state);
-        if ((state & 0xFFFFFF00) != 0x100)
-            break;
-        nalu_type = state & 0x1F;
-        if (nalu_type == H264_NAL_SPS) {
-            has_sps = 1;
-        } else if (nalu_type == H264_NAL_PPS)
-            has_pps = 1;
-        /* else if (nalu_type == 0x01 ||
-         *     nalu_type == 0x02 ||
-         *     nalu_type == 0x05) {
-         *  }
-         */
-        else if ((nalu_type != H264_NAL_SEI || has_pps) &&
-                  nalu_type != H264_NAL_AUD && nalu_type != H264_NAL_SPS_EXT &&
-                  nalu_type != 0x0f) {
-            if (has_sps) {
-                while (ptr - 4 > buf && ptr[-5] == 0)
-                    ptr--;
-                return ptr - 4 - buf;
-            }
-        }
-    }
-
-    return 0;
-}
-
 static void h264_close(AVCodecParserContext *s)
 {
     H264ParseContext *p = s->priv_data;
@@ -702,11 +666,10 @@ static av_cold int init(AVCodecParserContext *s)
     return 0;
 }
 
-AVCodecParser ff_h264_parser = {
+const AVCodecParser ff_h264_parser = {
     .codec_ids      = { AV_CODEC_ID_H264 },
     .priv_data_size = sizeof(H264ParseContext),
     .parser_init    = init,
     .parser_parse   = h264_parse,
     .parser_close   = h264_close,
-    .split          = h264_split,
 };

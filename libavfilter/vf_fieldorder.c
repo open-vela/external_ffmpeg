@@ -58,9 +58,7 @@ static int query_formats(AVFilterContext *ctx)
                 (ret = ff_add_format(&formats, pix_fmt)) < 0)
                 return ret;
         }
-        if ((ret = ff_formats_ref(formats, &ctx->inputs[0]->out_formats)) < 0 ||
-            (ret = ff_formats_ref(formats, &ctx->outputs[0]->in_formats)) < 0)
-            return ret;
+        return ff_set_common_formats(ctx, formats);
     }
 
     return 0;
@@ -173,7 +171,6 @@ static const AVFilterPad avfilter_vf_fieldorder_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_fieldorder_outputs[] = {
@@ -181,16 +178,15 @@ static const AVFilterPad avfilter_vf_fieldorder_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_fieldorder = {
+const AVFilter ff_vf_fieldorder = {
     .name          = "fieldorder",
     .description   = NULL_IF_CONFIG_SMALL("Set the field order."),
     .priv_size     = sizeof(FieldOrderContext),
     .priv_class    = &fieldorder_class,
     .query_formats = query_formats,
-    .inputs        = avfilter_vf_fieldorder_inputs,
-    .outputs       = avfilter_vf_fieldorder_outputs,
+    FILTER_INPUTS(avfilter_vf_fieldorder_inputs),
+    FILTER_OUTPUTS(avfilter_vf_fieldorder_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

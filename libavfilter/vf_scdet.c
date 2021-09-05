@@ -21,7 +21,6 @@
  * video scene change detection filter
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -75,10 +74,7 @@ static int query_formats(AVFilterContext *ctx)
             AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -200,7 +196,6 @@ static const AVFilterPad scdet_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad scdet_outputs[] = {
@@ -208,17 +203,16 @@ static const AVFilterPad scdet_outputs[] = {
         .name          = "default",
         .type          = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_scdet = {
+const AVFilter ff_vf_scdet = {
     .name          = "scdet",
     .description   = NULL_IF_CONFIG_SMALL("Detect video scene change"),
     .priv_size     = sizeof(SCDetContext),
     .priv_class    = &scdet_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = scdet_inputs,
-    .outputs       = scdet_outputs,
+    FILTER_INPUTS(scdet_inputs),
+    FILTER_OUTPUTS(scdet_outputs),
     .activate      = activate,
 };

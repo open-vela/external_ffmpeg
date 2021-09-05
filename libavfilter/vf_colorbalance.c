@@ -92,10 +92,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRP16, AV_PIX_FMT_GBRAP16,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static float get_component(float v, float l,
@@ -111,7 +108,7 @@ static float get_component(float v, float l,
     v += m;
     v += h;
 
-    return av_clipf(v + 0.5f, 0, 1);
+    return av_clipf(v, 0, 1);
 }
 
 static float hfun(float n, float h, float s, float l)
@@ -188,9 +185,9 @@ static int color_balance8_p(AVFilterContext *ctx, void *arg, int jobnr, int nb_j
             if (s->preserve_lightness)
                 preservel(&r, &g, &b, l);
 
-            dstr[j] = av_clip_uint8(r * max);
-            dstg[j] = av_clip_uint8(g * max);
-            dstb[j] = av_clip_uint8(b * max);
+            dstr[j] = av_clip_uint8(lrintf(r * max));
+            dstg[j] = av_clip_uint8(lrintf(g * max));
+            dstb[j] = av_clip_uint8(lrintf(b * max));
             if (in != out && out->linesize[3])
                 dsta[j] = srca[j];
         }
@@ -242,9 +239,9 @@ static int color_balance16_p(AVFilterContext *ctx, void *arg, int jobnr, int nb_
             if (s->preserve_lightness)
                 preservel(&r, &g, &b, l);
 
-            dstr[j] = av_clip_uintp2_c(r * max, depth);
-            dstg[j] = av_clip_uintp2_c(g * max, depth);
-            dstb[j] = av_clip_uintp2_c(b * max, depth);
+            dstr[j] = av_clip_uintp2_c(lrintf(r * max), depth);
+            dstg[j] = av_clip_uintp2_c(lrintf(g * max), depth);
+            dstb[j] = av_clip_uintp2_c(lrintf(b * max), depth);
             if (in != out && out->linesize[3])
                 dsta[j] = srca[j];
         }
@@ -299,9 +296,9 @@ static int color_balance8(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
             if (s->preserve_lightness)
                 preservel(&r, &g, &b, l);
 
-            dst[j + roffset] = av_clip_uint8(r * max);
-            dst[j + goffset] = av_clip_uint8(g * max);
-            dst[j + boffset] = av_clip_uint8(b * max);
+            dst[j + roffset] = av_clip_uint8(lrintf(r * max));
+            dst[j + goffset] = av_clip_uint8(lrintf(g * max));
+            dst[j + boffset] = av_clip_uint8(lrintf(b * max));
             if (in != out && step == 4)
                 dst[j + aoffset] = src[j + aoffset];
         }
@@ -351,9 +348,9 @@ static int color_balance16(AVFilterContext *ctx, void *arg, int jobnr, int nb_jo
             if (s->preserve_lightness)
                 preservel(&r, &g, &b, l);
 
-            dst[j + roffset] = av_clip_uintp2_c(r * max, depth);
-            dst[j + goffset] = av_clip_uintp2_c(g * max, depth);
-            dst[j + boffset] = av_clip_uintp2_c(b * max, depth);
+            dst[j + roffset] = av_clip_uintp2_c(lrintf(r * max), depth);
+            dst[j + goffset] = av_clip_uintp2_c(lrintf(g * max), depth);
+            dst[j + boffset] = av_clip_uintp2_c(lrintf(b * max), depth);
             if (in != out && step == 4)
                 dst[j + aoffset] = src[j + aoffset];
         }
@@ -414,7 +411,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     td.in = in;
     td.out = out;
-    ctx->internal->execute(ctx, s->color_balance, &td, NULL, FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
+    ff_filter_execute(ctx, s->color_balance, &td, NULL,
+                      FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
 
     if (in != out)
         av_frame_free(&in);
@@ -427,7 +425,6 @@ static const AVFilterPad colorbalance_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad colorbalance_outputs[] = {
@@ -436,17 +433,16 @@ static const AVFilterPad colorbalance_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_colorbalance = {
+const AVFilter ff_vf_colorbalance = {
     .name          = "colorbalance",
     .description   = NULL_IF_CONFIG_SMALL("Adjust the color balance."),
     .priv_size     = sizeof(ColorBalanceContext),
     .priv_class    = &colorbalance_class,
     .query_formats = query_formats,
-    .inputs        = colorbalance_inputs,
-    .outputs       = colorbalance_outputs,
+    FILTER_INPUTS(colorbalance_inputs),
+    FILTER_OUTPUTS(colorbalance_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
     .process_command = ff_filter_process_command,
 };
