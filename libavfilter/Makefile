@@ -520,6 +520,10 @@ OBJS-$(CONFIG_MOVIE_FILTER)                  += src_movie.o
 OBJS-$(CONFIG_AMOVIE_ASYNC_FILTER)           += src_movie_async.o
 OBJS-$(CONFIG_MOVIE_ASYNC_FILTER)            += src_movie_async.o
 
+# multimedia sink asynchronously
+OBJS-$(CONFIG_AMOVIESINK_ASYNC_FILTER)       += sink_movie_async.o
+OBJS-$(CONFIG_MOVIESINK_ASYNC_FILTER)        += sink_movie_async.o
+
 # Windows resource file
 SLIBOBJS-$(HAVE_GNU_WINDRES)                 += avfilterres.o
 
