@@ -38,19 +38,6 @@
 #include "movie_async.h"
 #include "filters.h"
 
-#define AVMOVIE_ASYNC_OPEN                    1
-#define AVMOVIE_ASYNC_SET_EVENT               2
-#define AVMOVIE_ASYNC_SET_OPTIONS             3
-#define AVMOVIE_ASYNC_SET_LOOP                4
-#define AVMOVIE_ASYNC_PREPARE                 5
-#define AVMOVIE_ASYNC_START                   6
-#define AVMOVIE_ASYNC_PAUSE                   7
-#define AVMOVIE_ASYNC_SEEK                    8
-
-#define AVMOVIE_ASYNC_STOP                    100
-#define AVMOVIE_ASYNC_RESET                   101
-#define AVMOVIE_ASYNC_CLOSE                   102
-
 #define AVMOVIE_ASYNC_CMD_QUEUE_IDX           (1 << 0)
 #define AVMOVIE_ASYNC_DATA_QUEUE_IDX          (1 << 1)
 

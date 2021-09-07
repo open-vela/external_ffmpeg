@@ -498,6 +498,10 @@ extern AVFilter ff_avsrc_movie;
 extern AVFilter ff_avsrc_amovie_async;
 extern AVFilter ff_avsrc_movie_async;
 
+/* multimedia sink asynchronously */
+extern AVFilter ff_sink_amoviesink_async;
+extern AVFilter ff_sink_moviesink_async;
+
 /* those filters are part of public or internal API,
  * they are formatted to not be found by the grep
  * as they are manually added again (due to their 'names'
