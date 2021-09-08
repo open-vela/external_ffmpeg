@@ -27,7 +27,8 @@
 
 #define UNCHECKED_BITSTREAM_READER 1
 
-#include "libavutil/cpu.h"
+#include "libavutil/video_enc_params.h"
+
 #include "avcodec.h"
 #include "error_resilience.h"
 #include "flv.h"
@@ -73,7 +74,6 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
     s->out_format      = FMT_H263;
 
     // set defaults
-    ff_mpv_decode_defaults(s);
     ff_mpv_decode_init(s, avctx);
 
     s->quant_precision = 5;
@@ -129,7 +129,6 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
                avctx->codec->id);
         return AVERROR(ENOSYS);
     }
-    s->codec_id    = avctx->codec->id;
 
     if (avctx->codec_tag == AV_RL32("L263") || avctx->codec_tag == AV_RL32("S263"))
         if (avctx->extradata_size == 56 && avctx->extradata[0] == 1)
@@ -743,7 +742,7 @@ const enum AVPixelFormat ff_h263_hwaccel_pixfmt_list_420[] = {
     AV_PIX_FMT_NONE
 };
 
-const AVCodecHWConfigInternal *ff_h263_hw_config_list[] = {
+const AVCodecHWConfigInternal *const ff_h263_hw_config_list[] = {
 #if CONFIG_H263_VAAPI_HWACCEL
     HWACCEL_VAAPI(h263),
 #endif
@@ -759,7 +758,7 @@ const AVCodecHWConfigInternal *ff_h263_hw_config_list[] = {
     NULL
 };
 
-AVCodec ff_h263_decoder = {
+const AVCodec ff_h263_decoder = {
     .name           = "h263",
     .long_name      = NULL_IF_CONFIG_SMALL("H.263 / H.263-1996, H.263+ / H.263-1998 / H.263 version 2"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -777,7 +776,7 @@ AVCodec ff_h263_decoder = {
     .hw_configs     = ff_h263_hw_config_list,
 };
 
-AVCodec ff_h263p_decoder = {
+const AVCodec ff_h263p_decoder = {
     .name           = "h263p",
     .long_name      = NULL_IF_CONFIG_SMALL("H.263 / H.263-1996, H.263+ / H.263-1998 / H.263 version 2"),
     .type           = AVMEDIA_TYPE_VIDEO,
