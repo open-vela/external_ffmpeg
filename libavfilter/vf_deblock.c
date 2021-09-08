@@ -84,10 +84,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY9, AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12, AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *formats = ff_make_format_list(pixel_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, formats);
+    return ff_set_common_formats_from_list(ctx, pixel_fmts);
 }
 
 #define WEAK_HFILTER(name, type, ldiv)                                              \
@@ -285,14 +282,14 @@ static int config_output(AVFilterLink *outlink)
     if (s->depth <= 8 && s->filter == WEAK) {
         s->deblockh = deblockh8_weak;
         s->deblockv = deblockv8_weak;
-    } else if (s->depth >= 8 && s->filter == WEAK) {
+    } else if (s->depth > 8 && s->filter == WEAK) {
         s->deblockh = deblockh16_weak;
         s->deblockv = deblockv16_weak;
     }
     if (s->depth <= 8 && s->filter == STRONG) {
         s->deblockh = deblockh8_strong;
         s->deblockv = deblockv8_strong;
-    } else if (s->depth >= 8 && s->filter == STRONG) {
+    } else if (s->depth > 8 && s->filter == STRONG) {
         s->deblockh = deblockh16_strong;
         s->deblockv = deblockv16_strong;
     }
@@ -367,8 +364,20 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     return ff_filter_frame(outlink, out);
 }
 
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                           char *res, int res_len, int flags)
+{
+    int ret;
+
+    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+    if (ret < 0)
+        return ret;
+
+    return config_output(ctx->outputs[0]);
+}
+
 #define OFFSET(x) offsetof(DeblockContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption deblock_options[] = {
     { "filter",    "set type of filter",          OFFSET(filter),    AV_OPT_TYPE_INT,   {.i64=STRONG},0, 1,  FLAGS, "filter" },
@@ -389,7 +398,6 @@ static const AVFilterPad inputs[] = {
         .type           = AVMEDIA_TYPE_VIDEO,
         .filter_frame   = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -398,18 +406,18 @@ static const AVFilterPad outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(deblock);
 
-AVFilter ff_vf_deblock = {
+const AVFilter ff_vf_deblock = {
     .name          = "deblock",
     .description   = NULL_IF_CONFIG_SMALL("Deblock video."),
     .priv_size     = sizeof(DeblockContext),
     .priv_class    = &deblock_class,
     .query_formats = query_formats,
-    .inputs        = inputs,
-    .outputs       = outputs,
+    FILTER_INPUTS(inputs),
+    FILTER_OUTPUTS(outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    .process_command = process_command,
 };

@@ -18,14 +18,15 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/timestamp.h"
+#include "libavcodec/bsf.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "internal.h"
 #include "url.h"
 
@@ -51,6 +52,7 @@ typedef struct {
     int64_t inpoint;
     int64_t outpoint;
     AVDictionary *metadata;
+    AVDictionary *options;
     int nb_streams;
 } ConcatFile;
 
@@ -113,18 +115,18 @@ static int add_file(AVFormatContext *avf, char *filename, ConcatFile **rfile,
     ConcatFile *file;
     char *url = NULL;
     const char *proto;
-    size_t url_len, proto_len;
+    const char *ptr;
+    size_t url_len;
     int ret;
 
-    if (cat->safe > 0 && !safe_filename(filename)) {
+    if (cat->safe && !safe_filename(filename)) {
         av_log(avf, AV_LOG_ERROR, "Unsafe file name '%s'\n", filename);
         FAIL(AVERROR(EPERM));
     }
 
     proto = avio_find_protocol_name(filename);
-    proto_len = proto ? strlen(proto) : 0;
-    if (proto && !memcmp(filename, proto, proto_len) &&
-        (filename[proto_len] == ':' || filename[proto_len] == ',')) {
+    if (proto && av_strstart(filename, proto, &ptr) &&
+        (*ptr == ':' || *ptr == ',')) {
         url = filename;
         filename = NULL;
     } else {
@@ -329,6 +331,7 @@ static int open_file(AVFormatContext *avf, unsigned fileno)
 {
     ConcatContext *cat = avf->priv_data;
     ConcatFile *file = &cat->files[fileno];
+    AVDictionary *options = NULL;
     int ret;
 
     if (cat->avf)
@@ -344,11 +347,21 @@ static int open_file(AVFormatContext *avf, unsigned fileno)
     if ((ret = ff_copy_whiteblacklists(cat->avf, avf)) < 0)
         return ret;
 
-    if ((ret = avformat_open_input(&cat->avf, file->url, NULL, NULL)) < 0 ||
+    ret = av_dict_copy(&options, file->options, 0);
+    if (ret < 0)
+        return ret;
+
+    if ((ret = avformat_open_input(&cat->avf, file->url, NULL, &options)) < 0 ||
         (ret = avformat_find_stream_info(cat->avf, NULL)) < 0) {
         av_log(avf, AV_LOG_ERROR, "Impossible to open '%s'\n", file->url);
+        av_dict_free(&options);
         avformat_close_input(&cat->avf);
         return ret;
+    }
+    if (options) {
+        av_log(avf, AV_LOG_WARNING, "Unused options for '%s'.\n", file->url);
+        /* TODO log unused options once we have a proper string API */
+        av_dict_free(&options);
     }
     cat->cur_file = file;
     file->start_time = !fileno ? 0 :
@@ -386,6 +399,7 @@ static int concat_read_close(AVFormatContext *avf)
         }
         av_freep(&cat->files[i].streams);
         av_dict_free(&cat->files[i].metadata);
+        av_dict_free(&cat->files[i].options);
     }
     if (cat->avf)
         avformat_close_input(&cat->avf);
@@ -457,6 +471,26 @@ static int concat_read_header(AVFormatContext *avf)
                 FAIL(AVERROR_INVALIDDATA);
             }
             av_freep(&metadata);
+        } else if (!strcmp(keyword, "option")) {
+            char *key, *val;
+            if (cat->safe) {
+                av_log(avf, AV_LOG_ERROR, "Options not permitted in safe mode.\n");
+                FAIL(AVERROR(EPERM));
+            }
+            if (!file) {
+                av_log(avf, AV_LOG_ERROR, "Line %d: %s without file\n",
+                       line, keyword);
+                FAIL(AVERROR_INVALIDDATA);
+            }
+            if (!(key = av_get_token((const char **)&cursor, SPACE_CHARS)) ||
+                !(val = av_get_token((const char **)&cursor, SPACE_CHARS))) {
+                av_freep(&key);
+                FAIL(AVERROR(ENOMEM));
+            }
+            ret = av_dict_set(&file->options, key, val,
+                              AV_DICT_DONT_STRDUP_KEY | AV_DICT_DONT_STRDUP_VAL);
+            if (ret < 0)
+                FAIL(ret);
         } else if (!strcmp(keyword, "stream")) {
             if (!avformat_new_stream(avf, NULL))
                 FAIL(AVERROR(ENOMEM));
@@ -475,8 +509,6 @@ static int concat_read_header(AVFormatContext *avf)
                 av_log(avf, AV_LOG_ERROR, "Line %d: invalid version\n", line);
                 FAIL(AVERROR_INVALIDDATA);
             }
-            if (cat->safe < 0)
-                cat->safe = 1;
         } else {
             av_log(avf, AV_LOG_ERROR, "Line %d: unknown keyword '%s'\n",
                    line, keyword);
@@ -510,12 +542,9 @@ static int concat_read_header(AVFormatContext *avf)
                                                MATCH_ONE_TO_ONE;
     if ((ret = open_file(avf, 0)) < 0)
         goto fail;
-    av_bprint_finalize(&bp, NULL);
-    return 0;
 
 fail:
     av_bprint_finalize(&bp, NULL);
-    concat_read_close(avf);
     return ret;
 }
 
@@ -626,7 +655,7 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &st->time_base),
            av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base));
     if (cat->cur_file->metadata) {
-        int metadata_len;
+        size_t metadata_len;
         char* packed_metadata = av_packet_pack_dictionary(cat->cur_file->metadata, &metadata_len);
         if (!packed_metadata)
             return AVERROR(ENOMEM);
@@ -638,8 +667,8 @@ static int concat_read_packet(AVFormatContext *avf, AVPacket *pkt)
         }
     }
 
-    if (cat->cur_file->duration == AV_NOPTS_VALUE && st->cur_dts != AV_NOPTS_VALUE) {
-        int64_t next_dts = av_rescale_q(st->cur_dts, st->time_base, AV_TIME_BASE_Q);
+    if (cat->cur_file->duration == AV_NOPTS_VALUE && st->internal->cur_dts != AV_NOPTS_VALUE) {
+        int64_t next_dts = av_rescale_q(st->internal->cur_dts, st->time_base, AV_TIME_BASE_Q);
         if (cat->cur_file->next_dts == AV_NOPTS_VALUE || next_dts > cat->cur_file->next_dts) {
             cat->cur_file->next_dts = next_dts;
         }
@@ -759,7 +788,7 @@ static int concat_seek(AVFormatContext *avf, int stream,
 
 static const AVOption options[] = {
     { "safe", "enable safe mode",
-      OFFSET(safe), AV_OPT_TYPE_BOOL, {.i64 = 1}, -1, 1, DEC },
+      OFFSET(safe), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DEC },
     { "auto_convert", "automatically convert bitstream format",
       OFFSET(auto_convert), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DEC },
     { "segment_time_metadata", "output file segment start time and duration as packet metadata",
@@ -775,10 +804,11 @@ static const AVClass concat_class = {
 };
 
 
-AVInputFormat ff_concat_demuxer = {
+const AVInputFormat ff_concat_demuxer = {
     .name           = "concat",
     .long_name      = NULL_IF_CONFIG_SMALL("Virtual concatenation script"),
     .priv_data_size = sizeof(ConcatContext),
+    .flags_internal = FF_FMT_INIT_CLEANUP,
     .read_probe     = concat_probe,
     .read_header    = concat_read_header,
     .read_packet    = concat_read_packet,

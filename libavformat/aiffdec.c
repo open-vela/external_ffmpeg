@@ -20,13 +20,11 @@
  */
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mathematics.h"
 #include "libavutil/dict.h"
 #include "avformat.h"
 #include "internal.h"
 #include "pcm.h"
 #include "aiff.h"
-#include "isom.h"
 #include "id3v2.h"
 #include "mov_chan.h"
 #include "replaygain.h"
@@ -102,6 +100,9 @@ static int get_aiff_header(AVFormatContext *s, int size,
     int sample_rate;
     unsigned int num_frames;
 
+    if (size == INT_MAX)
+        return AVERROR_INVALIDDATA;
+
     if (size & 1)
         size++;
     par->codec_type = AVMEDIA_TYPE_AUDIO;
@@ -120,6 +121,8 @@ static int get_aiff_header(AVFormatContext *s, int size,
     else
         sample_rate = (val + (1ULL<<(-exp-1))) >> -exp;
     par->sample_rate = sample_rate;
+    if (size < 18)
+        return AVERROR_INVALIDDATA;
     size -= 18;
 
     /* get codec id for AIFF-C */
@@ -212,7 +215,7 @@ static int aiff_read_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     AVStream * st;
     AIFFInputContext *aiff = s->priv_data;
-    ID3v2ExtraMeta *id3v2_extra_meta = NULL;
+    ID3v2ExtraMeta *id3v2_extra_meta;
 
     /* check FORM header */
     filesize = get_tag(pb, &tag);
@@ -286,6 +289,8 @@ static int aiff_read_header(AVFormatContext *s)
             get_meta(s, "comment"  , size);
             break;
         case MKTAG('S', 'S', 'N', 'D'):     /* Sampled sound chunk */
+            if (size < 8)
+                return AVERROR_INVALIDDATA;
             aiff->data_end = avio_tell(pb) + size;
             offset = avio_rb32(pb);      /* Offset of sound data */
             avio_rb32(pb);               /* BlockSize... don't care */
@@ -406,6 +411,8 @@ static int aiff_read_packet(AVFormatContext *s,
         break;
     default:
         size = st->codecpar->block_align ? (MAX_SIZE / st->codecpar->block_align) * st->codecpar->block_align : MAX_SIZE;
+        if (!size)
+            return AVERROR_INVALIDDATA;
     }
     size = FFMIN(max_size, size);
     res = av_get_packet(s->pb, pkt, size);
@@ -420,7 +427,7 @@ static int aiff_read_packet(AVFormatContext *s,
     return 0;
 }
 
-AVInputFormat ff_aiff_demuxer = {
+const AVInputFormat ff_aiff_demuxer = {
     .name           = "aiff",
     .long_name      = NULL_IF_CONFIG_SMALL("Audio IFF"),
     .priv_data_size = sizeof(AIFFInputContext),
@@ -428,5 +435,5 @@ AVInputFormat ff_aiff_demuxer = {
     .read_header    = aiff_read_header,
     .read_packet    = aiff_read_packet,
     .read_seek      = ff_pcm_read_seek,
-    .codec_tag      = (const AVCodecTag* const []){ ff_codec_aiff_tags, 0 },
+    .codec_tag      = ff_aiff_codec_tags_list,
 };
