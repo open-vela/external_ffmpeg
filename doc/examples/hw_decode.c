@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
     int video_stream, ret;
     AVStream *video = NULL;
     AVCodecContext *decoder_ctx = NULL;
-    AVCodec *decoder = NULL;
+    const AVCodec *decoder = NULL;
     AVPacket packet;
     enum AVHWDeviceType type;
     int i;
@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
     }
 
     /* open the file to dump raw data */
-    output_file = fopen(argv[3], "w+");
+    output_file = fopen(argv[3], "w+b");
 
     /* actual decoding and dump the raw data */
     while (ret >= 0) {
