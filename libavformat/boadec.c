@@ -54,12 +54,12 @@ static int read_header(AVFormatContext *s)
     avio_rl32(s->pb);
     st->codecpar->sample_rate = avio_rl32(s->pb);
     st->codecpar->channels    = avio_rl32(s->pb);
-    if (st->codecpar->channels > FF_SANE_NB_CHANNELS)
+    if (st->codecpar->channels > FF_SANE_NB_CHANNELS || st->codecpar->channels <= 0)
         return AVERROR(ENOSYS);
     s->internal->data_offset = avio_rl32(s->pb);
     avio_r8(s->pb);
     st->codecpar->block_align = avio_rl32(s->pb);
-    if (st->codecpar->block_align > INT_MAX / FF_SANE_NB_CHANNELS)
+    if (st->codecpar->block_align > INT_MAX / FF_SANE_NB_CHANNELS || st->codecpar->block_align <= 0)
         return AVERROR_INVALIDDATA;
     st->codecpar->block_align *= st->codecpar->channels;
 
@@ -75,7 +75,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
     return av_get_packet(s->pb, pkt, st->codecpar->block_align);
 }
 
-AVInputFormat ff_boa_demuxer = {
+const AVInputFormat ff_boa_demuxer = {
     .name           = "boa",
     .long_name      = NULL_IF_CONFIG_SMALL("Black Ops Audio"),
     .read_probe     = probe,

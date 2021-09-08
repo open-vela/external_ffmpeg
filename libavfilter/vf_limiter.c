@@ -46,7 +46,7 @@ typedef struct LimiterContext {
 } LimiterContext;
 
 #define OFFSET(x) offsetof(LimiterContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption limiter_options[] = {
     { "min",    "set min value", OFFSET(min),    AV_OPT_TYPE_INT, {.i64=0},     0, 65535, .flags = FLAGS },
@@ -90,10 +90,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static void limiter8(const uint8_t *src, uint8_t *dst,
@@ -133,7 +130,7 @@ static void limiter16(const uint8_t *ssrc, uint8_t *ddst,
     }
 }
 
-static int config_props(AVFilterLink *inlink)
+static int config_input(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
     LimiterContext *s = ctx->priv;
@@ -222,12 +219,24 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     td.out = out;
     td.in = in;
-    ctx->internal->execute(ctx, filter_slice, &td, NULL,
-                           FFMIN(s->height[2], ff_filter_get_nb_threads(ctx)));
+    ff_filter_execute(ctx, filter_slice, &td, NULL,
+                      FFMIN(s->height[2], ff_filter_get_nb_threads(ctx)));
     if (out != in)
         av_frame_free(&in);
 
     return ff_filter_frame(outlink, out);
+}
+
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                           char *res, int res_len, int flags)
+{
+    int ret;
+
+    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+    if (ret < 0)
+        return ret;
+
+    return config_input(ctx->inputs[0]);
 }
 
 static const AVFilterPad inputs[] = {
@@ -235,9 +244,8 @@ static const AVFilterPad inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
-        .config_props = config_props,
+        .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -245,17 +253,17 @@ static const AVFilterPad outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_limiter = {
+const AVFilter ff_vf_limiter = {
     .name          = "limiter",
     .description   = NULL_IF_CONFIG_SMALL("Limit pixels components to the specified range."),
     .priv_size     = sizeof(LimiterContext),
     .priv_class    = &limiter_class,
     .init          = init,
     .query_formats = query_formats,
-    .inputs        = inputs,
-    .outputs       = outputs,
+    FILTER_INPUTS(inputs),
+    FILTER_OUTPUTS(outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
 };
