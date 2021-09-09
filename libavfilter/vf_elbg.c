@@ -91,17 +91,14 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
     if (!elbg->pal8) {
-        AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-        if (!fmts_list)
-            return AVERROR(ENOMEM);
-        return ff_set_common_formats(ctx, fmts_list);
+        return ff_set_common_formats_from_list(ctx, pix_fmts);
     } else {
         static const enum AVPixelFormat pal8_fmt[] = {
             AV_PIX_FMT_PAL8,
             AV_PIX_FMT_NONE
         };
-        if ((ret = ff_formats_ref(ff_make_format_list(pix_fmts), &ctx->inputs[0]->out_formats)) < 0 ||
-            (ret = ff_formats_ref(ff_make_format_list(pal8_fmt), &ctx->outputs[0]->in_formats)) < 0)
+        if ((ret = ff_formats_ref(ff_make_format_list(pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0 ||
+            (ret = ff_formats_ref(ff_make_format_list(pal8_fmt), &ctx->outputs[0]->incfg.formats)) < 0)
             return ret;
     }
     return 0;
@@ -238,11 +235,10 @@ static const AVFilterPad elbg_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_VIDEO,
+        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .config_props   = config_input,
         .filter_frame   = filter_frame,
-        .needs_writable = 1,
     },
-    { NULL }
 };
 
 static const AVFilterPad elbg_outputs[] = {
@@ -250,10 +246,9 @@ static const AVFilterPad elbg_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_elbg = {
+const AVFilter ff_vf_elbg = {
     .name          = "elbg",
     .description   = NULL_IF_CONFIG_SMALL("Apply posterize effect, using the ELBG algorithm."),
     .priv_size     = sizeof(ELBGContext),
@@ -261,6 +256,6 @@ AVFilter ff_vf_elbg = {
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    .inputs        = elbg_inputs,
-    .outputs       = elbg_outputs,
+    FILTER_INPUTS(elbg_inputs),
+    FILTER_OUTPUTS(elbg_outputs),
 };

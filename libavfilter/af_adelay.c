@@ -28,9 +28,9 @@
 #include "internal.h"
 
 typedef struct ChanDelay {
-    int delay;
-    unsigned delay_index;
-    unsigned index;
+    int64_t delay;
+    size_t delay_index;
+    size_t index;
     uint8_t *samples;
 } ChanDelay;
 
@@ -63,33 +63,20 @@ AVFILTER_DEFINE_CLASS(adelay);
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterChannelLayouts *layouts;
-    AVFilterFormats *formats;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_U8P, AV_SAMPLE_FMT_S16P, AV_SAMPLE_FMT_S32P,
         AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret;
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
-    formats = ff_make_format_list(sample_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
     if (ret < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 #define DELAY(name, type, fill)                                           \
@@ -152,7 +139,7 @@ static int config_input(AVFilterLink *inlink)
 
         p = NULL;
 
-        ret = av_sscanf(arg, "%d%c", &d->delay, &type);
+        ret = av_sscanf(arg, "%"SCNd64"%c", &d->delay, &type);
         if (ret != 2 || type != 'S') {
             div = type == 's' ? 1.0 : 1000.0;
             if (av_sscanf(arg, "%f", &delay) != 1) {
@@ -193,6 +180,11 @@ static int config_input(AVFilterLink *inlink)
 
         if (!d->delay)
             continue;
+
+        if (d->delay > SIZE_MAX) {
+            av_log(ctx, AV_LOG_ERROR, "Requested delay is too big.\n");
+            return AVERROR(EINVAL);
+        }
 
         d->samples = av_malloc_array(d->delay, s->block_align);
         if (!d->samples)
@@ -334,7 +326,6 @@ static const AVFilterPad adelay_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad adelay_outputs[] = {
@@ -342,10 +333,9 @@ static const AVFilterPad adelay_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
-AVFilter ff_af_adelay = {
+const AVFilter ff_af_adelay = {
     .name          = "adelay",
     .description   = NULL_IF_CONFIG_SMALL("Delay one or more audio channels."),
     .query_formats = query_formats,
@@ -353,7 +343,7 @@ AVFilter ff_af_adelay = {
     .priv_class    = &adelay_class,
     .activate      = activate,
     .uninit        = uninit,
-    .inputs        = adelay_inputs,
-    .outputs       = adelay_outputs,
+    FILTER_INPUTS(adelay_inputs),
+    FILTER_OUTPUTS(adelay_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
 };

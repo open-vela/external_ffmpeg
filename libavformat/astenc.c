@@ -196,7 +196,7 @@ static const AVClass ast_muxer_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVOutputFormat ff_ast_muxer = {
+const AVOutputFormat ff_ast_muxer = {
     .name              = "ast",
     .long_name         = NULL_IF_CONFIG_SMALL("AST (Audio Stream)"),
     .extensions        = "ast",
@@ -207,5 +207,5 @@ AVOutputFormat ff_ast_muxer = {
     .write_packet      = ast_write_packet,
     .write_trailer     = ast_write_trailer,
     .priv_class        = &ast_muxer_class,
-    .codec_tag         = (const AVCodecTag* const []){ff_codec_ast_tags, 0},
+    .codec_tag         = ff_ast_codec_tags_list,
 };
