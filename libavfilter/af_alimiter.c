@@ -24,6 +24,7 @@
  * Lookahead limiter filter
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -276,6 +277,36 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     return ff_filter_frame(outlink, out);
 }
 
+static int query_formats(AVFilterContext *ctx)
+{
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
+    static const enum AVSampleFormat sample_fmts[] = {
+        AV_SAMPLE_FMT_DBL,
+        AV_SAMPLE_FMT_NONE
+    };
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        return ret;
+
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
+    if (ret < 0)
+        return ret;
+
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
+}
+
 static int config_input(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -320,6 +351,7 @@ static const AVFilterPad alimiter_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad alimiter_outputs[] = {
@@ -327,16 +359,17 @@ static const AVFilterPad alimiter_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_alimiter = {
+AVFilter ff_af_alimiter = {
     .name           = "alimiter",
     .description    = NULL_IF_CONFIG_SMALL("Audio lookahead limiter."),
     .priv_size      = sizeof(AudioLimiterContext),
     .priv_class     = &alimiter_class,
     .init           = init,
     .uninit         = uninit,
-    FILTER_INPUTS(alimiter_inputs),
-    FILTER_OUTPUTS(alimiter_outputs),
-    FILTER_SINGLE_SAMPLEFMT(AV_SAMPLE_FMT_DBL),
+    .query_formats  = query_formats,
+    .inputs         = alimiter_inputs,
+    .outputs        = alimiter_outputs,
 };
