@@ -82,7 +82,7 @@ typedef struct ChannelStats {
     uint64_t nb_infs;
     uint64_t nb_denormals;
     double *win_samples;
-    unsigned histogram[HISTOGRAM_SIZE];
+    uint64_t histogram[HISTOGRAM_SIZE];
     int win_pos;
     int max_index;
     double noise_floor;
@@ -109,7 +109,7 @@ typedef struct AudioStatsContext {
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 
 static const AVOption astats_options[] = {
-    { "length", "set the window length", OFFSET(time_constant), AV_OPT_TYPE_DOUBLE, {.dbl=.05}, .01, 10, FLAGS },
+    { "length", "set the window length", OFFSET(time_constant), AV_OPT_TYPE_DOUBLE, {.dbl=.05}, 0, 10, FLAGS },
     { "metadata", "inject metadata in the filtergraph", OFFSET(metadata), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS },
     { "reset", "recalculate stats after this many frames", OFFSET(reset_count), AV_OPT_TYPE_INT, {.i64=0}, 0, INT_MAX, FLAGS },
     { "measure_perchannel", "only measure_perchannel these per-channel statistics", OFFSET(measure_perchannel), AV_OPT_TYPE_FLAGS, {.i64=MEASURE_ALL}, 0, UINT_MAX, FLAGS, "measure" },
@@ -147,8 +147,6 @@ AVFILTER_DEFINE_CLASS(astats);
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats;
-    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P,
         AV_SAMPLE_FMT_S32, AV_SAMPLE_FMT_S32P,
@@ -157,26 +155,15 @@ static int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret;
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
-    formats = ff_make_format_list(sample_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
     if (ret < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static void reset_stats(AudioStatsContext *s)
@@ -226,7 +213,7 @@ static int config_output(AVFilterLink *outlink)
     if (!s->chstats)
         return AVERROR(ENOMEM);
 
-    s->tc_samples = 5 * s->time_constant * outlink->sample_rate + .5;
+    s->tc_samples = FFMAX(s->time_constant * outlink->sample_rate + .5, 1);
     s->nb_channels = outlink->channels;
 
     for (int i = 0; i < s->nb_channels; i++) {
@@ -329,11 +316,11 @@ static inline void update_stat(AudioStatsContext *s, ChannelStats *p, double d, 
 
     drop = p->win_samples[p->win_pos];
     p->win_samples[p->win_pos] = nd;
-    index = av_clip(FFABS(nd) * HISTOGRAM_MAX, 0, HISTOGRAM_MAX);
+    index = av_clip(lrint(av_clipd(FFABS(nd), 0.0, 1.0) * HISTOGRAM_MAX), 0, HISTOGRAM_MAX);
     p->max_index = FFMAX(p->max_index, index);
     p->histogram[index]++;
     if (!isnan(p->noise_floor))
-        p->histogram[av_clip(FFABS(drop) * HISTOGRAM_MAX, 0, HISTOGRAM_MAX)]--;
+        p->histogram[av_clip(lrint(av_clipd(FFABS(drop), 0.0, 1.0) * HISTOGRAM_MAX), 0, HISTOGRAM_MAX)]--;
     p->win_pos++;
 
     while (p->histogram[p->max_index] == 0)
@@ -645,7 +632,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         s->nb_frames++;
     }
 
-    ctx->internal->execute(ctx, filter_channel, buf, NULL, FFMIN(inlink->channels, ff_filter_get_nb_threads(ctx)));
+    ff_filter_execute(ctx, filter_channel, buf, NULL,
+                      FFMIN(inlink->channels, ff_filter_get_nb_threads(ctx)));
 
     if (s->metadata)
         set_metadata(s, metadata);
@@ -705,7 +693,8 @@ static void print_stats(AVFilterContext *ctx)
         if (fabs(p->sigma_x) > fabs(max_sigma_x))
             max_sigma_x = p->sigma_x;
 
-        av_log(ctx, AV_LOG_INFO, "Channel: %d\n", c + 1);
+        if (s->measure_perchannel != MEASURE_NONE)
+            av_log(ctx, AV_LOG_INFO, "Channel: %d\n", c + 1);
         if (s->measure_perchannel & MEASURE_DC_OFFSET)
             av_log(ctx, AV_LOG_INFO, "DC offset: %f\n", p->sigma_x / p->nb_samples);
         if (s->measure_perchannel & MEASURE_MIN_LEVEL)
@@ -757,7 +746,8 @@ static void print_stats(AVFilterContext *ctx)
             av_log(ctx, AV_LOG_INFO, "Number of denormals: %"PRId64"\n", p->nb_denormals);
     }
 
-    av_log(ctx, AV_LOG_INFO, "Overall\n");
+    if (s->measure_overall != MEASURE_NONE)
+        av_log(ctx, AV_LOG_INFO, "Overall\n");
     if (s->measure_overall & MEASURE_DC_OFFSET)
         av_log(ctx, AV_LOG_INFO, "DC offset: %f\n", max_sigma_x / (nb_samples / s->nb_channels));
     if (s->measure_overall & MEASURE_MIN_LEVEL)
@@ -825,7 +815,6 @@ static const AVFilterPad astats_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad astats_outputs[] = {
@@ -834,17 +823,16 @@ static const AVFilterPad astats_outputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_af_astats = {
+const AVFilter ff_af_astats = {
     .name          = "astats",
     .description   = NULL_IF_CONFIG_SMALL("Show time domain statistics about audio frames."),
     .query_formats = query_formats,
     .priv_size     = sizeof(AudioStatsContext),
     .priv_class    = &astats_class,
     .uninit        = uninit,
-    .inputs        = astats_inputs,
-    .outputs       = astats_outputs,
+    FILTER_INPUTS(astats_inputs),
+    FILTER_OUTPUTS(astats_outputs),
     .flags         = AVFILTER_FLAG_SLICE_THREADS,
 };

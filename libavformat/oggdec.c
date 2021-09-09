@@ -251,7 +251,6 @@ static int ogg_new_stream(AVFormatContext *s, uint32_t serial)
     int idx         = ogg->nstreams;
     AVStream *st;
     struct ogg_stream *os;
-    size_t size;
 
     if (ogg->state) {
         av_log(s, AV_LOG_ERROR, "New streams are not supposed to be added "
@@ -260,8 +259,8 @@ static int ogg_new_stream(AVFormatContext *s, uint32_t serial)
     }
 
     /* Allocate and init a new Ogg Stream */
-    if (av_size_mult(ogg->nstreams + 1, sizeof(*ogg->streams), &size) < 0 ||
-        !(os = av_realloc(ogg->streams, size)))
+    if (!(os = av_realloc_array(ogg->streams, ogg->nstreams + 1,
+                                sizeof(*ogg->streams))))
         return AVERROR(ENOMEM);
     ogg->streams = os;
     os           = ogg->streams + idx;
@@ -732,10 +731,8 @@ static int ogg_read_header(AVFormatContext *s)
     //linear headers seek from start
     do {
         ret = ogg_packet(s, NULL, NULL, NULL, NULL);
-        if (ret < 0) {
-            ogg_read_close(s);
+        if (ret < 0)
             return ret;
-        }
     } while (!ogg->headers);
     av_log(s, AV_LOG_TRACE, "found headers\n");
 
@@ -751,10 +748,8 @@ static int ogg_read_header(AVFormatContext *s)
                    "Headers mismatch for stream %d: "
                    "expected %d received %d.\n",
                    i, os->codec->nb_header, os->nb_header);
-            if (s->error_recognition & AV_EF_EXPLODE) {
-                ogg_read_close(s);
+            if (s->error_recognition & AV_EF_EXPLODE)
                 return AVERROR_INVALIDDATA;
-            }
         }
         if (os->start_granule != OGG_NOGRANULE_VALUE)
             os->lastpts = s->streams[i]->start_time =
@@ -763,10 +758,8 @@ static int ogg_read_header(AVFormatContext *s)
 
     //linear granulepos seek from end
     ret = ogg_get_length(s);
-    if (ret < 0) {
-        ogg_read_close(s);
+    if (ret < 0)
         return ret;
-    }
 
     return 0;
 }
@@ -966,10 +959,11 @@ static int ogg_probe(const AVProbeData *p)
     return 0;
 }
 
-AVInputFormat ff_ogg_demuxer = {
+const AVInputFormat ff_ogg_demuxer = {
     .name           = "ogg",
     .long_name      = NULL_IF_CONFIG_SMALL("Ogg"),
     .priv_data_size = sizeof(struct ogg),
+    .flags_internal = FF_FMT_INIT_CLEANUP,
     .read_probe     = ogg_probe,
     .read_header    = ogg_read_header,
     .read_packet    = ogg_read_packet,

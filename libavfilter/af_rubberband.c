@@ -91,32 +91,19 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats = NULL;
-    AVFilterChannelLayouts *layouts = NULL;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_FLTP,
         AV_SAMPLE_FMT_NONE,
     };
-    int ret;
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
-    formats = ff_make_format_list(sample_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
     if (ret < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -212,6 +199,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 
     rubberband_set_time_ratio(s->rbs, 1. / s->tempo);
     rubberband_set_pitch_scale(s->rbs, s->pitch);
+    s->nb_samples = rubberband_get_samples_required(s->rbs);
 
     return 0;
 }
@@ -222,7 +210,6 @@ static const AVFilterPad rubberband_inputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad rubberband_outputs[] = {
@@ -230,10 +217,9 @@ static const AVFilterPad rubberband_outputs[] = {
         .name          = "default",
         .type          = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
-AVFilter ff_af_rubberband = {
+const AVFilter ff_af_rubberband = {
     .name          = "rubberband",
     .description   = NULL_IF_CONFIG_SMALL("Apply time-stretching and pitch-shifting."),
     .query_formats = query_formats,
@@ -241,7 +227,7 @@ AVFilter ff_af_rubberband = {
     .priv_class    = &rubberband_class,
     .uninit        = uninit,
     .activate      = activate,
-    .inputs        = rubberband_inputs,
-    .outputs       = rubberband_outputs,
+    FILTER_INPUTS(rubberband_inputs),
+    FILTER_OUTPUTS(rubberband_outputs),
     .process_command = process_command,
 };

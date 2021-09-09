@@ -417,7 +417,6 @@ static const AVFilterPad nlmeans_opencl_inputs[] = {
         .filter_frame = &nlmeans_opencl_filter_frame,
         .config_props = &ff_opencl_filter_config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad nlmeans_opencl_outputs[] = {
@@ -426,10 +425,9 @@ static const AVFilterPad nlmeans_opencl_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_opencl_filter_config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_nlmeans_opencl = {
+const AVFilter ff_vf_nlmeans_opencl = {
     .name           = "nlmeans_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Non-local means denoiser through OpenCL"),
     .priv_size      = sizeof(NLMeansOpenCLContext),
@@ -437,7 +435,7 @@ AVFilter ff_vf_nlmeans_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &nlmeans_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    .inputs         = nlmeans_opencl_inputs,
-    .outputs        = nlmeans_opencl_outputs,
+    FILTER_INPUTS(nlmeans_opencl_inputs),
+    FILTER_OUTPUTS(nlmeans_opencl_outputs),
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
