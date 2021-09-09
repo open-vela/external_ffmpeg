@@ -41,6 +41,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "thread.h"
+#include "filters.h"
 
 #define OFFSET(x) offsetof(AVFilterGraph, x)
 #define F AV_OPT_FLAG_FILTERING_PARAM
