@@ -124,19 +124,16 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *pix_fmts = NULL;
-    int fmt, ret;
+    AVFilterFormats *formats = NULL;
+    int ret;
 
-    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
-        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
-        if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
-              desc->flags & AV_PIX_FMT_FLAG_PAL     ||
-              desc->flags & AV_PIX_FMT_FLAG_BITSTREAM) &&
-             (ret = ff_add_format(&pix_fmts, fmt)) < 0)
-            return ret;
-    }
-
-    return ff_set_common_formats(ctx, pix_fmts);
+    ret = ff_formats_pixdesc_filter(&formats, 0,
+                                    AV_PIX_FMT_FLAG_BITSTREAM |
+                                    AV_PIX_FMT_FLAG_PAL |
+                                    AV_PIX_FMT_FLAG_HWACCEL);
+    if (ret < 0)
+        return ret;
+    return ff_set_common_formats(ctx, formats);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -363,7 +360,6 @@ static const AVFilterPad detelecine_inputs[] = {
         .filter_frame  = filter_frame,
         .config_props  = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad detelecine_outputs[] = {
@@ -372,10 +368,9 @@ static const AVFilterPad detelecine_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_detelecine = {
+const AVFilter ff_vf_detelecine = {
     .name          = "detelecine",
     .description   = NULL_IF_CONFIG_SMALL("Apply an inverse telecine pattern."),
     .priv_size     = sizeof(DetelecineContext),
@@ -383,6 +378,6 @@ AVFilter ff_vf_detelecine = {
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = detelecine_inputs,
-    .outputs       = detelecine_outputs,
+    FILTER_INPUTS(detelecine_inputs),
+    FILTER_OUTPUTS(detelecine_outputs),
 };
