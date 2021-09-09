@@ -224,7 +224,15 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 {
     ADevSrcPriv *priv = ctx->priv;
 
-    if (!strcmp(cmd, "get_pollfd")) {
+    if (!strcmp(cmd, "play")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                    AV_APP_TO_DEV_PLAY,
+                                    res, res_len);
+    } else if (!strcmp(cmd, "pause")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                    AV_APP_TO_DEV_PAUSE,
+                                    res, res_len);
+    } else if (!strcmp(cmd, "get_pollfd")) {
         return avdevice_app_to_dev_control_message(
                 priv->fmt_ctx,
                 AV_APP_TO_DEV_GET_POLLFD,
