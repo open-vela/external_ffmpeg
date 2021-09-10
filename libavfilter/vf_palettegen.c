@@ -99,9 +99,9 @@ static int query_formats(AVFilterContext *ctx)
     static const enum AVPixelFormat out_fmts[] = {AV_PIX_FMT_RGB32, AV_PIX_FMT_NONE};
     int ret;
 
-    if ((ret = ff_formats_ref(ff_make_format_list(in_fmts) , &ctx->inputs[0]->out_formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_format_list(in_fmts) , &ctx->inputs[0]->outcfg.formats)) < 0)
         return ret;
-    if ((ret = ff_formats_ref(ff_make_format_list(out_fmts), &ctx->outputs[0]->in_formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_format_list(out_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
         return ret;
     return 0;
 }
@@ -113,8 +113,8 @@ static int cmp_##name(const void *pa, const void *pb)   \
 {                                                       \
     const struct color_ref * const *a = pa;             \
     const struct color_ref * const *b = pb;             \
-    return   ((*a)->color >> (8 * (2 - (pos))) & 0xff)  \
-           - ((*b)->color >> (8 * (2 - (pos))) & 0xff); \
+    return   (int)((*a)->color >> (8 * (2 - (pos))) & 0xff)  \
+           - (int)((*b)->color >> (8 * (2 - (pos))) & 0xff); \
 }
 
 DECLARE_CMP_FUNC(r, 0)
@@ -557,7 +557,6 @@ static const AVFilterPad palettegen_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad palettegen_outputs[] = {
@@ -567,16 +566,15 @@ static const AVFilterPad palettegen_outputs[] = {
         .config_props  = config_output,
         .request_frame = request_frame,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_palettegen = {
+const AVFilter ff_vf_palettegen = {
     .name          = "palettegen",
     .description   = NULL_IF_CONFIG_SMALL("Find the optimal palette for a given stream."),
     .priv_size     = sizeof(PaletteGenContext),
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = palettegen_inputs,
-    .outputs       = palettegen_outputs,
+    FILTER_INPUTS(palettegen_inputs),
+    FILTER_OUTPUTS(palettegen_outputs),
     .priv_class    = &palettegen_class,
 };

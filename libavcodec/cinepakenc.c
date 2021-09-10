@@ -45,6 +45,7 @@
 
 #include "avcodec.h"
 #include "elbg.h"
+#include "encode.h"
 #include "internal.h"
 
 #define CVID_HEADER_SIZE 10
@@ -171,22 +172,22 @@ static av_cold int cinepak_encode_init(AVCodecContext *avctx)
     if (!(s->last_frame = av_frame_alloc()))
         return AVERROR(ENOMEM);
     if (!(s->best_frame = av_frame_alloc()))
-        goto enomem;
+        return AVERROR(ENOMEM);
     if (!(s->scratch_frame = av_frame_alloc()))
-        goto enomem;
+        return AVERROR(ENOMEM);
     if (avctx->pix_fmt == AV_PIX_FMT_RGB24)
         if (!(s->input_frame = av_frame_alloc()))
-            goto enomem;
+            return AVERROR(ENOMEM);
 
     if (!(s->codebook_input = av_malloc_array((avctx->pix_fmt == AV_PIX_FMT_RGB24 ? 6 : 4) * (avctx->width * avctx->height) >> 2, sizeof(*s->codebook_input))))
-        goto enomem;
+        return AVERROR(ENOMEM);
 
     if (!(s->codebook_closest = av_malloc_array((avctx->width * avctx->height) >> 2, sizeof(*s->codebook_closest))))
-        goto enomem;
+        return AVERROR(ENOMEM);
 
     for (x = 0; x < (avctx->pix_fmt == AV_PIX_FMT_RGB24 ? 4 : 3); x++)
         if (!(s->pict_bufs[x] = av_malloc((avctx->pix_fmt == AV_PIX_FMT_RGB24 ? 6 : 4) * (avctx->width * avctx->height) >> 2)))
-            goto enomem;
+            return AVERROR(ENOMEM);
 
     mb_count = avctx->width * avctx->height / MB_AREA;
 
@@ -199,13 +200,13 @@ static av_cold int cinepak_encode_init(AVCodecContext *avctx)
     frame_buf_size = CVID_HEADER_SIZE + s->max_max_strips * strip_buf_size;
 
     if (!(s->strip_buf = av_malloc(strip_buf_size)))
-        goto enomem;
+        return AVERROR(ENOMEM);
 
     if (!(s->frame_buf = av_malloc(frame_buf_size)))
-        goto enomem;
+        return AVERROR(ENOMEM);
 
     if (!(s->mb = av_malloc_array(mb_count, sizeof(mb_info))))
-        goto enomem;
+        return AVERROR(ENOMEM);
 
     av_lfg_init(&s->randctx, 1);
     s->avctx          = avctx;
@@ -252,23 +253,6 @@ static av_cold int cinepak_encode_init(AVCodecContext *avctx)
     s->max_strips = s->max_max_strips;
 
     return 0;
-
-enomem:
-    av_frame_free(&s->last_frame);
-    av_frame_free(&s->best_frame);
-    av_frame_free(&s->scratch_frame);
-    if (avctx->pix_fmt == AV_PIX_FMT_RGB24)
-        av_frame_free(&s->input_frame);
-    av_freep(&s->codebook_input);
-    av_freep(&s->codebook_closest);
-    av_freep(&s->strip_buf);
-    av_freep(&s->frame_buf);
-    av_freep(&s->mb);
-
-    for (x = 0; x < (avctx->pix_fmt == AV_PIX_FMT_RGB24 ? 4 : 3); x++)
-        av_freep(&s->pict_bufs[x]);
-
-    return AVERROR(ENOMEM);
 }
 
 static int64_t calculate_mode_score(CinepakEncContext *s, int h,
@@ -1157,7 +1141,7 @@ static int cinepak_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     s->lambda = frame->quality ? frame->quality - 1 : 2 * FF_LAMBDA_SCALE;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, s->frame_buf_size, 0)) < 0)
+    if ((ret = ff_alloc_packet(avctx, pkt, s->frame_buf_size)) < 0)
         return ret;
     ret       = rd_frame(s, frame, (s->curframe == 0), pkt->data, s->frame_buf_size);
     pkt->size = ret;
@@ -1195,7 +1179,7 @@ static av_cold int cinepak_encode_end(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_cinepak_encoder = {
+const AVCodec ff_cinepak_encoder = {
     .name           = "cinepak",
     .long_name      = NULL_IF_CONFIG_SMALL("Cinepak"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -1206,4 +1190,5 @@ AVCodec ff_cinepak_encoder = {
     .close          = cinepak_encode_end,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_RGB24, AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE },
     .priv_class     = &cinepak_class,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
