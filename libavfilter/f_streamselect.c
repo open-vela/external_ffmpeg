@@ -190,7 +190,7 @@ static int parse_mapping(AVFilterContext *ctx, const char *map)
         return AVERROR(EINVAL);
     }
 
-    new_map = av_calloc(s->nb_inputs, sizeof(*new_map));
+    new_map = av_calloc(ctx->nb_outputs, sizeof(*new_map));
     if (!new_map)
         return AVERROR(ENOMEM);
 
@@ -204,14 +204,14 @@ static int parse_mapping(AVFilterContext *ctx, const char *map)
             break;
         map = p;
 
-        if (new_nb_map >= s->nb_inputs) {
+        if (new_nb_map >= ctx->nb_outputs) {
             av_log(ctx, AV_LOG_ERROR, "Unable to map more than the %d "
-                   "input pads available\n", s->nb_inputs);
+                   "output pads available\n", ctx->nb_outputs);
             av_free(new_map);
             return AVERROR(EINVAL);
         }
 
-        if (n < 0 || n >= ctx->nb_inputs) {
+        if (n >= ctx->nb_inputs) {
             av_log(ctx, AV_LOG_ERROR, "Input stream index %d doesn't exist "
                    "(there is only %d input streams defined)\n",
                    n, s->nb_inputs);
