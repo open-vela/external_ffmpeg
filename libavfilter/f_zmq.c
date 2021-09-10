@@ -214,7 +214,6 @@ static const AVFilterPad zmq_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad zmq_outputs[] = {
@@ -222,17 +221,16 @@ static const AVFilterPad zmq_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_zmq = {
+const AVFilter ff_vf_zmq = {
     .name        = "zmq",
     .description = NULL_IF_CONFIG_SMALL("Receive commands through ZMQ and broker them to filters."),
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(ZMQContext),
-    .inputs      = zmq_inputs,
-    .outputs     = zmq_outputs,
+    FILTER_INPUTS(zmq_inputs),
+    FILTER_OUTPUTS(zmq_outputs),
     .priv_class  = &zmq_class,
 };
 
@@ -249,7 +247,6 @@ static const AVFilterPad azmq_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad azmq_outputs[] = {
@@ -257,17 +254,16 @@ static const AVFilterPad azmq_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
-AVFilter ff_af_azmq = {
+const AVFilter ff_af_azmq = {
     .name        = "azmq",
     .description = NULL_IF_CONFIG_SMALL("Receive commands through ZMQ and broker them to filters."),
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(ZMQContext),
-    .inputs      = azmq_inputs,
-    .outputs     = azmq_outputs,
+    FILTER_INPUTS(azmq_inputs),
+    FILTER_OUTPUTS(azmq_outputs),
     .priv_class  = &azmq_class,
 };
 
