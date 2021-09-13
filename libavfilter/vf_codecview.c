@@ -33,7 +33,6 @@
 #include "libavutil/motion_vector.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
-#include "qp_table.h"
 #include "internal.h"
 
 #define MV_P_FOR  (1<<0)
@@ -83,7 +82,10 @@ static int query_formats(AVFilterContext *ctx)
     // TODO: we can probably add way more pixel formats without any other
     // changes; anything with 8-bit luma in first plane should be working
     static const enum AVPixelFormat pix_fmts[] = {AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE};
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int clip_line(int *sx, int *sy, int *ex, int *ey, int maxx)
@@ -138,7 +140,7 @@ static void draw_line(uint8_t *buf, int sx, int sy, int ex, int ey,
         }
         buf += sx + sy * stride;
         ex  -= sx;
-        f    = ((ey - sy) * (1 << 16)) / ex;
+        f    = ((ey - sy) << 16) / ex;
         for (x = 0; x <= ex; x++) {
             y  = (x * f) >> 16;
             fr = (x * f) & 0xFFFF;
@@ -153,7 +155,7 @@ static void draw_line(uint8_t *buf, int sx, int sy, int ex, int ey,
         buf += sx + sy * stride;
         ey  -= sy;
         if (ey)
-            f = ((ex - sx) * (1 << 16)) / ey;
+            f = ((ex - sx) << 16) / ey;
         else
             f = 0;
         for(y= 0; y <= ey; y++){
@@ -196,8 +198,8 @@ static void draw_arrow(uint8_t *buf, int sx, int sy, int ex,
         int length = sqrt((rx * rx + ry * ry) << 8);
 
         // FIXME subpixel accuracy
-        rx = ROUNDED_DIV(rx * (3 << 4), length);
-        ry = ROUNDED_DIV(ry * (3 << 4), length);
+        rx = ROUNDED_DIV(rx * 3 << 4, length);
+        ry = ROUNDED_DIV(ry * 3 << 4, length);
 
         if (tail) {
             rx = -rx;
@@ -217,14 +219,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     AVFilterLink *outlink = ctx->outputs[0];
 
     if (s->qp) {
-        int qstride, qp_type, ret;
-        int8_t *qp_table;
-
-        ret = ff_qp_table_extract(frame, &qp_table, &qstride, NULL, &qp_type);
-        if (ret < 0) {
-            av_frame_free(&frame);
-            return ret;
-        }
+        int qstride, qp_type;
+        int8_t *qp_table = av_frame_get_qp_table(frame, &qstride, &qp_type);
 
         if (qp_table) {
             int x, y;
@@ -244,7 +240,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
                 pv += lzv;
             }
         }
-        av_freep(&qp_table);
     }
 
     if (s->mv || s->mv_type) {
@@ -300,10 +295,11 @@ static const AVFilterPad codecview_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_VIDEO,
-        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
         .filter_frame   = filter_frame,
         .config_props   = config_input,
+        .needs_writable = 1,
     },
+    { NULL }
 };
 
 static const AVFilterPad codecview_outputs[] = {
@@ -311,15 +307,16 @@ static const AVFilterPad codecview_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_codecview = {
+AVFilter ff_vf_codecview = {
     .name          = "codecview",
     .description   = NULL_IF_CONFIG_SMALL("Visualize information about some codecs."),
     .priv_size     = sizeof(CodecViewContext),
     .query_formats = query_formats,
-    FILTER_INPUTS(codecview_inputs),
-    FILTER_OUTPUTS(codecview_outputs),
+    .inputs        = codecview_inputs,
+    .outputs       = codecview_outputs,
     .priv_class    = &codecview_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };
