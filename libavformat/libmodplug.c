@@ -99,14 +99,6 @@ static const AVOption options[] = {
     {NULL},
 };
 
-static int modplug_read_close(AVFormatContext *s)
-{
-    ModPlugContext *modplug = s->priv_data;
-    ModPlug_Unload(modplug->f);
-    av_freep(&modplug->buf);
-    return 0;
-}
-
 #define SET_OPT_IF_REQUESTED(libopt, opt, flag) do {        \
     if (modplug->opt) {                                     \
         settings.libopt  = modplug->opt;                    \
@@ -176,7 +168,6 @@ static int modplug_read_header(AVFormatContext *s)
     ModPlug_Settings settings;
     ModPlugContext *modplug = s->priv_data;
     int64_t sz = avio_size(pb);
-    int ret;
 
     if (sz < 0) {
         av_log(s, AV_LOG_WARNING, "Could not determine file size\n");
@@ -230,10 +221,8 @@ static int modplug_read_header(AVFormatContext *s)
         return AVERROR_INVALIDDATA;
     }
     st = avformat_new_stream(s, NULL);
-    if (!st) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (!st)
+        return AVERROR(ENOMEM);
     avpriv_set_pts_info(st, 64, 1, 1000);
     st->duration = ModPlug_GetLength(modplug->f);
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
@@ -246,10 +235,8 @@ static int modplug_read_header(AVFormatContext *s)
 
     if (modplug->video_stream) {
         AVStream *vst = avformat_new_stream(s, NULL);
-        if (!vst) {
-            ret = AVERROR(ENOMEM);
-            goto fail;
-        }
+        if (!vst)
+            return AVERROR(ENOMEM);
         avpriv_set_pts_info(vst, 64, 1, 1000);
         vst->duration = st->duration;
         vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
@@ -260,13 +247,7 @@ static int modplug_read_header(AVFormatContext *s)
         modplug->fsize    = modplug->linesize * modplug->h;
     }
 
-    ret = modplug_load_metadata(s);
-    if (ret < 0)
-        goto fail;
-    return 0;
-fail:
-    modplug_read_close(s);
-    return ret;
+    return modplug_load_metadata(s);
 }
 
 static void write_text(uint8_t *dst, const char *s, int linesize, int x, int y)
@@ -351,6 +332,14 @@ static int modplug_read_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
+static int modplug_read_close(AVFormatContext *s)
+{
+    ModPlugContext *modplug = s->priv_data;
+    ModPlug_Unload(modplug->f);
+    av_freep(&modplug->buf);
+    return 0;
+}
+
 static int modplug_read_seek(AVFormatContext *s, int stream_idx, int64_t ts, int flags)
 {
     ModPlugContext *modplug = s->priv_data;
@@ -380,7 +369,7 @@ static const AVClass modplug_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVInputFormat ff_libmodplug_demuxer = {
+AVInputFormat ff_libmodplug_demuxer = {
     .name           = "libmodplug",
     .long_name      = NULL_IF_CONFIG_SMALL("ModPlug demuxer"),
     .priv_data_size = sizeof(ModPlugContext),

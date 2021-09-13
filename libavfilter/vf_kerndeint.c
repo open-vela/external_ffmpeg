@@ -78,7 +78,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -292,6 +295,7 @@ static const AVFilterPad kerndeint_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad kerndeint_outputs[] = {
@@ -299,16 +303,17 @@ static const AVFilterPad kerndeint_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 
-const AVFilter ff_vf_kerndeint = {
+AVFilter ff_vf_kerndeint = {
     .name          = "kerndeint",
     .description   = NULL_IF_CONFIG_SMALL("Apply kernel deinterlacing to the input."),
     .priv_size     = sizeof(KerndeintContext),
     .priv_class    = &kerndeint_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(kerndeint_inputs),
-    FILTER_OUTPUTS(kerndeint_outputs),
+    .inputs        = kerndeint_inputs,
+    .outputs       = kerndeint_outputs,
 };

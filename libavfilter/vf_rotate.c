@@ -157,7 +157,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static double get_rotated_w(void *opaque, double angle)
@@ -412,6 +415,8 @@ static av_always_inline void simple_rotate(uint8_t *dst, const uint8_t *src, int
     }
 }
 
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts)*av_q2d(tb))
+
 static int filter_slice(AVFilterContext *ctx, void *arg, int job, int nb_jobs)
 {
     ThreadData *td = arg;
@@ -548,8 +553,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
                           .yprime = -(outh-1) * c / 2,
                           .plane = plane, .c = c, .s = s };
 
-        ff_filter_execute(ctx, filter_slice, &td, NULL,
-                          FFMIN(outh, ff_filter_get_nb_threads(ctx)));
+
+        ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(outh, ff_filter_get_nb_threads(ctx)));
     }
 
     av_frame_free(&in);
@@ -585,6 +590,7 @@ static const AVFilterPad rotate_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad rotate_outputs[] = {
@@ -593,9 +599,10 @@ static const AVFilterPad rotate_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_rotate = {
+AVFilter ff_vf_rotate = {
     .name          = "rotate",
     .description   = NULL_IF_CONFIG_SMALL("Rotate the input image."),
     .priv_size     = sizeof(RotContext),
@@ -603,8 +610,8 @@ const AVFilter ff_vf_rotate = {
     .uninit        = uninit,
     .query_formats = query_formats,
     .process_command = process_command,
-    FILTER_INPUTS(rotate_inputs),
-    FILTER_OUTPUTS(rotate_outputs),
+    .inputs        = rotate_inputs,
+    .outputs       = rotate_outputs,
     .priv_class    = &rotate_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };
