@@ -27,7 +27,6 @@ extern const URLProtocol ff_async_protocol;
 extern const URLProtocol ff_bluray_protocol;
 extern const URLProtocol ff_cache_protocol;
 extern const URLProtocol ff_concat_protocol;
-extern const URLProtocol ff_concatf_protocol;
 extern const URLProtocol ff_crypto_protocol;
 extern const URLProtocol ff_data_protocol;
 extern const URLProtocol ff_ffrtmpcrypt_protocol;
@@ -35,7 +34,6 @@ extern const URLProtocol ff_ffrtmphttp_protocol;
 extern const URLProtocol ff_file_protocol;
 extern const URLProtocol ff_ftp_protocol;
 extern const URLProtocol ff_gopher_protocol;
-extern const URLProtocol ff_gophers_protocol;
 extern const URLProtocol ff_hls_protocol;
 extern const URLProtocol ff_http_protocol;
 extern const URLProtocol ff_httpproxy_protocol;
@@ -63,7 +61,6 @@ extern const URLProtocol ff_udp_protocol;
 extern const URLProtocol ff_udplite_protocol;
 extern const URLProtocol ff_unix_protocol;
 extern const URLProtocol ff_libamqp_protocol;
-extern const URLProtocol ff_librist_protocol;
 extern const URLProtocol ff_librtmp_protocol;
 extern const URLProtocol ff_librtmpe_protocol;
 extern const URLProtocol ff_librtmps_protocol;
@@ -76,26 +73,31 @@ extern const URLProtocol ff_libzmq_protocol;
 
 #include "libavformat/protocol_list.c"
 
-const AVClass *ff_urlcontext_child_class_iterate(void **iter)
+const AVClass *ff_urlcontext_child_class_next(const AVClass *prev)
 {
-    const AVClass *ret = NULL;
-    uintptr_t i;
+    int i;
 
-    for (i = (uintptr_t)*iter; url_protocols[i]; i++) {
-        ret = url_protocols[i]->priv_data_class;
-        if (ret)
+    /* find the protocol that corresponds to prev */
+    for (i = 0; prev && url_protocols[i]; i++) {
+        if (url_protocols[i]->priv_data_class == prev) {
+            i++;
             break;
+        }
     }
 
-    *iter = (void*)(uintptr_t)(url_protocols[i] ? i + 1 : i);
-    return ret;
+    /* find next protocol with priv options */
+    for (; url_protocols[i]; i++)
+        if (url_protocols[i]->priv_data_class)
+            return url_protocols[i]->priv_data_class;
+    return NULL;
 }
+
 
 const char *avio_enum_protocols(void **opaque, int output)
 {
-    const URLProtocol **p = *opaque;
+    URLProtocol **p = *opaque;
 
-    p = p ? p + 1 : url_protocols;
+    p = p ? p + 1 : (URLProtocol **)url_protocols;
     *opaque = p;
     if (!*p) {
         *opaque = NULL;

@@ -134,7 +134,7 @@ static int query_formats(AVFilterContext *ctx)
     int ret;
 
     AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if ((ret = ff_formats_ref(fmts_list, &outlink->incfg.formats)) < 0)
+    if ((ret = ff_formats_ref(fmts_list, &outlink->in_formats)) < 0)
         return ret;
 
     return 0;
@@ -458,6 +458,7 @@ static const AVFilterPad drawgraph_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad drawgraph_outputs[] = {
@@ -467,9 +468,10 @@ static const AVFilterPad drawgraph_outputs[] = {
         .config_props = config_output,
         .request_frame = request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_drawgraph = {
+AVFilter ff_vf_drawgraph = {
     .name          = "drawgraph",
     .description   = NULL_IF_CONFIG_SMALL("Draw a graph using input video metadata."),
     .priv_size     = sizeof(DrawGraphContext),
@@ -477,8 +479,8 @@ const AVFilter ff_vf_drawgraph = {
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    FILTER_INPUTS(drawgraph_inputs),
-    FILTER_OUTPUTS(drawgraph_outputs),
+    .inputs        = drawgraph_inputs,
+    .outputs       = drawgraph_outputs,
 };
 
 #endif // CONFIG_DRAWGRAPH_FILTER
@@ -494,6 +496,7 @@ static const AVFilterPad adrawgraph_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad adrawgraph_outputs[] = {
@@ -503,9 +506,10 @@ static const AVFilterPad adrawgraph_outputs[] = {
         .config_props = config_output,
         .request_frame = request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_avf_adrawgraph = {
+AVFilter ff_avf_adrawgraph = {
     .name          = "adrawgraph",
     .description   = NULL_IF_CONFIG_SMALL("Draw a graph using input audio metadata."),
     .priv_size     = sizeof(DrawGraphContext),
@@ -513,7 +517,7 @@ const AVFilter ff_avf_adrawgraph = {
     .query_formats = query_formats,
     .init          = init,
     .uninit        = uninit,
-    FILTER_INPUTS(adrawgraph_inputs),
-    FILTER_OUTPUTS(adrawgraph_outputs),
+    .inputs        = adrawgraph_inputs,
+    .outputs       = adrawgraph_outputs,
 };
 #endif // CONFIG_ADRAWGRAPH_FILTER
