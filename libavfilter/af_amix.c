@@ -771,6 +771,27 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     MixContext *s = ctx->priv;
     int ret;
 
+    if (!strcmp(cmd, "dump")) {
+        int pos = 0;
+        int ret, i;
+
+        for (i = 0; i < s->nb_inputs; i++) {
+            AVFilterLink *link = ctx->inputs[i];
+
+            ret = snprintf(res + pos, res_len - pos, "%d(%u,%d) ",
+                           i, s->input_state ? s->input_state[i] : 0,
+                           s->fifos ? av_audio_fifo_size(s->fifos[i]) : 0);
+            if (ret < 0)
+                return ret;
+
+            pos += ret;
+            if (pos >= res_len)
+                break;
+        }
+
+        return 0;
+    }
+
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     if (ret < 0)
         return ret;
