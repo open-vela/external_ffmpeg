@@ -163,6 +163,7 @@ static const AVFilterPad dejudder_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad dejudder_outputs[] = {
@@ -171,15 +172,16 @@ static const AVFilterPad dejudder_outputs[] = {
         .type = AVMEDIA_TYPE_VIDEO,
         .config_props = config_out_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_dejudder = {
+AVFilter ff_vf_dejudder = {
     .name        = "dejudder",
     .description = NULL_IF_CONFIG_SMALL("Remove judder produced by pullup."),
     .priv_size   = sizeof(DejudderContext),
     .priv_class  = &dejudder_class,
-    FILTER_INPUTS(dejudder_inputs),
-    FILTER_OUTPUTS(dejudder_outputs),
+    .inputs      = dejudder_inputs,
+    .outputs     = dejudder_outputs,
     .init        = dejudder_init,
     .uninit      = dejudder_uninit,
 };

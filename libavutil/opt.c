@@ -1245,7 +1245,6 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
         av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_READONLY)       ? 'R' : '.');
         av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_BSF_PARAM)      ? 'B' : '.');
         av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_RUNTIME_PARAM)  ? 'T' : '.');
-        av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_DEPRECATED)     ? 'P' : '.');
 
         if (opt->help)
             av_log(av_log_obj, AV_LOG_INFO, " %s", opt->help);
@@ -1680,9 +1679,8 @@ const AVOption *av_opt_find2(void *obj, const char *name, const char *unit,
 
     if (search_flags & AV_OPT_SEARCH_CHILDREN) {
         if (search_flags & AV_OPT_SEARCH_FAKE_OBJ) {
-            void *iter = NULL;
-            const AVClass *child;
-            while (child = av_opt_child_class_iterate(c, &iter))
+            const AVClass *child = NULL;
+            while (child = av_opt_child_class_next(c, child))
                 if (o = av_opt_find2(&child, name, unit, opt_flags, search_flags, NULL))
                     return o;
         } else {
@@ -1717,10 +1715,10 @@ void *av_opt_child_next(void *obj, void *prev)
     return NULL;
 }
 
-const AVClass *av_opt_child_class_iterate(const AVClass *parent, void **iter)
+const AVClass *av_opt_child_class_next(const AVClass *parent, const AVClass *prev)
 {
-    if (parent->child_class_iterate)
-        return parent->child_class_iterate(iter);
+    if (parent->child_class_next)
+        return parent->child_class_next(prev);
     return NULL;
 }
 
@@ -1807,13 +1805,12 @@ int av_opt_copy(void *dst, const void *src)
         } else if (o->type == AV_OPT_TYPE_DICT) {
             AVDictionary **sdict = (AVDictionary **) field_src;
             AVDictionary **ddict = (AVDictionary **) field_dst;
-            int ret2;
             if (*sdict != *ddict)
                 av_dict_free(ddict);
             *ddict = NULL;
-            ret2 = av_dict_copy(ddict, *sdict, 0);
-            if (ret2 < 0)
-                ret = ret2;
+            av_dict_copy(ddict, *sdict, 0);
+            if (av_dict_count(*sdict) != av_dict_count(*ddict))
+                ret = AVERROR(ENOMEM);
         } else {
             int size = opt_size(o->type);
             if (size < 0)
@@ -2103,8 +2100,6 @@ int av_opt_serialize(void *obj, int opt_flags, int flags, char **buffer,
             av_freep(&buf);
         }
     }
-    ret = av_bprint_finalize(&bprint, buffer);
-    if (ret < 0)
-        return ret;
+    av_bprint_finalize(&bprint, buffer);
     return 0;
 }

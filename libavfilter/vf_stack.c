@@ -60,21 +60,24 @@ typedef struct StackContext {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats = NULL;
+    AVFilterFormats *pix_fmts = NULL;
     StackContext *s = ctx->priv;
-    int ret;
+    int fmt, ret;
 
     if (s->fillcolor_enable) {
         return ff_set_common_formats(ctx, ff_draw_supported_pixel_formats(0));
     }
 
-    ret = ff_formats_pixdesc_filter(&formats, 0,
-                                    AV_PIX_FMT_FLAG_HWACCEL |
-                                    AV_PIX_FMT_FLAG_BITSTREAM |
-                                    AV_PIX_FMT_FLAG_PAL);
-    if (ret < 0)
-        return ret;
-    return ff_set_common_formats(ctx, formats);
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+        if (!(desc->flags & AV_PIX_FMT_FLAG_PAL ||
+              desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
+              desc->flags & AV_PIX_FMT_FLAG_BITSTREAM) &&
+            (ret = ff_add_format(&pix_fmts, fmt)) < 0)
+            return ret;
+    }
+
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -123,8 +126,10 @@ static av_cold int init(AVFilterContext *ctx)
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        if ((ret = ff_append_inpad_free_name(ctx, &pad)) < 0)
+        if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0) {
+            av_freep(&pad.name);
             return ret;
+        }
     }
 
     return 0;
@@ -177,8 +182,7 @@ static int process_frame(FFFrameSync *fs)
         ff_fill_rectangle(&s->draw, &s->color, out->data, out->linesize,
                           0, 0, outlink->w, outlink->h);
 
-    ff_filter_execute(ctx, process_slice, out, NULL,
-                      FFMIN(s->nb_inputs, ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, process_slice, out, NULL, FFMIN(s->nb_inputs, ff_filter_get_nb_threads(ctx)));
 
     return ff_filter_frame(outlink, out);
 }
@@ -370,10 +374,14 @@ static int config_output(AVFilterLink *outlink)
 static av_cold void uninit(AVFilterContext *ctx)
 {
     StackContext *s = ctx->priv;
+    int i;
 
     ff_framesync_uninit(&s->fs);
     av_freep(&s->frames);
     av_freep(&s->items);
+
+    for (i = 0; i < ctx->nb_inputs; i++)
+        av_freep(&ctx->input_pads[i].name);
 }
 
 static int activate(AVFilterContext *ctx)
@@ -396,6 +404,7 @@ static const AVFilterPad outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
 #if CONFIG_HSTACK_FILTER
@@ -403,13 +412,13 @@ static const AVFilterPad outputs[] = {
 #define hstack_options stack_options
 AVFILTER_DEFINE_CLASS(hstack);
 
-const AVFilter ff_vf_hstack = {
+AVFilter ff_vf_hstack = {
     .name          = "hstack",
     .description   = NULL_IF_CONFIG_SMALL("Stack video inputs horizontally."),
     .priv_size     = sizeof(StackContext),
     .priv_class    = &hstack_class,
     .query_formats = query_formats,
-    FILTER_OUTPUTS(outputs),
+    .outputs       = outputs,
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
@@ -423,13 +432,13 @@ const AVFilter ff_vf_hstack = {
 #define vstack_options stack_options
 AVFILTER_DEFINE_CLASS(vstack);
 
-const AVFilter ff_vf_vstack = {
+AVFilter ff_vf_vstack = {
     .name          = "vstack",
     .description   = NULL_IF_CONFIG_SMALL("Stack video inputs vertically."),
     .priv_size     = sizeof(StackContext),
     .priv_class    = &vstack_class,
     .query_formats = query_formats,
-    FILTER_OUTPUTS(outputs),
+    .outputs       = outputs,
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
@@ -450,13 +459,13 @@ static const AVOption xstack_options[] = {
 
 AVFILTER_DEFINE_CLASS(xstack);
 
-const AVFilter ff_vf_xstack = {
+AVFilter ff_vf_xstack = {
     .name          = "xstack",
     .description   = NULL_IF_CONFIG_SMALL("Stack video inputs into custom layout."),
     .priv_size     = sizeof(StackContext),
     .priv_class    = &xstack_class,
     .query_formats = query_formats,
-    FILTER_OUTPUTS(outputs),
+    .outputs       = outputs,
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
