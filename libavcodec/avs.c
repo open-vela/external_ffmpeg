@@ -176,7 +176,7 @@ static av_cold int avs_decode_end(AVCodecContext *avctx)
 }
 
 
-const AVCodec ff_avs_decoder = {
+AVCodec ff_avs_decoder = {
     .name           = "avs",
     .long_name      = NULL_IF_CONFIG_SMALL("AVS (Audio Video Standard) video"),
     .type           = AVMEDIA_TYPE_VIDEO,

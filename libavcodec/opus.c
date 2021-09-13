@@ -26,7 +26,6 @@
 
 #include <stdint.h>
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/error.h"
 #include "libavutil/ffmath.h"
 
