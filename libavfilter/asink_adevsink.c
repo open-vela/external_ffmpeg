@@ -407,6 +407,11 @@ static int adevsink_process_command(AVFilterContext *ctx,
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_POLL_AVAILABLE,
                                     res, res_len);
+    } else if (!strcmp(cmd, "dump")) {
+        return avdevice_app_to_dev_control_message(
+                priv->fmt_ctx,
+                AV_APP_TO_DEV_DUMP,
+                res, res_len);
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
