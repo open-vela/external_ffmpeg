@@ -153,7 +153,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -413,9 +416,10 @@ static const AVFilterPad mandelbrot_outputs[] = {
         .request_frame = request_frame,
         .config_props  = config_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_vsrc_mandelbrot = {
+AVFilter ff_vsrc_mandelbrot = {
     .name          = "mandelbrot",
     .description   = NULL_IF_CONFIG_SMALL("Render a Mandelbrot fractal."),
     .priv_size     = sizeof(MBContext),
@@ -424,5 +428,5 @@ const AVFilter ff_vsrc_mandelbrot = {
     .uninit        = uninit,
     .query_formats = query_formats,
     .inputs        = NULL,
-    FILTER_OUTPUTS(mandelbrot_outputs),
+    .outputs       = mandelbrot_outputs,
 };

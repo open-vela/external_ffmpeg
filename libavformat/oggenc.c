@@ -91,11 +91,12 @@ static const AVOption options[] = {
     { NULL },
 };
 
-static const AVClass ogg_muxer_class = {
-    .class_name = "Ogg (audio/video/Speex/Opus) muxer",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
+#define OGG_CLASS(flavor, name)\
+static const AVClass flavor ## _muxer_class = {\
+    .class_name = #name " muxer",\
+    .item_name  = av_default_item_name,\
+    .option     = options,\
+    .version    = LIBAVUTIL_VERSION_INT,\
 };
 
 static void ogg_write_page(AVFormatContext *s, OGGPage *page, int extra_flags)
@@ -275,7 +276,7 @@ static uint8_t *ogg_write_vorbiscomment(int64_t offset, int bitexact,
                                         AVChapter **chapters, unsigned int nb_chapters)
 {
     const char *vendor = bitexact ? "ffmpeg" : LIBAVFORMAT_IDENT;
-    FFIOContext pb;
+    AVIOContext pb;
     int64_t size;
     uint8_t *p;
 
@@ -289,9 +290,9 @@ static uint8_t *ogg_write_vorbiscomment(int64_t offset, int bitexact,
         return NULL;
 
     ffio_init_context(&pb, p + offset, size - offset, 1, NULL, NULL, NULL, NULL);
-    ff_vorbiscomment_write(&pb.pub, *m, vendor, chapters, nb_chapters);
+    ff_vorbiscomment_write(&pb, *m, vendor, chapters, nb_chapters);
     if (framing_bit)
-        avio_w8(&pb.pub, 1);
+        avio_w8(&pb, 1);
 
     *header_len = size;
     return p;
@@ -743,7 +744,8 @@ static void ogg_free(AVFormatContext *s)
 }
 
 #if CONFIG_OGG_MUXER
-const AVOutputFormat ff_ogg_muxer = {
+OGG_CLASS(ogg, Ogg)
+AVOutputFormat ff_ogg_muxer = {
     .name              = "ogg",
     .long_name         = NULL_IF_CONFIG_SMALL("Ogg"),
     .mime_type         = "application/ogg",
@@ -773,7 +775,8 @@ const AVOutputFormat ff_ogg_muxer = {
 #endif
 
 #if CONFIG_OGA_MUXER
-const AVOutputFormat ff_oga_muxer = {
+OGG_CLASS(oga, Ogg audio)
+AVOutputFormat ff_oga_muxer = {
     .name              = "oga",
     .long_name         = NULL_IF_CONFIG_SMALL("Ogg Audio"),
     .mime_type         = "audio/ogg",
@@ -786,12 +789,13 @@ const AVOutputFormat ff_oga_muxer = {
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
     .flags             = AVFMT_TS_NEGATIVE | AVFMT_ALLOW_FLUSH,
-    .priv_class        = &ogg_muxer_class,
+    .priv_class        = &oga_muxer_class,
 };
 #endif
 
 #if CONFIG_OGV_MUXER
-const AVOutputFormat ff_ogv_muxer = {
+OGG_CLASS(ogv, Ogg video)
+AVOutputFormat ff_ogv_muxer = {
     .name              = "ogv",
     .long_name         = NULL_IF_CONFIG_SMALL("Ogg Video"),
     .mime_type         = "video/ogg",
@@ -807,12 +811,13 @@ const AVOutputFormat ff_ogv_muxer = {
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
     .flags             = AVFMT_TS_NEGATIVE | AVFMT_TS_NONSTRICT | AVFMT_ALLOW_FLUSH,
-    .priv_class        = &ogg_muxer_class,
+    .priv_class        = &ogv_muxer_class,
 };
 #endif
 
 #if CONFIG_SPX_MUXER
-const AVOutputFormat ff_spx_muxer = {
+OGG_CLASS(spx, Ogg Speex)
+AVOutputFormat ff_spx_muxer = {
     .name              = "spx",
     .long_name         = NULL_IF_CONFIG_SMALL("Ogg Speex"),
     .mime_type         = "audio/ogg",
@@ -825,12 +830,13 @@ const AVOutputFormat ff_spx_muxer = {
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
     .flags             = AVFMT_TS_NEGATIVE | AVFMT_ALLOW_FLUSH,
-    .priv_class        = &ogg_muxer_class,
+    .priv_class        = &spx_muxer_class,
 };
 #endif
 
 #if CONFIG_OPUS_MUXER
-const AVOutputFormat ff_opus_muxer = {
+OGG_CLASS(opus, Ogg Opus)
+AVOutputFormat ff_opus_muxer = {
     .name              = "opus",
     .long_name         = NULL_IF_CONFIG_SMALL("Ogg Opus"),
     .mime_type         = "audio/ogg",
@@ -843,6 +849,6 @@ const AVOutputFormat ff_opus_muxer = {
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
     .flags             = AVFMT_TS_NEGATIVE | AVFMT_ALLOW_FLUSH,
-    .priv_class        = &ogg_muxer_class,
+    .priv_class        = &opus_muxer_class,
 };
 #endif

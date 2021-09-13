@@ -30,7 +30,6 @@
 
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
 #include "internal.h"
@@ -309,7 +308,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
         AV_PIX_FMT_NONE
     };
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -351,6 +353,7 @@ static const AVFilterPad owdenoise_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad owdenoise_outputs[] = {
@@ -358,16 +361,17 @@ static const AVFilterPad owdenoise_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_owdenoise = {
+AVFilter ff_vf_owdenoise = {
     .name          = "owdenoise",
     .description   = NULL_IF_CONFIG_SMALL("Denoise using wavelets."),
     .priv_size     = sizeof(OWDenoiseContext),
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(owdenoise_inputs),
-    FILTER_OUTPUTS(owdenoise_outputs),
+    .inputs        = owdenoise_inputs,
+    .outputs       = owdenoise_outputs,
     .priv_class    = &owdenoise_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

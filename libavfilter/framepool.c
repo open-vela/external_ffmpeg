@@ -48,7 +48,7 @@ struct FFFramePool {
 
 };
 
-FFFramePool *ff_frame_pool_video_init(AVBufferRef* (*alloc)(size_t size),
+FFFramePool *ff_frame_pool_video_init(AVBufferRef* (*alloc)(int size),
                                       int width,
                                       int height,
                                       enum AVPixelFormat format,
@@ -102,7 +102,8 @@ FFFramePool *ff_frame_pool_video_init(AVBufferRef* (*alloc)(size_t size),
             goto fail;
     }
 
-    if (desc->flags & AV_PIX_FMT_FLAG_PAL) {
+    if (desc->flags & AV_PIX_FMT_FLAG_PAL ||
+        desc->flags & FF_PSEUDOPAL) {
         pool->pools[1] = av_buffer_pool_init(AVPALETTE_SIZE, alloc);
         if (!pool->pools[1])
             goto fail;
@@ -115,7 +116,7 @@ fail:
     return NULL;
 }
 
-FFFramePool *ff_frame_pool_audio_init(AVBufferRef* (*alloc)(size_t size),
+FFFramePool *ff_frame_pool_audio_init(AVBufferRef* (*alloc)(int size),
                                       int channels,
                                       int nb_samples,
                                       enum AVSampleFormat format,
@@ -225,7 +226,8 @@ AVFrame *ff_frame_pool_get(FFFramePool *pool)
             frame->data[i] = frame->buf[i]->data;
         }
 
-        if (desc->flags & AV_PIX_FMT_FLAG_PAL) {
+        if (desc->flags & AV_PIX_FMT_FLAG_PAL ||
+            desc->flags & FF_PSEUDOPAL) {
             enum AVPixelFormat format =
                 pool->format == AV_PIX_FMT_PAL8 ? AV_PIX_FMT_BGR8 : pool->format;
 
