@@ -1,6 +1,6 @@
 /*
  * Chromaprint fingerprinting muxer
- * Copyright (c) 2015 rcombs
+ * Copyright (c) 2015 Rodger Combs
  *
  * This file is part of FFmpeg.
  *
@@ -179,7 +179,7 @@ static const AVClass chromaprint_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVOutputFormat ff_chromaprint_muxer = {
+AVOutputFormat ff_chromaprint_muxer = {
     .name              = "chromaprint",
     .long_name         = NULL_IF_CONFIG_SMALL("Chromaprint"),
     .priv_data_size    = sizeof(ChromaprintMuxContext),

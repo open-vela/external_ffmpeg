@@ -995,6 +995,9 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterChannelLayouts *layouts = NULL;
+    AVFilterFormats        *formats = NULL;
+
     // WSOLA necessitates an internal sliding window ring buffer
     // for incoming audio stream.
     //
@@ -1009,15 +1012,29 @@ static int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_DBL,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts) {
+        return AVERROR(ENOMEM);
+    }
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats) {
+        return AVERROR(ENOMEM);
+    }
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats) {
+        return AVERROR(ENOMEM);
+    }
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -1173,6 +1190,7 @@ static const AVFilterPad atempo_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad atempo_outputs[] = {
@@ -1181,9 +1199,10 @@ static const AVFilterPad atempo_outputs[] = {
         .request_frame = request_frame,
         .type          = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_atempo = {
+AVFilter ff_af_atempo = {
     .name            = "atempo",
     .description     = NULL_IF_CONFIG_SMALL("Adjust audio tempo."),
     .init            = init,
@@ -1192,6 +1211,6 @@ const AVFilter ff_af_atempo = {
     .process_command = process_command,
     .priv_size       = sizeof(ATempoContext),
     .priv_class      = &atempo_class,
-    FILTER_INPUTS(atempo_inputs),
-    FILTER_OUTPUTS(atempo_outputs),
+    .inputs          = atempo_inputs,
+    .outputs         = atempo_outputs,
 };

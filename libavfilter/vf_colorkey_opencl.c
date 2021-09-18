@@ -206,6 +206,7 @@ static const AVFilterPad colorkey_opencl_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = &ff_opencl_filter_config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad colorkey_opencl_outputs[] = {
@@ -214,6 +215,7 @@ static const AVFilterPad colorkey_opencl_outputs[] = {
         .type = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_opencl_filter_config_output,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(ColorkeyOpenCLContext, x)
@@ -228,7 +230,7 @@ static const AVOption colorkey_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(colorkey_opencl);
 
-const AVFilter ff_vf_colorkey_opencl = {
+AVFilter ff_vf_colorkey_opencl = {
     .name           = "colorkey_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Turns a certain color into transparency. Operates on RGB colors."),
     .priv_size      = sizeof(ColorkeyOpenCLContext),
@@ -236,7 +238,7 @@ const AVFilter ff_vf_colorkey_opencl = {
     .init           = &ff_opencl_filter_init,
     .uninit         = &colorkey_opencl_uninit,
     .query_formats  = &ff_opencl_filter_query_formats,
-    FILTER_INPUTS(colorkey_opencl_inputs),
-    FILTER_OUTPUTS(colorkey_opencl_outputs),
+    .inputs         = colorkey_opencl_inputs,
+    .outputs        = colorkey_opencl_outputs,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE
 };
