@@ -23,7 +23,6 @@
 #include "audio.h"
 #include "filters.h"
 #include "formats.h"
-#include "framesync.h"
 #include "internal.h"
 #include "video.h"
 
@@ -34,65 +33,80 @@ typedef struct StreamSelectContext {
     int *map;
     int nb_map;
     int is_audio;
-    int64_t *last_pts;
-    AVFrame **frames;
-    FFFrameSync fs;
 } StreamSelectContext;
 
 #define OFFSET(x) offsetof(StreamSelectContext, x)
 #define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
 #define TFLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption streamselect_options[] = {
-    { "inputs",  "number of input streams",           OFFSET(nb_inputs),  AV_OPT_TYPE_INT,    {.i64=2},    2, INT_MAX,  .flags=FLAGS },
+    { "inputs",  "number of input streams",           OFFSET(nb_inputs),  AV_OPT_TYPE_INT,    {.i64=1},    1, INT_MAX,  .flags=FLAGS },
     { "map",     "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},              .flags=TFLAGS },
     { NULL }
 };
 
-AVFILTER_DEFINE_CLASS_EXT(streamselect, "(a)streamselect", streamselect_options);
-
-static int process_frame(FFFrameSync *fs)
-{
-    AVFilterContext *ctx = fs->parent;
-    StreamSelectContext *s = fs->opaque;
-    AVFrame **in = s->frames;
-    int i, j, ret = 0, have_out = 0;
-
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        if ((ret = ff_framesync_get_frame(&s->fs, i, &in[i], 0)) < 0)
-            return ret;
-    }
-
-    for (j = 0; j < ctx->nb_inputs; j++) {
-        for (i = 0; i < s->nb_map; i++) {
-            if (s->map[i] == j) {
-                AVFrame *out;
-
-                if (s->is_audio && s->last_pts[j] == in[j]->pts &&
-                    ctx->outputs[i]->frame_count_in > 0)
-                    continue;
-                out = av_frame_clone(in[j]);
-                if (!out)
-                    return AVERROR(ENOMEM);
-
-                out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, ctx->outputs[i]->time_base);
-                s->last_pts[j] = in[j]->pts;
-                ret = ff_filter_frame(ctx->outputs[i], out);
-                have_out = 1;
-                if (ret < 0)
-                    return ret;
-            }
-        }
-    }
-
-    if (!have_out)
-        ff_filter_set_ready(ctx, 100);
-    return ret;
-}
+AVFILTER_DEFINE_CLASS(streamselect);
 
 static int activate(AVFilterContext *ctx)
 {
     StreamSelectContext *s = ctx->priv;
-    return ff_framesync_activate(&s->fs);
+    int i, j, ret;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        AVFrame *frame = NULL;
+        bool request = true;
+        bool eof = true;
+        int64_t rpts;
+        int status;
+
+        ff_inlink_acknowledge_status(ctx->inputs[i], &status, &rpts);
+        if (!status) {
+            ret = ff_inlink_consume_frame(ctx->inputs[i], &frame);
+            if (ret < 0)
+                return ret;
+        }
+
+        for (j = 0; j < s->nb_map; j++) {
+            if (ff_outlink_get_status(ctx->outputs[j]))
+                continue;
+
+            if (s->map[j] < 0)
+                ff_outlink_set_status(ctx->outputs[j], AVERROR_EOF, AV_NOPTS_VALUE);
+            else if (s->map[j] == i) {
+                if (status) {
+                    ff_outlink_set_status(ctx->outputs[j], AVERROR_EOF, AV_NOPTS_VALUE);
+                } else if (frame) {
+                    AVFrame *out = av_frame_clone(frame);
+
+                    if (!out) {
+                        av_frame_free(&frame);
+                        return AVERROR(ENOMEM);
+                    }
+
+                    ret = ff_filter_frame(ctx->outputs[j], out);
+                    if (ret < 0) {
+                        av_frame_free(&out);
+                        av_frame_free(&frame);
+                        return ret;
+                    }
+                } else if (!ff_outlink_frame_wanted(ctx->outputs[j])) {
+                    request = false;
+                }
+
+                eof = false;
+            }
+        }
+
+        if (!status) {
+            if (eof)
+                ff_inlink_set_status(ctx->inputs[i], AVERROR_EOF);
+            else if (!frame && request)
+                ff_inlink_request_frame(ctx->inputs[i]);
+        }
+
+        av_frame_free(&frame);
+    }
+
+    return 0;
 }
 
 static int config_output(AVFilterLink *outlink)
@@ -102,52 +116,15 @@ static int config_output(AVFilterLink *outlink)
     const int outlink_idx = FF_OUTLINK_IDX(outlink);
     const int inlink_idx  = s->map[outlink_idx];
     AVFilterLink *inlink = ctx->inputs[inlink_idx];
-    FFFrameSyncIn *in;
-    int i, ret;
 
-    av_log(ctx, AV_LOG_VERBOSE, "config output link %d "
-           "with settings from input link %d\n",
-           outlink_idx, inlink_idx);
-
-    switch (outlink->type) {
-    case AVMEDIA_TYPE_VIDEO:
+    if (outlink->type == AVMEDIA_TYPE_VIDEO) {
         outlink->w = inlink->w;
         outlink->h = inlink->h;
         outlink->sample_aspect_ratio = inlink->sample_aspect_ratio;
         outlink->frame_rate = inlink->frame_rate;
-        break;
-    case AVMEDIA_TYPE_AUDIO:
-        outlink->sample_rate    = inlink->sample_rate;
-        outlink->channels       = inlink->channels;
-        outlink->channel_layout = inlink->channel_layout;
-        break;
     }
 
-    outlink->time_base = inlink->time_base;
-    outlink->format = inlink->format;
-
-    if (s->fs.opaque == s)
-        return 0;
-
-    if ((ret = ff_framesync_init(&s->fs, ctx, ctx->nb_inputs)) < 0)
-        return ret;
-
-    in = s->fs.in;
-    s->fs.opaque = s;
-    s->fs.on_event = process_frame;
-
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        in[i].time_base = ctx->inputs[i]->time_base;
-        in[i].sync      = 1;
-        in[i].before    = EXT_STOP;
-        in[i].after     = EXT_STOP;
-    }
-
-    s->frames = av_calloc(ctx->nb_inputs, sizeof(*s->frames));
-    if (!s->frames)
-        return AVERROR(ENOMEM);
-
-    return ff_framesync_configure(&s->fs);
+    return 0;
 }
 
 static int parse_definition(AVFilterContext *ctx, int nb_pads, int is_input, int is_audio)
@@ -167,13 +144,16 @@ static int parse_definition(AVFilterContext *ctx, int nb_pads, int is_input, int
         av_log(ctx, AV_LOG_DEBUG, "Add %s pad %s\n", padtype, pad.name);
 
         if (is_input) {
-            ret = ff_append_inpad_free_name(ctx, &pad);
+            ret = ff_insert_inpad(ctx, i, &pad);
         } else {
             pad.config_props  = config_output;
-            ret = ff_append_outpad_free_name(ctx, &pad);
+            ret = ff_insert_outpad(ctx, i, &pad);
         }
-        if (ret < 0)
+
+        if (ret < 0) {
+            av_freep(&pad.name);
             return ret;
+        }
     }
 
     return 0;
@@ -190,7 +170,7 @@ static int parse_mapping(AVFilterContext *ctx, const char *map)
         return AVERROR(EINVAL);
     }
 
-    new_map = av_calloc(s->nb_inputs, sizeof(*new_map));
+    new_map = av_calloc(ctx->nb_outputs, sizeof(*new_map));
     if (!new_map)
         return AVERROR(ENOMEM);
 
@@ -204,14 +184,14 @@ static int parse_mapping(AVFilterContext *ctx, const char *map)
             break;
         map = p;
 
-        if (new_nb_map >= s->nb_inputs) {
+        if (new_nb_map >= ctx->nb_outputs) {
             av_log(ctx, AV_LOG_ERROR, "Unable to map more than the %d "
-                   "input pads available\n", s->nb_inputs);
+                   "output pads available\n", ctx->nb_outputs);
             av_free(new_map);
             return AVERROR(EINVAL);
         }
 
-        if (n < 0 || n >= ctx->nb_inputs) {
+        if (n >= ctx->nb_inputs) {
             av_log(ctx, AV_LOG_ERROR, "Input stream index %d doesn't exist "
                    "(there is only %d input streams defined)\n",
                    n, s->nb_inputs);
@@ -270,10 +250,6 @@ static av_cold int init(AVFilterContext *ctx)
         map = p;
     }
 
-    s->last_pts = av_calloc(s->nb_inputs, sizeof(*s->last_pts));
-    if (!s->last_pts)
-        return AVERROR(ENOMEM);
-
     if ((ret = parse_definition(ctx, s->nb_inputs, 1, s->is_audio)) < 0 ||
         (ret = parse_definition(ctx, nb_outputs, 0, s->is_audio)) < 0)
         return ret;
@@ -288,16 +264,50 @@ static av_cold void uninit(AVFilterContext *ctx)
 {
     StreamSelectContext *s = ctx->priv;
 
-    av_freep(&s->last_pts);
     av_freep(&s->map);
-    av_freep(&s->frames);
-    ff_framesync_uninit(&s->fs);
+
+    for (int i = 0; i < ctx->nb_inputs; i++)
+        av_freep(&ctx->input_pads[i].name);
+
+    for (int i = 0; i < ctx->nb_outputs; i++)
+        av_freep(&ctx->output_pads[i].name);
 }
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterFormats *formats;
+    AVFilterFormats *formats = NULL, *rates = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
     int ret, i;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        int64_t rpts;
+        int status;
+
+        ff_inlink_acknowledge_status(ctx->inputs[i], &status, &rpts);
+
+        if (status == 0) {
+            if ((ret = ff_add_format(&formats, ctx->inputs[i]->format)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+                return ret;
+
+            if ((ret = ff_add_channel_layout(&layouts, ctx->inputs[i]->channel_layout)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
+                return ret;
+
+            formats = NULL;
+            if ((ret = ff_add_format(&formats, ctx->inputs[i]->sample_rate)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+                return ret;
+
+            return 0;
+        }
+    }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         formats = ff_all_formats(ctx->inputs[i]->type);
@@ -305,8 +315,11 @@ static int query_formats(AVFilterContext *ctx)
             return ret;
 
         if (ctx->inputs[i]->type == AVMEDIA_TYPE_AUDIO) {
-            if ((ret = ff_set_common_all_samplerates   (ctx)) < 0 ||
-                (ret = ff_set_common_all_channel_counts(ctx)) < 0)
+            rates = ff_all_samplerates();
+            if ((ret = ff_set_common_samplerates(ctx, rates)) < 0)
+                return ret;
+            layouts = ff_all_channel_counts();
+            if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
                 return ret;
         }
     }
@@ -314,7 +327,7 @@ static int query_formats(AVFilterContext *ctx)
     return 0;
 }
 
-const AVFilter ff_vf_streamselect = {
+AVFilter ff_vf_streamselect = {
     .name            = "streamselect",
     .description     = NULL_IF_CONFIG_SMALL("Select video streams"),
     .init            = init,
@@ -327,15 +340,18 @@ const AVFilter ff_vf_streamselect = {
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
 
-const AVFilter ff_af_astreamselect = {
+#define astreamselect_options streamselect_options
+AVFILTER_DEFINE_CLASS(astreamselect);
+
+AVFilter ff_af_astreamselect = {
     .name            = "astreamselect",
     .description     = NULL_IF_CONFIG_SMALL("Select audio streams"),
-    .priv_class      = &streamselect_class,
     .init            = init,
     .query_formats   = query_formats,
     .process_command = process_command,
     .uninit          = uninit,
     .activate        = activate,
     .priv_size       = sizeof(StreamSelectContext),
+    .priv_class      = &astreamselect_class,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };

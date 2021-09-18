@@ -149,7 +149,6 @@ static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
             break;
         } else if (marker == JPEG_MARKER_SOS) {
             next_marker = -1;
-            end = start;
             for (i = start; i + 1 < frag->data_size; i++) {
                 if (frag->data[i] != 0xff)
                     continue;
@@ -226,7 +225,7 @@ static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
             data_ref  = frag->data_ref;
         }
 
-        err = ff_cbs_insert_unit_data(frag, unit, marker,
+        err = ff_cbs_insert_unit_data(ctx, frag, unit, marker,
                                       data, data_size, data_ref);
         if (err < 0)
             return err;
@@ -252,7 +251,7 @@ static int cbs_jpeg_read_unit(CodedBitstreamContext *ctx,
 
     if (unit->type >= JPEG_MARKER_SOF0 &&
         unit->type <= JPEG_MARKER_SOF3) {
-        err = ff_cbs_alloc_unit_content(unit,
+        err = ff_cbs_alloc_unit_content(ctx, unit,
                                         sizeof(JPEGRawFrameHeader),
                                         NULL);
         if (err < 0)
@@ -264,7 +263,7 @@ static int cbs_jpeg_read_unit(CodedBitstreamContext *ctx,
 
     } else if (unit->type >= JPEG_MARKER_APPN &&
                unit->type <= JPEG_MARKER_APPN + 15) {
-        err = ff_cbs_alloc_unit_content(unit,
+        err = ff_cbs_alloc_unit_content(ctx, unit,
                                         sizeof(JPEGRawApplicationData),
                                         &cbs_jpeg_free_application_data);
         if (err < 0)
@@ -278,7 +277,7 @@ static int cbs_jpeg_read_unit(CodedBitstreamContext *ctx,
         JPEGRawScan *scan;
         int pos;
 
-        err = ff_cbs_alloc_unit_content(unit,
+        err = ff_cbs_alloc_unit_content(ctx, unit,
                                         sizeof(JPEGRawScan),
                                         &cbs_jpeg_free_scan);
         if (err < 0)
@@ -304,7 +303,7 @@ static int cbs_jpeg_read_unit(CodedBitstreamContext *ctx,
 #define SEGMENT(marker, type, func, free) \
         case JPEG_MARKER_ ## marker: \
             { \
-                err = ff_cbs_alloc_unit_content(unit, \
+                err = ff_cbs_alloc_unit_content(ctx, unit, \
                                                 sizeof(type), free); \
                 if (err < 0) \
                     return err; \

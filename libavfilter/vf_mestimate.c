@@ -20,6 +20,7 @@
 
 #include "motion_estimation.h"
 #include "libavcodec/mathops.h"
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
@@ -81,7 +82,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(ctx, pix_fmts);
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -96,11 +100,8 @@ static int config_input(AVFilterLink *inlink)
     s->b_height = inlink->h >> s->log2_mb_size;
     s->b_count = s->b_width * s->b_height;
 
-    if (s->b_count == 0)
-        return AVERROR(EINVAL);
-
     for (i = 0; i < 3; i++) {
-        s->mv_table[i] = av_calloc(s->b_count, sizeof(*s->mv_table[0]));
+        s->mv_table[i] = av_mallocz_array(s->b_count, sizeof(*s->mv_table[0]));
         if (!s->mv_table[i])
             return AVERROR(ENOMEM);
     }
@@ -353,6 +354,7 @@ static const AVFilterPad mestimate_inputs[] = {
         .filter_frame  = filter_frame,
         .config_props  = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad mestimate_outputs[] = {
@@ -360,15 +362,16 @@ static const AVFilterPad mestimate_outputs[] = {
         .name          = "default",
         .type          = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_mestimate = {
+AVFilter ff_vf_mestimate = {
     .name          = "mestimate",
     .description   = NULL_IF_CONFIG_SMALL("Generate motion vectors."),
     .priv_size     = sizeof(MEContext),
     .priv_class    = &mestimate_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-    FILTER_INPUTS(mestimate_inputs),
-    FILTER_OUTPUTS(mestimate_outputs),
+    .inputs        = mestimate_inputs,
+    .outputs       = mestimate_outputs,
 };
