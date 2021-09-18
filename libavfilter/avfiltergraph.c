@@ -1321,6 +1321,8 @@ static int graph_config_pointers(AVFilterGraph *graph,
         }
     }
     av_assert0(n == sink_links_count);
+
+    av_freep(&graph->sink_links);
     graph->sink_links       = sinks;
     graph->sink_links_count = sink_links_count;
     return 0;
