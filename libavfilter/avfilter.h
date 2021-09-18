@@ -115,6 +115,13 @@ enum AVMediaType avfilter_pad_get_type(const AVFilterPad *pads, int pad_idx);
  */
 #define AVFILTER_FLAG_SLICE_THREADS         (1 << 2)
 /**
+ * The filter supports multi pads format and some pads format are differently,
+ * e.g. src_movie.
+ * If no this flag, re-negotiation will copy the pad format(which status_in or
+ * status_out is 0) to all the other pads.
+ */
+#define AVFILTER_FLAG_MULTI_PADFORMATS      (1 << 3)
+/**
  * Some filters support a generic "enable" expression option that can be used
  * to enable or disable a filter in the timeline. Filters supporting this
  * option have this flag set. When the enable expression is false, the default
