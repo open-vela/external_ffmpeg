@@ -314,6 +314,83 @@ static void sanitize_channel_layouts(void *log, AVFilterChannelLayouts *l)
     }
 }
 
+static int filter_use_agreed_formats(AVFilterContext *ctx)
+{
+    AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
+    int64_t rpts;
+    int status;
+    int ret;
+    int i;
+
+    if (ctx->filter->flags & AVFILTER_FLAG_MULTI_PADFORMATS)
+        return AVERROR(ENOTSUP);
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+
+        ff_inlink_acknowledge_status(ctx->inputs[i], &status, &rpts);
+        if (status)
+            continue;
+
+        if ((ret = ff_add_format(&formats, ctx->inputs[i]->format)) < 0)
+            return ret;
+
+        if (ctx->inputs[i]->type == AVMEDIA_TYPE_AUDIO) {
+
+            if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+                return ret;
+
+            if ((ret = ff_add_channel_layout(&layouts, ctx->inputs[i]->channel_layout)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
+                return ret;
+
+            formats = NULL;
+            if ((ret = ff_add_format(&formats, ctx->inputs[i]->sample_rate)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+                return ret;
+        }
+
+        return 0;
+    }
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+
+        status = ff_outlink_get_status(ctx->outputs[i]);
+        if (status)
+            continue;
+
+        if ((ret = ff_add_format(&formats, ctx->outputs[i]->format)) < 0)
+            return ret;
+
+        if (ctx->inputs[i]->type == AVMEDIA_TYPE_AUDIO) {
+
+            if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+                return ret;
+
+            if ((ret = ff_add_channel_layout(&layouts, ctx->outputs[i]->channel_layout)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
+                return ret;
+
+            formats = NULL;
+            if ((ret = ff_add_format(&formats, ctx->outputs[i]->sample_rate)) < 0)
+                return ret;
+
+            if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+                return ret;
+        }
+
+        return 0;
+    }
+
+    return AVERROR(ENOTSUP);
+}
+
 static int filter_query_formats(AVFilterContext *ctx)
 {
     int ret, i;
@@ -324,11 +401,13 @@ static int filter_query_formats(AVFilterContext *ctx)
                             ctx->outputs && ctx->outputs[0] ? ctx->outputs[0]->type :
                             AVMEDIA_TYPE_VIDEO;
 
-    if ((ret = ctx->filter->query_formats(ctx)) < 0) {
-        if (ret != AVERROR(EAGAIN) && ret != FFERROR_NOT_READY)
-            av_log(ctx, AV_LOG_ERROR, "Query format failed for '%s': %s\n",
-                   ctx->name, av_err2str(ret));
-        return ret;
+    if (filter_use_agreed_formats(ctx) < 0) {
+        if ((ret = ctx->filter->query_formats(ctx)) < 0) {
+            if (ret != AVERROR(EAGAIN) && ret != FFERROR_NOT_READY)
+                av_log(ctx, AV_LOG_ERROR, "Query format failed for '%s': %s\n",
+                        ctx->name, av_err2str(ret));
+            return ret;
+        }
     }
 
     for (i = 0; i < ctx->nb_inputs; i++)
