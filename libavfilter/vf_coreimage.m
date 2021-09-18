@@ -142,7 +142,40 @@ static int query_formats(AVFilterContext *fctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats_from_list(fctx, inout_fmts_rgb);
+    AVFilterFormats *inout_formats;
+    int ret;
+
+    if (!(inout_formats = ff_make_format_list(inout_fmts_rgb))) {
+        return AVERROR(ENOMEM);
+    }
+
+    if ((ret = ff_formats_ref(inout_formats, &fctx->inputs[0]->out_formats)) < 0 ||
+        (ret = ff_formats_ref(inout_formats, &fctx->outputs[0]->in_formats)) < 0) {
+        return ret;
+    }
+
+    return 0;
+}
+
+static int query_formats_src(AVFilterContext *fctx)
+{
+    static const enum AVPixelFormat inout_fmts_rgb[] = {
+        AV_PIX_FMT_ARGB,
+        AV_PIX_FMT_NONE
+    };
+
+    AVFilterFormats *inout_formats;
+    int ret;
+
+    if (!(inout_formats = ff_make_format_list(inout_fmts_rgb))) {
+        return AVERROR(ENOMEM);
+    }
+
+    if ((ret = ff_formats_ref(inout_formats, &fctx->outputs[0]->in_formats)) < 0) {
+        return ret;
+    }
+
+    return 0;
 }
 
 static int apply_filter(CoreImageContext *ctx, AVFilterLink *link, AVFrame *frame)
@@ -461,7 +494,7 @@ static av_cold int init(AVFilterContext *fctx)
         av_log(ctx, AV_LOG_DEBUG, "Filter count: %i\n", ctx->num_filters);
 
         // allocate CIFilter array
-        ctx->filters = av_calloc(ctx->num_filters, sizeof(CIFilter*));
+        ctx->filters = av_mallocz_array(ctx->num_filters, sizeof(CIFilter*));
         if (!ctx->filters) {
             av_log(ctx, AV_LOG_ERROR, "Could not allocate filter array.\n");
             return AVERROR(ENOMEM);
@@ -575,6 +608,7 @@ static const AVFilterPad vf_coreimage_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad vf_coreimage_outputs[] = {
@@ -582,6 +616,7 @@ static const AVFilterPad vf_coreimage_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 static const AVFilterPad vsrc_coreimagesrc_outputs[] = {
@@ -591,6 +626,7 @@ static const AVFilterPad vsrc_coreimagesrc_outputs[] = {
         .request_frame = request_frame,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(CoreImageContext, x)
@@ -620,15 +656,15 @@ static const AVOption coreimage_options[] = {
 
 AVFILTER_DEFINE_CLASS(coreimage);
 
-const AVFilter ff_vf_coreimage = {
+AVFilter ff_vf_coreimage = {
     .name          = "coreimage",
     .description   = NULL_IF_CONFIG_SMALL("Video filtering using CoreImage API."),
     .init          = init,
     .uninit        = uninit,
     .priv_size     = sizeof(CoreImageContext),
     .priv_class    = &coreimage_class,
-    FILTER_INPUTS(vf_coreimage_inputs),
-    FILTER_OUTPUTS(vf_coreimage_outputs),
+    .inputs        = vf_coreimage_inputs,
+    .outputs       = vf_coreimage_outputs,
     .query_formats = query_formats,
 };
 
@@ -641,7 +677,7 @@ static const AVOption coreimagesrc_options[] = {
 
 AVFILTER_DEFINE_CLASS(coreimagesrc);
 
-const AVFilter ff_vsrc_coreimagesrc = {
+AVFilter ff_vsrc_coreimagesrc = {
     .name          = "coreimagesrc",
     .description   = NULL_IF_CONFIG_SMALL("Video source using image generators of CoreImage API."),
     .init          = init_src,
@@ -649,6 +685,6 @@ const AVFilter ff_vsrc_coreimagesrc = {
     .priv_size     = sizeof(CoreImageContext),
     .priv_class    = &coreimagesrc_class,
     .inputs        = NULL,
-    FILTER_OUTPUTS(vsrc_coreimagesrc_outputs),
-    .query_formats = query_formats,
+    .outputs       = vsrc_coreimagesrc_outputs,
+    .query_formats = query_formats_src,
 };

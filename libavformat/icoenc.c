@@ -26,10 +26,6 @@
 
 #include "libavutil/intreadwrite.h"
 #include "libavutil/pixdesc.h"
-
-#include "libavcodec/codec_desc.h"
-#include "libavcodec/codec_id.h"
-
 #include "avformat.h"
 
 typedef struct {
@@ -106,7 +102,7 @@ static int ico_write_header(AVFormatContext *s)
         avio_skip(pb, 16);
     }
 
-    ico->images = av_calloc(ico->nb_images, sizeof(*ico->images));
+    ico->images = av_mallocz_array(ico->nb_images, sizeof(IcoMuxContext));
     if (!ico->images)
         return AVERROR(ENOMEM);
 
@@ -195,7 +191,7 @@ static void ico_deinit(AVFormatContext *s)
     av_freep(&ico->images);
 }
 
-const AVOutputFormat ff_ico_muxer = {
+AVOutputFormat ff_ico_muxer = {
     .name           = "ico",
     .long_name      = NULL_IF_CONFIG_SMALL("Microsoft Windows ICO"),
     .priv_data_size = sizeof(IcoMuxContext),
