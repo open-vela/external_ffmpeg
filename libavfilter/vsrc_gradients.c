@@ -19,6 +19,7 @@
  */
 
 #include "avfilter.h"
+#include "filters.h"
 #include "formats.h"
 #include "video.h"
 #include "internal.h"
@@ -36,7 +37,9 @@ typedef struct GradientsContext {
     int w, h;
     int type;
     AVRational frame_rate;
-    uint64_t pts;
+    int64_t pts;
+    int64_t duration;           ///< duration expressed in microseconds
+    float speed;
 
     uint8_t color_rgba[8][4];
     int nb_colors;
@@ -72,43 +75,32 @@ static const AVOption gradients_options[] = {
     {"nb_colors", "set the number of colors", OFFSET(nb_colors), AV_OPT_TYPE_INT,  {.i64=2},          2, 8, FLAGS },
     {"n",         "set the number of colors", OFFSET(nb_colors), AV_OPT_TYPE_INT,  {.i64=2},          2, 8, FLAGS },
     {"seed",      "set the seed",   OFFSET(seed),          AV_OPT_TYPE_INT64,      {.i64=-1},        -1, UINT32_MAX, FLAGS },
+    {"duration",  "set video duration", OFFSET(duration),  AV_OPT_TYPE_DURATION,   {.i64=-1},        -1, INT64_MAX, FLAGS },\
+    {"d",         "set video duration", OFFSET(duration),  AV_OPT_TYPE_DURATION,   {.i64=-1},        -1, INT64_MAX, FLAGS },\
+    {"speed",     "set gradients rotation speed", OFFSET(speed), AV_OPT_TYPE_FLOAT,{.dbl=0.01}, 0.00001, 1, FLAGS },\
     {NULL},
 };
 
 AVFILTER_DEFINE_CLASS(gradients);
 
-static int query_formats(AVFilterContext *ctx)
-{
-    static const enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_RGBA,
-        AV_PIX_FMT_RGBA64,
-        AV_PIX_FMT_NONE
-    };
-
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
-}
-
 static uint32_t lerp_color(uint8_t c0[4], uint8_t c1[4], float x)
 {
     const float y = 1.f - x;
 
-    return (lrint(c0[0] * y + c1[0] * x)) << 0  |
-           (lrint(c0[1] * y + c1[1] * x)) << 8  |
-           (lrint(c0[2] * y + c1[2] * x)) << 16 |
-           (lrint(c0[3] * y + c1[3] * x)) << 24;
+    return (lrintf(c0[0] * y + c1[0] * x)) << 0  |
+           (lrintf(c0[1] * y + c1[1] * x)) << 8  |
+           (lrintf(c0[2] * y + c1[2] * x)) << 16 |
+           (lrintf(c0[3] * y + c1[3] * x)) << 24;
 }
 
 static uint64_t lerp_color16(uint8_t c0[4], uint8_t c1[4], float x)
 {
     const float y = 1.f - x;
 
-    return (llrint((c0[0] * y + c1[0] * x) * 256)) << 0  |
-           (llrint((c0[1] * y + c1[1] * x) * 256)) << 16 |
-           (llrint((c0[2] * y + c1[2] * x) * 256)) << 32 |
-           (llrint((c0[3] * y + c1[3] * x) * 256)) << 48;
+    return (llrintf((c0[0] * y + c1[0] * x) * 256)) << 0  |
+           (llrintf((c0[1] * y + c1[1] * x) * 256)) << 16 |
+           (llrintf((c0[2] * y + c1[2] * x) * 256)) << 32 |
+           (llrintf((c0[3] * y + c1[3] * x) * 256)) << 48;
 }
 
 static uint32_t lerp_colors(uint8_t arr[3][4], int nb_colors, float step)
@@ -181,7 +173,7 @@ static int draw_gradients_slice(AVFilterContext *ctx, void *arg, int job, int nb
     for (int y = start; y < end; y++) {
         for (int x = 0; x < width; x++) {
             float factor = project(s->fx0, s->fy0, s->fx1, s->fy1, x, y);
-            dst[x] = lerp_colors(s->color_rgba, s->nb_colors, factor);;
+            dst[x] = lerp_colors(s->color_rgba, s->nb_colors, factor);
         }
 
         dst += linesize;
@@ -204,7 +196,7 @@ static int draw_gradients_slice16(AVFilterContext *ctx, void *arg, int job, int 
     for (int y = start; y < end; y++) {
         for (int x = 0; x < width; x++) {
             float factor = project(s->fx0, s->fy0, s->fx1, s->fy1, x, y);
-            dst[x] = lerp_colors16(s->color_rgba, s->nb_colors, factor);;
+            dst[x] = lerp_colors16(s->color_rgba, s->nb_colors, factor);
         }
 
         dst += linesize;
@@ -242,49 +234,63 @@ static int draw_gradients_slice16(AVFilterContext *ctx, void *arg, int job, int 
     return 0;
 }
 
-static int gradients_request_frame(AVFilterLink *outlink)
+static int activate(AVFilterContext *ctx)
 {
-    AVFilterContext *ctx = outlink->src;
     GradientsContext *s = ctx->priv;
-    AVFrame *frame = ff_get_video_buffer(outlink, s->w, s->h);
-    float angle = fmodf(s->pts / 100.f, 2.f * M_PI);
-    const float w2 = s->w / 2.f;
-    const float h2 = s->h / 2.f;
+    AVFilterLink *outlink = ctx->outputs[0];
 
-    s->fx0 = (s->x0 - w2) * cosf(angle) - (s->y0 - h2) * sinf(angle) + w2;
-    s->fy0 = (s->x0 - w2) * sinf(angle) + (s->y0 - h2) * cosf(angle) + h2;
+    if (s->duration >= 0 &&
+        av_rescale_q(s->pts, outlink->time_base, AV_TIME_BASE_Q) >= s->duration) {
+        ff_outlink_set_status(outlink, AVERROR_EOF, s->pts);
+        return 0;
+    }
 
-    s->fx1 = (s->x1 - w2) * cosf(angle) - (s->y1 - h2) * sinf(angle) + w2;
-    s->fy1 = (s->x1 - w2) * sinf(angle) + (s->y1 - h2) * cosf(angle) + h2;
+    if (ff_outlink_frame_wanted(outlink)) {
+        AVFrame *frame = ff_get_video_buffer(outlink, s->w, s->h);
+        float angle = fmodf(s->pts * s->speed, 2.f * M_PI);
+        const float w2 = s->w / 2.f;
+        const float h2 = s->h / 2.f;
 
-    if (!frame)
-        return AVERROR(ENOMEM);
+        s->fx0 = (s->x0 - w2) * cosf(angle) - (s->y0 - h2) * sinf(angle) + w2;
+        s->fy0 = (s->x0 - w2) * sinf(angle) + (s->y0 - h2) * cosf(angle) + h2;
 
-    frame->sample_aspect_ratio = (AVRational) {1, 1};
-    frame->pts = s->pts++;
+        s->fx1 = (s->x1 - w2) * cosf(angle) - (s->y1 - h2) * sinf(angle) + w2;
+        s->fy1 = (s->x1 - w2) * sinf(angle) + (s->y1 - h2) * cosf(angle) + h2;
 
-    ctx->internal->execute(ctx, s->draw_slice, frame, NULL, FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
+        if (!frame)
+            return AVERROR(ENOMEM);
 
-    return ff_filter_frame(outlink, frame);
+        frame->key_frame           = 1;
+        frame->interlaced_frame    = 0;
+        frame->pict_type           = AV_PICTURE_TYPE_I;
+        frame->sample_aspect_ratio = (AVRational) {1, 1};
+        frame->pts = s->pts++;
+
+        ff_filter_execute(ctx, s->draw_slice, frame, NULL,
+                          FFMIN(outlink->h, ff_filter_get_nb_threads(ctx)));
+
+        return ff_filter_frame(outlink, frame);
+    }
+
+    return FFERROR_NOT_READY;
 }
 
 static const AVFilterPad gradients_outputs[] = {
     {
         .name          = "default",
         .type          = AVMEDIA_TYPE_VIDEO,
-        .request_frame = gradients_request_frame,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vsrc_gradients = {
+const AVFilter ff_vsrc_gradients = {
     .name          = "gradients",
     .description   = NULL_IF_CONFIG_SMALL("Draw a gradients."),
     .priv_size     = sizeof(GradientsContext),
     .priv_class    = &gradients_class,
-    .query_formats = query_formats,
     .inputs        = NULL,
-    .outputs       = gradients_outputs,
+    FILTER_OUTPUTS(gradients_outputs),
+    FILTER_PIXFMTS(AV_PIX_FMT_RGBA, AV_PIX_FMT_RGBA64),
+    .activate      = activate,
     .flags         = AVFILTER_FLAG_SLICE_THREADS,
 };

@@ -21,7 +21,7 @@
 #include <float.h>
 #include <math.h>
 
-#include "libavcodec/avfft.h"
+#include "libavutil/tx.h"
 #include "libavutil/audio_fifo.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
@@ -36,6 +36,7 @@
 #include "internal.h"
 #include "window_func.h"
 
+enum DataMode       { MAGNITUDE, PHASE, DELAY, NB_DATA };
 enum DisplayMode    { LINE, BAR, DOT, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
@@ -45,14 +46,16 @@ typedef struct ShowFreqsContext {
     const AVClass *class;
     int w, h;
     int mode;
+    int data_mode;
     int cmode;
     int fft_size;
-    int fft_bits;
     int ascale, fscale;
     int avg;
     int win_func;
-    FFTContext *fft;
-    FFTComplex **fft_data;
+    AVTXContext *fft;
+    av_tx_fn tx_fn;
+    AVComplexFloat **fft_input;
+    AVComplexFloat **fft_data;
     float **avg_data;
     float *window_func_lut;
     float overlap;
@@ -115,6 +118,10 @@ static const AVOption showfreqs_options[] = {
         { "combined", "show all channels in same window",  0, AV_OPT_TYPE_CONST, {.i64=COMBINED}, 0, 0, FLAGS, "cmode" },
         { "separate", "show each channel in own window",   0, AV_OPT_TYPE_CONST, {.i64=SEPARATE}, 0, 0, FLAGS, "cmode" },
     { "minamp",  "set minimum amplitude", OFFSET(minamp), AV_OPT_TYPE_FLOAT, {.dbl=1e-6}, FLT_MIN, 1e-6, FLAGS },
+    { "data", "set data mode", OFFSET(data_mode), AV_OPT_TYPE_INT, {.i64=MAGNITUDE}, 0, NB_DATA-1, FLAGS, "data" },
+        { "magnitude", "show magnitude",  0, AV_OPT_TYPE_CONST, {.i64=MAGNITUDE}, 0, 0, FLAGS, "data" },
+        { "phase",     "show phase",      0, AV_OPT_TYPE_CONST, {.i64=PHASE},     0, 0, FLAGS, "data" },
+        { "delay",     "show group delay",0, AV_OPT_TYPE_CONST, {.i64=DELAY},     0, 0, FLAGS, "data" },
     { NULL }
 };
 
@@ -132,20 +139,20 @@ static int query_formats(AVFilterContext *ctx)
 
     /* set input audio formats */
     formats = ff_make_format_list(sample_fmts);
-    if ((ret = ff_formats_ref(formats, &inlink->out_formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &inlink->outcfg.formats)) < 0)
         return ret;
 
     layouts = ff_all_channel_layouts();
-    if ((ret = ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts)) < 0)
+    if ((ret = ff_channel_layouts_ref(layouts, &inlink->outcfg.channel_layouts)) < 0)
         return ret;
 
     formats = ff_all_samplerates();
-    if ((ret = ff_formats_ref(formats, &inlink->out_samplerates)) < 0)
+    if ((ret = ff_formats_ref(formats, &inlink->outcfg.samplerates)) < 0)
         return ret;
 
     /* set output video format */
     formats = ff_make_format_list(pix_fmts);
-    if ((ret = ff_formats_ref(formats, &outlink->in_formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &outlink->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -165,32 +172,36 @@ static int config_output(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     AVFilterLink *inlink = ctx->inputs[0];
     ShowFreqsContext *s = ctx->priv;
-    float overlap;
-    int i;
+    float overlap, scale;
+    int i, ret;
 
-    s->fft_bits = av_log2(s->fft_size);
-    s->nb_freq = 1 << (s->fft_bits - 1);
-    s->win_size = s->nb_freq << 1;
+    s->nb_freq = s->fft_size / 2;
+    s->win_size = s->fft_size;
     av_audio_fifo_free(s->fifo);
-    av_fft_end(s->fft);
-    s->fft = av_fft_init(s->fft_bits, 0);
-    if (!s->fft) {
+    av_tx_uninit(&s->fft);
+    ret = av_tx_init(&s->fft, &s->tx_fn, AV_TX_FLOAT_FFT, 0, s->fft_size, &scale, 0);
+    if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR, "Unable to create FFT context. "
                "The window size might be too high.\n");
-        return AVERROR(ENOMEM);
+        return ret;
     }
 
     /* FFT buffers: x2 for each (display) channel buffer.
      * Note: we use free and malloc instead of a realloc-like function to
      * make sure the buffer is aligned in memory for the FFT functions. */
     for (i = 0; i < s->nb_channels; i++) {
+        av_freep(&s->fft_input[i]);
         av_freep(&s->fft_data[i]);
         av_freep(&s->avg_data[i]);
     }
+    av_freep(&s->fft_input);
     av_freep(&s->fft_data);
     av_freep(&s->avg_data);
     s->nb_channels = inlink->channels;
 
+    s->fft_input = av_calloc(s->nb_channels, sizeof(*s->fft_input));
+    if (!s->fft_input)
+        return AVERROR(ENOMEM);
     s->fft_data = av_calloc(s->nb_channels, sizeof(*s->fft_data));
     if (!s->fft_data)
         return AVERROR(ENOMEM);
@@ -198,9 +209,10 @@ static int config_output(AVFilterLink *outlink)
     if (!s->avg_data)
         return AVERROR(ENOMEM);
     for (i = 0; i < s->nb_channels; i++) {
-        s->fft_data[i] = av_calloc(s->win_size, sizeof(**s->fft_data));
+        s->fft_input[i] = av_calloc(FFALIGN(s->win_size, 512), sizeof(**s->fft_input));
+        s->fft_data[i] = av_calloc(FFALIGN(s->win_size, 512), sizeof(**s->fft_data));
         s->avg_data[i] = av_calloc(s->nb_freq, sizeof(**s->avg_data));
-        if (!s->fft_data[i] || !s->avg_data[i])
+        if (!s->fft_data[i] || !s->avg_data[i] || !s->fft_input[i])
             return AVERROR(ENOMEM);
     }
 
@@ -379,24 +391,24 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
         const float *p = (float *)in->extended_data[ch];
 
         for (n = 0; n < in->nb_samples; n++) {
-            s->fft_data[ch][n].re = p[n] * s->window_func_lut[n];
-            s->fft_data[ch][n].im = 0;
+            s->fft_input[ch][n].re = p[n] * s->window_func_lut[n];
+            s->fft_input[ch][n].im = 0;
         }
         for (; n < win_size; n++) {
-            s->fft_data[ch][n].re = 0;
-            s->fft_data[ch][n].im = 0;
+            s->fft_input[ch][n].re = 0;
+            s->fft_input[ch][n].im = 0;
         }
     }
 
     /* run FFT on each samples set */
     for (ch = 0; ch < s->nb_channels; ch++) {
-        av_fft_permute(s->fft, s->fft_data[ch]);
-        av_fft_calc(s->fft, s->fft_data[ch]);
+        s->tx_fn(s->fft, s->fft_data[ch], s->fft_input[ch], sizeof(float));
     }
 
 #define RE(x, ch) s->fft_data[ch][x].re
 #define IM(x, ch) s->fft_data[ch][x].im
 #define M(a, b) (sqrt((a) * (a) + (b) * (b)))
+#define P(a, b) (atan2((b), (a)))
 
     colors = av_strdup(s->colors);
     if (!colors) {
@@ -413,13 +425,37 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
         if (color)
             av_parse_color(fg, color, -1, ctx);
 
-        a = av_clipd(M(RE(0, ch), 0) / s->scale, 0, 1);
-        plot_freq(s, ch, a, 0, fg, &prev_y, out, outlink);
+        switch (s->data_mode) {
+        case MAGNITUDE:
+            a = av_clipd(M(RE(0, ch), 0) / s->scale, 0, 1);
+            plot_freq(s, ch, a, 0, fg, &prev_y, out, outlink);
 
-        for (f = 1; f < s->nb_freq; f++) {
-            a = av_clipd(M(RE(f, ch), IM(f, ch)) / s->scale, 0, 1);
+            for (f = 1; f < s->nb_freq; f++) {
+                a = av_clipd(M(RE(f, ch), IM(f, ch)) / s->scale, 0, 1);
 
-            plot_freq(s, ch, a, f, fg, &prev_y, out, outlink);
+                plot_freq(s, ch, a, f, fg, &prev_y, out, outlink);
+            }
+            break;
+        case PHASE:
+            a = av_clipd((M_PI + P(RE(0, ch), 0)) / (2. * M_PI), 0, 1);
+            plot_freq(s, ch, a, 0, fg, &prev_y, out, outlink);
+
+            for (f = 1; f < s->nb_freq; f++) {
+                a = av_clipd((M_PI + P(RE(f, ch), IM(f, ch))) / (2. * M_PI), 0, 1);
+
+                plot_freq(s, ch, a, f, fg, &prev_y, out, outlink);
+            }
+            break;
+        case DELAY:
+            plot_freq(s, ch, 0, 0, fg, &prev_y, out, outlink);
+
+            for (f = 1; f < s->nb_freq; f++) {
+                a = av_clipd((M_PI - P(IM(f, ch) * RE(f-1, ch) - IM(f-1, ch) * RE(f, ch),
+                                       RE(f, ch) * RE(f-1, ch) + IM(f, ch) * IM(f-1, ch))) / (2. * M_PI), 0, 1);
+
+                plot_freq(s, ch, a, f, fg, &prev_y, out, outlink);
+            }
+            break;
         }
     }
 
@@ -495,13 +531,16 @@ static av_cold void uninit(AVFilterContext *ctx)
     ShowFreqsContext *s = ctx->priv;
     int i;
 
-    av_fft_end(s->fft);
+    av_tx_uninit(&s->fft);
     for (i = 0; i < s->nb_channels; i++) {
+        if (s->fft_input)
+            av_freep(&s->fft_input[i]);
         if (s->fft_data)
             av_freep(&s->fft_data[i]);
         if (s->avg_data)
             av_freep(&s->avg_data[i]);
     }
+    av_freep(&s->fft_input);
     av_freep(&s->fft_data);
     av_freep(&s->avg_data);
     av_freep(&s->window_func_lut);
@@ -513,7 +552,6 @@ static const AVFilterPad showfreqs_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
 static const AVFilterPad showfreqs_outputs[] = {
@@ -522,18 +560,17 @@ static const AVFilterPad showfreqs_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_avf_showfreqs = {
+const AVFilter ff_avf_showfreqs = {
     .name          = "showfreqs",
     .description   = NULL_IF_CONFIG_SMALL("Convert input audio to a frequencies video output."),
     .init          = init,
     .uninit        = uninit,
-    .query_formats = query_formats,
     .priv_size     = sizeof(ShowFreqsContext),
     .activate      = activate,
-    .inputs        = showfreqs_inputs,
-    .outputs       = showfreqs_outputs,
+    FILTER_INPUTS(showfreqs_inputs),
+    FILTER_OUTPUTS(showfreqs_outputs),
+    FILTER_QUERY_FUNC(query_formats),
     .priv_class    = &showfreqs_class,
 };
