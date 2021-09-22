@@ -259,35 +259,30 @@ static int config_output(AVFilterLink *outlink)
     outlink->time_base = (AVRational){ 1, outlink->sample_rate };
     s->next_pts        = AV_NOPTS_VALUE;
 
-    s->frame_list = av_mallocz(sizeof(*s->frame_list));
-    if (!s->frame_list)
-        return AVERROR(ENOMEM);
+    memset(s->frame_list,  0, sizeof(*s->frame_list));
+    memset(s->input_state, 0, s->nb_inputs);
+    memset(s->input_scale, 0, s->nb_inputs * sizeof(*s->input_scale));
+    memset(s->scale_norm,  0, s->nb_inputs * sizeof(*s->scale_norm));
 
-    s->fifos = av_mallocz_array(s->nb_inputs, sizeof(*s->fifos));
-    if (!s->fifos)
-        return AVERROR(ENOMEM);
-
+    s->active_inputs = s->nb_inputs;
     s->nb_channels = outlink->channels;
     for (i = 0; i < s->nb_inputs; i++) {
+        if (s->fifos[i])
+            av_audio_fifo_free(s->fifos[i]);
+
         s->fifos[i] = av_audio_fifo_alloc(outlink->format, s->nb_channels, 1024);
         if (!s->fifos[i])
             return AVERROR(ENOMEM);
     }
 
-    s->input_state = av_mallocz(s->nb_inputs);
-    if (!s->input_state)
-        return AVERROR(ENOMEM);
-    s->active_inputs = s->nb_inputs;
-
-    s->input_scale = av_mallocz_array(s->nb_inputs, sizeof(*s->input_scale));
-    s->scale_norm  = av_mallocz_array(s->nb_inputs, sizeof(*s->scale_norm));
-    if (!s->input_scale || !s->scale_norm)
-        return AVERROR(ENOMEM);
     for (i = 0; i < s->nb_inputs; i++)
         s->scale_norm[i] = s->weight_sum / FFABS(s->weights[i]);
     calculate_scales(s, 0);
 
     av_get_channel_layout_string(buf, sizeof(buf), -1, outlink->channel_layout);
+
+    av_freep(&s->fixed_dsp);
+    av_freep(&s->float_dsp);
 
     if (outlink->format == AV_SAMPLE_FMT_S16 ||
         outlink->format == AV_SAMPLE_FMT_S16P)
@@ -679,6 +674,23 @@ static av_cold int init(AVFilterContext *ctx)
 
     parse_weights(ctx);
 
+    s->frame_list = av_mallocz(sizeof(*s->frame_list));
+    if (!s->frame_list)
+        return AVERROR(ENOMEM);
+
+    s->fifos = av_mallocz_array(s->nb_inputs, sizeof(*s->fifos));
+    if (!s->fifos)
+        return AVERROR(ENOMEM);
+
+    s->input_state = av_mallocz(s->nb_inputs);
+    if (!s->input_state)
+        return AVERROR(ENOMEM);
+
+    s->input_scale = av_mallocz_array(s->nb_inputs, sizeof(*s->input_scale));
+    s->scale_norm  = av_mallocz_array(s->nb_inputs, sizeof(*s->scale_norm));
+    if (!s->input_scale || !s->scale_norm)
+        return AVERROR(ENOMEM);
+
     return 0;
 }
 
@@ -750,7 +762,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 
             ret = snprintf(res + pos, res_len - pos, "%d(%u,%d) ",
                            i, s->input_state ? s->input_state[i] : 0,
-                           s->fifos ? av_audio_fifo_size(s->fifos[i]) : 0);
+                           s->fifos[i] ? av_audio_fifo_size(s->fifos[i]) : 0);
             if (ret < 0)
                 return ret;
 
