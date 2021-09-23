@@ -708,38 +708,8 @@ static av_cold void uninit(AVFilterContext *ctx)
 static int query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *formats = NULL;
-    AVFilterChannelLayouts *layouts = NULL;
-    int64_t rpts;
-    int status;
+    AVFilterChannelLayouts *layouts;
     int ret;
-    int i;
-
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        ff_inlink_acknowledge_status(ctx->inputs[i], &status, &rpts);
-
-        if (status == 0) {
-            if ((ret = ff_add_format(&formats, ctx->inputs[i]->format)) < 0)
-                return ret;
-
-            if ((ret = ff_set_common_formats(ctx, formats)) < 0)
-                return ret;
-
-            if ((ret = ff_add_channel_layout(&layouts, ctx->inputs[i]->channel_layout)) < 0)
-                return ret;
-
-            if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
-                return ret;
-
-            formats = NULL;
-            if ((ret = ff_add_format(&formats, ctx->inputs[i]->sample_rate)) < 0)
-                return ret;
-
-            if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
-                return ret;
-
-            return 0;
-        }
-    }
 
     layouts = ff_all_channel_counts();
     if (!layouts) {
