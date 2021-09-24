@@ -29,7 +29,7 @@
 #include "maskedclamp.h"
 
 #define OFFSET(x) offsetof(MaskedClampContext, x)
-#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 typedef struct ThreadData {
     AVFrame *b, *o, *m, *d;
@@ -84,7 +84,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int maskedclamp_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
@@ -159,8 +159,8 @@ static int process_frame(FFFrameSync *fs)
         td.m = bright;
         td.d = out;
 
-        ctx->internal->execute(ctx, maskedclamp_slice, &td, NULL, FFMIN(s->height[0],
-                                                                        ff_filter_get_nb_threads(ctx)));
+        ff_filter_execute(ctx, maskedclamp_slice, &td, NULL,
+                          FFMIN(s->height[0], ff_filter_get_nb_threads(ctx)));
     }
     out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, outlink->time_base);
 
@@ -230,11 +230,6 @@ static int config_output(AVFilterLink *outlink)
     FFFrameSyncIn *in;
     int ret;
 
-    if (base->format != dark->format ||
-        base->format != bright->format) {
-        av_log(ctx, AV_LOG_ERROR, "inputs must be of same pixel format\n");
-        return AVERROR(EINVAL);
-    }
     if (base->w != dark->w   || base->h != dark->h ||
         base->w != bright->w || base->h != bright->h) {
         av_log(ctx, AV_LOG_ERROR, "First input link %s parameters "
@@ -304,7 +299,6 @@ static const AVFilterPad maskedclamp_inputs[] = {
         .name         = "bright",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
 static const AVFilterPad maskedclamp_outputs[] = {
@@ -313,18 +307,18 @@ static const AVFilterPad maskedclamp_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_maskedclamp = {
+const AVFilter ff_vf_maskedclamp = {
     .name          = "maskedclamp",
     .description   = NULL_IF_CONFIG_SMALL("Clamp first stream with second stream and third stream."),
     .priv_size     = sizeof(MaskedClampContext),
     .uninit        = uninit,
     .activate      = activate,
     .query_formats = query_formats,
-    .inputs        = maskedclamp_inputs,
-    .outputs       = maskedclamp_outputs,
+    FILTER_INPUTS(maskedclamp_inputs),
+    FILTER_OUTPUTS(maskedclamp_outputs),
     .priv_class    = &maskedclamp_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = ff_filter_process_command,
 };

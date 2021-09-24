@@ -26,7 +26,54 @@
 
 extern const AVClass ff_avio_class;
 
-int ffio_init_context(AVIOContext *s,
+typedef struct FFIOContext {
+    AVIOContext pub;
+    /**
+     * A callback that is used instead of short_seek_threshold.
+     */
+    int (*short_seek_get)(void *opaque);
+
+    /**
+     * Threshold to favor readahead over seek.
+     */
+    int short_seek_threshold;
+
+    enum AVIODataMarkerType current_type;
+    int64_t last_time;
+
+    /**
+     * max filesize, used to limit allocations
+     */
+    int64_t maxsize;
+
+    /**
+     * Bytes read statistic
+     */
+    int64_t bytes_read;
+
+    /**
+     * seek statistic
+     */
+    int seek_count;
+
+    /**
+     * writeout statistic
+     */
+    int writeout_count;
+
+    /**
+     * Original buffer size
+     * used after probing to ensure seekback and to reset the buffer size
+     */
+    int orig_buffer_size;
+} FFIOContext;
+
+static av_always_inline FFIOContext *ffiocontext(AVIOContext *ctx)
+{
+    return (FFIOContext*)ctx;
+}
+
+void ffio_init_context(FFIOContext *s,
                   unsigned char *buffer,
                   int buffer_size,
                   int write_flag,
@@ -53,7 +100,7 @@ int ffio_init_context(AVIOContext *s,
  */
 int ffio_read_indirect(AVIOContext *s, unsigned char *buf, int size, const unsigned char **data);
 
-void ffio_fill(AVIOContext *s, int b, int count);
+void ffio_fill(AVIOContext *s, int b, int64_t count);
 
 static av_always_inline void ffio_wfourcc(AVIOContext *pb, const uint8_t *s)
 {
@@ -83,9 +130,6 @@ uint64_t ffio_read_varlen(AVIOContext *bc);
  */
 int ffio_read_size(AVIOContext *s, unsigned char *buf, int size);
 
-/** @warning must be called before any I/O */
-int ffio_set_buf_size(AVIOContext *s, int buf_size);
-
 /**
  * Reallocate a given buffer for AVIOContext.
  *
@@ -100,7 +144,9 @@ int ffio_realloc_buf(AVIOContext *s, int buf_size);
  *
  * Will ensure that when reading sequentially up to buf_size, seeking
  * within the current pos and pos+buf_size is possible.
- * Once the stream position moves outside this window this guarantee is lost.
+ * Once the stream position moves outside this window or another
+ * ffio_ensure_seekback call requests a buffer outside this window this
+ * guarantee is lost.
  */
 int ffio_ensure_seekback(AVIOContext *s, int64_t buf_size);
 
@@ -184,5 +230,19 @@ void ffio_reset_dyn_buf(AVIOContext *s);
  * @param s a pointer to an IO context opened by avio_open_dyn_buf()
  */
 void ffio_free_dyn_buf(AVIOContext **s);
+
+struct AVBPrint;
+/**
+ * Read a whole line of text from AVIOContext to an AVBPrint buffer overwriting
+ * its contents. Stop reading after reaching a \\r, a \\n, a \\r\\n, a \\0 or
+ * EOF. The line ending characters are NOT included in the buffer, but they
+ * are skipped on the input.
+ *
+ * @param s the read-only AVIOContext
+ * @param bp the AVBPrint buffer
+ * @return the length of the read line not including the line endings,
+ *         negative on error, or if the buffer becomes truncated.
+ */
+int64_t ff_read_line_to_bprint_overwrite(AVIOContext *s, struct AVBPrint *bp);
 
 #endif /* AVFORMAT_AVIO_INTERNAL_H */

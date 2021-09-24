@@ -45,7 +45,7 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, cons
 
 int main(int argc, char **argv)
 {
-    AVOutputFormat *ofmt = NULL;
+    const AVOutputFormat *ofmt = NULL;
     AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
     AVPacket pkt;
     const char *in_filename, *out_filename;
@@ -85,7 +85,7 @@ int main(int argc, char **argv)
     }
 
     stream_mapping_size = ifmt_ctx->nb_streams;
-    stream_mapping = av_mallocz_array(stream_mapping_size, sizeof(*stream_mapping));
+    stream_mapping = av_calloc(stream_mapping_size, sizeof(*stream_mapping));
     if (!stream_mapping) {
         ret = AVERROR(ENOMEM);
         goto end;
