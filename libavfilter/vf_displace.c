@@ -78,7 +78,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static void displace_planar(DisplaceContext *s, const AVFrame *in,
@@ -311,11 +311,6 @@ static int config_output(AVFilterLink *outlink)
     FFFrameSyncIn *in;
     int ret;
 
-    if (srclink->format != xlink->format ||
-        srclink->format != ylink->format) {
-        av_log(ctx, AV_LOG_ERROR, "inputs must be of same pixel format\n");
-        return AVERROR(EINVAL);
-    }
     if (srclink->w != xlink->w ||
         srclink->h != xlink->h ||
         srclink->w != ylink->w ||
@@ -388,7 +383,6 @@ static const AVFilterPad displace_inputs[] = {
         .name         = "ymap",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
 static const AVFilterPad displace_outputs[] = {
@@ -397,18 +391,17 @@ static const AVFilterPad displace_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_displace = {
+const AVFilter ff_vf_displace = {
     .name          = "displace",
     .description   = NULL_IF_CONFIG_SMALL("Displace pixels."),
     .priv_size     = sizeof(DisplaceContext),
     .uninit        = uninit,
     .query_formats = query_formats,
     .activate      = activate,
-    .inputs        = displace_inputs,
-    .outputs       = displace_outputs,
+    FILTER_INPUTS(displace_inputs),
+    FILTER_OUTPUTS(displace_outputs),
     .priv_class    = &displace_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
 };

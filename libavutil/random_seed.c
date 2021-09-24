@@ -33,7 +33,6 @@
 #include <fcntl.h>
 #include <math.h>
 #include <time.h>
-#include <sys/time.h>
 #include <string.h>
 #include "avassert.h"
 #include "internal.h"

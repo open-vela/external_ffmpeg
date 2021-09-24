@@ -136,7 +136,7 @@ static int activate(AVFilterContext *ctx)
         out->height = outlink->h;
         out->data[0] += y * out->linesize[0];
         out->data[0] += x * s->max_step[0];
-        if (!(s->desc->flags & AV_PIX_FMT_FLAG_PAL || s->desc->flags & FF_PSEUDOPAL)) {
+        if (!(s->desc->flags & AV_PIX_FMT_FLAG_PAL)) {
             for (i = 1; i < 3; i ++) {
                 if (out->data[i]) {
                     out->data[i] += (y >> s->desc->log2_chroma_w) * out->linesize[i];
@@ -172,7 +172,6 @@ static const AVFilterPad untile_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
 static const AVFilterPad untile_outputs[] = {
@@ -181,10 +180,9 @@ static const AVFilterPad untile_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_untile = {
+const AVFilter ff_vf_untile = {
     .name          = "untile",
     .description   = NULL_IF_CONFIG_SMALL("Untile a frame into a sequence of frames."),
     .init          = init,
@@ -192,7 +190,7 @@ AVFilter ff_vf_untile = {
     .query_formats = query_formats,
     .activate      = activate,
     .priv_size     = sizeof(UntileContext),
-    .inputs        = untile_inputs,
-    .outputs       = untile_outputs,
+    FILTER_INPUTS(untile_inputs),
+    FILTER_OUTPUTS(untile_outputs),
     .priv_class    = &untile_class,
 };

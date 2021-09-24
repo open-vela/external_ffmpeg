@@ -32,7 +32,6 @@
 
 #include <float.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -189,10 +188,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int do_search_boundary(int pos, int plane_boundary, int search_range, int search_step)
@@ -767,7 +763,7 @@ static int filter_frame(AVFilterContext *ctx, AVFrame **out, AVFrame *in, AVFram
         td.ref = ref->data[p];
         td.ref_linesize = ref->linesize[p];
         td.plane = p;
-        ctx->internal->execute(ctx, filter_slice, &td, NULL, nb_jobs);
+        ff_filter_execute(ctx, filter_slice, &td, NULL, nb_jobs);
 
         s->do_output(s, (*out)->data[p], (*out)->linesize[p], p, nb_jobs);
     }
@@ -942,27 +938,19 @@ static av_cold int init(AVFilterContext *ctx)
     }
 
     pad.type         = AVMEDIA_TYPE_VIDEO;
-    pad.name         = av_strdup("source");
+    pad.name         = "source";
     pad.config_props = config_input;
-    if (!pad.name)
-        return AVERROR(ENOMEM);
 
-    if ((ret = ff_insert_inpad(ctx, 0, &pad)) < 0) {
-        av_freep(&pad.name);
+    if ((ret = ff_append_inpad(ctx, &pad)) < 0)
         return ret;
-    }
 
     if (s->ref) {
         pad.type         = AVMEDIA_TYPE_VIDEO;
-        pad.name         = av_strdup("reference");
+        pad.name         = "reference";
         pad.config_props = NULL;
-        if (!pad.name)
-            return AVERROR(ENOMEM);
 
-        if ((ret = ff_insert_inpad(ctx, 1, &pad)) < 0) {
-            av_freep(&pad.name);
+        if ((ret = ff_append_inpad(ctx, &pad)) < 0)
             return ret;
-        }
     }
 
     return 0;
@@ -980,10 +968,6 @@ static int config_output(AVFilterLink *outlink)
     if (s->ref) {
         ref = ctx->inputs[1];
 
-        if (src->format != ref->format) {
-            av_log(ctx, AV_LOG_ERROR, "inputs must be of same pixel format\n");
-            return AVERROR(EINVAL);
-        }
         if (src->w                       != ref->w ||
             src->h                       != ref->h) {
             av_log(ctx, AV_LOG_ERROR, "First input link %s parameters "
@@ -1027,9 +1011,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     BM3DContext *s = ctx->priv;
     int i;
 
-    for (i = 0; i < ctx->nb_inputs; i++)
-        av_freep(&ctx->input_pads[i].name);
-
     if (s->ref)
         ff_framesync_uninit(&s->fs);
 
@@ -1063,10 +1044,9 @@ static const AVFilterPad bm3d_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_bm3d = {
+const AVFilter ff_vf_bm3d = {
     .name          = "bm3d",
     .description   = NULL_IF_CONFIG_SMALL("Block-Matching 3D denoiser."),
     .priv_size     = sizeof(BM3DContext),
@@ -1075,7 +1055,7 @@ AVFilter ff_vf_bm3d = {
     .activate      = activate,
     .query_formats = query_formats,
     .inputs        = NULL,
-    .outputs       = bm3d_outputs,
+    FILTER_OUTPUTS(bm3d_outputs),
     .priv_class    = &bm3d_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL |
                      AVFILTER_FLAG_DYNAMIC_INPUTS |

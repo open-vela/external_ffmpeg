@@ -90,10 +90,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 /**
@@ -315,7 +312,7 @@ static int config_input(AVFilterLink *inlink)
     s->ii_lz_32 = FFALIGN(s->ii_w + 1, 4);
 
     // "+1" is for the space of the top 0-line
-    s->ii_orig = av_mallocz_array(s->ii_h + 1, s->ii_lz_32 * sizeof(*s->ii_orig));
+    s->ii_orig = av_calloc(s->ii_h + 1, s->ii_lz_32 * sizeof(*s->ii_orig));
     if (!s->ii_orig)
         return AVERROR(ENOMEM);
 
@@ -458,8 +455,8 @@ static int nlmeans_plane(AVFilterContext *ctx, int w, int h, int p, int r,
                 compute_ssd_integral_image(&s->dsp, s->ii, s->ii_lz_32,
                                            src, src_linesize,
                                            offx, offy, e, w, h);
-                ctx->internal->execute(ctx, nlmeans_slice, &td, NULL,
-                                       FFMIN(td.endy - td.starty, ff_filter_get_nb_threads(ctx)));
+                ff_filter_execute(ctx, nlmeans_slice, &td, NULL,
+                                  FFMIN(td.endy - td.starty, ff_filter_get_nb_threads(ctx)));
             }
         }
     }
@@ -566,7 +563,6 @@ static const AVFilterPad nlmeans_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad nlmeans_outputs[] = {
@@ -574,18 +570,17 @@ static const AVFilterPad nlmeans_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_nlmeans = {
+const AVFilter ff_vf_nlmeans = {
     .name          = "nlmeans",
     .description   = NULL_IF_CONFIG_SMALL("Non-local means denoiser."),
     .priv_size     = sizeof(NLMeansContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-    .inputs        = nlmeans_inputs,
-    .outputs       = nlmeans_outputs,
+    FILTER_INPUTS(nlmeans_inputs),
+    FILTER_OUTPUTS(nlmeans_outputs),
     .priv_class    = &nlmeans_class,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };

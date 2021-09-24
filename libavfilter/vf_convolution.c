@@ -22,6 +22,7 @@
 #include "libavutil/avstring.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
@@ -31,7 +32,7 @@
 #include "video.h"
 
 #define OFFSET(x) offsetof(ConvolutionContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption convolution_options[] = {
     { "0m", "set matrix for 1st plane", OFFSET(matrix_str[0]), AV_OPT_TYPE_STRING, {.str="0 0 0 0 1 0 0 0 0"}, 0, 0, FLAGS },
@@ -100,7 +101,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 typedef struct ThreadData {
@@ -110,7 +111,7 @@ typedef struct ThreadData {
 static void filter16_prewitt(uint8_t *dstp, int width,
                              float scale, float delta, const int *const matrix,
                              const uint8_t *c[], int peak, int radius,
-                             int dstride, int stride)
+                             int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -128,7 +129,7 @@ static void filter16_prewitt(uint8_t *dstp, int width,
 static void filter16_roberts(uint8_t *dstp, int width,
                              float scale, float delta, const int *const matrix,
                              const uint8_t *c[], int peak, int radius,
-                             int dstride, int stride)
+                             int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -144,7 +145,7 @@ static void filter16_roberts(uint8_t *dstp, int width,
 static void filter16_sobel(uint8_t *dstp, int width,
                            float scale, float delta, const int *const matrix,
                            const uint8_t *c[], int peak, int radius,
-                           int dstride, int stride)
+                           int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -159,10 +160,79 @@ static void filter16_sobel(uint8_t *dstp, int width,
     }
 }
 
+static void filter16_scharr(uint8_t *dstp, int width,
+                            float scale, float delta, const int *const matrix,
+                            const uint8_t *c[], int peak, int radius,
+                            int dstride, int stride, int size)
+{
+    uint16_t *dst = (uint16_t *)dstp;
+    int x;
+
+    for (x = 0; x < width; x++) {
+        float suma = AV_RN16A(&c[0][2 * x]) * -47 + AV_RN16A(&c[1][2 * x]) * -162 + AV_RN16A(&c[2][2 * x]) *  -47 +
+                     AV_RN16A(&c[6][2 * x]) *  47 + AV_RN16A(&c[7][2 * x]) *  162 + AV_RN16A(&c[8][2 * x]) *   47;
+        float sumb = AV_RN16A(&c[0][2 * x]) * -47 + AV_RN16A(&c[2][2 * x]) *   47 + AV_RN16A(&c[3][2 * x]) * -162 +
+                     AV_RN16A(&c[5][2 * x]) * 162 + AV_RN16A(&c[6][2 * x]) *  -47 + AV_RN16A(&c[8][2 * x]) *   47;
+
+        suma /= 256.f;
+        sumb /= 256.f;
+        dst[x] = av_clip(sqrtf(suma*suma + sumb*sumb) * scale + delta, 0, peak);
+    }
+}
+
+static void filter16_kirsch(uint8_t *dstp, int width,
+                            float scale, float delta, const int *const matrix,
+                            const uint8_t *c[], int peak, int radius,
+                            int dstride, int stride, int size)
+{
+    uint16_t *dst = (uint16_t *)dstp;
+    const uint16_t *c0 = (const uint16_t *)c[0], *c1 = (const uint16_t *)c[1], *c2 = (const uint16_t *)c[2];
+    const uint16_t *c3 = (const uint16_t *)c[3], *c5 = (const uint16_t *)c[5];
+    const uint16_t *c6 = (const uint16_t *)c[6], *c7 = (const uint16_t *)c[7], *c8 = (const uint16_t *)c[8];
+    int x;
+
+    for (x = 0; x < width; x++) {
+        int sum0 = c0[x] *  5 + c1[x] *  5 + c2[x] *  5 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] * -3;
+        int sum1 = c0[x] * -3 + c1[x] *  5 + c2[x] *  5 +
+                   c3[x] *  5 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] * -3;
+        int sum2 = c0[x] * -3 + c1[x] * -3 + c2[x] *  5 +
+                   c3[x] *  5 + c5[x] *  5 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] * -3;
+        int sum3 = c0[x] * -3 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] *  5 + c5[x] *  5 +
+                   c6[x] *  5 + c7[x] * -3 + c8[x] * -3;
+        int sum4 = c0[x] * -3 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] *  5 +
+                   c6[x] *  5 + c7[x] *  5 + c8[x] * -3;
+        int sum5 = c0[x] * -3 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] *  5 + c7[x] *  5 + c8[x] *  5;
+        int sum6 = c0[x] *  5 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] *  5 + c8[x] *  5;
+        int sum7 = c0[x] *  5 + c1[x] *  5 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] *  5;
+
+        sum0 = FFMAX(sum0, sum1);
+        sum2 = FFMAX(sum2, sum3);
+        sum4 = FFMAX(sum4, sum5);
+        sum6 = FFMAX(sum6, sum7);
+        sum0 = FFMAX(sum0, sum2);
+        sum4 = FFMAX(sum4, sum6);
+        sum0 = FFMAX(sum0, sum4);
+
+        dst[x] = av_clip(FFABS(sum0) * scale + delta, 0, peak);
+    }
+}
+
 static void filter_prewitt(uint8_t *dst, int width,
                            float scale, float delta, const int *const matrix,
                            const uint8_t *c[], int peak, int radius,
-                           int dstride, int stride)
+                           int dstride, int stride, int size)
 {
     const uint8_t *c0 = c[0], *c1 = c[1], *c2 = c[2];
     const uint8_t *c3 = c[3], *c5 = c[5];
@@ -182,7 +252,7 @@ static void filter_prewitt(uint8_t *dst, int width,
 static void filter_roberts(uint8_t *dst, int width,
                            float scale, float delta, const int *const matrix,
                            const uint8_t *c[], int peak, int radius,
-                           int dstride, int stride)
+                           int dstride, int stride, int size)
 {
     int x;
 
@@ -197,7 +267,7 @@ static void filter_roberts(uint8_t *dst, int width,
 static void filter_sobel(uint8_t *dst, int width,
                          float scale, float delta, const int *const matrix,
                          const uint8_t *c[], int peak, int radius,
-                         int dstride, int stride)
+                         int dstride, int stride, int size)
 {
     const uint8_t *c0 = c[0], *c1 = c[1], *c2 = c[2];
     const uint8_t *c3 = c[3], *c5 = c[5];
@@ -214,10 +284,80 @@ static void filter_sobel(uint8_t *dst, int width,
     }
 }
 
+static void filter_scharr(uint8_t *dst, int width,
+                          float scale, float delta, const int *const matrix,
+                          const uint8_t *c[], int peak, int radius,
+                          int dstride, int stride, int size)
+{
+    const uint8_t *c0 = c[0], *c1 = c[1], *c2 = c[2];
+    const uint8_t *c3 = c[3], *c5 = c[5];
+    const uint8_t *c6 = c[6], *c7 = c[7], *c8 = c[8];
+    int x;
+
+    for (x = 0; x < width; x++) {
+        float suma = c0[x] * -47 + c1[x] * -162 + c2[x] *  -47 +
+                     c6[x] *  47 + c7[x] *  162 + c8[x] *   47;
+        float sumb = c0[x] * -47 + c2[x] *   47 + c3[x] * -162 +
+                     c5[x] * 162 + c6[x] *  -47 + c8[x] *   47;
+
+        suma /= 256.f;
+        sumb /= 256.f;
+        dst[x] = av_clip_uint8(sqrtf(suma*suma + sumb*sumb) * scale + delta);
+    }
+}
+
+static void filter_kirsch(uint8_t *dst, int width,
+                          float scale, float delta, const int *const matrix,
+                          const uint8_t *c[], int peak, int radius,
+                          int dstride, int stride, int size)
+{
+    const uint8_t *c0 = c[0], *c1 = c[1], *c2 = c[2];
+    const uint8_t *c3 = c[3], *c5 = c[5];
+    const uint8_t *c6 = c[6], *c7 = c[7], *c8 = c[8];
+    int x;
+
+    for (x = 0; x < width; x++) {
+        int sum0 = c0[x] *  5 + c1[x] *  5 + c2[x] *  5 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] * -3;
+        int sum1 = c0[x] * -3 + c1[x] *  5 + c2[x] *  5 +
+                   c3[x] *  5 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] * -3;
+        int sum2 = c0[x] * -3 + c1[x] * -3 + c2[x] *  5 +
+                   c3[x] *  5 + c5[x] *  5 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] * -3;
+        int sum3 = c0[x] * -3 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] *  5 + c5[x] *  5 +
+                   c6[x] *  5 + c7[x] * -3 + c8[x] * -3;
+        int sum4 = c0[x] * -3 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] *  5 +
+                   c6[x] *  5 + c7[x] *  5 + c8[x] * -3;
+        int sum5 = c0[x] * -3 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] *  5 + c7[x] *  5 + c8[x] *  5;
+        int sum6 = c0[x] *  5 + c1[x] * -3 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] *  5 + c8[x] *  5;
+        int sum7 = c0[x] *  5 + c1[x] *  5 + c2[x] * -3 +
+                   c3[x] * -3 + c5[x] * -3 +
+                   c6[x] * -3 + c7[x] * -3 + c8[x] *  5;
+
+        sum0 = FFMAX(sum0, sum1);
+        sum2 = FFMAX(sum2, sum3);
+        sum4 = FFMAX(sum4, sum5);
+        sum6 = FFMAX(sum6, sum7);
+        sum0 = FFMAX(sum0, sum2);
+        sum4 = FFMAX(sum4, sum6);
+        sum0 = FFMAX(sum0, sum4);
+
+        dst[x] = av_clip_uint8(FFABS(sum0) * scale + delta);
+    }
+}
+
 static void filter16_3x3(uint8_t *dstp, int width,
                          float rdiv, float bias, const int *const matrix,
                          const uint8_t *c[], int peak, int radius,
-                         int dstride, int stride)
+                         int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -240,7 +380,7 @@ static void filter16_3x3(uint8_t *dstp, int width,
 static void filter16_5x5(uint8_t *dstp, int width,
                          float rdiv, float bias, const int *const matrix,
                          const uint8_t *c[], int peak, int radius,
-                         int dstride, int stride)
+                         int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -259,7 +399,7 @@ static void filter16_5x5(uint8_t *dstp, int width,
 static void filter16_7x7(uint8_t *dstp, int width,
                          float rdiv, float bias, const int *const matrix,
                          const uint8_t *c[], int peak, int radius,
-                         int dstride, int stride)
+                         int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -278,7 +418,7 @@ static void filter16_7x7(uint8_t *dstp, int width,
 static void filter16_row(uint8_t *dstp, int width,
                          float rdiv, float bias, const int *const matrix,
                          const uint8_t *c[], int peak, int radius,
-                         int dstride, int stride)
+                         int dstride, int stride, int size)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int x;
@@ -297,19 +437,24 @@ static void filter16_row(uint8_t *dstp, int width,
 static void filter16_column(uint8_t *dstp, int height,
                             float rdiv, float bias, const int *const matrix,
                             const uint8_t *c[], int peak, int radius,
-                            int dstride, int stride)
+                            int dstride, int stride, int size)
 {
+    DECLARE_ALIGNED(64, int, sum)[16];
     uint16_t *dst = (uint16_t *)dstp;
-    int y;
+    const int width = FFMIN(16, size);
 
-    for (y = 0; y < height; y++) {
-        int i, sum = 0;
+    for (int y = 0; y < height; y++) {
 
-        for (i = 0; i < 2 * radius + 1; i++)
-            sum += AV_RN16A(&c[i][0 + y * stride]) * matrix[i];
+        memset(sum, 0, sizeof(sum));
+        for (int i = 0; i < 2 * radius + 1; i++) {
+            for (int off16 = 0; off16 < width; off16++)
+                sum[off16] += AV_RN16A(&c[i][0 + y * stride + off16 * 2]) * matrix[i];
+        }
 
-        sum = (int)(sum * rdiv + bias + 0.5f);
-        dst[0] = av_clip(sum, 0, peak);
+        for (int off16 = 0; off16 < width; off16++) {
+            sum[off16] = (int)(sum[off16] * rdiv + bias + 0.5f);
+            dst[off16] = av_clip(sum[off16], 0, peak);
+        }
         dst += dstride / 2;
     }
 }
@@ -317,7 +462,7 @@ static void filter16_column(uint8_t *dstp, int height,
 static void filter_7x7(uint8_t *dst, int width,
                        float rdiv, float bias, const int *const matrix,
                        const uint8_t *c[], int peak, int radius,
-                       int dstride, int stride)
+                       int dstride, int stride, int size)
 {
     int x;
 
@@ -335,7 +480,7 @@ static void filter_7x7(uint8_t *dst, int width,
 static void filter_5x5(uint8_t *dst, int width,
                        float rdiv, float bias, const int *const matrix,
                        const uint8_t *c[], int peak, int radius,
-                       int dstride, int stride)
+                       int dstride, int stride, int size)
 {
     int x;
 
@@ -353,7 +498,7 @@ static void filter_5x5(uint8_t *dst, int width,
 static void filter_3x3(uint8_t *dst, int width,
                        float rdiv, float bias, const int *const matrix,
                        const uint8_t *c[], int peak, int radius,
-                       int dstride, int stride)
+                       int dstride, int stride, int size)
 {
     const uint8_t *c0 = c[0], *c1 = c[1], *c2 = c[2];
     const uint8_t *c3 = c[3], *c4 = c[4], *c5 = c[5];
@@ -372,7 +517,7 @@ static void filter_3x3(uint8_t *dst, int width,
 static void filter_row(uint8_t *dst, int width,
                        float rdiv, float bias, const int *const matrix,
                        const uint8_t *c[], int peak, int radius,
-                       int dstride, int stride)
+                       int dstride, int stride, int size)
 {
     int x;
 
@@ -390,18 +535,22 @@ static void filter_row(uint8_t *dst, int width,
 static void filter_column(uint8_t *dst, int height,
                           float rdiv, float bias, const int *const matrix,
                           const uint8_t *c[], int peak, int radius,
-                          int dstride, int stride)
+                          int dstride, int stride, int size)
 {
-    int y;
+    DECLARE_ALIGNED(64, int, sum)[16];
 
-    for (y = 0; y < height; y++) {
-        int i, sum = 0;
+    for (int y = 0; y < height; y++) {
+        memset(sum, 0, sizeof(sum));
 
-        for (i = 0; i < 2 * radius + 1; i++)
-            sum += c[i][0 + y * stride] * matrix[i];
+        for (int i = 0; i < 2 * radius + 1; i++) {
+            for (int off16 = 0; off16 < 16; off16++)
+                sum[off16] += c[i][0 + y * stride + off16] * matrix[i];
+        }
 
-        sum = (int)(sum * rdiv + bias + 0.5f);
-        dst[0] = av_clip_uint8(sum);
+        for (int off16 = 0; off16 < 16; off16++) {
+            sum[off16] = (int)(sum[off16] * rdiv + bias + 0.5f);
+            dst[off16] = av_clip_uint8(sum[off16]);
+        }
         dst += dstride;
     }
 }
@@ -508,6 +657,7 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
         const int dst_pos = slice_start * (mode == MATRIX_COLUMN ? bpc : dstride);
         uint8_t *dst = out->data[plane] + dst_pos;
         const int *matrix = s->matrix[plane];
+        const int step = mode == MATRIX_COLUMN ? 16 : 1;
         const uint8_t *c[49];
         int y, x;
 
@@ -520,32 +670,31 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
                                     width * bpc, slice_end - slice_start);
             continue;
         }
-
-        for (y = slice_start; y < slice_end; y++) {
+        for (y = slice_start; y < slice_end; y += step) {
             const int xoff = mode == MATRIX_COLUMN ? (y - slice_start) * bpc : radius * bpc;
-            const int yoff = mode == MATRIX_COLUMN ? radius * stride : 0;
+            const int yoff = mode == MATRIX_COLUMN ? radius * dstride : 0;
 
             for (x = 0; x < radius; x++) {
                 const int xoff = mode == MATRIX_COLUMN ? (y - slice_start) * bpc : x * bpc;
-                const int yoff = mode == MATRIX_COLUMN ? x * stride : 0;
+                const int yoff = mode == MATRIX_COLUMN ? x * dstride : 0;
 
                 s->setup[plane](radius, c, src, stride, x, width, y, height, bpc);
                 s->filter[plane](dst + yoff + xoff, 1, rdiv,
                                  bias, matrix, c, s->max, radius,
-                                 dstride, stride);
+                                 dstride, stride, slice_end - step);
             }
             s->setup[plane](radius, c, src, stride, radius, width, y, height, bpc);
             s->filter[plane](dst + yoff + xoff, sizew - 2 * radius,
                              rdiv, bias, matrix, c, s->max, radius,
-                             dstride, stride);
+                             dstride, stride, slice_end - step);
             for (x = sizew - radius; x < sizew; x++) {
                 const int xoff = mode == MATRIX_COLUMN ? (y - slice_start) * bpc : x * bpc;
-                const int yoff = mode == MATRIX_COLUMN ? x * stride : 0;
+                const int yoff = mode == MATRIX_COLUMN ? x * dstride : 0;
 
                 s->setup[plane](radius, c, src, stride, x, width, y, height, bpc);
                 s->filter[plane](dst + yoff + xoff, 1, rdiv,
                                  bias, matrix, c, s->max, radius,
-                                 dstride, stride);
+                                 dstride, stride, slice_end - step);
             }
             if (mode != MATRIX_COLUMN)
                 dst += dstride;
@@ -604,6 +753,14 @@ static int config_input(AVFilterLink *inlink)
         if (s->depth > 8)
             for (p = 0; p < s->nb_planes; p++)
                 s->filter[p] = filter16_sobel;
+    } else if (!strcmp(ctx->filter->name, "kirsch")) {
+        if (s->depth > 8)
+            for (p = 0; p < s->nb_planes; p++)
+                s->filter[p] = filter16_kirsch;
+    } else if (!strcmp(ctx->filter->name, "scharr")) {
+        if (s->depth > 8)
+            for (p = 0; p < s->nb_planes; p++)
+                s->filter[p] = filter16_scharr;
     }
 
     return 0;
@@ -626,7 +783,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     td.in = in;
     td.out = out;
-    ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN3(s->planeheight[1], s->planewidth[1], s->nb_threads));
+    ff_filter_execute(ctx, filter_slice, &td, NULL,
+                      FFMIN3(s->planeheight[1], s->planewidth[1], s->nb_threads));
 
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
@@ -644,20 +802,25 @@ static av_cold int init(AVFilterContext *ctx)
             float sum = 0;
 
             p = s->matrix_str[i];
-            while (s->matrix_length[i] < 49) {
-                if (!(arg = av_strtok(p, " ", &saveptr)))
-                    break;
+            if (p) {
+                s->matrix_length[i] = 0;
 
-                p = NULL;
-                sscanf(arg, "%d", &matrix[s->matrix_length[i]]);
-                sum += matrix[s->matrix_length[i]];
-                s->matrix_length[i]++;
+                while (s->matrix_length[i] < 49) {
+                    if (!(arg = av_strtok(p, " |", &saveptr)))
+                        break;
+
+                    p = NULL;
+                    sscanf(arg, "%d", &matrix[s->matrix_length[i]]);
+                    sum += matrix[s->matrix_length[i]];
+                    s->matrix_length[i]++;
+                }
+
+                if (!(s->matrix_length[i] & 1)) {
+                    av_log(ctx, AV_LOG_ERROR, "number of matrix elements must be odd\n");
+                    return AVERROR(EINVAL);
+                }
             }
 
-            if (!(s->matrix_length[i] & 1)) {
-                av_log(ctx, AV_LOG_ERROR, "number of matrix elements must be odd\n");
-                return AVERROR(EINVAL);
-            }
             if (s->mode[i] == MATRIX_ROW) {
                 s->filter[i] = filter_row;
                 s->setup[i] = setup_row;
@@ -668,24 +831,31 @@ static av_cold int init(AVFilterContext *ctx)
                 s->size[i] = s->matrix_length[i];
             } else if (s->matrix_length[i] == 9) {
                 s->size[i] = 3;
-                if (!memcmp(matrix, same3x3, sizeof(same3x3)))
+
+                if (!memcmp(matrix, same3x3, sizeof(same3x3))) {
                     s->copy[i] = 1;
-                else
+                } else {
                     s->filter[i] = filter_3x3;
+                    s->copy[i] = 0;
+                }
                 s->setup[i] = setup_3x3;
             } else if (s->matrix_length[i] == 25) {
                 s->size[i] = 5;
-                if (!memcmp(matrix, same5x5, sizeof(same5x5)))
+                if (!memcmp(matrix, same5x5, sizeof(same5x5))) {
                     s->copy[i] = 1;
-                else
+                } else {
                     s->filter[i] = filter_5x5;
+                    s->copy[i] = 0;
+                }
                 s->setup[i] = setup_5x5;
             } else if (s->matrix_length[i] == 49) {
                 s->size[i] = 7;
-                if (!memcmp(matrix, same7x7, sizeof(same7x7)))
+                if (!memcmp(matrix, same7x7, sizeof(same7x7))) {
                     s->copy[i] = 1;
-                else
+                } else {
                     s->filter[i] = filter_7x7;
+                    s->copy[i] = 0;
+                }
                 s->setup[i] = setup_7x7;
             } else {
                 return AVERROR(EINVAL);
@@ -732,9 +902,43 @@ static av_cold int init(AVFilterContext *ctx)
             s->rdiv[i] = s->scale;
             s->bias[i] = s->delta;
         }
+    } else if (!strcmp(ctx->filter->name, "kirsch")) {
+        for (i = 0; i < 4; i++) {
+            if ((1 << i) & s->planes)
+                s->filter[i] = filter_kirsch;
+            else
+                s->copy[i] = 1;
+            s->size[i] = 3;
+            s->setup[i] = setup_3x3;
+            s->rdiv[i] = s->scale;
+            s->bias[i] = s->delta;
+        }
+    } else if (!strcmp(ctx->filter->name, "scharr")) {
+        for (i = 0; i < 4; i++) {
+            if ((1 << i) & s->planes)
+                s->filter[i] = filter_scharr;
+            else
+                s->copy[i] = 1;
+            s->size[i] = 3;
+            s->setup[i] = setup_3x3;
+            s->rdiv[i] = s->scale;
+            s->bias[i] = s->delta;
+        }
     }
 
     return 0;
+}
+
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                           char *res, int res_len, int flags)
+{
+    int ret;
+
+    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+    if (ret < 0)
+        return ret;
+
+    return init(ctx);
 }
 
 static const AVFilterPad convolution_inputs[] = {
@@ -744,7 +948,6 @@ static const AVFilterPad convolution_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad convolution_outputs[] = {
@@ -752,96 +955,116 @@ static const AVFilterPad convolution_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
 #if CONFIG_CONVOLUTION_FILTER
 
-AVFilter ff_vf_convolution = {
+const AVFilter ff_vf_convolution = {
     .name          = "convolution",
     .description   = NULL_IF_CONFIG_SMALL("Apply convolution filter."),
     .priv_size     = sizeof(ConvolutionContext),
     .priv_class    = &convolution_class,
     .init          = init,
     .query_formats = query_formats,
-    .inputs        = convolution_inputs,
-    .outputs       = convolution_outputs,
+    FILTER_INPUTS(convolution_inputs),
+    FILTER_OUTPUTS(convolution_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
 };
 
 #endif /* CONFIG_CONVOLUTION_FILTER */
 
-#if CONFIG_PREWITT_FILTER
-
-static const AVOption prewitt_options[] = {
+static const AVOption common_options[] = {
     { "planes", "set planes to filter", OFFSET(planes), AV_OPT_TYPE_INT,  {.i64=15}, 0, 15, FLAGS},
     { "scale",  "set scale",            OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0,  65535, FLAGS},
     { "delta",  "set delta",            OFFSET(delta), AV_OPT_TYPE_FLOAT, {.dbl=0}, -65535, 65535, FLAGS},
     { NULL }
 };
 
-AVFILTER_DEFINE_CLASS(prewitt);
+AVFILTER_DEFINE_CLASS_EXT(common, "kirsch/prewitt/roberts/scharr/sobel",
+                          common_options);
 
-AVFilter ff_vf_prewitt = {
+#if CONFIG_PREWITT_FILTER
+
+const AVFilter ff_vf_prewitt = {
     .name          = "prewitt",
     .description   = NULL_IF_CONFIG_SMALL("Apply prewitt operator."),
     .priv_size     = sizeof(ConvolutionContext),
-    .priv_class    = &prewitt_class,
+    .priv_class    = &common_class,
     .init          = init,
     .query_formats = query_formats,
-    .inputs        = convolution_inputs,
-    .outputs       = convolution_outputs,
+    FILTER_INPUTS(convolution_inputs),
+    FILTER_OUTPUTS(convolution_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
 };
 
 #endif /* CONFIG_PREWITT_FILTER */
 
 #if CONFIG_SOBEL_FILTER
 
-static const AVOption sobel_options[] = {
-    { "planes", "set planes to filter", OFFSET(planes), AV_OPT_TYPE_INT,  {.i64=15}, 0, 15, FLAGS},
-    { "scale",  "set scale",            OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0,  65535, FLAGS},
-    { "delta",  "set delta",            OFFSET(delta), AV_OPT_TYPE_FLOAT, {.dbl=0}, -65535, 65535, FLAGS},
-    { NULL }
-};
-
-AVFILTER_DEFINE_CLASS(sobel);
-
-AVFilter ff_vf_sobel = {
+const AVFilter ff_vf_sobel = {
     .name          = "sobel",
     .description   = NULL_IF_CONFIG_SMALL("Apply sobel operator."),
     .priv_size     = sizeof(ConvolutionContext),
-    .priv_class    = &sobel_class,
+    .priv_class    = &common_class,
     .init          = init,
     .query_formats = query_formats,
-    .inputs        = convolution_inputs,
-    .outputs       = convolution_outputs,
+    FILTER_INPUTS(convolution_inputs),
+    FILTER_OUTPUTS(convolution_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
 };
 
 #endif /* CONFIG_SOBEL_FILTER */
 
 #if CONFIG_ROBERTS_FILTER
 
-static const AVOption roberts_options[] = {
-    { "planes", "set planes to filter", OFFSET(planes), AV_OPT_TYPE_INT,  {.i64=15}, 0, 15, FLAGS},
-    { "scale",  "set scale",            OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0,  65535, FLAGS},
-    { "delta",  "set delta",            OFFSET(delta), AV_OPT_TYPE_FLOAT, {.dbl=0}, -65535, 65535, FLAGS},
-    { NULL }
-};
-
-AVFILTER_DEFINE_CLASS(roberts);
-
-AVFilter ff_vf_roberts = {
+const AVFilter ff_vf_roberts = {
     .name          = "roberts",
     .description   = NULL_IF_CONFIG_SMALL("Apply roberts cross operator."),
     .priv_size     = sizeof(ConvolutionContext),
-    .priv_class    = &roberts_class,
+    .priv_class    = &common_class,
     .init          = init,
     .query_formats = query_formats,
-    .inputs        = convolution_inputs,
-    .outputs       = convolution_outputs,
+    FILTER_INPUTS(convolution_inputs),
+    FILTER_OUTPUTS(convolution_outputs),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
 };
 
 #endif /* CONFIG_ROBERTS_FILTER */
+
+#if CONFIG_KIRSCH_FILTER
+
+const AVFilter ff_vf_kirsch = {
+    .name          = "kirsch",
+    .description   = NULL_IF_CONFIG_SMALL("Apply kirsch operator."),
+    .priv_size     = sizeof(ConvolutionContext),
+    .priv_class    = &common_class,
+    .init          = init,
+    .query_formats = query_formats,
+    FILTER_INPUTS(convolution_inputs),
+    FILTER_OUTPUTS(convolution_outputs),
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
+};
+
+#endif /* CONFIG_KIRSCH_FILTER */
+
+#if CONFIG_SCHARR_FILTER
+
+const AVFilter ff_vf_scharr = {
+    .name          = "scharr",
+    .description   = NULL_IF_CONFIG_SMALL("Apply scharr operator."),
+    .priv_size     = sizeof(ConvolutionContext),
+    .priv_class    = &common_class,
+    .init          = init,
+    .query_formats = query_formats,
+    FILTER_INPUTS(convolution_inputs),
+    FILTER_OUTPUTS(convolution_outputs),
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = process_command,
+};
+
+#endif /* CONFIG_SCHARR_FILTER */

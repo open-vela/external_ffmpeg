@@ -102,32 +102,19 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    AVFilterChannelLayouts *layouts;
-    AVFilterFormats *formats;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBLP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret;
-
-    layouts = ff_all_channel_counts();
-    if (!layouts)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    int ret = ff_set_common_all_channel_counts(ctx);
     if (ret < 0)
         return ret;
 
-    formats = ff_make_format_list(sample_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    ret = ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
     if (ret < 0)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static void count_items(char *item_str, int *nb_items)
@@ -357,9 +344,9 @@ static int config_output(AVFilterLink *outlink)
 
     uninit(ctx);
 
-    s->channels = av_mallocz_array(channels, sizeof(*s->channels));
+    s->channels = av_calloc(channels, sizeof(*s->channels));
     s->nb_segments = (nb_points + 4) * 2;
-    s->segments = av_mallocz_array(s->nb_segments, sizeof(*s->segments));
+    s->segments = av_calloc(s->nb_segments, sizeof(*s->segments));
 
     if (!s->channels || !s->segments) {
         uninit(ctx);
@@ -571,7 +558,6 @@ static const AVFilterPad compand_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad compand_outputs[] = {
@@ -581,11 +567,10 @@ static const AVFilterPad compand_outputs[] = {
         .config_props  = config_output,
         .type          = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
 
-AVFilter ff_af_compand = {
+const AVFilter ff_af_compand = {
     .name           = "compand",
     .description    = NULL_IF_CONFIG_SMALL(
             "Compress or expand audio dynamic range."),
@@ -594,6 +579,6 @@ AVFilter ff_af_compand = {
     .priv_class     = &compand_class,
     .init           = init,
     .uninit         = uninit,
-    .inputs         = compand_inputs,
-    .outputs        = compand_outputs,
+    FILTER_INPUTS(compand_inputs),
+    FILTER_OUTPUTS(compand_outputs),
 };

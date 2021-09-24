@@ -31,11 +31,12 @@
  * ported by Clément Bœsch for FFmpeg.
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "internal.h"
+#include "qp_table.h"
 #include "vf_spp.h"
 
 enum mode {
@@ -44,9 +45,11 @@ enum mode {
     NB_MODES
 };
 
-static const AVClass *child_class_next(const AVClass *prev)
+static const AVClass *child_class_iterate(void **iter)
 {
-    return prev ? NULL : avcodec_dct_get_class();
+    const AVClass *c = *iter ? NULL : avcodec_dct_get_class();
+    *iter = (void*)(uintptr_t)c;
+    return c;
 }
 
 static void *child_next(void *obj, void *prev)
@@ -74,7 +77,7 @@ static const AVClass spp_class = {
     .option           = spp_options,
     .version          = LIBAVUTIL_VERSION_INT,
     .category         = AV_CLASS_CATEGORY_FILTER,
-    .child_class_next = child_class_next,
+    .child_class_iterate = child_class_iterate,
     .child_next       = child_next,
 };
 
@@ -90,7 +93,8 @@ DECLARE_ALIGNED(8, static const uint8_t, ldither)[8][8] = {
     { 42,  26,  38,  22,  41,  25,  37,  21 },
 };
 
-static const uint8_t offset[127][2] = {
+static const uint8_t offset[128][2] = {
+    {0,0},                                                  // unused
     {0,0},
     {0,0}, {4,4},                                           // quality = 1
     {0,0}, {2,2}, {6,4}, {4,6},                             // quality = 2
@@ -280,8 +284,8 @@ static void filter(SPPContext *p, uint8_t *dst, uint8_t *src,
                 qp = FFMAX(1, ff_norm_qscale(qp, p->qscale_type));
             }
             for (i = 0; i < count; i++) {
-                const int x1 = x + offset[i + count - 1][0];
-                const int y1 = y + offset[i + count - 1][1];
+                const int x1 = x + offset[i + count][0];
+                const int y1 = y + offset[i + count][1];
                 const int index = x1 + y1*linesize;
                 p->dct->get_pixels_unaligned(block, p->src + sample_bytes*index, sample_bytes*linesize);
                 p->dct->fdct(block);
@@ -325,10 +329,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    return ff_set_common_formats_from_list(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -337,6 +338,12 @@ static int config_input(AVFilterLink *inlink)
     const int h = FFALIGN(inlink->h + 16, 16);
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
     const int bps = desc->comp[0].depth;
+
+    s->store_slice = store_slice_c;
+    switch (s->mode) {
+    case MODE_HARD: s->requantize = hardthresh_c; break;
+    case MODE_SOFT: s->requantize = softthresh_c; break;
+    }
 
     av_opt_set_int(s->dct, "bits_per_sample", bps, 0);
     avcodec_dct_init(s->dct);
@@ -362,47 +369,34 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     AVFilterLink *outlink = ctx->outputs[0];
     AVFrame *out = in;
     int qp_stride = 0;
-    const int8_t *qp_table = NULL;
+    int8_t *qp_table = NULL;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
     const int depth = desc->comp[0].depth;
+    int ret = 0;
 
     /* if we are not in a constant user quantizer mode and we don't want to use
      * the quantizers from the B-frames (B-frames often have a higher QP), we
      * need to save the qp table from the last non B-frame; this is what the
      * following code block does */
-    if (!s->qp) {
-        qp_table = av_frame_get_qp_table(in, &qp_stride, &s->qscale_type);
+    if (!s->qp && (s->use_bframe_qp || in->pict_type != AV_PICTURE_TYPE_B)) {
+        ret = ff_qp_table_extract(in, &qp_table, &qp_stride, NULL, &s->qscale_type);
+        if (ret < 0) {
+            av_frame_free(&in);
+            return ret;
+        }
 
-        if (qp_table && !s->use_bframe_qp && in->pict_type != AV_PICTURE_TYPE_B) {
-            int w, h;
-
-            /* if the qp stride is not set, it means the QP are only defined on
-             * a line basis */
-            if (!qp_stride) {
-                w = AV_CEIL_RSHIFT(inlink->w, 4);
-                h = 1;
-            } else {
-                w = qp_stride;
-                h = AV_CEIL_RSHIFT(inlink->h, 4);
-            }
-
-            if (w * h > s->non_b_qp_alloc_size) {
-                int ret = av_reallocp_array(&s->non_b_qp_table, w, h);
-                if (ret < 0) {
-                    s->non_b_qp_alloc_size = 0;
-                    return ret;
-                }
-                s->non_b_qp_alloc_size = w * h;
-            }
-
-            av_assert0(w * h <= s->non_b_qp_alloc_size);
-            memcpy(s->non_b_qp_table, qp_table, w * h);
+        if (!s->use_bframe_qp && in->pict_type != AV_PICTURE_TYPE_B) {
+            av_freep(&s->non_b_qp_table);
+            s->non_b_qp_table  = qp_table;
+            s->non_b_qp_stride = qp_stride;
         }
     }
 
     if (s->log2_count && !ctx->is_disabled) {
-        if (!s->use_bframe_qp && s->non_b_qp_table)
-            qp_table = s->non_b_qp_table;
+        if (!s->use_bframe_qp && s->non_b_qp_table) {
+            qp_table  = s->non_b_qp_table;
+            qp_stride = s->non_b_qp_stride;
+        }
 
         if (qp_table || s->qp) {
             const int cw = AV_CEIL_RSHIFT(inlink->w, s->hsub);
@@ -417,7 +411,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
                 out = ff_get_video_buffer(outlink, aligned_w, aligned_h);
                 if (!out) {
                     av_frame_free(&in);
-                    return AVERROR(ENOMEM);
+                    ret = AVERROR(ENOMEM);
+                    goto finish;
                 }
                 av_frame_copy_props(out, in);
                 out->width  = in->width;
@@ -441,7 +436,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
                                 inlink->w, inlink->h);
         av_frame_free(&in);
     }
-    return ff_filter_frame(outlink, out);
+    ret = ff_filter_frame(outlink, out);
+finish:
+    if (qp_table != s->non_b_qp_table)
+        av_freep(&qp_table);
+    return ret;
 }
 
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
@@ -459,30 +458,14 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     return AVERROR(ENOSYS);
 }
 
-static av_cold int init_dict(AVFilterContext *ctx, AVDictionary **opts)
+static av_cold int preinit(AVFilterContext *ctx)
 {
     SPPContext *s = ctx->priv;
-    int ret;
 
     s->dct = avcodec_dct_alloc();
     if (!s->dct)
         return AVERROR(ENOMEM);
 
-    if (opts) {
-        AVDictionaryEntry *e = NULL;
-
-        while ((e = av_dict_get(*opts, "", e, AV_DICT_IGNORE_SUFFIX))) {
-            if ((ret = av_opt_set(s->dct, e->key, e->value, 0)) < 0)
-                return ret;
-        }
-        av_dict_free(opts);
-    }
-
-    s->store_slice = store_slice_c;
-    switch (s->mode) {
-    case MODE_HARD: s->requantize = hardthresh_c; break;
-    case MODE_SOFT: s->requantize = softthresh_c; break;
-    }
     return 0;
 }
 
@@ -503,7 +486,6 @@ static const AVFilterPad spp_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad spp_outputs[] = {
@@ -511,18 +493,17 @@ static const AVFilterPad spp_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_spp = {
+const AVFilter ff_vf_spp = {
     .name            = "spp",
     .description     = NULL_IF_CONFIG_SMALL("Apply a simple post processing filter."),
     .priv_size       = sizeof(SPPContext),
-    .init_dict       = init_dict,
+    .preinit         = preinit,
     .uninit          = uninit,
     .query_formats   = query_formats,
-    .inputs          = spp_inputs,
-    .outputs         = spp_outputs,
+    FILTER_INPUTS(spp_inputs),
+    FILTER_OUTPUTS(spp_outputs),
     .process_command = process_command,
     .priv_class      = &spp_class,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
