@@ -1,6 +1,5 @@
 /*
- * Unix socket protocol
- * Copyright (c) 2013 Luca Barbato
+ * Rpmsg socket protocol
  *
  * This file is part of FFmpeg.
  *
@@ -22,28 +21,28 @@
 /**
  * @file
  *
- * Unix socket url_protocol
+ * Rpmsg socket url_protocol
  */
 
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
 #include "os_support.h"
 #include "network.h"
-#include <sys/un.h>
+#include <netpacket/rpmsg.h>
 #include "url.h"
 
-typedef struct UnixContext {
+typedef struct RpmsgContext {
     const AVClass *class;
-    struct sockaddr_un addr;
+    struct sockaddr_rpmsg addr;
     int timeout;
     int listen;
     int type;
     int fd;
-} UnixContext;
+} RpmsgContext;
 
-#define OFFSET(x) offsetof(UnixContext, x)
+#define OFFSET(x) offsetof(RpmsgContext, x)
 #define ED AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_ENCODING_PARAM
-static const AVOption unix_options[] = {
+static const AVOption rpmsg_options[] = {
     { "listen",    "Open socket for listening",             OFFSET(listen),  AV_OPT_TYPE_BOOL,  { .i64 = 0 },                    0,       1, ED },
     { "timeout",   "Timeout in ms",                         OFFSET(timeout), AV_OPT_TYPE_INT,   { .i64 = -1 },                  -1, INT_MAX, ED },
     { "type",      "Socket type",                           OFFSET(type),    AV_OPT_TYPE_INT,   { .i64 = SOCK_STREAM },    INT_MIN, INT_MAX, ED, "type" },
@@ -53,23 +52,31 @@ static const AVOption unix_options[] = {
     { NULL }
 };
 
-static const AVClass unix_class = {
-    .class_name = "unix",
+static const AVClass rpmsg_class = {
+    .class_name = "rpmsg",
     .item_name  = av_default_item_name,
-    .option     = unix_options,
+    .option     = rpmsg_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static int unix_open(URLContext *h, const char *filename, int flags)
+static int rpmsg_open(URLContext *h, const char *filename, int flags)
 {
-    UnixContext *s = h->priv_data;
+    RpmsgContext *s = h->priv_data;
+    const char *tmp;
     int fd, ret;
 
-    av_strstart(filename, "unix:", &filename);
-    s->addr.sun_family = AF_UNIX;
-    av_strlcpy(s->addr.sun_path, filename, sizeof(s->addr.sun_path));
+    av_strstart(filename, "rpmsg:", &filename);
+    s->addr.rp_family = AF_RPMSG;
 
-    if ((fd = ff_socket(AF_UNIX, s->type, 0)) < 0)
+    av_strstart(filename, ":", &tmp);
+    if (tmp) {
+        av_strlcpy(s->addr.rp_cpu, filename, FFMIN(filename - tmp - 1, RPMSG_SOCKET_CPU_SIZE));
+        filename = tmp;
+    }
+
+    av_strlcpy(s->addr.rp_name, filename, sizeof(s->addr.rp_name));
+
+    if ((fd = ff_socket(AF_RPMSG, s->type, 0)) < 0)
         return ff_neterrno();
 
     if (s->timeout < 0 && h->rw_timeout)
@@ -93,16 +100,14 @@ static int unix_open(URLContext *h, const char *filename, int flags)
     return 0;
 
 fail:
-    if (s->listen && AVUNERROR(ret) != EADDRINUSE)
-        unlink(s->addr.sun_path);
     if (fd >= 0)
         closesocket(fd);
     return ret;
 }
 
-static int unix_read(URLContext *h, uint8_t *buf, int size)
+static int rpmsg_read(URLContext *h, uint8_t *buf, int size)
 {
-    UnixContext *s = h->priv_data;
+    RpmsgContext *s = h->priv_data;
     int ret;
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
@@ -116,9 +121,9 @@ static int unix_read(URLContext *h, uint8_t *buf, int size)
     return ret < 0 ? ff_neterrno() : ret;
 }
 
-static int unix_write(URLContext *h, const uint8_t *buf, int size)
+static int rpmsg_write(URLContext *h, const uint8_t *buf, int size)
 {
-    UnixContext *s = h->priv_data;
+    RpmsgContext *s = h->priv_data;
     int ret;
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
@@ -130,29 +135,27 @@ static int unix_write(URLContext *h, const uint8_t *buf, int size)
     return ret < 0 ? ff_neterrno() : ret;
 }
 
-static int unix_close(URLContext *h)
+static int rpmsg_close(URLContext *h)
 {
-    UnixContext *s = h->priv_data;
-    if (s->listen)
-        unlink(s->addr.sun_path);
+    RpmsgContext *s = h->priv_data;
     closesocket(s->fd);
     return 0;
 }
 
-static int unix_get_file_handle(URLContext *h)
+static int rpmsg_get_file_handle(URLContext *h)
 {
-    UnixContext *s = h->priv_data;
+    RpmsgContext *s = h->priv_data;
     return s->fd;
 }
 
-const URLProtocol ff_unix_protocol = {
-    .name                = "unix",
-    .url_open            = unix_open,
-    .url_read            = unix_read,
-    .url_write           = unix_write,
-    .url_close           = unix_close,
-    .url_get_file_handle = unix_get_file_handle,
-    .priv_data_size      = sizeof(UnixContext),
-    .priv_data_class     = &unix_class,
+const URLProtocol ff_rpmsg_protocol = {
+    .name                = "rpmsg",
+    .url_open            = rpmsg_open,
+    .url_read            = rpmsg_read,
+    .url_write           = rpmsg_write,
+    .url_close           = rpmsg_close,
+    .url_get_file_handle = rpmsg_get_file_handle,
+    .priv_data_size      = sizeof(RpmsgContext),
+    .priv_data_class     = &rpmsg_class,
     .flags               = URL_PROTOCOL_FLAG_NETWORK,
 };
