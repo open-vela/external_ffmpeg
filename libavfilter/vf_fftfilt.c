@@ -385,30 +385,22 @@ static av_cold void uninit(AVFilterContext *ctx)
     }
 }
 
-static int query_formats(AVFilterContext *ctx)
-{
-    static const enum AVPixelFormat pixel_fmts_fftfilt[] = {
-        AV_PIX_FMT_GRAY8,
-        AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUVJ444P,
-        AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUVJ420P,
-        AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUVJ422P,
-        AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV420P10,
-        AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV420P14,
-        AV_PIX_FMT_YUV420P16,
-        AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV422P10,
-        AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV422P14,
-        AV_PIX_FMT_YUV422P16,
-        AV_PIX_FMT_YUV444P9, AV_PIX_FMT_YUV444P10,
-        AV_PIX_FMT_YUV444P12, AV_PIX_FMT_YUV444P14,
-        AV_PIX_FMT_YUV444P16,
-        AV_PIX_FMT_NONE
-    };
-
-    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts_fftfilt);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
-}
+static const enum AVPixelFormat pixel_fmts_fftfilt[] = {
+    AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUVJ444P,
+    AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUVJ420P,
+    AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUVJ422P,
+    AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV420P10,
+    AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV420P14,
+    AV_PIX_FMT_YUV420P16,
+    AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV422P10,
+    AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV422P14,
+    AV_PIX_FMT_YUV422P16,
+    AV_PIX_FMT_YUV444P9, AV_PIX_FMT_YUV444P10,
+    AV_PIX_FMT_YUV444P12, AV_PIX_FMT_YUV444P14,
+    AV_PIX_FMT_YUV444P16,
+    AV_PIX_FMT_NONE
+};
 
 static const AVFilterPad fftfilt_inputs[] = {
     {
@@ -417,7 +409,6 @@ static const AVFilterPad fftfilt_inputs[] = {
         .config_props = config_props,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad fftfilt_outputs[] = {
@@ -425,17 +416,16 @@ static const AVFilterPad fftfilt_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_fftfilt = {
+const AVFilter ff_vf_fftfilt = {
     .name            = "fftfilt",
     .description     = NULL_IF_CONFIG_SMALL("Apply arbitrary expressions to pixels in frequency domain."),
     .priv_size       = sizeof(FFTFILTContext),
     .priv_class      = &fftfilt_class,
-    .inputs          = fftfilt_inputs,
-    .outputs         = fftfilt_outputs,
-    .query_formats   = query_formats,
+    FILTER_INPUTS(fftfilt_inputs),
+    FILTER_OUTPUTS(fftfilt_outputs),
+    FILTER_PIXFMTS_ARRAY(pixel_fmts_fftfilt),
     .init            = initialize,
     .uninit          = uninit,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,

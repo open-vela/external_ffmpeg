@@ -25,21 +25,6 @@
 #include "formats.h"
 #include "opencl.h"
 
-int ff_opencl_filter_query_formats(AVFilterContext *avctx)
-{
-    const static enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_OPENCL,
-        AV_PIX_FMT_NONE,
-    };
-    AVFilterFormats *formats;
-
-    formats = ff_make_format_list(pix_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-
-    return ff_set_common_formats(avctx, formats);
-}
-
 static int opencl_filter_set_device(AVFilterContext *avctx,
                                     AVBufferRef *device)
 {
