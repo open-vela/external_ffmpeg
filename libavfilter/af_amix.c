@@ -721,7 +721,27 @@ static int query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *formats = NULL;
     AVFilterChannelLayouts *layouts;
-    int ret;
+    int i, ret;
+
+    if (ctx->outputs[0]->in_formats) {
+        for (i = 0; i < ctx->nb_inputs; i++) {
+            if (!ctx->inputs[i]->out_formats) {
+                ret = ff_formats_ref(ctx->outputs[0]->in_formats, &ctx->inputs[i]->out_formats);
+                if (ret < 0)
+                    return ret;
+
+                ret = ff_formats_ref(ctx->outputs[0]->in_samplerates, &ctx->inputs[i]->out_samplerates);
+                if (ret < 0)
+                    return ret;
+
+                ret = ff_channel_layouts_ref(ctx->outputs[0]->in_channel_layouts, &ctx->inputs[i]->out_channel_layouts);
+                if (ret < 0)
+                    return ret;
+            }
+        }
+
+        return 0;
+    }
 
     layouts = ff_all_channel_counts();
     if (!layouts) {
