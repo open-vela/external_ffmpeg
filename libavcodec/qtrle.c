@@ -36,7 +36,6 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "decode.h"
 #include "bytestream.h"
 #include "internal.h"
 
@@ -540,7 +539,15 @@ static int qtrle_decode_frame(AVCodecContext *avctx,
     }
 
     if(has_palette) {
-        s->frame->palette_has_changed = ff_copy_palette(s->pal, avpkt, avctx);
+        int size;
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
+
+        if (pal && size == AVPALETTE_SIZE) {
+            s->frame->palette_has_changed = 1;
+            memcpy(s->pal, pal, AVPALETTE_SIZE);
+        } else if (pal) {
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
+        }
 
         /* make the palette available on the way out */
         memcpy(s->frame->data[1], s->pal, AVPALETTE_SIZE);
@@ -581,7 +588,7 @@ static av_cold int qtrle_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_qtrle_decoder = {
+AVCodec ff_qtrle_decoder = {
     .name           = "qtrle",
     .long_name      = NULL_IF_CONFIG_SMALL("QuickTime Animation (RLE) video"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -592,5 +599,4 @@ const AVCodec ff_qtrle_decoder = {
     .decode         = qtrle_decode_frame,
     .flush          = qtrle_decode_flush,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
