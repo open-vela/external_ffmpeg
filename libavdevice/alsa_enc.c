@@ -37,6 +37,8 @@
  * which gives a low latency suitable for real-time playback.
  */
 
+#define _POSIX_C_SOURCE 2
+
 #include <alsa/asoundlib.h>
 
 #include "libavutil/internal.h"
@@ -157,7 +159,7 @@ static const AVClass alsa_muxer_class = {
     .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
 };
 
-const AVOutputFormat ff_alsa_muxer = {
+AVOutputFormat ff_alsa_muxer = {
     .name           = "alsa",
     .long_name      = NULL_IF_CONFIG_SMALL("ALSA audio output"),
     .priv_data_size = sizeof(AlsaData),
