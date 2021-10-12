@@ -115,9 +115,13 @@ static int config_output(AVFilterLink *outlink)
     StreamSelectContext *s = ctx->priv;
     const int outlink_idx = FF_OUTLINK_IDX(outlink);
     const int inlink_idx  = s->map[outlink_idx];
-    AVFilterLink *inlink = ctx->inputs[inlink_idx];
+
+    if (inlink_idx < 0)
+        return 0;
 
     if (outlink->type == AVMEDIA_TYPE_VIDEO) {
+        AVFilterLink *inlink = ctx->inputs[inlink_idx];
+
         outlink->w = inlink->w;
         outlink->h = inlink->h;
         outlink->sample_aspect_ratio = inlink->sample_aspect_ratio;
@@ -191,7 +195,7 @@ static int parse_mapping(AVFilterContext *ctx, const char *map)
             return AVERROR(EINVAL);
         }
 
-        if (n >= ctx->nb_inputs) {
+        if (n >= s->nb_inputs) {
             av_log(ctx, AV_LOG_ERROR, "Input stream index %d doesn't exist "
                    "(there is only %d input streams defined)\n",
                    n, s->nb_inputs);
