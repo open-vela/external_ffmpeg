@@ -227,10 +227,18 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 {
     if (!strcmp(cmd, "map")) {
         int ret = parse_mapping(ctx, args);
-
         if (ret < 0)
             return ret;
-        return avfilter_config_links(ctx);
+
+        ret = avfilter_graph_reconfig(ctx->graph, NULL);
+        if (ret >= 0) {
+            for (int i = 0; i < ctx->nb_outputs; i++)
+                if (ctx->outputs[i]->in_formats)
+                    ctx->outputs[i]->frame_wanted_out = 1;
+            ff_filter_set_ready(ctx, 100);
+        }
+
+        return ret;
     }
     return AVERROR(ENOSYS);
 }
@@ -277,23 +285,29 @@ static av_cold void uninit(AVFilterContext *ctx)
         av_freep(&ctx->output_pads[i].name);
 }
 
-static int query_formats(AVFilterContext *ctx)
+static int query_formats_ref(AVFilterLink *link, bool out,
+                             AVFilterFormats *formats,
+                             AVFilterFormats *rates,
+                             AVFilterChannelLayouts *layouts)
 {
-    AVFilterFormats *formats, *rates = NULL;
-    AVFilterChannelLayouts *layouts = NULL;
-    int ret, i;
+    int ret;
 
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        formats = ff_all_formats(ctx->inputs[i]->type);
-        if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+    if (out ? !link->out_formats : !link->in_formats) {
+        ret = ff_formats_ref(formats, out ? &link->out_formats : &link->in_formats);
+        if (ret < 0)
             return ret;
+    }
 
-        if (ctx->inputs[i]->type == AVMEDIA_TYPE_AUDIO) {
-            rates = ff_all_samplerates();
-            if ((ret = ff_set_common_samplerates(ctx, rates)) < 0)
+    if (link->type == AVMEDIA_TYPE_AUDIO) {
+        if (out ? !link->out_samplerates : !link->in_samplerates) {
+            ret = ff_formats_ref(rates, out ? &link->out_samplerates : &link->in_samplerates);
+            if (ret < 0)
                 return ret;
-            layouts = ff_all_channel_counts();
-            if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
+        }
+
+        if (out ? !link->out_channel_layouts : !link->in_channel_layouts) {
+            ret = ff_channel_layouts_ref(layouts, out ? &link->out_channel_layouts : &link->in_channel_layouts);
+            if (ret < 0)
                 return ret;
         }
     }
@@ -301,31 +315,135 @@ static int query_formats(AVFilterContext *ctx)
     return 0;
 }
 
+static void query_formats_unref(AVFilterLink *link, bool out)
+{
+    if (out) {
+        ff_formats_unref(&link->out_formats);
+        ff_formats_unref(&link->out_samplerates);
+        ff_channel_layouts_unref(&link->out_channel_layouts);
+    } else {
+        ff_formats_unref(&link->in_formats);
+        ff_formats_unref(&link->in_samplerates);
+        ff_channel_layouts_unref(&link->in_channel_layouts);
+    }
+}
+
+static int query_formats(AVFilterContext *ctx)
+{
+    StreamSelectContext *s = ctx->priv;
+    AVFilterFormats *formats = NULL;
+    AVFilterFormats *rates = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
+    int ret = 0;
+    int i, j;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        bool eof = true;
+
+        for (j = 0; j < s->nb_map; j++) {
+            if (s->map[j] < 0)
+                query_formats_unref(ctx->outputs[j], false);
+            else if (s->map[j] == i) {
+                if (ctx->outputs[j]->in_formats) {
+                    formats = ctx->outputs[j]->in_formats;
+                    rates   = ctx->outputs[j]->in_samplerates;
+                    layouts = ctx->outputs[j]->in_channel_layouts;
+                }
+                eof = false;
+            }
+        }
+
+        if (eof) {
+            query_formats_unref(ctx->inputs[i], true);
+            continue;
+        }
+
+        if (!formats) {
+            if (ctx->inputs[i]->out_formats) {
+                formats = ctx->inputs[i]->out_formats;
+                rates   = ctx->inputs[i]->out_samplerates;
+                layouts = ctx->inputs[i]->out_channel_layouts;
+            } else {
+                formats = ff_all_formats(ctx->inputs[0]->type);
+                rates   = ff_all_samplerates();
+                layouts = ff_all_channel_counts();
+            }
+        }
+
+        for (j = 0; j < s->nb_map; j++) {
+            if (s->map[j] == i) {
+                ret = query_formats_ref(ctx->outputs[j], false, formats, rates, layouts);
+                if (ret < 0)
+                    return ret;
+            }
+        }
+
+        ret = query_formats_ref(ctx->inputs[i], true, formats, rates, layouts);
+        if (ret < 0)
+            return ret;
+    }
+
+    return 0;
+}
+
+static int sanitize_formats(AVFilterContext *ctx)
+{
+    StreamSelectContext *s = ctx->priv;
+    bool changed = false;
+    int i, j;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        bool used = false;
+
+        for (j = 0; j < s->nb_map; j++) {
+            if (s->map[j] == i && ctx->outputs[j]->in_formats) {
+                used = true;
+                break;
+            }
+        }
+
+        if (ctx->inputs[i]->out_formats && !used) {
+            query_formats_unref(ctx->inputs[i], true);
+            changed = true;
+        } else if (!ctx->inputs[i]->out_formats && used) {
+            for (j = 0; j < s->nb_map; j++) {
+                if (s->map[j] == i)
+                    query_formats_unref(ctx->outputs[j], false);
+            }
+            changed = true;
+        }
+    }
+
+    return changed ? AVERROR(EAGAIN) : 0;
+}
+
 AVFilter ff_vf_streamselect = {
-    .name            = "streamselect",
-    .description     = NULL_IF_CONFIG_SMALL("Select video streams"),
-    .init            = init,
-    .query_formats   = query_formats,
-    .process_command = process_command,
-    .uninit          = uninit,
-    .activate        = activate,
-    .priv_size       = sizeof(StreamSelectContext),
-    .priv_class      = &streamselect_class,
-    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+    .name             = "streamselect",
+    .description      = NULL_IF_CONFIG_SMALL("Select video streams"),
+    .init             = init,
+    .query_formats    = query_formats,
+    .sanitize_formats = sanitize_formats,
+    .process_command  = process_command,
+    .uninit           = uninit,
+    .activate         = activate,
+    .priv_size        = sizeof(StreamSelectContext),
+    .priv_class       = &streamselect_class,
+    .flags            = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
 
 #define astreamselect_options streamselect_options
 AVFILTER_DEFINE_CLASS(astreamselect);
 
 AVFilter ff_af_astreamselect = {
-    .name            = "astreamselect",
-    .description     = NULL_IF_CONFIG_SMALL("Select audio streams"),
-    .init            = init,
-    .query_formats   = query_formats,
-    .process_command = process_command,
-    .uninit          = uninit,
-    .activate        = activate,
-    .priv_size       = sizeof(StreamSelectContext),
-    .priv_class      = &astreamselect_class,
-    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+    .name             = "astreamselect",
+    .description      = NULL_IF_CONFIG_SMALL("Select audio streams"),
+    .init             = init,
+    .query_formats    = query_formats,
+    .sanitize_formats = sanitize_formats,
+    .process_command  = process_command,
+    .uninit           = uninit,
+    .activate         = activate,
+    .priv_size        = sizeof(StreamSelectContext),
+    .priv_class       = &astreamselect_class,
+    .flags            = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
