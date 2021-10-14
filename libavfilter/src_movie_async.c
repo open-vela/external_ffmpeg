@@ -65,6 +65,7 @@ typedef struct MovieStream {
     AVStream         *st;
     AVCodecContext   *codec_ctx;
     FFFrameQueue     dat_queue;
+    int              framed;                  /**< whether any frame has filter_frame to link */
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -966,22 +967,26 @@ static int movie_async_activate(AVFilterContext *ctx)
         if (movie_async_dat_empty(ctx, i))
             continue;
 
+        if (movie->streams[i].framed == 0)
+            avfilter_graph_reconfig(ctx->graph, NULL);
+
         link = ctx->outputs[i];
         status = ff_outlink_get_status(link);
-        if (status < 0) {
-            avfilter_graph_reconfig(ctx->graph, NULL);
-            link = ctx->outputs[i];
-        }
 
-        if (!status && !ff_outlink_frame_wanted(link))
+        if (status < 0 || !link->in_formats)
+            continue;
+
+        if (movie->streams[i].framed && !ff_outlink_frame_wanted(link))
             continue;
 
         frame = movie_async_recv_dat(ctx, i);
         if (!frame->linesize[0]) {
+            movie->streams[i].framed = 0;
             ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
             av_frame_free(&frame);
         } else {
             ret = ff_filter_frame(link, frame);
+            movie->streams[i].framed = 1;
         }
     }
 
