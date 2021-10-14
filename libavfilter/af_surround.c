@@ -175,7 +175,7 @@ static int query_formats(AVFilterContext *ctx)
     if (ret)
         return ret;
 
-    ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->in_channel_layouts);
+    ret = ff_channel_layouts_ref(layouts, &ctx->outputs[0]->incfg.channel_layouts);
     if (ret)
         return ret;
 
@@ -184,14 +184,11 @@ static int query_formats(AVFilterContext *ctx)
     if (ret)
         return ret;
 
-    ret = ff_channel_layouts_ref(layouts, &ctx->inputs[0]->out_channel_layouts);
+    ret = ff_channel_layouts_ref(layouts, &ctx->inputs[0]->outcfg.channel_layouts);
     if (ret)
         return ret;
 
-    formats = ff_all_samplerates();
-    if (!formats)
-        return AVERROR(ENOMEM);
-    return ff_set_common_samplerates(ctx, formats);
+    return ff_set_common_all_samplerates(ctx);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -203,13 +200,13 @@ static int config_input(AVFilterLink *inlink)
     s->rdft = av_calloc(inlink->channels, sizeof(*s->rdft));
     if (!s->rdft)
         return AVERROR(ENOMEM);
+    s->nb_in_channels = inlink->channels;
 
     for (ch = 0; ch < inlink->channels; ch++) {
         s->rdft[ch]  = av_rdft_init(ff_log2(s->buf_size), DFT_R2C);
         if (!s->rdft[ch])
             return AVERROR(ENOMEM);
     }
-    s->nb_in_channels = inlink->channels;
     s->input_levels = av_malloc_array(s->nb_in_channels, sizeof(*s->input_levels));
     if (!s->input_levels)
         return AVERROR(ENOMEM);
@@ -266,13 +263,13 @@ static int config_output(AVFilterLink *outlink)
     s->irdft = av_calloc(outlink->channels, sizeof(*s->irdft));
     if (!s->irdft)
         return AVERROR(ENOMEM);
+    s->nb_out_channels = outlink->channels;
 
     for (ch = 0; ch < outlink->channels; ch++) {
         s->irdft[ch] = av_rdft_init(ff_log2(s->buf_size), IDFT_C2R);
         if (!s->irdft[ch])
             return AVERROR(ENOMEM);
     }
-    s->nb_out_channels = outlink->channels;
     s->output_levels = av_malloc_array(s->nb_out_channels, sizeof(*s->output_levels));
     if (!s->output_levels)
         return AVERROR(ENOMEM);
@@ -1589,7 +1586,7 @@ static int filter_frame(AVFilterLink *inlink)
     if (ret < 0)
         return ret;
 
-    ctx->internal->execute(ctx, fft_channel, NULL, NULL, inlink->channels);
+    ff_filter_execute(ctx, fft_channel, NULL, NULL, inlink->channels);
 
     s->filter(ctx);
 
@@ -1597,7 +1594,7 @@ static int filter_frame(AVFilterLink *inlink)
     if (!out)
         return AVERROR(ENOMEM);
 
-    ctx->internal->execute(ctx, ifft_channel, out, NULL, outlink->channels);
+    ff_filter_execute(ctx, ifft_channel, out, NULL, outlink->channels);
 
     out->pts = s->pts;
     if (s->pts != AV_NOPTS_VALUE)
@@ -1773,7 +1770,6 @@ static const AVFilterPad inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -1782,19 +1778,18 @@ static const AVFilterPad outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_af_surround = {
+const AVFilter ff_af_surround = {
     .name           = "surround",
     .description    = NULL_IF_CONFIG_SMALL("Apply audio surround upmix filter."),
-    .query_formats  = query_formats,
     .priv_size      = sizeof(AudioSurroundContext),
     .priv_class     = &surround_class,
     .init           = init,
     .uninit         = uninit,
     .activate       = activate,
-    .inputs         = inputs,
-    .outputs        = outputs,
+    FILTER_INPUTS(inputs),
+    FILTER_OUTPUTS(outputs),
+    FILTER_QUERY_FUNC(query_formats),
     .flags          = AVFILTER_FLAG_SLICE_THREADS,
 };
