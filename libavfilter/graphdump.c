@@ -171,9 +171,11 @@ static void graph_link_dump(AVBPrint *buf, AVFilterContext *cur, AVFilterLink *l
     char tmp[64];
 
     if (!link) {
-        av_bprintf(buf, "%73s", "");
+        av_bprintf(buf, "%79s", "");
         return;
     }
+
+    av_bprintf(buf, "f:%d|%d ", !!link->in_formats, !!link->out_formats);
 
     switch (link->type) {
         case AVMEDIA_TYPE_VIDEO:
