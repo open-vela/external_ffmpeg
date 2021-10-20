@@ -101,6 +101,7 @@ static void vp8_release_frame(VP8Context *s, VP8Frame *f)
 }
 
 #if CONFIG_VP8_DECODER
+#if HAVE_THREADS
 static int vp8_ref_frame(VP8Context *s, VP8Frame *dst, VP8Frame *src)
 {
     int ret;
@@ -123,6 +124,7 @@ static int vp8_ref_frame(VP8Context *s, VP8Frame *dst, VP8Frame *src)
 
     return 0;
 }
+#endif
 #endif /* CONFIG_VP8_DECODER */
 
 static void vp8_decode_flush_impl(AVCodecContext *avctx, int free_mem)
@@ -2362,7 +2364,10 @@ static av_always_inline int decode_mb_row_no_filter(AVCodecContext *avctx, void 
                                         int jobnr, int threadnr, int is_vp7)
 {
     VP8Context *s = avctx->priv_data;
-    VP8ThreadData *prev_td, *next_td, *td = &s->thread_data[threadnr];
+    VP8ThreadData *prev_td, *td = &s->thread_data[threadnr];
+#if HAVE_THREADS
+    VP8ThreadData *next_td;
+#endif
     int mb_y = atomic_load(&td->thread_mb_pos) >> 16;
     int mb_x, mb_xy = mb_y * s->mb_width;
     int num_jobs = s->num_jobs;
@@ -2382,10 +2387,12 @@ static av_always_inline int decode_mb_row_no_filter(AVCodecContext *avctx, void 
         prev_td = td;
     else
         prev_td = &s->thread_data[(jobnr + num_jobs - 1) % num_jobs];
+#if HAVE_THREADS
     if (mb_y == s->mb_height - 1)
         next_td = td;
     else
         next_td = &s->thread_data[(jobnr + 1) % num_jobs];
+#endif
     if (s->mb_layout == 1)
         mb = s->macroblocks_base + ((s->mb_width + 1) * (mb_y + 1) + 1);
     else {

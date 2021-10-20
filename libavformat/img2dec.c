@@ -160,6 +160,7 @@ fail:
     return -1;
 }
 
+#if CONFIG_IMAGE2_DEMUXER
 static int img_read_probe(const AVProbeData *p)
 {
     if (p->filename && ff_guess_image2_codec(p->filename)) {
@@ -178,6 +179,7 @@ static int img_read_probe(const AVProbeData *p)
     }
     return 0;
 }
+#endif
 
 int ff_img_read_header(AVFormatContext *s1)
 {
@@ -567,6 +569,7 @@ fail:
     return res;
 }
 
+#if CONFIG_IMAGE2_DEMUXER
 static int img_read_close(struct AVFormatContext* s1)
 {
 #if HAVE_GLOB
@@ -577,7 +580,9 @@ static int img_read_close(struct AVFormatContext* s1)
 #endif
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE2_DEMUXER
 static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp, int flags)
 {
     VideoDemuxData *s1 = s->priv_data;
@@ -597,6 +602,7 @@ static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
     s1->pts = timestamp;
     return 0;
 }
+#endif
 
 #define OFFSET(x) offsetof(VideoDemuxData, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
