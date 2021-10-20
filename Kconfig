@@ -28,14 +28,6 @@ config LIB_FFMPEG_CONFIGURATION
 	---help---
 		FFmpeg configuration which pass to configure
 
-config LIB_FFMPEG_MOVIE_STACK_SIZE
-	int "movie stack size"
-	default 61440
-
-config LIB_FFMPEG_MOVIE_PRIORITY
-	int "movie priority"
-	default 244
-
 config LIB_FFMPEG_TOOLS_PRIORITY
 	int "task priority"
 	default 100

@@ -74,6 +74,8 @@ typedef struct MovieAsyncContext {
     int                       dat_max;
     int                       cmd_max;
     int                       silent_samples;
+    int                       stack_size;
+    int                       priority;
 
     MovieStream               *streams;       /**< array of all streams, one per output */
     AVFormatContext           *format_ctx;
@@ -97,9 +99,11 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",        "maximum number of dat queue", OFFSET(dat_max),         AV_OPT_TYPE_INT, {.i64 = 4 },    2, 8,    FLAGS },
-    { "cmdqmax",        "maximum number of cmd queue", OFFSET(cmd_max),         AV_OPT_TYPE_INT, {.i64 = 16 },   8, 32,   FLAGS },
-    { "silent_samples", "samples of silent frame",     OFFSET(silent_samples),  AV_OPT_TYPE_INT, {.i64 = 1024 }, 0, 2048, FLAGS },
+    { "datqmax",        "maximum number of dat queue", OFFSET(dat_max),         AV_OPT_TYPE_INT, {.i64 = 4 },      2, 8,         FLAGS },
+    { "cmdqmax",        "maximum number of cmd queue", OFFSET(cmd_max),         AV_OPT_TYPE_INT, {.i64 = 16 },     8, 32,        FLAGS },
+    { "silent_samples", "samples of silent frame",     OFFSET(silent_samples),  AV_OPT_TYPE_INT, {.i64 = 1024 },   0, 2048,      FLAGS },
+    { "stack_size",     "stack size of work thread",   OFFSET(stack_size),      AV_OPT_TYPE_INT, {.i64 = 61440 },  0, INT32_MAX, FLAGS },
+    { "priority",       "priority of work thread",     OFFSET(priority),        AV_OPT_TYPE_INT, {.i64 = 244 },    0, INT16_MAX, FLAGS },
     { NULL },
 };
 
@@ -503,8 +507,8 @@ static int movie_async_open(AVFilterContext *ctx)
     movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
 
     pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, CONFIG_LIB_FFMPEG_MOVIE_STACK_SIZE);
-    param.sched_priority = CONFIG_LIB_FFMPEG_MOVIE_PRIORITY;
+    pthread_attr_setstacksize(&attr, movie->stack_size);
+    param.sched_priority = movie->priority;
     pthread_attr_setschedparam(&attr, &param);
     ret = pthread_create(&thread, &attr, movie_async_thread, ctx);
     if (ret != 0) {
