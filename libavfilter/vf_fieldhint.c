@@ -77,11 +77,19 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    int reject_flags = AV_PIX_FMT_FLAG_BITSTREAM |
-                       AV_PIX_FMT_FLAG_HWACCEL   |
-                       AV_PIX_FMT_FLAG_PAL;
+    AVFilterFormats *pix_fmts = NULL;
+    int fmt, ret;
 
-    return ff_set_common_formats(ctx, ff_formats_pixdesc_filter(0, reject_flags));
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+        if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
+              desc->flags & AV_PIX_FMT_FLAG_PAL     ||
+              desc->flags & AV_PIX_FMT_FLAG_BITSTREAM) &&
+            (ret = ff_add_format(&pix_fmts, fmt)) < 0)
+            return ret;
+    }
+
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -279,6 +287,7 @@ static const AVFilterPad inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -287,16 +296,17 @@ static const AVFilterPad outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .request_frame = request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_fieldhint = {
+AVFilter ff_vf_fieldhint = {
     .name          = "fieldhint",
     .description   = NULL_IF_CONFIG_SMALL("Field matching using hints."),
     .priv_size     = sizeof(FieldHintContext),
     .priv_class    = &fieldhint_class,
     .init          = init,
     .uninit        = uninit,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .query_formats = query_formats,
+    .inputs        = inputs,
+    .outputs       = outputs,
 };
