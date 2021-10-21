@@ -21,8 +21,6 @@
 #ifndef AVCODEC_QSV_INTERNAL_H
 #define AVCODEC_QSV_INTERNAL_H
 
-#include "config.h"
-
 #if CONFIG_VAAPI
 #define AVCODEC_QSV_LINUX_SESSION_HANDLE
 #endif //CONFIG_VAAPI
@@ -62,7 +60,7 @@
 
 typedef struct QSVMid {
     AVBufferRef *hw_frames_ref;
-    mfxHDLPair *handle_pair;
+    mfxHDL handle;
 
     AVFrame *locked_frame;
     AVFrame *hw_frame;
@@ -106,6 +104,11 @@ typedef struct QSVFramesContext {
 int ff_qsv_print_iopattern(void *log_ctx, int mfx_iopattern,
                            const char *extra_string);
 
+/**
+ * Convert a libmfx error code into an ffmpeg error code.
+ */
+int ff_qsv_map_error(mfxStatus mfx_err, const char **desc);
+
 int ff_qsv_print_error(void *log_ctx, mfxStatus err,
                        const char *error_string);
 
@@ -113,6 +116,7 @@ int ff_qsv_print_warning(void *log_ctx, mfxStatus err,
                          const char *warning_string);
 
 int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id);
+int ff_qsv_level_to_mfx(enum AVCodecID codec_id, int level);
 
 enum AVPixelFormat ff_qsv_map_fourcc(uint32_t fourcc);
 
