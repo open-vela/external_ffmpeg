@@ -193,7 +193,7 @@ static int gdv_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     return 0;
 }
 
-const AVInputFormat ff_gdv_demuxer = {
+AVInputFormat ff_gdv_demuxer = {
     .name           = "gdv",
     .long_name      = NULL_IF_CONFIG_SMALL("Gremlin Digital Video"),
     .priv_data_size = sizeof(GDVContext),
