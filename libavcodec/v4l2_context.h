@@ -24,14 +24,13 @@
 #ifndef AVCODEC_V4L2_CONTEXT_H
 #define AVCODEC_V4L2_CONTEXT_H
 
-#include <stdint.h>
+#include <stdatomic.h>
 #include <linux/videodev2.h>
 
+#include "libavcodec/avcodec.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/frame.h"
-#include "libavutil/rational.h"
-#include "codec_id.h"
-#include "packet.h"
+#include "libavutil/buffer.h"
 #include "v4l2_buffers.h"
 
 typedef struct V4L2Context {

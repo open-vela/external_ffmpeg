@@ -30,6 +30,7 @@
 
 /**
  * Special return code when activate() did not do anything.
+ * Special return code when query_formats() not ready.
  */
 #define FFERROR_NOT_READY FFERRTAG('N','R','D','Y')
 
