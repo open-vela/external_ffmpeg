@@ -175,6 +175,8 @@ static int read_packet(AVFormatContext *s,
             return 0;
 
         case MM_TYPE_AUDIO :
+            if (s->nb_streams < 2)
+                return AVERROR_INVALIDDATA;
             if ((ret = av_get_packet(s->pb, pkt, length)) < 0)
                 return ret;
             pkt->stream_index = 1;
@@ -188,7 +190,7 @@ static int read_packet(AVFormatContext *s,
     }
 }
 
-AVInputFormat ff_mm_demuxer = {
+const AVInputFormat ff_mm_demuxer = {
     .name           = "mm",
     .long_name      = NULL_IF_CONFIG_SMALL("American Laser Games MM"),
     .priv_data_size = sizeof(MmDemuxContext),
