@@ -121,20 +121,17 @@ static int vpk_read_seek(AVFormatContext *s, int stream_index,
     int64_t ret = 0;
 
     samples_per_block = av_get_audio_frame_duration2(par, par->block_align);
-    if (samples_per_block > 0)
-        timestamp /= samples_per_block;
-    else
-        return -1;
+    timestamp /= samples_per_block;
     ret = avio_seek(s->pb, vpk->data_start + timestamp * par->block_align, SEEK_SET);
     if (ret < 0)
         return ret;
 
     vpk->current_block = timestamp;
-    avpriv_update_cur_dts(s, st, timestamp * samples_per_block);
+    ff_update_cur_dts(s, st, timestamp * samples_per_block);
     return 0;
 }
 
-const AVInputFormat ff_vpk_demuxer = {
+AVInputFormat ff_vpk_demuxer = {
     .name           = "vpk",
     .long_name      = NULL_IF_CONFIG_SMALL("Sony PS2 VPK"),
     .priv_data_size = sizeof(VPKDemuxContext),
