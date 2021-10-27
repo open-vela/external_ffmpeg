@@ -56,7 +56,6 @@ static int r3d_read_red1(AVFormatContext *s)
     R3DContext *r3d = s->priv_data;
     char filename[258];
     int tmp;
-    int ret;
     int av_unused tmp2;
     AVRational framerate;
 
@@ -98,9 +97,7 @@ static int r3d_read_red1(AVFormatContext *s)
     r3d->audio_channels = avio_r8(s->pb); // audio channels
     av_log(s, AV_LOG_TRACE, "audio channels %d\n", tmp);
 
-    ret = avio_read(s->pb, filename, 257);
-    if (ret < 257)
-        return ret < 0 ? ret : AVERROR_EOF;
+    avio_read(s->pb, filename, 257);
     filename[sizeof(filename)-1] = 0;
     av_dict_set(&st->metadata, "filename", filename, 0);
 
@@ -160,7 +157,6 @@ static void r3d_read_reos(AVFormatContext *s)
 
 static int r3d_read_header(AVFormatContext *s)
 {
-    FFFormatContext *const si = ffformatcontext(s);
     R3DContext *r3d = s->priv_data;
     Atom atom;
     int ret;
@@ -184,8 +180,8 @@ static int r3d_read_header(AVFormatContext *s)
     if (r3d->audio_channels)
         s->ctx_flags |= AVFMTCTX_NOHEADER;
 
-    si->data_offset = avio_tell(s->pb);
-    av_log(s, AV_LOG_TRACE, "data offset %#"PRIx64"\n", si->data_offset);
+    s->internal->data_offset = avio_tell(s->pb);
+    av_log(s, AV_LOG_TRACE, "data offset %#"PRIx64"\n", s->internal->data_offset);
     if (!(s->pb->seekable & AVIO_SEEKABLE_NORMAL))
         return 0;
     // find REOB/REOF/REOS to load index
@@ -211,7 +207,7 @@ static int r3d_read_header(AVFormatContext *s)
     }
 
  out:
-    avio_seek(s->pb, si->data_offset, SEEK_SET);
+    avio_seek(s->pb, s->internal->data_offset, SEEK_SET);
     return 0;
 }
 
@@ -326,8 +322,7 @@ static int r3d_read_reda(AVFormatContext *s, AVPacket *pkt, Atom *atom)
 
     pkt->stream_index = 1;
     pkt->dts = dts;
-
-    if (st->codecpar->sample_rate && samples > 0)
+    if (st->codecpar->sample_rate)
         pkt->duration = av_rescale(samples, st->time_base.den, st->codecpar->sample_rate);
     av_log(s, AV_LOG_TRACE, "pkt dts %"PRId64" duration %"PRId64" samples %d sample rate %d\n",
             pkt->dts, pkt->duration, samples, st->codecpar->sample_rate);
@@ -401,7 +396,7 @@ static int r3d_seek(AVFormatContext *s, int stream_index, int64_t sample_time, i
     return 0;
 }
 
-const AVInputFormat ff_r3d_demuxer = {
+AVInputFormat ff_r3d_demuxer = {
     .name           = "r3d",
     .long_name      = NULL_IF_CONFIG_SMALL("REDCODE R3D"),
     .priv_data_size = sizeof(R3DContext),

@@ -24,7 +24,6 @@
  */
 
 #include "libavutil/avassert.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
@@ -180,7 +179,6 @@ static const struct TransferCharacteristics transfer_characteristics[AVCOL_TRC_N
     [AVCOL_TRC_GAMMA28]   = { 1.0,    0.0,    1.0 / 2.8, 0.0 },
     [AVCOL_TRC_SMPTE170M] = { 1.099,  0.018,  0.45, 4.5 },
     [AVCOL_TRC_SMPTE240M] = { 1.1115, 0.0228, 0.45, 4.0 },
-    [AVCOL_TRC_LINEAR]    = { 1.0,    0.0,    1.0,  0.0 },
     [AVCOL_TRC_IEC61966_2_1] = { 1.055, 0.0031308, 1.0 / 2.4, 12.92 },
     [AVCOL_TRC_IEC61966_2_4] = { 1.099, 0.018, 0.45, 4.5 },
     [AVCOL_TRC_BT2020_10] = { 1.099,  0.018,  0.45, 4.5 },
@@ -873,8 +871,8 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
             return res;
         }
     } else {
-        ff_filter_execute(ctx, convert, &td, NULL,
-                          FFMIN((in->height + 1) >> 1, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, convert, &td, NULL,
+                               FFMIN((in->height + 1) >> 1, ff_filter_get_nb_threads(ctx)));
     }
     av_frame_free(&in);
 
@@ -898,7 +896,7 @@ static int query_formats(AVFilterContext *ctx)
         return AVERROR(ENOMEM);
     if (s->user_format == AV_PIX_FMT_NONE)
         return ff_set_common_formats(ctx, formats);
-    res = ff_formats_ref(formats, &ctx->inputs[0]->outcfg.formats);
+    res = ff_formats_ref(formats, &ctx->inputs[0]->out_formats);
     if (res < 0)
         return res;
     formats = NULL;
@@ -906,7 +904,7 @@ static int query_formats(AVFilterContext *ctx)
     if (res < 0)
         return res;
 
-    return ff_formats_ref(formats, &ctx->outputs[0]->incfg.formats);
+    return ff_formats_ref(formats, &ctx->outputs[0]->in_formats);
 }
 
 static int config_props(AVFilterLink *outlink)
@@ -992,7 +990,6 @@ static const AVOption colorspace_options[] = {
     ENUM("gamma28",      AVCOL_TRC_GAMMA28,      "trc"),
     ENUM("smpte170m",    AVCOL_TRC_SMPTE170M,    "trc"),
     ENUM("smpte240m",    AVCOL_TRC_SMPTE240M,    "trc"),
-    ENUM("linear",       AVCOL_TRC_LINEAR,       "trc"),
     ENUM("srgb",         AVCOL_TRC_IEC61966_2_1, "trc"),
     ENUM("iec61966-2-1", AVCOL_TRC_IEC61966_2_1, "trc"),
     ENUM("xvycc",        AVCOL_TRC_IEC61966_2_4, "trc"),
@@ -1057,6 +1054,7 @@ static const AVFilterPad inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -1065,17 +1063,18 @@ static const AVFilterPad outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_colorspace = {
+AVFilter ff_vf_colorspace = {
     .name            = "colorspace",
     .description     = NULL_IF_CONFIG_SMALL("Convert between colorspaces."),
     .init            = init,
     .uninit          = uninit,
+    .query_formats   = query_formats,
     .priv_size       = sizeof(ColorSpaceContext),
     .priv_class      = &colorspace_class,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .inputs          = inputs,
+    .outputs         = outputs,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };
