@@ -237,10 +237,9 @@ static int rl2_read_packet(AVFormatContext *s,
 
     /** check if there is a valid video or audio entry that can be used */
     for(i=0; i<s->nb_streams; i++){
-        const FFStream *const sti = ffstream(s->streams[i]);
-        if (rl2->index_pos[i] < sti->nb_index_entries
-              && sti->index_entries[ rl2->index_pos[i] ].pos < pos) {
-            sample = &sti->index_entries[ rl2->index_pos[i] ];
+        if(rl2->index_pos[i] < s->streams[i]->nb_index_entries
+              && s->streams[i]->index_entries[ rl2->index_pos[i] ].pos < pos){
+            sample = &s->streams[i]->index_entries[ rl2->index_pos[i] ];
             pos= sample->pos;
             stream_id= i;
         }
@@ -284,7 +283,7 @@ static int rl2_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
         return -1;
 
     rl2->index_pos[stream_index] = index;
-    timestamp = ffstream(st)->index_entries[index].timestamp;
+    timestamp = st->index_entries[index].timestamp;
 
     for(i=0; i < s->nb_streams; i++){
         AVStream *st2 = s->streams[i];
@@ -301,7 +300,7 @@ static int rl2_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
     return 0;
 }
 
-const AVInputFormat ff_rl2_demuxer = {
+AVInputFormat ff_rl2_demuxer = {
     .name           = "rl2",
     .long_name      = NULL_IF_CONFIG_SMALL("RL2"),
     .priv_data_size = sizeof(Rl2DemuxContext),

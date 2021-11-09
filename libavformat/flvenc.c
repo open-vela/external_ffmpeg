@@ -284,8 +284,8 @@ static void write_metadata(AVFormatContext *s, unsigned int ts)
     avio_w8(pb, FLV_TAG_TYPE_META);            // tag type META
     flv->metadata_size_pos = avio_tell(pb);
     avio_wb24(pb, 0);           // size of data part (sum of all parts below)
-    put_timestamp(pb, ts);      // timestamp
-    avio_wb24(pb, 0);           // reserved
+    avio_wb24(pb, ts);          // timestamp
+    avio_wb32(pb, 0);           // reserved
 
     /* now data of data_size size */
 
@@ -902,7 +902,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (par->codec_id == AV_CODEC_ID_AAC || par->codec_id == AV_CODEC_ID_H264
             || par->codec_id == AV_CODEC_ID_MPEG4) {
-        size_t side_size;
+        int side_size = 0;
         uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
         if (side && side_size > 0 && (side_size != par->extradata_size || memcmp(side, par->extradata, side_size))) {
             ret = ff_alloc_extradata(par, side_size);
@@ -1083,10 +1083,10 @@ fail:
     return ret;
 }
 
-static int flv_check_bitstream(AVFormatContext *s, AVStream *st,
-                               const AVPacket *pkt)
+static int flv_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
 {
     int ret = 1;
+    AVStream *st = s->streams[pkt->stream_index];
 
     if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
         if (pkt->size > 2 && (AV_RB16(pkt->data) & 0xfff0) == 0xfff0)
@@ -1112,7 +1112,7 @@ static const AVClass flv_muxer_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVOutputFormat ff_flv_muxer = {
+AVOutputFormat ff_flv_muxer = {
     .name           = "flv",
     .long_name      = NULL_IF_CONFIG_SMALL("FLV (Flash Video)"),
     .mime_type      = "video/x-flv",
