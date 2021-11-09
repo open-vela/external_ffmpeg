@@ -285,14 +285,13 @@ static int cine_read_packet(AVFormatContext *avctx, AVPacket *pkt)
 {
     CineDemuxContext *cine = avctx->priv_data;
     AVStream *st = avctx->streams[0];
-    FFStream *const sti = ffstream(st);
     AVIOContext *pb = avctx->pb;
     int n, size, ret;
 
-    if (cine->pts >= sti->nb_index_entries)
+    if (cine->pts >= st->duration)
         return AVERROR_EOF;
 
-    avio_seek(pb, sti->index_entries[cine->pts].pos, SEEK_SET);
+    avio_seek(pb, st->index_entries[cine->pts].pos, SEEK_SET);
     n = avio_rl32(pb);
     if (n < 8)
         return AVERROR_INVALIDDATA;
@@ -323,7 +322,7 @@ static int cine_read_seek(AVFormatContext *avctx, int stream_index, int64_t time
     return 0;
 }
 
-const AVInputFormat ff_cine_demuxer = {
+AVInputFormat ff_cine_demuxer = {
     .name           = "cine",
     .long_name      = NULL_IF_CONFIG_SMALL("Phantom Cine"),
     .priv_data_size = sizeof(CineDemuxContext),
