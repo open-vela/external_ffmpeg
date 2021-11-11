@@ -24,6 +24,7 @@
  * Rpmsg socket url_protocol
  */
 
+#include "libavutil/parseutils.h"
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
 #include "os_support.h"
@@ -62,19 +63,36 @@ static const AVClass rpmsg_class = {
 static int rpmsg_open(URLContext *h, const char *filename, int flags)
 {
     RpmsgContext *s = h->priv_data;
-    const char *tmp;
+    int name_size, cpu_size;
+    const char *opts, *cpu;
     int fd, ret;
+    char buf[8];
 
     av_strstart(filename, "rpmsg:", &filename);
     s->addr.rp_family = AF_RPMSG;
 
-    av_strstart(filename, ":", &tmp);
-    if (tmp) {
-        av_strlcpy(s->addr.rp_cpu, filename, FFMIN(filename - tmp - 1, RPMSG_SOCKET_CPU_SIZE));
-        filename = tmp;
+    name_size = RPMSG_SOCKET_NAME_SIZE;
+    cpu_size  = RPMSG_SOCKET_CPU_SIZE;
+    cpu  = strchr(filename, ':');
+    opts = strrchr(filename, '?');
+
+    if (opts) {
+        if (av_find_info_tag(buf, sizeof(buf), "listen", opts + 1))
+            s->listen = strtol(buf, NULL, 10);
     }
 
-    av_strlcpy(s->addr.rp_name, filename, sizeof(s->addr.rp_name));
+    if (cpu) {
+        if (opts)
+            cpu_size = opts - cpu;
+
+        name_size = cpu - filename + 1;
+        av_strlcpy(s->addr.rp_cpu, cpu + 1, FFMIN(cpu_size, RPMSG_SOCKET_CPU_SIZE));
+    } else {
+        if (opts)
+            name_size = opts - filename + 1;
+    }
+
+    av_strlcpy(s->addr.rp_name, filename, FFMIN(name_size, RPMSG_SOCKET_NAME_SIZE));
 
     if ((fd = ff_socket(AF_RPMSG, s->type, 0)) < 0)
         return ff_neterrno();
