@@ -539,7 +539,7 @@ static int activate(AVFilterContext *ctx)
         if (ff_inlink_acknowledge_status(ctx->inputs[i], &status, &pts))
             continue;
 
-        s->input_state[i] |= INPUT_ON;
+        s->input_state[i] = INPUT_ON;
         calc_active_inputs(s);
 
         if ((ret = ff_inlink_consume_frame(ctx->inputs[i], &buf)) > 0) {
