@@ -131,7 +131,7 @@ static int rpmsg_read(URLContext *h, uint8_t *buf, int size)
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd(s->fd, 0);
         if (ret < 0)
-            return ret;
+            return ret == -ECONNRESET ? AVERROR_EOF : ret;
     }
     ret = recv(s->fd, buf, size, 0);
     if (!ret && s->type == SOCK_STREAM)
