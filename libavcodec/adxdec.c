@@ -103,6 +103,22 @@ static int adx_decode_frame(AVCodecContext *avctx, void *data,
     const uint8_t *buf  = avpkt->data;
     const uint8_t *buf_end = buf + avpkt->size;
     int num_blocks, ch, ret;
+    size_t new_extradata_size;
+    uint8_t *new_extradata;
+
+    new_extradata = av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA,
+                                            &new_extradata_size);
+    if (new_extradata && new_extradata_size > 0) {
+        int header_size;
+        if ((ret = ff_adx_decode_header(avctx, new_extradata,
+                                        new_extradata_size, &header_size,
+                                        c->coeff)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "error parsing new ADX extradata\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        c->eof = 0;
+    }
 
     if (c->eof) {
         *got_frame_ptr = 0;
@@ -174,7 +190,7 @@ static void adx_decode_flush(AVCodecContext *avctx)
     c->eof = 0;
 }
 
-AVCodec ff_adpcm_adx_decoder = {
+const AVCodec ff_adpcm_adx_decoder = {
     .name           = "adpcm_adx",
     .long_name      = NULL_IF_CONFIG_SMALL("SEGA CRI ADX ADPCM"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -183,7 +199,9 @@ AVCodec ff_adpcm_adx_decoder = {
     .init           = adx_decode_init,
     .decode         = adx_decode_frame,
     .flush          = adx_decode_flush,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
+                      AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
