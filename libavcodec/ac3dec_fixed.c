@@ -49,7 +49,6 @@
 
 #define FFT_FLOAT 0
 #define USE_FIXED 1
-#define FFT_FIXED_32 1
 #include "ac3dec.h"
 
 
@@ -151,10 +150,7 @@ static void ac3_downmix_c_fixed16(int16_t **samples, int16_t **matrix,
     }
 }
 
-#ifdef CONFIG_EAC3_DECODER
 #include "eac3dec.c"
-#endif
-
 #include "ac3dec.c"
 
 static const AVOption options[] = {
@@ -171,7 +167,7 @@ static const AVClass ac3_decoder_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_ac3_fixed_decoder = {
+const AVCodec ff_ac3_fixed_decoder = {
     .name           = "ac3_fixed",
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_AC3,
@@ -179,9 +175,11 @@ AVCodec ff_ac3_fixed_decoder = {
     .init           = ac3_decode_init,
     .close          = ac3_decode_end,
     .decode         = ac3_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
+                      AV_CODEC_CAP_DR1,
     .long_name      = NULL_IF_CONFIG_SMALL("ATSC A/52A (AC-3)"),
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
     .priv_class     = &ac3_decoder_class,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

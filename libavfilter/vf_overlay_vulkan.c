@@ -25,11 +25,12 @@
 #define CGROUPS (int [3]){ 32, 32, 1 }
 
 typedef struct OverlayVulkanContext {
-    VulkanFilterContext vkctx;
+    FFVulkanContext vkctx;
 
     int initialized;
-    VulkanPipeline *pl;
+    FFVkQueueFamilyCtx qf;
     FFVkExecContext *exec;
+    FFVulkanPipeline *pl;
     FFFrameSync fs;
     FFVkBuffer params_buf;
 
@@ -79,24 +80,24 @@ static const char overlay_alpha[] = {
 static av_cold int init_filter(AVFilterContext *ctx)
 {
     int err;
+    FFVkSampler *sampler;
     OverlayVulkanContext *s = ctx->priv;
-    VkSampler *sampler = ff_vk_init_sampler(ctx, 1, VK_FILTER_NEAREST);
+    const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
+
+    ff_vk_qf_init(ctx, &s->qf, VK_QUEUE_COMPUTE_BIT, 0);
+
+    sampler = ff_vk_init_sampler(ctx, 1, VK_FILTER_NEAREST);
     if (!sampler)
         return AVERROR_EXTERNAL;
 
-    s->pl = ff_vk_create_pipeline(ctx);
+    s->pl = ff_vk_create_pipeline(ctx, &s->qf);
     if (!s->pl)
         return AVERROR(ENOMEM);
 
-    s->vkctx.queue_family_idx = s->vkctx.hwctx->queue_family_comp_index;
-    s->vkctx.queue_count = GET_QUEUE_COUNT(s->vkctx.hwctx, 0, 1, 0);
-    s->vkctx.cur_queue_idx = av_get_random_seed() % s->vkctx.queue_count;
-
     { /* Create the shader */
-        const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
         const int ialpha = av_pix_fmt_desc_get(s->vkctx.input_format)->flags & AV_PIX_FMT_FLAG_ALPHA;
 
-        VulkanDescriptorSetBinding desc_i[3] = {
+        FFVulkanDescriptorSetBinding desc_i[3] = {
             {
                 .name       = "main_img",
                 .type       = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -104,7 +105,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
                 .elems      = planes,
                 .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
                 .updater    = s->main_images,
-                .samplers   = DUP_SAMPLER_ARRAY4(*sampler),
+                .sampler    = sampler,
             },
             {
                 .name       = "overlay_img",
@@ -113,7 +114,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
                 .elems      = planes,
                 .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
                 .updater    = s->overlay_images,
-                .samplers   = DUP_SAMPLER_ARRAY4(*sampler),
+                .sampler    = sampler,
             },
             {
                 .name       = "output_img",
@@ -127,7 +128,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
             },
         };
 
-        VulkanDescriptorSetBinding desc_b = {
+        FFVulkanDescriptorSetBinding desc_b = {
             .name        = "params",
             .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             .mem_quali   = "readonly",
@@ -137,8 +138,8 @@ static av_cold int init_filter(AVFilterContext *ctx)
             .buf_content = "ivec2 o_offset[3], o_size[3];",
         };
 
-        SPIRVShader *shd = ff_vk_init_shader(ctx, s->pl, "overlay_compute",
-                                             VK_SHADER_STAGE_COMPUTE_BIT);
+        FFSPIRVShader *shd = ff_vk_init_shader(ctx, s->pl, "overlay_compute",
+                                               VK_SHADER_STAGE_COMPUTE_BIT);
         if (!shd)
             return AVERROR(ENOMEM);
 
@@ -216,7 +217,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
     }
 
     /* Execution context */
-    RET(ff_vk_create_exec_ctx(ctx, &s->exec));
+    RET(ff_vk_create_exec_ctx(ctx, &s->exec, &s->qf));
 
     s->initialized = 1;
 
@@ -232,6 +233,7 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
     int err;
     VkCommandBuffer cmd_buf;
     OverlayVulkanContext *s = avctx->priv;
+    FFVulkanFunctions *vk = &s->vkctx.vkfn;
     int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
 
     AVVkFrame *out     = (AVVkFrame *)out_f->data[0];
@@ -311,9 +313,9 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
             },
         };
 
-        vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                             0, NULL, 0, NULL, FF_ARRAY_ELEMS(bar), bar);
+        vk->CmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+                               0, NULL, 0, NULL, FF_ARRAY_ELEMS(bar), bar);
 
         main->layout[i]    = bar[0].newLayout;
         main->access[i]    = bar[0].dstAccessMask;
@@ -327,9 +329,9 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
 
     ff_vk_bind_pipeline_exec(avctx, s->exec, s->pl);
 
-    vkCmdDispatch(cmd_buf,
-                  FFALIGN(s->vkctx.output_width,  CGROUPS[0])/CGROUPS[0],
-                  FFALIGN(s->vkctx.output_height, CGROUPS[1])/CGROUPS[1], 1);
+    vk->CmdDispatch(cmd_buf,
+                    FFALIGN(s->vkctx.output_width,  CGROUPS[0])/CGROUPS[0],
+                    FFALIGN(s->vkctx.output_height, CGROUPS[1])/CGROUPS[1], 1);
 
     ff_vk_add_exec_dep(avctx, s->exec, main_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
     ff_vk_add_exec_dep(avctx, s->exec, overlay_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
@@ -338,6 +340,8 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
     err = ff_vk_submit_exec_queue(avctx, s->exec);
     if (err)
         return err;
+
+    ff_vk_qf_rotate(&s->qf);
 
     return err;
 
@@ -463,7 +467,6 @@ static const AVFilterPad overlay_vulkan_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_vk_filter_config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad overlay_vulkan_outputs[] = {
@@ -472,19 +475,18 @@ static const AVFilterPad overlay_vulkan_outputs[] = {
         .type = AVMEDIA_TYPE_VIDEO,
         .config_props = &overlay_vulkan_config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_overlay_vulkan = {
+const AVFilter ff_vf_overlay_vulkan = {
     .name           = "overlay_vulkan",
     .description    = NULL_IF_CONFIG_SMALL("Overlay a source on top of another"),
     .priv_size      = sizeof(OverlayVulkanContext),
     .init           = &overlay_vulkan_init,
     .uninit         = &overlay_vulkan_uninit,
-    .query_formats  = &ff_vk_filter_query_formats,
     .activate       = &overlay_vulkan_activate,
-    .inputs         = overlay_vulkan_inputs,
-    .outputs        = overlay_vulkan_outputs,
+    FILTER_INPUTS(overlay_vulkan_inputs),
+    FILTER_OUTPUTS(overlay_vulkan_outputs),
+    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
     .priv_class     = &overlay_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
