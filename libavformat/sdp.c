@@ -212,11 +212,10 @@ static char *extradata2psets(AVFormatContext *s, AVCodecParameters *par)
         p += strlen(p);
         r = r1;
     }
-    if (sps && sps_end - sps >= 4) {
+    if (sps && sps_end - sps >= 4 && p - psets <= MAX_PSET_SIZE - strlen(profile_string) - 7) {
         memcpy(p, profile_string, strlen(profile_string));
         p += strlen(p);
         ff_data_to_hex(p, sps + 1, 3, 0);
-        p[6] = '\0';
     }
     av_free(tmpbuf);
 
@@ -340,7 +339,6 @@ static char *extradata2config(AVFormatContext *s, AVCodecParameters *par)
     }
     memcpy(config, "; config=", 9);
     ff_data_to_hex(config + 9, par->extradata, par->extradata_size, 0);
-    config[9 + par->extradata_size * 2] = 0;
 
     return config;
 }
@@ -475,7 +473,6 @@ static char *latm_context2config(AVFormatContext *s, AVCodecParameters *par)
         return NULL;
     }
     ff_data_to_hex(config, config_byte, 6, 1);
-    config[12] = 0;
 
     return config;
 }
@@ -660,6 +657,42 @@ static char *sdp_write_media_attributes(char *buff, int size, AVStream *st, int 
                                     p->width, p->height, pix_fmt, config);
             break;
         }
+        case AV_CODEC_ID_BITPACKED:
+        case AV_CODEC_ID_RAWVIDEO: {
+            const char *pix_fmt;
+            int bit_depth = 8;
+
+            switch (p->format) {
+            case AV_PIX_FMT_UYVY422:
+                pix_fmt = "YCbCr-4:2:2";
+                break;
+            case AV_PIX_FMT_YUV422P10:
+                pix_fmt = "YCbCr-4:2:2";
+                bit_depth = 10;
+                break;
+            case AV_PIX_FMT_YUV420P:
+                pix_fmt = "YCbCr-4:2:0";
+                break;
+            case AV_PIX_FMT_RGB24:
+                pix_fmt = "RGB";
+                break;
+            case AV_PIX_FMT_BGR24:
+                pix_fmt = "BGR";
+                break;
+            default:
+                av_log(fmt, AV_LOG_ERROR, "Unsupported pixel format.\n");
+                return NULL;
+            }
+
+            av_strlcatf(buff, size, "a=rtpmap:%d raw/90000\r\n"
+                                    "a=fmtp:%d sampling=%s; "
+                                    "width=%d; height=%d; "
+                                    "depth=%d\r\n",
+                                    payload_type, payload_type,
+                                    pix_fmt, p->width, p->height, bit_depth);
+            break;
+        }
+
         case AV_CODEC_ID_VP8:
             av_strlcatf(buff, size, "a=rtpmap:%d VP8/90000\r\n",
                                      payload_type);
@@ -704,20 +737,6 @@ static char *sdp_write_media_attributes(char *buff, int size, AVStream *st, int 
         case AV_CODEC_ID_SPEEX:
             av_strlcatf(buff, size, "a=rtpmap:%d speex/%d\r\n",
                                      payload_type, p->sample_rate);
-            if (st->codec) {
-                const char *mode;
-                uint64_t vad_option;
-
-                if (st->codec->flags & AV_CODEC_FLAG_QSCALE)
-                      mode = "on";
-                else if (!av_opt_get_int(st->codec, "vad", AV_OPT_FLAG_ENCODING_PARAM, &vad_option) && vad_option)
-                      mode = "vad";
-                else
-                      mode = "off";
-
-                av_strlcatf(buff, size, "a=fmtp:%d vbr=%s\r\n",
-                                        payload_type, mode);
-            }
             break;
         case AV_CODEC_ID_OPUS:
             /* The opus RTP draft says that all opus streams MUST be declared
