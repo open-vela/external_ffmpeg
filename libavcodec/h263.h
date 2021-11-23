@@ -34,7 +34,6 @@
 // reading vlc values. Changing these may improve speed and data cache needs
 // be aware though that decreasing them may need the number of stages that is
 // passed to get_vlc* to be increased.
-#define H263_MV_VLC_BITS     9
 #define INTRA_MCBPC_VLC_BITS 6
 #define INTER_MCBPC_VLC_BITS 7
 #define CBPY_VLC_BITS 6
@@ -45,7 +44,6 @@
 extern VLC ff_h263_intra_MCBPC_vlc;
 extern VLC ff_h263_inter_MCBPC_vlc;
 extern VLC ff_h263_cbpy_vlc;
-extern VLC ff_h263_mv_vlc;
 
 extern const enum AVPixelFormat ff_h263_hwaccel_pixfmt_list_420[];
 
@@ -66,7 +64,6 @@ int16_t *ff_h263_pred_motion(MpegEncContext * s, int block, int dir,
                              int *px, int *py);
 void ff_h263_encode_init(MpegEncContext *s);
 void ff_h263_decode_init_vlc(void);
-void ff_h263_init_rl_inter(void);
 int ff_h263_decode_picture_header(MpegEncContext *s);
 int ff_h263_decode_gob_header(MpegEncContext *s);
 void ff_h263_update_motion_val(MpegEncContext * s);
@@ -103,7 +100,7 @@ static inline int h263_get_motion_length(int val, int f_code){
     int l, bit_size, code;
 
     if (val == 0) {
-        return 1; /* ff_mvtab[0][1] */
+        return ff_mvtab[0][1];
     } else {
         bit_size = f_code - 1;
         /* modulo encoding */
