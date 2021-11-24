@@ -183,7 +183,7 @@ static int screenpresso_decode_frame(AVCodecContext *avctx, void *data,
     return avpkt->size;
 }
 
-const AVCodec ff_screenpresso_decoder = {
+AVCodec ff_screenpresso_decoder = {
     .name           = "screenpresso",
     .long_name      = NULL_IF_CONFIG_SMALL("Screenpresso"),
     .type           = AVMEDIA_TYPE_VIDEO,
