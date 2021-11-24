@@ -232,15 +232,24 @@ static int config_props(AVFilterLink *inlink)
     return 0;
 }
 
-static const enum AVPixelFormat pixel_fmts_eq[] = {
-    AV_PIX_FMT_GRAY8,
-    AV_PIX_FMT_YUV410P,
-    AV_PIX_FMT_YUV411P,
-    AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUVA420P,
-    AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUVA422P,
-    AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUVA444P,
-    AV_PIX_FMT_NONE
-};
+static int query_formats(AVFilterContext *ctx)
+{
+    static const enum AVPixelFormat pixel_fmts_eq[] = {
+        AV_PIX_FMT_GRAY8,
+        AV_PIX_FMT_YUV410P,
+        AV_PIX_FMT_YUV411P,
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_YUV422P,
+        AV_PIX_FMT_YUV444P,
+        AV_PIX_FMT_NONE
+    };
+    AVFilterFormats *fmts_list = ff_make_format_list(pixel_fmts_eq);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
+}
+
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
@@ -281,13 +290,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             h = AV_CEIL_RSHIFT(h, desc->log2_chroma_h);
         }
 
-        if (i == 3 || !eq->param[i].adjust)
-            av_image_copy_plane(out->data[i], out->linesize[i],
-                                in->data[i], in->linesize[i], w, h);
-
-        else
+        if (eq->param[i].adjust)
             eq->param[i].adjust(&eq->param[i], out->data[i], out->linesize[i],
                                  in->data[i], in->linesize[i], w, h);
+        else
+            av_image_copy_plane(out->data[i], out->linesize[i],
+                                in->data[i], in->linesize[i], w, h);
     }
 
     av_frame_free(&in);
@@ -332,6 +340,7 @@ static const AVFilterPad eq_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_props,
     },
+    { NULL }
 };
 
 static const AVFilterPad eq_outputs[] = {
@@ -339,6 +348,7 @@ static const AVFilterPad eq_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(EQContext, x)
@@ -369,15 +379,15 @@ static const AVOption eq_options[] = {
 
 AVFILTER_DEFINE_CLASS(eq);
 
-const AVFilter ff_vf_eq = {
+AVFilter ff_vf_eq = {
     .name            = "eq",
     .description     = NULL_IF_CONFIG_SMALL("Adjust brightness, contrast, gamma, and saturation."),
     .priv_size       = sizeof(EQContext),
     .priv_class      = &eq_class,
-    FILTER_INPUTS(eq_inputs),
-    FILTER_OUTPUTS(eq_outputs),
-    FILTER_PIXFMTS_ARRAY(pixel_fmts_eq),
+    .inputs          = eq_inputs,
+    .outputs         = eq_outputs,
     .process_command = process_command,
+    .query_formats   = query_formats,
     .init            = initialize,
     .uninit          = uninit,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
