@@ -197,14 +197,13 @@ static av_cold int vble_decode_init(AVCodecContext *avctx)
 
     if (!ctx->val) {
         av_log(avctx, AV_LOG_ERROR, "Could not allocate values buffer.\n");
-        vble_decode_close(avctx);
         return AVERROR(ENOMEM);
     }
 
     return 0;
 }
 
-AVCodec ff_vble_decoder = {
+const AVCodec ff_vble_decoder = {
     .name           = "vble",
     .long_name      = NULL_IF_CONFIG_SMALL("VBLE Lossless Codec"),
     .type           = AVMEDIA_TYPE_VIDEO,
