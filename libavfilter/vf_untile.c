@@ -62,11 +62,16 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    int reject_flags = AV_PIX_FMT_FLAG_HWACCEL   |
-                       AV_PIX_FMT_FLAG_BITSTREAM |
-                       FF_PIX_FMT_FLAG_SW_FLAT_SUB;
+    AVFilterFormats *formats = NULL;
+    int ret;
 
-    return ff_set_common_formats(ctx, ff_formats_pixdesc_filter(0, reject_flags));
+    ret = ff_formats_pixdesc_filter(&formats, 0,
+                                    AV_PIX_FMT_FLAG_HWACCEL |
+                                    AV_PIX_FMT_FLAG_BITSTREAM |
+                                    FF_PIX_FMT_FLAG_SW_FLAT_SUB);
+    if (ret < 0)
+        return ret;
+    return ff_set_common_formats(ctx, formats);
 }
 
 static int config_output(AVFilterLink *outlink)
@@ -131,7 +136,7 @@ static int activate(AVFilterContext *ctx)
         out->height = outlink->h;
         out->data[0] += y * out->linesize[0];
         out->data[0] += x * s->max_step[0];
-        if (!(s->desc->flags & AV_PIX_FMT_FLAG_PAL)) {
+        if (!(s->desc->flags & AV_PIX_FMT_FLAG_PAL || s->desc->flags & FF_PSEUDOPAL)) {
             for (i = 1; i < 3; i ++) {
                 if (out->data[i]) {
                     out->data[i] += (y >> s->desc->log2_chroma_w) * out->linesize[i];
@@ -167,6 +172,7 @@ static const AVFilterPad untile_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 static const AVFilterPad untile_outputs[] = {
@@ -175,17 +181,18 @@ static const AVFilterPad untile_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_untile = {
+AVFilter ff_vf_untile = {
     .name          = "untile",
     .description   = NULL_IF_CONFIG_SMALL("Untile a frame into a sequence of frames."),
     .init          = init,
     .uninit        = uninit,
+    .query_formats = query_formats,
     .activate      = activate,
     .priv_size     = sizeof(UntileContext),
-    FILTER_INPUTS(untile_inputs),
-    FILTER_OUTPUTS(untile_outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .inputs        = untile_inputs,
+    .outputs       = untile_outputs,
     .priv_class    = &untile_class,
 };

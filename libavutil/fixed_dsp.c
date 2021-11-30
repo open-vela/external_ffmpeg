@@ -57,6 +57,17 @@ static void vector_fmul_add_c(int *dst, const int *src0, const int *src1, const 
     }
 }
 
+static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, int len)
+{
+    int i;
+    int32_t accu;
+
+    for (i = 0; i < len; i++) {
+        accu   = (int32_t)src[i] * mul;
+        dst[i] = av_clip_int16(dst[i] + ((accu + 0x4000) >> 15));
+    }
+}
+
 static void vector_fmul_reverse_c(int *dst, const int *src0, const int *src1, int len)
 {
     int i;
@@ -134,10 +145,9 @@ static int scalarproduct_fixed_c(const int *v1, const int *v2, int len)
     return (int)(p >> 31);
 }
 
-static void butterflies_fixed_c(int *v1s, int *v2, int len)
+static void butterflies_fixed_c(int *v1, int *v2, int len)
 {
     int i;
-    unsigned int *v1 = v1s;
 
     for (i = 0; i < len; i++){
         int t = v1[i] - v2[i];
@@ -157,6 +167,7 @@ AVFixedDSPContext * avpriv_alloc_fixed_dsp(int bit_exact)
     fdsp->vector_fmul_window = vector_fmul_window_c;
     fdsp->vector_fmul = vector_fmul_c;
     fdsp->vector_fmul_add = vector_fmul_add_c;
+    fdsp->vector_fmac_scalar = vector_fmac_scalar_c;
     fdsp->vector_fmul_reverse = vector_fmul_reverse_c;
     fdsp->butterflies_fixed = butterflies_fixed_c;
     fdsp->scalarproduct_fixed = scalarproduct_fixed_c;
