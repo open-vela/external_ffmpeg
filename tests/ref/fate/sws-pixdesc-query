@@ -13,10 +13,6 @@ is16BPS:
   gray16le
   p016be
   p016le
-  p216be
-  p216le
-  p416be
-  p416le
   rgb48be
   rgb48le
   rgba64be
@@ -61,14 +57,6 @@ isNBPS:
   nv20le
   p010be
   p010le
-  p210be
-  p210le
-  p410be
-  p410le
-  x2bgr10be
-  x2bgr10le
-  x2rgb10be
-  x2rgb10le
   xyz12be
   xyz12le
   y210be
@@ -148,17 +136,11 @@ isBE:
   nv20be
   p010be
   p016be
-  p210be
-  p216be
-  p410be
-  p416be
   rgb444be
   rgb48be
   rgb555be
   rgb565be
   rgba64be
-  x2bgr10be
-  x2rgb10be
   xyz12be
   y210be
   ya16be
@@ -205,14 +187,6 @@ isYUV:
   p010le
   p016be
   p016le
-  p210be
-  p210le
-  p216be
-  p216le
-  p410be
-  p410le
-  p416be
-  p416le
   uyvy422
   uyyvyy411
   xyz12be
@@ -307,14 +281,6 @@ isPlanarYUV:
   p010le
   p016be
   p016le
-  p210be
-  p210le
-  p216be
-  p216le
-  p410be
-  p410le
-  p416be
-  p416le
   yuv410p
   yuv411p
   yuv420p
@@ -398,14 +364,6 @@ isSemiPlanarYUV:
   p010le
   p016be
   p016le
-  p210be
-  p210le
-  p216be
-  p216le
-  p410be
-  p410le
-  p416be
-  p416le
 
 isRGB:
   0bgr
@@ -478,10 +436,6 @@ isRGB:
   rgb8
   rgba64be
   rgba64le
-  x2bgr10be
-  x2bgr10le
-  x2rgb10be
-  x2rgb10le
 
 Gray:
   gray
@@ -628,10 +582,6 @@ AnyRGB:
   rgb8
   rgba64be
   rgba64le
-  x2bgr10be
-  x2bgr10le
-  x2rgb10be
-  x2rgb10le
 
 ALPHA:
   ayuv64be
@@ -739,10 +689,6 @@ Packed:
   rgba64le
   uyvy422
   uyyvyy411
-  x2bgr10be
-  x2bgr10le
-  x2rgb10be
-  x2rgb10le
   xyz12be
   xyz12le
   y210be
@@ -787,14 +733,6 @@ Planar:
   p010le
   p016be
   p016le
-  p210be
-  p210le
-  p216be
-  p216le
-  p410be
-  p410le
-  p416be
-  p416le
   yuv410p
   yuv411p
   yuv420p
@@ -915,10 +853,6 @@ PackedRGB:
   rgb8
   rgba64be
   rgba64le
-  x2bgr10be
-  x2bgr10le
-  x2rgb10be
-  x2rgb10le
 
 PlanarRGB:
   gbrap

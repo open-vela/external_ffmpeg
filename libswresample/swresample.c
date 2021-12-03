@@ -415,7 +415,7 @@ int swri_realloc_audio(AudioData *a, int count){
     av_assert0(a->bps);
     av_assert0(a->ch_count);
 
-    a->data = av_calloc(countb, a->ch_count);
+    a->data= av_mallocz_array(countb, a->ch_count);
     if(!a->data)
         return AVERROR(ENOMEM);
     for(i=0; i<a->ch_count; i++){
@@ -711,10 +711,8 @@ int swr_is_initialized(struct SwrContext *s) {
     return !!s->in_buffer.ch_count;
 }
 
-int attribute_align_arg swr_convert(struct SwrContext *s,
-                                          uint8_t **out_arg, int out_count,
-                                    const uint8_t **in_arg,  int in_count)
-{
+int attribute_align_arg swr_convert(struct SwrContext *s, uint8_t *out_arg[SWR_CH_MAX], int out_count,
+                                                    const uint8_t *in_arg [SWR_CH_MAX], int  in_count){
     AudioData * in= &s->in;
     AudioData *out= &s->out;
     int av_unused max_output;
