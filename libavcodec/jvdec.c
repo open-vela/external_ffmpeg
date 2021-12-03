@@ -233,7 +233,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_jv_decoder = {
+AVCodec ff_jv_decoder = {
     .name           = "jv",
     .long_name      = NULL_IF_CONFIG_SMALL("Bitmap Brothers JV video"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -243,5 +243,4 @@ const AVCodec ff_jv_decoder = {
     .close          = decode_close,
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

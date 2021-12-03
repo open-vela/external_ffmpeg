@@ -16,12 +16,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <stdint.h>
-#include <string.h>
+#include "config.h"
 
+#include "libavutil/common.h"
 #include "libavutil/log.h"
 
-#include "bsf.h"
+#include "avcodec.h"
 #include "bsf_internal.h"
 
 extern const AVBitStreamFilter ff_aac_adtstoasc_bsf;
@@ -53,7 +53,6 @@ extern const AVBitStreamFilter ff_opus_metadata_bsf;
 extern const AVBitStreamFilter ff_pcm_rechunk_bsf;
 extern const AVBitStreamFilter ff_prores_metadata_bsf;
 extern const AVBitStreamFilter ff_remove_extradata_bsf;
-extern const AVBitStreamFilter ff_setts_bsf;
 extern const AVBitStreamFilter ff_text2movsub_bsf;
 extern const AVBitStreamFilter ff_trace_headers_bsf;
 extern const AVBitStreamFilter ff_truehd_core_bsf;
@@ -75,6 +74,12 @@ const AVBitStreamFilter *av_bsf_iterate(void **opaque)
     return f;
 }
 
+#if FF_API_NEXT
+const AVBitStreamFilter *av_bsf_next(void **opaque) {
+    return av_bsf_iterate(opaque);
+}
+#endif
+
 const AVBitStreamFilter *av_bsf_get_by_name(const char *name)
 {
     const AVBitStreamFilter *f = NULL;
@@ -91,12 +96,20 @@ const AVBitStreamFilter *av_bsf_get_by_name(const char *name)
     return NULL;
 }
 
-const AVClass *ff_bsf_child_class_iterate(void **opaque)
+const AVClass *ff_bsf_child_class_next(const AVClass *prev)
 {
-    const AVBitStreamFilter *f;
+    const AVBitStreamFilter *f = NULL;
+    void *i = 0;
+
+    /* find the filter that corresponds to prev */
+    while (prev && (f = av_bsf_iterate(&i))) {
+        if (f->priv_class == prev) {
+            break;
+        }
+    }
 
     /* find next filter with priv options */
-    while ((f = av_bsf_iterate(opaque))) {
+    while ((f = av_bsf_iterate(&i))) {
         if (f->priv_class)
             return f->priv_class;
     }
