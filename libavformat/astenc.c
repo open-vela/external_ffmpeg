@@ -118,7 +118,9 @@ static int ast_write_packet(AVFormatContext *s, AVPacket *pkt)
     avio_wb32(pb, size); /* Block size */
 
     /* padding */
-    ffio_fill(pb, 0, 24);
+    avio_wb64(pb, 0);
+    avio_wb64(pb, 0);
+    avio_wb64(pb, 0);
 
     avio_write(pb, pkt->data, pkt->size);
 
@@ -194,7 +196,7 @@ static const AVClass ast_muxer_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVOutputFormat ff_ast_muxer = {
+AVOutputFormat ff_ast_muxer = {
     .name              = "ast",
     .long_name         = NULL_IF_CONFIG_SMALL("AST (Audio Stream)"),
     .extensions        = "ast",
@@ -205,5 +207,5 @@ const AVOutputFormat ff_ast_muxer = {
     .write_packet      = ast_write_packet,
     .write_trailer     = ast_write_trailer,
     .priv_class        = &ast_muxer_class,
-    .codec_tag         = ff_ast_codec_tags_list,
+    .codec_tag         = (const AVCodecTag* const []){ff_codec_ast_tags, 0},
 };
