@@ -52,6 +52,10 @@ static int adevsink_control_message(struct AVFormatContext *s, int type,
 
     if (type == AV_DEV_TO_APP_BUFFER_WRITABLE)
         ff_filter_set_ready(ctx, 100);
+    else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
+        avfilter_graph_reconfig(ctx->graph, NULL);
+        ff_filter_set_ready(ctx, 100);
+    }
 
     return 0;
 }
@@ -81,6 +85,9 @@ static int adevsink_start(AVFilterContext *ctx)
     priv->enc_ctx->sample_rate    = inlink->sample_rate;
     priv->enc_ctx->channel_layout = inlink->channel_layout;
     priv->enc_ctx->channels       = inlink->channels;
+
+    av_dict_set_int(&fmt_opt, "ar", inlink->sample_rate, 0);
+    av_dict_set_int(&fmt_opt, "ac", inlink->channels, 0);
 
     avdevice_app_to_dev_control_message(priv->fmt_ctx,
             AV_APP_TO_DEV_GET_FORMAT_REQUEST,
@@ -265,7 +272,7 @@ static int adevsink_query_formats(AVFilterContext *ctx)
 
     ret = avdevice_capabilities_create(&caps, priv->fmt_ctx, NULL);
     if (ret < 0)
-        return 0;
+        return ret == AVERROR(ENOSYS) ? 0 : ret;
 
     ret = av_opt_query_ranges(&ranges, caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
     if (ret < 0) {
