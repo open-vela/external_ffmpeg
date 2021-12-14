@@ -676,7 +676,7 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
         }
         h->pred_mode_Y[pos] = predpred;
     }
-    pred_mode_uv = get_ue_golomb(gb);
+    pred_mode_uv = get_ue_golomb_31(gb);
     if (pred_mode_uv > 6) {
         av_log(h->avctx, AV_LOG_ERROR, "illegal intra chroma pred mode\n");
         return AVERROR_INVALIDDATA;
@@ -1307,7 +1307,7 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     }
 }
 
-AVCodec ff_cavs_decoder = {
+const AVCodec ff_cavs_decoder = {
     .name           = "cavs",
     .long_name      = NULL_IF_CONFIG_SMALL("Chinese AVS (Audio Video Standard) (AVS1-P2, JiZhun profile)"),
     .type           = AVMEDIA_TYPE_VIDEO,
