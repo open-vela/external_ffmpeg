@@ -25,6 +25,19 @@ enabled decoders.
 A description of some of the currently available video decoders
 follows.
 
+@section av1
+
+AOMedia Video 1 (AV1) decoder.
+
+@subsection Options
+
+@table @option
+
+@item operating_point
+Select an operating point of a scalable AV1 bitstream (0 - 31). Default is 0.
+
+@end table
+
 @section rawvideo
 
 Raw video decoder.
@@ -63,13 +76,19 @@ The following options are supported by the libdav1d wrapper.
 
 @item framethreads
 Set amount of frame threads to use during decoding. The default value is 0 (autodetect).
+This option is deprecated for libdav1d >= 1.0 and will be removed in the future. Use the
+global option @code{threads} instead.
 
 @item tilethreads
 Set amount of tile threads to use during decoding. The default value is 0 (autodetect).
+This option is deprecated for libdav1d >= 1.0 and will be removed in the future. Use the
+global option @code{threads} instead.
 
 @item filmgrain
 Apply film grain to the decoded video if present in the bitstream. Defaults to the
 internal default of the library.
+This option is deprecated and will be removed in the future. See the global option
+@code{export_side_data} to export Film Grain parameters instead of applying it.
 
 @item oppoint
 Select an operating point of a scalable AV1 bitstream (0 - 31). Defaults to the
@@ -85,6 +104,27 @@ Output all spatial layers of a scalable AV1 bitstream. The default value is fals
 AVS2-P2/IEEE1857.4 video decoder wrapper.
 
 This decoder allows libavcodec to decode AVS2 streams with davs2 library.
+
+@c man end VIDEO DECODERS
+
+@section libuavs3d
+
+AVS3-P2/IEEE1857.10 video decoder.
+
+libuavs3d allows libavcodec to decode AVS3 streams.
+Requires the presence of the libuavs3d headers and library during configuration.
+You need to explicitly configure the build with @code{--enable-libuavs3d}.
+
+@subsection Options
+
+The following option is supported by the libuavs3d wrapper.
+
+@table @option
+
+@item frame_threads
+Set amount of frame threads to use during decoding. The default value is 0 (autodetect).
+
+@end table
 
 @c man end VIDEO DECODERS
 
@@ -107,7 +147,7 @@ the undocumented RealAudio 3 (a.k.a. dnet).
 
 @item -drc_scale @var{value}
 Dynamic Range Scale Factor. The factor to apply to dynamic range values
-from the AC-3 stream. This factor is applied exponentially.
+from the AC-3 stream. This factor is applied exponentially. The default value is 1.
 There are 3 notable scale factor ranges:
 @table @option
 @item drc_scale == 0
@@ -259,6 +299,8 @@ Enabled by default.
 @table @option
 @item compute_clut
 @table @option
+@item -2
+Compute clut once if no matching CLUT is in the stream.
 @item -1
 Compute clut if no matching CLUT is in the stream.
 @item 0
