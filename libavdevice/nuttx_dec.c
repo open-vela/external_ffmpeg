@@ -58,15 +58,13 @@ static int nuttx_control_message(struct AVFormatContext *s1,
         case AV_APP_TO_DEV_GET_POLLFD: {
             struct pollfd *poll = data;
 
-            if (!data || data_size < sizeof(struct pollfd) * 2)
+            if (!data || data_size < sizeof(struct pollfd))
                 return AVERROR(EINVAL);
 
             poll[0].fd      = priv->mq;
             poll[0].events  = POLLIN;
-            poll[1].fd      = 0;
-            poll[1].events  = 0;
 
-            return 0;
+            return 1;
         }
         case AV_APP_TO_DEV_POLL_AVAILABLE: {
             int ret;
