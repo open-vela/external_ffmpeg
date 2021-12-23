@@ -229,7 +229,9 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
 {
     MovieSinkPriv *priv = ctx->priv;
     int format, sample_rate, channels, w, h;
+    int vbr = -1, level = -1;
     uint64_t channel_layout;
+    int64_t bitrate = -1;
     AVStream *stream;
     AVCodec *enc;
     int ret;
@@ -247,7 +249,9 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         return AVERROR(ENOMEM);
 
     if (priv->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
-        sscanf(params, "a:%d,%d,%d,%llu", &format, &sample_rate, &channels, &channel_layout);
+        sscanf(params, "a:%d,%d,%d,%llu,%lld,%d,%d",
+               &format, &sample_rate, &channels, &channel_layout, &bitrate, &vbr, &level);
+
         priv->streams[pad_id].enc_ctx->sample_fmt     = format;
         priv->streams[pad_id].enc_ctx->sample_rate    = sample_rate;
         priv->streams[pad_id].enc_ctx->channels       = channels;
@@ -259,13 +263,22 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         priv->streams[pad_id].enc_ctx->height  = h;
     }
 
+    if (bitrate != -1)
+        av_opt_set_int(priv->streams[pad_id].enc_ctx, "b", bitrate, 0);
+
+    if (vbr != -1)
+        av_opt_set_int(priv->streams[pad_id].enc_ctx, "vbr", vbr, AV_OPT_SEARCH_CHILDREN);
+
+    if (level != -1)
+        av_opt_set_int(priv->streams[pad_id].enc_ctx, "compression_level", level, 0);
+
     ret = avcodec_open2(priv->streams[pad_id].enc_ctx, enc, NULL);
     if (ret < 0)
         goto out;
 
     stream = avformat_new_stream(priv->format_ctx, enc);
     if (!stream) {
-        ret = AVERROR(-ENOMEM);
+        ret = AVERROR(ENOMEM);
         goto out;
     }
 
@@ -322,7 +335,7 @@ static int amoviesink_encode_frame(AVFilterContext *ctx, int pad_id, AVFrame *fr
     int ret = 0;
 
     if (priv->state != AVMOVIE_ASYNC_STATE_STARTED)
-        return AVERROR(-EPERM);
+        return AVERROR(EPERM);
 
     av_init_packet(pkt);
 
@@ -860,7 +873,7 @@ static int amoviesink_process_prepare(AVFilterContext *ctx, const char *args)
 
     priv->format = av_guess_format(format, args, NULL);
     if (!priv->format)
-        return AVERROR(-EINVAL);
+        return AVERROR(EINVAL);
 
     return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
 }
@@ -868,9 +881,20 @@ static int amoviesink_process_prepare(AVFilterContext *ctx, const char *args)
 static int amoviesink_process_start(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
+    int i, ret, len, vbr = -1, level = -1;
+    AVDictionaryEntry *tag;
     char *ptr, params[64];
+    int64_t bitrate= -1;
     AVFilterLink *link;
-    int i, ret, len;
+
+    if ((tag = av_dict_get(priv->format_opt, "bitrate", NULL, 0)))
+        bitrate = strtoul(tag->value, NULL, 0);
+
+    if ((tag = av_dict_get(priv->format_opt, "vbr", NULL, 0)))
+        vbr = strtoul(tag->value, NULL, 0);
+
+    if ((tag = av_dict_get(priv->format_opt, "level", NULL, 0)))
+        level = strtoul(tag->value, NULL, 0);
 
     avfilter_graph_reconfig(ctx->graph, NULL);
 
@@ -879,8 +903,9 @@ static int amoviesink_process_start(AVFilterContext *ctx)
     for (i = 0; i < ctx->nb_inputs; i++) {
         link = ctx->inputs[i];
         if (link->type == AVMEDIA_TYPE_AUDIO)
-            ret = snprintf(ptr, len, "a:%d,%d,%d,%llu",
-                           link->format, link->sample_rate, link->channels, link->channel_layout);
+            ret = snprintf(ptr, len, "a:%d,%d,%d,%llu,%lld,%d,%d",
+                           link->format, link->sample_rate, link->channels, link->channel_layout, bitrate, vbr, level);
+
         else
             ret = snprintf(ptr, len, ";v:%d,%d,%d", link->format, link->w, link->h);
 
