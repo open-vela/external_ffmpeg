@@ -63,8 +63,10 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     s->pictures[0] = av_frame_alloc();
     s->pictures[1] = av_frame_alloc();
-    if (!s->pictures[0] || !s->pictures[1])
+    if (!s->pictures[0] || !s->pictures[1]) {
+        decode_end(avctx);
         return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -257,7 +259,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     return buf_size;
 }
 
-const AVCodec ff_c93_decoder = {
+AVCodec ff_c93_decoder = {
     .name           = "c93",
     .long_name      = NULL_IF_CONFIG_SMALL("Interplay C93"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -267,5 +269,5 @@ const AVCodec ff_c93_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
