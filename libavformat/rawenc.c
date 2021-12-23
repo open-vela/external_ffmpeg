@@ -675,3 +675,18 @@ const FFOutputFormat ff_vc1_muxer = {
     .p.flags           = AVFMT_NOTIMESTAMPS,
 };
 #endif
+
+#if CONFIG_OPUSRAW_MUXER
+AVOutputFormat ff_opusraw_muxer = {
+    .p.name              = "opusraw",
+    .p.long_name         = NULL_IF_CONFIG_SMALL("raw opus raw audio"),
+    .p.extensions        = "opus",
+    .p.audio_codec       = AV_CODEC_ID_OPUS,
+    .p.video_codec       = AV_CODEC_ID_NONE,
+    .p.subtitle_codec    = AV_CODEC_ID_NONE,
+    .flags_internal      = FF_OFMT_FLAG_MAX_ONE_OF_EACH |
+                         FF_OFMT_FLAG_ONLY_DEFAULT_CODECS,
+    .write_packet        = ff_raw_write_packet,
+    .p.flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
