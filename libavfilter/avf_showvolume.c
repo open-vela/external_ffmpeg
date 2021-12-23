@@ -125,19 +125,19 @@ static int query_formats(AVFilterContext *ctx)
     int ret;
 
     formats = ff_make_format_list(sample_fmts);
-    if ((ret = ff_formats_ref(formats, &inlink->outcfg.formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &inlink->out_formats)) < 0)
         return ret;
 
     layouts = ff_all_channel_counts();
-    if ((ret = ff_channel_layouts_ref(layouts, &inlink->outcfg.channel_layouts)) < 0)
+    if ((ret = ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts)) < 0)
         return ret;
 
     formats = ff_all_samplerates();
-    if ((ret = ff_formats_ref(formats, &inlink->outcfg.samplerates)) < 0)
+    if ((ret = ff_formats_ref(formats, &inlink->out_samplerates)) < 0)
         return ret;
 
     formats = ff_make_format_list(pix_fmts);
-    if ((ret = ff_formats_ref(formats, &outlink->incfg.formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &outlink->in_formats)) < 0)
         return ret;
 
     return 0;
@@ -486,6 +486,7 @@ static const AVFilterPad showvolume_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad showvolume_outputs[] = {
@@ -494,17 +495,18 @@ static const AVFilterPad showvolume_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_avf_showvolume = {
+AVFilter ff_avf_showvolume = {
     .name          = "showvolume",
     .description   = NULL_IF_CONFIG_SMALL("Convert input audio volume to video output."),
     .init          = init,
     .activate      = activate,
     .uninit        = uninit,
+    .query_formats = query_formats,
     .priv_size     = sizeof(ShowVolumeContext),
-    FILTER_INPUTS(showvolume_inputs),
-    FILTER_OUTPUTS(showvolume_outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .inputs        = showvolume_inputs,
+    .outputs       = showvolume_outputs,
     .priv_class    = &showvolume_class,
 };
