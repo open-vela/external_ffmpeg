@@ -22,16 +22,15 @@
 #include "common.h"
 #include "aes_ctr.h"
 #include "aes.h"
-#include "aes_internal.h"
 #include "random_seed.h"
 
 #define AES_BLOCK_SIZE (16)
 
 typedef struct AVAESCTR {
+    struct AVAES* aes;
     uint8_t counter[AES_BLOCK_SIZE];
     uint8_t encrypted_counter[AES_BLOCK_SIZE];
     int block_offset;
-    AVAES aes;
 } AVAESCTR;
 
 struct AVAESCTR *av_aes_ctr_alloc(void)
@@ -69,7 +68,12 @@ void av_aes_ctr_set_random_iv(struct AVAESCTR *a)
 
 int av_aes_ctr_init(struct AVAESCTR *a, const uint8_t *key)
 {
-    av_aes_init(&a->aes, key, 128, 0);
+    a->aes = av_aes_alloc();
+    if (!a->aes) {
+        return AVERROR(ENOMEM);
+    }
+
+    av_aes_init(a->aes, key, 128, 0);
 
     memset(a->counter, 0, sizeof(a->counter));
     a->block_offset = 0;
@@ -79,7 +83,10 @@ int av_aes_ctr_init(struct AVAESCTR *a, const uint8_t *key)
 
 void av_aes_ctr_free(struct AVAESCTR *a)
 {
-    av_free(a);
+    if (a) {
+        av_freep(&a->aes);
+        av_free(a);
+    }
 }
 
 static void av_aes_ctr_increment_be64(uint8_t* counter)
@@ -109,7 +116,7 @@ void av_aes_ctr_crypt(struct AVAESCTR *a, uint8_t *dst, const uint8_t *src, int 
 
     while (src < src_end) {
         if (a->block_offset == 0) {
-            av_aes_crypt(&a->aes, a->encrypted_counter, a->counter, 1, NULL, 0);
+            av_aes_crypt(a->aes, a->encrypted_counter, a->counter, 1, NULL, 0);
 
             av_aes_ctr_increment_be64(a->counter + 8);
         }
