@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include "avassert.h"
 #include "avstring.h"
 #include "bprint.h"
 #include "common.h"
@@ -245,10 +244,8 @@ int av_bprint_finalize(AVBPrint *buf, char **ret_str)
                 str = buf->str;
             buf->str = NULL;
         } else {
-            str = av_malloc(real_size);
-            if (str)
-                memcpy(str, buf->str, real_size);
-            else
+            str = av_memdup(buf->str, real_size);
+            if (!str)
                 ret = AVERROR(ENOMEM);
         }
         *ret_str = str;
@@ -281,6 +278,35 @@ void av_bprint_escape(AVBPrint *dstbuf, const char *src, const char *special_cha
                 av_bprint_chars(dstbuf, *src, 1);
         }
         av_bprint_chars(dstbuf, '\'', 1);
+        break;
+
+    case AV_ESCAPE_MODE_XML:
+        /* escape XML non-markup character data as per 2.4 by default: */
+        /*  [^<&]* - ([^<&]* ']]>' [^<&]*) */
+
+        /* additionally, given one of the AV_ESCAPE_FLAG_XML_* flags, */
+        /* escape those specific characters as required. */
+        for (; *src; src++) {
+            switch (*src) {
+            case '&' : av_bprintf(dstbuf, "%s", "&amp;");  break;
+            case '<' : av_bprintf(dstbuf, "%s", "&lt;");   break;
+            case '>' : av_bprintf(dstbuf, "%s", "&gt;");   break;
+            case '\'':
+                if (!(flags & AV_ESCAPE_FLAG_XML_SINGLE_QUOTES))
+                    goto XML_DEFAULT_HANDLING;
+
+                av_bprintf(dstbuf, "%s", "&apos;");
+                break;
+            case '"' :
+                if (!(flags & AV_ESCAPE_FLAG_XML_DOUBLE_QUOTES))
+                    goto XML_DEFAULT_HANDLING;
+
+                av_bprintf(dstbuf, "%s", "&quot;");
+                break;
+XML_DEFAULT_HANDLING:
+            default: av_bprint_chars(dstbuf, *src, 1);
+            }
+        }
         break;
 
     /* case AV_ESCAPE_MODE_BACKSLASH or unknown mode */
