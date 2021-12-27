@@ -370,6 +370,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
         if (playback) {
             dq_addlast(&buffer->dq_entry, &priv->bufferq);
         } else {
+            buffer->nbytes    = buffer->nmaxbytes;
             buf_desc.u.buffer = buffer;
             ret = ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
             if (ret < 0) {
