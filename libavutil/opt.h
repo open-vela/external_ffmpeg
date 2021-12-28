@@ -684,6 +684,7 @@ const AVClass *av_opt_child_class_next(const AVClass *parent, const AVClass *pre
  * AVERROR(EINVAL) if the value is not valid
  */
 int av_opt_set         (void *obj, const char *name, const char *val, int search_flags);
+int av_opt_set2        (void *obj, const char *name, const char *val, int opt_flags, int search_flags);
 int av_opt_set_int     (void *obj, const char *name, int64_t     val, int search_flags);
 int av_opt_set_double  (void *obj, const char *name, double      val, int search_flags);
 int av_opt_set_q       (void *obj, const char *name, AVRational  val, int search_flags);
