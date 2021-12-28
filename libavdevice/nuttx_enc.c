@@ -237,7 +237,7 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
 }
 
 #define OFFSET(x) offsetof(NuttxPriv, x)
-#define FLAGS AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
+#define FLAGS AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
     { "periods",      "", OFFSET(periods),      AV_OPT_TYPE_INT, {.i64 = 4},   0, INT_MAX, FLAGS},
     { "period_bytes", "", OFFSET(period_bytes), AV_OPT_TYPE_INT, {.i64 = 0},   0, INT_MAX, FLAGS},
