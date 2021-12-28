@@ -894,10 +894,8 @@ int ff_filter_process_command(AVFilterContext *ctx, const char *cmd,
 
     if (!ctx->filter->priv_class)
         return 0;
-    o = av_opt_find2(ctx->priv, cmd, NULL, AV_OPT_FLAG_RUNTIME_PARAM | AV_OPT_FLAG_FILTERING_PARAM, AV_OPT_SEARCH_CHILDREN, NULL);
-    if (!o)
-        return AVERROR(ENOSYS);
-    return av_opt_set(ctx->priv, cmd, arg, AV_OPT_SEARCH_CHILDREN);
+
+    return av_opt_set2(ctx->priv, cmd, arg, AV_OPT_FLAG_RUNTIME_PARAM | AV_OPT_FLAG_FILTERING_PARAM, AV_OPT_SEARCH_CHILDREN);
 }
 
 int avfilter_init_dict(AVFilterContext *ctx, AVDictionary **options)
