@@ -462,11 +462,11 @@ static int set_string_dict(void *obj, const AVOption *o, const char *val, uint8_
     return 0;
 }
 
-int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
+int av_opt_set2(void *obj, const char *name, const char *val, int opt_flags, int search_flags)
 {
     int ret = 0;
     void *dst, *target_obj;
-    const AVOption *o = av_opt_find2(obj, name, NULL, 0, search_flags, &target_obj);
+    const AVOption *o = av_opt_find2(obj, name, NULL, opt_flags, search_flags, &target_obj);
     if (!o || !target_obj)
         return AVERROR_OPTION_NOT_FOUND;
     if (!val && (o->type != AV_OPT_TYPE_STRING &&
@@ -549,6 +549,11 @@ int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
 
     av_log(obj, AV_LOG_ERROR, "Invalid option type.\n");
     return AVERROR(EINVAL);
+}
+
+int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
+{
+    return av_opt_set2(obj, name, val, 0, search_flags);
 }
 
 #define OPT_EVAL_NUMBER(name, opttype, vartype)                         \
