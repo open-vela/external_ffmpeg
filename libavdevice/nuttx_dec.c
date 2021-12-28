@@ -74,6 +74,11 @@ static int nuttx_control_message(struct AVFormatContext *s1,
 
             return ret;
         }
+        case AV_APP_TO_DEV_PLAY: {
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
+
+            return 0;
+        }
         case AV_APP_TO_DEV_DUMP:
             snprintf(data, data_size, "%d|%d|%d|%d|%d",
                      priv->running, priv->flushing,
