@@ -39,6 +39,11 @@ typedef struct ADevSrcPriv {
 
     char            *format;
     char            *devname;
+
+    int             sample_fmt;
+    uint32_t        sample_rate;
+    uint32_t        channels;
+    uint64_t        channel_layout;
 } ADevSrcPriv;
 
 static void adevsrc_stop(AVFilterContext *ctx)
@@ -297,84 +302,106 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
         return 0;
     }
 
-    ret = av_opt_query_ranges(&ranges, caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
-    if (ret < 0) {
-        ret = av_opt_query_ranges(&ranges, caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE);
-        codec = true;
-    }
+    if (priv->sample_fmt != AV_SAMPLE_FMT_NONE) {
+        ret = ff_add_format(&formats, priv->sample_fmt);
+        if (ret < 0)
+            goto out;
+    } else {
+        ret = av_opt_query_ranges(&ranges, caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
+        if (ret < 0) {
+            ret = av_opt_query_ranges(&ranges, caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE);
+            codec = true;
+        }
 
-    if (ret >= 0) {
-        for (i = 0; i < ranges->nb_ranges; i++) {
-            int64_t fmt = ranges->range[i]->value_min;
+        if (ret >= 0) {
+            for (i = 0; i < ranges->nb_ranges; i++) {
+                int64_t fmt = ranges->range[i]->value_min;
 
-            if (codec) {
-                AVCodec *codec = avcodec_find_decoder(fmt);
-                int n = 0;
+                if (codec) {
+                    AVCodec *codec = avcodec_find_decoder(fmt);
+                    int n = 0;
 
-                if (!codec)
-                    return AVERROR(EINVAL);
+                    if (!codec)
+                        return AVERROR(EINVAL);
 
-                while (codec->sample_fmts[n] != AV_SAMPLE_FMT_NONE) {
-                    ret = ff_add_format(&formats, codec->sample_fmts[n++]);
+                    while (codec->sample_fmts[n] != AV_SAMPLE_FMT_NONE) {
+                        ret = ff_add_format(&formats, codec->sample_fmts[n++]);
+                        if (ret < 0)
+                            goto out;
+                    }
+                } else {
+                    ret = ff_add_format(&formats, fmt);
                     if (ret < 0)
                         goto out;
                 }
-            } else {
-                ret = ff_add_format(&formats, fmt);
+            }
+
+            av_opt_freep_ranges(&ranges);
+        }
+    }
+
+    ret = ff_set_common_formats(ctx, formats);
+    if (ret < 0)
+        goto out;
+
+    formats = NULL;
+
+    if (priv->sample_rate) {
+        ret = ff_add_format(&formats, priv->sample_rate);
+        if (ret < 0)
+            goto out;
+    } else {
+        ret = av_opt_query_ranges(&ranges, caps, "sample_rates", AV_OPT_MULTI_COMPONENT_RANGE);
+        if (ret >= 0) {
+            for (i = 0; i < ranges->nb_ranges; i++) {
+                ret = ff_add_format(&formats, ranges->range[i]->value_min);
                 if (ret < 0)
                     goto out;
             }
+
+            av_opt_freep_ranges(&ranges);
         }
-
-        av_opt_freep_ranges(&ranges);
-
-        ret = ff_set_common_formats(ctx, formats);
-        if (ret < 0)
-            goto out;
-
-        formats = NULL;
     }
 
-    ret = av_opt_query_ranges(&ranges, caps, "sample_rates", AV_OPT_MULTI_COMPONENT_RANGE);
-    if (ret >= 0) {
-        for (i = 0; i < ranges->nb_ranges; i++) {
-            ret = ff_add_format(&formats, ranges->range[i]->value_min);
-            if (ret < 0)
-                goto out;
-        }
+    ret = ff_set_common_samplerates(ctx, formats);
+    if (ret < 0)
+        goto out;
 
-        av_opt_freep_ranges(&ranges);
-
-        ret = ff_set_common_samplerates(ctx, formats);
+    if (priv->channels) {
+        ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(priv->channels));
         if (ret < 0)
             goto out;
-    }
+    } else if (priv->channel_layout) {
+        ret = ff_add_channel_layout(&layouts, priv->channel_layout);
+        if (ret < 0)
+            goto out;
+    } else {
+        ret = av_opt_query_ranges(&ranges, caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
+        if (ret >= 0) {
+            int n;
 
-    ret = av_opt_query_ranges(&ranges, caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
-    if (ret >= 0) {
-        int n;
-
-        for (n = 0; n < ranges->nb_ranges; n++) {
-            if (ranges->range[n]->is_range) {
-                for (i = ranges->range[n]->value_min; i <= ranges->range[n]->value_max; i++) {
+            for (n = 0; n < ranges->nb_ranges; n++) {
+                if (ranges->range[n]->is_range) {
+                    for (i = ranges->range[n]->value_min; i <= ranges->range[n]->value_max; i++) {
+                        ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(i));
+                        if (ret < 0)
+                            goto out;
+                    }
+                } else {
+                    i = ranges->range[n]->value_min;
                     ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(i));
                     if (ret < 0)
                         goto out;
                 }
-            } else {
-                i = ranges->range[n]->value_min;
-                ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(i));
-                if (ret < 0)
-                    goto out;
             }
+
+            av_opt_freep_ranges(&ranges);
         }
-
-        av_opt_freep_ranges(&ranges);
-
-        ret = ff_set_common_channel_layouts(ctx, layouts);
-        if (ret < 0)
-            goto out;
     }
+
+    ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        goto out;
 
     ret = 0;
 
@@ -417,9 +444,14 @@ static void* adevsrc_child_next(void *obj, void *prev)
 
 #define OFFSET(x) offsetof(ADevSrcPriv, x)
 #define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
+#define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption adevsrc_options[] = {
-    { "format",         "", OFFSET(format),         AV_OPT_TYPE_STRING, .flags = A },
-    { "devname",        "", OFFSET(devname),        AV_OPT_TYPE_STRING, .flags = A },
+    { "format",         "", OFFSET(format),         AV_OPT_TYPE_STRING,         .flags = A },
+    { "devname",        "", OFFSET(devname),        AV_OPT_TYPE_STRING,         .flags = A },
+    { "sample_fmt",     "", OFFSET(sample_fmt),     AV_OPT_TYPE_SAMPLE_FMT,     {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
+    { "sample_rate",    "", OFFSET(sample_rate),    AV_OPT_TYPE_INT,            {.i64 = 0},                 0, INT_MAX, R },
+    { "channels",       "", OFFSET(channels),       AV_OPT_TYPE_INT,            {.i64 = 0},                 0, INT_MAX, R },
+    { "channel_layout", "", OFFSET(channel_layout), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64 = 0},                 0, INT_MAX, R },
     { NULL },
 };
 
