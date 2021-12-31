@@ -1042,7 +1042,7 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
                       int *got_frame, AVPacket *avpkt)
 {
     DXVContext *ctx = avctx->priv_data;
-    AVFrame *const frame = data;
+    ThreadFrame tframe;
     GetByteContext *gbc = &ctx->gbc;
     int (*decompress_tex)(AVCodecContext *avctx);
     const char *msgcomp, *msgtext;
@@ -1211,17 +1211,18 @@ static int dxv_decode(AVCodecContext *avctx, void *data,
             return AVERROR_INVALIDDATA;
     }
 
-    ret = ff_thread_get_buffer(avctx, frame, 0);
+    tframe.f = data;
+    ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
 
     /* Now decompress the texture with the standard functions. */
     avctx->execute2(avctx, decompress_texture_thread,
-                    frame, NULL, ctx->slice_count);
+                    tframe.f, NULL, ctx->slice_count);
 
     /* Frame is ready to be output. */
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->key_frame = 1;
+    tframe.f->pict_type = AV_PICTURE_TYPE_I;
+    tframe.f->key_frame = 1;
     *got_frame = 1;
 
     return avpkt->size;
@@ -1261,7 +1262,7 @@ static int dxv_close(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_dxv_decoder = {
+AVCodec ff_dxv_decoder = {
     .name           = "dxv",
     .long_name      = NULL_IF_CONFIG_SMALL("Resolume DXV"),
     .type           = AVMEDIA_TYPE_VIDEO,

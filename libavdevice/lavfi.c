@@ -69,14 +69,14 @@ static int *create_all_formats(int n)
             count++;
     }
 
-    if (!(fmts = av_malloc_array(count + 1, sizeof(*fmts))))
+    if (!(fmts = av_malloc((count+1) * sizeof(int))))
         return NULL;
     for (j = 0, i = 0; i < n; i++) {
         const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(i);
         if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
             fmts[j++] = i;
     }
-    fmts[j] = AV_PIX_FMT_NONE;
+    fmts[j] = -1;
     return fmts;
 }
 
@@ -100,7 +100,6 @@ static int create_subcc_streams(AVFormatContext *avctx)
     LavfiContext *lavfi = avctx->priv_data;
     AVStream *st;
     int stream_idx, sink_idx;
-    AVRational *time_base;
 
     for (stream_idx = 0; stream_idx < lavfi->nb_sinks; stream_idx++) {
         sink_idx = lavfi->stream_sink_map[stream_idx];
@@ -110,9 +109,6 @@ static int create_subcc_streams(AVFormatContext *avctx)
                 return AVERROR(ENOMEM);
             st->codecpar->codec_id = AV_CODEC_ID_EIA_608;
             st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
-            time_base = &avctx->streams[stream_idx]->time_base;
-            st->time_base.num = time_base->num;
-            st->time_base.den = time_base->den;
         } else {
             lavfi->sink_stream_subcc_map[sink_idx] = -1;
         }
@@ -150,12 +146,15 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
         if (avctx->protocol_whitelist && (ret = av_dict_set(&options, "protocol_whitelist", avctx->protocol_whitelist, 0)) < 0)
             goto end;
         ret = avio_open2(&avio, lavfi->graph_filename, AVIO_FLAG_READ, &avctx->interrupt_callback, &options);
-        av_dict_free(&options);
+        av_dict_set(&options, "protocol_whitelist", NULL, 0);
         if (ret < 0)
             goto end;
         av_bprint_init(&graph_file_pb, 0, AV_BPRINT_SIZE_UNLIMITED);
         ret = avio_read_to_bprint(avio, &graph_file_pb, INT_MAX);
         avio_closep(&avio);
+        av_bprint_chars(&graph_file_pb, '\0', 1);
+        if (!ret && !av_bprint_is_complete(&graph_file_pb))
+            ret = AVERROR(ENOMEM);
         if (ret) {
             av_bprint_finalize(&graph_file_pb, NULL);
             goto end;
@@ -269,17 +268,17 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
             if (ret < 0)
                 goto end;
         } else if (type == AVMEDIA_TYPE_AUDIO) {
-            static const enum AVSampleFormat sample_fmts[] = {
-                AV_SAMPLE_FMT_U8,  AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S32,
-                AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_DBL,
-            };
+            enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_U8,
+                                                  AV_SAMPLE_FMT_S16,
+                                                  AV_SAMPLE_FMT_S32,
+                                                  AV_SAMPLE_FMT_FLT,
+                                                  AV_SAMPLE_FMT_DBL, -1 };
 
             ret = avfilter_graph_create_filter(&sink, abuffersink,
                                                inout->name, NULL,
                                                NULL, lavfi->graph);
             if (ret >= 0)
-                ret = av_opt_set_bin(sink, "sample_fmts", (const uint8_t*)sample_fmts,
-                                     sizeof(sample_fmts), AV_OPT_SEARCH_CHILDREN);
+                ret = av_opt_set_int_list(sink, "sample_fmts", sample_fmts,  AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
             if (ret < 0)
                 goto end;
             ret = av_opt_set_int(sink, "all_channel_counts", 1,
@@ -317,30 +316,29 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
         AVFilterContext *sink = lavfi->sinks[lavfi->stream_sink_map[i]];
         AVRational time_base = av_buffersink_get_time_base(sink);
         AVStream *st = avctx->streams[i];
-        AVCodecParameters *const par = st->codecpar;
+        st->codecpar->codec_type = av_buffersink_get_type(sink);
         avpriv_set_pts_info(st, 64, time_base.num, time_base.den);
-        par->codec_type = av_buffersink_get_type(sink);
-        if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
-            int64_t probesize;
-            par->codec_id   = AV_CODEC_ID_RAWVIDEO;
-            par->format     = av_buffersink_get_format(sink);
-            par->width      = av_buffersink_get_w(sink);
-            par->height     = av_buffersink_get_h(sink);
-            probesize       = par->width * par->height * 30 *
-                              av_get_padded_bits_per_pixel(av_pix_fmt_desc_get(par->format));
-            avctx->probesize = FFMAX(avctx->probesize, probesize);
+        if (av_buffersink_get_type(sink) == AVMEDIA_TYPE_VIDEO) {
+            st->codecpar->codec_id   = AV_CODEC_ID_RAWVIDEO;
+            st->codecpar->format     = av_buffersink_get_format(sink);
+            st->codecpar->width      = av_buffersink_get_w(sink);
+            st->codecpar->height     = av_buffersink_get_h(sink);
             st       ->sample_aspect_ratio =
-            par->sample_aspect_ratio = av_buffersink_get_sample_aspect_ratio(sink);
-        } else if (par->codec_type == AVMEDIA_TYPE_AUDIO) {
-            par->channels    = av_buffersink_get_channels(sink);
-            par->sample_rate = av_buffersink_get_sample_rate(sink);
-            par->channel_layout = av_buffersink_get_channel_layout(sink);
-            par->format      = av_buffersink_get_format(sink);
-            par->codec_id    = av_get_pcm_codec(par->format, -1);
-            if (par->codec_id == AV_CODEC_ID_NONE)
+            st->codecpar->sample_aspect_ratio = av_buffersink_get_sample_aspect_ratio(sink);
+            avctx->probesize = FFMAX(avctx->probesize,
+                                     av_buffersink_get_w(sink) * av_buffersink_get_h(sink) *
+                                     av_get_padded_bits_per_pixel(av_pix_fmt_desc_get(av_buffersink_get_format(sink))) *
+                                     30);
+        } else if (av_buffersink_get_type(sink) == AVMEDIA_TYPE_AUDIO) {
+            st->codecpar->codec_id    = av_get_pcm_codec(av_buffersink_get_format(sink), -1);
+            st->codecpar->channels    = av_buffersink_get_channels(sink);
+            st->codecpar->format      = av_buffersink_get_format(sink);
+            st->codecpar->sample_rate = av_buffersink_get_sample_rate(sink);
+            st->codecpar->channel_layout = av_buffersink_get_channel_layout(sink);
+            if (st->codecpar->codec_id == AV_CODEC_ID_NONE)
                 av_log(avctx, AV_LOG_ERROR,
                        "Could not find PCM codec for sample format %s.\n",
-                       av_get_sample_fmt_name(par->format));
+                       av_get_sample_fmt_name(av_buffersink_get_format(sink)));
         }
     }
 
@@ -354,6 +352,8 @@ end:
     av_free(pix_fmts);
     avfilter_inout_free(&input_links);
     avfilter_inout_free(&output_links);
+    if (ret < 0)
+        lavfi_read_close(avctx);
     return ret;
 }
 
@@ -362,12 +362,16 @@ static int create_subcc_packet(AVFormatContext *avctx, AVFrame *frame,
 {
     LavfiContext *lavfi = avctx->priv_data;
     AVFrameSideData *sd;
-    int stream_idx, ret;
+    int stream_idx, i, ret;
 
     if ((stream_idx = lavfi->sink_stream_subcc_map[sink_idx]) < 0)
         return 0;
-    if (!(sd = av_frame_get_side_data(frame, AV_FRAME_DATA_A53_CC)))
+    for (i = 0; i < frame->nb_side_data; i++)
+        if (frame->side_data[i]->type == AV_FRAME_DATA_A53_CC)
+            break;
+    if (i >= frame->nb_side_data)
         return 0;
+    sd = frame->side_data[i];
     if ((ret = av_new_packet(&lavfi->subcc_packet, sd->size)) < 0)
         return ret;
     memcpy(lavfi->subcc_packet.data, sd->data, sd->size);
@@ -386,10 +390,12 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     AVDictionary *frame_metadata;
     int ret, i;
     int size = 0;
-    AVStream *st;
 
     if (lavfi->subcc_packet.size) {
-        av_packet_move_ref(pkt, &lavfi->subcc_packet);
+        *pkt = lavfi->subcc_packet;
+        av_init_packet(&lavfi->subcc_packet);
+        lavfi->subcc_packet.size = 0;
+        lavfi->subcc_packet.data = NULL;
         return pkt->size;
     }
 
@@ -427,52 +433,57 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
 
     av_buffersink_get_frame_flags(lavfi->sinks[min_pts_sink_idx], frame, 0);
     stream_idx = lavfi->sink_stream_map[min_pts_sink_idx];
-    st = avctx->streams[stream_idx];
 
-    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+    if (frame->width /* FIXME best way of testing a video */) {
         size = av_image_get_buffer_size(frame->format, frame->width, frame->height, 1);
         if ((ret = av_new_packet(pkt, size)) < 0)
-            goto fail;
+            return ret;
 
         av_image_copy_to_buffer(pkt->data, size, (const uint8_t **)frame->data, frame->linesize,
                                 frame->format, frame->width, frame->height, 1);
-    } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+    } else if (frame->channels /* FIXME test audio */) {
         size = frame->nb_samples * av_get_bytes_per_sample(frame->format) *
                                    frame->channels;
         if ((ret = av_new_packet(pkt, size)) < 0)
-            goto fail;
+            return ret;
         memcpy(pkt->data, frame->data[0], size);
     }
 
     frame_metadata = frame->metadata;
     if (frame_metadata) {
-        size_t size;
-        uint8_t *metadata = av_packet_pack_dictionary(frame_metadata, &size);
+        uint8_t *metadata;
+        AVDictionaryEntry *e = NULL;
+        AVBPrint meta_buf;
 
-        if (!metadata) {
-            ret = AVERROR(ENOMEM);
-            goto fail;
+        av_bprint_init(&meta_buf, 0, AV_BPRINT_SIZE_UNLIMITED);
+        while ((e = av_dict_get(frame_metadata, "", e, AV_DICT_IGNORE_SUFFIX))) {
+            av_bprintf(&meta_buf, "%s", e->key);
+            av_bprint_chars(&meta_buf, '\0', 1);
+            av_bprintf(&meta_buf, "%s", e->value);
+            av_bprint_chars(&meta_buf, '\0', 1);
         }
-        if ((ret = av_packet_add_side_data(pkt, AV_PKT_DATA_STRINGS_METADATA,
-                                           metadata, size)) < 0) {
-            av_freep(&metadata);
-            goto fail;
+        if (!av_bprint_is_complete(&meta_buf) ||
+            !(metadata = av_packet_new_side_data(pkt, AV_PKT_DATA_STRINGS_METADATA,
+                                                 meta_buf.len))) {
+            av_bprint_finalize(&meta_buf, NULL);
+            return AVERROR(ENOMEM);
         }
+        memcpy(metadata, meta_buf.str, meta_buf.len);
+        av_bprint_finalize(&meta_buf, NULL);
     }
 
     if ((ret = create_subcc_packet(avctx, frame, min_pts_sink_idx)) < 0) {
-        goto fail;
+        av_frame_unref(frame);
+        av_packet_unref(pkt);
+        return ret;
     }
 
     pkt->stream_index = stream_idx;
     pkt->pts = frame->pts;
     pkt->pos = frame->pkt_pos;
+    pkt->size = size;
     av_frame_unref(frame);
     return size;
-fail:
-    av_frame_unref(frame);
-    return ret;
-
 }
 
 #define OFFSET(x) offsetof(LavfiContext, x)
@@ -494,7 +505,7 @@ static const AVClass lavfi_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_INPUT,
 };
 
-const AVInputFormat ff_lavfi_demuxer = {
+AVInputFormat ff_lavfi_demuxer = {
     .name           = "lavfi",
     .long_name      = NULL_IF_CONFIG_SMALL("Libavfilter virtual input device"),
     .priv_data_size = sizeof(LavfiContext),
@@ -503,5 +514,4 @@ const AVInputFormat ff_lavfi_demuxer = {
     .read_close     = lavfi_read_close,
     .flags          = AVFMT_NOFILE,
     .priv_class     = &lavfi_class,
-    .flags_internal = FF_FMT_INIT_CLEANUP,
 };
