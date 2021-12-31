@@ -20,7 +20,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "aptx.h"
 
 /*
@@ -171,7 +170,7 @@ static int aptx_decode_frame(AVCodecContext *avctx, void *data,
 }
 
 #if CONFIG_APTX_DECODER
-const AVCodec ff_aptx_decoder = {
+AVCodec ff_aptx_decoder = {
     .name                  = "aptx",
     .long_name             = NULL_IF_CONFIG_SMALL("aptX (Audio Processing Technology for Bluetooth)"),
     .type                  = AVMEDIA_TYPE_AUDIO,
@@ -188,7 +187,7 @@ const AVCodec ff_aptx_decoder = {
 #endif
 
 #if CONFIG_APTX_HD_DECODER
-const AVCodec ff_aptx_hd_decoder = {
+AVCodec ff_aptx_hd_decoder = {
     .name                  = "aptx_hd",
     .long_name             = NULL_IF_CONFIG_SMALL("aptX HD (Audio Processing Technology for Bluetooth)"),
     .type                  = AVMEDIA_TYPE_AUDIO,

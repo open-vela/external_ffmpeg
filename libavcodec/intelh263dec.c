@@ -18,11 +18,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "internal.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
-#include "h263data.h"
-#include "h263dec.h"
+#include "h263.h"
 #include "mpegvideodata.h"
 
 /* don't understand why they choose a different header ! */
@@ -68,6 +66,7 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
         return -1;      /* SAC: off */
     }
     s->obmc= get_bits1(&s->gb);
+    s->unrestricted_mv = s->obmc || s->h263_long_vectors;
     s->pb_frame = get_bits1(&s->gb);
 
     if (format < 6) {
@@ -129,7 +128,7 @@ int ff_intel_h263_decode_picture_header(MpegEncContext *s)
     return 0;
 }
 
-const AVCodec ff_h263i_decoder = {
+AVCodec ff_h263i_decoder = {
     .name           = "h263i",
     .long_name      = NULL_IF_CONFIG_SMALL("Intel H.263"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -139,8 +138,7 @@ const AVCodec ff_h263i_decoder = {
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = AV_CODEC_CAP_DRAW_HORIZ_BAND | AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
+    .caps_internal  = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_NONE

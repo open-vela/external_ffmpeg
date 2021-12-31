@@ -19,7 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/dict.h"
 #include "libavutil/log.h"
 #include "libavutil/mathematics.h"
@@ -66,12 +65,6 @@ int ff_put_wav_header(AVFormatContext *s, AVIOContext *pb,
     if (!par->codec_tag || par->codec_tag > 0xffff)
         return -1;
 
-    if (par->codec_id == AV_CODEC_ID_ADPCM_SWF && par->block_align == 0) {
-        av_log(s, AV_LOG_ERROR, "%s can only be written to WAVE with a constant frame size\n",
-               avcodec_get_name(par->codec_id));
-        return AVERROR(EINVAL);
-    }
-
     /* We use the known constant frame size for the codec if known, otherwise
      * fall back on using AVCodecContext.frame_size, which is not as reliable
      * for indicating packet duration. */
@@ -81,7 +74,7 @@ int ff_put_wav_header(AVFormatContext *s, AVIOContext *pb,
                            par->channels == 1 && par->channel_layout && par->channel_layout != AV_CH_LAYOUT_MONO ||
                            par->channels == 2 && par->channel_layout && par->channel_layout != AV_CH_LAYOUT_STEREO ||
                            par->sample_rate > 48000 ||
-                           par->codec_id == AV_CODEC_ID_EAC3 || par->codec_id == AV_CODEC_ID_DFPWM ||
+                           par->codec_id == AV_CODEC_ID_EAC3 ||
                            av_get_bits_per_sample(par->codec_id) > 16;
 
     if (waveformatextensible)
@@ -188,13 +181,13 @@ int ff_put_wav_header(AVFormatContext *s, AVIOContext *pb,
         /* dwChannelMask */
         avio_wl32(pb, write_channel_mask ? par->channel_layout : 0);
         /* GUID + next 3 */
-        if (par->codec_id == AV_CODEC_ID_EAC3 || par->codec_id == AV_CODEC_ID_DFPWM) {
+        if (par->codec_id == AV_CODEC_ID_EAC3) {
             ff_put_guid(pb, ff_get_codec_guid(par->codec_id, ff_codec_wav_guids));
         } else {
-            avio_wl32(pb, par->codec_tag);
-            avio_wl32(pb, 0x00100000);
-            avio_wl32(pb, 0xAA000080);
-            avio_wl32(pb, 0x719B3800);
+        avio_wl32(pb, par->codec_tag);
+        avio_wl32(pb, 0x00100000);
+        avio_wl32(pb, 0xAA000080);
+        avio_wl32(pb, 0x719B3800);
         }
     } else if ((flags & FF_PUT_WAV_HEADER_FORCE_WAVEFORMATEX) ||
                par->codec_tag != 0x0001 /* PCM */ ||
@@ -214,12 +207,11 @@ int ff_put_wav_header(AVFormatContext *s, AVIOContext *pb,
 
 /* BITMAPINFOHEADER header */
 void ff_put_bmp_header(AVIOContext *pb, AVCodecParameters *par,
-                       int for_asf, int ignore_extradata, int rgb_frame_is_flipped)
+                       int for_asf, int ignore_extradata)
 {
-    int flipped_extradata = (par->extradata_size >= 9 &&
-                            !memcmp(par->extradata + par->extradata_size - 9, "BottomUp", 9));
-    int keep_height = flipped_extradata || rgb_frame_is_flipped;
-    int extradata_size = par->extradata_size - 9*flipped_extradata;
+    int keep_height = par->extradata_size >= 9 &&
+                      !memcmp(par->extradata + par->extradata_size - 9, "BottomUp", 9);
+    int extradata_size = par->extradata_size - 9*keep_height;
     enum AVPixelFormat pix_fmt = par->format;
     int pal_avi;
 
