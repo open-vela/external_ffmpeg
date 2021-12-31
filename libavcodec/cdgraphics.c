@@ -68,7 +68,7 @@ typedef struct CDGraphicsContext {
     AVFrame *frame;
     int hscroll;
     int vscroll;
-    uint8_t alpha[CDG_PALETTE_SIZE];
+    int transparency;
     int cleared;
 } CDGraphicsContext;
 
@@ -79,9 +79,7 @@ static av_cold int cdg_decode_init(AVCodecContext *avctx)
     cc->frame = av_frame_alloc();
     if (!cc->frame)
         return AVERROR(ENOMEM);
-
-    for (int i = 0; i < CDG_PALETTE_SIZE; i++)
-        cc->alpha[i] = 0xFFU;
+    cc->transparency = -1;
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
     return ff_set_dimensions(avctx, CDG_FULL_WIDTH, CDG_FULL_HEIGHT);
@@ -122,7 +120,9 @@ static void cdg_load_palette(CDGraphicsContext *cc, uint8_t *data, int low)
         r = ((color >> 8) & 0x000F) * 17;
         g = ((color >> 4) & 0x000F) * 17;
         b = ((color     ) & 0x000F) * 17;
-        palette[i + array_offset] = (uint32_t)cc->alpha[i + array_offset] << 24 | r << 16 | g << 8 | b;
+        palette[i + array_offset] = 0xFFU << 24 | r << 16 | g << 8 | b;
+        if (cc->transparency >= 0)
+            palette[cc->transparency] &= 0xFFFFFF;
     }
     cc->frame->palette_has_changed = 1;
 }
@@ -218,7 +218,7 @@ static void cdg_scroll(CDGraphicsContext *cc, uint8_t *data,
 
     /// find the difference and save the offset for cdg_tile_block usage
     hinc = h_off - cc->hscroll;
-    vinc = cc->vscroll - v_off;
+    vinc = v_off - cc->vscroll;
     cc->hscroll = h_off;
     cc->vscroll = v_off;
 
@@ -346,8 +346,7 @@ static int cdg_decode_frame(AVCodecContext *avctx,
                 return ret;
             break;
         case CDG_INST_TRANSPARENT_COL:
-            for (int i = 0; i < CDG_PALETTE_SIZE; i++)
-                cc->alpha[i] = 255 - ((cdg_data[i] & 0x3f) << 2);
+            cc->transparency = cdg_data[0] & 0xF;
             break;
         default:
             break;
@@ -366,18 +365,6 @@ static int cdg_decode_frame(AVCodecContext *avctx,
     return avpkt->size;
 }
 
-static void cdg_decode_flush(AVCodecContext *avctx)
-{
-    CDGraphicsContext *cc = avctx->priv_data;
-
-    if (!cc->frame->data[0])
-        return;
-
-    memset(cc->frame->data[0], 0, cc->frame->linesize[0] * avctx->height);
-    if (!avctx->frame_number)
-        memset(cc->frame->data[1], 0, AVPALETTE_SIZE);
-}
-
 static av_cold int cdg_decode_end(AVCodecContext *avctx)
 {
     CDGraphicsContext *cc = avctx->priv_data;
@@ -387,7 +374,7 @@ static av_cold int cdg_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_cdgraphics_decoder = {
+AVCodec ff_cdgraphics_decoder = {
     .name           = "cdgraphics",
     .long_name      = NULL_IF_CONFIG_SMALL("CD Graphics video"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -396,7 +383,5 @@ const AVCodec ff_cdgraphics_decoder = {
     .init           = cdg_decode_init,
     .close          = cdg_decode_end,
     .decode         = cdg_decode_frame,
-    .flush          = cdg_decode_flush,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
