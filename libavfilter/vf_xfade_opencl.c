@@ -17,6 +17,7 @@
  */
 
 #include "libavutil/log.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -402,15 +403,16 @@ static const AVFilterPad xfade_opencl_inputs[] = {
     {
         .name             = "main",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_buffer.video = get_video_buffer,
+        .get_video_buffer = get_video_buffer,
         .config_props     = &ff_opencl_filter_config_input,
     },
     {
         .name             = "xfade",
         .type             = AVMEDIA_TYPE_VIDEO,
-        .get_buffer.video = get_video_buffer,
+        .get_video_buffer = get_video_buffer,
         .config_props     = &ff_opencl_filter_config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad xfade_opencl_outputs[] = {
@@ -419,18 +421,19 @@ static const AVFilterPad xfade_opencl_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = &xfade_opencl_config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_xfade_opencl = {
+AVFilter ff_vf_xfade_opencl = {
     .name            = "xfade_opencl",
     .description     = NULL_IF_CONFIG_SMALL("Cross fade one video with another video."),
     .priv_size       = sizeof(XFadeOpenCLContext),
     .priv_class      = &xfade_opencl_class,
     .init            = &ff_opencl_filter_init,
     .uninit          = &xfade_opencl_uninit,
+    .query_formats   = &ff_opencl_filter_query_formats,
     .activate        = &xfade_opencl_activate,
-    FILTER_INPUTS(xfade_opencl_inputs),
-    FILTER_OUTPUTS(xfade_opencl_outputs),
-    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_OPENCL),
+    .inputs          = xfade_opencl_inputs,
+    .outputs         = xfade_opencl_outputs,
     .flags_internal  = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
