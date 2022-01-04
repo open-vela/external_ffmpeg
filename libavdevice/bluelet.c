@@ -88,6 +88,14 @@ typedef struct {
     uint32_t bit_rate;
 } bluelet_config_t;
 
+typedef struct {
+    uint32_t channel_mode;
+    uint32_t blocks;
+    uint32_t subbands;
+    uint32_t alloc_method;
+    uint32_t bitpool;
+} bluelet_sbc_param_t;
+
 struct bluelet_ipc_pair {
     const char* ctrl;
     const char* data;
@@ -138,7 +146,6 @@ static int ff_bluelet_socket_connect(const char* server_name, const char* path, 
         strcpy(addr.rp_name, path);
         strcpy(addr.rp_cpu, server_name);
         addr.rp_family = AF_RPMSG;
-
         ret = connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr));
     }
 
@@ -282,6 +289,18 @@ static int ff_bluelet_update_config(BlueletPriv* priv)
     }
 
     priv->bit_rate = config.bit_rate;
+    if (config.codec_type == BLUELET_CODEC_TYPE_SBC) {
+        bluelet_sbc_param_t param;
+
+        ret = ff_bluelet_recv_ctrl(priv, &param, sizeof(param));
+        if (ret < 0)
+            goto error;
+
+        snprintf(priv->codec_param, sizeof(priv->codec_param),
+                "channel_mode=%d:blocks=%d:subbands=%d:alloc_method=%d:bitpool=%d",
+                param.channel_mode, param.blocks, param.subbands, param.alloc_method, param.bitpool);
+    }
+
     priv->state = BLUELET_STATE_CONFIGED;
     ff_bluelet_send_ctrl(priv, &cmd, 1);
 

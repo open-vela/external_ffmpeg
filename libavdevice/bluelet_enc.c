@@ -89,8 +89,12 @@ static int bluelet_write_lastpacket(AVFormatContext* ctx)
     int ret;
 
     ret = ff_bluelet_write_buffer(priv, priv->lastpkt->data, priv->lastpkt->size);
-    if (ret < 0)
+
+    if (ret < 0) {
+        if (ret == AVERROR_EOF)
+            av_packet_free(&priv->lastpkt);
         return ret;
+    }
 
     priv->lastpkt->data += ret;
     priv->lastpkt->size -= ret;
@@ -152,53 +156,60 @@ static int bluelet_enc_control_message(struct AVFormatContext* ctx, int type,
     int ret = 0;
 
     switch (type) {
-    case AV_APP_TO_DEV_GET_POLLFD: {
-        if (!data || data_size < sizeof(struct pollfd) * 2)
-            return AVERROR(EINVAL);
+        case AV_APP_TO_DEV_GET_POLLFD: {
+            if (!data || data_size < sizeof(struct pollfd) * 2)
+                return AVERROR(EINVAL);
 
-        if (priv->ctrl_fd <= 0)
-            return AVERROR(EPERM);
+            if (priv->ctrl_fd <= 0)
+                return AVERROR(EPERM);
 
-        poll[0].fd = priv->ctrl_fd;
-        poll[0].events = POLLIN;
-        ret = 1;
+            poll[0].fd = priv->ctrl_fd;
+            poll[0].events = POLLIN;
+            ret = 1;
 
-        if (priv->data_fd > 0 && priv->lastpkt != NULL) {
-            poll[1].fd = priv->data_fd;
-            poll[1].events = POLLOUT;
-            ret = 2;
-        }
-
-        break;
-    }
-    case AV_APP_TO_DEV_POLL_AVAILABLE: {
-        if (!data || data_size != sizeof(struct pollfd))
-            return AVERROR(EINVAL);
-
-        if (priv->ctrl_fd == poll->fd) {
-            int action = ff_bluelet_handle_event(priv);
-            if (action == BLUELET_ACTION_WRITABLE) {
-                avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
-            } else if (action == BLUELET_ACTION_CONFIG) {
-                ctx->oformat->audio_codec = priv->codec_id;
-                avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+            if (priv->data_fd > 0 && priv->lastpkt != NULL) {
+                poll[1].fd = priv->data_fd;
+                poll[1].events = POLLOUT;
+                ret = 2;
             }
-        } else {
-            if (priv->lastpkt)
-                avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
-        }
 
-        break;
-    }
-    case AV_APP_TO_DEV_GET_FORMAT_REQUEST: {
-        AVDictionary** dict = (AVDictionary**)data;
-
-        if (dict != NULL) {
-            av_dict_set_int(dict, "ab", priv->bit_rate, 0);
-            return 0;
+            break;
         }
-        break;
-    }
+        case AV_APP_TO_DEV_POLL_AVAILABLE: {
+            if (!data || data_size != sizeof(struct pollfd))
+                return AVERROR(EINVAL);
+
+            if (priv->ctrl_fd == poll->fd) {
+                int action = ff_bluelet_handle_event(priv);
+                if (action == BLUELET_ACTION_WRITABLE) {
+                    avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+                } else if (action == BLUELET_ACTION_CONFIG) {
+                    ctx->oformat->audio_codec = priv->codec_id;
+                    avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+                }
+            } else {
+                if (priv->lastpkt)
+                    avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+            }
+
+            break;
+        }
+        case AV_APP_TO_DEV_GET_FORMAT_REQUEST: {
+            AVDictionary** dict = (AVDictionary**)data;
+
+            if (dict != NULL) {
+                av_dict_set_int(dict, "ab", priv->bit_rate, 0);
+                if (priv->codec_id == AV_CODEC_ID_SBC)
+                    av_dict_set(dict, "sbc_param", priv->codec_param, 0);
+                return 0;
+            }
+            break;
+        }
+        case AV_APP_TO_DEV_DUMP:{
+            snprintf(data, data_size, "%s|%d|%p",
+                     priv->server_name, priv->state, priv->lastpkt);
+            break;
+        }
     }
 
     return ret;

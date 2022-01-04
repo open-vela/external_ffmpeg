@@ -61,6 +61,7 @@ typedef struct BlueletPriv {
     bluelet_state_t state;
     AVPacket*       lastpkt;
     char*           server_name;
+    uint8_t         codec_param[128];
 } BlueletPriv;
 
 /*****************************************************************************
