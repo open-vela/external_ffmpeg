@@ -35,6 +35,7 @@
 #include "cabac.h"
 #include "cabac_functions.h"
 #include "internal.h"
+#include "avcodec.h"
 #include "h264dec.h"
 #include "h264data.h"
 #include "h264_mvpred.h"
@@ -42,8 +43,6 @@
 
 #if ARCH_X86
 #include "x86/h264_cabac.c"
-#elif ARCH_LOONGARCH64
-#include "loongarch/h264_cabac.c"
 #endif
 
 /* Cabac pre state table */
