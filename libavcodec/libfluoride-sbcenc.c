@@ -36,7 +36,55 @@ typedef struct SBCEncContext {
     SBC_ENC_PARAMS context;
     int64_t        max_delay;
     int            frame_length;
+    const char     *sbc_param;
 } SBCEncContext;
+
+static int sbc_encoder_parse_param(const char *sbc_param, SBC_ENC_PARAMS *param)
+{
+    AVDictionaryEntry *tag;
+    AVDictionary    *format_opt = NULL;
+    int ret;
+
+    if (sbc_param == NULL || param == NULL)
+        goto error;
+
+    ret = av_dict_parse_string(&format_opt, sbc_param, "=", ":", 0);
+    if (ret != 0)
+        goto error;
+
+    tag = av_dict_get(format_opt, "channel_mode", NULL, 0);
+    if (tag == NULL)
+        goto error;
+    param->s16ChannelMode = strtoul(tag->value, NULL, 0);
+
+    tag = av_dict_get(format_opt, "blocks", NULL, 0);
+    if (tag == NULL)
+        goto error;
+    param->s16NumOfBlocks = strtoul(tag->value, NULL, 0);
+
+    tag = av_dict_get(format_opt, "subbands", NULL, 0);
+    if (tag == NULL)
+        goto error;
+    param->s16NumOfSubBands = strtoul(tag->value, NULL, 0);
+
+    tag = av_dict_get(format_opt, "alloc_method", NULL, 0);
+    if (tag == NULL)
+        goto error;
+    param->s16AllocationMethod = strtoul(tag->value, NULL, 0);
+
+    tag = av_dict_get(format_opt, "bitpool", NULL, 0);
+    if (tag == NULL)
+        goto error;
+    param->s16BitPool = strtoul(tag->value, NULL, 0);
+    av_dict_free(&format_opt);
+
+    return 0;
+
+error:
+    if (format_opt != NULL)
+        av_dict_free(&format_opt);
+    return AVERROR(EINVAL);
+}
 
 static int sbc_encode_init(AVCodecContext *avctx)
 {
@@ -72,29 +120,35 @@ static int sbc_encode_init(AVCodecContext *avctx)
             return AVERROR(EINVAL);
         }
 
-        if (avctx->ch_layout.nb_channels == 1) {
-            param->s16ChannelMode = SBC_MONO;
-            if (sbc->max_delay <= 3000 || avctx->bit_rate > 270000)
-                param->s16NumOfSubBands = 4;
-            else
-                param->s16NumOfSubBands = 8;
-        } else {
-            if (avctx->bit_rate < 180000 || avctx->bit_rate > 420000)
-                param->s16ChannelMode = SBC_JOINT_STEREO;
-            else
-                param->s16ChannelMode = SBC_STEREO;
-            if (sbc->max_delay <= 4000 || avctx->bit_rate > 420000)
-                param->s16NumOfSubBands = 4;
-            else
-                param->s16NumOfSubBands = 8;
+        if (sbc_encoder_parse_param(sbc->sbc_param, param) != 0) {
+            if (avctx->ch_layout.nb_channels == 1) {
+                param->s16ChannelMode = SBC_MONO;
+
+                if (sbc->max_delay <= 3000 || avctx->bit_rate > 270000)
+                    param->s16NumOfSubBands = 4;
+                else
+                    param->s16NumOfSubBands = 8;
+
+            } else {
+                if (avctx->bit_rate < 180000 || avctx->bit_rate > 420000)
+                    param->s16ChannelMode = SBC_JOINT_STEREO;
+                else
+                    param->s16ChannelMode = SBC_STEREO;
+
+                if (sbc->max_delay <= 4000 || avctx->bit_rate > 420000)
+                    param->s16NumOfSubBands = 4;
+                else
+                    param->s16NumOfSubBands = 8;
+            }
+
+            /* sbc algorithmic delay is ((s16NumOfBlocks + 10) * s16NumOfSubBands - 2) / sample_rate */
+
+            param->s16NumOfBlocks = av_clip(((sbc->max_delay * avctx->sample_rate + 2)
+                                            / (1000000 * param->s16NumOfSubBands)) - 10, 4, 16) & ~3;
+
+            param->s16AllocationMethod = SBC_LOUDNESS;
         }
 
-        /* sbc algorithmic delay is ((s16NumOfBlocks + 10) * s16NumOfSubBands - 2) / sample_rate */
-
-        param->s16NumOfBlocks = av_clip(((sbc->max_delay * avctx->sample_rate + 2)
-                    / (1000000 * param->s16NumOfSubBands)) - 10, 4, 16) & ~3;
-
-        param->s16AllocationMethod = SBC_LOUDNESS;
         param->u16BitRate = avctx->bit_rate / 1000;
         param->s16NumOfChannels = avctx->ch_layout.nb_channels;
 
@@ -160,6 +214,7 @@ static int sbc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 static const AVOption options[] = {
     { "sbc_delay", "set maximum algorithmic latency",
       OFFSET(max_delay), AV_OPT_TYPE_DURATION, {.i64 = 13000}, 1000,13000, AE },
+    { "sbc_param", "", OFFSET(sbc_param), AV_OPT_TYPE_STRING, {.str=NULL}, AE },
     { NULL },
 };
 
