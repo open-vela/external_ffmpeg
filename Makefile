@@ -97,6 +97,7 @@ CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libfluoride-
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libhelix-aac}
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libhelix-mp3/pub}
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/bes/framework/services_hifi4/services/multimedia/audio/smf/core/inc}
+CFLAGS += -Wno-atomic-alignment -Wno-shift-count-overflow -Wno-implicit-int-float-conversion
 CFLAGS += $(CFLAGS_HEADERS) -DHAVE_AV_CONFIG_H
 
 EXTRA := $(filter-out -W%, $(CFLAGS))
