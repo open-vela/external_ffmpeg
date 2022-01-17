@@ -184,7 +184,7 @@ static av_cold int eightsvx_decode_close(AVCodecContext *avctx)
 }
 
 #if CONFIG_EIGHTSVX_FIB_DECODER
-const AVCodec ff_eightsvx_fib_decoder = {
+AVCodec ff_eightsvx_fib_decoder = {
   .name           = "8svx_fib",
   .long_name      = NULL_IF_CONFIG_SMALL("8SVX fibonacci"),
   .type           = AVMEDIA_TYPE_AUDIO,
@@ -196,11 +196,10 @@ const AVCodec ff_eightsvx_fib_decoder = {
   .capabilities   = AV_CODEC_CAP_DR1,
   .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
                                                     AV_SAMPLE_FMT_NONE },
-  .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
 #if CONFIG_EIGHTSVX_EXP_DECODER
-const AVCodec ff_eightsvx_exp_decoder = {
+AVCodec ff_eightsvx_exp_decoder = {
   .name           = "8svx_exp",
   .long_name      = NULL_IF_CONFIG_SMALL("8SVX exponential"),
   .type           = AVMEDIA_TYPE_AUDIO,
@@ -212,6 +211,5 @@ const AVCodec ff_eightsvx_exp_decoder = {
   .capabilities   = AV_CODEC_CAP_DR1,
   .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
                                                     AV_SAMPLE_FMT_NONE },
-  .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
