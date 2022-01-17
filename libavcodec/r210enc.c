@@ -21,7 +21,6 @@
  */
 
 #include "avcodec.h"
-#include "encode.h"
 #include "internal.h"
 #include "bytestream.h"
 
@@ -47,8 +46,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     uint8_t *srcr_line, *srcg_line, *srcb_line;
     uint8_t *dst;
 
-    ret = ff_get_encode_buffer(avctx, pkt, 4 * aligned_width * avctx->height, 0);
-    if (ret < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, 4 * aligned_width * avctx->height, 0)) < 0)
         return ret;
 
     srcg_line = pic->data[0];
@@ -81,48 +79,42 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         srcb_line += pic->linesize[1];
     }
 
+    pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
     return 0;
 }
 
-static const enum AVPixelFormat pix_fmt[] = { AV_PIX_FMT_GBRP10, AV_PIX_FMT_NONE };
 
 #if CONFIG_R210_ENCODER
-const AVCodec ff_r210_encoder = {
+AVCodec ff_r210_encoder = {
     .name           = "r210",
     .long_name      = NULL_IF_CONFIG_SMALL("Uncompressed RGB 10-bit"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_R210,
-    .capabilities   = AV_CODEC_CAP_DR1,
     .init           = encode_init,
     .encode2        = encode_frame,
-    .pix_fmts       = pix_fmt,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_GBRP10, AV_PIX_FMT_NONE },
 };
 #endif
 #if CONFIG_R10K_ENCODER
-const AVCodec ff_r10k_encoder = {
+AVCodec ff_r10k_encoder = {
     .name           = "r10k",
     .long_name      = NULL_IF_CONFIG_SMALL("AJA Kona 10-bit RGB Codec"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_R10K,
-    .capabilities   = AV_CODEC_CAP_DR1,
     .init           = encode_init,
     .encode2        = encode_frame,
-    .pix_fmts       = pix_fmt,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_GBRP10, AV_PIX_FMT_NONE },
 };
 #endif
 #if CONFIG_AVRP_ENCODER
-const AVCodec ff_avrp_encoder = {
+AVCodec ff_avrp_encoder = {
     .name           = "avrp",
     .long_name      = NULL_IF_CONFIG_SMALL("Avid 1:1 10-bit RGB Packer"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_AVRP,
-    .capabilities   = AV_CODEC_CAP_DR1,
     .init           = encode_init,
     .encode2        = encode_frame,
-    .pix_fmts       = pix_fmt,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_GBRP10, AV_PIX_FMT_NONE },
 };
 #endif

@@ -18,6 +18,8 @@
 
 #include <string.h>
 
+#include "libavutil/avassert.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -269,6 +271,7 @@ static const AVFilterPad scale_vaapi_inputs[] = {
         .filter_frame = &scale_vaapi_filter_frame,
         .config_props = &ff_vaapi_vpp_config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad scale_vaapi_outputs[] = {
@@ -277,17 +280,18 @@ static const AVFilterPad scale_vaapi_outputs[] = {
         .type = AVMEDIA_TYPE_VIDEO,
         .config_props = &scale_vaapi_config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_scale_vaapi = {
+AVFilter ff_vf_scale_vaapi = {
     .name          = "scale_vaapi",
     .description   = NULL_IF_CONFIG_SMALL("Scale to/from VAAPI surfaces."),
     .priv_size     = sizeof(ScaleVAAPIContext),
     .init          = &scale_vaapi_init,
     .uninit        = &ff_vaapi_vpp_ctx_uninit,
-    FILTER_INPUTS(scale_vaapi_inputs),
-    FILTER_OUTPUTS(scale_vaapi_outputs),
-    FILTER_QUERY_FUNC(&ff_vaapi_vpp_query_formats),
+    .query_formats = &ff_vaapi_vpp_query_formats,
+    .inputs        = scale_vaapi_inputs,
+    .outputs       = scale_vaapi_outputs,
     .priv_class    = &scale_vaapi_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
