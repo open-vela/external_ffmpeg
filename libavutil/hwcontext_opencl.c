@@ -2146,6 +2146,7 @@ fail:
             clReleaseMemObject(mapping->frame.planes[p]);
     }
     av_free(mapping);
+    memset(dst->data, 0, sizeof(dst->data));
     return err;
 }
 
@@ -2317,6 +2318,7 @@ fail:
         if (desc->planes[p])
             clReleaseMemObject(desc->planes[p]);
     av_freep(&desc);
+    memset(dst->data, 0, sizeof(dst->data));
     return err;
 }
 
@@ -2407,6 +2409,7 @@ fail:
         0, NULL, &event);
     if (cle == CL_SUCCESS)
         opencl_wait_events(dst_fc, &event, 1);
+    memset(dst->data, 0, sizeof(dst->data));
     return err;
 }
 
@@ -2562,6 +2565,7 @@ fail:
         0, NULL, &event);
     if (cle == CL_SUCCESS)
         opencl_wait_events(dst_fc, &event, 1);
+    memset(dst->data, 0, sizeof(dst->data));
     return err;
 }
 
@@ -2793,6 +2797,7 @@ fail:
             clReleaseMemObject(mapping->object_buffers[i]);
     }
     av_free(mapping);
+    memset(dst->data, 0, sizeof(dst->data));
     return err;
 }
 
