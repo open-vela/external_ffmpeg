@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "bsf.h"
+#include "avcodec.h"
 #include "bsf_internal.h"
 #include "libavutil/avassert.h"
 #include "libavutil/opt.h"
