@@ -24,8 +24,9 @@
 #ifndef AVCODEC_DSD_H
 #define AVCODEC_DSD_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include "libavcodec/internal.h"
+#include "libavcodec/mathops.h"
+#include "avcodec.h"
 
 #define HTAPS   48               /** number of FIR constants */
 #define FIFOSIZE 16              /** must be a power of two */
