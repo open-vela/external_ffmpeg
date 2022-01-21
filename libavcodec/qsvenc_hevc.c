@@ -235,29 +235,17 @@ static const AVOption options[] = {
     { "load_plugins", "A :-separate list of hexadecimal plugin UIDs to load in an internal session",
         OFFSET(qsv.load_plugins), AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VE },
 
-#if QSV_HAVE_LA
-    { "look_ahead_depth", "Depth of look ahead in number frames, available when extbrc option is enabled", OFFSET(qsv.look_ahead_depth), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 100, VE },
-#endif
     { "profile", NULL, OFFSET(qsv.profile), AV_OPT_TYPE_INT, { .i64 = MFX_PROFILE_UNKNOWN }, 0, INT_MAX, VE, "profile" },
     { "unknown", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_UNKNOWN      }, INT_MIN, INT_MAX,     VE, "profile" },
     { "main",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_HEVC_MAIN    }, INT_MIN, INT_MAX,     VE, "profile" },
     { "main10",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_HEVC_MAIN10  }, INT_MIN, INT_MAX,     VE, "profile" },
     { "mainsp",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_HEVC_MAINSP  }, INT_MIN, INT_MAX,     VE, "profile" },
     { "rext",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_HEVC_REXT    }, INT_MIN, INT_MAX,     VE, "profile" },
-#if QSV_VERSION_ATLEAST(1, 32)
-    { "scc",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = MFX_PROFILE_HEVC_SCC     }, INT_MIN, INT_MAX,     VE, "profile" },
-#endif
 
     { "gpb", "1: GPB (generalized P/B frame); 0: regular P frame", OFFSET(qsv.gpb), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, VE},
 
     { "tile_cols",  "Number of columns for tiled encoding",   OFFSET(qsv.tile_cols),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, UINT16_MAX, VE },
     { "tile_rows",  "Number of rows for tiled encoding",      OFFSET(qsv.tile_rows),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, UINT16_MAX, VE },
-    { "recovery_point_sei", "Insert recovery point SEI messages",       OFFSET(qsv.recovery_point_sei),      AV_OPT_TYPE_INT, { .i64 = -1 },               -1,          1, VE },
-    { "aud", "Insert the Access Unit Delimiter NAL", OFFSET(qsv.aud), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE},
-    { "pic_timing_sei",    "Insert picture timing SEI with pic_struct_syntax element", OFFSET(qsv.pic_timing_sei), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, VE },
-#if QSV_VERSION_ATLEAST(1, 26)
-    { "transform_skip", "Turn this option ON to enable transformskip",   OFFSET(qsv.transform_skip),          AV_OPT_TYPE_INT,    { .i64 = -1},   -1, 1,  VE},
-#endif
 
     { NULL },
 };
@@ -275,14 +263,15 @@ static const AVCodecDefault qsv_enc_defaults[] = {
     // same as the x264 default
     { "g",         "248"   },
     { "bf",        "8"     },
-    { "qmin",      "-1"    },
-    { "qmax",      "-1"    },
     { "trellis",   "-1"    },
     { "flags",     "+cgop" },
+#if FF_API_PRIVATE_OPT
+    { "b_strategy", "-1"   },
+#endif
     { NULL },
 };
 
-const AVCodec ff_hevc_qsv_encoder = {
+AVCodec ff_hevc_qsv_encoder = {
     .name           = "hevc_qsv",
     .long_name      = NULL_IF_CONFIG_SMALL("HEVC (Intel Quick Sync Video acceleration)"),
     .priv_data_size = sizeof(QSVHEVCEncContext),

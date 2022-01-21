@@ -33,7 +33,6 @@
 #include "libavutil/crc.h"
 #include "libavutil/downmix_info.h"
 #include "libavutil/opt.h"
-#include "libavutil/thread.h"
 #include "bswapdsp.h"
 #include "internal.h"
 #include "aac_ac3_parser.h"
@@ -184,26 +183,23 @@ static av_cold void ac3_tables_init(void)
  */
 static av_cold int ac3_decode_init(AVCodecContext *avctx)
 {
-    static AVOnce init_static_once = AV_ONCE_INIT;
     AC3DecodeContext *s = avctx->priv_data;
-    int i, ret;
+    int i;
 
     s->avctx = avctx;
 
-    if ((ret = ff_mdct_init(&s->imdct_256, 8, 1, 1.0)) < 0 ||
-        (ret = ff_mdct_init(&s->imdct_512, 9, 1, 1.0)) < 0)
-        return ret;
+    ac3_tables_init();
+    ff_mdct_init(&s->imdct_256, 8, 1, 1.0);
+    ff_mdct_init(&s->imdct_512, 9, 1, 1.0);
     AC3_RENAME(ff_kbd_window_init)(s->window, 5.0, 256);
     ff_bswapdsp_init(&s->bdsp);
 
 #if (USE_FIXED)
     s->fdsp = avpriv_alloc_fixed_dsp(avctx->flags & AV_CODEC_FLAG_BITEXACT);
 #else
-    ff_fmt_convert_init(&s->fmt_conv, avctx);
     s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    ff_fmt_convert_init(&s->fmt_conv, avctx);
 #endif
-    if (!s->fdsp)
-        return AVERROR(ENOMEM);
 
     ff_ac3dsp_init(&s->ac3dsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
     av_lfg_init(&s->dith_state, 0);
@@ -226,8 +222,6 @@ static av_cold int ac3_decode_init(AVCodecContext *avctx)
         s->xcfptr[i] = s->transform_coeffs[i];
         s->dlyptr[i] = s->delay[i];
     }
-
-    ff_thread_once(&init_static_once, ac3_tables_init);
 
     return 0;
 }
@@ -356,12 +350,14 @@ static int parse_frame_header(AC3DecodeContext *s)
         s->skip_syntax           = 1;
         memset(s->channel_uses_aht, 0, sizeof(s->channel_uses_aht));
         return ac3_parse_header(s);
-    } else if (CONFIG_EAC3_DECODER) {
+    } else {
+#if CONFIG_EAC3_DECODER
         s->eac3 = 1;
         return ff_eac3_parse_header(s);
-    } else {
+#else
         av_log(s->avctx, AV_LOG_ERROR, "E-AC-3 support not compiled in\n");
         return AVERROR(ENOSYS);
+#endif
     }
 }
 
@@ -522,7 +518,7 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
     int end_freq   = s->end_freq[ch_index];
     uint8_t *baps  = s->bap[ch_index];
     int8_t *exps   = s->dexps[ch_index];
-    int32_t *coeffs = s->fixed_coeffs[ch_index];
+    int *coeffs    = s->fixed_coeffs[ch_index];
     int dither     = (ch_index == CPL_CH) || s->dither_flag[ch_index];
     GetBitContext *gbc = &s->gbc;
     int freq;
@@ -619,8 +615,10 @@ static inline void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk,
         /* if AHT is used, mantissas for all blocks are encoded in the first
            block of the frame. */
         int bin;
-        if (CONFIG_EAC3_DECODER && !blk)
+#if CONFIG_EAC3_DECODER
+        if (!blk)
             ff_eac3_decode_transform_coeffs_aht_ch(s, ch);
+#endif
         for (bin = s->start_freq[ch]; bin < s->end_freq[ch]; bin++) {
             s->fixed_coeffs[ch][bin] = s->pre_mantissa[ch][bin][blk] >> s->dexps[ch][bin];
         }
@@ -1410,14 +1408,16 @@ static int decode_audio_block(AC3DecodeContext *s, int blk, int offset)
           gain = gain * s->level_gain[audio_channel];
         gain *= 1.0 / 4194304.0f;
         s->fmt_conv.int32_to_float_fmul_scalar(s->transform_coeffs[ch],
-                                               s->fixed_coeffs[ch], gain, 256);
+                                               (int32_t *)s->fixed_coeffs[ch], gain, 256);
 #endif
     }
 
+#if CONFIG_EAC3_DECODER
     /* apply spectral extension to high frequency bins */
-    if (CONFIG_EAC3_DECODER && s->spx_in_use) {
+    if (s->spx_in_use) {
         ff_eac3_apply_spectral_extension(s);
     }
+#endif
 
     /* downmix and MDCT. order depends on whether block switching is used for
        any channel in this block. this is because coefficients for the long
@@ -1616,7 +1616,7 @@ dependent_frame:
         return AVERROR_INVALIDDATA;
     }
     avctx->channels = s->out_channels;
-    avctx->channel_layout = ff_ac3_channel_layout_tab[s->output_mode & ~AC3_OUTPUT_LFEON];
+    avctx->channel_layout = avpriv_ac3_channel_layout_tab[s->output_mode & ~AC3_OUTPUT_LFEON];
     if (s->output_mode & AC3_OUTPUT_LFEON)
         avctx->channel_layout |= AV_CH_LOW_FREQUENCY;
 
@@ -1700,7 +1700,7 @@ skip:
         extended_channel_map[ch] = ch;
 
     if (s->frame_type == EAC3_FRAME_TYPE_DEPENDENT) {
-        uint64_t ich_layout = ff_ac3_channel_layout_tab[s->prev_output_mode & ~AC3_OUTPUT_LFEON];
+        uint64_t ich_layout = avpriv_ac3_channel_layout_tab[s->prev_output_mode & ~AC3_OUTPUT_LFEON];
         int channel_map_size = ff_ac3_channels_tab[s->output_mode & ~AC3_OUTPUT_LFEON] + s->lfe_on;
         uint64_t channel_layout;
         int extend = 0;
