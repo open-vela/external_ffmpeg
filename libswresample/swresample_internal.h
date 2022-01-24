@@ -91,6 +91,9 @@ struct Resampler {
 
 extern struct Resampler const swri_resampler;
 extern struct Resampler const swri_soxr_resampler;
+#if CONFIG_HIFI4SRC
+extern struct Resampler const swri_hifi4_resampler;
+#endif
 
 struct SwrContext {
     const AVClass *av_class;                        ///< AVClass used for AVOption and av_log()
