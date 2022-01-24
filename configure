@@ -1862,6 +1862,7 @@ HWACCEL_LIBRARY_LIST="
     omx
     opencl
     vulkan
+    hifi4src
 "
 
 DOCUMENT_LIST="
