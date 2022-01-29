@@ -29,6 +29,7 @@
 #include <stdatomic.h>
 
 #include "libavutil/buffer.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/thread.h"
 #include "libavutil/internal.h"
 
@@ -104,6 +105,7 @@ typedef struct VP9Context {
     pthread_mutex_t progress_mutex;
     pthread_cond_t progress_cond;
     atomic_int *entries;
+    unsigned pthread_init_cnt;
 #endif
 
     uint8_t ss_h, ss_v;
