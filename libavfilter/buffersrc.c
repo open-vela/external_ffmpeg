@@ -25,7 +25,6 @@
 
 #include <float.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/frame.h"
@@ -149,33 +148,6 @@ int attribute_align_arg av_buffersrc_add_frame(AVFilterContext *ctx, AVFrame *fr
     return av_buffersrc_add_frame_flags(ctx, frame, 0);
 }
 
-static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
-                                           AVFrame *frame, int flags);
-
-int attribute_align_arg av_buffersrc_add_frame_flags(AVFilterContext *ctx, AVFrame *frame, int flags)
-{
-    AVFrame *copy = NULL;
-    int ret = 0;
-
-    if (frame && frame->channel_layout &&
-        av_get_channel_layout_nb_channels(frame->channel_layout) != frame->channels) {
-        av_log(ctx, AV_LOG_ERROR, "Layout indicates a different number of channels than actually present\n");
-        return AVERROR(EINVAL);
-    }
-
-    if (!(flags & AV_BUFFERSRC_FLAG_KEEP_REF) || !frame)
-        return av_buffersrc_add_frame_internal(ctx, frame, flags);
-
-    if (!(copy = av_frame_alloc()))
-        return AVERROR(ENOMEM);
-    ret = av_frame_ref(copy, frame);
-    if (ret >= 0)
-        ret = av_buffersrc_add_frame_internal(ctx, copy, flags);
-
-    av_frame_free(&copy);
-    return ret;
-}
-
 static int push_frame(AVFilterGraph *graph)
 {
     int ret;
@@ -190,12 +162,17 @@ static int push_frame(AVFilterGraph *graph)
     return 0;
 }
 
-static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
-                                           AVFrame *frame, int flags)
+int attribute_align_arg av_buffersrc_add_frame_flags(AVFilterContext *ctx, AVFrame *frame, int flags)
 {
     BufferSourceContext *s = ctx->priv;
     AVFrame *copy;
     int refcounted, ret;
+
+    if (frame && frame->channel_layout &&
+        av_get_channel_layout_nb_channels(frame->channel_layout) != frame->channels) {
+        av_log(ctx, AV_LOG_ERROR, "Layout indicates a different number of channels than actually present\n");
+        return AVERROR(EINVAL);
+    }
 
     s->nb_failed_requests = 0;
 
@@ -229,7 +206,7 @@ static int av_buffersrc_add_frame_internal(AVFilterContext *ctx,
     if (!(copy = av_frame_alloc()))
         return AVERROR(ENOMEM);
 
-    if (refcounted) {
+    if (refcounted && !(flags & AV_BUFFERSRC_FLAG_KEEP_REF)) {
         av_frame_move_ref(copy, frame);
     } else {
         ret = av_frame_ref(copy, frame);
@@ -457,20 +434,19 @@ static const AVFilterPad avfilter_vsrc_buffer_outputs[] = {
         .request_frame = request_frame,
         .config_props  = config_props,
     },
-    { NULL }
 };
 
-AVFilter ff_vsrc_buffer = {
+const AVFilter ff_vsrc_buffer = {
     .name      = "buffer",
     .description = NULL_IF_CONFIG_SMALL("Buffer video frames, and make them accessible to the filterchain."),
     .priv_size = sizeof(BufferSourceContext),
-    .query_formats = query_formats,
 
     .init      = init_video,
     .uninit    = uninit,
 
     .inputs    = NULL,
-    .outputs   = avfilter_vsrc_buffer_outputs,
+    FILTER_OUTPUTS(avfilter_vsrc_buffer_outputs),
+    FILTER_QUERY_FUNC(query_formats),
     .priv_class = &buffer_class,
 };
 
@@ -481,19 +457,18 @@ static const AVFilterPad avfilter_asrc_abuffer_outputs[] = {
         .request_frame = request_frame,
         .config_props  = config_props,
     },
-    { NULL }
 };
 
-AVFilter ff_asrc_abuffer = {
+const AVFilter ff_asrc_abuffer = {
     .name          = "abuffer",
     .description   = NULL_IF_CONFIG_SMALL("Buffer audio frames, and make them accessible to the filterchain."),
     .priv_size     = sizeof(BufferSourceContext),
-    .query_formats = query_formats,
 
     .init      = init_audio,
     .uninit    = uninit,
 
     .inputs    = NULL,
-    .outputs   = avfilter_asrc_abuffer_outputs,
+    FILTER_OUTPUTS(avfilter_asrc_abuffer_outputs),
+    FILTER_QUERY_FUNC(query_formats),
     .priv_class = &abuffer_class,
 };
