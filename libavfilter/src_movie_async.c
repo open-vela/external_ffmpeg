@@ -69,6 +69,7 @@ typedef struct MovieAsyncContext {
     MovieStream               *streams;       /**< array of all streams, one per output */
     AVFormatContext           *format_ctx;
     AVDictionary              *format_opt;
+    AVDictionary              *global_opts;
 
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
@@ -88,11 +89,11 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",        "maximum number of dat queue", OFFSET(dat_max),         AV_OPT_TYPE_INT, {.i64 = 4 },      2, 8,         FLAGS },
-    { "cmdqmax",        "maximum number of cmd queue", OFFSET(cmd_max),         AV_OPT_TYPE_INT, {.i64 = 16 },     8, 32,        FLAGS },
-    { "silent_samples", "samples of silent frame",     OFFSET(silent_samples),  AV_OPT_TYPE_INT, {.i64 = 1024 },   0, 2048,      FLAGS },
-    { "stack_size",     "stack size of work thread",   OFFSET(stack_size),      AV_OPT_TYPE_INT, {.i64 = 61440 },  0, INT32_MAX, FLAGS },
-    { "priority",       "priority of work thread",     OFFSET(priority),        AV_OPT_TYPE_INT, {.i64 = 244 },    0, INT16_MAX, FLAGS },
+    { "datqmax",        "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT, {.i64 = 4 },     2, 8,         FLAGS },
+    { "cmdqmax",        "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT, {.i64 = 16 },    8, 32,        FLAGS },
+    { "silent_samples", "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT, {.i64 = 1024 },  0, 2048,      FLAGS },
+    { "stack_size",     "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT, {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
+    { "priority",       "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT, {.i64 = 244 },   0, INT16_MAX, FLAGS },
     { NULL },
 };
 
@@ -455,6 +456,9 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
     movie->format_ctx->interrupt_callback.callback = movie_async_interrupt;
     movie->format_ctx->interrupt_callback.opaque = ctx;
+
+    if (movie->global_opts)
+        av_dict_copy(&movie->format_opt, movie->global_opts, 0);
 
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s start open input.\n", filename);
     ret = avformat_open_input(&movie->format_ctx, filename, iformat, &movie->format_opt);
@@ -905,12 +909,15 @@ static av_cold void movie_async_uninit(AVFilterContext *ctx)
         av_freep(&ctx->output_pads[i].name);
     }
 
+    if (movie->global_opts)
+        av_dict_free(&movie->global_opts);
+
     av_freep(&movie->streams);
     pthread_mutex_destroy(&movie->mutex);
     pthread_cond_destroy(&movie->cond);
 }
 
-static av_cold int movie_async_init(AVFilterContext *ctx)
+static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     MovieAsyncContext *movie = ctx->priv;
     int ret = AVERROR(ENOMEM);
@@ -949,6 +956,11 @@ static av_cold int movie_async_init(AVFilterContext *ctx)
             av_freep(&pad.name);
             goto error;
         }
+    }
+
+    if (options && *options) {
+        av_dict_copy(&movie->global_opts, *options, 0);
+        av_dict_free(options);
     }
 
     return 0;
@@ -1187,21 +1199,39 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
     }
 }
 
+static const struct AVClass* movie_child_class_next(const struct AVClass *prev)
+{
+    if (!prev)
+        return avformat_get_class();
+    else if (prev == avformat_get_class())
+        return avcodec_get_class();
+    else
+        return NULL;
+}
+
 static void* movie_async_child_next(void *obj, void *prev)
 {
     MovieAsyncContext *movie = obj;
-    return prev ? NULL : movie->format_ctx;
+
+    if (!prev) {
+        return movie->format_ctx;
+    } else if (prev == movie->format_ctx) {
+        return movie->streams[0].codec_ctx;
+    } else {
+        return NULL;
+    }
 }
 
 #if CONFIG_MOVIE_ASYNC_FILTER
 
 static const AVClass movie_async_class = {
-    .class_name = "movie_async_class",
-    .item_name  = av_default_item_name,
-    .option     = movie_async_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_FILTER,
-    .child_next = movie_async_child_next,
+    .class_name       = "movie_async_class",
+    .item_name        = av_default_item_name,
+    .option           = movie_async_options,
+    .version          = LIBAVUTIL_VERSION_INT,
+    .category         = AV_CLASS_CATEGORY_FILTER,
+    .child_next       = movie_async_child_next,
+    .child_class_next = movie_child_class_next,
 };
 
 AVFilter ff_avsrc_movie_async = {
@@ -1209,7 +1239,7 @@ AVFilter ff_avsrc_movie_async = {
     .description     = NULL_IF_CONFIG_SMALL("Read from a movie source asynchronously."),
     .priv_size       = sizeof(MovieAsyncContext),
     .priv_class      = &movie_async_class,
-    .init            = movie_async_init,
+    .init_dict       = movie_async_init_dict,
     .uninit          = movie_async_uninit,
     .query_formats   = movie_async_query_formats,
     .activate        = movie_async_activate,
@@ -1223,19 +1253,20 @@ AVFilter ff_avsrc_movie_async = {
 #if CONFIG_AMOVIE_ASYNC_FILTER
 
 static const AVClass amovie_async_class = {
-    .class_name = "amovie_async_class",
-    .item_name  = av_default_item_name,
-    .option     = movie_async_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_FILTER,
-    .child_next = movie_async_child_next,
+    .class_name       = "amovie_async_class",
+    .item_name        = av_default_item_name,
+    .option           = movie_async_options,
+    .version          = LIBAVUTIL_VERSION_INT,
+    .category         = AV_CLASS_CATEGORY_FILTER,
+    .child_next       = movie_async_child_next,
+    .child_class_next = movie_child_class_next,
 };
 
 AVFilter ff_avsrc_amovie_async = {
     .name            = "amovie_async",
     .description     = NULL_IF_CONFIG_SMALL("Read audio from a movie source asynchronously."),
     .priv_size       = sizeof(MovieAsyncContext),
-    .init            = movie_async_init,
+    .init_dict       = movie_async_init_dict,
     .uninit          = movie_async_uninit,
     .query_formats   = movie_async_query_formats,
     .activate        = movie_async_activate,
