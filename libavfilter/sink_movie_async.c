@@ -57,6 +57,7 @@ typedef struct MovieSinkPriv {
     AVDictionary              *format_opt;
     AVOutputFormat            *format;
     MovieStream               *streams;
+    AVDictionary              *global_opts;
 
     dq_queue_t                cmd_queue;         /**< graph thread send cmd to work thread */
 
@@ -204,6 +205,7 @@ static void amoviesink_close_muxer(AVFilterContext *ctx)
 static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
 {
     MovieSinkPriv *priv = ctx->priv;
+    AVDictionary *dict = NULL;
     int ret, i;
 
     ret = avformat_alloc_output_context2(&priv->format_ctx, priv->format,
@@ -217,6 +219,13 @@ static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
     ret = avio_open2(&priv->format_ctx->pb, filename, AVIO_FLAG_WRITE, NULL, NULL);
     if (ret < 0)
         goto out;
+
+    if (priv->global_opts) {
+        av_dict_copy(&dict, priv->global_opts, 0);
+        av_opt_set_dict2(priv->format_ctx, &dict, AV_OPT_SEARCH_CHILDREN);
+        if (dict)
+            av_dict_free(&dict);
+    }
 
     return 0;
 
@@ -602,12 +611,15 @@ static void amoviesink_uninit(AVFilterContext *ctx)
         av_freep(&ctx->input_pads[i].name);
     }
 
+    if (priv->global_opts)
+        av_dict_free(&priv->global_opts);
+
     av_freep(&priv->streams);
     pthread_mutex_destroy(&priv->mutex);
     pthread_cond_destroy(&priv->cond);
 }
 
-static int amoviesink_init(AVFilterContext *ctx)
+static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     MovieSinkPriv *priv = ctx->priv;
     enum AVMediaType types[] = {
@@ -644,6 +656,11 @@ static int amoviesink_init(AVFilterContext *ctx)
             av_freep(&pad.name);
             goto out;
         }
+    }
+
+    if (options && *options) {
+        av_dict_copy(&priv->global_opts, *options, 0);
+        av_dict_free(options);
     }
 
     return 0;
@@ -1037,28 +1054,46 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption amoviesink_async_options[] = {
-    { "datqmax",    "maximum number of dat queue", OFFSET(dat_max),    AV_OPT_TYPE_INT, {.i64 = 4},       2, 8,         FLAGS },
-    { "cmdqmax",    "maximum number of cmd queue", OFFSET(cmd_max),    AV_OPT_TYPE_INT, {.i64 = 16 },     8, 32,        FLAGS },
-    { "stack_size", "stack size of work thread",   OFFSET(stack_size), AV_OPT_TYPE_INT, {.i64 = 61440 },  0, INT32_MAX, FLAGS },
-    { "priority",   "priority of work thread",     OFFSET(priority),   AV_OPT_TYPE_INT, {.i64 = 244 },    0, INT16_MAX, FLAGS },
+    { "datqmax",    "maximum number of dat queue", OFFSET(dat_max),    AV_OPT_TYPE_INT,    {.i64 = 4},       2, 8,         FLAGS },
+    { "cmdqmax",    "maximum number of cmd queue", OFFSET(cmd_max),    AV_OPT_TYPE_INT,    {.i64 = 16 },     8, 32,        FLAGS },
+    { "stack_size", "stack size of work thread",   OFFSET(stack_size), AV_OPT_TYPE_INT,    {.i64 = 61440 },  0, INT32_MAX, FLAGS },
+    { "priority",   "priority of work thread",     OFFSET(priority),   AV_OPT_TYPE_INT,    {.i64 = 244 },    0, INT16_MAX, FLAGS },
     { NULL },
 };
+
+static const struct AVClass* amoviesink_child_class_next(const struct AVClass *prev)
+{
+    if (!prev)
+        return avformat_get_class();
+    else if (prev == avformat_get_class())
+        return avcodec_get_class();
+    else
+        return NULL;
+}
 
 static void* amoviesink_child_next(void *obj, void *prev)
 {
     MovieSinkPriv *priv = obj;
-    return prev ? NULL : priv->format_ctx;
+
+    if (!prev) {
+        return priv->format_ctx;
+    } else if (prev == priv->format_ctx) {
+        return priv->streams[0].enc_ctx;
+    } else {
+        return NULL;
+    }
 }
 
 #if CONFIG_AMOVIESINK_ASYNC_FILTER
 
 static const AVClass amoviesink_async_class = {
-    .class_name = "amoviesink_async_class",
-    .item_name  = av_default_item_name,
-    .option     = amoviesink_async_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_FILTER,
-    .child_next = amoviesink_child_next,
+    .class_name       = "amoviesink_async_class",
+    .item_name        = av_default_item_name,
+    .option           = amoviesink_async_options,
+    .version          = LIBAVUTIL_VERSION_INT,
+    .category         = AV_CLASS_CATEGORY_FILTER,
+    .child_next       = amoviesink_child_next,
+    .child_class_next = amoviesink_child_class_next
 };
 
 AVFilter ff_sink_amoviesink_async = {
@@ -1066,7 +1101,7 @@ AVFilter ff_sink_amoviesink_async = {
     .description     = NULL_IF_CONFIG_SMALL("amovie sink asyncchronously, end of the filter graph."),
     .priv_class      = &amoviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
-    .init            = amoviesink_init,
+    .init_dict       = amoviesink_init_dict,
     .uninit          = amoviesink_uninit,
     .query_formats   = amoviesink_query_formats,
     .activate        = amoviesink_activate,
@@ -1080,12 +1115,13 @@ AVFilter ff_sink_amoviesink_async = {
 #if CONFIG_MOVIESINK_ASYNC_FILTER
 
 static const AVClass moviesink_async_class = {
-    .class_name = "moviesink_async_class",
-    .item_name  = av_default_item_name,
-    .option     = amoviesink_async_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_FILTER,
-    .child_next = amoviesink_child_next,
+    .class_name       = "moviesink_async_class",
+    .item_name        = av_default_item_name,
+    .option           = amoviesink_async_options,
+    .version          = LIBAVUTIL_VERSION_INT,
+    .category         = AV_CLASS_CATEGORY_FILTER,
+    .child_next       = amoviesink_child_next,
+    .child_class_next = amoviesink_child_class_next
 };
 
 AVFilter ff_sink_moviesink_async = {
@@ -1093,7 +1129,7 @@ AVFilter ff_sink_moviesink_async = {
     .description     = NULL_IF_CONFIG_SMALL("movie sink asyncchronously, end of the filter graph."),
     .priv_class      = &moviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
-    .init            = amoviesink_init,
+    .init_dict       = amoviesink_init_dict,
     .uninit          = amoviesink_uninit,
     .query_formats   = amoviesink_query_formats,
     .activate        = amoviesink_activate,
