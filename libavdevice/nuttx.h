@@ -55,6 +55,7 @@ typedef struct NuttxPriv {
     uint64_t   channel_layout;
     bool       nonblock;
 
+    bool       pause;
     bool       mute;
     double     volume;
 

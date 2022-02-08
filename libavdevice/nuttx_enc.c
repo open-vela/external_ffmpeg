@@ -111,6 +111,12 @@ static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
     NuttxPriv *priv = s1->priv_data;
     int ret;
 
+    if (priv->pause) {
+        if (priv->lastpkt)
+            av_packet_free(&priv->lastpkt);
+        return AVERROR_EOF;
+    }
+
     if (priv->lastpkt)
         return nuttx_write_lastpacket(s1);
 
@@ -172,7 +178,13 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
             return ret;
         }
         case AV_APP_TO_DEV_PLAY: {
+            priv->pause = false;
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+
+            return 0;
+        }
+        case AV_APP_TO_DEV_PAUSE: {
+            priv->pause = true;
 
             return 0;
         }
