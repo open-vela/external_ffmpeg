@@ -27,9 +27,8 @@
 
 #include "avcodec.h"
 #include "motion_est.h"
-#include "threadframe.h"
+#include "thread.h"
 
-#define MPEGVIDEO_MAX_PLANES 4
 #define MAX_PICTURE_COUNT 36
 #define EDGE_WIDTH 16
 
@@ -70,7 +69,6 @@ typedef struct Picture {
 
     int alloc_mb_width;         ///< mb_width used to allocate tables
     int alloc_mb_height;        ///< mb_height used to allocate tables
-    int alloc_mb_stride;        ///< mb_stride used to allocate tables
 
     AVBufferRef *mb_mean_buf;
     uint8_t *mb_mean;           ///< Table for MB luminance
@@ -89,7 +87,7 @@ typedef struct Picture {
     int reference;
     int shared;
 
-    uint64_t encoding_error[MPEGVIDEO_MAX_PLANES];
+    uint64_t encoding_error[AV_NUM_DATA_POINTERS];
 } Picture;
 
 /**
@@ -108,7 +106,7 @@ int ff_mpeg_framesize_alloc(AVCodecContext *avctx, MotionEstContext *me,
 int ff_mpeg_ref_picture(AVCodecContext *avctx, Picture *dst, Picture *src);
 void ff_mpeg_unref_picture(AVCodecContext *avctx, Picture *picture);
 
-void ff_mpv_picture_free(AVCodecContext *avctx, Picture *pic);
+void ff_free_picture_tables(Picture *pic);
 int ff_update_picture_tables(Picture *dst, Picture *src);
 
 int ff_find_unused_picture(AVCodecContext *avctx, Picture *picture, int shared);
