@@ -45,7 +45,6 @@ typedef struct MixContext {
 
     int depth;
     int max;
-    int planes;
     int nb_planes;
     int linesize[4];
     int height[4];
@@ -56,29 +55,56 @@ typedef struct MixContext {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    unsigned reject_flags = AV_PIX_FMT_FLAG_BITSTREAM |
-                            AV_PIX_FMT_FLAG_HWACCEL   |
-                            AV_PIX_FMT_FLAG_PAL;
-    unsigned accept_flags = 0;
+    AVFilterFormats *pix_fmts = NULL;
+    int fmt, ret;
 
-    if (!HAVE_BIGENDIAN)
-        reject_flags |= AV_PIX_FMT_FLAG_BE;
-    else
-        accept_flags |= AV_PIX_FMT_FLAG_BE;
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+        if (!(desc->flags & AV_PIX_FMT_FLAG_PAL ||
+              desc->flags & AV_PIX_FMT_FLAG_HWACCEL ||
+              desc->flags & AV_PIX_FMT_FLAG_BITSTREAM) &&
+            (ret = ff_add_format(&pix_fmts, fmt)) < 0)
+            return ret;
+    }
 
-    return ff_set_common_formats(ctx, ff_formats_pixdesc_filter(accept_flags, reject_flags));
+    return ff_set_common_formats(ctx, pix_fmts);
 }
 
-static int parse_weights(AVFilterContext *ctx)
+static av_cold int init(AVFilterContext *ctx)
 {
     MixContext *s = ctx->priv;
     char *p, *arg, *saveptr = NULL;
-    int i, last = 0;
+    int i, ret, last = 0;
 
-    s->wfactor = 0.f;
+    s->tmix = !strcmp(ctx->filter->name, "tmix");
+
+    s->frames = av_calloc(s->nb_inputs, sizeof(*s->frames));
+    if (!s->frames)
+        return AVERROR(ENOMEM);
+
+    s->weights = av_calloc(s->nb_inputs, sizeof(*s->weights));
+    if (!s->weights)
+        return AVERROR(ENOMEM);
+
+    if (!s->tmix) {
+        for (i = 0; i < s->nb_inputs; i++) {
+            AVFilterPad pad = { 0 };
+
+            pad.type = AVMEDIA_TYPE_VIDEO;
+            pad.name = av_asprintf("input%d", i);
+            if (!pad.name)
+                return AVERROR(ENOMEM);
+
+            if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0) {
+                av_freep(&pad.name);
+                return ret;
+            }
+        }
+    }
+
     p = s->weights_str;
     for (i = 0; i < s->nb_inputs; i++) {
-        if (!(arg = av_strtok(p, " |", &saveptr)))
+        if (!(arg = av_strtok(p, " ", &saveptr)))
             break;
 
         p = NULL;
@@ -89,7 +115,6 @@ static int parse_weights(AVFilterContext *ctx)
         s->wfactor += s->weights[i];
         last = i;
     }
-
     for (; i < s->nb_inputs; i++) {
         s->weights[i] = s->weights[last];
         s->wfactor += s->weights[i];
@@ -103,38 +128,6 @@ static int parse_weights(AVFilterContext *ctx)
     return 0;
 }
 
-static av_cold int init(AVFilterContext *ctx)
-{
-    MixContext *s = ctx->priv;
-    int ret;
-
-    s->tmix = !strcmp(ctx->filter->name, "tmix");
-
-    s->frames = av_calloc(s->nb_inputs, sizeof(*s->frames));
-    if (!s->frames)
-        return AVERROR(ENOMEM);
-
-    s->weights = av_calloc(s->nb_inputs, sizeof(*s->weights));
-    if (!s->weights)
-        return AVERROR(ENOMEM);
-
-    if (!s->tmix) {
-        for (int i = 0; i < s->nb_inputs; i++) {
-            AVFilterPad pad = { 0 };
-
-            pad.type = AVMEDIA_TYPE_VIDEO;
-            pad.name = av_asprintf("input%d", i);
-            if (!pad.name)
-                return AVERROR(ENOMEM);
-
-            if ((ret = ff_append_inpad_free_name(ctx, &pad)) < 0)
-                return ret;
-        }
-    }
-
-    return parse_weights(ctx);
-}
-
 typedef struct ThreadData {
     AVFrame **in, *out;
 } ThreadData;
@@ -145,7 +138,6 @@ static int mix_frames(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
     ThreadData *td = arg;
     AVFrame **in = td->in;
     AVFrame *out = td->out;
-    const float *weights = s->weights;
     int i, p, x, y;
 
     if (s->depth <= 8) {
@@ -154,89 +146,42 @@ static int mix_frames(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
             const int slice_end = (s->height[p] * (jobnr+1)) / nb_jobs;
             uint8_t *dst = out->data[p] + slice_start * out->linesize[p];
 
-            if (!((1 << p) & s->planes)) {
-                av_image_copy_plane(dst, out->linesize[p],
-                                    in[0]->data[p] + slice_start * in[0]->linesize[p],
-                                    in[0]->linesize[p],
-                                    s->linesize[p], slice_end - slice_start);
-                continue;
-            }
-
             for (y = slice_start; y < slice_end; y++) {
                 for (x = 0; x < s->linesize[p]; x++) {
-                    float val = 0.f;
+                    int val = 0;
 
                     for (i = 0; i < s->nb_inputs; i++) {
                         uint8_t src = in[i]->data[p][y * in[i]->linesize[p] + x];
 
-                        val += src * weights[i];
+                        val += src * s->weights[i];
                     }
 
-                    dst[x] = av_clip_uint8(lrintf(val * s->wfactor));
+                    dst[x] = av_clip_uint8(val * s->wfactor);
                 }
 
                 dst += out->linesize[p];
-            }
-        }
-    } else if (s->depth <= 16) {
-        for (p = 0; p < s->nb_planes; p++) {
-            const int slice_start = (s->height[p] * jobnr) / nb_jobs;
-            const int slice_end = (s->height[p] * (jobnr+1)) / nb_jobs;
-            uint16_t *dst = (uint16_t *)(out->data[p] + slice_start * out->linesize[p]);
-
-            if (!((1 << p) & s->planes)) {
-                av_image_copy_plane((uint8_t *)dst, out->linesize[p],
-                                    in[0]->data[p] + slice_start * in[0]->linesize[p],
-                                    in[0]->linesize[p],
-                                    s->linesize[p], slice_end - slice_start);
-                continue;
-            }
-
-            for (y = slice_start; y < slice_end; y++) {
-                for (x = 0; x < s->linesize[p] / 2; x++) {
-                    float val = 0.f;
-
-                    for (i = 0; i < s->nb_inputs; i++) {
-                        uint16_t src = AV_RN16(in[i]->data[p] + y * in[i]->linesize[p] + x * 2);
-
-                        val += src * weights[i];
-                    }
-
-                    dst[x] = av_clip(lrintf(val * s->wfactor), 0, s->max);
-                }
-
-                dst += out->linesize[p] / 2;
             }
         }
     } else {
         for (p = 0; p < s->nb_planes; p++) {
             const int slice_start = (s->height[p] * jobnr) / nb_jobs;
             const int slice_end = (s->height[p] * (jobnr+1)) / nb_jobs;
-            float *dst = (float *)(out->data[p] + slice_start * out->linesize[p]);
-            ptrdiff_t dst_linesize = out->linesize[p] / 4;
-
-            if (!((1 << p) & s->planes)) {
-                av_image_copy_plane((uint8_t *)dst, out->linesize[p],
-                                    in[0]->data[p] + slice_start * in[0]->linesize[p],
-                                    in[0]->linesize[p],
-                                    s->linesize[p], slice_end - slice_start);
-                continue;
-            }
+            uint16_t *dst = (uint16_t *)(out->data[p] + slice_start * out->linesize[p]);
 
             for (y = slice_start; y < slice_end; y++) {
                 for (x = 0; x < s->linesize[p] / 2; x++) {
-                    float val = 0.f;
+                    int val = 0;
 
                     for (i = 0; i < s->nb_inputs; i++) {
-                        float src = *(float *)(in[i]->data[p] + y * in[i]->linesize[p] + x * 4);
+                        uint16_t src = AV_RN16(in[i]->data[p] + y * in[i]->linesize[p] + x * 2);
 
-                        val += src * weights[i];
+                        val += src * s->weights[i];
                     }
 
-                    dst[x] = val * s->wfactor;
+                    dst[x] = av_clip(val * s->wfactor, 0, s->max);
                 }
 
-                dst += dst_linesize;
+                dst += out->linesize[p] / 2;
             }
         }
     }
@@ -259,14 +204,6 @@ static int process_frame(FFFrameSync *fs)
             return ret;
     }
 
-    if (ctx->is_disabled) {
-        out = av_frame_clone(s->frames[0]);
-        if (!out)
-            return AVERROR(ENOMEM);
-        out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, outlink->time_base);
-        return ff_filter_frame(outlink, out);
-    }
-
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
         return AVERROR(ENOMEM);
@@ -274,8 +211,7 @@ static int process_frame(FFFrameSync *fs)
 
     td.in = in;
     td.out = out;
-    ff_filter_execute(ctx, mix_frames, &td, NULL,
-                      FFMIN(s->height[0], ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, mix_frames, &td, NULL, FFMIN(s->height[0], ff_filter_get_nb_threads(ctx)));
 
     return ff_filter_frame(outlink, out);
 }
@@ -352,23 +288,14 @@ static av_cold void uninit(AVFilterContext *ctx)
     ff_framesync_uninit(&s->fs);
     av_freep(&s->weights);
 
-    if (s->tmix) {
+    if (!s->tmix) {
+        for (i = 0; i < ctx->nb_inputs; i++)
+            av_freep(&ctx->input_pads[i].name);
+    } else {
         for (i = 0; i < s->nb_frames && s->frames; i++)
             av_frame_free(&s->frames[i]);
     }
     av_freep(&s->frames);
-}
-
-static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
-                           char *res, int res_len, int flags)
-{
-    int ret;
-
-    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-    if (ret < 0)
-        return ret;
-
-    return parse_weights(ctx);
 }
 
 static int activate(AVFilterContext *ctx)
@@ -379,13 +306,11 @@ static int activate(AVFilterContext *ctx)
 
 #define OFFSET(x) offsetof(MixContext, x)
 #define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
-#define TFLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption mix_options[] = {
     { "inputs", "set number of inputs", OFFSET(nb_inputs), AV_OPT_TYPE_INT, {.i64=2}, 2, INT16_MAX, .flags = FLAGS },
-    { "weights", "set weight for each input", OFFSET(weights_str), AV_OPT_TYPE_STRING, {.str="1 1"}, 0, 0, .flags = TFLAGS },
-    { "scale", "set scale", OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=0}, 0, INT16_MAX, .flags = TFLAGS },
-    { "planes", "set what planes to filter", OFFSET(planes),   AV_OPT_TYPE_FLAGS, {.i64=15}, 0, 15,  .flags = TFLAGS },
+    { "weights", "set weight for each input", OFFSET(weights_str), AV_OPT_TYPE_STRING, {.str="1 1"}, 0, 0, .flags = FLAGS },
+    { "scale", "set scale", OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=0}, 0, INT16_MAX, .flags = FLAGS },
     { "duration", "how to determine end of stream", OFFSET(duration), AV_OPT_TYPE_INT, {.i64=0}, 0, 2, .flags = FLAGS, "duration" },
         { "longest",  "Duration of longest input",  0, AV_OPT_TYPE_CONST, {.i64=0}, 0, 0, FLAGS, "duration" },
         { "shortest", "Duration of shortest input", 0, AV_OPT_TYPE_CONST, {.i64=1}, 0, 0, FLAGS, "duration" },
@@ -399,24 +324,23 @@ static const AVFilterPad outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
 #if CONFIG_MIX_FILTER
 AVFILTER_DEFINE_CLASS(mix);
 
-const AVFilter ff_vf_mix = {
+AVFilter ff_vf_mix = {
     .name          = "mix",
     .description   = NULL_IF_CONFIG_SMALL("Mix video inputs."),
     .priv_size     = sizeof(MixContext),
     .priv_class    = &mix_class,
-    FILTER_OUTPUTS(outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .query_formats = query_formats,
+    .outputs       = outputs,
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
-    .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS |
-                     AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
-    .process_command = process_command,
+    .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
 };
 
 #endif /* CONFIG_MIX_FILTER */
@@ -458,17 +382,15 @@ static int tmix_filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     td.out = out;
     td.in = s->frames;
-    ff_filter_execute(ctx, mix_frames, &td, NULL,
-                      FFMIN(s->height[0], ff_filter_get_nb_threads(ctx)));
+    ctx->internal->execute(ctx, mix_frames, &td, NULL, FFMIN(s->height[0], ff_filter_get_nb_threads(ctx)));
 
     return ff_filter_frame(outlink, out);
 }
 
 static const AVOption tmix_options[] = {
-    { "frames", "set number of successive frames to mix", OFFSET(nb_inputs), AV_OPT_TYPE_INT, {.i64=3}, 1, 1024, .flags = FLAGS },
-    { "weights", "set weight for each frame", OFFSET(weights_str), AV_OPT_TYPE_STRING, {.str="1 1 1"}, 0, 0, .flags = TFLAGS },
-    { "scale", "set scale", OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=0}, 0, INT16_MAX, .flags = TFLAGS },
-    { "planes", "set what planes to filter", OFFSET(planes),   AV_OPT_TYPE_FLAGS, {.i64=15}, 0, 15,  .flags = TFLAGS },
+    { "frames", "set number of successive frames to mix", OFFSET(nb_inputs), AV_OPT_TYPE_INT, {.i64=3}, 1, 128, .flags = FLAGS },
+    { "weights", "set weight for each frame", OFFSET(weights_str), AV_OPT_TYPE_STRING, {.str="1 1 1"}, 0, 0, .flags = FLAGS },
+    { "scale", "set scale", OFFSET(scale), AV_OPT_TYPE_FLOAT, {.dbl=0}, 0, INT16_MAX, .flags = FLAGS },
     { NULL },
 };
 
@@ -478,22 +400,22 @@ static const AVFilterPad inputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .filter_frame  = tmix_filter_frame,
     },
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(tmix);
 
-const AVFilter ff_vf_tmix = {
+AVFilter ff_vf_tmix = {
     .name          = "tmix",
     .description   = NULL_IF_CONFIG_SMALL("Mix successive video frames."),
     .priv_size     = sizeof(MixContext),
     .priv_class    = &tmix_class,
-    FILTER_OUTPUTS(outputs),
-    FILTER_INPUTS(inputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .query_formats = query_formats,
+    .outputs       = outputs,
+    .inputs        = inputs,
     .init          = init,
     .uninit        = uninit,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
-    .process_command = process_command,
 };
 
 #endif /* CONFIG_TMIX_FILTER */
