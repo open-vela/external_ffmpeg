@@ -29,6 +29,7 @@
 #include "libavutil/float_dsp.h"
 #include "avcodec.h"
 #include "fft.h"
+#include "internal.h"
 
 enum TwinVQCodec {
     TWINVQ_CODEC_VQF,
