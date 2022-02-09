@@ -27,11 +27,16 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
+#include "libavutil/crc.h"
+#include "libavutil/opt.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/pixdesc.h"
 
 #include "avcodec.h"
+#include "internal.h"
 #include "rangecoder.h"
+#include "mathops.h"
 #include "ffv1.h"
-#include "threadframe.h"
 
 av_cold int ff_ffv1_common_init(AVCodecContext *avctx)
 {
@@ -58,7 +63,7 @@ av_cold int ff_ffv1_common_init(AVCodecContext *avctx)
     return 0;
 }
 
-av_cold int ff_ffv1_init_slice_state(const FFV1Context *f, FFV1Context *fs)
+av_cold int ff_ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs)
 {
     int j, i;
 
@@ -75,7 +80,7 @@ av_cold int ff_ffv1_init_slice_state(const FFV1Context *f, FFV1Context *fs)
                 return AVERROR(ENOMEM);
         } else {
             if (!p->vlc_state) {
-                p->vlc_state = av_calloc(p->context_count, sizeof(*p->vlc_state));
+                p->vlc_state = av_mallocz_array(p->context_count, sizeof(VlcState));
                 if (!p->vlc_state)
                     return AVERROR(ENOMEM);
                 for (i = 0; i < p->context_count; i++) {
@@ -110,11 +115,12 @@ av_cold int ff_ffv1_init_slices_state(FFV1Context *f)
 
 av_cold int ff_ffv1_init_slice_contexts(FFV1Context *f)
 {
-    int i, max_slice_count = f->num_h_slices * f->num_v_slices;
+    int i;
 
-    av_assert0(max_slice_count > 0);
+    f->max_slice_count = f->num_h_slices * f->num_v_slices;
+    av_assert0(f->max_slice_count > 0);
 
-    for (i = 0; i < max_slice_count;) {
+    for (i = 0; i < f->max_slice_count; i++) {
         int sx          = i % f->num_h_slices;
         int sy          = i / f->num_h_slices;
         int sxs         = f->avctx->width  *  sx      / f->num_h_slices;
@@ -126,7 +132,7 @@ av_cold int ff_ffv1_init_slice_contexts(FFV1Context *f)
         if (!fs)
             goto memfail;
 
-        f->slice_context[i++] = fs;
+        f->slice_context[i] = fs;
         memcpy(fs, f, sizeof(*fs));
         memset(fs->rc_stat2, 0, sizeof(fs->rc_stat2));
 
@@ -139,14 +145,21 @@ av_cold int ff_ffv1_init_slice_contexts(FFV1Context *f)
                                       sizeof(*fs->sample_buffer));
         fs->sample_buffer32 = av_malloc_array((fs->width + 6), 3 * MAX_PLANES *
                                         sizeof(*fs->sample_buffer32));
-        if (!fs->sample_buffer || !fs->sample_buffer32)
+        if (!fs->sample_buffer || !fs->sample_buffer32) {
+            av_freep(&fs->sample_buffer);
+            av_freep(&fs->sample_buffer32);
+            av_freep(&f->slice_context[i]);
             goto memfail;
+        }
     }
-    f->max_slice_count = max_slice_count;
     return 0;
 
 memfail:
-    f->max_slice_count = i;
+    while(--i >= 0) {
+        av_freep(&f->slice_context[i]->sample_buffer);
+        av_freep(&f->slice_context[i]->sample_buffer32);
+        av_freep(&f->slice_context[i]);
+    }
     return AVERROR(ENOMEM);
 }
 
@@ -165,7 +178,7 @@ int ff_ffv1_allocate_initial_states(FFV1Context *f)
     return 0;
 }
 
-void ff_ffv1_clear_slice_state(const FFV1Context *f, FFV1Context *fs)
+void ff_ffv1_clear_slice_state(FFV1Context *f, FFV1Context *fs)
 {
     int i, j;
 
@@ -199,11 +212,11 @@ av_cold int ff_ffv1_close(AVCodecContext *avctx)
     int i, j;
 
     if (s->picture.f)
-        ff_thread_release_ext_buffer(avctx, &s->picture);
+        ff_thread_release_buffer(avctx, &s->picture);
     av_frame_free(&s->picture.f);
 
     if (s->last_picture.f)
-        ff_thread_release_ext_buffer(avctx, &s->last_picture);
+        ff_thread_release_buffer(avctx, &s->last_picture);
     av_frame_free(&s->last_picture.f);
 
     for (j = 0; j < s->max_slice_count; j++) {

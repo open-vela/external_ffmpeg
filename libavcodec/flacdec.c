@@ -262,7 +262,7 @@ static int decode_residuals(FLACContext *s, int32_t *decoded, int pred_order)
         } else {
             int real_limit = tmp ? (INT_MAX >> tmp) + 2 : INT_MAX;
             for (; i < samples; i++) {
-                int v = get_sr_golomb_flac(&gb, tmp, real_limit, 1);
+                int v = get_sr_golomb_flac(&gb, tmp, real_limit, 0);
                 if (v == 0x80000000){
                     av_log(s->avctx, AV_LOG_ERROR, "invalid residual\n");
                     return AVERROR_INVALIDDATA;
@@ -559,6 +559,7 @@ static int flac_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame_ptr, AVPacket *avpkt)
 {
     AVFrame *frame     = data;
+    ThreadFrame tframe = { .f = data };
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     FLACContext *s = avctx->priv_data;
@@ -617,7 +618,7 @@ static int flac_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = s->blocksize;
-    if ((ret = ff_thread_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &tframe, 0)) < 0)
         return ret;
 
     s->dsp.decorrelate[s->ch_mode](frame->data, s->decoded,
@@ -653,13 +654,13 @@ static const AVOption options[] = {
 };
 
 static const AVClass flac_decoder_class = {
-    .class_name = "FLAC decoder",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
+    "FLAC decoder",
+    av_default_item_name,
+    options,
+    LIBAVUTIL_VERSION_INT,
 };
 
-const AVCodec ff_flac_decoder = {
+AVCodec ff_flac_decoder = {
     .name           = "flac",
     .long_name      = NULL_IF_CONFIG_SMALL("FLAC (Free Lossless Audio Codec)"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -668,14 +669,11 @@ const AVCodec ff_flac_decoder = {
     .init           = flac_decode_init,
     .close          = flac_decode_close,
     .decode         = flac_decode_frame,
-    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
-                      AV_CODEC_CAP_DR1 |
-                      AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
                                                       AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S32,
                                                       AV_SAMPLE_FMT_S32P,
                                                       AV_SAMPLE_FMT_NONE },
     .priv_class     = &flac_decoder_class,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
