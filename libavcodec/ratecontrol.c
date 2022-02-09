@@ -29,6 +29,7 @@
 #include "libavutil/internal.h"
 
 #include "avcodec.h"
+#include "internal.h"
 #include "ratecontrol.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
