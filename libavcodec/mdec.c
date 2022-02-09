@@ -27,14 +27,11 @@
  * This is very similar to intra-only MPEG-1.
  */
 
-#include "libavutil/mem_internal.h"
-
 #include "avcodec.h"
 #include "blockdsp.h"
 #include "bswapdsp.h"
 #include "idctdsp.h"
 #include "mpeg12.h"
-#include "mpeg12data.h"
 #include "thread.h"
 
 typedef struct MDECContext {
@@ -42,6 +39,7 @@ typedef struct MDECContext {
     BlockDSPContext bdsp;
     BswapDSPContext bbdsp;
     IDCTDSPContext idsp;
+    ThreadFrame frame;
     GetBitContext gb;
     ScanTable scantable;
     int version;
@@ -73,6 +71,8 @@ static inline int mdec_decode_block_intra(MDECContext *a, int16_t *block, int n)
     } else {
         component = (n <= 3 ? 0 : n - 4 + 1);
         diff = decode_dc(&a->gb, component);
+        if (diff >= 0xffff)
+            return AVERROR_INVALIDDATA;
         a->last_dc[component] += diff;
         block[0] = a->last_dc[component] * (1 << 3);
     }
@@ -173,13 +173,13 @@ static int decode_frame(AVCodecContext *avctx,
     MDECContext * const a = avctx->priv_data;
     const uint8_t *buf    = avpkt->data;
     int buf_size          = avpkt->size;
-    AVFrame *const frame  = data;
+    ThreadFrame frame     = { .f = data };
     int ret;
 
-    if ((ret = ff_thread_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->key_frame = 1;
+    frame.f->pict_type = AV_PICTURE_TYPE_I;
+    frame.f->key_frame = 1;
 
     av_fast_padded_malloc(&a->bitstream_buffer, &a->bitstream_buffer_size, buf_size);
     if (!a->bitstream_buffer)
@@ -201,7 +201,7 @@ static int decode_frame(AVCodecContext *avctx,
             if ((ret = decode_mb(a, a->block)) < 0)
                 return ret;
 
-            idct_put(a, frame, a->mb_x, a->mb_y);
+            idct_put(a, frame.f, a->mb_x, a->mb_y);
         }
     }
 
@@ -250,7 +250,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_mdec_decoder = {
+AVCodec ff_mdec_decoder = {
     .name             = "mdec",
     .long_name        = NULL_IF_CONFIG_SMALL("Sony PlayStation MDEC (Motion DECoder)"),
     .type             = AVMEDIA_TYPE_VIDEO,
@@ -260,5 +260,4 @@ const AVCodec ff_mdec_decoder = {
     .close            = decode_end,
     .decode           = decode_frame,
     .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE,
 };
