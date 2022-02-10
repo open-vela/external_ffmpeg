@@ -29,6 +29,7 @@
 
 #include <limits.h>
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
@@ -106,7 +107,8 @@ static int allocate_buffers(AVCodecContext *avctx)
     TTAContext *s = avctx->priv_data;
 
     if (s->bps < 3) {
-        s->decode_buffer = av_mallocz_array(sizeof(int32_t)*s->frame_length, s->channels);
+        s->decode_buffer = av_calloc(s->frame_length,
+                                     sizeof(*s->decode_buffer) * s->channels);
         if (!s->decode_buffer)
             return AVERROR(ENOMEM);
     } else
@@ -220,7 +222,6 @@ static int tta_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame_ptr, AVPacket *avpkt)
 {
     AVFrame *frame     = data;
-    ThreadFrame tframe = { .f = data };
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     TTAContext *s = avctx->priv_data;
@@ -240,7 +241,7 @@ static int tta_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = framelen;
-    if ((ret = ff_thread_get_buffer(avctx, &tframe, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
     // decode directly to output buffer for 24-bit sample format
@@ -414,7 +415,7 @@ static const AVClass tta_decoder_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_tta_decoder = {
+const AVCodec ff_tta_decoder = {
     .name           = "tta",
     .long_name      = NULL_IF_CONFIG_SMALL("TTA (True Audio)"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -423,6 +424,7 @@ AVCodec ff_tta_decoder = {
     .init           = tta_decode_init,
     .close          = tta_decode_close,
     .decode         = tta_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_CHANNEL_CONF,
     .priv_class     = &tta_decoder_class,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
