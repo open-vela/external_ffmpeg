@@ -21,10 +21,12 @@
 #include <vorbis/vorbisenc.h>
 
 #include "libavutil/avassert.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/fifo.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "audio_frame_queue.h"
+#include "encode.h"
 #include "internal.h"
 #include "vorbis.h"
 #include "vorbis_parser.h"
@@ -44,7 +46,7 @@ typedef struct LibvorbisEncContext {
     vorbis_info vi;                     /**< vorbis_info used during init   */
     vorbis_dsp_state vd;                /**< DSP state used for analysis    */
     vorbis_block vb;                    /**< vorbis_block used for analysis */
-    AVFifoBuffer *pkt_fifo;             /**< output packet buffer           */
+    AVFifo *pkt_fifo;                   /**< output packet buffer           */
     int eof;                            /**< end-of-file flag               */
     int dsp_initialized;                /**< vd has been initialized        */
     vorbis_comment vc;                  /**< VorbisComment info             */
@@ -68,6 +70,17 @@ static const AVClass vorbis_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
+};
+
+static const uint8_t vorbis_encoding_channel_layout_offsets[8][8] = {
+    { 0 },
+    { 0, 1 },
+    { 0, 2, 1 },
+    { 0, 1, 2, 3 },
+    { 0, 2, 1, 3, 4 },
+    { 0, 2, 1, 4, 5, 3 },
+    { 0, 2, 1, 5, 6, 4, 3 },
+    { 0, 2, 1, 6, 7, 4, 5, 3 },
 };
 
 static int vorbis_error_to_averror(int ov_err)
@@ -183,9 +196,8 @@ static av_cold int libvorbis_encode_close(AVCodecContext *avctx)
     vorbis_dsp_clear(&s->vd);
     vorbis_info_clear(&s->vi);
 
-    av_fifo_freep(&s->pkt_fifo);
+    av_fifo_freep2(&s->pkt_fifo);
     ff_af_queue_close(&s->afq);
-    av_freep(&avctx->extradata);
 
     av_vorbis_parse_free(&s->vp);
 
@@ -259,7 +271,7 @@ static av_cold int libvorbis_encode_init(AVCodecContext *avctx)
     avctx->frame_size = LIBVORBIS_FRAME_SIZE;
     ff_af_queue_init(avctx, &s->afq);
 
-    s->pkt_fifo = av_fifo_alloc(BUFFER_SIZE);
+    s->pkt_fifo = av_fifo_alloc2(BUFFER_SIZE, 1, 0);
     if (!s->pkt_fifo) {
         ret = AVERROR(ENOMEM);
         goto error;
@@ -287,7 +299,7 @@ static int libvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         buffer = vorbis_analysis_buffer(&s->vd, samples);
         for (c = 0; c < channels; c++) {
             int co = (channels > 8) ? c :
-                     ff_vorbis_encoding_channel_layout_offsets[channels - 1][c];
+                     vorbis_encoding_channel_layout_offsets[channels - 1][c];
             memcpy(buffer[c], frame->extended_data[co],
                    samples * sizeof(*buffer[c]));
         }
@@ -315,12 +327,12 @@ static int libvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
         /* add any available packets to the output packet buffer */
         while ((ret = vorbis_bitrate_flushpacket(&s->vd, &op)) == 1) {
-            if (av_fifo_space(s->pkt_fifo) < sizeof(ogg_packet) + op.bytes) {
+            if (av_fifo_can_write(s->pkt_fifo) < sizeof(ogg_packet) + op.bytes) {
                 av_log(avctx, AV_LOG_ERROR, "packet buffer is too small\n");
                 return AVERROR_BUG;
             }
-            av_fifo_generic_write(s->pkt_fifo, &op, sizeof(ogg_packet), NULL);
-            av_fifo_generic_write(s->pkt_fifo, op.packet, op.bytes, NULL);
+            av_fifo_write(s->pkt_fifo, &op, sizeof(ogg_packet));
+            av_fifo_write(s->pkt_fifo, op.packet, op.bytes);
         }
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "error getting available packets\n");
@@ -332,15 +344,13 @@ static int libvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         return vorbis_error_to_averror(ret);
     }
 
-    /* check for available packets */
-    if (av_fifo_size(s->pkt_fifo) < sizeof(ogg_packet))
+    /* Read an available packet if possible */
+    if (av_fifo_read(s->pkt_fifo, &op, sizeof(ogg_packet)) < 0)
         return 0;
 
-    av_fifo_generic_read(s->pkt_fifo, &op, sizeof(ogg_packet), NULL);
-
-    if ((ret = ff_alloc_packet2(avctx, avpkt, op.bytes, 0)) < 0)
+    if ((ret = ff_get_encode_buffer(avctx, avpkt, op.bytes, 0)) < 0)
         return ret;
-    av_fifo_generic_read(s->pkt_fifo, avpkt->data, op.bytes, NULL);
+    av_fifo_read(s->pkt_fifo, avpkt->data, op.bytes);
 
     avpkt->pts = ff_samples_to_time_base(avctx, op.granulepos);
 
@@ -363,16 +373,17 @@ static int libvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     return 0;
 }
 
-AVCodec ff_libvorbis_encoder = {
+const AVCodec ff_libvorbis_encoder = {
     .name           = "libvorbis",
     .long_name      = NULL_IF_CONFIG_SMALL("libvorbis"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_VORBIS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
+                      AV_CODEC_CAP_SMALL_LAST_FRAME,
     .priv_data_size = sizeof(LibvorbisEncContext),
     .init           = libvorbis_encode_init,
     .encode2        = libvorbis_encode_frame,
     .close          = libvorbis_encode_close,
-    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SMALL_LAST_FRAME,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
     .priv_class     = &vorbis_class,
