@@ -25,7 +25,6 @@
 #include "avcodec.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
-#include "mpegvideodec.h"
 
 #undef NDEBUG
 #include <assert.h>
