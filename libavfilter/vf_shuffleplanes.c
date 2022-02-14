@@ -64,6 +64,7 @@ static int query_formats(AVFilterContext *ctx)
             if (i != 4)
                 continue;
             if ((ret = ff_add_format(&formats, fmt)) < 0) {
+                ff_formats_unref(&formats);
                 return ret;
             }
         }
@@ -151,6 +152,7 @@ static const AVFilterPad shuffleplanes_inputs[] = {
         .config_props     = shuffleplanes_config_input,
         .filter_frame     = shuffleplanes_filter_frame,
     },
+    { NULL },
 };
 
 static const AVFilterPad shuffleplanes_outputs[] = {
@@ -158,15 +160,16 @@ static const AVFilterPad shuffleplanes_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL },
 };
 
-const AVFilter ff_vf_shuffleplanes = {
+AVFilter ff_vf_shuffleplanes = {
     .name         = "shuffleplanes",
     .description  = NULL_IF_CONFIG_SMALL("Shuffle video planes."),
     .priv_size    = sizeof(ShufflePlanesContext),
     .priv_class   = &shuffleplanes_class,
-    FILTER_INPUTS(shuffleplanes_inputs),
-    FILTER_OUTPUTS(shuffleplanes_outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .query_formats = query_formats,
+    .inputs       = shuffleplanes_inputs,
+    .outputs      = shuffleplanes_outputs,
     .flags        = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

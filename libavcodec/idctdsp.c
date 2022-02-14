@@ -26,7 +26,7 @@
 #include "simple_idct.h"
 #include "xvididct.h"
 
-av_cold void ff_init_scantable(const uint8_t *permutation, ScanTable *st,
+av_cold void ff_init_scantable(uint8_t *permutation, ScanTable *st,
                                const uint8_t *src_scantable)
 {
     int i, end;
@@ -315,8 +315,6 @@ av_cold void ff_idctdsp_init(IDCTDSPContext *c, AVCodecContext *avctx)
         ff_idctdsp_init_x86(c, avctx, high_bit_depth);
     if (ARCH_MIPS)
         ff_idctdsp_init_mips(c, avctx, high_bit_depth);
-    if (ARCH_LOONGARCH)
-        ff_idctdsp_init_loongarch(c, avctx, high_bit_depth);
 
     ff_init_scantable_permutation(c->idct_permutation,
                                   c->perm_type);
