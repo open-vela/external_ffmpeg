@@ -253,7 +253,7 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
                 AV_APP_TO_DEV_DUMP,
                 res, res_len);
     } else {
-        return av_opt_set(priv, cmd, args, AV_OPT_SEARCH_CHILDREN);
+        return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
 }
 
