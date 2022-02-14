@@ -242,16 +242,13 @@ static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
     cb.callback = amoviesink_async_interrupt;
     cb.opaque   = ctx;
 
-    ret = avio_open2(&priv->format_ctx->pb, filename, AVIO_FLAG_WRITE, &cb, NULL);
+    if (priv->global_opts)
+        av_dict_copy(&dict, priv->global_opts, 0);
+
+    ret = avio_open2(&priv->format_ctx->pb, filename, AVIO_FLAG_WRITE, &cb, &dict);
+    av_dict_free(&dict);
     if (ret < 0)
         goto out;
-
-    if (priv->global_opts) {
-        av_dict_copy(&dict, priv->global_opts, 0);
-        av_opt_set_dict2(priv->format_ctx, &dict, AV_OPT_SEARCH_CHILDREN);
-        if (dict)
-            av_dict_free(&dict);
-    }
 
     return 0;
 
