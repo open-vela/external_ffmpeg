@@ -28,6 +28,8 @@
  * @author Nicolas George ( nicolas george normalesup org )
  */
 
+#define _POSIX_C_SOURCE 2
+
 #include <alsa/asoundlib.h>
 #include "avdevice.h"
 #include "libavutil/avassert.h"
@@ -286,10 +288,6 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
         }
     }
 
-    s->pkt = av_packet_alloc();
-    if (!s->pkt)
-        goto fail1;
-
     s->h = h;
     return 0;
 
@@ -312,7 +310,6 @@ av_cold int ff_alsa_close(AVFormatContext *s1)
     if (CONFIG_ALSA_INDEV)
         ff_timefilter_destroy(s->timefilter);
     snd_pcm_close(s->h);
-    av_packet_free(&s->pkt);
     return 0;
 }
 
