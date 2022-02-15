@@ -61,16 +61,13 @@ typedef struct CiescopeContext {
     float intensity;
     float contrast;
     int background;
-    int fill;
 
-    float log2lin[65536];
-    float igamma;
-    float i[3][3];
-    float m[3][3];
+    double log2lin[65536];
+    double igamma;
+    double i[3][3];
+    double m[3][3];
     AVFrame *f;
-    void (*filter)(AVFilterContext *ctx, const uint8_t *ptr,
-                   ptrdiff_t linesize,
-                   float *cx, float *cy, int x, int y);
+    void (*filter)(AVFilterContext *ctx, AVFrame *in, double *cx, double *cy, int x, int y);
 } CiescopeContext;
 
 #define OFFSET(x) offsetof(CiescopeContext, x)
@@ -119,7 +116,6 @@ static const AVOption ciescope_options[] = {
     { "corrgamma",  NULL, OFFSET(correct_gamma), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
     { "showwhite",  NULL, OFFSET(show_white), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS },
     { "gamma",      NULL, OFFSET(igamma), AV_OPT_TYPE_DOUBLE, {.dbl=2.6}, 0.1, 6, FLAGS },
-    { "fill",       "fill with CIE colors", OFFSET(fill), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
     { NULL }
 };
 
@@ -143,10 +139,10 @@ static int query_formats(AVFilterContext *ctx)
 {
     int ret;
 
-    if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &ctx->inputs[0]->out_formats)) < 0)
         return ret;
 
-    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->in_formats)) < 0)
         return ret;
 
     return 0;
@@ -167,11 +163,11 @@ static int config_output(AVFilterLink *outlink)
    point. */
 
 struct ColorSystem {
-    float xRed, yRed,        /* Red primary illuminant */
-          xGreen, yGreen,    /* Green primary illuminant */
-          xBlue, yBlue,      /* Blue primary illuminant */
-          xWhite, yWhite,    /* White point */
-          gamma;             /* gamma of nonlinear correction */
+    double xRed, yRed,                /* Red primary illuminant */
+           xGreen, yGreen,            /* Green primary illuminant */
+           xBlue, yBlue,              /* Blue primary illuminant */
+           xWhite, yWhite,            /* White point */
+           gamma;             /* gamma of nonlinear correction */
 };
 
 static float const spectral_chromaticity[][3] = {
@@ -716,23 +712,23 @@ static struct ColorSystem CustomSystem = {
 */
 
 static void
-uv_to_xy(float  const u,
-         float  const v,
-         float *const xc,
-         float *const yc)
+uv_to_xy(double   const u,
+         double   const v,
+         double * const xc,
+         double * const yc)
 {
 /*
     Given 1970 coordinates u, v, determine 1931 chromaticities x, y
 */
-    *xc = 3.f*u / (2.f*u - 8.f*v + 4.f);
-    *yc = 2.f*v / (2.f*u - 8.f*v + 4.f);
+    *xc = 3*u / (2*u - 8*v + 4);
+    *yc = 2*v / (2*u - 8*v + 4);
 }
 
 static void
-upvp_to_xy(float   const up,
-           float   const vp,
-           float * const xc,
-           float * const yc)
+upvp_to_xy(double   const up,
+           double   const vp,
+           double * const xc,
+           double * const yc)
 {
 /*
     Given 1976 coordinates u', v', determine 1931 chromaticities x, y
@@ -742,50 +738,48 @@ upvp_to_xy(float   const up,
 }
 
 static void
-xy_to_upvp(float xc,
-           float yc,
-           float * const up,
-           float * const vp)
+xy_to_upvp(double xc,
+           double yc,
+           double * const up,
+           double * const vp)
 {
 /*
     Given 1931 chromaticities x, y, determine 1976 coordinates u', v'
 */
-    const float scale = 1.f / (-2.f*xc + 12.f*yc + 3.f);
-    *up = 4.f*xc * scale;
-    *vp = 9.f*yc * scale;
+    *up = 4*xc / (- 2*xc + 12*yc + 3);
+    *vp = 9*yc / (- 2*xc + 12*yc + 3);
 }
 
 static void
-xy_to_uv(float xc,
-         float yc,
-         float * const u,
-         float * const v)
+xy_to_uv(double xc,
+         double yc,
+         double * const u,
+         double * const v)
 {
 /*
     Given 1931 chromaticities x, y, determine 1960 coordinates u, v
 */
-    const float scale = 1.f / (-2.f*xc + 12.f*yc + 3.f);
-    *u = 4.f*xc * scale;
-    *v = 6.f*yc * scale;
+    *u = 4*xc / (- 2*xc + 12*yc + 3);
+    *v = 6*yc / (- 2*xc + 12*yc + 3);
 }
 
 static void
-xyz_to_rgb(const float m[3][3],
-           float xc, float yc, float zc,
-           float * const r, float * const g, float * const b)
+xyz_to_rgb(const double m[3][3],
+           double xc, double yc, double zc,
+           double * const r, double * const g, double * const b)
 {
     *r = m[0][0]*xc + m[0][1]*yc + m[0][2]*zc;
     *g = m[1][0]*xc + m[1][1]*yc + m[1][2]*zc;
     *b = m[2][0]*xc + m[2][1]*yc + m[2][2]*zc;
 }
 
-static void invert_matrix3x3(float in[3][3], float out[3][3])
+static void invert_matrix3x3(double in[3][3], double out[3][3])
 {
-    float m00 = in[0][0], m01 = in[0][1], m02 = in[0][2],
+    double m00 = in[0][0], m01 = in[0][1], m02 = in[0][2],
            m10 = in[1][0], m11 = in[1][1], m12 = in[1][2],
            m20 = in[2][0], m21 = in[2][1], m22 = in[2][2];
     int i, j;
-    float det;
+    double det;
 
     out[0][0] =  (m11 * m22 - m21 * m12);
     out[0][1] = -(m01 * m22 - m21 * m02);
@@ -806,9 +800,9 @@ static void invert_matrix3x3(float in[3][3], float out[3][3])
     }
 }
 
-static void get_rgb2xyz_matrix(struct ColorSystem system, float m[3][3])
+static void get_rgb2xyz_matrix(struct ColorSystem system, double m[3][3])
 {
-    float S[3], X[4], Z[4];
+    double S[3], X[4], Z[4];
     int i;
 
     X[0] = system.xRed   / system.yRed;
@@ -840,32 +834,30 @@ static void get_rgb2xyz_matrix(struct ColorSystem system, float m[3][3])
 }
 
 static void
-rgb_to_xy(float rc,
-          float gc,
-          float bc,
-          float * const x,
-          float * const y,
-          float * const z,
-          const float m[3][3])
+rgb_to_xy(double rc,
+          double gc,
+          double bc,
+          double * const x,
+          double * const y,
+          double * const z,
+          const double m[3][3])
 {
-    float scale;
+    double sum;
 
     *x = m[0][0] * rc + m[0][1] * gc + m[0][2] * bc;
     *y = m[1][0] * rc + m[1][1] * gc + m[1][2] * bc;
     *z = m[2][0] * rc + m[2][1] * gc + m[2][2] * bc;
 
-    scale = *x + *y + *z;
-    if (scale == 0.f)
-        scale = 1.f;
-    scale = 1.f / scale;
-    *x = *x * scale;
-    *y = *y * scale;
+    sum = *x + *y + *z;
+
+    *x = *x / sum;
+    *y = *y / sum;
 }
 
 static int
-constrain_rgb(float * const r,
-              float * const g,
-              float * const b)
+constrain_rgb(double * const r,
+              double * const g,
+              double * const b)
 {
 /*----------------------------------------------------------------------------
     If  the  requested RGB shade contains a negative weight for one of
@@ -873,7 +865,7 @@ constrain_rgb(float * const r,
     the  given  triple  of  primaries.  Desaturate it by adding white,
     equal quantities of R, G, and B, enough to make RGB all positive.
 -----------------------------------------------------------------------------*/
-    float w;
+    double w;
 
     /* Amount of white needed is w = - min(0, *r, *g, *b) */
     w = (0 < *r) ? 0 : *r;
@@ -893,7 +885,7 @@ constrain_rgb(float * const r,
 
 static void
 gamma_correct(const struct ColorSystem * const cs,
-              float *                   const c)
+              double *                   const c)
 {
 /*----------------------------------------------------------------------------
     Transform linear RGB values to nonlinear RGB values.
@@ -906,8 +898,8 @@ gamma_correct(const struct ColorSystem * const cs,
        http://www.inforamp.net/~poynton/ColorFAQ.html
        http://www.inforamp.net/~poynton/GammaFAQ.html
 -----------------------------------------------------------------------------*/
-    float gamma;
-    float cc;
+    double gamma;
+    double cc;
 
     gamma = cs->gamma;
 
@@ -929,9 +921,9 @@ gamma_correct(const struct ColorSystem * const cs,
 
 static void
 gamma_correct_rgb(const struct ColorSystem * const cs,
-                  float * const r,
-                  float * const g,
-                  float * const b)
+                  double * const r,
+                  double * const g,
+                  double * const b)
 {
     gamma_correct(cs, r);
     gamma_correct(cs, g);
@@ -945,24 +937,24 @@ gamma_correct_rgb(const struct ColorSystem * const cs,
 #define Sz(x) (((x) * (int)FFMIN(w, h)) / 512)
 
 static void
-monochrome_color_location(float waveLength, int w, int h,
+monochrome_color_location(double waveLength, int w, int h,
                           int cie, int *xP, int *yP)
 {
     const int ix = waveLength - 360;
-    const float pX = spectral_chromaticity[ix][0];
-    const float pY = spectral_chromaticity[ix][1];
-    const float pZ = spectral_chromaticity[ix][2];
-    const float px = pX / (pX + pY + pZ);
-    const float py = pY / (pX + pY + pZ);
+    const double pX = spectral_chromaticity[ix][0];
+    const double pY = spectral_chromaticity[ix][1];
+    const double pZ = spectral_chromaticity[ix][2];
+    const double px = pX / (pX + pY + pZ);
+    const double py = pY / (pX + pY + pZ);
 
     if (cie == LUV) {
-        float up, vp;
+        double up, vp;
 
         xy_to_upvp(px, py, &up, &vp);
         *xP = up * (w - 1);
         *yP = (h - 1) - vp * (h - 1);
     } else if (cie == UCS) {
-        float u, v;
+        double u, v;
 
         xy_to_uv(px, py, &u, &v);
         *xP = u * (w - 1);
@@ -1106,7 +1098,7 @@ fill_in_tongue(uint16_t*                  const pixels,
                int                        const h,
                uint16_t                   const maxval,
                const struct ColorSystem * const cs,
-               float                      const m[3][3],
+               double                     const m[3][3],
                int                        const cie,
                int                        const correct_gamma,
                float                      const contrast)
@@ -1129,24 +1121,24 @@ fill_in_tongue(uint16_t*                  const pixels,
             int x;
 
             for (x = leftEdge; x <= rightEdge; ++x) {
-                float cx, cy, cz, jr, jg, jb, jmax;
+                double cx, cy, cz, jr, jg, jb, jmax;
                 int r, g, b, mx = maxval;
 
                 if (cie == LUV) {
-                    float up, vp;
-                    up = ((float) x) / (w - 1);
-                    vp = 1.0 - ((float) y) / (h - 1);
+                    double up, vp;
+                    up = ((double) x) / (w - 1);
+                    vp = 1.0 - ((double) y) / (h - 1);
                     upvp_to_xy(up, vp, &cx, &cy);
                     cz = 1.0 - (cx + cy);
                 } else if (cie == UCS) {
-                    float u, v;
-                    u = ((float) x) / (w - 1);
-                    v = 1.0 - ((float) y) / (h - 1);
+                    double u, v;
+                    u = ((double) x) / (w - 1);
+                    v = 1.0 - ((double) y) / (h - 1);
                     uv_to_xy(u, v, &cx, &cy);
                     cz = 1.0 - (cx + cy);
                 } else if (cie == XYY) {
-                    cx = ((float) x) / (w - 1);
-                    cy = 1.0 - ((float) y) / (h - 1);
+                    cx = ((double) x) / (w - 1);
+                    cy = 1.0 - ((double) y) / (h - 1);
                     cz = 1.0 - (cx + cy);
                 } else {
                     av_assert0(0);
@@ -1196,12 +1188,12 @@ plot_white_point(uint16_t*      pixels,
     int wx, wy;
 
     if (cie == LUV) {
-        float wup, wvp;
+        double wup, wvp;
         xy_to_upvp(cs->xWhite, cs->yWhite, &wup, &wvp);
         wx = (w - 1) * wup;
         wy = (h - 1) - ((int) ((h - 1) * wvp));
     } else if (cie == UCS) {
-        float wu, wv;
+        double wu, wv;
         xy_to_uv(cs->xWhite, cs->yWhite, &wu, &wv);
         wx = (w - 1) * wu;
         wy = (h - 1) - ((int) ((h - 1) * wv));
@@ -1241,83 +1233,68 @@ static int draw_background(AVFilterContext *ctx)
 
     tongue_outline(pixels, s->f->linesize[0] / 2, w, h, 65535, s->cie);
 
-    if (s->fill)
-        fill_in_tongue(pixels, s->f->linesize[0] / 2, w, h, 65535, cs, (const float (*)[3])s->i, s->cie,
-                       s->correct_gamma, s->contrast);
+    fill_in_tongue(pixels, s->f->linesize[0] / 2, w, h, 65535, cs, (const double (*)[3])s->i, s->cie,
+                   s->correct_gamma, s->contrast);
 
     return 0;
 }
 
-static void filter_rgb48(AVFilterContext *ctx, const uint8_t *ptr,
-                         ptrdiff_t linesize,
-                         float *cx, float *cy, int x, int y)
+static void filter_rgb48(AVFilterContext *ctx, AVFrame *in, double *cx, double *cy, int x, int y)
 {
     CiescopeContext *s = ctx->priv;
-    const float scale = 1. / 65535.;
-    const uint16_t *src = (const uint16_t*)(ptr + linesize * y + x * 6);
-    float r = src[0] * scale;
-    float g = src[1] * scale;
-    float b = src[2] * scale;
-    float cz;
+    const uint16_t* src = (const uint16_t*)(in->data[0] + in->linesize[0] * y + x * 6);
+    double r = src[0] / 65535.;
+    double g = src[1] / 65535.;
+    double b = src[2] / 65535.;
+    double cz;
 
-    rgb_to_xy(r, g, b, cx, cy, &cz, (const float (*)[3])s->m);
+    rgb_to_xy(r, g, b, cx, cy, &cz, (const double (*)[3])s->m);
 }
 
-static void filter_rgba64(AVFilterContext *ctx, const uint8_t *ptr,
-                          ptrdiff_t linesize,
-                          float *cx, float *cy, int x, int y)
+static void filter_rgba64(AVFilterContext *ctx, AVFrame *in, double *cx, double *cy, int x, int y)
 {
     CiescopeContext *s = ctx->priv;
-    const float scale = 1. / 65535.;
-    const uint16_t *src = (const uint16_t*)(ptr + linesize * y + x * 8);
-    float r = src[0] * scale;
-    float g = src[1] * scale;
-    float b = src[2] * scale;
-    float cz;
+    const uint16_t* src = (const uint16_t*)(in->data[0] + in->linesize[0] * y + x * 8);
+    double r = src[0] / 65535.;
+    double g = src[1] / 65535.;
+    double b = src[2] / 65535.;
+    double cz;
 
-    rgb_to_xy(r, g, b, cx, cy, &cz, (const float (*)[3])s->m);
+    rgb_to_xy(r, g, b, cx, cy, &cz, (const double (*)[3])s->m);
 }
 
-static void filter_rgb24(AVFilterContext *ctx, const uint8_t *ptr,
-                         ptrdiff_t linesize,
-                         float *cx, float *cy, int x, int y)
+static void filter_rgb24(AVFilterContext *ctx, AVFrame *in, double *cx, double *cy, int x, int y)
 {
     CiescopeContext *s = ctx->priv;
-    const float scale = 1. / 255.;
-    const uint8_t *src = ptr + linesize * y + x * 3;
-    float r = src[0] * scale;
-    float g = src[1] * scale;
-    float b = src[2] * scale;
-    float cz;
+    const uint8_t* src = in->data[0] + in->linesize[0] * y + x * 3;
+    double r = src[0] / 255.;
+    double g = src[1] / 255.;
+    double b = src[2] / 255.;
+    double cz;
 
-    rgb_to_xy(r, g, b, cx, cy, &cz, (const float (*)[3])s->m);
+    rgb_to_xy(r, g, b, cx, cy, &cz, (const double (*)[3])s->m);
 }
 
-static void filter_rgba(AVFilterContext *ctx, const uint8_t *ptr,
-                        ptrdiff_t linesize,
-                        float *cx, float *cy, int x, int y)
+static void filter_rgba(AVFilterContext *ctx, AVFrame *in, double *cx, double *cy, int x, int y)
 {
     CiescopeContext *s = ctx->priv;
-    const float scale = 1. / 255.;
-    const uint8_t *src = ptr + linesize * y + x * 4;
-    float r = src[0] * scale;
-    float g = src[1] * scale;
-    float b = src[2] * scale;
-    float cz;
+    const uint8_t* src = in->data[0] + in->linesize[0] * y + x * 4;
+    double r = src[0] / 255.;
+    double g = src[1] / 255.;
+    double b = src[2] / 255.;
+    double cz;
 
-    rgb_to_xy(r, g, b, cx, cy, &cz, (const float (*)[3])s->m);
+    rgb_to_xy(r, g, b, cx, cy, &cz, (const double (*)[3])s->m);
 }
 
-static void filter_xyz(AVFilterContext *ctx, const uint8_t *ptr,
-                       ptrdiff_t linesize,
-                       float *cx, float *cy, int x, int y)
+static void filter_xyz(AVFilterContext *ctx, AVFrame *in, double *cx, double *cy, int x, int y)
 {
     CiescopeContext *s = ctx->priv;
-    const uint16_t* src = (uint16_t *)(ptr + linesize * y + x * 6);
-    float lx = s->log2lin[src[0]];
-    float ly = s->log2lin[src[1]];
-    float lz = s->log2lin[src[2]];
-    float sum = lx + ly + lz;
+    const uint16_t* src = (uint16_t *)(in->data[0] + in->linesize[0] * y + x * 6);
+    double lx = s->log2lin[src[0]];
+    double ly = s->log2lin[src[1]];
+    double lz = s->log2lin[src[2]];
+    double sum = lx + ly + lz;
 
     if (sum == 0)
         sum = 1;
@@ -1337,7 +1314,7 @@ static void plot_gamuts(uint16_t *pixels, int linesize, int w, int h,
         if (!((1 << i) & gamuts))
             continue;
         if (cie == LUV) {
-            float wup, wvp;
+            double wup, wvp;
             xy_to_upvp(cs->xRed, cs->yRed, &wup, &wvp);
             rx = (w - 1) * wup;
             ry = (h - 1) - ((int) ((h - 1) * wvp));
@@ -1348,7 +1325,7 @@ static void plot_gamuts(uint16_t *pixels, int linesize, int w, int h,
             bx = (w - 1) * wup;
             by = (h - 1) - ((int) ((h - 1) * wvp));
         } else if (cie == UCS) {
-            float wu, wv;
+            double wu, wv;
             xy_to_uv(cs->xRed, cs->yRed, &wu, &wv);
             rx = (w - 1) * wu;
             ry = (h - 1) - ((int) ((h - 1) * wv));
@@ -1406,48 +1383,37 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
     for (y = 0; y < in->height; y++) {
-        const uint8_t *src = in->data[0];
-        const ptrdiff_t src_linesize = in->linesize[0];
-        uint16_t *dst = (uint16_t *)out->data[0];
-        const ptrdiff_t linesize = out->linesize[0] / 2;
-        const int w_1 = w - 1;
-        const int h_1 = h - 1;
-
         for (x = 0; x < in->width; x++) {
-            float cx, cy;
-            int wx, wy, pos;
-            int r, g, b;
+            double cx, cy;
+            uint16_t *dst;
+            int wx, wy;
 
-            s->filter(ctx, src, src_linesize, &cx, &cy, x, y);
+            s->filter(ctx, in, &cx, &cy, x, y);
 
             if (s->cie == LUV) {
-                float up, vp;
+                double up, vp;
                 xy_to_upvp(cx, cy, &up, &vp);
                 cx = up;
                 cy = vp;
             } else if (s->cie == UCS) {
-                float u, v;
+                double u, v;
                 xy_to_uv(cx, cy, &u, &v);
                 cx = u;
                 cy = v;
             }
 
-            wx = w_1 * cx;
-            wy = h_1 - h_1 * cy;
+            wx = (w - 1) * cx;
+            wy = (h - 1) - ((h - 1) * cy);
 
             if (wx < 0 || wx >= w ||
                 wy < 0 || wy >= h)
                 continue;
 
-            pos = wy * linesize + wx * 4;
-            r = dst[pos + 0] + i;
-            g = dst[pos + 1] + i;
-            b = dst[pos + 2] + i;
-
-            dst[pos + 0] = FFMIN(r, 65535);
-            dst[pos + 1] = FFMIN(g, 65535);
-            dst[pos + 2] = FFMIN(b, 65535);
-            dst[pos + 3] = 65535;
+            dst = (uint16_t *)(out->data[0] + wy * out->linesize[0] + wx * 8 + 0);
+            dst[0] = FFMIN(dst[0] + i, 65535);
+            dst[1] = FFMIN(dst[1] + i, 65535);
+            dst[2] = FFMIN(dst[2] + i, 65535);
+            dst[3] = 65535;
         }
     }
 
@@ -1525,6 +1491,7 @@ static const AVFilterPad inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -1533,15 +1500,16 @@ static const AVFilterPad outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_ciescope = {
+AVFilter ff_vf_ciescope = {
     .name          = "ciescope",
     .description   = NULL_IF_CONFIG_SMALL("Video CIE scope."),
     .priv_size     = sizeof(CiescopeContext),
     .priv_class    = &ciescope_class,
+    .query_formats = query_formats,
     .uninit        = uninit,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .inputs        = inputs,
+    .outputs       = outputs,
 };

@@ -24,13 +24,10 @@
  * Silicon Graphics Motion Video Compressor 1 & 2 decoder
  */
 
-#include "config_components.h"
-
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 typedef struct MvcContext {
@@ -225,10 +222,11 @@ static int decode_mvc2(AVCodecContext *avctx, GetByteContext *gb,
     return 0;
 }
 
-static int mvc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                            int *got_frame, AVPacket *avpkt)
+static int mvc_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
+                            AVPacket *avpkt)
 {
     MvcContext *s = avctx->priv_data;
+    AVFrame *frame = data;
     GetByteContext gb;
     int ret;
 
@@ -255,29 +253,27 @@ static int mvc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 }
 
 #if CONFIG_MVC1_DECODER
-const FFCodec ff_mvc1_decoder = {
-    .p.name         = "mvc1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Silicon Graphics Motion Video Compressor 1"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_MVC1,
+AVCodec ff_mvc1_decoder = {
+    .name           = "mvc1",
+    .long_name      = NULL_IF_CONFIG_SMALL("Silicon Graphics Motion Video Compressor 1"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MVC1,
     .priv_data_size = sizeof(MvcContext),
     .init           = mvc_decode_init,
-    FF_CODEC_DECODE_CB(mvc_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .decode         = mvc_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 
 #if CONFIG_MVC2_DECODER
-const FFCodec ff_mvc2_decoder = {
-    .p.name         = "mvc2",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Silicon Graphics Motion Video Compressor 2"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_MVC2,
+AVCodec ff_mvc2_decoder = {
+    .name           = "mvc2",
+    .long_name      = NULL_IF_CONFIG_SMALL("Silicon Graphics Motion Video Compressor 2"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MVC2,
     .priv_data_size = sizeof(MvcContext),
     .init           = mvc_decode_init,
-    FF_CODEC_DECODE_CB(mvc_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .decode         = mvc_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
