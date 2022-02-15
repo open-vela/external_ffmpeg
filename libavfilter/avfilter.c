@@ -19,6 +19,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -195,6 +198,66 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
     return 0;
 }
 
+static void link_uninit_dump_pcm(AVFilterLink *link, bool stop)
+{
+    if (link->dump_pcm_fds) {
+        int i;
+        for (i = 0; i < link->nb_dump_pcm_fds; i++) {
+            if (link->dump_pcm_fds[i])
+                close(link->dump_pcm_fds[i]);
+        }
+        av_free(link->dump_pcm_fds);
+        link->dump_pcm_fds    = NULL;
+        link->nb_dump_pcm_fds = 0;
+    }
+
+    if (stop)
+        link->dump_pcm = false;
+}
+
+static int link_init_dump_pcm(AVFilterLink *link)
+{
+    char path[PATH_MAX];
+    int fd, i;
+
+    link->nb_dump_pcm_fds = av_sample_fmt_is_planar(link->format)? link->ch_layout.nb_channels : 1;
+    link->dump_pcm_fds = av_malloc_array(link->nb_dump_pcm_fds, sizeof(int));
+    if (!link->dump_pcm_fds)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < link->nb_dump_pcm_fds; i++) {
+        snprintf(path, sizeof(path), FFMPEG_TMPDIR"/%.16s-%.8s-%d.pcm", link->src->name, link->dst->name, i);
+        fd = open(path, O_WRONLY | O_CREAT);
+        if (fd < 0) {
+            link_uninit_dump_pcm(link, true);
+            return AVERROR(errno);
+        }
+        link->dump_pcm_fds[i] = fd;
+    }
+
+    return 0;
+}
+
+static int filter_set_dump_pcm(AVFilterContext *filter, const char *target, bool set)
+{
+    int i;
+
+    for (i = 0; i < filter->nb_outputs; i++) {
+        AVFilterLink *link = filter->outputs[i];
+        if (!target || !strcmp(link->dst->name, target)) {
+            if (set)
+                link->dump_pcm = true;
+            else
+                link_uninit_dump_pcm(link, true);
+
+            if (target)
+                return 0;
+        }
+    }
+
+    return target ? AVERROR(EINVAL) : 0;
+}
+
 static void link_free(AVFilterLink **link)
 {
     FilterLinkInternal *li;
@@ -206,6 +269,8 @@ static void link_free(AVFilterLink **link)
     ff_framequeue_free(&li->fifo);
     ff_frame_pool_uninit(&li->frame_pool);
     av_channel_layout_uninit(&(*link)->ch_layout);
+
+    link_uninit_dump_pcm(*link, true);
 
     av_buffer_unref(&li->l.hw_frames_ctx);
 
@@ -619,6 +684,10 @@ int avfilter_process_command(AVFilterContext *filter, const char *cmd, const cha
         if (res == local_res)
             av_log(filter, AV_LOG_INFO, "%s", res);
         return 0;
+    }else if(!strcmp(cmd, "dump_raw_start")) {
+        return filter_set_dump_pcm(filter, arg, true);
+    }else if(!strcmp(cmd, "dump_raw_stop")) {
+        return filter_set_dump_pcm(filter, arg, false);
     }else if(!strcmp(cmd, "enable")) {
         return set_enable_expr(fffilterctx(filter), arg);
     }else if(filter->filter->process_command) {
@@ -1113,6 +1182,40 @@ fail:
     return ret;
 }
 
+static int link_dump_frame(AVFilterLink *link, AVFrame *frame)
+{
+    int samples_size, ret;
+
+    if (!link->dump_pcm_fds) {
+        ret = link_init_dump_pcm(link);
+        if (ret < 0)
+            return ret;
+    }
+
+    samples_size = av_get_bytes_per_sample(frame->format) * frame->nb_samples;
+    if (av_sample_fmt_is_planar(frame->format)) {
+        int i;
+        for (i = 0; i < link->nb_dump_pcm_fds && i < frame->ch_layout.nb_channels; i++) {
+            if (i < AV_NUM_DATA_POINTERS)
+                ret = write(link->dump_pcm_fds[i], frame->data[i], samples_size);
+            else
+                ret = write(link->dump_pcm_fds[i], frame->extended_data[i - AV_NUM_DATA_POINTERS], samples_size);
+
+            if (ret < 0)
+                goto err;
+        }
+    } else {
+        ret = write(link->dump_pcm_fds[0], frame->data[0], samples_size * frame->ch_layout.nb_channels);
+        if (ret < 0)
+            goto err;
+    }
+
+    return 0;
+err:
+    link_uninit_dump_pcm(link, true);
+    return AVERROR(errno);
+}
+
 int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     FilterLinkInternal * const li = ff_link_internal(link);
@@ -1148,6 +1251,12 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
 
         frame->duration = av_rescale_q(frame->nb_samples, (AVRational){ 1, frame->sample_rate },
                                        link->time_base);
+    }
+
+    if (link->dump_pcm && link->type == AVMEDIA_TYPE_AUDIO) {
+        ret = link_dump_frame(link, frame);
+        if (ret < 0)
+            av_log(link->dst, AV_LOG_ERROR, "Dump pcm files failed with %d\n", ret);
     }
 
     li->frame_blocked_in = li->frame_wanted_out = 0;

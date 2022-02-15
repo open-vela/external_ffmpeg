@@ -618,6 +618,10 @@ struct AVFilterLink {
     int sample_rate;            ///< samples per second
     AVChannelLayout ch_layout;  ///< channel layout of current buffer (see libavutil/channel_layout.h)
 
+    bool        dump_pcm;       ///< flag to dump pcm
+    int        *dump_pcm_fds;   ///< dump files
+    unsigned nb_dump_pcm_fds;   ///< number of dump file
+
     /**
      * Define the time base used by the PTS of the frames/samples
      * which will pass through this link.
