@@ -31,13 +31,13 @@
  */
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
-#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mem_internal.h"
 #include "sbc.h"
 #include "sbcdec_data.h"
+
+#define SBC_WBS_SAMPLES_PER_FRAME 128
+#define SBC_MAX_FRAME 10
 
 struct sbc_decoder_state {
     int32_t V[2][170];
@@ -212,8 +212,8 @@ static int sbc_unpack_frame(const uint8_t *data, struct sbc_frame *frame,
 }
 
 static inline void sbc_synthesize_four(struct sbc_decoder_state *state,
-                                       struct sbc_frame *frame,
-                                       int ch, int blk, AVFrame *output_frame)
+                                       struct sbc_frame *frame, int ch, int blk,
+                                       AVFrame *output_frame, int nblocks)
 {
     int i, k, idx;
     int32_t *v = state->V[ch];
@@ -240,7 +240,7 @@ static inline void sbc_synthesize_four(struct sbc_decoder_state *state,
         k = (i + 4) & 0xf;
 
         /* Store in output, Q0 */
-        AV_WN16A(&output_frame->data[ch][blk * 8 + i * 2], av_clip_int16(
+        AV_WN16A(&output_frame->data[ch][(nblocks + blk) * 8 + i * 2], av_clip_int16(
          (int)( (unsigned)v[offset[i] + 0] * ff_sbc_proto_4_40m0[idx + 0] +
                 (unsigned)v[offset[k] + 1] * ff_sbc_proto_4_40m1[idx + 0] +
                 (unsigned)v[offset[i] + 2] * ff_sbc_proto_4_40m0[idx + 1] +
@@ -255,8 +255,8 @@ static inline void sbc_synthesize_four(struct sbc_decoder_state *state,
 }
 
 static inline void sbc_synthesize_eight(struct sbc_decoder_state *state,
-                                        struct sbc_frame *frame,
-                                        int ch, int blk, AVFrame *output_frame)
+                                        struct sbc_frame *frame, int ch, int blk,
+                                        AVFrame *output_frame, int nblocks)
 {
     int i, k, idx;
     int32_t *v = state->V[ch];
@@ -287,7 +287,7 @@ static inline void sbc_synthesize_eight(struct sbc_decoder_state *state,
         k = (i + 8) & 0xf;
 
         /* Store in output, Q0 */
-        AV_WN16A(&output_frame->data[ch][blk * 16 + i * 2], av_clip_int16(
+        AV_WN16A(&output_frame->data[ch][(nblocks + blk) * 16 + i * 2], av_clip_int16(
          (int)( (unsigned)v[offset[i] + 0] * ff_sbc_proto_8_80m0[idx + 0] +
                 (unsigned)v[offset[k] + 1] * ff_sbc_proto_8_80m1[idx + 0] +
                 (unsigned)v[offset[i] + 2] * ff_sbc_proto_8_80m0[idx + 1] +
@@ -302,7 +302,8 @@ static inline void sbc_synthesize_eight(struct sbc_decoder_state *state,
 }
 
 static void sbc_synthesize_audio(struct sbc_decoder_state *state,
-                                 struct sbc_frame *frame, AVFrame *output_frame)
+                                 struct sbc_frame *frame,
+                                 AVFrame *output_frame, int nblocks)
 {
     int ch, blk;
 
@@ -310,13 +311,13 @@ static void sbc_synthesize_audio(struct sbc_decoder_state *state,
     case 4:
         for (ch = 0; ch < frame->channels; ch++)
             for (blk = 0; blk < frame->blocks; blk++)
-                sbc_synthesize_four(state, frame, ch, blk, output_frame);
+                sbc_synthesize_four(state, frame, ch, blk, output_frame, nblocks);
         break;
 
     case 8:
         for (ch = 0; ch < frame->channels; ch++)
             for (blk = 0; blk < frame->blocks; blk++)
-                sbc_synthesize_eight(state, frame, ch, blk, output_frame);
+                sbc_synthesize_eight(state, frame, ch, blk, output_frame, nblocks);
         break;
     }
 }
@@ -337,10 +338,53 @@ static int sbc_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                            int *got_frame_ptr, AVPacket *avpkt)
+static int sbc_packed_decode_frame(AVCodecContext *avctx,
+                                   void *data, int *got_frame_ptr,
+                                   AVPacket *avpkt)
 {
     SBCDecContext *sbc = avctx->priv_data;
+    AVFrame *frame = data;
+    int ret, frame_length = 1;
+    int blocks = 0;
+    int nframes;
+    int i;
+
+    if (!sbc)
+        return AVERROR(EIO);
+
+    nframes = avpkt->data[0] & 0xf;
+    if (nframes > SBC_MAX_FRAME)
+        return AVERROR(EINVAL);
+
+    frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        return ret;
+
+    for (i = 0; i < nframes; i++) {
+        ret = sbc_unpack_frame(avpkt->data + frame_length, &sbc->frame,
+                               avpkt->size - frame_length);
+        if (ret <= 0)
+            return ret;
+
+        avctx->channels = sbc->frame.channels;
+
+        sbc_synthesize_audio(&sbc->dsp, &sbc->frame, frame, blocks);
+
+        blocks += sbc->frame.blocks;
+        frame_length += ret;
+    }
+
+    *got_frame_ptr = 1;
+
+    return frame_length;
+}
+
+static int sbc_decode_frame(AVCodecContext *avctx,
+                            void *data, int *got_frame_ptr,
+                            AVPacket *avpkt)
+{
+    SBCDecContext *sbc = avctx->priv_data;
+    AVFrame *frame = data;
     int ret, frame_length;
 
     if (!sbc)
@@ -350,39 +394,49 @@ static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     if (frame_length <= 0)
         return frame_length;
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-    avctx->ch_layout.nb_channels = sbc->frame.channels;
+    avctx->channels = sbc->frame.channels;
 
     frame->nb_samples = sbc->frame.blocks * sbc->frame.subbands;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
-    sbc_synthesize_audio(&sbc->dsp, &sbc->frame, frame);
+    sbc_synthesize_audio(&sbc->dsp, &sbc->frame, frame, 0);
 
     *got_frame_ptr = 1;
 
     return frame_length;
 }
 
-const FFCodec ff_sbc_decoder = {
-    .p.name                = "sbc",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("SBC (low-complexity subband codec)"),
-    .p.type                = AVMEDIA_TYPE_AUDIO,
-    .p.id                  = AV_CODEC_ID_SBC,
+AVCodec ff_sbc_decoder = {
+    .name                  = "sbc",
+    .long_name             = NULL_IF_CONFIG_SMALL("SBC (low-complexity subband codec)"),
+    .type                  = AVMEDIA_TYPE_AUDIO,
+    .id                    = AV_CODEC_ID_SBC,
     .priv_data_size        = sizeof(SBCDecContext),
     .init                  = sbc_decode_init,
-    FF_CODEC_DECODE_CB(sbc_decode_frame),
-    .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .decode                = sbc_decode_frame,
+    .capabilities          = AV_CODEC_CAP_DR1,
     .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts     = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
+    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
                                                   AV_CH_LAYOUT_STEREO, 0},
-#endif
-    .p.ch_layouts          = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
-                                                         AV_CHANNEL_LAYOUT_STEREO,
-                                                         { 0 } },
-    .p.sample_fmts         = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
+    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                              AV_SAMPLE_FMT_NONE },
-    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+    .supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+};
+
+AVCodec ff_sbc_packed_decoder = {
+    .name                  = "sbc-packed",
+    .long_name             = NULL_IF_CONFIG_SMALL("SBC packed (low-complexity subband codec)"),
+    .type                  = AVMEDIA_TYPE_AUDIO,
+    .id                    = AV_CODEC_ID_SBC_PACKED,
+    .priv_data_size        = sizeof(SBCDecContext),
+    .init                  = sbc_decode_init,
+    .decode                = sbc_packed_decode_frame,
+    .capabilities          = AV_CODEC_CAP_DR1,
+    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
+    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
+                                                  AV_CH_LAYOUT_STEREO, 0},
+    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
+                                                             AV_SAMPLE_FMT_NONE },
+    .supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
 };
