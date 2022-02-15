@@ -163,35 +163,47 @@ static av_cold int decode_init(AVCodecContext *avctx)
     for (i = 0; i < 3; i++) {
         ret = init_ralf_vlc(&ctx->sets[i].filter_params, filter_param_def[i],
                             FILTERPARAM_ELEMENTS);
-        if (ret < 0)
+        if (ret < 0) {
+            decode_close(avctx);
             return ret;
+        }
         ret = init_ralf_vlc(&ctx->sets[i].bias, bias_def[i], BIAS_ELEMENTS);
-        if (ret < 0)
+        if (ret < 0) {
+            decode_close(avctx);
             return ret;
+        }
         ret = init_ralf_vlc(&ctx->sets[i].coding_mode, coding_mode_def[i],
                             CODING_MODE_ELEMENTS);
-        if (ret < 0)
+        if (ret < 0) {
+            decode_close(avctx);
             return ret;
+        }
         for (j = 0; j < 10; j++) {
             for (k = 0; k < 11; k++) {
                 ret = init_ralf_vlc(&ctx->sets[i].filter_coeffs[j][k],
                                     filter_coeffs_def[i][j][k],
                                     FILTER_COEFFS_ELEMENTS);
-                if (ret < 0)
+                if (ret < 0) {
+                    decode_close(avctx);
                     return ret;
+                }
             }
         }
         for (j = 0; j < 15; j++) {
             ret = init_ralf_vlc(&ctx->sets[i].short_codes[j],
                                 short_codes_def[i][j], SHORT_CODES_ELEMENTS);
-            if (ret < 0)
+            if (ret < 0) {
+                decode_close(avctx);
                 return ret;
+            }
         }
         for (j = 0; j < 125; j++) {
             ret = init_ralf_vlc(&ctx->sets[i].long_codes[j],
                                 long_codes_def[i][j], LONG_CODES_ELEMENTS);
-            if (ret < 0)
+            if (ret < 0) {
+                decode_close(avctx);
                 return ret;
+            }
         }
     }
 
@@ -513,7 +525,7 @@ static void decode_flush(AVCodecContext *avctx)
 }
 
 
-const AVCodec ff_ralf_decoder = {
+AVCodec ff_ralf_decoder = {
     .name           = "ralf",
     .long_name      = NULL_IF_CONFIG_SMALL("RealAudio Lossless"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -523,9 +535,7 @@ const AVCodec ff_ralf_decoder = {
     .close          = decode_close,
     .decode         = decode_frame,
     .flush          = decode_flush,
-    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
-                      AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

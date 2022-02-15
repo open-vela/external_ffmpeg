@@ -20,9 +20,8 @@
 
 #include "libavutil/imgutils.h"
 
-#include "flvdec.h"
-#include "h263dec.h"
-#include "internal.h"
+#include "flv.h"
+#include "h263.h"
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
 
@@ -91,6 +90,7 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
 
     s->h263_plus = 0;
 
+    s->unrestricted_mv   = 1;
     s->h263_long_vectors = 0;
 
     /* PEI */
@@ -113,7 +113,7 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
     return 0;
 }
 
-const AVCodec ff_flv_decoder = {
+AVCodec ff_flv_decoder = {
     .name           = "flv",
     .long_name      = NULL_IF_CONFIG_SMALL("FLV / Sorenson Spark / Sorenson H.263 (Flash Video)"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -123,8 +123,7 @@ const AVCodec ff_flv_decoder = {
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = AV_CODEC_CAP_DRAW_HORIZ_BAND | AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
+    .caps_internal  = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
     .max_lowres     = 3,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE },
