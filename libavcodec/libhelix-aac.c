@@ -93,8 +93,11 @@ static int aac_decode_frame(AVCodecContext *avctx,
     }
 
     ret = AACDecode(aac->context, &in_data, &in_size, (int16_t *)aac->pcm);
-    if (ret < 0)
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "%s error ret %d.\n", __func__, ret);
+        AACFlushCodec(aac->context);
         return ret;
+    }
 
     AACGetLastFrameInfo(aac->context, &info);
 
