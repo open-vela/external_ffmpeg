@@ -19,12 +19,8 @@
 *.swp
 *.ver
 *.version
-*.metal.air
-*.metallib
-*.metallib.c
 *.ptx
 *.ptx.c
-*.ptx.gz
 *_g
 \#*
 .\#*
@@ -41,3 +37,7 @@
 /src
 /mapfile
 /tools/python/__pycache__/
+.built
+.depend
+Make.dep
+tags
