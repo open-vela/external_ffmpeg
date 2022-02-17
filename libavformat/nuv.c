@@ -24,6 +24,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "internal.h"
 #include "riff.h"
 
@@ -117,6 +118,10 @@ static int get_codec_data(AVFormatContext *s, AVIOContext *pb, AVStream *vst,
                 ast->codecpar->bits_per_coded_sample = avio_rl32(pb);
                 ast->codecpar->channels              = avio_rl32(pb);
                 ast->codecpar->channel_layout        = 0;
+                if (ast->codecpar->channels <= 0) {
+                    av_log(s, AV_LOG_ERROR, "Invalid channels %d\n", ast->codecpar->channels);
+                    return AVERROR_INVALIDDATA;
+                }
 
                 id = ff_wav_codec_get_id(ast->codecpar->codec_tag,
                                          ast->codecpar->bits_per_coded_sample);
@@ -128,7 +133,7 @@ static int get_codec_data(AVFormatContext *s, AVIOContext *pb, AVStream *vst,
                 }
                 ast->codecpar->codec_id = id;
 
-                ast->need_parsing = AVSTREAM_PARSE_FULL;
+                ffstream(ast)->need_parsing = AVSTREAM_PARSE_FULL;
             } else
                 avio_skip(pb, 4 * 4);
 
@@ -254,9 +259,9 @@ static int nuv_packet(AVFormatContext *s, AVPacket *pkt)
         int copyhdrsize = ctx->rtjpg_video ? HDRSIZE : 0;
         uint64_t pos    = avio_tell(pb);
 
-        ret = avio_read(pb, hdr, HDRSIZE);
-        if (ret < HDRSIZE)
-            return ret < 0 ? ret : AVERROR(EIO);
+        ret = ffio_read_size(pb, hdr, HDRSIZE);
+        if (ret < 0)
+            return ret;
 
         frametype = hdr[0];
         size      = PKTSIZE(AV_RL32(&hdr[8]));
@@ -390,7 +395,7 @@ static int64_t nuv_read_dts(AVFormatContext *s, int stream_index,
 }
 
 
-AVInputFormat ff_nuv_demuxer = {
+const AVInputFormat ff_nuv_demuxer = {
     .name           = "nuv",
     .long_name      = NULL_IF_CONFIG_SMALL("NuppelVideo"),
     .priv_data_size = sizeof(NUVContext),
