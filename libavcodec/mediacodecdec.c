@@ -33,6 +33,7 @@
 #include "avcodec.h"
 #include "decode.h"
 #include "h264_parse.h"
+#include "h264_ps.h"
 #include "hevc_parse.h"
 #include "hwconfig.h"
 #include "internal.h"
@@ -155,6 +156,9 @@ static int h264_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
         uint8_t *data = NULL;
         int data_size = 0;
 
+        avctx->profile = ff_h264_get_profile(sps);
+        avctx->level = sps->level_idc;
+
         if ((ret = h2645_ps_to_nalu(sps->data, sps->data_size, &data, &data_size)) < 0) {
             goto done;
         }
@@ -167,8 +171,11 @@ static int h264_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
         ff_AMediaFormat_setBuffer(format, "csd-1", (void*)data, data_size);
         av_freep(&data);
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Could not extract PPS/SPS from extradata");
-        ret = AVERROR_INVALIDDATA;
+        const int warn = is_avc && (avctx->codec_tag == MKTAG('a','v','c','1') ||
+                                    avctx->codec_tag == MKTAG('a','v','c','2'));
+        av_log(avctx, warn ? AV_LOG_WARNING : AV_LOG_DEBUG,
+               "Could not extract PPS/SPS from extradata\n");
+        ret = 0;
     }
 
 done:
@@ -233,6 +240,9 @@ static int hevc_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
         uint8_t *data;
         int data_size;
 
+        avctx->profile = sps->ptl.general_ptl.profile_idc;
+        avctx->level   = sps->ptl.general_ptl.level_idc;
+
         if ((ret = h2645_ps_to_nalu(vps->data, vps->data_size, &vps_data, &vps_data_size)) < 0 ||
             (ret = h2645_ps_to_nalu(sps->data, sps->data_size, &sps_data, &sps_data_size)) < 0 ||
             (ret = h2645_ps_to_nalu(pps->data, pps->data_size, &pps_data, &pps_data_size)) < 0) {
@@ -254,8 +264,10 @@ static int hevc_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
 
         av_freep(&data);
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Could not extract VPS/PPS/SPS from extradata");
-        ret = AVERROR_INVALIDDATA;
+        const int warn = is_nalff && avctx->codec_tag == MKTAG('h','v','c','1');
+        av_log(avctx, warn ? AV_LOG_WARNING : AV_LOG_DEBUG,
+               "Could not extract VPS/PPS/SPS from extradata\n");
+        ret = 0;
     }
 
 done:
@@ -486,7 +498,7 @@ static void mediacodec_decode_flush(AVCodecContext *avctx)
     ff_mediacodec_dec_flush(avctx, s->ctx);
 }
 
-static const AVCodecHWConfigInternal *mediacodec_hw_configs[] = {
+static const AVCodecHWConfigInternal *const mediacodec_hw_configs[] = {
     &(const AVCodecHWConfigInternal) {
         .public          = {
             .pix_fmt     = AV_PIX_FMT_MEDIACODEC,
@@ -517,7 +529,7 @@ static const AVClass ff_##short_name##_mediacodec_dec_class = { \
 
 #define DECLARE_MEDIACODEC_VDEC(short_name, full_name, codec_id, bsf)                          \
 DECLARE_MEDIACODEC_VCLASS(short_name)                                                          \
-AVCodec ff_##short_name##_mediacodec_decoder = {                                               \
+const AVCodec ff_ ## short_name ## _mediacodec_decoder = {                                     \
     .name           = #short_name "_mediacodec",                                               \
     .long_name      = NULL_IF_CONFIG_SMALL(full_name " Android MediaCodec decoder"),           \
     .type           = AVMEDIA_TYPE_VIDEO,                                                      \
