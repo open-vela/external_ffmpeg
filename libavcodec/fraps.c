@@ -31,6 +31,10 @@
  * Version 2 files support by Konstantin Shishkov
  */
 
+#include "config.h"
+
+#define CACHED_BITSTREAM_READER HAVE_FAST_64BIT
+#define UNCHECKED_BITSTREAM_READER 1
 #include "avcodec.h"
 #include "get_bits.h"
 #include "huffman.h"
@@ -136,7 +140,6 @@ static int decode_frame(AVCodecContext *avctx,
     FrapsContext * const s = avctx->priv_data;
     const uint8_t *buf     = avpkt->data;
     int buf_size           = avpkt->size;
-    ThreadFrame frame = { .f = data };
     AVFrame * const f = data;
     uint32_t header;
     unsigned int version,header_size;
@@ -223,7 +226,7 @@ static int decode_frame(AVCodecContext *avctx,
                                      : AVCOL_RANGE_JPEG;
     avctx->colorspace = version & 1 ? AVCOL_SPC_UNSPECIFIED : AVCOL_SPC_BT709;
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, f, 0)) < 0)
         return ret;
 
     switch (version) {
@@ -338,7 +341,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 }
 
 
-AVCodec ff_fraps_decoder = {
+const AVCodec ff_fraps_decoder = {
     .name           = "fraps",
     .long_name      = NULL_IF_CONFIG_SMALL("Fraps"),
     .type           = AVMEDIA_TYPE_VIDEO,
