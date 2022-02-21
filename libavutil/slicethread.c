@@ -17,13 +17,12 @@
  */
 
 #include <stdatomic.h>
-#include "cpu.h"
 #include "slicethread.h"
 #include "mem.h"
 #include "thread.h"
 #include "avassert.h"
 
-#if HAVE_PTHREADS || HAVE_W32THREADS || HAVE_OS2THREADS
+#if HAVE_THREADS
 
 typedef struct WorkerContext {
     AVSliceThread   *ctx;
@@ -232,7 +231,7 @@ void avpriv_slicethread_free(AVSliceThread **pctx)
     av_freep(pctx);
 }
 
-#else /* HAVE_PTHREADS || HAVE_W32THREADS || HAVE_OS32THREADS */
+#else /* HAVE_THREADS */
 
 int avpriv_slicethread_create(AVSliceThread **pctx, void *priv,
                               void (*worker_func)(void *priv, int jobnr, int threadnr, int nb_jobs, int nb_threads),
@@ -240,7 +239,7 @@ int avpriv_slicethread_create(AVSliceThread **pctx, void *priv,
                               int nb_threads)
 {
     *pctx = NULL;
-    return AVERROR(ENOSYS);
+    return AVERROR(EINVAL);
 }
 
 void avpriv_slicethread_execute(AVSliceThread *ctx, int nb_jobs, int execute_main)
@@ -253,4 +252,4 @@ void avpriv_slicethread_free(AVSliceThread **pctx)
     av_assert0(!pctx || !*pctx);
 }
 
-#endif /* HAVE_PTHREADS || HAVE_W32THREADS || HAVE_OS32THREADS */
+#endif /* HAVE_THREADS */
