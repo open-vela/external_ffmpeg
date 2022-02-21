@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/float_dsp.h"
@@ -54,8 +55,6 @@ typedef struct AudioNLMSContext {
 
     AVFrame *frame[2];
 
-    int anlmf;
-
     AVFloatDSPContext *fdsp;
 } AudioNLMSContext;
 
@@ -76,23 +75,36 @@ static const AVOption anlms_options[] = {
     { NULL }
 };
 
-AVFILTER_DEFINE_CLASS_EXT(anlms, "anlm(f|s)", anlms_options);
+AVFILTER_DEFINE_CLASS(anlms);
 
 static int query_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_FLTP,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_all_channel_counts(ctx);
+    int ret;
+
+    layouts = ff_all_channel_counts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_all_samplerates(ctx);
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static float fir_sample(AudioNLMSContext *s, float sample, float *delay,
@@ -132,8 +144,6 @@ static float process_sample(AudioNLMSContext *s, float input, float desired,
 
     norm = s->eps + sum;
     b = mu * e / norm;
-    if (s->anlmf)
-        b *= 4.f * e * e;
 
     memcpy(tmp, delay + offset, order * sizeof(float));
 
@@ -207,8 +217,8 @@ static int activate(AVFilterContext *ctx)
             return AVERROR(ENOMEM);
         }
 
-        ff_filter_execute(ctx, process_channels, out, NULL,
-                          FFMIN(ctx->outputs[0]->channels, ff_filter_get_nb_threads(ctx)));
+        ctx->internal->execute(ctx, process_channels, out, NULL, FFMIN(ctx->outputs[0]->channels,
+                                                                       ff_filter_get_nb_threads(ctx)));
 
         out->pts = s->frame[0]->pts;
 
@@ -245,7 +255,6 @@ static int config_output(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     AudioNLMSContext *s = ctx->priv;
 
-    s->anlmf = !strcmp(ctx->filter->name, "anlmf");
     s->kernel_size = FFALIGN(s->order, 16);
 
     if (!s->offset)
@@ -293,6 +302,7 @@ static const AVFilterPad inputs[] = {
         .name = "desired",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -301,9 +311,10 @@ static const AVFilterPad outputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_anlms = {
+AVFilter ff_af_anlms = {
     .name           = "anlms",
     .description    = NULL_IF_CONFIG_SMALL("Apply Normalized Least-Mean-Squares algorithm to first audio stream."),
     .priv_size      = sizeof(AudioNLMSContext),
@@ -311,24 +322,9 @@ const AVFilter ff_af_anlms = {
     .init           = init,
     .uninit         = uninit,
     .activate       = activate,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
-    FILTER_QUERY_FUNC(query_formats),
-    .flags          = AVFILTER_FLAG_SLICE_THREADS,
-    .process_command = ff_filter_process_command,
-};
-
-const AVFilter ff_af_anlmf = {
-    .name           = "anlmf",
-    .description    = NULL_IF_CONFIG_SMALL("Apply Normalized Least-Mean-Fourth algorithm to first audio stream."),
-    .priv_size      = sizeof(AudioNLMSContext),
-    .priv_class     = &anlms_class,
-    .init           = init,
-    .uninit         = uninit,
-    .activate       = activate,
-    FILTER_INPUTS(inputs),
-    FILTER_OUTPUTS(outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .query_formats  = query_formats,
+    .inputs         = inputs,
+    .outputs        = outputs,
     .flags          = AVFILTER_FLAG_SLICE_THREADS,
     .process_command = ff_filter_process_command,
 };

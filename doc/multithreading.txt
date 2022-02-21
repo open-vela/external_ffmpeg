@@ -20,7 +20,8 @@ Slice threading -
 
 Frame threading -
 * Restrictions with slice threading also apply.
-* Custom get_buffer2() and get_format() callbacks must be thread-safe.
+* For best performance, the client should set thread_safe_callbacks if it
+  provides a thread-safe get_buffer() callback.
 * There is one frame of delay added for every thread beyond the first one.
   Clients must be able to handle this; the pkt_dts and pkt_pts fields in
   AVFrame will work as usual.
