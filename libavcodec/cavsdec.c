@@ -32,6 +32,7 @@
 #include "cavs.h"
 #include "internal.h"
 #include "mpeg12data.h"
+#include "startcode.h"
 
 static const uint8_t mv_scan[4] = {
     MV_FWD_X0, MV_FWD_X1,
@@ -504,7 +505,7 @@ static inline int get_ue_code(GetBitContext *gb, int order)
 {
     unsigned ret = get_ue_golomb(gb);
     if (ret >= ((1U<<31)>>order)) {
-        av_log(NULL, AV_LOG_ERROR, "get_ue_code: value too larger\n");
+        av_log(NULL, AV_LOG_ERROR, "get_ue_code: value too large\n");
         return AVERROR_INVALIDDATA;
     }
     if (order) {
@@ -676,7 +677,7 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
         }
         h->pred_mode_Y[pos] = predpred;
     }
-    pred_mode_uv = get_ue_golomb(gb);
+    pred_mode_uv = get_ue_golomb_31(gb);
     if (pred_mode_uv > 6) {
         av_log(h->avctx, AV_LOG_ERROR, "illegal intra chroma pred mode\n");
         return AVERROR_INVALIDDATA;
@@ -1307,7 +1308,7 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     }
 }
 
-AVCodec ff_cavs_decoder = {
+const AVCodec ff_cavs_decoder = {
     .name           = "cavs",
     .long_name      = NULL_IF_CONFIG_SMALL("Chinese AVS (Audio Video Standard) (AVS1-P2, JiZhun profile)"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -1318,4 +1319,5 @@ AVCodec ff_cavs_decoder = {
     .decode         = cavs_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .flush          = cavs_flush,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
