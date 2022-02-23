@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include "libavutil/internal.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/x86/asm.h"
 #include "libavcodec/mpegutils.h"
 #include "libavcodec/mpegvideo.h"
@@ -108,7 +109,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
     const uint16_t *qmat, *bias;
     LOCAL_ALIGNED_16(int16_t, temp_block, [64]);
 
-    av_assert2((7&(int)(&temp_block[0])) == 0); //did gcc align it correctly?
+    av_assert2((7&(uintptr_t)(&temp_block[0])) == 0); //did gcc align it correctly?
 
     //s->fdct (block);
     RENAME_FDCT(ff_fdct)(block); // cannot be anything else ...
