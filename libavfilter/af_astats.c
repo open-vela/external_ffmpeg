@@ -653,6 +653,66 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     return ff_filter_frame(inlink->dst->outputs[0], buf);
 }
 
+static int query_stats(AVFilterContext *ctx, const char *cmd, char *res, int res_len)
+{
+    AudioStatsContext *s = ctx->priv;
+    double min = DBL_MAX, max =-DBL_MAX,
+           nmin = DBL_MAX, nmax =-DBL_MAX;
+    bool found = false;
+    char name[48];
+    int c;
+
+    if (!cmd || !res || !res_len)
+        return AVERROR(EINVAL);
+
+    for (c = 0; c < s->nb_channels; c++) {
+        ChannelStats *p = &s->chstats[c];
+
+        min = FFMIN(min, p->min);
+        max = FFMAX(max, p->max);
+        nmin = FFMIN(nmin, p->nmin);
+        nmax = FFMAX(nmax, p->nmax);
+
+        if (s->measure_perchannel & MEASURE_MIN_LEVEL) {
+            snprintf(name, sizeof(name), "lavfi.astats.%d.%s", c + 1, "Min_level");
+            if (!strcmp(name, cmd)) {
+                snprintf(res, res_len, "%f", p->min);
+                found = true;
+                break;
+            }
+        } else if (s->measure_perchannel & MEASURE_MAX_LEVEL) {
+            snprintf(name, sizeof(name), "lavfi.astats.%d.%s", c + 1, "MAX_level");
+            if (!strcmp(name, cmd)) {
+                snprintf(res, res_len, "%f", p->max);
+                found = true;
+                break;
+            }
+        } else if (s->measure_perchannel & MEASURE_PEAK_LEVEL) {
+            snprintf(name, sizeof(name), "lavfi.astats.%d.%s", c + 1, "Peak_level");
+            if (!strcmp(name, cmd)) {
+                snprintf(res, res_len, "%f", LINEAR_TO_DB(FFMAX(-p->nmin, p->nmax)));
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (found)
+        goto out;
+
+    if (!strcmp(cmd, "lavfi.astats.Overall.Min_level") && (s->measure_overall & MEASURE_MIN_LEVEL))
+        snprintf(res, res_len, "%f", min);
+    else if (!strcmp(cmd, "lavfi.astats.Overall.Max_level") && (s->measure_overall & MEASURE_MAX_LEVEL))
+        snprintf(res, res_len, "%f", max);
+    else if (!strcmp(cmd, "lavfi.astats.Overall.Peak_level") && (s->measure_overall & MEASURE_PEAK_LEVEL))
+        snprintf(res, res_len, "%f", LINEAR_TO_DB(FFMAX(-nmin, nmax)));
+    else
+        return AVERROR(ENOSYS);
+
+out:
+    return 0;
+}
+
 static void print_stats(AVFilterContext *ctx)
 {
     AudioStatsContext *s = ctx->priv;
@@ -803,6 +863,12 @@ static void print_stats(AVFilterContext *ctx)
         av_log(ctx, AV_LOG_INFO, "Number of denormals: %f\n", nb_denormals / (float)s->nb_channels);
 }
 
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                           char *res, int res_len, int flags)
+{
+    return query_stats(ctx, cmd, res, res_len);
+}
+
 static av_cold void uninit(AVFilterContext *ctx)
 {
     AudioStatsContext *s = ctx->priv;
@@ -838,13 +904,14 @@ static const AVFilterPad astats_outputs[] = {
 };
 
 AVFilter ff_af_astats = {
-    .name          = "astats",
-    .description   = NULL_IF_CONFIG_SMALL("Show time domain statistics about audio frames."),
-    .query_formats = query_formats,
-    .priv_size     = sizeof(AudioStatsContext),
-    .priv_class    = &astats_class,
-    .uninit        = uninit,
-    .inputs        = astats_inputs,
-    .outputs       = astats_outputs,
-    .flags         = AVFILTER_FLAG_SLICE_THREADS,
+    .name            = "astats",
+    .description     = NULL_IF_CONFIG_SMALL("Show time domain statistics about audio frames."),
+    .query_formats   = query_formats,
+    .priv_size       = sizeof(AudioStatsContext),
+    .priv_class      = &astats_class,
+    .process_command = process_command,
+    .uninit          = uninit,
+    .inputs          = astats_inputs,
+    .outputs         = astats_outputs,
+    .flags           = AVFILTER_FLAG_SLICE_THREADS,
 };
