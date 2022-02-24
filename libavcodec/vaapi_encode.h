@@ -29,6 +29,7 @@
 
 #include "libavutil/hwcontext.h"
 #include "libavutil/hwcontext_vaapi.h"
+#include "libavutil/fifo.h"
 
 #include "avcodec.h"
 #include "hwconfig.h"
@@ -43,9 +44,14 @@ enum {
     MAX_PICTURE_REFERENCES = 2,
     MAX_REORDER_DELAY      = 16,
     MAX_PARAM_BUFFER_SIZE  = 1024,
+    // A.4.1: table A.6 allows at most 22 tile rows for any level.
+    MAX_TILE_ROWS          = 22,
+    // A.4.1: table A.6 allows at most 20 tile columns for any level.
+    MAX_TILE_COLS          = 20,
+    MAX_ASYNC_DEPTH        = 64,
 };
 
-extern const AVCodecHWConfigInternal *ff_vaapi_encode_hw_configs[];
+extern const AVCodecHWConfigInternal *const ff_vaapi_encode_hw_configs[];
 
 enum {
     PICTURE_TYPE_IDR = 0,
@@ -60,7 +66,6 @@ typedef struct VAAPIEncodeSlice {
     int             row_size;
     int             block_start;
     int             block_size;
-    void           *priv_data;
     void           *codec_slice_params;
 } VAAPIEncodeSlice;
 
@@ -294,13 +299,26 @@ typedef struct VAAPIEncodeContext {
     // Timestamp handling.
     int64_t         first_pts;
     int64_t         dts_pts_diff;
-    int64_t         ts_ring[MAX_REORDER_DELAY * 3];
+    int64_t         ts_ring[MAX_REORDER_DELAY * 3 +
+                            MAX_ASYNC_DEPTH];
 
     // Slice structure.
     int slice_block_rows;
     int slice_block_cols;
     int nb_slices;
     int slice_size;
+
+    // Tile encoding.
+    int tile_cols;
+    int tile_rows;
+    // Tile width of the i-th column.
+    int col_width[MAX_TILE_COLS];
+    // Tile height of i-th row.
+    int row_height[MAX_TILE_ROWS];
+    // Location of the i-th tile column boundary.
+    int col_bd[MAX_TILE_COLS + 1];
+    // Location of the i-th tile row boundary.
+    int row_bd[MAX_TILE_ROWS + 1];
 
     // Frame type decision.
     int gop_size;
@@ -328,6 +346,15 @@ typedef struct VAAPIEncodeContext {
     // If the driver does not support ROI then warn the first time we
     // encounter a frame with ROI side data.
     int             roi_warned;
+
+    AVFrame         *frame;
+
+    // Whether the driver support vaSyncBuffer
+    int             has_sync_buffer_func;
+    // Store buffered pic
+    AVFifo          *encode_fifo;
+    // Max number of frame buffered in encoder.
+    int             async_depth;
 } VAAPIEncodeContext;
 
 enum {
@@ -419,7 +446,6 @@ typedef struct VAAPIEncodeType {
 } VAAPIEncodeType;
 
 
-int ff_vaapi_encode_send_frame(AVCodecContext *avctx, const AVFrame *frame);
 int ff_vaapi_encode_receive_packet(AVCodecContext *avctx, AVPacket *pkt);
 
 int ff_vaapi_encode_init(AVCodecContext *avctx);
@@ -439,7 +465,12 @@ int ff_vaapi_encode_close(AVCodecContext *avctx);
     { "b_depth", \
       "Maximum B-frame reference depth", \
       OFFSET(common.desired_b_depth), AV_OPT_TYPE_INT, \
-      { .i64 = 1 }, 1, INT_MAX, FLAGS }
+      { .i64 = 1 }, 1, INT_MAX, FLAGS }, \
+    { "async_depth", "Maximum processing parallelism. " \
+      "Increase this to improve single channel performance. This option " \
+      "doesn't work if driver doesn't implement vaSyncBuffer function.", \
+      OFFSET(common.async_depth), AV_OPT_TYPE_INT, \
+      { .i64 = 2 }, 1, MAX_ASYNC_DEPTH, FLAGS }
 
 #define VAAPI_ENCODE_RC_MODE(name, desc) \
     { #name, desc, 0, AV_OPT_TYPE_CONST, { .i64 = RC_MODE_ ## name }, \
