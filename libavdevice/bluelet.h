@@ -45,6 +45,15 @@ typedef enum {
     BLUELET_STATE_STARTED,
 } bluelet_state_t;
 
+typedef struct {
+    uint32_t profile;
+    uint32_t vbr;
+} bluelet_aac_t;
+
+typedef struct {
+    uint8_t param[128];
+} bluelet_sbc_t;
+
 typedef struct BlueletPriv {
     AVClass*        class;
     AVStream*       st;
@@ -66,7 +75,10 @@ typedef struct BlueletPriv {
         bool        available;
     };
     char*           server_name;
-    uint8_t         codec_param[128];
+    union {
+        bluelet_aac_t aac;
+        bluelet_sbc_t sbc;
+    };
 } BlueletPriv;
 
 /*****************************************************************************
