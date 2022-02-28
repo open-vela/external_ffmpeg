@@ -32,6 +32,7 @@
 #include "libavfilter/filters.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
+#include "libavcodec/get_bits.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
 
@@ -165,7 +166,6 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             poll[0].fd = priv->ctrl_fd;
             poll[0].events = POLLIN;
             ret = 1;
-
             if (priv->data_fd > 0 && priv->lastpkt != NULL) {
                 poll[1].fd = priv->data_fd;
                 poll[1].events = POLLOUT;
@@ -199,7 +199,13 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             if (dict != NULL) {
                 av_dict_set_int(dict, "ab", priv->bit_rate, 0);
                 if (priv->codec_id == AV_CODEC_ID_SBC)
-                    av_dict_set(dict, "sbc_param", priv->codec_param, 0);
+                    av_dict_set(dict, "sbc_param", priv->sbc.param, 0);
+                else if (priv->codec_id == AV_CODEC_ID_AAC) {
+                    av_dict_set_int(dict, "profile", priv->aac.profile, 0);
+                    av_dict_set_int(dict, "vbr", priv->aac.vbr, 0);
+                    av_dict_set_int(dict, "latm", 1, 0);
+                    av_dict_set_int(dict, "peak", 1, 0);
+                }
                 return 0;
             }
             break;
@@ -245,6 +251,22 @@ static int bluelet_enc_free_device_capabilities(struct AVFormatContext *ctx, str
     return 0;
 }
 
+static int bluelet_enc_check_bitstream(struct AVFormatContext *ctx, const AVPacket *pkt)
+{
+    int ret = 1;
+    AVStream *st = ctx->streams[0];
+
+    if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
+        /* check aac header, if loas header is present, skip add bitstream filter */
+        if(pkt->size > 2 && pkt->data[0] == 0x56 && (pkt->data[1] >> 4) == 0xe &&
+           (AV_RB16(pkt->data + 1) & 0x1FFF) + 3 == pkt->size)
+            return ret;
+        ret = ff_stream_add_bitstream_filter(st, "aac_rawtolatm", NULL);
+    }
+
+    return ret;
+}
+
 #define OFFSET(x) offsetof(BlueletPriv, x)
 #define FLAGS AV_OPT_FLAG_ENCODING_PARAM | AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
@@ -275,6 +297,7 @@ AVOutputFormat ff_bluelet_muxer = {
     .write_uncoded_frame        = bluelet_write_frame,
     .create_device_capabilities = bluelet_enc_create_device_capabilities,
     .free_device_capabilities   = bluelet_enc_free_device_capabilities,
+    .check_bitstream            = bluelet_enc_check_bitstream,
     .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT,
     .priv_class                 = &bluelet_muxer_class,
 };
