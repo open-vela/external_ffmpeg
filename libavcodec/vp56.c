@@ -773,6 +773,12 @@ next:
     return 0;
 }
 
+av_cold int ff_vp56_init(AVCodecContext *avctx, int flip, int has_alpha)
+{
+    VP56Context *s = avctx->priv_data;
+    return ff_vp56_init_context(avctx, s, flip, has_alpha);
+}
+
 av_cold int ff_vp56_init_context(AVCodecContext *avctx, VP56Context *s,
                                   int flip, int has_alpha)
 {
@@ -794,8 +800,10 @@ av_cold int ff_vp56_init_context(AVCodecContext *avctx, VP56Context *s,
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->frames); i++) {
         s->frames[i] = av_frame_alloc();
-        if (!s->frames[i])
+        if (!s->frames[i]) {
+            ff_vp56_free(avctx);
             return AVERROR(ENOMEM);
+        }
     }
     s->edge_emu_buffer_alloc = NULL;
 
@@ -822,6 +830,12 @@ av_cold int ff_vp56_init_context(AVCodecContext *avctx, VP56Context *s,
     }
 
     return 0;
+}
+
+av_cold int ff_vp56_free(AVCodecContext *avctx)
+{
+    VP56Context *s = avctx->priv_data;
+    return ff_vp56_free_context(s);
 }
 
 av_cold int ff_vp56_free_context(VP56Context *s)
