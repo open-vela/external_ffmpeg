@@ -1136,7 +1136,23 @@ static int write_packet_common(AVFormatContext *s, AVStream *st, AVPacket *pkt, 
 static int write_packets_from_bsfs(AVFormatContext *s, AVStream *st, AVPacket *pkt, int interleaved)
 {
     AVBSFContext *bsfc = st->internal->bsfc;
+    AVPacket *last_pkt = bsfc->last_packet;
     int ret;
+
+    while (last_pkt->data != NULL) {
+        ret = write_packet_common(s, st, last_pkt, interleaved);
+        if (ret >= 0 && !interleaved) // a successful write_packet_common already unrefed pkt for interleaved
+            av_packet_unref(last_pkt);
+        else if (ret < 0)
+            return ret;
+
+        ret = av_bsf_receive_packet(bsfc, last_pkt);
+        if (ret < 0) {
+            av_packet_unref(last_pkt);
+            return 0;
+        }
+        av_packet_rescale_ts(last_pkt, bsfc->time_base_out, st->time_base);
+    }
 
     if ((ret = av_bsf_send_packet(bsfc, pkt)) < 0) {
         av_log(s, AV_LOG_ERROR,
@@ -1160,6 +1176,8 @@ static int write_packets_from_bsfs(AVFormatContext *s, AVStream *st, AVPacket *p
         ret = write_packet_common(s, st, pkt, interleaved);
         if (ret >= 0 && !interleaved) // a successful write_packet_common already unrefed pkt for interleaved
             av_packet_unref(pkt);
+        else if (ret == AVERROR(EAGAIN))
+            av_packet_move_ref(last_pkt, pkt);
     } while (ret >= 0);
 
     return ret;

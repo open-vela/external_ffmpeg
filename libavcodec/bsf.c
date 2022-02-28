@@ -50,6 +50,8 @@ void av_bsf_free(AVBSFContext **pctx)
     if (ctx->filter->priv_class && ctx->priv_data)
         av_opt_free(ctx->priv_data);
 
+    if (ctx->last_packet)
+        av_packet_free(&ctx->last_packet);
     if (ctx->internal)
         av_packet_free(&ctx->internal->buffer_pkt);
     av_freep(&ctx->internal);
@@ -104,6 +106,11 @@ int av_bsf_alloc(const AVBitStreamFilter *filter, AVBSFContext **pctx)
     ctx->par_in  = avcodec_parameters_alloc();
     ctx->par_out = avcodec_parameters_alloc();
     if (!ctx->par_in || !ctx->par_out) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    ctx->last_packet = av_packet_alloc();
+    if (!ctx->last_packet) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
