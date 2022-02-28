@@ -93,6 +93,7 @@ typedef struct AVBSFContext {
      * filter in av_bsf_init().
      */
     AVRational time_base_out;
+    AVPacket   *last_packet;
 } AVBSFContext;
 
 typedef struct AVBitStreamFilter {
