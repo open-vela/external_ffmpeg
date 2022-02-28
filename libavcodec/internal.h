@@ -28,11 +28,9 @@
 
 #include "libavutil/buffer.h"
 #include "libavutil/channel_layout.h"
-#include "libavutil/fifo.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/pixfmt.h"
 #include "avcodec.h"
-#include "bsf.h"
 #include "config.h"
 
 /**
@@ -75,20 +73,18 @@
  * uses ff_thread_report/await_progress().
  */
 #define FF_CODEC_CAP_ALLOCATE_PROGRESS      (1 << 6)
-/**
- * Codec handles avctx->thread_count == 0 (auto) internally.
- */
-#define FF_CODEC_CAP_AUTO_THREADS           (1 << 7)
-/**
- * Codec handles output frame properties internally instead of letting the
- * internal logic derive them from AVCodecInternal.last_pkt_props.
- */
-#define FF_CODEC_CAP_SETS_FRAME_PROPS       (1 << 8)
 
 /**
  * AVCodec.codec_tags termination value
  */
 #define FF_CODEC_TAGS_END -1
+
+
+#ifdef TRACE
+#   define ff_tlog(ctx, ...) av_log(ctx, AV_LOG_TRACE, __VA_ARGS__)
+#else
+#   define ff_tlog(ctx, ...) do { } while(0)
+#endif
 
 
 #define FF_DEFAULT_QUANT_BIAS 999999
@@ -112,14 +108,17 @@
 #   define STRIDE_ALIGN 8
 #endif
 
-typedef struct EncodeSimpleContext {
-    AVFrame *in_frame;
-} EncodeSimpleContext;
+typedef struct DecodeSimpleContext {
+    AVPacket *in_pkt;
+    AVFrame  *out_frame;
+} DecodeSimpleContext;
 
 typedef struct AVCodecInternal {
     /**
-     * When using frame-threaded decoding, this field is set for the first
-     * worker thread (e.g. to decode extradata just once).
+     * Whether the parent AVCodecContext is a copy of the context which had
+     * init() called on it.
+     * This is used by multithreading - shared tables and picture pointers
+     * should be freed from the original context only.
      */
     int is_copy;
 
@@ -129,19 +128,13 @@ typedef struct AVCodecInternal {
      */
     int last_audio_frame;
 
+    AVFrame *to_free;
+
     AVBufferRef *pool;
 
     void *thread_ctx;
 
-    /**
-     * This packet is used to hold the packet given to decoders
-     * implementing the .decode API; it is unused by the generic
-     * code for decoders implementing the .receive_frame API and
-     * may be freely used (but not freed) by them with the caveat
-     * that the packet will be unreferenced generically in
-     * avcodec_flush_buffers().
-     */
-    AVPacket *in_pkt;
+    DecodeSimpleContext ds;
     AVBSFContext *bsf;
 
     /**
@@ -149,7 +142,6 @@ typedef struct AVCodecInternal {
      * for decoding.
      */
     AVPacket *last_pkt_props;
-    AVFifo *pkt_props;
 
     /**
      * temporary buffer used for encoders to store their bitstream
@@ -157,22 +149,7 @@ typedef struct AVCodecInternal {
     uint8_t *byte_buffer;
     unsigned int byte_buffer_size;
 
-    /**
-     * This is set to AV_PKT_FLAG_KEY for encoders that encode intra-only
-     * formats (i.e. whose codec descriptor has AV_CODEC_PROP_INTRA_ONLY set).
-     * This is used to set said flag generically for said encoders.
-     */
-    int intra_only_flag;
-
     void *frame_thread_encoder;
-
-    EncodeSimpleContext es;
-
-    /**
-     * If this is set, then AVCodec->close (if existing) needs to be called
-     * for the parent AVCodecContext.
-     */
-    int needs_close;
 
     /**
      * Number of audio samples to skip at the start of the next decoded frame
@@ -193,8 +170,17 @@ typedef struct AVCodecInternal {
      * buffers for using new encode/decode API through legacy API
      */
     AVPacket *buffer_pkt;
+    int buffer_pkt_valid; // encoding: packet without data can be valid
     AVFrame *buffer_frame;
     int draining_done;
+    int compat_decode_warned;
+    /* this variable is set by the decoder internals to signal to the old
+     * API compat wrappers the amount of data consumed from the last packet */
+    size_t compat_decode_consumed;
+    /* when a partial packet has been consumed, this stores the remaining size
+     * of the packet (that should be submitted in the next decode call */
+    size_t compat_decode_partial_size;
+    AVFrame *compat_decode_frame;
 
     int showed_multi_packet_warning;
 
@@ -225,7 +211,7 @@ extern const uint8_t ff_log2_run[41];
  */
 int ff_match_2uint16(const uint16_t (*tab)[2], int size, int a, int b);
 
-unsigned int ff_toupper4(unsigned int x);
+unsigned int avpriv_toupper4(unsigned int x);
 
 void ff_color_frame(AVFrame *frame, const int color[4]);
 
@@ -235,6 +221,34 @@ void ff_color_frame(AVFrame *frame, const int color[4]);
  * addressable by a 32-bit signed integer as used by get_bits.
  */
 #define FF_MAX_EXTRADATA_SIZE ((1 << 28) - AV_INPUT_BUFFER_PADDING_SIZE)
+
+/**
+ * Check AVPacket size and/or allocate data.
+ *
+ * Encoders supporting AVCodec.encode2() can use this as a convenience to
+ * ensure the output packet data is large enough, whether provided by the user
+ * or allocated in this function.
+ *
+ * @param avctx   the AVCodecContext of the encoder
+ * @param avpkt   the AVPacket
+ *                If avpkt->data is already set, avpkt->size is checked
+ *                to ensure it is large enough.
+ *                If avpkt->data is NULL, a new buffer is allocated.
+ *                avpkt->size is set to the specified size.
+ *                All other AVPacket fields will be reset with av_init_packet().
+ * @param size    the minimum required packet size
+ * @param min_size This is a hint to the allocation algorithm, which indicates
+ *                to what minimal size the caller might later shrink the packet
+ *                to. Encoders often allocate packets which are larger than the
+ *                amount of data that is written into them as the exact amount is
+ *                not known at the time of allocation. min_size represents the
+ *                size a packet might be shrunk to by the caller. Can be set to
+ *                0. setting this roughly correctly allows the allocation code
+ *                to choose between several allocation strategies to improve
+ *                speed slightly.
+ * @return        non negative on success, negative error code on failure
+ */
+int ff_alloc_packet2(AVCodecContext *avctx, AVPacket *avpkt, int64_t size, int64_t min_size);
 
 /**
  * Rescale from sample rate to AVCodecContext.time_base.
@@ -285,6 +299,22 @@ int ff_thread_can_start_frame(AVCodecContext *avctx);
 
 int avpriv_h264_has_num_reorder_frames(AVCodecContext *avctx);
 
+/**
+ * Call avcodec_open2 recursively by decrementing counter, unlocking mutex,
+ * calling the function and then restoring again. Assumes the mutex is
+ * already locked
+ */
+int ff_codec_open2_recursive(AVCodecContext *avctx, const AVCodec *codec, AVDictionary **options);
+
+/**
+ * Finalize buf into extradata and set its size appropriately.
+ */
+int avpriv_bprint_to_extradata(AVCodecContext *avctx, struct AVBPrint *buf);
+
+const uint8_t *avpriv_find_start_code(const uint8_t *p,
+                                      const uint8_t *end,
+                                      uint32_t *state);
+
 int avpriv_codec_get_cap_skip_frame_fill_param(const AVCodec *codec);
 
 /**
@@ -319,24 +349,28 @@ int ff_side_data_update_matrix_encoding(AVFrame *frame,
 int ff_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmt);
 
 /**
+ * Set various frame properties from the codec context / packet data.
+ */
+int ff_decode_frame_props(AVCodecContext *avctx, AVFrame *frame);
+
+/**
  * Add a CPB properties side data to an encoding context.
  */
 AVCPBProperties *ff_add_cpb_side_data(AVCodecContext *avctx);
 
 /**
- * Check AVFrame for S12M timecode side data and allocate and fill TC SEI message with timecode info
+ * Check AVFrame for A53 side data and allocate and fill SEI message with A53 info
  *
- * @param frame      Raw frame to get S12M timecode side data from
- * @param rate       The frame rate
+ * @param frame      Raw frame to get A53 side data from
  * @param prefix_len Number of bytes to allocate before SEI message
  * @param data       Pointer to a variable to store allocated memory
- *                   Upon return the variable will hold NULL on error or if frame has no S12M timecode info.
+ *                   Upon return the variable will hold NULL on error or if frame has no A53 info.
  *                   Otherwise it will point to prefix_len uninitialized bytes followed by
  *                   *sei_size SEI message
  * @param sei_size   Pointer to a variable to store generated SEI message length
  * @return           Zero on success, negative error code on failure
  */
-int ff_alloc_timecode_sei(const AVFrame *frame, AVRational rate, size_t prefix_len,
+int ff_alloc_a53_sei(const AVFrame *frame, size_t prefix_len,
                      void **data, size_t *sei_size);
 
 /**
@@ -358,5 +392,11 @@ int ff_int_from_list_or_default(void *ctx, const char * val_name, int val,
                                 const int * array_valid_values, int default_value);
 
 void ff_dvdsub_parse_palette(uint32_t *palette, const char *p);
+
+#if defined(_WIN32) && CONFIG_SHARED && !defined(BUILDING_avcodec)
+#    define av_export_avcodec __declspec(dllimport)
+#else
+#    define av_export_avcodec
+#endif
 
 #endif /* AVCODEC_INTERNAL_H */

@@ -1,7 +1,7 @@
 /*
  * Audio Toolbox system codecs
  *
- * copyright (c) 2016 rcombs
+ * copyright (c) 2016 Rodger Combs
  *
  * This file is part of FFmpeg.
  *
@@ -29,11 +29,9 @@
 #include "audio_frame_queue.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "encode.h"
 #include "internal.h"
 #include "libavformat/isom.h"
 #include "libavutil/avassert.h"
-#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "libavutil/log.h"
 
@@ -538,7 +536,7 @@ static int ffat_encode(AVCodecContext *avctx, AVPacket *avpkt,
         at->eof = 1;
     }
 
-    if ((ret = ff_alloc_packet(avctx, avpkt, at->pkt_size)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, at->pkt_size, 0)) < 0)
         return ret;
 
 
@@ -618,7 +616,7 @@ static const AVOption options[] = {
 
 #define FFAT_ENC(NAME, ID, PROFILES, ...) \
     FFAT_ENC_CLASS(NAME) \
-    const AVCodec ff_##NAME##_at_encoder = { \
+    AVCodec ff_##NAME##_at_encoder = { \
         .name           = #NAME "_at", \
         .long_name      = NULL_IF_CONFIG_SMALL(#NAME " (AudioToolbox)"), \
         .type           = AVMEDIA_TYPE_AUDIO, \
@@ -629,7 +627,7 @@ static const AVOption options[] = {
         .encode2        = ffat_encode, \
         .flush          = ffat_encode_flush, \
         .priv_class     = &ffat_##NAME##_enc_class, \
-        .capabilities   = AV_CODEC_CAP_DELAY | \
+        .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | \
                           AV_CODEC_CAP_ENCODER_FLUSH __VA_ARGS__, \
         .sample_fmts    = (const enum AVSampleFormat[]) { \
             AV_SAMPLE_FMT_S16, \
