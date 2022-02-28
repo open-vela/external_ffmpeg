@@ -236,8 +236,12 @@ int ff_bluelet_write_buffer(BlueletPriv* priv, void* buffer, size_t bytes)
         return AVERROR_EOF;
 
     ret = send(priv->data_fd, buffer, bytes, MSG_NOSIGNAL);
-    if (ret < 0)
-        return AVERROR(errno);
+    if (ret < 0) {
+        if (errno == EAGAIN)
+            return 0;
+        else
+            return AVERROR(errno);
+    }
 
     return ret;
 }

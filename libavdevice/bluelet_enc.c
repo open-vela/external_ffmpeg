@@ -89,9 +89,8 @@ static int bluelet_write_lastpacket(AVFormatContext* ctx)
     int ret;
 
     ret = ff_bluelet_write_buffer(priv, priv->lastpkt->data, priv->lastpkt->size);
-
     if (ret < 0) {
-        if (ret == AVERROR_EOF)
+        if (ret != AVERROR(EAGAIN))
             av_packet_free(&priv->lastpkt);
         return ret;
     }
