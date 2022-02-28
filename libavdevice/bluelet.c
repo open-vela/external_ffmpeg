@@ -80,6 +80,11 @@ enum {
     BLUELET_CTRL_EVT_UPDATE_CONFIG,
 };
 
+#define BLUELET_AAC_OBJECT_TYPE_MPEG2_LC 0x80  /* MPEG-2 Low Complexity */
+#define BLUELET_AAC_OBJECT_TYPE_MPEG4_LC 0x40  /* MPEG-4 Low Complexity */
+#define BLUELET_AAC_OBJECT_TYPE_MPEG4_LTP 0x20 /* MPEG-4 Long Term Prediction */
+#define BLUELET_AAC_OBJECT_TYPE_MPEG4_SCALABLE 0x10
+
 typedef struct {
     uint32_t codec_type;
     uint32_t sample_rate;
@@ -95,6 +100,11 @@ typedef struct {
     uint32_t alloc_method;
     uint32_t bitpool;
 } bluelet_sbc_param_t;
+
+typedef struct {
+    uint32_t object_type;
+    uint32_t vbr;
+} bluelet_aac_param_t;
 
 struct bluelet_ipc_pair {
     const char *ctrl;
@@ -302,9 +312,32 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
         if (ret < 0)
             goto error;
 
-        snprintf(priv->codec_param, sizeof(priv->codec_param),
+        snprintf(priv->sbc.param, sizeof(priv->sbc.param),
                 "channel_mode=%d:blocks=%d:subbands=%d:alloc_method=%d:bitpool=%d",
                 param.channel_mode, param.blocks, param.subbands, param.alloc_method, param.bitpool);
+    } else if (config.codec_type == BLUELET_CODEC_TYPE_MPEG2_4_AAC) {
+        bluelet_aac_param_t param;
+        ret = ff_bluelet_recv_ctrl(priv, &param, sizeof(param));
+        if (ret < 0)
+            goto error;
+
+        priv->aac.vbr = param.vbr;
+        switch (param.object_type) {
+            case BLUELET_AAC_OBJECT_TYPE_MPEG2_LC:
+                priv->aac.profile = FF_PROFILE_MPEG2_AAC_LOW;
+                break;
+            case BLUELET_AAC_OBJECT_TYPE_MPEG4_LC:
+                priv->aac.profile = FF_PROFILE_AAC_LOW;
+                break;
+            case BLUELET_AAC_OBJECT_TYPE_MPEG4_LTP:
+                priv->aac.profile = FF_PROFILE_AAC_LTP;
+                break;
+            case BLUELET_AAC_OBJECT_TYPE_MPEG4_SCALABLE:
+                priv->aac.profile = FF_PROFILE_AAC_SSR;
+                break;
+            default:
+                break;
+        }
     }
 
     priv->state = BLUELET_STATE_CONFIGED;
