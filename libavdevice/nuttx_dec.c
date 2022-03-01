@@ -127,7 +127,7 @@ static int nuttx_read_header(AVFormatContext *s1)
     st->codecpar->channels       = priv->channels;
     st->codecpar->frame_size     = priv->frame_size;
     st->codecpar->channel_layout = priv->channel_layout;
-    avpriv_set_pts_info(st, 64, 1, 1000000);  /* 64 bits pts in us */
+    priv->captured = 0;
 
     return 0;
 }
@@ -162,8 +162,8 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
     }
 
     pkt->size = ret;
+    pkt->pts = priv->captured / priv->frame_size;
     priv->captured += ret;
-    pkt->pts = priv->captured * 1000000 / (priv->frame_size * priv->sample_rate);
 
     return 0;
 }
