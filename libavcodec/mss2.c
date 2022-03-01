@@ -27,8 +27,7 @@
 #include "error_resilience.h"
 #include "internal.h"
 #include "mpeg_er.h"
-#include "mpegvideodec.h"
-#include "msmpeg4dec.h"
+#include "msmpeg4.h"
 #include "qpeldsp.h"
 #include "vc1.h"
 #include "wmv2data.h"
@@ -752,7 +751,9 @@ static av_cold int wmv9_init(AVCodecContext *avctx)
 
     v->s.avctx    = avctx;
 
-    ff_vc1_init_common(v);
+    if ((ret = ff_vc1_init_common(v)) < 0)
+        return ret;
+    ff_vc1dsp_init(&v->vc1dsp);
 
     v->profile = PROFILE_MAIN;
 
@@ -846,7 +847,7 @@ static av_cold int mss2_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_mss2_decoder = {
+AVCodec ff_mss2_decoder = {
     .name           = "mss2",
     .long_name      = NULL_IF_CONFIG_SMALL("MS Windows Media Video V9 Screen"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -856,5 +857,4 @@ const AVCodec ff_mss2_decoder = {
     .close          = mss2_decode_end,
     .decode         = mss2_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

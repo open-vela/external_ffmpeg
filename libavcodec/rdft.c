@@ -20,7 +20,6 @@
  */
 #include <stdlib.h>
 #include <math.h>
-#include "libavutil/error.h"
 #include "libavutil/mathematics.h"
 #include "rdft.h"
 
