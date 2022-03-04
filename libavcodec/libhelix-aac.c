@@ -25,13 +25,17 @@
 
 #include "avcodec.h"
 #include "internal.h"
+#include "codec_internal.h"
+#include "decode.h"
+#include "get_bits.h"
+#include "mpeg4audio.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem.h"
 
 #include <aacdec.h>
 
 #define SYNCWORDH 0xff
 #define SYNCWORDL 0xf0
-
 #define LIBHELIX_AAC_MAX_CHANNELS 2
 #define LIBHELIX_AAC_MAX_NSAMPS   2048
 
@@ -40,11 +44,13 @@ typedef struct HAACDecContext {
     HAACDecoder context;
     uint8_t *pcm;
     int pcm_size;
+    MPEG4AudioConfig m4ac;
 } HAACDecContext;
 
 static int aac_decode_init(AVCodecContext *avctx)
 {
     HAACDecContext *aac = avctx->priv_data;
+    GetBitContext gb;
     int ret;
 
     aac->context = AACInitDecoder();
@@ -60,15 +66,22 @@ static int aac_decode_init(AVCodecContext *avctx)
     if (!aac->pcm)
         return AVERROR(ENOMEM);
 
+    if (avctx->extradata_size > 0) {
+        if ((ret = init_get_bits(&gb, avctx->extradata, avctx->extradata_size)) < 0)
+            return ret;
+
+        if ((ret = ff_mpeg4audio_get_config_gb(&aac->m4ac, &gb, 1, NULL)) < 0)
+            return ret;
+
+    }
+
     return 0;
 }
 
-static int aac_decode_frame(AVCodecContext *avctx,
-                            void *data, int *got_frame_ptr,
-                            AVPacket *avpkt)
+static int aac_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                            int *got_frame_ptr, AVPacket *avpkt)
 {
     HAACDecContext *aac = avctx->priv_data;
-    AVFrame *frame = data;
     AACFrameInfo info;
     uint8_t *in_data;
     int ret, in_size;
@@ -84,8 +97,8 @@ static int aac_decode_frame(AVCodecContext *avctx,
         if (ret < 0)
             return 0;
     } else {
-        info.sampRateCore = avctx->sample_rate;
-        info.nChans  = avctx->channels;
+        info.sampRateCore = aac->m4ac.sample_rate ? aac->m4ac.sample_rate : avctx->sample_rate;
+        info.nChans  = aac->m4ac.channels ? aac->m4ac.channels : avctx->ch_layout.nb_channels;
         info.profile = AAC_PROFILE_LC;
         ret = AACSetRawBlockParams(aac->context, 0, &info);
         if (ret < 0)
@@ -104,11 +117,8 @@ static int aac_decode_frame(AVCodecContext *avctx,
     if (!avctx->sample_rate)
          avctx->sample_rate = info.sampRateOut;
 
-    if (!avctx->channels)
-         avctx->channels = info.nChans;
-
-    if (!avctx->channel_layout)
-         avctx->channel_layout = av_get_default_channel_layout(avctx->channels);
+    if (!avctx->ch_layout.nb_channels)
+         av_channel_layout_default(&avctx->ch_layout, info.nChans);
 
     avctx->frame_size = info.outputSamps / info.nChans;
 
@@ -117,7 +127,7 @@ static int aac_decode_frame(AVCodecContext *avctx,
         return ret;
 
     memcpy(frame->extended_data[0], aac->pcm,
-           avctx->channels * avctx->frame_size *
+           avctx->ch_layout.nb_channels * avctx->frame_size *
            av_get_bytes_per_sample(avctx->sample_fmt));
 
     *got_frame_ptr = 1;
@@ -136,19 +146,18 @@ static av_cold int aac_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_libhelix_aac_decoder = {
-    .name                  = "libhelix_aac",
-    .long_name             = NULL_IF_CONFIG_SMALL("libHelix AAC Decoder"),
-    .type                  = AVMEDIA_TYPE_AUDIO,
-    .id                    = AV_CODEC_ID_AAC,
-    .priv_data_size        = sizeof(HAACDecContext),
-    .init                  = aac_decode_init,
-    .decode                = aac_decode_frame,
-    .close                 = aac_decode_close,
-    .capabilities          = AV_CODEC_CAP_DR1,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                                  AV_CH_LAYOUT_STEREO, 0},
-    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
+const FFCodec ff_libhelix_aac_decoder = {
+    .p.name            = "libhelix_aac",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("libHelix AAC Decoder"),
+    .p.type            = AVMEDIA_TYPE_AUDIO,
+    .p.id              = AV_CODEC_ID_AAC,
+    .priv_data_size    = sizeof(HAACDecContext),
+    .init              = aac_decode_init,
+    FF_CODEC_DECODE_CB(aac_decode_frame),
+    .close             = aac_decode_close,
+    .p.capabilities    = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
+    .p.sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                         AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts      = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                     AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };
