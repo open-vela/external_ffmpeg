@@ -22,6 +22,8 @@
 
 #include <inttypes.h>
 
+#include "libavutil/mem_internal.h"
+
 #include "avcodec.h"
 #include "bytestream.h"
 #include "internal.h"
@@ -389,7 +391,6 @@ static int aic_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     uint32_t off;
     int x, y, ret;
     int slice_size;
-    ThreadFrame frame = { .f = data };
 
     ctx->frame            = data;
     ctx->frame->pict_type = AV_PICTURE_TYPE_I;
@@ -408,7 +409,7 @@ static int aic_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         return ret;
     }
 
-    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, ctx->frame, 0)) < 0)
         return ret;
 
     bytestream2_init(&gb, buf + AIC_HDR_SIZE,
@@ -494,7 +495,7 @@ static av_cold int aic_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_aic_decoder = {
+const AVCodec ff_aic_decoder = {
     .name           = "aic",
     .long_name      = NULL_IF_CONFIG_SMALL("Apple Intermediate Codec"),
     .type           = AVMEDIA_TYPE_VIDEO,
