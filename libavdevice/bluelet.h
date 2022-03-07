@@ -59,7 +59,10 @@ typedef struct BlueletPriv {
     int             data_fd;
     enum AVCodecID  codec_id;
     bluelet_state_t state;
-    AVPacket*       lastpkt;
+    union {
+        AVPacket*   lastpkt;
+        bool        available;
+    };
     char*           server_name;
     uint8_t         codec_param[128];
 } BlueletPriv;
@@ -75,5 +78,7 @@ void ff_bluelet_deinit(BlueletPriv* priv);
 int ff_bluelet_read_buffer(BlueletPriv* priv, void* buffer, size_t bytes);
 int ff_bluelet_write_buffer(BlueletPriv* priv, void* buffer, size_t bytes);
 int ff_bluelet_handle_event(BlueletPriv* priv);
+int ff_bluelet_capbility_query_ranges(struct AVOptionRanges** ranges_, void* obj,
+                                      const char* key, int flags);
 
 #endif /* AVDEVICE_BLUELET_H */

@@ -221,6 +221,8 @@ int ff_bluelet_read_buffer(BlueletPriv* priv, void* buffer, size_t bytes)
     ret = recv(priv->data_fd, buffer, bytes, MSG_NOSIGNAL);
     if (ret < 0)
         return AVERROR(errno);
+    else if (ret == 0)
+        return AVERROR_EOF;
 
     return ret;
 }
@@ -314,6 +316,49 @@ error:
     priv->codec_id = AV_CODEC_ID_NONE;
     priv->state = BLUELET_STATE_IDLE;
     return BLUELET_ACTION_AVAILABLE;
+}
+
+int ff_bluelet_capbility_query_ranges(struct AVOptionRanges** ranges_, void* obj,
+                                      const char* key, int flags)
+{
+    struct AVDeviceCapabilitiesQuery* devcap = obj;
+    BlueletPriv* priv = devcap->device_context->priv_data;
+    struct AVOptionRanges* ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    AVOptionRange** range_array = av_mallocz(sizeof(AVOptionRange*));
+    AVOptionRange* range = av_mallocz(sizeof(AVOptionRange));
+    int ret;
+
+    if (!ranges || !range || !range_array) {
+        ret = AVERROR(ENOMEM);
+        goto err;
+    }
+
+    ranges->range = range_array;
+    ranges->range[0] = range;
+    ranges->nb_ranges = 1;
+    ranges->nb_components = 1;
+    range->is_range = 0;
+
+    if (!strcmp(key, "codec")) {
+        range->value_min = priv->codec_id;
+        range->value_max = priv->codec_id;
+    } else if (!strcmp(key, "channels")) {
+        range->value_min = priv->channels;
+        range->value_max = priv->channels;
+    } else if (!strcmp(key, "sample_rates")) {
+        range->value_min = priv->sample_rate;
+        range->value_max = priv->sample_rate;
+    } else {
+        ret = AVERROR(EINVAL);
+        goto err;
+    }
+
+    *ranges_ = ranges;
+    return ranges->nb_components;
+
+err:
+    av_opt_freep_ranges(&ranges);
+    return ret;
 }
 
 int ff_bluelet_handle_event(BlueletPriv* priv)

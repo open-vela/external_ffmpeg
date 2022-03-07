@@ -148,7 +148,7 @@ static int bluelet_write_frame(AVFormatContext* s1, int stream_index, AVFrame** 
 }
 
 static int bluelet_enc_control_message(struct AVFormatContext* ctx, int type,
-    void* data, size_t data_size)
+                                       void* data, size_t data_size)
 {
     BlueletPriv* priv = ctx->priv_data;
     struct pollfd* poll = data;
@@ -214,58 +214,21 @@ static int bluelet_enc_control_message(struct AVFormatContext* ctx, int type,
     return ret;
 }
 
-static int bluelet_capbility_query_ranges(struct AVOptionRanges** ranges_, void* obj,
-    const char* key, int flags)
+static int bluelet_enc_capbility_query_ranges(struct AVOptionRanges** ranges, void* obj,
+                                              const char* key, int flags)
 {
-    struct AVDeviceCapabilitiesQuery* devcap = obj;
-    BlueletPriv* priv = devcap->device_context->priv_data;
-    struct AVOptionRanges* ranges = av_mallocz(sizeof(struct AVOptionRanges));
-    AVOptionRange** range_array = av_mallocz(sizeof(AVOptionRange*));
-    AVOptionRange* range = av_mallocz(sizeof(AVOptionRange));
-    int ret;
-
-    if (!ranges || !range || !range_array) {
-        ret = AVERROR(ENOMEM);
-        goto err;
-    }
-
-    ranges->range = range_array;
-    ranges->range[0] = range;
-    ranges->nb_ranges = 1;
-    ranges->nb_components = 1;
-    range->is_range = 0;
-
-    if (!strcmp(key, "codec")) {
-        range->value_min = priv->codec_id;
-        range->value_max = priv->codec_id;
-    } else if (!strcmp(key, "channels")) {
-        range->value_min = priv->channels;
-        range->value_max = priv->channels;
-    } else if (!strcmp(key, "sample_rates")) {
-        range->value_min = priv->sample_rate;
-        range->value_max = priv->sample_rate;
-    } else {
-        ret = AVERROR(EINVAL);
-        goto err;
-    }
-
-    *ranges_ = ranges;
-    return ranges->nb_components;
-
-err:
-    av_opt_freep_ranges(&ranges);
-    return ret;
+    return ff_bluelet_capbility_query_ranges(ranges, obj, key, flags);
 }
 
 static const AVClass bluelet_enc_cap_class = {
-    .class_name = "BLUELET outdev capbility",
-    .item_name = av_default_item_name,
-    .version = LIBAVUTIL_VERSION_INT,
-    .category = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
-    .query_ranges = bluelet_capbility_query_ranges,
+    .class_name   = "BLUELET outdev capbility",
+    .item_name    = av_default_item_name,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = bluelet_enc_capbility_query_ranges,
 };
 
-static int bluelet_create_device_capabilities(struct AVFormatContext* ctx, struct AVDeviceCapabilitiesQuery* caps)
+static int bluelet_enc_create_device_capabilities(struct AVFormatContext* ctx, struct AVDeviceCapabilitiesQuery* caps)
 {
     BlueletPriv* priv = ctx->priv_data;
 
@@ -277,7 +240,7 @@ static int bluelet_create_device_capabilities(struct AVFormatContext* ctx, struc
     return 0;
 }
 
-static int bluelet_free_device_capabilities(struct AVFormatContext* ctx, struct AVDeviceCapabilitiesQuery* caps)
+static int bluelet_enc_free_device_capabilities(struct AVFormatContext* ctx, struct AVDeviceCapabilitiesQuery* caps)
 {
     return 0;
 }
@@ -291,27 +254,27 @@ static const AVOption options[] = {
 
 static const AVClass bluelet_muxer_class = {
     .class_name = "BLUELET outdev",
-    .item_name = av_default_item_name,
-    .option = options,
-    .version = LIBAVUTIL_VERSION_INT,
-    .category = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
 };
 
 AVOutputFormat ff_bluelet_muxer = {
-    .name = "bluelet",
-    .long_name = NULL_IF_CONFIG_SMALL("BLUELET audio output"),
-    .priv_data_size = sizeof(BlueletPriv),
-    .audio_codec = AV_CODEC_ID_NONE,
-    .video_codec = AV_CODEC_ID_NONE,
-    .init = bluelet_enc_init,
-    .deinit = bluelet_enc_deinit,
-    .write_header = bluelet_write_header,
-    .write_packet = bluelet_write_packet,
-    .write_trailer = bluelet_write_trailer,
-    .control_message = bluelet_enc_control_message,
-    .write_uncoded_frame = bluelet_write_frame,
-    .create_device_capabilities = bluelet_create_device_capabilities,
-    .free_device_capabilities = bluelet_free_device_capabilities,
-    .flags = AVFMT_NOFILE | AVFMT_TS_NONSTRICT,
-    .priv_class = &bluelet_muxer_class,
+    .name                       = "bluelet",
+    .long_name                  = NULL_IF_CONFIG_SMALL("BLUELET audio output"),
+    .priv_data_size             = sizeof(BlueletPriv),
+    .audio_codec                = AV_CODEC_ID_NONE,
+    .video_codec                = AV_CODEC_ID_NONE,
+    .init                       = bluelet_enc_init,
+    .deinit                     = bluelet_enc_deinit,
+    .write_header               = bluelet_write_header,
+    .write_packet               = bluelet_write_packet,
+    .write_trailer              = bluelet_write_trailer,
+    .control_message            = bluelet_enc_control_message,
+    .write_uncoded_frame        = bluelet_write_frame,
+    .create_device_capabilities = bluelet_enc_create_device_capabilities,
+    .free_device_capabilities   = bluelet_enc_free_device_capabilities,
+    .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT,
+    .priv_class                 = &bluelet_muxer_class,
 };

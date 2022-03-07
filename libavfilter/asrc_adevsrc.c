@@ -124,6 +124,9 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
             ff_filter_set_ready(ctx, 300);
         else
             avdevsrc_force_request(ctx);
+    } else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
+        avfilter_graph_reconfig(ctx->graph, NULL);
+        ff_filter_set_ready(ctx, 100);
     }
 
     return 0;
@@ -268,39 +271,8 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     int ret, i;
 
     ret = avdevice_capabilities_create(&caps, priv->fmt_ctx, NULL);
-    if (ret < 0) {
-        AVCodecContext *codec_ctx = priv->dec_ctx;
-
-        if (ret != AVERROR(ENOSYS))
-            return ret;
-
-        if (!codec_ctx)
-            return FFERROR_NOT_READY;
-
-        if ((ret = ff_add_format(&formats, codec_ctx->sample_fmt)) < 0)
-            return ret;
-
-        if ((ret = ff_set_common_formats(ctx, formats)) < 0)
-            return ret;
-
-        if (!codec_ctx->channel_layout)
-            codec_ctx->channel_layout = av_get_default_channel_layout(codec_ctx->channels);
-
-        if ((ret = ff_add_channel_layout(&layouts, codec_ctx->channel_layout)) < 0)
-            return ret;
-
-        if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
-            return ret;
-
-        formats = NULL;
-        if ((ret = ff_add_format(&formats, codec_ctx->sample_rate)) < 0)
-            return ret;
-
-        if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
-            return ret;
-
-        return 0;
-    }
+    if (ret < 0)
+        return ret == AVERROR(ENOSYS) ? 0 : ret;
 
     if (priv->sample_fmt != AV_SAMPLE_FMT_NONE) {
         ret = ff_add_format(&formats, priv->sample_fmt);
@@ -430,7 +402,7 @@ static int adevsrc_config_props(AVFilterLink *link)
     return 0;
 }
 
-static void* adevsrc_child_next(void *obj, void *prev)
+static void *adevsrc_child_next(void *obj, void *prev)
 {
     ADevSrcPriv *priv = obj;
 
@@ -438,6 +410,16 @@ static void* adevsrc_child_next(void *obj, void *prev)
         return priv->fmt_ctx;
     else if (prev == priv->fmt_ctx)
         return priv->dec_ctx;
+    else
+        return NULL;
+}
+
+static const struct AVClass* adevsrc_child_class_next(const struct AVClass *prev)
+{
+    if (!prev)
+        return avformat_get_class();
+    else if (prev == avformat_get_class())
+        return avcodec_get_class();
     else
         return NULL;
 }
@@ -462,6 +444,7 @@ static const AVClass adevsrc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
     .category   = AV_CLASS_CATEGORY_FILTER,
     .child_next = adevsrc_child_next,
+    .child_class_next = adevsrc_child_class_next,
 };
 
 static const AVFilterPad adevsrc_outputs[] = {
