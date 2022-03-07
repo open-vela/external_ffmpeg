@@ -91,6 +91,9 @@ struct Resampler {
 
 extern struct Resampler const swri_resampler;
 extern struct Resampler const swri_soxr_resampler;
+#if CONFIG_HIFI4SRC
+extern struct Resampler const swri_hifi4_resampler;
+#endif
 
 struct SwrContext {
     const AVClass *av_class;                        ///< AVClass used for AVOption and av_log()
@@ -99,8 +102,8 @@ struct SwrContext {
     enum AVSampleFormat  in_sample_fmt;             ///< input sample format
     enum AVSampleFormat int_sample_fmt;             ///< internal sample format (AV_SAMPLE_FMT_FLTP or AV_SAMPLE_FMT_S16P)
     enum AVSampleFormat out_sample_fmt;             ///< output sample format
-    AVChannelLayout  in_ch_layout;                  ///< input channel layout
-    AVChannelLayout out_ch_layout;                  ///< output channel layout
+    int64_t  in_ch_layout;                          ///< input channel layout
+    int64_t out_ch_layout;                          ///< output channel layout
     int      in_sample_rate;                        ///< input sample rate
     int     out_sample_rate;                        ///< output sample rate
     int flags;                                      ///< miscellaneous flags such as SWR_FLAG_RESAMPLE
@@ -114,15 +117,11 @@ struct SwrContext {
     int used_ch_count;                              ///< number of used input channels (mapped channel count if channel_map, otherwise in.ch_count)
     int engine;
 
-    int user_used_ch_count;                         ///< User set used channel count
-#if FF_API_OLD_CHANNEL_LAYOUT
     int user_in_ch_count;                           ///< User set input channel count
     int user_out_ch_count;                          ///< User set output channel count
+    int user_used_ch_count;                         ///< User set used channel count
     int64_t user_in_ch_layout;                      ///< User set input channel layout
     int64_t user_out_ch_layout;                     ///< User set output channel layout
-#endif
-    AVChannelLayout user_in_chlayout;               ///< User set input channel layout
-    AVChannelLayout user_out_chlayout;              ///< User set output channel layout
     enum AVSampleFormat user_int_sample_fmt;        ///< User set internal sample format
     int user_dither_method;                         ///< User set dither method
 

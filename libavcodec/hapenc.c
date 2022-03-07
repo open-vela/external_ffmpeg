@@ -39,9 +39,8 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
-#include "encode.h"
 #include "hap.h"
+#include "internal.h"
 #include "texturedsp.h"
 
 #define HAP_MAX_CHUNKS 64
@@ -201,7 +200,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     int pktsize = FFMAX(ctx->tex_size, ctx->max_snappy * ctx->chunk_count) + header_length;
 
     /* Allocate maximum size packet, shrink later. */
-    ret = ff_alloc_packet(avctx, pkt, pktsize);
+    ret = ff_alloc_packet2(avctx, pkt, pktsize, header_length);
     if (ret < 0)
         return ret;
 
@@ -229,6 +228,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     hap_write_frame_header(ctx, pkt->data, final_data_size + header_length);
 
     av_shrink_packet(pkt, final_data_size + header_length);
+    pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
     return 0;
 }
@@ -349,17 +349,17 @@ static const AVClass hapenc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_hap_encoder = {
-    .p.name         = "hap",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_HAP,
+AVCodec ff_hap_encoder = {
+    .name           = "hap",
+    .long_name      = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HAP,
     .priv_data_size = sizeof(HapContext),
-    .p.priv_class   = &hapenc_class,
+    .priv_class     = &hapenc_class,
     .init           = hap_init,
-    FF_CODEC_ENCODE_CB(hap_encode),
+    .encode2        = hap_encode,
     .close          = hap_close,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) {
+    .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE,
     },
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
