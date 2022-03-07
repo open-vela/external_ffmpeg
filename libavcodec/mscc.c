@@ -26,9 +26,7 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
-#include "zlib_wrapper.h"
 
 #include <zlib.h>
 
@@ -38,7 +36,7 @@ typedef struct MSCCContext {
     uint8_t          *decomp_buf;
     unsigned int      uncomp_size;
     uint8_t          *uncomp_buf;
-    FFZStream         zstream;
+    z_stream          zstream;
 
     uint32_t          pal[256];
 } MSCCContext;
@@ -129,11 +127,12 @@ static int rle_uncompress(AVCodecContext *avctx, GetByteContext *gb, PutByteCont
     return AVERROR_INVALIDDATA;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx,
+                        void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     MSCCContext *s = avctx->priv_data;
-    z_stream *const zstream = &s->zstream.zstream;
+    AVFrame *frame = data;
     uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     GetByteContext gb;
@@ -153,7 +152,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     }
 
     if (avctx->pix_fmt == AV_PIX_FMT_PAL8) {
-        size_t size;
+        int size;
         const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
 
         if (pal && size == AVPALETTE_SIZE) {
@@ -161,28 +160,27 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
             for (j = 0; j < 256; j++)
                 s->pal[j] = 0xFF000000 | AV_RL32(pal + j * 4);
         } else if (pal) {
-            av_log(avctx, AV_LOG_ERROR,
-                   "Palette size %"SIZE_SPECIFIER" is wrong\n", size);
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
         memcpy(frame->data[1], s->pal, AVPALETTE_SIZE);
     }
 
-    ret = inflateReset(zstream);
+    ret = inflateReset(&s->zstream);
     if (ret != Z_OK) {
         av_log(avctx, AV_LOG_ERROR, "Inflate reset error: %d\n", ret);
         return AVERROR_UNKNOWN;
     }
-    zstream->next_in   = buf;
-    zstream->avail_in  = buf_size;
-    zstream->next_out  = s->decomp_buf;
-    zstream->avail_out = s->decomp_size;
-    ret = inflate(zstream, Z_FINISH);
+    s->zstream.next_in   = buf;
+    s->zstream.avail_in  = buf_size;
+    s->zstream.next_out  = s->decomp_buf;
+    s->zstream.avail_out = s->decomp_size;
+    ret = inflate(&s->zstream, Z_FINISH);
     if (ret != Z_STREAM_END) {
         av_log(avctx, AV_LOG_ERROR, "Inflate error: %d\n", ret);
         return AVERROR_UNKNOWN;
     }
 
-    bytestream2_init(&gb, s->decomp_buf, zstream->total_out);
+    bytestream2_init(&gb, s->decomp_buf, s->zstream.total_out);
     bytestream2_init_writer(&pb, s->uncomp_buf, s->uncomp_size);
 
     ret = rle_uncompress(avctx, &gb, &pb);
@@ -205,7 +203,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     MSCCContext *s = avctx->priv_data;
-    int stride;
+    int stride, zret;
 
     switch (avctx->bits_per_coded_sample) {
     case  8: avctx->pix_fmt = AV_PIX_FMT_PAL8;   break;
@@ -228,7 +226,16 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (!(s->uncomp_buf = av_malloc(s->uncomp_size)))
         return AVERROR(ENOMEM);
 
-    return ff_inflate_init(&s->zstream, avctx);
+    s->zstream.zalloc = Z_NULL;
+    s->zstream.zfree = Z_NULL;
+    s->zstream.opaque = Z_NULL;
+    zret = inflateInit(&s->zstream);
+    if (zret != Z_OK) {
+        av_log(avctx, AV_LOG_ERROR, "Inflate init error: %d\n", zret);
+        return AVERROR_UNKNOWN;
+    }
+
+    return 0;
 }
 
 static av_cold int decode_close(AVCodecContext *avctx)
@@ -239,33 +246,33 @@ static av_cold int decode_close(AVCodecContext *avctx)
     s->decomp_size = 0;
     av_freep(&s->uncomp_buf);
     s->uncomp_size = 0;
-    ff_inflate_end(&s->zstream);
+    inflateEnd(&s->zstream);
 
     return 0;
 }
 
-const FFCodec ff_mscc_decoder = {
-    .p.name           = "mscc",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("Mandsoft Screen Capture Codec"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_MSCC,
+AVCodec ff_mscc_decoder = {
+    .name             = "mscc",
+    .long_name        = NULL_IF_CONFIG_SMALL("Mandsoft Screen Capture Codec"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_MSCC,
     .priv_data_size   = sizeof(MSCCContext),
     .init             = decode_init,
     .close            = decode_close,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1,
+    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };
 
-const FFCodec ff_srgc_decoder = {
-    .p.name           = "srgc",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("Screen Recorder Gold Codec"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_SRGC,
+AVCodec ff_srgc_decoder = {
+    .name             = "srgc",
+    .long_name        = NULL_IF_CONFIG_SMALL("Screen Recorder Gold Codec"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_SRGC,
     .priv_data_size   = sizeof(MSCCContext),
     .init             = decode_init,
     .close            = decode_close,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1,
+    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };

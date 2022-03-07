@@ -37,8 +37,8 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "hap.h"
+#include "internal.h"
 #include "snappy.h"
 #include "texturedsp.h"
 #include "thread.h"
@@ -105,8 +105,6 @@ static int hap_parse_decode_instructions(HapContext *ctx, int size)
         size_t running_size = 0;
         for (i = 0; i < ctx->chunk_count; i++) {
             ctx->chunks[i].compressed_offset = running_size;
-            if (ctx->chunks[i].compressed_size > UINT32_MAX - running_size)
-                return AVERROR_INVALIDDATA;
             running_size += ctx->chunks[i].compressed_size;
         }
     }
@@ -188,7 +186,7 @@ static int hap_parse_frame_header(AVCodecContext *avctx)
         HapChunk *chunk = &ctx->chunks[i];
 
         /* Check the compressed buffer is valid */
-        if (chunk->compressed_offset + (uint64_t)chunk->compressed_size > bytestream2_get_bytes_left(gbc))
+        if (chunk->compressed_offset + chunk->compressed_size > bytestream2_get_bytes_left(gbc))
             return AVERROR_INVALIDDATA;
 
         /* Chunks are unpacked sequentially, ctx->tex_size is the uncompressed
@@ -301,10 +299,11 @@ static int decompress_texture2_thread(AVCodecContext *avctx, void *arg,
     return decompress_texture_thread_internal(avctx, arg, slice, thread_nb, 1);
 }
 
-static int hap_decode(AVCodecContext *avctx, AVFrame *frame,
+static int hap_decode(AVCodecContext *avctx, void *data,
                       int *got_frame, AVPacket *avpkt)
 {
     HapContext *ctx = avctx->priv_data;
+    ThreadFrame tframe;
     int ret, i, t;
     int section_size;
     enum HapSectionType section_type;
@@ -329,7 +328,8 @@ static int hap_decode(AVCodecContext *avctx, AVFrame *frame,
     }
 
     /* Get the output frame ready to receive data */
-    ret = ff_thread_get_buffer(avctx, frame, 0);
+    tframe.f = data;
+    ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
 
@@ -349,6 +349,9 @@ static int hap_decode(AVCodecContext *avctx, AVFrame *frame,
         }
 
         start_texture_section += ctx->texture_section_size + 4;
+
+        if (avctx->codec->update_thread_context)
+            ff_thread_finish_setup(avctx);
 
         /* Unpack the DXT texture */
         if (hap_can_use_tex_in_place(ctx)) {
@@ -381,15 +384,16 @@ static int hap_decode(AVCodecContext *avctx, AVFrame *frame,
 
         /* Use the decompress function on the texture, one block per thread */
         if (t == 0){
-            avctx->execute2(avctx, decompress_texture_thread, frame, NULL, ctx->slice_count);
+            avctx->execute2(avctx, decompress_texture_thread, tframe.f, NULL, ctx->slice_count);
         } else{
-            avctx->execute2(avctx, decompress_texture2_thread, frame, NULL, ctx->slice_count);
+            tframe.f = data;
+            avctx->execute2(avctx, decompress_texture2_thread, tframe.f, NULL, ctx->slice_count);
         }
     }
 
     /* Frame is ready to be output */
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->key_frame = 1;
+    tframe.f->pict_type = AV_PICTURE_TYPE_I;
+    tframe.f->key_frame = 1;
     *got_frame = 1;
 
     return avpkt->size;
@@ -472,16 +476,16 @@ static av_cold int hap_close(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_hap_decoder = {
-    .p.name         = "hap",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_HAP,
+AVCodec ff_hap_decoder = {
+    .name           = "hap",
+    .long_name      = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HAP,
     .init           = hap_init,
-    FF_CODEC_DECODE_CB(hap_decode),
+    .decode         = hap_decode,
     .close          = hap_close,
     .priv_data_size = sizeof(HapContext),
-    .p.capabilities = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS |
+    .capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS |
                       AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
