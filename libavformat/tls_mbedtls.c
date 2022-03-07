@@ -223,14 +223,16 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     }
 
     mbedtls_ssl_conf_authmode(&tls_ctx->ssl_config,
-                              shr->verify ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_NONE);
+                              shr->ca_file ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_NONE);
     mbedtls_ssl_conf_rng(&tls_ctx->ssl_config, mbedtls_ctr_drbg_random, &tls_ctx->ctr_drbg_context);
     mbedtls_ssl_conf_ca_chain(&tls_ctx->ssl_config, &tls_ctx->ca_cert, NULL);
 
     // set own certificate and private key
-    if ((ret = mbedtls_ssl_conf_own_cert(&tls_ctx->ssl_config, &tls_ctx->own_cert, &tls_ctx->priv_key)) != 0) {
-        av_log(h, AV_LOG_ERROR, "mbedtls_ssl_conf_own_cert returned %d\n", ret);
-        goto fail;
+    if (shr->key_file) {
+        if ((ret = mbedtls_ssl_conf_own_cert(&tls_ctx->ssl_config, &tls_ctx->own_cert, &tls_ctx->priv_key)) != 0) {
+            av_log(h, AV_LOG_ERROR, "mbedtls_ssl_conf_own_cert returned %d\n", ret);
+            goto fail;
+        }
     }
 
     if ((ret = mbedtls_ssl_setup(&tls_ctx->ssl_context, &tls_ctx->ssl_config)) != 0) {
@@ -260,7 +262,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         // check the result of the certificate verification
         if ((verify_res_flags = mbedtls_ssl_get_verify_result(&tls_ctx->ssl_context)) != 0) {
             av_log(h, AV_LOG_ERROR, "mbedtls_ssl_get_verify_result reported problems "\
-                                    "with the certificate verification, returned flags: %u\n",
+                                    "with the certificate verification, returned flags: %"PRIu32"\n",
                                     verify_res_flags);
             if (verify_res_flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED)
                 av_log(h, AV_LOG_ERROR, "The certificate is not correctly signed by the trusted CA.\n");
@@ -326,12 +328,6 @@ static int tls_get_file_handle(URLContext *h)
     return ffurl_get_file_handle(c->tls_shared.tcp);
 }
 
-static int tls_get_short_seek(URLContext *h)
-{
-    TLSContext *s = h->priv_data;
-    return ffurl_get_short_seek(s->tls_shared.tcp);
-}
-
 static const AVOption options[] = {
     TLS_COMMON_OPTIONS(TLSContext, tls_shared), \
     {"key_password", "Password for the private key file", OFFSET(priv_key_pw),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
@@ -352,7 +348,6 @@ const URLProtocol ff_tls_protocol = {
     .url_write      = tls_write,
     .url_close      = tls_close,
     .url_get_file_handle = tls_get_file_handle,
-    .url_get_short_seek  = tls_get_short_seek,
     .priv_data_size = sizeof(TLSContext),
     .flags          = URL_PROTOCOL_FLAG_NETWORK,
     .priv_data_class = &tls_class,
