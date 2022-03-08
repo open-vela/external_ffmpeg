@@ -89,6 +89,7 @@ static int v410_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame, AVPacket *avpkt)
 {
     ThreadData td;
+    ThreadFrame frame = { .f = data };
     AVFrame *pic = data;
     uint8_t *src = avpkt->data;
     int ret;
@@ -100,7 +101,7 @@ static int v410_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR(EINVAL);
     }
 
-    if ((ret = ff_thread_get_buffer(avctx, pic, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
 
     pic->key_frame = 1;
@@ -115,7 +116,7 @@ static int v410_decode_frame(AVCodecContext *avctx, void *data,
     return avpkt->size;
 }
 
-const AVCodec ff_v410_decoder = {
+AVCodec ff_v410_decoder = {
     .name         = "v410",
     .long_name    = NULL_IF_CONFIG_SMALL("Uncompressed 4:4:4 10-bit"),
     .type         = AVMEDIA_TYPE_VIDEO,
@@ -123,6 +124,5 @@ const AVCodec ff_v410_decoder = {
     .init         = v410_decode_init,
     .decode       = v410_decode_frame,
     .capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS |
-                    AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal = FF_CODEC_CAP_INIT_THREADSAFE,
+                    AV_CODEC_CAP_FRAME_THREADS
 };

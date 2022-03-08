@@ -21,7 +21,7 @@
  */
 
 #include "hwconfig.h"
-#include "mpegvideodec.h"
+#include "internal.h"
 #include "vaapi_decode.h"
 #include "vc1.h"
 #include "vc1data.h"
