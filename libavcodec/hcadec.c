@@ -19,7 +19,6 @@
 #include "libavutil/crc.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/tx.h"
 
 #include "avcodec.h"
@@ -158,10 +157,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     } else
         return AVERROR_INVALIDDATA;
 
-    if (c->total_band_count > FF_ARRAY_ELEMS(c->ch->imdct_in))
-        return AVERROR_INVALIDDATA;
-
-
     while (get_bits_left(gb) >= 32) {
         chunk = get_bits_long(gb, 32);
         if (chunk == MKBETAG('v', 'b', 'r', 0)) {
@@ -268,7 +263,7 @@ static void apply_intensity_stereo(HCAContext *s, ChannelContext *ch1, ChannelCo
                                    int index, unsigned band_count, unsigned base_band_count,
                                    unsigned stereo_band_count)
 {
-    float ratio_l = intensity_ratio_table[ch2->intensity[index]];
+    float ratio_l = intensity_ratio_table[ch1->intensity[index]];
     float ratio_r = ratio_l - 2.0f;
     float *c1 = &ch1->imdct_in[base_band_count];
     float *c2 = &ch2->imdct_in[base_band_count];
@@ -292,8 +287,7 @@ static void reconstruct_hfr(HCAContext *s, ChannelContext *ch,
 
     for (int i = 0, k = start_band, l = start_band - 1; i < hfr_group_count; i++){
         for (int j = 0; j < bands_per_hfr_group && k < total_band_count && l >= 0; j++, k++, l--){
-            ch->imdct_in[k] = scale_conversion_table[ scale_conv_bias +
-                av_clip_intp2(ch->hfr_scale[i] - ch->scale_factors[l], 6) ] * ch->imdct_in[l];
+            ch->imdct_in[k] = scale_conversion_table[ (ch->hfr_scale[i] - ch->scale_factors[l]) & 63 ] * ch->imdct_in[l];
         }
     }
 
@@ -445,7 +439,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_hca_decoder = {
+AVCodec ff_hca_decoder = {
     .name           = "hca",
     .long_name      = NULL_IF_CONFIG_SMALL("CRI HCA"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -455,7 +449,6 @@ const AVCodec ff_hca_decoder = {
     .decode         = decode_frame,
     .close          = decode_close,
     .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };
