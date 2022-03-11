@@ -1,6 +1,7 @@
 clean::
 	$(RM) $(CLEANSUFFIXES:%=libavcodec/bsf/%)
 
+OBJS-$(CONFIG_A2DP_RECHUNK_BSF)           += bsf/a2dp_rechunk.o
 OBJS-$(CONFIG_AAC_ADTSTOASC_BSF)          += bsf/aac_adtstoasc.o
 OBJS-$(CONFIG_AV1_FRAME_MERGE_BSF)        += bsf/av1_frame_merge.o
 OBJS-$(CONFIG_AV1_FRAME_SPLIT_BSF)        += bsf/av1_frame_split.o

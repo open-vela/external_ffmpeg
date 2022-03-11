@@ -1251,6 +1251,7 @@ OBJS-$(CONFIG_XWD_PARSER)              += xwd_parser.o
 # bitstream filters
 include $(SRC_PATH)/libavcodec/bsf/Makefile
 
+OBJS-$(CONFIG_A2DP_RECHUNK_BSF)           += sbc_parser.o
 OBJS-$(CONFIG_EXTRACT_EXTRADATA_BSF)      += av1_parse.o h2645_parse.o
 OBJS-$(CONFIG_H264_METADATA_BSF)          += h264_levels.o h2645data.o
 OBJS-$(CONFIG_HAPQA_EXTRACT_BSF)          += hap.o
