@@ -20,8 +20,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <string.h>
+
 #include "config.h"
 
+#include "libavutil/attributes.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/mdct15.h"
 
