@@ -21,11 +21,12 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/dct.h"
-#include "libavcodec/mpegvideo.h"
+#include "libavcodec/mpegvideoenc.h"
 
 /* not permutated inverse zigzag_direct + 1 for MMX quantizer */
 DECLARE_ALIGNED(16, static const uint16_t, inv_zigzag_direct16)[64] = {
