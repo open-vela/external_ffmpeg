@@ -56,18 +56,17 @@ static av_cold int cng_decode_init(AVCodecContext *avctx)
     CNGContext *p = avctx->priv_data;
 
     avctx->sample_fmt  = AV_SAMPLE_FMT_S16;
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout   = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    avctx->channels    = 1;
     avctx->sample_rate = 8000;
 
     p->order            = 12;
     avctx->frame_size   = 640;
-    p->refl_coef        = av_calloc(p->order, sizeof(*p->refl_coef));
-    p->target_refl_coef = av_calloc(p->order, sizeof(*p->target_refl_coef));
-    p->lpc_coef         = av_calloc(p->order, sizeof(*p->lpc_coef));
-    p->filter_out       = av_calloc(avctx->frame_size + p->order,
+    p->refl_coef        = av_mallocz_array(p->order, sizeof(*p->refl_coef));
+    p->target_refl_coef = av_mallocz_array(p->order, sizeof(*p->target_refl_coef));
+    p->lpc_coef         = av_mallocz_array(p->order, sizeof(*p->lpc_coef));
+    p->filter_out       = av_mallocz_array(avctx->frame_size + p->order,
                                      sizeof(*p->filter_out));
-    p->excitation       = av_calloc(avctx->frame_size, sizeof(*p->excitation));
+    p->excitation       = av_mallocz_array(avctx->frame_size, sizeof(*p->excitation));
     if (!p->refl_coef || !p->target_refl_coef || !p->lpc_coef ||
         !p->filter_out || !p->excitation) {
         return AVERROR(ENOMEM);
@@ -162,7 +161,7 @@ static int cng_decode_frame(AVCodecContext *avctx, void *data,
     return buf_size;
 }
 
-const AVCodec ff_comfortnoise_decoder = {
+AVCodec ff_comfortnoise_decoder = {
     .name           = "comfortnoise",
     .long_name      = NULL_IF_CONFIG_SMALL("RFC 3389 comfort noise generator"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -174,7 +173,7 @@ const AVCodec ff_comfortnoise_decoder = {
     .close          = cng_decode_close,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };

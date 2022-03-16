@@ -23,8 +23,6 @@
 
 #include "libavutil/float_dsp.h"
 #include "libavutil/internal.h"
-#include "libavutil/mem_internal.h"
-
 #include "checkasm.h"
 
 #define LEN 256

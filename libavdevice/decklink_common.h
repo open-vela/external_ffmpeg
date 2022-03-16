@@ -29,9 +29,6 @@
 #define IDeckLinkProfileAttributes IDeckLinkAttributes
 #endif
 
-extern "C" {
-#include "libavcodec/packet_internal.h"
-}
 #include "libavutil/thread.h"
 #include "decklink_common_c.h"
 #if CONFIG_LIBKLVANC
@@ -78,7 +75,7 @@ class decklink_output_callback;
 class decklink_input_callback;
 
 typedef struct AVPacketQueue {
-    PacketList pkt_list;
+    AVPacketList *first_pkt, *last_pkt;
     int nb_packets;
     unsigned long long size;
     int abort_request;
@@ -123,18 +120,15 @@ struct decklink_ctx {
     unsigned int dropped;
     AVStream *audio_st;
     AVStream *video_st;
-    AVStream *klv_st;
     AVStream *teletext_st;
     uint16_t cdp_sequence_num;
 
     /* Options */
     int list_devices;
     int list_formats;
-    int enable_klv;
     int64_t teletext_lines;
     double preroll;
     int duplex_mode;
-    BMDLinkConfiguration link;
     DecklinkPtsSource audio_pts_source;
     DecklinkPtsSource video_pts_source;
     int draw_bars;
@@ -159,14 +153,16 @@ struct decklink_ctx {
 
 typedef enum { DIRECTION_IN, DIRECTION_OUT} decklink_direction_t;
 
-static const BMDPixelFormat decklink_raw_format_map[] = {
-    (BMDPixelFormat)0,
-    bmdFormat8BitYUV,
-    bmdFormat10BitYUV,
-    bmdFormat8BitARGB,
-    bmdFormat8BitBGRA,
-    bmdFormat10BitRGB,
-};
+#ifdef _WIN32
+#if BLACKMAGIC_DECKLINK_API_VERSION < 0x0a040000
+typedef unsigned long buffercount_type;
+#else
+typedef unsigned int buffercount_type;
+#endif
+IDeckLinkIterator *CreateDeckLinkIteratorInstance(void);
+#else
+typedef uint32_t buffercount_type;
+#endif
 
 static const BMDAudioConnection decklink_audio_connection_map[] = {
     (BMDAudioConnection)0,
@@ -197,30 +193,7 @@ static const BMDTimecodeFormat decklink_timecode_format_map[] = {
     bmdTimecodeVITC,
     bmdTimecodeVITCField2,
     bmdTimecodeSerial,
-#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
-    bmdTimecodeRP188HighFrameRate,
-#else
-    (BMDTimecodeFormat)0,
-#endif
 };
-
-static const BMDLinkConfiguration decklink_link_conf_map[] = {
-    (BMDLinkConfiguration)0,
-    bmdLinkConfigurationSingleLink,
-    bmdLinkConfigurationDualLink,
-    bmdLinkConfigurationQuadLink
-};
-
-#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
-static const BMDProfileID decklink_profile_id_map[] = {
-    (BMDProfileID)0,
-    bmdProfileTwoSubDevicesHalfDuplex,
-    bmdProfileOneSubDeviceFullDuplex,
-    bmdProfileOneSubDeviceHalfDuplex,
-    bmdProfileTwoSubDevicesFullDuplex,
-    bmdProfileFourSubDevicesHalfDuplex,
-};
-#endif
 
 int ff_decklink_set_configs(AVFormatContext *avctx, decklink_direction_t direction);
 int ff_decklink_set_format(AVFormatContext *avctx, int width, int height, int tb_num, int tb_den, enum AVFieldOrder field_order, decklink_direction_t direction = DIRECTION_OUT);

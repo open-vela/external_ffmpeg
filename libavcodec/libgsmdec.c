@@ -28,7 +28,6 @@
 // The idiosyncrasies of GSM-in-WAV are explained at http://kbs.cs.tu-berlin.de/~jutta/toast.html
 
 #include "config.h"
-#include "config_components.h"
 #if HAVE_GSM_H
 #include <gsm.h>
 #else
@@ -49,8 +48,8 @@ typedef struct LibGSMDecodeContext {
 static av_cold int libgsm_decode_init(AVCodecContext *avctx) {
     LibGSMDecodeContext *s = avctx->priv_data;
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    avctx->channels       = 1;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
     if (!avctx->sample_rate)
         avctx->sample_rate = 8000;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
@@ -125,7 +124,7 @@ static void libgsm_flush(AVCodecContext *avctx) {
 }
 
 #if CONFIG_LIBGSM_DECODER
-const AVCodec ff_libgsm_decoder = {
+AVCodec ff_libgsm_decoder = {
     .name           = "libgsm",
     .long_name      = NULL_IF_CONFIG_SMALL("libgsm GSM"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -135,12 +134,12 @@ const AVCodec ff_libgsm_decoder = {
     .close          = libgsm_decode_close,
     .decode         = libgsm_decode_frame,
     .flush          = libgsm_flush,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .wrapper_name   = "libgsm",
 };
 #endif
 #if CONFIG_LIBGSM_MS_DECODER
-const AVCodec ff_libgsm_ms_decoder = {
+AVCodec ff_libgsm_ms_decoder = {
     .name           = "libgsm_ms",
     .long_name      = NULL_IF_CONFIG_SMALL("libgsm GSM Microsoft variant"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -150,7 +149,7 @@ const AVCodec ff_libgsm_ms_decoder = {
     .close          = libgsm_decode_close,
     .decode         = libgsm_decode_frame,
     .flush          = libgsm_flush,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .wrapper_name   = "libgsm",
 };
 #endif
