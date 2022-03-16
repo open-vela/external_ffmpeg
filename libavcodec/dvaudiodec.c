@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "internal.h"
@@ -36,6 +35,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
     DVAudioContext *s = avctx->priv_data;
     int i;
 
+    if (avctx->channels != 2) {
+        av_log(avctx, AV_LOG_ERROR, "invalid number of channels\n");
+        return AVERROR(EINVAL);
+    }
+
     if (avctx->codec_tag == 0x0215) {
         s->block_size = 7200;
     } else if (avctx->codec_tag == 0x0216) {
@@ -50,8 +54,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->is_pal = s->block_size == 8640;
     s->is_12bit = avctx->bits_per_coded_sample == 12;
     avctx->sample_fmt = AV_SAMPLE_FMT_S16;
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+    avctx->channel_layout = AV_CH_LAYOUT_STEREO;
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->shuffle); i++) {
         const unsigned a = s->is_pal ? 18 : 15;
@@ -118,7 +121,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     return s->block_size;
 }
 
-const AVCodec ff_dvaudio_decoder = {
+AVCodec ff_dvaudio_decoder = {
     .name           = "dvaudio",
     .long_name      = NULL_IF_CONFIG_SMALL("Ulead DV Audio"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -127,5 +130,4 @@ const AVCodec ff_dvaudio_decoder = {
     .decode         = decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(DVAudioContext),
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

@@ -19,12 +19,8 @@
 *.swp
 *.ver
 *.version
-*.metal.air
-*.metallib
-*.metallib.c
 *.ptx
 *.ptx.c
-*.ptx.gz
 *_g
 \#*
 .\#*
@@ -36,7 +32,12 @@
 /config.asm
 /config.h
 /coverage.info
+/avversion.h
 /lcov/
 /src
 /mapfile
 /tools/python/__pycache__/
+.built
+.depend
+Make.dep
+tags

@@ -18,14 +18,13 @@
 
 #include <float.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/tx.h"
 #include "internal.h"
-
-#define MAX_THREADS 32
+#include "libavcodec/avfft.h"
 
 enum BufferTypes {
     CURRENT,
@@ -42,10 +41,11 @@ typedef struct PlaneContext {
     float n;
 
     float *buffer[BSIZE];
-    AVComplexFloat *hdata[MAX_THREADS], *vdata[MAX_THREADS];
-    AVComplexFloat *hdata_out[MAX_THREADS], *vdata_out[MAX_THREADS];
+    FFTComplex *hdata, *vdata;
     int data_linesize;
     int buffer_linesize;
+
+    FFTContext *fft, *ifft;
 } PlaneContext;
 
 typedef struct FFTdnoizContext {
@@ -63,24 +63,19 @@ typedef struct FFTdnoizContext {
 
     int depth;
     int nb_planes;
-    int nb_threads;
     PlaneContext planes[4];
 
-    AVTXContext *fft[MAX_THREADS], *ifft[MAX_THREADS];
-    av_tx_fn tx_fn, itx_fn;
-
-    void (*import_row)(AVComplexFloat *dst, uint8_t *src, int rw);
-    void (*export_row)(AVComplexFloat *src, uint8_t *dst, int rw, float scale, int depth);
+    void (*import_row)(FFTComplex *dst, uint8_t *src, int rw);
+    void (*export_row)(FFTComplex *src, uint8_t *dst, int rw, float scale, int depth);
 } FFTdnoizContext;
 
 #define OFFSET(x) offsetof(FFTdnoizContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
-#define TFLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption fftdnoiz_options[] = {
     { "sigma",   "set denoise strength",
-        OFFSET(sigma),      AV_OPT_TYPE_FLOAT, {.dbl=1},        0,  30, .flags = TFLAGS },
+        OFFSET(sigma),      AV_OPT_TYPE_FLOAT, {.dbl=1},        0,  30, .flags = FLAGS },
     { "amount",  "set amount of denoising",
-        OFFSET(amount),     AV_OPT_TYPE_FLOAT, {.dbl=1},     0.01,   1, .flags = TFLAGS },
+        OFFSET(amount),     AV_OPT_TYPE_FLOAT, {.dbl=1},     0.01,   1, .flags = FLAGS },
     { "block",   "set block log2(size)",
         OFFSET(block_bits), AV_OPT_TYPE_INT,   {.i64=4},        3,   6, .flags = FLAGS },
     { "overlap", "set block overlap",
@@ -90,44 +85,68 @@ static const AVOption fftdnoiz_options[] = {
     { "next",    "set number of next frames for temporal denoising",
         OFFSET(nb_next),    AV_OPT_TYPE_INT,   {.i64=0},        0,   1, .flags = FLAGS },
     { "planes",  "set planes to filter",
-        OFFSET(planesf),    AV_OPT_TYPE_INT,   {.i64=7},        0,  15, .flags = TFLAGS },
+        OFFSET(planesf),    AV_OPT_TYPE_INT,   {.i64=7},        0,  15, .flags = FLAGS },
     { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(fftdnoiz);
 
-static const enum AVPixelFormat pix_fmts[] = {
-    AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY9,
-    AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12,
-    AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
-    AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV411P,
-    AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P,
-    AV_PIX_FMT_YUV440P, AV_PIX_FMT_YUV444P,
-    AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ422P,
-    AV_PIX_FMT_YUVJ440P, AV_PIX_FMT_YUVJ444P,
-    AV_PIX_FMT_YUVJ411P,
-    AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9,
-    AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10,
-    AV_PIX_FMT_YUV440P10,
-    AV_PIX_FMT_YUV444P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV420P12,
-    AV_PIX_FMT_YUV440P12,
-    AV_PIX_FMT_YUV444P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV420P14,
-    AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
-    AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10,
-    AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
-    AV_PIX_FMT_YUVA420P,  AV_PIX_FMT_YUVA422P,   AV_PIX_FMT_YUVA444P,
-    AV_PIX_FMT_YUVA444P9, AV_PIX_FMT_YUVA444P10, AV_PIX_FMT_YUVA444P12, AV_PIX_FMT_YUVA444P16,
-    AV_PIX_FMT_YUVA422P9, AV_PIX_FMT_YUVA422P10, AV_PIX_FMT_YUVA422P12, AV_PIX_FMT_YUVA422P16,
-    AV_PIX_FMT_YUVA420P9, AV_PIX_FMT_YUVA420P10, AV_PIX_FMT_YUVA420P16,
-    AV_PIX_FMT_GBRAP,     AV_PIX_FMT_GBRAP10,    AV_PIX_FMT_GBRAP12,    AV_PIX_FMT_GBRAP16,
-    AV_PIX_FMT_NONE
-};
+static av_cold int init(AVFilterContext *ctx)
+{
+    FFTdnoizContext *s = ctx->priv;
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        PlaneContext *p = &s->planes[i];
+
+        p->fft  = av_fft_init(s->block_bits, 0);
+        p->ifft = av_fft_init(s->block_bits, 1);
+        if (!p->fft || !p->ifft)
+            return AVERROR(ENOMEM);
+    }
+
+    return 0;
+}
+
+static int query_formats(AVFilterContext *ctx)
+{
+    static const enum AVPixelFormat pix_fmts[] = {
+        AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY9,
+        AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12,
+        AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
+        AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV411P,
+        AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P,
+        AV_PIX_FMT_YUV440P, AV_PIX_FMT_YUV444P,
+        AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ422P,
+        AV_PIX_FMT_YUVJ440P, AV_PIX_FMT_YUVJ444P,
+        AV_PIX_FMT_YUVJ411P,
+        AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9,
+        AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10,
+        AV_PIX_FMT_YUV440P10,
+        AV_PIX_FMT_YUV444P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV420P12,
+        AV_PIX_FMT_YUV440P12,
+        AV_PIX_FMT_YUV444P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV420P14,
+        AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
+        AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10,
+        AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
+        AV_PIX_FMT_YUVA420P,  AV_PIX_FMT_YUVA422P,   AV_PIX_FMT_YUVA444P,
+        AV_PIX_FMT_YUVA444P9, AV_PIX_FMT_YUVA444P10, AV_PIX_FMT_YUVA444P12, AV_PIX_FMT_YUVA444P16,
+        AV_PIX_FMT_YUVA422P9, AV_PIX_FMT_YUVA422P10, AV_PIX_FMT_YUVA422P12, AV_PIX_FMT_YUVA422P16,
+        AV_PIX_FMT_YUVA420P9, AV_PIX_FMT_YUVA420P10, AV_PIX_FMT_YUVA420P16,
+        AV_PIX_FMT_GBRAP,     AV_PIX_FMT_GBRAP10,    AV_PIX_FMT_GBRAP12,    AV_PIX_FMT_GBRAP16,
+        AV_PIX_FMT_NONE
+    };
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
+}
 
 typedef struct ThreadData {
     float *src, *dst;
 } ThreadData;
 
-static void import_row8(AVComplexFloat *dst, uint8_t *src, int rw)
+static void import_row8(FFTComplex *dst, uint8_t *src, int rw)
 {
     int j;
 
@@ -137,15 +156,15 @@ static void import_row8(AVComplexFloat *dst, uint8_t *src, int rw)
     }
 }
 
-static void export_row8(AVComplexFloat *src, uint8_t *dst, int rw, float scale, int depth)
+static void export_row8(FFTComplex *src, uint8_t *dst, int rw, float scale, int depth)
 {
     int j;
 
     for (j = 0; j < rw; j++)
-        dst[j] = av_clip_uint8(lrintf(src[j].re * scale));
+        dst[j] = av_clip_uint8(src[j].re * scale + 0.5f);
 }
 
-static void import_row16(AVComplexFloat *dst, uint8_t *srcp, int rw)
+static void import_row16(FFTComplex *dst, uint8_t *srcp, int rw)
 {
     uint16_t *src = (uint16_t *)srcp;
     int j;
@@ -156,7 +175,7 @@ static void import_row16(AVComplexFloat *dst, uint8_t *srcp, int rw)
     }
 }
 
-static void export_row16(AVComplexFloat *src, uint8_t *dstp, int rw, float scale, int depth)
+static void export_row16(FFTComplex *src, uint8_t *dstp, int rw, float scale, int depth)
 {
     uint16_t *dst = (uint16_t *)dstp;
     int j;
@@ -190,16 +209,6 @@ static int config_input(AVFilterLink *inlink)
     s->planes[0].planeheight = s->planes[3].planeheight = inlink->h;
 
     s->nb_planes = av_pix_fmt_count_planes(inlink->format);
-    s->nb_threads = FFMIN(ff_filter_get_nb_threads(ctx), MAX_THREADS);
-
-    for (int i = 0; i < s->nb_threads; i++) {
-        float scale = 1.f, iscale = 1.f;
-
-        av_tx_init(&s->fft[i],  &s->tx_fn,  AV_TX_FLOAT_FFT, 0, 1 << s->block_bits, &scale,  0);
-        av_tx_init(&s->ifft[i], &s->itx_fn, AV_TX_FLOAT_FFT, 1, 1 << s->block_bits, &iscale, 0);
-        if (!s->fft[i] || !s->ifft[i])
-            return AVERROR(ENOMEM);
-    }
 
     for (i = 0; i < s->nb_planes; i++) {
         PlaneContext *p = &s->planes[i];
@@ -214,7 +223,7 @@ static int config_input(AVFilterLink *inlink)
 
         av_log(ctx, AV_LOG_DEBUG, "nox:%d noy:%d size:%d\n", p->nox, p->noy, size);
 
-        p->buffer_linesize = p->b * p->nox * sizeof(AVComplexFloat);
+        p->buffer_linesize = p->b * p->nox * sizeof(FFTComplex);
         p->buffer[CURRENT] = av_calloc(p->b * p->noy, p->buffer_linesize);
         if (!p->buffer[CURRENT])
             return AVERROR(ENOMEM);
@@ -229,15 +238,10 @@ static int config_input(AVFilterLink *inlink)
                 return AVERROR(ENOMEM);
         }
         p->data_linesize = 2 * p->b * sizeof(float);
-        for (int j = 0; j < s->nb_threads; j++) {
-            p->hdata[j] = av_calloc(p->b, p->data_linesize);
-            p->hdata_out[j] = av_calloc(p->b, p->data_linesize);
-            p->vdata[j] = av_calloc(p->b, p->data_linesize);
-            p->vdata_out[j] = av_calloc(p->b, p->data_linesize);
-            if (!p->hdata[j] || !p->vdata[j] ||
-                !p->hdata_out[j] || !p->vdata_out[j])
-                return AVERROR(ENOMEM);
-        }
+        p->hdata = av_calloc(p->b, p->data_linesize);
+        p->vdata = av_calloc(p->b, p->data_linesize);
+        if (!p->hdata || !p->vdata)
+            return AVERROR(ENOMEM);
     }
 
     return 0;
@@ -245,8 +249,7 @@ static int config_input(AVFilterLink *inlink)
 
 static void import_plane(FFTdnoizContext *s,
                          uint8_t *srcp, int src_linesize,
-                         float *buffer, int buffer_linesize, int plane,
-                         int jobnr, int nb_jobs)
+                         float *buffer, int buffer_linesize, int plane)
 {
     PlaneContext *p = &s->planes[plane];
     const int width = p->planewidth;
@@ -257,23 +260,19 @@ static void import_plane(FFTdnoizContext *s,
     const int nox = p->nox;
     const int noy = p->noy;
     const int bpp = (s->depth + 7) / 8;
-    const int data_linesize = p->data_linesize / sizeof(AVComplexFloat);
-    const int slice_start = (noy * jobnr) / nb_jobs;
-    const int slice_end = (noy * (jobnr+1)) / nb_jobs;
-    AVComplexFloat *hdata = p->hdata[jobnr];
-    AVComplexFloat *vdata = p->vdata[jobnr];
-    AVComplexFloat *hdata_out = p->hdata_out[jobnr];
-    AVComplexFloat *vdata_out = p->vdata_out[jobnr];
+    const int data_linesize = p->data_linesize / sizeof(FFTComplex);
+    FFTComplex *hdata = p->hdata;
+    FFTComplex *vdata = p->vdata;
     int x, y, i, j;
 
     buffer_linesize /= sizeof(float);
-    for (y = slice_start; y < slice_end; y++) {
+    for (y = 0; y < noy; y++) {
         for (x = 0; x < nox; x++) {
             const int rh = FFMIN(block, height - y * size);
             const int rw = FFMIN(block, width  - x * size);
             uint8_t *src = srcp + src_linesize * y * size + x * size * bpp;
             float *bdst = buffer + buffer_linesize * y * block + x * block * 2;
-            AVComplexFloat *ssrc, *dst = hdata, *dst_out = hdata_out;
+            FFTComplex *ssrc, *dst = hdata;
 
             for (i = 0; i < rh; i++) {
                 s->import_row(dst, src, rw);
@@ -281,14 +280,14 @@ static void import_plane(FFTdnoizContext *s,
                     dst[j].re = dst[block - j - 1].re;
                     dst[j].im = 0;
                 }
-                s->tx_fn(s->fft[jobnr], dst_out, dst, sizeof(float));
+                av_fft_permute(p->fft, dst);
+                av_fft_calc(p->fft, dst);
 
                 src += src_linesize;
                 dst += data_linesize;
-                dst_out += data_linesize;
             }
 
-            dst = hdata_out;
+            dst = hdata;
             for (; i < block; i++) {
                 for (j = 0; j < block; j++) {
                     dst[j].re = dst[(block - i - 1) * data_linesize + j].re;
@@ -296,17 +295,16 @@ static void import_plane(FFTdnoizContext *s,
                 }
             }
 
-            ssrc = hdata_out;
-            dst = vdata_out;
-            dst_out = vdata;
+            ssrc = hdata;
+            dst = vdata;
             for (i = 0; i < block; i++) {
                 for (j = 0; j < block; j++)
                     dst[j] = ssrc[j * data_linesize + i];
-                s->tx_fn(s->fft[jobnr], dst_out, dst, sizeof(float));
-                memcpy(bdst, dst_out, block * sizeof(AVComplexFloat));
+                av_fft_permute(p->fft, dst);
+                av_fft_calc(p->fft, dst);
+                memcpy(bdst, dst, block * sizeof(FFTComplex));
 
                 dst += data_linesize;
-                dst_out += data_linesize;
                 bdst += buffer_linesize;
             }
         }
@@ -315,8 +313,7 @@ static void import_plane(FFTdnoizContext *s,
 
 static void export_plane(FFTdnoizContext *s,
                          uint8_t *dstp, int dst_linesize,
-                         float *buffer, int buffer_linesize, int plane,
-                         int jobnr, int nb_jobs)
+                         float *buffer, int buffer_linesize, int plane)
 {
     PlaneContext *p = &s->planes[plane];
     const int depth = s->depth;
@@ -329,18 +326,14 @@ static void export_plane(FFTdnoizContext *s,
     const int size = block - overlap;
     const int nox = p->nox;
     const int noy = p->noy;
-    const int data_linesize = p->data_linesize / sizeof(AVComplexFloat);
+    const int data_linesize = p->data_linesize / sizeof(FFTComplex);
     const float scale = 1.f / (block * block);
-    const int slice_start = (noy * jobnr) / nb_jobs;
-    const int slice_end = (noy * (jobnr+1)) / nb_jobs;
-    AVComplexFloat *hdata = p->hdata[jobnr];
-    AVComplexFloat *vdata = p->vdata[jobnr];
-    AVComplexFloat *hdata_out = p->hdata_out[jobnr];
-    AVComplexFloat *vdata_out = p->vdata_out[jobnr];
+    FFTComplex *hdata = p->hdata;
+    FFTComplex *vdata = p->vdata;
     int x, y, i, j;
 
     buffer_linesize /= sizeof(float);
-    for (y = slice_start; y < slice_end; y++) {
+    for (y = 0; y < noy; y++) {
         for (x = 0; x < nox; x++) {
             const int woff = x == 0 ? 0 : hoverlap;
             const int hoff = y == 0 ? 0 : hoverlap;
@@ -348,36 +341,35 @@ static void export_plane(FFTdnoizContext *s,
             const int rh = y == 0 ? block : FFMIN(size, height - y * size - hoff);
             float *bsrc = buffer + buffer_linesize * y * block + x * block * 2;
             uint8_t *dst = dstp + dst_linesize * (y * size + hoff) + (x * size + woff) * bpp;
-            AVComplexFloat *hdst, *ddst = vdata, *vdst = vdata_out, *hdst_out = hdata_out;
+            FFTComplex *hdst, *ddst = vdata;
 
             hdst = hdata;
             for (i = 0; i < block; i++) {
-                memcpy(ddst, bsrc, block * sizeof(AVComplexFloat));
-                s->itx_fn(s->ifft[jobnr], vdst, ddst, sizeof(float));
+                memcpy(ddst, bsrc, block * sizeof(FFTComplex));
+                av_fft_permute(p->ifft, ddst);
+                av_fft_calc(p->ifft, ddst);
                 for (j = 0; j < block; j++) {
-                    hdst[j * data_linesize + i] = vdst[j];
+                    hdst[j * data_linesize + i] = ddst[j];
                 }
 
-                vdst += data_linesize;
                 ddst += data_linesize;
                 bsrc += buffer_linesize;
             }
 
             hdst = hdata + hoff * data_linesize;
             for (i = 0; i < rh; i++) {
-                s->itx_fn(s->ifft[jobnr], hdst_out, hdst, sizeof(float));
-                s->export_row(hdst_out + woff, dst, rw, scale, depth);
+                av_fft_permute(p->ifft, hdst);
+                av_fft_calc(p->ifft, hdst);
+                s->export_row(hdst + woff, dst, rw, scale, depth);
 
                 hdst += data_linesize;
-                hdst_out += data_linesize;
                 dst += dst_linesize;
             }
         }
     }
 }
 
-static void filter_plane3d2(FFTdnoizContext *s, int plane, float *pbuffer, float *nbuffer,
-                            int jobnr, int nb_jobs)
+static void filter_plane3d2(FFTdnoizContext *s, int plane, float *pbuffer, float *nbuffer)
 {
     PlaneContext *p = &s->planes[plane];
     const int block = p->b;
@@ -385,15 +377,13 @@ static void filter_plane3d2(FFTdnoizContext *s, int plane, float *pbuffer, float
     const int noy = p->noy;
     const int buffer_linesize = p->buffer_linesize / sizeof(float);
     const float sigma = s->sigma * s->sigma * block * block;
-    const int slice_start = (noy * jobnr) / nb_jobs;
-    const int slice_end = (noy * (jobnr+1)) / nb_jobs;
     const float limit = 1.f - s->amount;
     float *cbuffer = p->buffer[CURRENT];
     const float cfactor = sqrtf(3.f) * 0.5f;
     const float scale = 1.f / 3.f;
     int y, x, i, j;
 
-    for (y = slice_start; y < slice_end; y++) {
+    for (y = 0; y < noy; y++) {
         for (x = 0; x < nox; x++) {
             float *cbuff = cbuffer + buffer_linesize * y * block + x * block * 2;
             float *pbuff = pbuffer + buffer_linesize * y * block + x * block * 2;
@@ -439,8 +429,7 @@ static void filter_plane3d2(FFTdnoizContext *s, int plane, float *pbuffer, float
     }
 }
 
-static void filter_plane3d1(FFTdnoizContext *s, int plane, float *pbuffer,
-                            int jobnr, int nb_jobs)
+static void filter_plane3d1(FFTdnoizContext *s, int plane, float *pbuffer)
 {
     PlaneContext *p = &s->planes[plane];
     const int block = p->b;
@@ -448,13 +437,11 @@ static void filter_plane3d1(FFTdnoizContext *s, int plane, float *pbuffer,
     const int noy = p->noy;
     const int buffer_linesize = p->buffer_linesize / sizeof(float);
     const float sigma = s->sigma * s->sigma * block * block;
-    const int slice_start = (noy * jobnr) / nb_jobs;
-    const int slice_end = (noy * (jobnr+1)) / nb_jobs;
     const float limit = 1.f - s->amount;
     float *cbuffer = p->buffer[CURRENT];
     int y, x, i, j;
 
-    for (y = slice_start; y < slice_end; y++) {
+    for (y = 0; y < noy; y++) {
         for (x = 0; x < nox; x++) {
             float *cbuff = cbuffer + buffer_linesize * y * block + x * block * 2;
             float *pbuff = pbuffer + buffer_linesize * y * block + x * block * 2;
@@ -494,8 +481,7 @@ static void filter_plane3d1(FFTdnoizContext *s, int plane, float *pbuffer,
     }
 }
 
-static void filter_plane2d(FFTdnoizContext *s, int plane,
-                           int jobnr, int nb_jobs)
+static void filter_plane2d(FFTdnoizContext *s, int plane)
 {
     PlaneContext *p = &s->planes[plane];
     const int block = p->b;
@@ -504,16 +490,15 @@ static void filter_plane2d(FFTdnoizContext *s, int plane,
     const int buffer_linesize = p->buffer_linesize / 4;
     const float sigma = s->sigma * s->sigma * block * block;
     const float limit = 1.f - s->amount;
-    const int slice_start = (noy * jobnr) / nb_jobs;
-    const int slice_end = (noy * (jobnr+1)) / nb_jobs;
     float *buffer = p->buffer[CURRENT];
+    int y, x, i, j;
 
-    for (int y = slice_start; y < slice_end; y++) {
-        for (int x = 0; x < nox; x++) {
+    for (y = 0; y < noy; y++) {
+        for (x = 0; x < nox; x++) {
             float *buff = buffer + buffer_linesize * y * block + x * block * 2;
 
-            for (int i = 0; i < block; i++) {
-                for (int j = 0; j < block; j++) {
+            for (i = 0; i < block; i++) {
+                for (j = 0; j < block; j++) {
                     float factor, power, re, im;
 
                     re = buff[j * 2    ];
@@ -528,82 +513,6 @@ static void filter_plane2d(FFTdnoizContext *s, int plane,
             }
         }
     }
-}
-
-static int import_pass(AVFilterContext *ctx, void *arg,
-                       int jobnr, int nb_jobs)
-{
-    FFTdnoizContext *s = ctx->priv;
-
-    for (int plane = 0; plane < s->nb_planes; plane++) {
-        PlaneContext *p = &s->planes[plane];
-
-        if (!((1 << plane) & s->planesf) || ctx->is_disabled)
-            continue;
-
-        if (s->next) {
-            import_plane(s, s->next->data[plane], s->next->linesize[plane],
-                         p->buffer[NEXT], p->buffer_linesize, plane,
-                         jobnr, nb_jobs);
-        }
-
-        if (s->prev) {
-            import_plane(s, s->prev->data[plane], s->prev->linesize[plane],
-                         p->buffer[PREV], p->buffer_linesize, plane,
-                         jobnr, nb_jobs);
-        }
-
-        import_plane(s, s->cur->data[plane], s->cur->linesize[plane],
-                     p->buffer[CURRENT], p->buffer_linesize, plane,
-                     jobnr, nb_jobs);
-    }
-
-    return 0;
-}
-
-static int filter_pass(AVFilterContext *ctx, void *arg,
-                       int jobnr, int nb_jobs)
-{
-    FFTdnoizContext *s = ctx->priv;
-
-    for (int plane = 0; plane < s->nb_planes; plane++) {
-        PlaneContext *p = &s->planes[plane];
-
-        if (!((1 << plane) & s->planesf) || ctx->is_disabled)
-            continue;
-
-        if (s->next && s->prev) {
-            filter_plane3d2(s, plane, p->buffer[PREV], p->buffer[NEXT], jobnr, nb_jobs);
-        } else if (s->next) {
-            filter_plane3d1(s, plane, p->buffer[NEXT], jobnr, nb_jobs);
-        } else  if (s->prev) {
-            filter_plane3d1(s, plane, p->buffer[PREV], jobnr, nb_jobs);
-        } else {
-            filter_plane2d(s, plane, jobnr, nb_jobs);
-        }
-    }
-
-    return 0;
-}
-
-static int export_pass(AVFilterContext *ctx, void *arg,
-                       int jobnr, int nb_jobs)
-{
-    FFTdnoizContext *s = ctx->priv;
-    AVFrame *out = arg;
-
-    for (int plane = 0; plane < s->nb_planes; plane++) {
-        PlaneContext *p = &s->planes[plane];
-
-        if (!((1 << plane) & s->planesf) || ctx->is_disabled)
-            continue;
-
-        export_plane(s, out->data[plane], out->linesize[plane],
-                     p->buffer[CURRENT], p->buffer_linesize, plane,
-                     jobnr, nb_jobs);
-    }
-
-    return 0;
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
@@ -658,15 +567,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         av_frame_copy_props(out, s->cur);
     }
 
-    ff_filter_execute(ctx, import_pass, NULL, NULL,
-                      FFMIN(s->planes[0].noy, s->nb_threads));
-
-    ff_filter_execute(ctx, filter_pass, NULL, NULL,
-                      FFMIN(s->planes[0].noy, s->nb_threads));
-
-    ff_filter_execute(ctx, export_pass, out, NULL,
-                      FFMIN(s->planes[0].noy, s->nb_threads));
-
     for (plane = 0; plane < s->nb_planes; plane++) {
         PlaneContext *p = &s->planes[plane];
 
@@ -677,6 +577,32 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
                                     p->planewidth, p->planeheight);
             continue;
         }
+
+        if (s->next) {
+            import_plane(s, s->next->data[plane], s->next->linesize[plane],
+                         p->buffer[NEXT], p->buffer_linesize, plane);
+        }
+
+        if (s->prev) {
+            import_plane(s, s->prev->data[plane], s->prev->linesize[plane],
+                         p->buffer[PREV], p->buffer_linesize, plane);
+        }
+
+        import_plane(s, s->cur->data[plane], s->cur->linesize[plane],
+                     p->buffer[CURRENT], p->buffer_linesize, plane);
+
+        if (s->next && s->prev) {
+            filter_plane3d2(s, plane, p->buffer[PREV], p->buffer[NEXT]);
+        } else if (s->next) {
+            filter_plane3d1(s, plane, p->buffer[NEXT]);
+        } else  if (s->prev) {
+            filter_plane3d1(s, plane, p->buffer[PREV]);
+        } else {
+            filter_plane2d(s, plane);
+        }
+
+        export_plane(s, out->data[plane], out->linesize[plane],
+                     p->buffer[CURRENT], p->buffer_linesize, plane);
     }
 
     if (s->nb_next == 0 && s->nb_prev == 0) {
@@ -726,21 +652,13 @@ static av_cold void uninit(AVFilterContext *ctx)
     for (i = 0; i < 4; i++) {
         PlaneContext *p = &s->planes[i];
 
-        for (int j = 0; j < s->nb_threads; j++) {
-            av_freep(&p->hdata[j]);
-            av_freep(&p->vdata[j]);
-            av_freep(&p->hdata_out[j]);
-            av_freep(&p->vdata_out[j]);
-        }
-
+        av_freep(&p->hdata);
+        av_freep(&p->vdata);
         av_freep(&p->buffer[PREV]);
         av_freep(&p->buffer[CURRENT]);
         av_freep(&p->buffer[NEXT]);
-    }
-
-    for (i = 0; i < s->nb_threads; i++) {
-        av_tx_uninit(&s->fft[i]);
-        av_tx_uninit(&s->ifft[i]);
+        av_fft_end(p->fft);
+        av_fft_end(p->ifft);
     }
 
     av_frame_free(&s->prev);
@@ -755,6 +673,7 @@ static const AVFilterPad fftdnoiz_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad fftdnoiz_outputs[] = {
@@ -763,18 +682,18 @@ static const AVFilterPad fftdnoiz_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .request_frame = request_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_fftdnoiz = {
+AVFilter ff_vf_fftdnoiz = {
     .name          = "fftdnoiz",
     .description   = NULL_IF_CONFIG_SMALL("Denoise frames using 3D FFT."),
     .priv_size     = sizeof(FFTdnoizContext),
+    .init          = init,
     .uninit        = uninit,
-    FILTER_INPUTS(fftdnoiz_inputs),
-    FILTER_OUTPUTS(fftdnoiz_outputs),
-    FILTER_PIXFMTS_ARRAY(pix_fmts),
+    .query_formats = query_formats,
+    .inputs        = fftdnoiz_inputs,
+    .outputs       = fftdnoiz_outputs,
     .priv_class    = &fftdnoiz_class,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL |
-                     AVFILTER_FLAG_SLICE_THREADS,
-    .process_command = ff_filter_process_command,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
 };
