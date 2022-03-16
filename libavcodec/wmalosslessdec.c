@@ -26,7 +26,6 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
-#include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -190,14 +189,14 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    av_assert0(avctx->ch_layout.nb_channels >= 0);
-    if (avctx->ch_layout.nb_channels > WMALL_MAX_CHANNELS) {
+    av_assert0(avctx->channels >= 0);
+    if (avctx->channels > WMALL_MAX_CHANNELS) {
         avpriv_request_sample(avctx,
                               "More than " AV_STRINGIFY(WMALL_MAX_CHANNELS) " channels");
         return AVERROR_PATCHWELCOME;
     }
 
-    s->max_frame_size = MAX_FRAMESIZE * avctx->ch_layout.nb_channels;
+    s->max_frame_size = MAX_FRAMESIZE * avctx->channels;
     s->frame_data = av_mallocz(s->max_frame_size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!s->frame_data)
         return AVERROR(ENOMEM);
@@ -244,7 +243,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     av_assert0(s->samples_per_frame <= WMALL_BLOCK_MAX_SIZE);
 
     /* init previous block len */
-    for (i = 0; i < avctx->ch_layout.nb_channels; i++)
+    for (i = 0; i < avctx->channels; i++)
         s->channel[i].prev_block_len = s->samples_per_frame;
 
     /* subframe info */
@@ -263,7 +262,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
     }
 
-    s->num_channels = avctx->ch_layout.nb_channels;
+    s->num_channels = avctx->channels;
 
     /* extract lfe channel position */
     s->lfe_channel = -1;
@@ -279,8 +278,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (!s->frame)
         return AVERROR(ENOMEM);
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    av_channel_layout_from_mask(&avctx->ch_layout, channel_mask);
+    avctx->channel_layout = channel_mask;
     return 0;
 }
 
@@ -934,8 +932,6 @@ static int decode_subframe(WmallDecodeCtx *s)
             s->do_lpc = 0;
     }
 
-    if (get_bits_left(&s->gb) < 1)
-        return AVERROR_INVALIDDATA;
 
     if (get_bits1(&s->gb))
         padding_zeroes = get_bits(&s->gb, 5);
@@ -1162,14 +1158,14 @@ static void save_bits(WmallDecodeCtx *s, GetBitContext* gb, int len,
 
     s->num_saved_bits += len;
     if (!append) {
-        ff_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
+        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3),
                          s->num_saved_bits);
     } else {
         int align = 8 - (get_bits_count(gb) & 7);
         align = FFMIN(align, len);
         put_bits(&s->pb, align, get_bits(gb, align));
         len -= align;
-        ff_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
+        avpriv_copy_bits(&s->pb, gb->buffer + (get_bits_count(gb) >> 3), len);
     }
     skip_bits_long(gb, len);
 
@@ -1324,7 +1320,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-const AVCodec ff_wmalossless_decoder = {
+AVCodec ff_wmalossless_decoder = {
     .name           = "wmalossless",
     .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Audio Lossless"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -1335,7 +1331,7 @@ const AVCodec ff_wmalossless_decoder = {
     .decode         = decode_packet,
     .flush          = flush,
     .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_S32P,
                                                       AV_SAMPLE_FMT_NONE },
