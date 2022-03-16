@@ -53,9 +53,7 @@
 #endif
 
 #if HAVE_AS_ARCH_DIRECTIVE
-#if   HAVE_ARMV8M_MAIN
-        .arch           armv8-m.main
-#elif HAVE_NEON
+#if   HAVE_NEON
         .arch           armv7-a
 #elif HAVE_ARMV6T2
         .arch           armv6t2
@@ -66,11 +64,7 @@
 #endif
 #endif
 #if   HAVE_AS_OBJECT_ARCH
-#if   HAVE_ARMV8M_MAIN
-ELF     .object_arch    armv8-m.main
-#else
 ELF     .object_arch    armv4
-#endif
 #endif
 
 #if   HAVE_NEON

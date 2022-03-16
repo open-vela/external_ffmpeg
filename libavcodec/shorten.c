@@ -428,7 +428,11 @@ static int read_header(ShortenContext *s)
         s->channels = 0;
         return AVERROR_INVALIDDATA;
     }
-    s->avctx->channels = s->channels;
+    if (s->avctx->ch_layout.nb_channels != s->channels) {
+        av_channel_layout_uninit(&s->avctx->ch_layout);
+        s->avctx->ch_layout.nb_channels = s->channels;
+        s->avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
+    }
 
     /* get blocksize if version > 0 */
     if (s->version > 0) {
@@ -799,7 +803,7 @@ static av_cold int shorten_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_shorten_decoder = {
+const AVCodec ff_shorten_decoder = {
     .name           = "shorten",
     .long_name      = NULL_IF_CONFIG_SMALL("Shorten"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -808,8 +812,12 @@ AVCodec ff_shorten_decoder = {
     .init           = shorten_decode_init,
     .close          = shorten_decode_close,
     .decode         = shorten_decode_frame,
-    .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_CHANNEL_CONF |
+                      AV_CODEC_CAP_DELAY |
+                      AV_CODEC_CAP_DR1 |
+                      AV_CODEC_CAP_SUBFRAMES ,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_U8P,
                                                       AV_SAMPLE_FMT_NONE },
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
