@@ -28,17 +28,9 @@
 
 #include <stdint.h>
 
-#include "libavcodec/avcodec.h"
+#include "libavutil/channel_layout.h"
+#include "libavcodec/codec_id.h"
 #include "avformat.h"
-
-/**
- * Get the channel layout for the specified channel layout tag.
- *
- * @param[in]  tag     channel layout tag
- * @param[out] bitmap  channel bitmap (only used if needed)
- * @return             channel layout
- */
-uint64_t ff_mov_get_channel_layout(uint32_t tag, uint32_t bitmap);
 
 /**
  * Get the channel layout tag for the specified codec id and channel layout.
@@ -50,7 +42,7 @@ uint64_t ff_mov_get_channel_layout(uint32_t tag, uint32_t bitmap);
  * @return                     channel layout tag
  */
 uint32_t ff_mov_get_channel_layout_tag(enum AVCodecID codec_id,
-                                       uint64_t channel_layout,
+                                       const AVChannelLayout *ch_layout,
                                        uint32_t *bitmap);
 
 /**
