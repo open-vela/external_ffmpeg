@@ -37,8 +37,6 @@
  * Supports: BGR24 (RGB 24bpp)
  */
 
-#include "config_components.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -160,6 +158,7 @@ static int zlib_decomp(AVCodecContext *avctx, const uint8_t *src, int src_len, i
 static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
 {
     AVFrame *frame = data;
+    ThreadFrame tframe = { .f = data };
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     LclDecContext * const c = avctx->priv_data;
@@ -174,9 +173,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     int uqvq, ret;
     unsigned int mthread_inlen, mthread_outlen;
     unsigned int len = buf_size;
-    int linesize, offset;
+    int linesize;
 
-    if ((ret = ff_thread_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &tframe, 0)) < 0)
         return ret;
 
     outptr = frame->data[0]; // Output image pointer
@@ -374,10 +373,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
 
     /* Convert colorspace */
     y_out = frame->data[0] + (height - 1) * frame->linesize[0];
-    offset = (height - 1) * frame->linesize[1];
-    u_out = FF_PTR_ADD(frame->data[1], offset);
-    offset = (height - 1) * frame->linesize[2];
-    v_out = FF_PTR_ADD(frame->data[2], offset);
+    u_out = frame->data[1] + (height - 1) * frame->linesize[1];
+    v_out = frame->data[2] + (height - 1) * frame->linesize[2];
     switch (c->imgtype) {
     case IMGTYPE_YUV111:
         for (row = 0; row < height; row++) {
@@ -639,7 +636,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 }
 
 #if CONFIG_MSZH_DECODER
-const AVCodec ff_mszh_decoder = {
+AVCodec ff_mszh_decoder = {
     .name           = "mszh",
     .long_name      = NULL_IF_CONFIG_SMALL("LCL (LossLess Codec Library) MSZH"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -654,7 +651,7 @@ const AVCodec ff_mszh_decoder = {
 #endif
 
 #if CONFIG_ZLIB_DECODER
-const AVCodec ff_zlib_decoder = {
+AVCodec ff_zlib_decoder = {
     .name           = "zlib",
     .long_name      = NULL_IF_CONFIG_SMALL("LCL (LossLess Codec Library) ZLIB"),
     .type           = AVMEDIA_TYPE_VIDEO,
