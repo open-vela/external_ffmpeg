@@ -39,8 +39,8 @@ static av_cold int ra144_decode_init(AVCodecContext * avctx)
     ractx->lpc_coef[0] = ractx->lpc_tables[0];
     ractx->lpc_coef[1] = ractx->lpc_tables[1];
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    avctx->channels       = 1;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
     return 0;
@@ -126,7 +126,7 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
     return FRAME_SIZE;
 }
 
-const AVCodec ff_ra_144_decoder = {
+AVCodec ff_ra_144_decoder = {
     .name           = "real_144",
     .long_name      = NULL_IF_CONFIG_SMALL("RealAudio 1.0 (14.4K)"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -134,6 +134,5 @@ const AVCodec ff_ra_144_decoder = {
     .priv_data_size = sizeof(RA144Context),
     .init           = ra144_decode_init,
     .decode         = ra144_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

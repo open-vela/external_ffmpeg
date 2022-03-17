@@ -20,11 +20,8 @@
 
 #include "mlz.h"
 
-av_cold int ff_mlz_init_dict(void *context, MLZ *mlz)
-{
-    mlz->dict = av_mallocz(TABLE_SIZE * sizeof(*mlz->dict));
-    if (!mlz->dict)
-        return AVERROR(ENOMEM);
+av_cold void ff_mlz_init_dict(void* context, MLZ *mlz) {
+    mlz->dict = av_mallocz_array(TABLE_SIZE, sizeof(*mlz->dict));
 
     mlz->flush_code            = FLUSH_CODE;
     mlz->current_dic_index_max = DIC_INDEX_INIT;
@@ -33,8 +30,6 @@ av_cold int ff_mlz_init_dict(void *context, MLZ *mlz)
     mlz->next_code             = FIRST_CODE;
     mlz->freeze_flag           = 0;
     mlz->context               = context;
-
-    return 0;
 }
 
 av_cold void ff_mlz_flush_dict(MLZ *mlz) {
