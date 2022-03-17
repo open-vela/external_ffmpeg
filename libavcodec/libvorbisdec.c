@@ -112,7 +112,9 @@ static int oggvorbis_decode_init(AVCodecContext *avccontext) {
         }
     }
 
-    avccontext->channels = context->vi.channels;
+    av_channel_layout_uninit(&avccontext->ch_layout);
+    avccontext->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
+    avccontext->ch_layout.nb_channels = context->vi.channels;
     avccontext->sample_rate = context->vi.rate;
     avccontext->sample_fmt = AV_SAMPLE_FMT_S16;
     avccontext->time_base= (AVRational){1, avccontext->sample_rate};
@@ -208,7 +210,7 @@ static int oggvorbis_decode_close(AVCodecContext *avccontext) {
 }
 
 
-AVCodec ff_libvorbis_decoder = {
+const AVCodec ff_libvorbis_decoder = {
     .name           = "libvorbis",
     .long_name      = NULL_IF_CONFIG_SMALL("libvorbis"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -217,5 +219,5 @@ AVCodec ff_libvorbis_decoder = {
     .init           = oggvorbis_decode_init,
     .decode         = oggvorbis_decode_frame,
     .close          = oggvorbis_decode_close,
-    .capabilities   = AV_CODEC_CAP_DELAY,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_CHANNEL_CONF,
 };

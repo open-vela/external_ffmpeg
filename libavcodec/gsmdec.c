@@ -24,6 +24,8 @@
  * GSM decoder
  */
 
+#include "config_components.h"
+
 #include "libavutil/channel_layout.h"
 #include "avcodec.h"
 #include "get_bits.h"
@@ -34,8 +36,8 @@
 
 static av_cold int gsm_init(AVCodecContext *avctx)
 {
-    avctx->channels       = 1;
-    avctx->channel_layout = AV_CH_LAYOUT_MONO;
+    av_channel_layout_uninit(&avctx->ch_layout);
+    avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
     if (!avctx->sample_rate)
         avctx->sample_rate = 8000;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
@@ -111,7 +113,7 @@ static void gsm_flush(AVCodecContext *avctx)
 }
 
 #if CONFIG_GSM_DECODER
-AVCodec ff_gsm_decoder = {
+const AVCodec ff_gsm_decoder = {
     .name           = "gsm",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -120,11 +122,12 @@ AVCodec ff_gsm_decoder = {
     .init           = gsm_init,
     .decode         = gsm_decode_frame,
     .flush          = gsm_flush,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
 #if CONFIG_GSM_MS_DECODER
-AVCodec ff_gsm_ms_decoder = {
+const AVCodec ff_gsm_ms_decoder = {
     .name           = "gsm_ms",
     .long_name      = NULL_IF_CONFIG_SMALL("GSM Microsoft variant"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -133,6 +136,7 @@ AVCodec ff_gsm_ms_decoder = {
     .init           = gsm_init,
     .decode         = gsm_decode_frame,
     .flush          = gsm_flush,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
