@@ -24,7 +24,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include "libavutil/imgutils.h"
+#include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
 #include "hwconfig.h"
@@ -32,6 +35,7 @@
 #include "mathops.h"
 #include "rectangle.h"
 #include "thread.h"
+#include "threadframe.h"
 #include "vp8.h"
 #include "vp8data.h"
 
@@ -70,8 +74,8 @@ static void free_buffers(VP8Context *s)
 static int vp8_alloc_frame(VP8Context *s, VP8Frame *f, int ref)
 {
     int ret;
-    if ((ret = ff_thread_get_buffer(s->avctx, &f->tf,
-                                    ref ? AV_GET_BUFFER_FLAG_REF : 0)) < 0)
+    if ((ret = ff_thread_get_ext_buffer(s->avctx, &f->tf,
+                                        ref ? AV_GET_BUFFER_FLAG_REF : 0)) < 0)
         return ret;
     if (!(f->seg_map = av_buffer_allocz(s->mb_width * s->mb_height)))
         goto fail;
@@ -88,7 +92,7 @@ static int vp8_alloc_frame(VP8Context *s, VP8Frame *f, int ref)
 
 fail:
     av_buffer_unref(&f->seg_map);
-    ff_thread_release_buffer(s->avctx, &f->tf);
+    ff_thread_release_ext_buffer(s->avctx, &f->tf);
     return AVERROR(ENOMEM);
 }
 
@@ -97,11 +101,10 @@ static void vp8_release_frame(VP8Context *s, VP8Frame *f)
     av_buffer_unref(&f->seg_map);
     av_buffer_unref(&f->hwaccel_priv_buf);
     f->hwaccel_picture_private = NULL;
-    ff_thread_release_buffer(s->avctx, &f->tf);
+    ff_thread_release_ext_buffer(s->avctx, &f->tf);
 }
 
 #if CONFIG_VP8_DECODER
-#if HAVE_THREADS
 static int vp8_ref_frame(VP8Context *s, VP8Frame *dst, VP8Frame *src)
 {
     int ret;
@@ -124,7 +127,6 @@ static int vp8_ref_frame(VP8Context *s, VP8Frame *dst, VP8Frame *src)
 
     return 0;
 }
-#endif
 #endif /* CONFIG_VP8_DECODER */
 
 static void vp8_decode_flush_impl(AVCodecContext *avctx, int free_mem)
@@ -189,7 +191,7 @@ static av_always_inline
 int update_dimensions(VP8Context *s, int width, int height, int is_vp7)
 {
     AVCodecContext *avctx = s->avctx;
-    int i, ret;
+    int i, ret, dim_reset = 0;
 
     if (width  != s->avctx->width || ((width+15)/16 != s->mb_width || (height+15)/16 != s->mb_height) && s->macroblocks_base ||
         height != s->avctx->height) {
@@ -198,9 +200,12 @@ int update_dimensions(VP8Context *s, int width, int height, int is_vp7)
         ret = ff_set_dimensions(s->avctx, width, height);
         if (ret < 0)
             return ret;
+
+        dim_reset = (s->macroblocks_base != NULL);
     }
 
-    if (!s->actually_webp && !is_vp7) {
+    if ((s->pix_fmt == AV_PIX_FMT_NONE || dim_reset) &&
+         !s->actually_webp && !is_vp7) {
         s->pix_fmt = get_pixel_format(s);
         if (s->pix_fmt < 0)
             return AVERROR(EINVAL);
@@ -2291,10 +2296,10 @@ int vp78_decode_mv_mb_modes(AVCodecContext *avctx, VP8Frame *curframe,
         s->mv_bounds.mv_min.x = -MARGIN;
         s->mv_bounds.mv_max.x = ((s->mb_width - 1) << 6) + MARGIN;
 
-        if (vpX_rac_is_end(&s->c)) {
-            return AVERROR_INVALIDDATA;
-        }
         for (mb_x = 0; mb_x < s->mb_width; mb_x++, mb_xy++, mb++) {
+            if (vpX_rac_is_end(&s->c)) {
+                return AVERROR_INVALIDDATA;
+            }
             if (mb_y == 0)
                 AV_WN32A((mb - s->mb_width - 1)->intra4x4_pred_mode_top,
                          DC_PRED * 0x01010101);
@@ -2364,10 +2369,7 @@ static av_always_inline int decode_mb_row_no_filter(AVCodecContext *avctx, void 
                                         int jobnr, int threadnr, int is_vp7)
 {
     VP8Context *s = avctx->priv_data;
-    VP8ThreadData *prev_td, *td = &s->thread_data[threadnr];
-#if HAVE_THREADS
-    VP8ThreadData *next_td;
-#endif
+    VP8ThreadData *prev_td, *next_td, *td = &s->thread_data[threadnr];
     int mb_y = atomic_load(&td->thread_mb_pos) >> 16;
     int mb_x, mb_xy = mb_y * s->mb_width;
     int num_jobs = s->num_jobs;
@@ -2387,12 +2389,10 @@ static av_always_inline int decode_mb_row_no_filter(AVCodecContext *avctx, void 
         prev_td = td;
     else
         prev_td = &s->thread_data[(jobnr + num_jobs - 1) % num_jobs];
-#if HAVE_THREADS
     if (mb_y == s->mb_height - 1)
         next_td = td;
     else
         next_td = &s->thread_data[(jobnr + 1) % num_jobs];
-#endif
     if (s->mb_layout == 1)
         mb = s->macroblocks_base + ((s->mb_width + 1) * (mb_y + 1) + 1);
     else {
@@ -2625,7 +2625,7 @@ static int vp8_decode_mb_row_sliced(AVCodecContext *avctx, void *tdata,
 
 static av_always_inline
 int vp78_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
-                      AVPacket *avpkt, int is_vp7)
+                      const AVPacket *avpkt, int is_vp7)
 {
     VP8Context *s = avctx->priv_data;
     int ret, i, referenced, num_jobs;
@@ -2829,9 +2829,6 @@ av_cold int ff_vp8_decode_free(AVCodecContext *avctx)
     VP8Context *s = avctx->priv_data;
     int i;
 
-    if (!s)
-        return 0;
-
     vp8_decode_flush_impl(avctx, 1);
     for (i = 0; i < FF_ARRAY_ELEMS(s->frames); i++)
         av_frame_free(&s->frames[i].tf.f);
@@ -2941,7 +2938,7 @@ static int vp8_decode_update_thread_context(AVCodecContext *dst,
 #endif /* CONFIG_VP8_DECODER */
 
 #if CONFIG_VP7_DECODER
-AVCodec ff_vp7_decoder = {
+const AVCodec ff_vp7_decoder = {
     .name                  = "vp7",
     .long_name             = NULL_IF_CONFIG_SMALL("On2 VP7"),
     .type                  = AVMEDIA_TYPE_VIDEO,
@@ -2951,12 +2948,13 @@ AVCodec ff_vp7_decoder = {
     .close                 = ff_vp8_decode_free,
     .decode                = vp7_decode_frame,
     .capabilities          = AV_CODEC_CAP_DR1,
+    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
     .flush                 = vp8_decode_flush,
 };
 #endif /* CONFIG_VP7_DECODER */
 
 #if CONFIG_VP8_DECODER
-AVCodec ff_vp8_decoder = {
+const AVCodec ff_vp8_decoder = {
     .name                  = "vp8",
     .long_name             = NULL_IF_CONFIG_SMALL("On2 VP8"),
     .type                  = AVMEDIA_TYPE_VIDEO,
@@ -2967,9 +2965,11 @@ AVCodec ff_vp8_decoder = {
     .decode                = ff_vp8_decode_frame,
     .capabilities          = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS |
                              AV_CODEC_CAP_SLICE_THREADS,
+    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE |
+                             FF_CODEC_CAP_ALLOCATE_PROGRESS,
     .flush                 = vp8_decode_flush,
     .update_thread_context = ONLY_IF_THREADS_ENABLED(vp8_decode_update_thread_context),
-    .hw_configs            = (const AVCodecHWConfigInternal*[]) {
+    .hw_configs            = (const AVCodecHWConfigInternal *const []) {
 #if CONFIG_VP8_VAAPI_HWACCEL
                                HWACCEL_VAAPI(vp8),
 #endif
@@ -2978,6 +2978,5 @@ AVCodec ff_vp8_decoder = {
 #endif
                                NULL
                            },
-    .caps_internal         = FF_CODEC_CAP_ALLOCATE_PROGRESS,
 };
 #endif /* CONFIG_VP7_DECODER */

@@ -28,6 +28,8 @@
  * Creative YUV (CYUV) Video Decoder.
  */
 
+#include "config_components.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,7 +178,7 @@ static int cyuv_decode_frame(AVCodecContext *avctx,
 }
 
 #if CONFIG_AURA_DECODER
-AVCodec ff_aura_decoder = {
+const AVCodec ff_aura_decoder = {
     .name           = "aura",
     .long_name      = NULL_IF_CONFIG_SMALL("Auravision AURA"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -190,7 +192,7 @@ AVCodec ff_aura_decoder = {
 #endif
 
 #if CONFIG_CYUV_DECODER
-AVCodec ff_cyuv_decoder = {
+const AVCodec ff_cyuv_decoder = {
     .name           = "cyuv",
     .long_name      = NULL_IF_CONFIG_SMALL("Creative YUV (CYUV)"),
     .type           = AVMEDIA_TYPE_VIDEO,

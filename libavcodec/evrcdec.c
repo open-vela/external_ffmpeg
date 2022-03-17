@@ -25,6 +25,7 @@
  * @author Paul B Mahol
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
@@ -234,8 +235,8 @@ static av_cold int evrc_decode_init(AVCodecContext *avctx)
     int i, n, idx = 0;
     float denom = 2.0 / (2.0 * 8.0 + 1.0);
 
-    avctx->channels       = 1;
-    avctx->channel_layout = AV_CH_LAYOUT_MONO;
+    av_channel_layout_uninit(&avctx->ch_layout);
+    avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
     avctx->sample_fmt     = AV_SAMPLE_FMT_FLT;
 
     for (i = 0; i < FILTER_ORDER; i++) {
@@ -928,14 +929,15 @@ static const AVClass evrcdec_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_evrc_decoder = {
+const AVCodec ff_evrc_decoder = {
     .name           = "evrc",
     .long_name      = NULL_IF_CONFIG_SMALL("EVRC (Enhanced Variable Rate Codec)"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_EVRC,
     .init           = evrc_decode_init,
     .decode         = evrc_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
     .priv_data_size = sizeof(EVRCContext),
     .priv_class     = &evrcdec_class,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
