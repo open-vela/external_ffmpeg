@@ -30,7 +30,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "libavutil/channel_layout.h"
 #include "avcodec.h"
+#include "codec_internal.h"
 #include "internal.h"
 #include "get_bits.h"
 #include "ilbcdata.h"
@@ -1455,8 +1457,8 @@ static av_cold int ilbc_decode_init(AVCodecContext *avctx)
     else
         return AVERROR_INVALIDDATA;
 
-    avctx->channels       = 1;
-    avctx->channel_layout = AV_CH_LAYOUT_MONO;
+    av_channel_layout_uninit(&avctx->ch_layout);
+    avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
     avctx->sample_rate    = 8000;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
@@ -1477,13 +1479,14 @@ static av_cold int ilbc_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_ilbc_decoder = {
-    .name           = "ilbc",
-    .long_name      = NULL_IF_CONFIG_SMALL("iLBC (Internet Low Bitrate Codec)"),
-    .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = AV_CODEC_ID_ILBC,
+const FFCodec ff_ilbc_decoder = {
+    .p.name         = "ilbc",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("iLBC (Internet Low Bitrate Codec)"),
+    .p.type         = AVMEDIA_TYPE_AUDIO,
+    .p.id           = AV_CODEC_ID_ILBC,
     .init           = ilbc_decode_init,
     .decode         = ilbc_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
     .priv_data_size = sizeof(ILBCContext),
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
