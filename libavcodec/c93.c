@@ -21,6 +21,7 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
+#include "codec_internal.h"
 #include "internal.h"
 
 typedef struct C93DecoderContext {
@@ -63,10 +64,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     s->pictures[0] = av_frame_alloc();
     s->pictures[1] = av_frame_alloc();
-    if (!s->pictures[0] || !s->pictures[1]) {
-        decode_end(avctx);
+    if (!s->pictures[0] || !s->pictures[1])
         return AVERROR(ENOMEM);
-    }
 
     return 0;
 }
@@ -259,15 +258,15 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     return buf_size;
 }
 
-AVCodec ff_c93_decoder = {
-    .name           = "c93",
-    .long_name      = NULL_IF_CONFIG_SMALL("Interplay C93"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_C93,
+const FFCodec ff_c93_decoder = {
+    .p.name         = "c93",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("Interplay C93"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_C93,
     .priv_data_size = sizeof(C93DecoderContext),
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.capabilities = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

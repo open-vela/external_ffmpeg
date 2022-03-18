@@ -257,6 +257,8 @@ int i = 0;
         break;
     }
 
+    if (ARCH_AARCH64)
+        ff_hevc_dsp_init_aarch64(hevcdsp, bit_depth);
     if (ARCH_ARM)
         ff_hevc_dsp_init_arm(hevcdsp, bit_depth);
     if (ARCH_PPC)
@@ -265,4 +267,6 @@ int i = 0;
         ff_hevc_dsp_init_x86(hevcdsp, bit_depth);
     if (ARCH_MIPS)
         ff_hevc_dsp_init_mips(hevcdsp, bit_depth);
+    if (ARCH_LOONGARCH)
+        ff_hevc_dsp_init_loongarch(hevcdsp, bit_depth);
 }
