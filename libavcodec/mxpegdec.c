@@ -25,6 +25,7 @@
  * MxPEG decoder
  */
 
+#include "codec_internal.h"
 #include "internal.h"
 #include "mjpeg.h"
 #include "mjpegdec.h"
@@ -67,10 +68,8 @@ static av_cold int mxpeg_decode_init(AVCodecContext *avctx)
 
     s->picture[0] = av_frame_alloc();
     s->picture[1] = av_frame_alloc();
-    if (!s->picture[0] || !s->picture[1]) {
-        mxpeg_decode_end(avctx);
+    if (!s->picture[0] || !s->picture[1])
         return AVERROR(ENOMEM);
-    }
 
     s->jpg.picture_ptr      = s->picture[0];
     return ff_mjpeg_decode_init(avctx);
@@ -195,6 +194,9 @@ static int mxpeg_decode_frame(AVCodecContext *avctx,
     int start_code;
     int ret;
 
+    if (avctx->skip_frame == AVDISCARD_ALL)
+        return AVERROR_PATCHWELCOME;
+
     buf_ptr = buf;
     buf_end = buf + buf_size;
     jpg->got_picture = 0;
@@ -247,16 +249,17 @@ static int mxpeg_decode_frame(AVCodecContext *avctx,
                            "Multiple SOF in a frame\n");
                     return AVERROR_INVALIDDATA;
                 }
-                s->got_sof_data = 0;
                 ret = ff_mjpeg_decode_sof(jpg);
                 if (ret < 0) {
                     av_log(avctx, AV_LOG_ERROR,
                            "SOF data decode error\n");
+                    s->got_sof_data = 0;
                     return ret;
                 }
                 if (jpg->interlaced) {
                     av_log(avctx, AV_LOG_ERROR,
                            "Interlaced mode not supported in MxPEG\n");
+                    s->got_sof_data = 0;
                     return AVERROR(EINVAL);
                 }
                 s->got_sof_data ++;
@@ -340,16 +343,16 @@ the_end:
     return buf_ptr - buf;
 }
 
-AVCodec ff_mxpeg_decoder = {
-    .name           = "mxpeg",
-    .long_name      = NULL_IF_CONFIG_SMALL("Mobotix MxPEG video"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_MXPEG,
+const FFCodec ff_mxpeg_decoder = {
+    .p.name         = "mxpeg",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("Mobotix MxPEG video"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_MXPEG,
     .priv_data_size = sizeof(MXpegDecodeContext),
     .init           = mxpeg_decode_init,
     .close          = mxpeg_decode_end,
     .decode         = mxpeg_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
-    .max_lowres     = 3,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.capabilities = AV_CODEC_CAP_DR1,
+    .p.max_lowres   = 3,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

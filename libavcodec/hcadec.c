@@ -19,9 +19,11 @@
 #include "libavutil/crc.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/tx.h"
 
 #include "avcodec.h"
+#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 #include "hca_data.h"
@@ -113,7 +115,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
     c->crc_table = av_crc_get_table(AV_CRC_16_ANSI);
 
-    if (avctx->channels <= 0 || avctx->channels > 16)
+    if (avctx->ch_layout.nb_channels <= 0 || avctx->ch_layout.nb_channels > 16)
         return AVERROR(EINVAL);
 
     ret = init_get_bits8(gb, avctx->extradata, avctx->extradata_size);
@@ -157,6 +159,10 @@ static av_cold int decode_init(AVCodecContext *avctx)
     } else
         return AVERROR_INVALIDDATA;
 
+    if (c->total_band_count > FF_ARRAY_ELEMS(c->ch->imdct_in))
+        return AVERROR_INVALIDDATA;
+
+
     while (get_bits_left(gb) >= 32) {
         chunk = get_bits_long(gb, 32);
         if (chunk == MKBETAG('v', 'b', 'r', 0)) {
@@ -189,7 +195,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (!c->track_count)
         c->track_count = 1;
 
-    b = avctx->channels / c->track_count;
+    b = avctx->ch_layout.nb_channels / c->track_count;
     if (c->stereo_band_count && b > 1) {
         int8_t *x = r;
 
@@ -234,7 +240,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (c->base_band_count + c->stereo_band_count + (unsigned long)c->hfr_group_count > 128ULL)
         return AVERROR_INVALIDDATA;
 
-    for (int i = 0; i < avctx->channels; i++) {
+    for (int i = 0; i < avctx->ch_layout.nb_channels; i++) {
         c->ch[i].chan_type = r[i];
         c->ch[i].count     = c->base_band_count + ((r[i] != 2) ? c->stereo_band_count : 0);
         c->ch[i].hfr_scale = &c->ch[i].scale_factors[c->base_band_count + c->stereo_band_count];
@@ -263,7 +269,7 @@ static void apply_intensity_stereo(HCAContext *s, ChannelContext *ch1, ChannelCo
                                    int index, unsigned band_count, unsigned base_band_count,
                                    unsigned stereo_band_count)
 {
-    float ratio_l = intensity_ratio_table[ch1->intensity[index]];
+    float ratio_l = intensity_ratio_table[ch2->intensity[index]];
     float ratio_r = ratio_l - 2.0f;
     float *c1 = &ch1->imdct_in[base_band_count];
     float *c2 = &ch2->imdct_in[base_band_count];
@@ -287,7 +293,8 @@ static void reconstruct_hfr(HCAContext *s, ChannelContext *ch,
 
     for (int i = 0, k = start_band, l = start_band - 1; i < hfr_group_count; i++){
         for (int j = 0; j < bands_per_hfr_group && k < total_band_count && l >= 0; j++, k++, l--){
-            ch->imdct_in[k] = scale_conversion_table[ (ch->hfr_scale[i] - ch->scale_factors[l]) & 63 ] * ch->imdct_in[l];
+            ch->imdct_in[k] = scale_conversion_table[ scale_conv_bias +
+                av_clip_intp2(ch->hfr_scale[i] - ch->scale_factors[l], 6) ] * ch->imdct_in[l];
         }
     }
 
@@ -407,20 +414,20 @@ static int decode_frame(AVCodecContext *avctx, void *data,
 
     packed_noise_level = (get_bits(gb, 9) << 8) - get_bits(gb, 7);
 
-    for (ch = 0; ch < avctx->channels; ch++)
+    for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
         unpack(c, &c->ch[ch], c->hfr_group_count, packed_noise_level, c->ath);
 
     for (int i = 0; i < 8; i++) {
-        for (ch = 0; ch < avctx->channels; ch++)
+        for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
             dequantize_coefficients(c, &c->ch[ch]);
-        for (ch = 0; ch < avctx->channels; ch++)
+        for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
             reconstruct_hfr(c, &c->ch[ch], c->hfr_group_count, c->bands_per_hfr_group,
                             c->stereo_band_count + c->base_band_count, c->total_band_count);
-        for (ch = 0; ch < avctx->channels - 1; ch++)
+        for (ch = 0; ch < avctx->ch_layout.nb_channels - 1; ch++)
             apply_intensity_stereo(c, &c->ch[ch], &c->ch[ch+1], i,
                                    c->total_band_count - c->base_band_count,
                                    c->base_band_count, c->stereo_band_count);
-        for (ch = 0; ch < avctx->channels; ch++)
+        for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
             run_imdct(c, &c->ch[ch], i, samples[ch] + i * 128);
     }
 
@@ -439,16 +446,17 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_hca_decoder = {
-    .name           = "hca",
-    .long_name      = NULL_IF_CONFIG_SMALL("CRI HCA"),
-    .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = AV_CODEC_ID_HCA,
+const FFCodec ff_hca_decoder = {
+    .p.name         = "hca",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("CRI HCA"),
+    .p.type         = AVMEDIA_TYPE_AUDIO,
+    .p.id           = AV_CODEC_ID_HCA,
     .priv_data_size = sizeof(HCAContext),
     .init           = decode_init,
     .decode         = decode_frame,
     .close          = decode_close,
-    .capabilities   = AV_CODEC_CAP_DR1,
-    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
+    .p.capabilities = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };

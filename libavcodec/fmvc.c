@@ -26,6 +26,7 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
+#include "codec_internal.h"
 #include "internal.h"
 
 #define BLOCK_HEIGHT 112u
@@ -440,6 +441,8 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             memcpy(dst, src, avctx->width * s->bpp);
             dst -= frame->linesize[0];
             src += s->stride * 4;
+            if (bytestream2_tell_p(pb) < y*s->stride * 4)
+                break;
         }
     } else {
         unsigned block, nb_blocks;
@@ -624,16 +627,16 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_fmvc_decoder = {
-    .name             = "fmvc",
-    .long_name        = NULL_IF_CONFIG_SMALL("FM Screen Capture Codec"),
-    .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = AV_CODEC_ID_FMVC,
+const FFCodec ff_fmvc_decoder = {
+    .p.name           = "fmvc",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("FM Screen Capture Codec"),
+    .p.type           = AVMEDIA_TYPE_VIDEO,
+    .p.id             = AV_CODEC_ID_FMVC,
     .priv_data_size   = sizeof(FMVCContext),
     .init             = decode_init,
     .close            = decode_close,
     .decode           = decode_frame,
-    .capabilities     = AV_CODEC_CAP_DR1,
+    .p.capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
                         FF_CODEC_CAP_INIT_CLEANUP,
 };
