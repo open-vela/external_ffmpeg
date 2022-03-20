@@ -27,6 +27,7 @@
 
 #include "avcodec.h"
 #include "ass.h"
+#include "codec_internal.h"
 #include "libavutil/bprint.h"
 
 static const struct {
@@ -98,13 +99,14 @@ static int webvtt_decode_frame(AVCodecContext *avctx,
     return avpkt->size;
 }
 
-AVCodec ff_webvtt_decoder = {
-    .name           = "webvtt",
-    .long_name      = NULL_IF_CONFIG_SMALL("WebVTT subtitle"),
-    .type           = AVMEDIA_TYPE_SUBTITLE,
-    .id             = AV_CODEC_ID_WEBVTT,
+const FFCodec ff_webvtt_decoder = {
+    .p.name         = "webvtt",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("WebVTT subtitle"),
+    .p.type         = AVMEDIA_TYPE_SUBTITLE,
+    .p.id           = AV_CODEC_ID_WEBVTT,
     .decode         = webvtt_decode_frame,
     .init           = ff_ass_subtitle_header_default,
     .flush          = ff_ass_decoder_flush,
     .priv_data_size = sizeof(FFASSDecoderContext),
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
