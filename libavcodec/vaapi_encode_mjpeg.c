@@ -29,7 +29,7 @@
 #include "bytestream.h"
 #include "cbs.h"
 #include "cbs_jpeg.h"
-#include "internal.h"
+#include "codec_internal.h"
 #include "jpegtables.h"
 #include "mjpeg.h"
 #include "put_bits.h"
@@ -90,34 +90,34 @@ static int vaapi_encode_mjpeg_write_image_header(AVCodecContext *avctx,
     int err;
 
     if (priv->jfif) {
-        err = ff_cbs_insert_unit_content(priv->cbc, frag, -1,
+        err = ff_cbs_insert_unit_content(frag, -1,
                                          JPEG_MARKER_APPN + 0,
                                          &priv->jfif_header, NULL);
         if (err < 0)
             goto fail;
     }
 
-    err = ff_cbs_insert_unit_content(priv->cbc, frag, -1,
+    err = ff_cbs_insert_unit_content(frag, -1,
                                      JPEG_MARKER_DQT,
                                      &priv->quant_tables, NULL);
     if (err < 0)
         goto fail;
 
-    err = ff_cbs_insert_unit_content(priv->cbc, frag, -1,
+    err = ff_cbs_insert_unit_content(frag, -1,
                                      JPEG_MARKER_SOF0,
                                      &priv->frame_header, NULL);
     if (err < 0)
         goto fail;
 
     if (priv->huffman) {
-        err = ff_cbs_insert_unit_content(priv->cbc, frag, -1,
+        err = ff_cbs_insert_unit_content(frag, -1,
                                          JPEG_MARKER_DHT,
                                          &priv->huffman_tables, NULL);
         if (err < 0)
             goto fail;
     }
 
-    err = ff_cbs_insert_unit_content(priv->cbc, frag, -1,
+    err = ff_cbs_insert_unit_content(frag, -1,
                                      JPEG_MARKER_SOS,
                                      &priv->scan, NULL);
     if (err < 0)
@@ -142,7 +142,7 @@ static int vaapi_encode_mjpeg_write_image_header(AVCodecContext *avctx,
 
     err = 0;
 fail:
-    ff_cbs_fragment_reset(priv->cbc, frag);
+    ff_cbs_fragment_reset(frag);
     return err;
 }
 
@@ -327,20 +327,20 @@ static int vaapi_encode_mjpeg_init_picture_params(AVCodecContext *avctx,
 
         switch (t) {
         case 0:
-            lengths = avpriv_mjpeg_bits_dc_luminance + 1;
-            values  = avpriv_mjpeg_val_dc;
+            lengths = ff_mjpeg_bits_dc_luminance + 1;
+            values  = ff_mjpeg_val_dc;
             break;
         case 1:
-            lengths = avpriv_mjpeg_bits_ac_luminance + 1;
-            values  = avpriv_mjpeg_val_ac_luminance;
+            lengths = ff_mjpeg_bits_ac_luminance + 1;
+            values  = ff_mjpeg_val_ac_luminance;
             break;
         case 2:
-            lengths = avpriv_mjpeg_bits_dc_chrominance + 1;
-            values  = avpriv_mjpeg_val_dc;
+            lengths = ff_mjpeg_bits_dc_chrominance + 1;
+            values  = ff_mjpeg_val_dc;
             break;
         case 3:
-            lengths = avpriv_mjpeg_bits_ac_chrominance + 1;
-            values  = avpriv_mjpeg_val_ac_chrominance;
+            lengths = ff_mjpeg_bits_ac_chrominance + 1;
+            values  = ff_mjpeg_val_ac_chrominance;
             break;
         }
 
@@ -519,7 +519,7 @@ static av_cold int vaapi_encode_mjpeg_close(AVCodecContext *avctx)
 {
     VAAPIEncodeMJPEGContext *priv = avctx->priv_data;
 
-    ff_cbs_fragment_free(priv->cbc, &priv->current_fragment);
+    ff_cbs_fragment_free(&priv->current_fragment);
     ff_cbs_close(&priv->cbc);
 
     return ff_vaapi_encode_close(avctx);
@@ -540,7 +540,7 @@ static const AVOption vaapi_encode_mjpeg_options[] = {
     { NULL },
 };
 
-static const AVCodecDefault vaapi_encode_mjpeg_defaults[] = {
+static const FFCodecDefault vaapi_encode_mjpeg_defaults[] = {
     { "b",              "0"  },
     { NULL },
 };
@@ -552,24 +552,23 @@ static const AVClass vaapi_encode_mjpeg_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_mjpeg_vaapi_encoder = {
-    .name           = "mjpeg_vaapi",
-    .long_name      = NULL_IF_CONFIG_SMALL("MJPEG (VAAPI)"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_MJPEG,
+const FFCodec ff_mjpeg_vaapi_encoder = {
+    .p.name         = "mjpeg_vaapi",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("MJPEG (VAAPI)"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_MJPEG,
     .priv_data_size = sizeof(VAAPIEncodeMJPEGContext),
     .init           = &vaapi_encode_mjpeg_init,
-    .send_frame     = &ff_vaapi_encode_send_frame,
     .receive_packet = &ff_vaapi_encode_receive_packet,
     .close          = &vaapi_encode_mjpeg_close,
-    .priv_class     = &vaapi_encode_mjpeg_class,
-    .capabilities   = AV_CODEC_CAP_HARDWARE,
+    .p.priv_class   = &vaapi_encode_mjpeg_class,
+    .p.capabilities = AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .defaults       = vaapi_encode_mjpeg_defaults,
-    .pix_fmts = (const enum AVPixelFormat[]) {
+    .p.pix_fmts = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_VAAPI,
         AV_PIX_FMT_NONE,
     },
     .hw_configs     = ff_vaapi_encode_hw_configs,
-    .wrapper_name   = "vaapi",
+    .p.wrapper_name = "vaapi",
 };
