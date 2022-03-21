@@ -33,12 +33,10 @@
 #include "libavutil/pixdesc.h"
 
 #include "avcodec.h"
-#include "encode.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "put_bits.h"
-#include "put_golomb.h"
 #include "rangecoder.h"
+#include "golomb.h"
 #include "mathops.h"
 #include "ffv1.h"
 
@@ -556,6 +554,13 @@ static av_cold int encode_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
     }
 
+#if FF_API_CODER_TYPE
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->coder_type != -1)
+        s->ac = avctx->coder_type > 0 ? AC_RANGE_CUSTOM_TAB : AC_GOLOMB_RICE;
+    else
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     if (s->ac == 1) // Compatbility with common command line usage
         s->ac = AC_RANGE_CUSTOM_TAB;
     else if (s->ac == AC_RANGE_DEFAULT_TAB_FORCE)
@@ -698,6 +703,16 @@ static av_cold int encode_init(AVCodecContext *avctx)
             s->ac = AC_RANGE_CUSTOM_TAB;
         }
     }
+#if FF_API_PRIVATE_OPT
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->context_model)
+        s->context_model = avctx->context_model;
+    if (avctx->context_model > 1U) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid context model %d, valid values are 0 and 1\n", avctx->context_model);
+        return AVERROR(EINVAL);
+    }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     if (s->ac == AC_RANGE_CUSTOM_TAB) {
         for (i = 1; i < 256; i++)
@@ -746,6 +761,12 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     if ((ret = ff_ffv1_allocate_initial_states(s)) < 0)
         return ret;
+
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     if (!s->transparency)
         s->plane_count = 2;
@@ -1161,7 +1182,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         maxsize = INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE - 32;
     }
 
-    if ((ret = ff_alloc_packet(avctx, pkt, maxsize)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, maxsize, 0)) < 0)
         return ret;
 
     ff_init_range_encoder(c, pkt->data, pkt->size);
@@ -1170,6 +1191,11 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     av_frame_unref(p);
     if ((ret = av_frame_ref(p, pict)) < 0)
         return ret;
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     if (avctx->gop_size == 0 || f->picture_number % avctx->gop_size == 0) {
         put_rac(c, &keystate, 1);
@@ -1213,7 +1239,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             bytes = ff_rac_terminate(&fs->c, 1);
         } else {
             flush_put_bits(&fs->pb); // FIXME: nicer padding
-            bytes = fs->ac_byte_count + put_bytes_output(&fs->pb);
+            bytes = fs->ac_byte_count + (put_bits_count(&fs->pb) + 7) / 8;
         }
         if (i > 0 || f->version > 2) {
             av_assert0(bytes < pkt->size / f->slice_count);
@@ -1234,6 +1260,12 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     if (avctx->flags & AV_CODEC_FLAG_PASS1)
         avctx->stats_out[0] = '\0';
+
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->key_frame = f->key_frame;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     f->picture_number++;
     pkt->size   = buf_p - pkt->data;
@@ -1278,17 +1310,24 @@ static const AVClass ffv1_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_ffv1_encoder = {
-    .p.name         = "ffv1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("FFmpeg video codec #1"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_FFV1,
+#if FF_API_CODER_TYPE
+static const AVCodecDefault ffv1_defaults[] = {
+    { "coder", "-1" },
+    { NULL },
+};
+#endif
+
+AVCodec ff_ffv1_encoder = {
+    .name           = "ffv1",
+    .long_name      = NULL_IF_CONFIG_SMALL("FFmpeg video codec #1"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_FFV1,
     .priv_data_size = sizeof(FFV1Context),
     .init           = encode_init,
     .encode2        = encode_frame,
     .close          = encode_close,
-    .p.capabilities = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_DELAY,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) {
+    .capabilities   = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_DELAY,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV420P,   AV_PIX_FMT_YUVA420P,  AV_PIX_FMT_YUVA422P,  AV_PIX_FMT_YUV444P,
         AV_PIX_FMT_YUVA444P,  AV_PIX_FMT_YUV440P,   AV_PIX_FMT_YUV422P,   AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_YUV410P,   AV_PIX_FMT_0RGB32,    AV_PIX_FMT_RGB32,     AV_PIX_FMT_YUV420P16,
@@ -1311,6 +1350,8 @@ const FFCodec ff_ffv1_encoder = {
         AV_PIX_FMT_NONE
 
     },
-    .p.priv_class   = &ffv1_class,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+#if FF_API_CODER_TYPE
+    .defaults       = ffv1_defaults,
+#endif
+    .priv_class     = &ffv1_class,
 };

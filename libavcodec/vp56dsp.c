@@ -21,9 +21,8 @@
 
 #include <stdint.h>
 
-#include "config.h"
-#include "config_components.h"
 #include "libavutil/attributes.h"
+#include "avcodec.h"
 #include "vp56dsp.h"
 #include "libavutil/common.h"
 
