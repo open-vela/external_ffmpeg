@@ -24,12 +24,10 @@
  */
 
 #include "libavutil/avassert.h"
-#include "codec_internal.h"
 #include "error_resilience.h"
 #include "internal.h"
 #include "mpeg_er.h"
-#include "mpegvideodec.h"
-#include "msmpeg4dec.h"
+#include "msmpeg4.h"
 #include "qpeldsp.h"
 #include "vc1.h"
 #include "wmv2data.h"
@@ -753,7 +751,9 @@ static av_cold int wmv9_init(AVCodecContext *avctx)
 
     v->s.avctx    = avctx;
 
-    ff_vc1_init_common(v);
+    if ((ret = ff_vc1_init_common(v)) < 0)
+        return ret;
+    ff_vc1dsp_init(&v->vc1dsp);
 
     v->profile = PROFILE_MAIN;
 
@@ -847,15 +847,14 @@ static av_cold int mss2_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_mss2_decoder = {
-    .p.name         = "mss2",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("MS Windows Media Video V9 Screen"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_MSS2,
+AVCodec ff_mss2_decoder = {
+    .name           = "mss2",
+    .long_name      = NULL_IF_CONFIG_SMALL("MS Windows Media Video V9 Screen"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MSS2,
     .priv_data_size = sizeof(MSS2Context),
     .init           = mss2_decode_init,
     .close          = mss2_decode_end,
     .decode         = mss2_decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

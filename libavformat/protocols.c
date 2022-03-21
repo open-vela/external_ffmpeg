@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config.h"
+
 #include "libavutil/avstring.h"
 #include "libavutil/mem.h"
 
@@ -25,7 +27,6 @@ extern const URLProtocol ff_async_protocol;
 extern const URLProtocol ff_bluray_protocol;
 extern const URLProtocol ff_cache_protocol;
 extern const URLProtocol ff_concat_protocol;
-extern const URLProtocol ff_concatf_protocol;
 extern const URLProtocol ff_crypto_protocol;
 extern const URLProtocol ff_data_protocol;
 extern const URLProtocol ff_ffrtmpcrypt_protocol;
@@ -33,7 +34,6 @@ extern const URLProtocol ff_ffrtmphttp_protocol;
 extern const URLProtocol ff_file_protocol;
 extern const URLProtocol ff_ftp_protocol;
 extern const URLProtocol ff_gopher_protocol;
-extern const URLProtocol ff_gophers_protocol;
 extern const URLProtocol ff_hls_protocol;
 extern const URLProtocol ff_http_protocol;
 extern const URLProtocol ff_httpproxy_protocol;
@@ -44,6 +44,7 @@ extern const URLProtocol ff_mmst_protocol;
 extern const URLProtocol ff_md5_protocol;
 extern const URLProtocol ff_pipe_protocol;
 extern const URLProtocol ff_prompeg_protocol;
+extern const URLProtocol ff_rpmsg_protocol;
 extern const URLProtocol ff_rtmp_protocol;
 extern const URLProtocol ff_rtmpe_protocol;
 extern const URLProtocol ff_rtmps_protocol;
@@ -61,7 +62,6 @@ extern const URLProtocol ff_udp_protocol;
 extern const URLProtocol ff_udplite_protocol;
 extern const URLProtocol ff_unix_protocol;
 extern const URLProtocol ff_libamqp_protocol;
-extern const URLProtocol ff_librist_protocol;
 extern const URLProtocol ff_librtmp_protocol;
 extern const URLProtocol ff_librtmpe_protocol;
 extern const URLProtocol ff_librtmps_protocol;
@@ -74,34 +74,39 @@ extern const URLProtocol ff_libzmq_protocol;
 
 #include "libavformat/protocol_list.c"
 
-const AVClass *ff_urlcontext_child_class_iterate(void **iter)
+const AVClass *ff_urlcontext_child_class_next(const AVClass *prev)
 {
-    const AVClass *ret = NULL;
-    uintptr_t i;
+    int i;
 
-    for (i = (uintptr_t)*iter; url_protocols[i]; i++) {
-        ret = url_protocols[i]->priv_data_class;
-        if (ret)
+    /* find the protocol that corresponds to prev */
+    for (i = 0; prev && url_protocols[i]; i++) {
+        if (url_protocols[i]->priv_data_class == prev) {
+            i++;
             break;
+        }
     }
 
-    *iter = (void*)(uintptr_t)(url_protocols[i] ? i + 1 : i);
-    return ret;
+    /* find next protocol with priv options */
+    for (; url_protocols[i]; i++)
+        if (url_protocols[i]->priv_data_class)
+            return url_protocols[i]->priv_data_class;
+    return NULL;
 }
+
 
 const char *avio_enum_protocols(void **opaque, int output)
 {
-    uintptr_t i;
+    URLProtocol **p = *opaque;
 
-    for (i = (uintptr_t)*opaque; url_protocols[i]; i++) {
-        const URLProtocol *p = url_protocols[i];
-        if ((output && p->url_write) || (!output && p->url_read)) {
-            *opaque = (void*)(uintptr_t)(i + 1);
-            return p->name;
-        }
+    p = p ? p + 1 : (URLProtocol **)url_protocols;
+    *opaque = p;
+    if (!*p) {
+        *opaque = NULL;
+        return NULL;
     }
-    *opaque = NULL;
-    return NULL;
+    if ((output && (*p)->url_write) || (!output && (*p)->url_read))
+        return (*p)->name;
+    return avio_enum_protocols(opaque, output);
 }
 
 const AVClass *avio_protocol_get_class(const char *name)
@@ -120,7 +125,7 @@ const URLProtocol **ffurl_get_protocols(const char *whitelist,
     const URLProtocol **ret;
     int i, ret_idx = 0;
 
-    ret = av_calloc(FF_ARRAY_ELEMS(url_protocols), sizeof(*ret));
+    ret = av_mallocz_array(FF_ARRAY_ELEMS(url_protocols), sizeof(*ret));
     if (!ret)
         return NULL;
 

@@ -23,6 +23,7 @@
 #include <vdpau/vdpau.h>
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
+#include "internal.h"
 #include "vp9data.h"
 #include "vp9dec.h"
 #include "hwconfig.h"
