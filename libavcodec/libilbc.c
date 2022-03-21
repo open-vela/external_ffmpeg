@@ -25,13 +25,7 @@
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
-#include "codec_internal.h"
-#include "encode.h"
 #include "internal.h"
-
-#ifndef LIBILBC_VERSION_MAJOR
-#define LIBILBC_VERSION_MAJOR 2
-#endif
 
 static int get_mode(AVCodecContext *avctx)
 {
@@ -47,11 +41,7 @@ static int get_mode(AVCodecContext *avctx)
 
 typedef struct ILBCDecContext {
     const AVClass *class;
-#if LIBILBC_VERSION_MAJOR < 3
     iLBC_Dec_Inst_t decoder;
-#else
-    IlbcDecoder decoder;
-#endif
     int enhance;
 } ILBCDecContext;
 
@@ -79,8 +69,8 @@ static av_cold int ilbc_decode_init(AVCodecContext *avctx)
 
     WebRtcIlbcfix_InitDecode(&s->decoder, mode, s->enhance);
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    avctx->channels       = 1;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
     avctx->sample_rate    = 8000;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
@@ -97,12 +87,7 @@ static int ilbc_decode_frame(AVCodecContext *avctx, void *data,
     int ret;
 
     if (s->decoder.no_of_bytes > buf_size) {
-#if LIBILBC_VERSION_MAJOR < 3
         av_log(avctx, AV_LOG_ERROR, "iLBC frame too short (%u, should be %u)\n",
-#else
-        av_log(avctx, AV_LOG_ERROR, "iLBC frame too short (%u, should be "
-                                    "%"SIZE_SPECIFIER")\n",
-#endif
                buf_size, s->decoder.no_of_bytes);
         return AVERROR_INVALIDDATA;
     }
@@ -118,25 +103,21 @@ static int ilbc_decode_frame(AVCodecContext *avctx, void *data,
     return s->decoder.no_of_bytes;
 }
 
-const FFCodec ff_libilbc_decoder = {
-    .p.name         = "libilbc",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("iLBC (Internet Low Bitrate Codec)"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_ILBC,
+AVCodec ff_libilbc_decoder = {
+    .name           = "libilbc",
+    .long_name      = NULL_IF_CONFIG_SMALL("iLBC (Internet Low Bitrate Codec)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_ILBC,
     .priv_data_size = sizeof(ILBCDecContext),
     .init           = ilbc_decode_init,
     .decode         = ilbc_decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
-    .p.priv_class   = &ilbc_dec_class,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .priv_class     = &ilbc_dec_class,
 };
 
 typedef struct ILBCEncContext {
     const AVClass *class;
-#if LIBILBC_VERSION_MAJOR < 3
     iLBC_Enc_Inst_t encoder;
-#else
-    IlbcEncoder encoder;
-#endif
     int mode;
 } ILBCEncContext;
 
@@ -162,7 +143,7 @@ static av_cold int ilbc_encode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    if (avctx->ch_layout.nb_channels != 1) {
+    if (avctx->channels != 1) {
         av_log(avctx, AV_LOG_ERROR, "Only mono supported\n");
         return AVERROR(EINVAL);
     }
@@ -185,7 +166,7 @@ static int ilbc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     ILBCEncContext *s = avctx->priv_data;
     int ret;
 
-    if ((ret = ff_alloc_packet(avctx, avpkt, 50)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, 50, 0)) < 0)
         return ret;
 
     WebRtcIlbcfix_EncodeImpl((uint16_t *) avpkt->data, (const int16_t *) frame->data[0], &s->encoder);
@@ -195,22 +176,22 @@ static int ilbc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     return 0;
 }
 
-static const FFCodecDefault ilbc_encode_defaults[] = {
+static const AVCodecDefault ilbc_encode_defaults[] = {
     { "b", "0" },
     { NULL }
 };
 
-const FFCodec ff_libilbc_encoder = {
-    .p.name         = "libilbc",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("iLBC (Internet Low Bitrate Codec)"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_ILBC,
+AVCodec ff_libilbc_encoder = {
+    .name           = "libilbc",
+    .long_name      = NULL_IF_CONFIG_SMALL("iLBC (Internet Low Bitrate Codec)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_ILBC,
     .priv_data_size = sizeof(ILBCEncContext),
     .init           = ilbc_encode_init,
     .encode2        = ilbc_encode_frame,
-    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
+    .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
     .defaults       = ilbc_encode_defaults,
-    .p.priv_class   = &ilbc_enc_class,
-    .p.wrapper_name = "libbilbc",
+    .priv_class     = &ilbc_enc_class,
+    .wrapper_name   = "libbilbc",
 };
