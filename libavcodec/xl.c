@@ -27,7 +27,6 @@
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 static const int xl_table[32] = {
@@ -128,13 +127,12 @@ static av_cold int decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_xl_decoder = {
-    .p.name       = "xl",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("Miro VideoXL"),
-    .p.type       = AVMEDIA_TYPE_VIDEO,
-    .p.id         = AV_CODEC_ID_VIXL,
+AVCodec ff_xl_decoder = {
+    .name         = "xl",
+    .long_name    = NULL_IF_CONFIG_SMALL("Miro VideoXL"),
+    .type         = AVMEDIA_TYPE_VIDEO,
+    .id           = AV_CODEC_ID_VIXL,
     .init         = decode_init,
     .decode       = decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities = AV_CODEC_CAP_DR1,
 };
