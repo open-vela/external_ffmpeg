@@ -23,7 +23,6 @@
  */
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 
@@ -112,7 +111,6 @@ static int cpia_decode_frame(AVCodecContext *avctx,
         // Read line length, two byte little endian
         linelength = AV_RL16(src);
         src += 2;
-        src_size -= 2;
 
         if (src_size < linelength) {
             frame->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
@@ -222,15 +220,14 @@ static av_cold int cpia_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_cpia_decoder = {
-    .p.name         = "cpia",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("CPiA video format"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_CPIA,
+AVCodec ff_cpia_decoder = {
+    .name           = "cpia",
+    .long_name      = NULL_IF_CONFIG_SMALL("CPiA video format"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_CPIA,
     .priv_data_size = sizeof(CpiaContext),
     .init           = cpia_decode_init,
     .close          = cpia_decode_end,
     .decode         = cpia_decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

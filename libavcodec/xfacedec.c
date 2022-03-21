@@ -27,7 +27,6 @@
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "xface.h"
 
@@ -177,14 +176,13 @@ static int xface_decode_frame(AVCodecContext *avctx,
     return avpkt->size;
 }
 
-const FFCodec ff_xface_decoder = {
-    .p.name         = "xface",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("X-face image"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_XFACE,
+AVCodec ff_xface_decoder = {
+    .name           = "xface",
+    .long_name      = NULL_IF_CONFIG_SMALL("X-face image"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_XFACE,
     .priv_data_size = sizeof(XFaceContext),
     .init           = xface_decode_init,
     .decode         = xface_decode_frame,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_MONOWHITE, AV_PIX_FMT_NONE },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MONOWHITE, AV_PIX_FMT_NONE },
 };

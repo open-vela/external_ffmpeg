@@ -21,9 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <string.h>
-
-#include "attributes.h"
+#include "avutil.h"
+#include "common.h"
 #include "intreadwrite.h"
 #include "mem.h"
 #include "blowfish.h"

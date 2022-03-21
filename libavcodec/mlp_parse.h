@@ -21,10 +21,6 @@
 #ifndef AVCODEC_MLP_PARSE_H
 #define AVCODEC_MLP_PARSE_H
 
-#include <stdint.h>
-
-#include "libavutil/channel_layout.h"
-
 #include "get_bits.h"
 
 typedef struct MLPHeaderInfo
