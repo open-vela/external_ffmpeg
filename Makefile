@@ -1,166 +1,194 @@
-#
-# Copyright (C) 2020 Xiaomi Corporation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+MAIN_MAKEFILE=1
+include ffbuild/config.mak
 
-include $(APPDIR)/Make.defs
+vpath %.c    $(SRC_PATH)
+vpath %.cpp  $(SRC_PATH)
+vpath %.h    $(SRC_PATH)
+vpath %.inc  $(SRC_PATH)
+vpath %.m    $(SRC_PATH)
+vpath %.S    $(SRC_PATH)
+vpath %.asm  $(SRC_PATH)
+vpath %.rc   $(SRC_PATH)
+vpath %.v    $(SRC_PATH)
+vpath %.texi $(SRC_PATH)
+vpath %.cu   $(SRC_PATH)
+vpath %.ptx  $(SRC_PATH)
+vpath %.metal $(SRC_PATH)
+vpath %/fate_config.sh.template $(SRC_PATH)
 
-SBINDIR   := $(BINDIR)
-SINCDIR   := $(INCDIR)
-SAR       := $(AR)
--include ffbuild/config.mak
-BINDIR    := $(SBINDIR)
-INCDIR    := $(SINCDIR)
-AR        := $(SAR)
+TESTTOOLS   = audiogen videogen rotozoom tiny_psnr tiny_ssim base64 audiomatch
+HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 
-CSRCS     :=
-ASRCS     :=
-SRC_PATH  := .
-
-CFG_ARCH  := $(CONFIG_ARCH)
-ifeq ($(CONFIG_ARCH),avr)
-  CFG_ARCH = avr32
-endif
-
-ifneq ($(CONFIG_ARCH),sim)
-  CFG_CMDS += --arch=$(CFG_ARCH) --target-os=none
-  CFG_CMDS += --enable-cross-compile --cross-prefix=$(CROSSDEV)
-  CFG_CMDS += --cc=$(CC)
-endif
-
-ifneq ($(CONFIG_LIB_MBEDTLS),)
-  CFG_CMDS += --enable-mbedtls
-endif
-
-FFLIBS-$(CONFIG_AVCODEC)    += avcodec
+# $(FFLIBS-yes) needs to be in linking order
 FFLIBS-$(CONFIG_AVDEVICE)   += avdevice
 FFLIBS-$(CONFIG_AVFILTER)   += avfilter
 FFLIBS-$(CONFIG_AVFORMAT)   += avformat
-FFLIBS-$(CONFIG_AVRESAMPLE) += avresample
-FFLIBS-yes                  += avutil
+FFLIBS-$(CONFIG_AVCODEC)    += avcodec
 FFLIBS-$(CONFIG_POSTPROC)   += postproc
 FFLIBS-$(CONFIG_SWRESAMPLE) += swresample
 FFLIBS-$(CONFIG_SWSCALE)    += swscale
+
+FFLIBS := avutil
+
+DATA_FILES := $(wildcard $(SRC_PATH)/presets/*.ffpreset) $(SRC_PATH)/doc/ffprobe.xsd
+
+SKIPHEADERS = compat/w32pthreads.h
+
+# first so "all" becomes default target
+all: all-yes
+
+include $(SRC_PATH)/tools/Makefile
+include $(SRC_PATH)/ffbuild/common.mak
+
+FF_EXTRALIBS := $(FFEXTRALIBS)
+FF_DEP_LIBS  := $(DEP_LIBS)
+FF_STATIC_DEP_LIBS := $(STATIC_DEP_LIBS)
+
+$(TOOLS): %$(EXESUF): %.o
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(EXTRALIBS-$(*F)) $(EXTRALIBS) $(ELIBS)
+
+target_dec_%_fuzzer$(EXESUF): target_dec_%_fuzzer.o $(FF_DEP_LIBS)
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+
+tools/target_bsf_%_fuzzer$(EXESUF): tools/target_bsf_%_fuzzer.o $(FF_DEP_LIBS)
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+
+target_dem_%_fuzzer$(EXESUF): target_dem_%_fuzzer.o $(FF_DEP_LIBS)
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+
+tools/target_dem_fuzzer$(EXESUF): tools/target_dem_fuzzer.o $(FF_DEP_LIBS)
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+
+tools/target_io_dem_fuzzer$(EXESUF): tools/target_io_dem_fuzzer.o $(FF_DEP_LIBS)
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+
+
+tools/enum_options$(EXESUF): ELIBS = $(FF_EXTRALIBS)
+tools/enum_options$(EXESUF): $(FF_DEP_LIBS)
+tools/scale_slice_test$(EXESUF): $(FF_DEP_LIBS)
+tools/scale_slice_test$(EXESUF): ELIBS = $(FF_EXTRALIBS)
+tools/sofa2wavs$(EXESUF): ELIBS = $(FF_EXTRALIBS)
+tools/uncoded_frame$(EXESUF): $(FF_DEP_LIBS)
+tools/uncoded_frame$(EXESUF): ELIBS = $(FF_EXTRALIBS)
+tools/target_dec_%_fuzzer$(EXESUF): $(FF_DEP_LIBS)
+tools/target_dem_%_fuzzer$(EXESUF): $(FF_DEP_LIBS)
+
+CONFIGURABLE_COMPONENTS =                                           \
+    $(wildcard $(FFLIBS:%=$(SRC_PATH)/lib%/all*.c))                 \
+    $(SRC_PATH)/libavcodec/bitstream_filters.c                      \
+    $(SRC_PATH)/libavcodec/parsers.c                                \
+    $(SRC_PATH)/libavformat/protocols.c                             \
+
+config_components.h: ffbuild/.config
+ffbuild/.config: $(CONFIGURABLE_COMPONENTS)
+	@-tput bold 2>/dev/null
+	@-printf '\nWARNING: $(?) newer than config_components.h, rerun configure\n\n'
+	@-tput sgr0 2>/dev/null
 
 SUBDIR_VARS := CLEANFILES FFLIBS HOSTPROGS TESTPROGS TOOLS               \
                HEADERS ARCH_HEADERS BUILT_HEADERS SKIPHEADERS            \
                ARMV5TE-OBJS ARMV6-OBJS ARMV8-OBJS VFP-OBJS NEON-OBJS     \
                ALTIVEC-OBJS VSX-OBJS MMX-OBJS X86ASM-OBJS                \
                MIPSFPU-OBJS MIPSDSPR2-OBJS MIPSDSP-OBJS MSA-OBJS         \
-               MMI-OBJS OBJS SLIBOBJS HOSTOBJS TESTOBJS
+               MMI-OBJS LSX-OBJS LASX-OBJS OBJS SLIBOBJS SHLIBOBJS       \
+               STLIBOBJS HOSTOBJS TESTOBJS
 
-define DOSUBDIR
-  $(foreach V,$(SUBDIR_VARS), $(V) := $(V)-yes :=)
-  include $(1)/Makefile
-  -include $(1)/$$(ARCH)/Makefile
-  include ffbuild/arch.mak
-  SOBJS := $$(sort $$(addprefix $(1)/, $$(OBJS) $$(OBJS-yes)))
-  CSRCS += $$(wildcard $$(patsubst %.o,%.c, $$(SOBJS)))
-  ASRCS += $$(wildcard $$(patsubst %.o,%.S, $$(SOBJS)))
+define RESET
+$(1) :=
+$(1)-yes :=
 endef
 
-$(foreach D,$(FFLIBS-yes),$(eval $(call DOSUBDIR,lib$(D))))
+define DOSUBDIR
+$(foreach V,$(SUBDIR_VARS),$(eval $(call RESET,$(V))))
+SUBDIR := $(1)/
+include $(SRC_PATH)/$(1)/Makefile
+-include $(SRC_PATH)/$(1)/$(ARCH)/Makefile
+-include $(SRC_PATH)/$(1)/$(INTRINSICS)/Makefile
+include $(SRC_PATH)/ffbuild/library.mak
+endef
 
-PRIORITY  = $(CONFIG_LIB_FFMPEG_TOOLS_PRIORITY)
-STACKSIZE = $(CONFIG_LIB_FFMPEG_TOOLS_STACKSIZE)
-MODULE    = $(CONFIG_LIB_FFMPEG)
-CSRCS    += fftools/cmdutils.c
+$(foreach D,$(FFLIBS),$(eval $(call DOSUBDIR,lib$(D))))
 
-ifeq ($(CONFIG_FFMPEG),yes)
-  PROGNAME += ffmpeg
-  MAINSRC  += fftools/ffmpeg.c
-  CSRCS    += fftools/ffmpeg_opt.c fftools/ffmpeg_filter.c fftools/ffmpeg_hw.c
+include $(SRC_PATH)/fftools/Makefile
+include $(SRC_PATH)/doc/Makefile
+include $(SRC_PATH)/doc/examples/Makefile
+
+libavcodec/avcodec.o libavformat/utils.o libavdevice/avdevice.o libavfilter/avfilter.o libavutil/utils.o libpostproc/postprocess.o libswresample/swresample.o libswscale/utils.o : libavutil/ffversion.h
+
+$(PROGS): %$(PROGSSUF)$(EXESUF): %$(PROGSSUF)_g$(EXESUF)
+ifeq ($(STRIPTYPE),direct)
+	$(STRIP) -o $@ $<
+else
+	$(CP) $< $@
+	$(STRIP) $@
 endif
 
-ifeq ($(CONFIG_FFPROBE),yes)
-  PROGNAME += ffprobe
-  MAINSRC  += fftools/ffprobe.c
-endif
+%$(PROGSSUF)_g$(EXESUF): $(FF_DEP_LIBS)
+	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $(OBJS-$*) $(FF_EXTRALIBS)
 
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" .}
+VERSION_SH  = $(SRC_PATH)/ffbuild/version.sh
+GIT_LOG     = $(SRC_PATH)/.git/logs/HEAD
 
-ifeq ($(CONFIG_LIB_FLUORIDE_SBC_DECODER),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libfluoride-sbc/decoder/include}
-endif
-ifeq ($(CONFIG_LIB_FLUORIDE_SBC_ENCODER),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libfluoride-sbc/encoder/include}
-endif
-
-ifeq ($(CONFIG_LIB_HELIX_AAC),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libhelix-aac}
-endif
-ifeq ($(CONFIG_LIB_HELIX_MP3),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/libhelix-mp3/pub}
-endif
-
-ifeq ($(CONFIG_LIB_OPUS),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/opus/include}
-endif
-
-ifeq ($(CONFIG_UORB),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/uORB}
-endif
-
-ifeq ($(CONFIG_LIB_ZLIB),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/zlib}
-endif
-
-ifeq ($(CONFIG_LIB_SILK),y)
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/external/silk-v3-decoder/silk/interface}
-endif
-
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/bes/framework/services_hifi4/services/multimedia/audio/smf/core/inc}
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/xiaomi/miwear/xiaomi_enc}
-CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/xiaomi/miwear/bes_aec}
-
-CFLAGS += -Wno-shift-count-overflow -Wno-implicit-int-float-conversion
-CFLAGS += $(CFLAGS_HEADERS) -DHAVE_AV_CONFIG_H -DZLIB_CONST
-
-EXTRA := $(filter-out -W%, $(CFLAGS))
+.version: $(wildcard $(GIT_LOG)) $(VERSION_SH) ffbuild/config.mak
+.version: M=@
 
 libavutil/ffversion.h .version:
-	$(Q)ffbuild/version.sh . libavutil/ffversion.h $(EXTRA_VERSION)
+	$(M)$(VERSION_SH) $(SRC_PATH) libavutil/ffversion.h $(EXTRA_VERSION)
+	$(Q)touch .version
 
-config.h:
-	$(Q) echo "FFMPEG configure... $(CONFIG_ARCH)"
-	$(Q)./configure             --disable-all                   \
-		--disable-everything    --disable-autodetect            \
-		--disable-amf           --disable-audiotoolbox          \
-		--disable-cuda-llvm     --disable-cuvid                 \
-		--disable-d3d11va       --disable-doc                   \
-		--disable-dwt           --disable-dxva2                 \
-		--disable-dxva2         --disable-error-resilience      \
-		--disable-faan          --disable-ffnvcodec             \
-		--disable-htmlpages     --disable-iconv                 \
-		--disable-lsp           --disable-lzo                   \
-		--disable-manpages      --disable-pic                   \
-		--disable-pixelutils    --disable-podpages              \
-		--disable-nvdec         --disable-nvenc                 \
-		--disable-txtpages      --disable-v4l2-m2m              \
-		--disable-vaapi         --disable-vdpau                 \
-		--disable-videotoolbox  --disable-x86asm                \
-		--disable-xop           --disable-threads               \
-		--enable-version3       --enable-small                  \
-		--extra-cflags="$(EXTRA)" --extra-ldflags="$(CFLAGS)"   \
-		--ld=echo --pkg-config=false assert_level=3 $(CFG_CMDS) \
-		"$(CONFIG_LIB_FFMPEG_CONFIGURATION)"
+# force version.sh to run whenever version might have changed
+-include .version
 
-context:: config.h libavutil/ffversion.h
+install: install-libs install-headers
 
-distclean::
-	rm -f .version config.h ffbuild/.config ffbuild/config*
-	rm -f libavutil/avconfig.h libavutil/ffversion.h
-	find ./ -name "*_list.c" | xargs rm -f
+install-libs: install-libs-yes
 
-include $(APPDIR)/Application.mk
+install-data: $(DATA_FILES)
+	$(Q)mkdir -p "$(DATADIR)"
+	$(INSTALL) -m 644 $(DATA_FILES) "$(DATADIR)"
+
+uninstall: uninstall-data uninstall-headers uninstall-libs uninstall-pkgconfig
+
+uninstall-data:
+	$(RM) -r "$(DATADIR)"
+
+clean::
+	$(RM) $(CLEANSUFFIXES)
+	$(RM) $(addprefix compat/,$(CLEANSUFFIXES)) $(addprefix compat/*/,$(CLEANSUFFIXES)) $(addprefix compat/*/*/,$(CLEANSUFFIXES))
+	$(RM) -r coverage-html
+	$(RM) -rf coverage.info coverage.info.in lcov
+
+distclean:: clean
+	$(RM) .version config.asm config.h config_components.h mapfile  \
+		ffbuild/.config ffbuild/config.* libavutil/avconfig.h \
+		version.h libavutil/ffversion.h libavcodec/codec_names.h \
+		libavcodec/bsf_list.c libavformat/protocol_list.c \
+		libavcodec/codec_list.c libavcodec/parser_list.c \
+		libavfilter/filter_list.c libavdevice/indev_list.c libavdevice/outdev_list.c \
+		libavformat/muxer_list.c libavformat/demuxer_list.c
+ifeq ($(SRC_LINK),src)
+	$(RM) src
+endif
+	$(RM) -rf doc/examples/pc-uninstalled
+
+config:
+	$(SRC_PATH)/configure $(value FFMPEG_CONFIGURATION)
+
+build: all alltools examples testprogs
+check: all alltools examples testprogs fate
+
+include $(SRC_PATH)/tests/Makefile
+
+$(sort $(OUTDIRS)):
+	$(Q)mkdir -p $@
+
+# Dummy rule to stop make trying to rebuild removed or renamed headers
+%.h:
+	@:
+
+# Disable suffix rules.  Most of the builtin rules are suffix rules,
+# so this saves some time on slow systems.
+.SUFFIXES:
+
+.PHONY: all all-yes alltools build check config testprogs
+.PHONY: *clean install* uninstall*
