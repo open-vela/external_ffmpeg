@@ -325,6 +325,7 @@ static int binkaudio_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     if (decode_block(s, (float **)frame->extended_data,
                      avctx->codec->id == AV_CODEC_ID_BINKAUDIO_DCT)) {
         av_log(avctx, AV_LOG_ERROR, "Incomplete packet\n");
+        s->ch_offset = 0;
         return AVERROR_INVALIDDATA;
     }
     get_bits_align32(gb);
@@ -337,6 +338,7 @@ static int binkaudio_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
     return 0;
 fail:
+    s->ch_offset = 0;
     av_packet_unref(s->pkt);
     return ret;
 }
