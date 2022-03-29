@@ -40,7 +40,6 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 #define BITMAPINFOHEADER_SIZE 0x28
@@ -54,7 +53,6 @@ typedef struct TDSCContext {
     GetByteContext gbc;
 
     AVFrame *refframe;          // full decoded frame (without cursor)
-    AVPacket *jpkt;             // encoded JPEG tile
     AVFrame *jpgframe;          // decoded JPEG tile
     uint8_t *tilebuffer;        // buffer containing tile data
 
@@ -82,7 +80,6 @@ static av_cold int tdsc_close(AVCodecContext *avctx)
 
     av_frame_free(&ctx->refframe);
     av_frame_free(&ctx->jpgframe);
-    av_packet_free(&ctx->jpkt);
     av_freep(&ctx->deflatebuffer);
     av_freep(&ctx->tilebuffer);
     av_freep(&ctx->cursor);
@@ -114,8 +111,7 @@ static av_cold int tdsc_init(AVCodecContext *avctx)
     /* Allocate reference and JPEG frame */
     ctx->refframe = av_frame_alloc();
     ctx->jpgframe = av_frame_alloc();
-    ctx->jpkt     = av_packet_alloc();
-    if (!ctx->refframe || !ctx->jpgframe || !ctx->jpkt)
+    if (!ctx->refframe || !ctx->jpgframe)
         return AVERROR(ENOMEM);
 
     /* Prepare everything needed for JPEG decoding */
@@ -129,7 +125,7 @@ static av_cold int tdsc_init(AVCodecContext *avctx)
     ctx->jpeg_avctx->flags2 = avctx->flags2;
     ctx->jpeg_avctx->dct_algo = avctx->dct_algo;
     ctx->jpeg_avctx->idct_algo = avctx->idct_algo;
-    ret = avcodec_open2(ctx->jpeg_avctx, codec, NULL);
+    ret = ff_codec_open2_recursive(ctx->jpeg_avctx, codec, NULL);
     if (ret < 0)
         return ret;
 
@@ -346,14 +342,15 @@ static int tdsc_decode_jpeg_tile(AVCodecContext *avctx, int tile_size,
                                  int x, int y, int w, int h)
 {
     TDSCContext *ctx = avctx->priv_data;
+    AVPacket jpkt;
     int ret;
 
     /* Prepare a packet and send to the MJPEG decoder */
-    av_packet_unref(ctx->jpkt);
-    ctx->jpkt->data = ctx->tilebuffer;
-    ctx->jpkt->size = tile_size;
+    av_init_packet(&jpkt);
+    jpkt.data = ctx->tilebuffer;
+    jpkt.size = tile_size;
 
-    ret = avcodec_send_packet(ctx->jpeg_avctx, ctx->jpkt);
+    ret = avcodec_send_packet(ctx->jpeg_avctx, &jpkt);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error submitting a packet for decoding\n");
         return ret;
@@ -393,7 +390,7 @@ static int tdsc_decode_tiles(AVCodecContext *avctx, int number_tiles)
     for (i = 0; i < number_tiles; i++) {
         int tile_size;
         int tile_mode;
-        int x, y, x2, y2, w, h;
+        int x, y, w, h;
         int ret;
 
         if (bytestream2_get_bytes_left(&ctx->gbc) < 4 ||
@@ -411,19 +408,20 @@ static int tdsc_decode_tiles(AVCodecContext *avctx, int number_tiles)
         bytestream2_skip(&ctx->gbc, 4); // unknown
         x = bytestream2_get_le32(&ctx->gbc);
         y = bytestream2_get_le32(&ctx->gbc);
-        x2 = bytestream2_get_le32(&ctx->gbc);
-        y2 = bytestream2_get_le32(&ctx->gbc);
+        w = bytestream2_get_le32(&ctx->gbc) - x;
+        h = bytestream2_get_le32(&ctx->gbc) - y;
 
-        if (x < 0 || y < 0 || x2 <= x || y2 <= y ||
-            x2 > ctx->width || y2 > ctx->height
-        ) {
+        if (x >= ctx->width || y >= ctx->height) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Invalid tile position (%d.%d %d.%d outside %dx%d).\n",
-                   x, y, x2, y2, ctx->width, ctx->height);
+                   "Invalid tile position (%d.%d outside %dx%d).\n",
+                   x, y, ctx->width, ctx->height);
             return AVERROR_INVALIDDATA;
         }
-        w = x2 - x;
-        h = y2 - y;
+        if (x + w > ctx->width || y + h > ctx->height) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Invalid tile size %dx%d\n", w, h);
+            return AVERROR_INVALIDDATA;
+        }
 
         ret = av_reallocp(&ctx->tilebuffer, tile_size);
         if (!ctx->tilebuffer)
@@ -532,15 +530,10 @@ static int tdsc_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Resize deflate buffer on resolution change */
     if (ctx->width != avctx->width || ctx->height != avctx->height) {
-        int deflatelen = avctx->width * avctx->height * (3 + 1);
-        if (deflatelen != ctx->deflatelen) {
-            ctx->deflatelen =deflatelen;
-            ret = av_reallocp(&ctx->deflatebuffer, ctx->deflatelen);
-            if (ret < 0) {
-                ctx->deflatelen = 0;
-                return ret;
-            }
-        }
+        ctx->deflatelen = avctx->width * avctx->height * (3 + 1);
+        ret = av_reallocp(&ctx->deflatebuffer, ctx->deflatelen);
+        if (ret < 0)
+            return ret;
     }
     dlen = ctx->deflatelen;
 
@@ -622,16 +615,16 @@ static int tdsc_decode_frame(AVCodecContext *avctx, void *data,
     return avpkt->size;
 }
 
-const FFCodec ff_tdsc_decoder = {
-    .p.name         = "tdsc",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("TDSC"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_TDSC,
+AVCodec ff_tdsc_decoder = {
+    .name           = "tdsc",
+    .long_name      = NULL_IF_CONFIG_SMALL("TDSC"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_TDSC,
     .init           = tdsc_init,
     .decode         = tdsc_decode_frame,
     .close          = tdsc_close,
     .priv_data_size = sizeof(TDSCContext),
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
 };
