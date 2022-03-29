@@ -19,7 +19,6 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "amfenc.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 #define OFFSET(x) offsetof(AmfContext, x)
@@ -70,7 +69,7 @@ static const AVOption options[] = {
     { "gop",            "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_HEADER_INSERTION_MODE_GOP_ALIGNED }, 0, 0, VE, "hdrmode" },
     { "idr",            "", 0, AV_OPT_TYPE_CONST, { .i64 = AMF_VIDEO_ENCODER_HEVC_HEADER_INSERTION_MODE_IDR_ALIGNED }, 0, 0, VE, "hdrmode" },
 
-    { "gops_per_idr",    "GOPs per IDR 0-no IDR will be inserted",  OFFSET(gops_per_idr),  AV_OPT_TYPE_INT,  { .i64 = 1  },  0, INT_MAX, VE },
+    { "gops_per_idr",    "GOPs per IDR 0-no IDR will be inserted",  OFFSET(gops_per_idr),  AV_OPT_TYPE_INT,  { .i64 = 60 },  0, INT_MAX, VE },
     { "preanalysis",    "Enable preanalysis",                       OFFSET(preanalysis),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
     { "vbaq",           "Enable VBAQ",                              OFFSET(enable_vbaq),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
     { "enforce_hrd",    "Enforce HRD",                              OFFSET(enforce_hrd),   AV_OPT_TYPE_BOOL, { .i64 = 0  },  0, 1, VE},
@@ -293,14 +292,12 @@ static av_cold int amf_encode_init_hevc(AVCodecContext *avctx)
 
     return 0;
 }
-static const FFCodecDefault defaults[] = {
+static const AVCodecDefault defaults[] = {
     { "refs",       "-1"  },
     { "aspect",     "0"   },
     { "b",          "2M"  },
     { "g",          "250" },
     { "slices",     "1"   },
-    { "qmin",       "-1"  },
-    { "qmax",       "-1"  },
     { NULL                },
 };
 static const AVClass hevc_amf_class = {
@@ -310,21 +307,20 @@ static const AVClass hevc_amf_class = {
     .version = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_hevc_amf_encoder = {
-    .p.name         = "hevc_amf",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("AMD AMF HEVC encoder"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_HEVC,
+AVCodec ff_hevc_amf_encoder = {
+    .name           = "hevc_amf",
+    .long_name      = NULL_IF_CONFIG_SMALL("AMD AMF HEVC encoder"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HEVC,
     .init           = amf_encode_init_hevc,
+    .send_frame     = ff_amf_send_frame,
     .receive_packet = ff_amf_receive_packet,
     .close          = ff_amf_encode_close,
     .priv_data_size = sizeof(AmfContext),
-    .p.priv_class   = &hevc_amf_class,
+    .priv_class     = &hevc_amf_class,
     .defaults       = defaults,
-    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE |
-                      AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
-    .p.pix_fmts     = ff_amf_pix_fmts,
-    .p.wrapper_name = "amf",
-    .hw_configs     = ff_amfenc_hw_configs,
+    .pix_fmts       = ff_amf_pix_fmts,
+    .wrapper_name   = "amf",
 };

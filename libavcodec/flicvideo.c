@@ -41,7 +41,6 @@
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "mathops.h"
 
@@ -736,8 +735,6 @@ static int flic_decode_frame_15_16BPP(AVCodecContext *avctx,
                 bytestream2_skip(&g2, chunk_size - 6);
             } else {
 
-                if (bytestream2_get_bytes_left(&g2) < 2 * s->avctx->width * s->avctx->height )
-                    return AVERROR_INVALIDDATA;
                 for (y_ptr = 0; y_ptr < s->frame->linesize[0] * s->avctx->height;
                      y_ptr += s->frame->linesize[0]) {
 
@@ -1105,15 +1102,14 @@ static av_cold int flic_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_flic_decoder = {
-    .p.name         = "flic",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Autodesk Animator Flic video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_FLIC,
+AVCodec ff_flic_decoder = {
+    .name           = "flic",
+    .long_name      = NULL_IF_CONFIG_SMALL("Autodesk Animator Flic video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_FLIC,
     .priv_data_size = sizeof(FlicDecodeContext),
     .init           = flic_decode_init,
     .close          = flic_decode_end,
     .decode         = flic_decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
