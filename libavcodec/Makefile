@@ -680,6 +680,8 @@ OBJS-$(CONFIG_SGI_ENCODER)             += sgienc.o rle.o
 OBJS-$(CONFIG_SGIRLE_DECODER)          += sgirledec.o
 OBJS-$(CONFIG_SHEERVIDEO_DECODER)      += sheervideo.o
 OBJS-$(CONFIG_SHORTEN_DECODER)         += shorten.o
+OBJS-$(CONFIG_SILK_DECODER)            += silkdec.o
+OBJS-$(CONFIG_SILK_ENCODER)            += silkenc.o
 OBJS-$(CONFIG_SIPR_DECODER)            += sipr.o acelp_pitch_delay.o \
                                           celp_math.o acelp_vectors.o \
                                           acelp_filters.o celp_filters.o \

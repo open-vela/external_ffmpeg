@@ -306,6 +306,8 @@ extern const FFCodec ff_sgi_encoder;
 extern const FFCodec ff_sgi_decoder;
 extern const FFCodec ff_sgirle_decoder;
 extern const FFCodec ff_sheervideo_decoder;
+extern const FFCodec ff_silk_encoder;
+extern const FFCodec ff_silk_decoder;
 extern const FFCodec ff_simbiosis_imx_decoder;
 extern const FFCodec ff_smacker_decoder;
 extern const FFCodec ff_smc_encoder;

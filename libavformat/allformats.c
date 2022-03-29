@@ -443,6 +443,8 @@ extern const FFInputFormat  ff_ser_demuxer;
 extern const FFInputFormat  ff_sga_demuxer;
 extern const FFInputFormat  ff_shorten_demuxer;
 extern const FFInputFormat  ff_siff_demuxer;
+extern const FFInputFormat  ff_silk_demuxer;
+extern const FFOutputFormat ff_silk_muxer;
 extern const FFInputFormat  ff_simbiosis_imx_demuxer;
 extern const FFInputFormat  ff_sln_demuxer;
 extern const FFInputFormat  ff_smacker_demuxer;
