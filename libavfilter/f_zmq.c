@@ -23,8 +23,6 @@
  * receive commands through libzeromq and broker them to filters
  */
 
-#include "config_components.h"
-
 #include <zmq.h>
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -205,9 +203,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *ref)
     return ff_filter_frame(ctx->outputs[0], ref);
 }
 
-AVFILTER_DEFINE_CLASS_EXT(zmq, "(a)zmq", options);
-
 #if CONFIG_ZMQ_FILTER
+
+#define zmq_options options
+AVFILTER_DEFINE_CLASS(zmq);
 
 static const AVFilterPad zmq_inputs[] = {
     {
@@ -215,6 +214,7 @@ static const AVFilterPad zmq_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad zmq_outputs[] = {
@@ -222,16 +222,17 @@ static const AVFilterPad zmq_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_zmq = {
+AVFilter ff_vf_zmq = {
     .name        = "zmq",
     .description = NULL_IF_CONFIG_SMALL("Receive commands through ZMQ and broker them to filters."),
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(ZMQContext),
-    FILTER_INPUTS(zmq_inputs),
-    FILTER_OUTPUTS(zmq_outputs),
+    .inputs      = zmq_inputs,
+    .outputs     = zmq_outputs,
     .priv_class  = &zmq_class,
 };
 
@@ -239,12 +240,16 @@ const AVFilter ff_vf_zmq = {
 
 #if CONFIG_AZMQ_FILTER
 
+#define azmq_options options
+AVFILTER_DEFINE_CLASS(azmq);
+
 static const AVFilterPad azmq_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad azmq_outputs[] = {
@@ -252,17 +257,18 @@ static const AVFilterPad azmq_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_azmq = {
+AVFilter ff_af_azmq = {
     .name        = "azmq",
     .description = NULL_IF_CONFIG_SMALL("Receive commands through ZMQ and broker them to filters."),
-    .priv_class  = &zmq_class,
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(ZMQContext),
-    FILTER_INPUTS(azmq_inputs),
-    FILTER_OUTPUTS(azmq_outputs),
+    .inputs      = azmq_inputs,
+    .outputs     = azmq_outputs,
+    .priv_class  = &azmq_class,
 };
 
 #endif
