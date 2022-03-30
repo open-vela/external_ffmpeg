@@ -42,7 +42,6 @@
 #include "libavutil/internal.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 typedef struct RpzaContext {
@@ -287,15 +286,14 @@ static av_cold int rpza_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_rpza_decoder = {
-    .p.name         = "rpza",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("QuickTime video (RPZA)"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_RPZA,
+AVCodec ff_rpza_decoder = {
+    .name           = "rpza",
+    .long_name      = NULL_IF_CONFIG_SMALL("QuickTime video (RPZA)"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_RPZA,
     .priv_data_size = sizeof(RpzaContext),
     .init           = rpza_decode_init,
     .close          = rpza_decode_end,
     .decode         = rpza_decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

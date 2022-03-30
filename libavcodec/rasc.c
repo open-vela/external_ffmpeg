@@ -24,14 +24,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
-#include "zlib_wrapper.h"
 
 #include <zlib.h>
 
@@ -60,19 +59,16 @@ typedef struct RASCContext {
     unsigned        cursor_y;
     int             stride;
     int             bpp;
+    z_stream        zstream;
     AVFrame        *frame;
     AVFrame        *frame1;
     AVFrame        *frame2;
-    FFZStream       zstream;
 } RASCContext;
 
 static void clear_plane(AVCodecContext *avctx, AVFrame *frame)
 {
     RASCContext *s = avctx->priv_data;
     uint8_t *dst = frame->data[0];
-
-    if (!dst)
-        return;
 
     for (int y = 0; y < avctx->height; y++) {
         memset(dst, 0, avctx->width * s->bpp);
@@ -113,7 +109,7 @@ static int init_frames(AVCodecContext *avctx)
 }
 
 static int decode_fint(AVCodecContext *avctx,
-                       const AVPacket *avpkt, unsigned size)
+                       AVPacket *avpkt, unsigned size)
 {
     RASCContext *s = avctx->priv_data;
     GetByteContext *gb = &s->gb;
@@ -172,15 +168,14 @@ static int decode_fint(AVCodecContext *avctx,
     return 0;
 }
 
-static int decode_zlib(AVCodecContext *avctx, const AVPacket *avpkt,
+static int decode_zlib(AVCodecContext *avctx, AVPacket *avpkt,
                        unsigned size, unsigned uncompressed_size)
 {
     RASCContext *s = avctx->priv_data;
-    z_stream *const zstream = &s->zstream.zstream;
     GetByteContext *gb = &s->gb;
     int zret;
 
-    zret = inflateReset(zstream);
+    zret = inflateReset(&s->zstream);
     if (zret != Z_OK) {
         av_log(avctx, AV_LOG_ERROR, "Inflate reset error: %d\n", zret);
         return AVERROR_EXTERNAL;
@@ -190,13 +185,13 @@ static int decode_zlib(AVCodecContext *avctx, const AVPacket *avpkt,
     if (!s->delta)
         return AVERROR(ENOMEM);
 
-    zstream->next_in  = avpkt->data + bytestream2_tell(gb);
-    zstream->avail_in = FFMIN(size, bytestream2_get_bytes_left(gb));
+    s->zstream.next_in  = avpkt->data + bytestream2_tell(gb);
+    s->zstream.avail_in = FFMIN(size, bytestream2_get_bytes_left(gb));
 
-    zstream->next_out  = s->delta;
-    zstream->avail_out = s->delta_size;
+    s->zstream.next_out  = s->delta;
+    s->zstream.avail_out = s->delta_size;
 
-    zret = inflate(zstream, Z_FINISH);
+    zret = inflate(&s->zstream, Z_FINISH);
     if (zret != Z_STREAM_END) {
         av_log(avctx, AV_LOG_ERROR,
                "Inflate failed with return code: %d.\n", zret);
@@ -207,7 +202,7 @@ static int decode_zlib(AVCodecContext *avctx, const AVPacket *avpkt,
 }
 
 static int decode_move(AVCodecContext *avctx,
-                       const AVPacket *avpkt, unsigned size)
+                       AVPacket *avpkt, unsigned size)
 {
     RASCContext *s = avctx->priv_data;
     GetByteContext *gb = &s->gb;
@@ -331,7 +326,7 @@ static int decode_move(AVCodecContext *avctx,
     len--;
 
 static int decode_dlta(AVCodecContext *avctx,
-                       const AVPacket *avpkt, unsigned size)
+                       AVPacket *avpkt, unsigned size)
 {
     RASCContext *s = avctx->priv_data;
     GetByteContext *gb = &s->gb;
@@ -473,10 +468,9 @@ static int decode_dlta(AVCodecContext *avctx,
 }
 
 static int decode_kfrm(AVCodecContext *avctx,
-                       const AVPacket *avpkt, unsigned size)
+                       AVPacket *avpkt, unsigned size)
 {
     RASCContext *s = avctx->priv_data;
-    z_stream *const zstream = &s->zstream.zstream;
     GetByteContext *gb = &s->gb;
     uint8_t *dst;
     unsigned pos;
@@ -492,21 +486,21 @@ static int decode_kfrm(AVCodecContext *avctx,
     if (!s->frame2->data[0])
         return AVERROR_INVALIDDATA;
 
-    zret = inflateReset(zstream);
+    zret = inflateReset(&s->zstream);
     if (zret != Z_OK) {
         av_log(avctx, AV_LOG_ERROR, "Inflate reset error: %d\n", zret);
         return AVERROR_EXTERNAL;
     }
 
-    zstream->next_in  = avpkt->data + bytestream2_tell(gb);
-    zstream->avail_in = bytestream2_get_bytes_left(gb);
+    s->zstream.next_in  = avpkt->data + bytestream2_tell(gb);
+    s->zstream.avail_in = bytestream2_get_bytes_left(gb);
 
     dst = s->frame2->data[0] + (avctx->height - 1) * s->frame2->linesize[0];
     for (int i = 0; i < avctx->height; i++) {
-        zstream->next_out  = dst;
-        zstream->avail_out = s->stride;
+        s->zstream.next_out  = dst;
+        s->zstream.avail_out = s->stride;
 
-        zret = inflate(zstream, Z_SYNC_FLUSH);
+        zret = inflate(&s->zstream, Z_SYNC_FLUSH);
         if (zret != Z_OK && zret != Z_STREAM_END) {
             av_log(avctx, AV_LOG_ERROR,
                    "Inflate failed with return code: %d.\n", zret);
@@ -518,10 +512,10 @@ static int decode_kfrm(AVCodecContext *avctx,
 
     dst = s->frame1->data[0] + (avctx->height - 1) * s->frame1->linesize[0];
     for (int i = 0; i < avctx->height; i++) {
-        zstream->next_out  = dst;
-        zstream->avail_out = s->stride;
+        s->zstream.next_out  = dst;
+        s->zstream.avail_out = s->stride;
 
-        zret = inflate(zstream, Z_SYNC_FLUSH);
+        zret = inflate(&s->zstream, Z_SYNC_FLUSH);
         if (zret != Z_OK && zret != Z_STREAM_END) {
             av_log(avctx, AV_LOG_ERROR,
                    "Inflate failed with return code: %d.\n", zret);
@@ -537,7 +531,7 @@ static int decode_kfrm(AVCodecContext *avctx,
 }
 
 static int decode_mous(AVCodecContext *avctx,
-                       const AVPacket *avpkt, unsigned size)
+                       AVPacket *avpkt, unsigned size)
 {
     RASCContext *s = avctx->priv_data;
     GetByteContext *gb = &s->gb;
@@ -577,7 +571,7 @@ static int decode_mous(AVCodecContext *avctx,
 }
 
 static int decode_mpos(AVCodecContext *avctx,
-                       const AVPacket *avpkt, unsigned size)
+                       AVPacket *avpkt, unsigned size)
 {
     RASCContext *s = avctx->priv_data;
     GetByteContext *gb = &s->gb;
@@ -725,7 +719,6 @@ static int decode_frame(AVCodecContext *avctx,
             break;
         default:
             bytestream2_skip(gb, size);
-            ret = 0;
         }
 
         if (ret < 0)
@@ -755,13 +748,23 @@ static int decode_frame(AVCodecContext *avctx,
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     RASCContext *s = avctx->priv_data;
+    int zret;
+
+    s->zstream.zalloc = Z_NULL;
+    s->zstream.zfree = Z_NULL;
+    s->zstream.opaque = Z_NULL;
+    zret = inflateInit(&s->zstream);
+    if (zret != Z_OK) {
+        av_log(avctx, AV_LOG_ERROR, "Inflate init error: %d\n", zret);
+        return AVERROR_EXTERNAL;
+    }
 
     s->frame1 = av_frame_alloc();
     s->frame2 = av_frame_alloc();
     if (!s->frame1 || !s->frame2)
         return AVERROR(ENOMEM);
 
-    return ff_inflate_init(&s->zstream, avctx);
+    return 0;
 }
 
 static av_cold int decode_close(AVCodecContext *avctx)
@@ -774,7 +777,7 @@ static av_cold int decode_close(AVCodecContext *avctx)
     s->delta_size = 0;
     av_frame_free(&s->frame1);
     av_frame_free(&s->frame2);
-    ff_inflate_end(&s->zstream);
+    inflateEnd(&s->zstream);
 
     return 0;
 }
@@ -799,18 +802,18 @@ static const AVClass rasc_decoder_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_rasc_decoder = {
-    .p.name           = "rasc",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("RemotelyAnywhere Screen Capture"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_RASC,
+AVCodec ff_rasc_decoder = {
+    .name             = "rasc",
+    .long_name        = NULL_IF_CONFIG_SMALL("RemotelyAnywhere Screen Capture"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_RASC,
     .priv_data_size   = sizeof(RASCContext),
     .init             = decode_init,
     .close            = decode_close,
     .decode           = decode_frame,
     .flush            = decode_flush,
-    .p.capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities     = AV_CODEC_CAP_DR1,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
                         FF_CODEC_CAP_INIT_CLEANUP,
-    .p.priv_class     = &rasc_decoder_class,
+    .priv_class       = &rasc_decoder_class,
 };

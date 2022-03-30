@@ -21,8 +21,6 @@
 #ifndef AVCODEC_QSV_INTERNAL_H
 #define AVCODEC_QSV_INTERNAL_H
 
-#include "config.h"
-
 #if CONFIG_VAAPI
 #define AVCODEC_QSV_LINUX_SESSION_HANDLE
 #endif //CONFIG_VAAPI
@@ -52,8 +50,6 @@
 
 #define QSV_MAX_ENC_PAYLOAD 2       // # of mfxEncodeCtrl payloads supported
 
-#define QSV_MAX_FRAME_EXT_PARAMS 4
-
 #define QSV_VERSION_ATLEAST(MAJOR, MINOR)   \
     (MFX_VERSION_MAJOR > (MAJOR) ||         \
      MFX_VERSION_MAJOR == (MAJOR) && MFX_VERSION_MINOR >= (MINOR))
@@ -64,7 +60,7 @@
 
 typedef struct QSVMid {
     AVBufferRef *hw_frames_ref;
-    mfxHDLPair *handle_pair;
+    mfxHDL handle;
 
     AVFrame *locked_frame;
     AVFrame *hw_frame;
@@ -76,13 +72,7 @@ typedef struct QSVFrame {
     mfxFrameSurface1 surface;
     mfxEncodeCtrl enc_ctrl;
     mfxExtDecodedFrameInfo dec_info;
-#if QSV_VERSION_ATLEAST(1, 34)
-    mfxExtAV1FilmGrainParam av1_film_grain_param;
-#endif
-    mfxExtBuffer *ext_param[QSV_MAX_FRAME_EXT_PARAMS];
-    int num_ext_params;
-
-    mfxPayload *payloads[QSV_MAX_ENC_PAYLOAD]; ///< used for enc_ctrl.Payload
+    mfxExtBuffer *ext_param;
 
     int queued;
     int used;
@@ -114,6 +104,11 @@ typedef struct QSVFramesContext {
 int ff_qsv_print_iopattern(void *log_ctx, int mfx_iopattern,
                            const char *extra_string);
 
+/**
+ * Convert a libmfx error code into an ffmpeg error code.
+ */
+int ff_qsv_map_error(mfxStatus mfx_err, const char **desc);
+
 int ff_qsv_print_error(void *log_ctx, mfxStatus err,
                        const char *error_string);
 
@@ -121,6 +116,7 @@ int ff_qsv_print_warning(void *log_ctx, mfxStatus err,
                          const char *warning_string);
 
 int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id);
+int ff_qsv_level_to_mfx(enum AVCodecID codec_id, int level);
 
 enum AVPixelFormat ff_qsv_map_fourcc(uint32_t fourcc);
 
@@ -143,8 +139,5 @@ int ff_qsv_init_session_frames(AVCodecContext *avctx, mfxSession *session,
                                const char *load_plugins, int opaque, int gpu_copy);
 
 int ff_qsv_find_surface_idx(QSVFramesContext *ctx, QSVFrame *frame);
-
-void ff_qsv_frame_add_ext_param(AVCodecContext *avctx, QSVFrame *frame,
-                                mfxExtBuffer *param);
 
 #endif /* AVCODEC_QSV_INTERNAL_H */
