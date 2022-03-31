@@ -24,6 +24,7 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "copy_block.h"
+#include "codec_internal.h"
 #include "internal.h"
 
 
@@ -104,10 +105,8 @@ static av_cold int paf_video_init(AVCodecContext *avctx)
     c->video_size = avctx->width * avctx->height;
     for (i = 0; i < 4; i++) {
         c->frame[i] = av_mallocz(c->frame_size);
-        if (!c->frame[i]) {
-            paf_video_close(avctx);
+        if (!c->frame[i])
             return AVERROR(ENOMEM);
-        }
     }
 
     return 0;
@@ -409,14 +408,15 @@ static int paf_video_decode(AVCodecContext *avctx, void *data,
     return pkt->size;
 }
 
-AVCodec ff_paf_video_decoder = {
-    .name           = "paf_video",
-    .long_name      = NULL_IF_CONFIG_SMALL("Amazing Studio Packed Animation File Video"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_PAF_VIDEO,
+const FFCodec ff_paf_video_decoder = {
+    .p.name         = "paf_video",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("Amazing Studio Packed Animation File Video"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_PAF_VIDEO,
     .priv_data_size = sizeof(PAFVideoDecContext),
     .init           = paf_video_init,
     .close          = paf_video_close,
     .decode         = paf_video_decode,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .p.capabilities = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
