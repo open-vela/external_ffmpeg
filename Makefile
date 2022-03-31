@@ -124,10 +124,14 @@ CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/bes/framework/
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/xiaomi/miwear/xiaomi_enc}
 CFLAGS += ${shell $(INCDIR) $(INCDIROPT) "$(CC)" $(APPDIR)/vendor/xiaomi/miwear/bes_aec}
 
-CFLAGS += -Wno-shift-count-overflow -Wno-implicit-int-float-conversion
+ifeq ($(MAKECMDGOALS), context)
+CFLAGS += -Wno-error
+endif
+
+CFLAGS += -Wno-shift-count-overflow -Wno-implicit-int-float-conversion -Wno-shadow
 CFLAGS += $(CFLAGS_HEADERS) -DHAVE_AV_CONFIG_H -DZLIB_CONST
 
-EXTRA :=  $(CFLAGS)
+EXTRA := $(CFLAGS)
 
 libavutil/ffversion.h .version:
 	$(Q)ffbuild/version.sh . libavutil/ffversion.h $(EXTRA_VERSION)
