@@ -31,7 +31,6 @@
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "bytestream.h"
 
@@ -573,15 +572,14 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_vmnc_decoder = {
-    .p.name         = "vmnc",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("VMware Screen Codec / VMware Video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_VMNC,
+AVCodec ff_vmnc_decoder = {
+    .name           = "vmnc",
+    .long_name      = NULL_IF_CONFIG_SMALL("VMware Screen Codec / VMware Video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_VMNC,
     .priv_data_size = sizeof(VmncContext),
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

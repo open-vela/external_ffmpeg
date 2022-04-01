@@ -31,7 +31,6 @@
 #include "libavutil/internal.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 #define CDTOONS_HEADER_SIZE   44
@@ -443,16 +442,15 @@ static av_cold int cdtoons_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_cdtoons_decoder = {
-    .p.name         = "cdtoons",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("CDToons video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_CDTOONS,
+AVCodec ff_cdtoons_decoder = {
+    .name           = "cdtoons",
+    .long_name      = NULL_IF_CONFIG_SMALL("CDToons video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_CDTOONS,
     .priv_data_size = sizeof(CDToonsContext),
     .init           = cdtoons_decode_init,
     .close          = cdtoons_decode_end,
     .decode         = cdtoons_decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .flush          = cdtoons_flush,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

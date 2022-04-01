@@ -22,10 +22,11 @@
  */
 
 #include "avcodec.h"
-#include "codec_internal.h"
+#include "internal.h"
 #include "v210dec.h"
 #include "libavutil/bswap.h"
 #include "libavutil/internal.h"
+#include "libavutil/mem.h"
 #include "libavutil/intreadwrite.h"
 #include "thread.h"
 
@@ -142,6 +143,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     V210DecContext *s = avctx->priv_data;
     ThreadData td;
     int ret, stride, aligned_input;
+    ThreadFrame frame = { .f = data };
     AVFrame *pic = data;
     const uint8_t *psrc = avpkt->data;
 
@@ -176,7 +178,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         ff_v210dec_init(s);
     }
 
-    if ((ret = ff_thread_get_buffer(avctx, pic, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
 
     pic->pict_type = AV_PICTURE_TYPE_I;
@@ -212,17 +214,16 @@ static const AVClass v210dec_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_v210_decoder = {
-    .p.name         = "v210",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Uncompressed 4:2:2 10-bit"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_V210,
+AVCodec ff_v210_decoder = {
+    .name           = "v210",
+    .long_name      = NULL_IF_CONFIG_SMALL("Uncompressed 4:2:2 10-bit"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_V210,
     .priv_data_size = sizeof(V210DecContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .p.capabilities = AV_CODEC_CAP_DR1 |
+    .capabilities   = AV_CODEC_CAP_DR1 |
                       AV_CODEC_CAP_SLICE_THREADS |
                       AV_CODEC_CAP_FRAME_THREADS,
-    .p.priv_class   = &v210dec_class,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .priv_class     = &v210dec_class,
 };
