@@ -24,8 +24,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include <stdio.h>
 #include <stddef.h>
 #include <math.h>
@@ -34,9 +32,7 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/downmix_info.h"
-#include "libavutil/intmath.h"
 #include "libavutil/opt.h"
-#include "libavutil/thread.h"
 #include "bswapdsp.h"
 #include "internal.h"
 #include "aac_ac3_parser.h"
@@ -187,28 +183,23 @@ static av_cold void ac3_tables_init(void)
  */
 static av_cold int ac3_decode_init(AVCodecContext *avctx)
 {
-    static AVOnce init_static_once = AV_ONCE_INIT;
     AC3DecodeContext *s = avctx->priv_data;
-    const AVChannelLayout mono   = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
-    const AVChannelLayout stereo = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
-    int i, ret;
+    int i;
 
     s->avctx = avctx;
 
-    if ((ret = ff_mdct_init(&s->imdct_256, 8, 1, 1.0)) < 0 ||
-        (ret = ff_mdct_init(&s->imdct_512, 9, 1, 1.0)) < 0)
-        return ret;
+    ac3_tables_init();
+    ff_mdct_init(&s->imdct_256, 8, 1, 1.0);
+    ff_mdct_init(&s->imdct_512, 9, 1, 1.0);
     AC3_RENAME(ff_kbd_window_init)(s->window, 5.0, 256);
     ff_bswapdsp_init(&s->bdsp);
 
 #if (USE_FIXED)
     s->fdsp = avpriv_alloc_fixed_dsp(avctx->flags & AV_CODEC_FLAG_BITEXACT);
 #else
-    ff_fmt_convert_init(&s->fmt_conv, avctx);
     s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    ff_fmt_convert_init(&s->fmt_conv, avctx);
 #endif
-    if (!s->fdsp)
-        return AVERROR(ENOMEM);
 
     ff_ac3dsp_init(&s->ac3dsp, avctx->flags & AV_CODEC_FLAG_BITEXACT);
     av_lfg_init(&s->dith_state, 0);
@@ -219,31 +210,18 @@ static av_cold int ac3_decode_init(AVCodecContext *avctx)
         avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
 
     /* allow downmixing to stereo or mono */
-#if FF_API_OLD_CHANNEL_LAYOUT
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (avctx->request_channel_layout) {
-        av_channel_layout_uninit(&s->downmix_layout);
-        av_channel_layout_from_mask(&s->downmix_layout, avctx->request_channel_layout);
-    }
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-    if (avctx->ch_layout.nb_channels > 1 &&
-        !av_channel_layout_compare(&s->downmix_layout, &mono)) {
-        av_channel_layout_uninit(&avctx->ch_layout);
-        avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
-    } else if (avctx->ch_layout.nb_channels > 2 &&
-             !av_channel_layout_compare(&s->downmix_layout, &stereo)) {
-        av_channel_layout_uninit(&avctx->ch_layout);
-        avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
-    }
+    if (avctx->channels > 1 &&
+        avctx->request_channel_layout == AV_CH_LAYOUT_MONO)
+        avctx->channels = 1;
+    else if (avctx->channels > 2 &&
+             avctx->request_channel_layout == AV_CH_LAYOUT_STEREO)
+        avctx->channels = 2;
     s->downmixed = 1;
 
     for (i = 0; i < AC3_MAX_CHANNELS; i++) {
         s->xcfptr[i] = s->transform_coeffs[i];
         s->dlyptr[i] = s->delay[i];
     }
-
-    ff_thread_once(&init_static_once, ac3_tables_init);
 
     return 0;
 }
@@ -372,12 +350,14 @@ static int parse_frame_header(AC3DecodeContext *s)
         s->skip_syntax           = 1;
         memset(s->channel_uses_aht, 0, sizeof(s->channel_uses_aht));
         return ac3_parse_header(s);
-    } else if (CONFIG_EAC3_DECODER) {
+    } else {
+#if CONFIG_EAC3_DECODER
         s->eac3 = 1;
         return ff_eac3_parse_header(s);
-    } else {
+#else
         av_log(s->avctx, AV_LOG_ERROR, "E-AC-3 support not compiled in\n");
         return AVERROR(ENOSYS);
+#endif
     }
 }
 
@@ -538,7 +518,7 @@ static void ac3_decode_transform_coeffs_ch(AC3DecodeContext *s, int ch_index, ma
     int end_freq   = s->end_freq[ch_index];
     uint8_t *baps  = s->bap[ch_index];
     int8_t *exps   = s->dexps[ch_index];
-    int32_t *coeffs = s->fixed_coeffs[ch_index];
+    int *coeffs    = s->fixed_coeffs[ch_index];
     int dither     = (ch_index == CPL_CH) || s->dither_flag[ch_index];
     GetBitContext *gbc = &s->gbc;
     int freq;
@@ -635,8 +615,10 @@ static inline void decode_transform_coeffs_ch(AC3DecodeContext *s, int blk,
         /* if AHT is used, mantissas for all blocks are encoded in the first
            block of the frame. */
         int bin;
-        if (CONFIG_EAC3_DECODER && !blk)
+#if CONFIG_EAC3_DECODER
+        if (!blk)
             ff_eac3_decode_transform_coeffs_aht_ch(s, ch);
+#endif
         for (bin = s->start_freq[ch]; bin < s->end_freq[ch]; bin++) {
             s->fixed_coeffs[ch][bin] = s->pre_mantissa[ch][bin][blk] >> s->dexps[ch][bin];
         }
@@ -1426,14 +1408,16 @@ static int decode_audio_block(AC3DecodeContext *s, int blk, int offset)
           gain = gain * s->level_gain[audio_channel];
         gain *= 1.0 / 4194304.0f;
         s->fmt_conv.int32_to_float_fmul_scalar(s->transform_coeffs[ch],
-                                               s->fixed_coeffs[ch], gain, 256);
+                                               (int32_t *)s->fixed_coeffs[ch], gain, 256);
 #endif
     }
 
+#if CONFIG_EAC3_DECODER
     /* apply spectral extension to high frequency bins */
-    if (CONFIG_EAC3_DECODER && s->spx_in_use) {
+    if (s->spx_in_use) {
         ff_eac3_apply_spectral_extension(s);
     }
+#endif
 
     /* downmix and MDCT. order depends on whether block switching is used for
        any channel in this block. this is because coefficients for the long
@@ -1496,7 +1480,6 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
     const SHORTFLOAT *output[AC3_MAX_CHANNELS];
     enum AVMatrixEncoding matrix_encoding;
     AVDownmixInfo *downmix_info;
-    uint64_t mask;
 
     s->superframe_size = 0;
 
@@ -1607,11 +1590,11 @@ dependent_frame:
         if (s->lfe_on)
             s->output_mode |= AC3_OUTPUT_LFEON;
         if (s->channels > 1 &&
-            !av_channel_layout_compare(&s->downmix_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_MONO)) {
+            avctx->request_channel_layout == AV_CH_LAYOUT_MONO) {
             s->out_channels = 1;
             s->output_mode  = AC3_CHMODE_MONO;
         } else if (s->channels > 2 &&
-                   !av_channel_layout_compare(&s->downmix_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO)) {
+                   avctx->request_channel_layout == AV_CH_LAYOUT_STEREO) {
             s->out_channels = 2;
             s->output_mode  = AC3_CHMODE_STEREO;
         }
@@ -1632,13 +1615,10 @@ dependent_frame:
         av_log(avctx, AV_LOG_ERROR, "unable to determine channel mode\n");
         return AVERROR_INVALIDDATA;
     }
-
-    mask = ff_ac3_channel_layout_tab[s->output_mode & ~AC3_OUTPUT_LFEON];
+    avctx->channels = s->out_channels;
+    avctx->channel_layout = avpriv_ac3_channel_layout_tab[s->output_mode & ~AC3_OUTPUT_LFEON];
     if (s->output_mode & AC3_OUTPUT_LFEON)
-        mask |= AV_CH_LOW_FREQUENCY;
-
-    av_channel_layout_uninit(&avctx->ch_layout);
-    av_channel_layout_from_mask(&avctx->ch_layout, mask);
+        avctx->channel_layout |= AV_CH_LOW_FREQUENCY;
 
     /* set audio service type based on bitstream mode for AC-3 */
     avctx->audio_service_type = s->bitstream_mode;
@@ -1720,7 +1700,7 @@ skip:
         extended_channel_map[ch] = ch;
 
     if (s->frame_type == EAC3_FRAME_TYPE_DEPENDENT) {
-        uint64_t ich_layout = ff_ac3_channel_layout_tab[s->prev_output_mode & ~AC3_OUTPUT_LFEON];
+        uint64_t ich_layout = avpriv_ac3_channel_layout_tab[s->prev_output_mode & ~AC3_OUTPUT_LFEON];
         int channel_map_size = ff_ac3_channels_tab[s->output_mode & ~AC3_OUTPUT_LFEON] + s->lfe_on;
         uint64_t channel_layout;
         int extend = 0;
@@ -1734,20 +1714,20 @@ skip:
                 channel_layout |= ff_eac3_custom_channel_map_locations[ch][1];
             }
         }
-        if (av_popcount64(channel_layout) > EAC3_MAX_CHANNELS) {
+        if (av_get_channel_layout_nb_channels(channel_layout) > EAC3_MAX_CHANNELS) {
             av_log(avctx, AV_LOG_ERROR, "Too many channels (%d) coded\n",
-                   av_popcount64(channel_layout));
+                   av_get_channel_layout_nb_channels(channel_layout));
             return AVERROR_INVALIDDATA;
         }
 
-        av_channel_layout_uninit(&avctx->ch_layout);
-        av_channel_layout_from_mask(&avctx->ch_layout, channel_layout);
+        avctx->channel_layout = channel_layout;
+        avctx->channels = av_get_channel_layout_nb_channels(channel_layout);
 
         for (ch = 0; ch < EAC3_MAX_CHANNELS; ch++) {
             if (s->channel_map & (1 << (EAC3_MAX_CHANNELS - ch - 1))) {
                 if (ff_eac3_custom_channel_map_locations[ch][0]) {
-                    int index = av_channel_layout_index_from_channel(&avctx->ch_layout,
-                                                                     ff_ctzll(ff_eac3_custom_channel_map_locations[ch][1]));
+                    int index = av_get_channel_layout_channel_index(channel_layout,
+                                                                    ff_eac3_custom_channel_map_locations[ch][1]);
                     if (index < 0)
                         return AVERROR_INVALIDDATA;
                     if (extend >= channel_map_size)
@@ -1759,7 +1739,8 @@ skip:
 
                     for (i = 0; i < 64; i++) {
                         if ((1ULL << i) & ff_eac3_custom_channel_map_locations[ch][1]) {
-                            int index = av_channel_layout_index_from_channel(&avctx->ch_layout, i);
+                            int index = av_get_channel_layout_channel_index(channel_layout,
+                                                                            1ULL << i);
                             if (index < 0)
                                 return AVERROR_INVALIDDATA;
                             if (extend >= channel_map_size)
@@ -1778,7 +1759,7 @@ skip:
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
-    for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++) {
+    for (ch = 0; ch < avctx->channels; ch++) {
         int map = extended_channel_map[ch];
         av_assert0(ch>=AV_NUM_DATA_POINTERS || frame->extended_data[ch] == frame->data[ch]);
         memcpy((SHORTFLOAT *)frame->extended_data[ch],
