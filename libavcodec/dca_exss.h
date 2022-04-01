@@ -21,7 +21,7 @@
 #ifndef AVCODEC_DCA_EXSS_H
 #define AVCODEC_DCA_EXSS_H
 
-#include <stdint.h>
+#include "libavutil/common.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
