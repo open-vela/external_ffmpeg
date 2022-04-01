@@ -180,7 +180,7 @@ static int bluelet_enc_control_message(struct AVFormatContext* ctx, int type,
 
             if (priv->ctrl_fd == poll->fd) {
                 int action = ff_bluelet_handle_event(priv);
-                if (action == BLUELET_ACTION_WRITABLE) {
+                if (action == BLUELET_ACTION_AVAILABLE) {
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
                 } else if (action == BLUELET_ACTION_CONFIG) {
                     ctx->oformat->audio_codec = priv->codec_id;

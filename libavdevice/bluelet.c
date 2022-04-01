@@ -313,7 +313,7 @@ static int ff_bluelet_update_config(BlueletPriv* priv)
 error:
     priv->codec_id = AV_CODEC_ID_NONE;
     priv->state = BLUELET_STATE_IDLE;
-    return BLUELET_ACTION_WRITABLE;
+    return BLUELET_ACTION_AVAILABLE;
 }
 
 int ff_bluelet_handle_event(BlueletPriv* priv)
@@ -328,11 +328,11 @@ int ff_bluelet_handle_event(BlueletPriv* priv)
 
     switch (event) {
     case BLUELET_CTRL_EVT_STARTED:
-        action = BLUELET_ACTION_WRITABLE;
+        action = BLUELET_ACTION_AVAILABLE;
         priv->state = BLUELET_STATE_STARTED;
         break;
     case BLUELET_CTRL_EVT_START_FAIL:
-        action = BLUELET_ACTION_WRITABLE;
+        action = BLUELET_ACTION_AVAILABLE;
         priv->state = BLUELET_STATE_CONFIGED;
         break;
     case BLUELET_CTRL_EVT_STOPPED:

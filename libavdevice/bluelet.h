@@ -34,7 +34,7 @@
  ****************************************************************************/
 enum {
     BLUELET_ACTION_NONE,
-    BLUELET_ACTION_WRITABLE,
+    BLUELET_ACTION_AVAILABLE,
     BLUELET_ACTION_CONFIG,
 };
 
