@@ -99,7 +99,7 @@ static int bluelet_read_packet(AVFormatContext *ctx, AVPacket *pkt)
 
 static int bluelet_dec_init(struct AVFormatContext *ctx)
 {
-    BlueletPriv* priv = ctx->priv_data;
+    BlueletPriv *priv = ctx->priv_data;
 
     priv->playback  = false;
     priv->available = false;
@@ -110,7 +110,7 @@ static int bluelet_dec_init(struct AVFormatContext *ctx)
 
 static void bluelet_dec_deinit(struct AVFormatContext *ctx)
 {
-    BlueletPriv* priv = ctx->priv_data;
+    BlueletPriv *priv = ctx->priv_data;
 
     ff_bluelet_deinit(priv);
 }
@@ -165,8 +165,8 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
     return ret;
 }
 
-static int bluelet_dec_capbility_query_ranges(struct AVOptionRanges** ranges, void* obj,
-                                              const char* key, int flags)
+static int bluelet_dec_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
+                                              const char *key, int flags)
 {
     return ff_bluelet_capbility_query_ranges(ranges, obj, key, flags);
 }
@@ -179,9 +179,9 @@ static const AVClass bluelet_dec_cap_class = {
     .query_ranges = bluelet_dec_capbility_query_ranges,
 };
 
-static int bluelet_dec_create_device_capabilities(struct AVFormatContext* ctx, struct AVDeviceCapabilitiesQuery* caps)
+static int bluelet_dec_create_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
 {
-    BlueletPriv* priv = ctx->priv_data;
+    BlueletPriv *priv = ctx->priv_data;
 
     if (priv->codec_id == AV_CODEC_ID_NONE)
         return FFERROR_NOT_READY;
@@ -191,7 +191,7 @@ static int bluelet_dec_create_device_capabilities(struct AVFormatContext* ctx, s
     return 0;
 }
 
-static int bluelet_dec_free_device_capabilities(struct AVFormatContext* ctx, struct AVDeviceCapabilitiesQuery* caps)
+static int bluelet_dec_free_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
 {
     return 0;
 }

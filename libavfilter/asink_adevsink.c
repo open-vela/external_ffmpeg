@@ -447,7 +447,7 @@ static int adevsink_process_command(AVFilterContext *ctx,
     }
 }
 
-static const struct AVClass* adevsink_child_class_next(const struct AVClass *prev)
+static const struct AVClass *adevsink_child_class_next(const struct AVClass *prev)
 {
     if (!prev)
         return avformat_get_class();
@@ -457,7 +457,7 @@ static const struct AVClass* adevsink_child_class_next(const struct AVClass *pre
         return NULL;
 }
 
-static void* adevsink_child_next(void *obj, void *prev)
+static void *adevsink_child_next(void *obj, void *prev)
 {
     ADevSinkPriv *priv = obj;
 

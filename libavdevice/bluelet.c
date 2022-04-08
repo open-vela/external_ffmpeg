@@ -97,8 +97,8 @@ typedef struct {
 } bluelet_sbc_param_t;
 
 struct bluelet_ipc_pair {
-    const char* ctrl;
-    const char* data;
+    const char *ctrl;
+    const char *data;
 };
 
 static const struct bluelet_ipc_pair ipc_pair[2] = {
@@ -117,7 +117,7 @@ static void ff_bluelet_socket_disconnect(int socket_fd)
     }
 }
 
-static int ff_bluelet_socket_connect(const char* server_name, const char* path, bool nonblock)
+static int ff_bluelet_socket_connect(const char *server_name, const char *path, bool nonblock)
 {
     int socket_fd;
     int ret;
@@ -157,7 +157,7 @@ static int ff_bluelet_socket_connect(const char* server_name, const char* path, 
     return socket_fd;
 }
 
-static int ff_bluelet_recv_ctrl(BlueletPriv* priv, void* buffer, size_t length)
+static int ff_bluelet_recv_ctrl(BlueletPriv *priv, void *buffer, size_t length)
 {
     assert(priv->ctrl_fd > 0);
 
@@ -173,7 +173,7 @@ static int ff_bluelet_recv_ctrl(BlueletPriv* priv, void* buffer, size_t length)
     return 0;
 }
 
-static int ff_bluelet_send_ctrl(BlueletPriv* priv, const void* buffer, size_t length)
+static int ff_bluelet_send_ctrl(BlueletPriv *priv, const void *buffer, size_t length)
 {
     assert(priv->ctrl_fd > 0);
 
@@ -189,7 +189,7 @@ static int ff_bluelet_send_ctrl(BlueletPriv* priv, const void* buffer, size_t le
     return 0;
 }
 
-int ff_bluelet_init(BlueletPriv* priv, bool nonblock)
+int ff_bluelet_init(BlueletPriv *priv, bool nonblock)
 {
     priv->ctrl_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].ctrl, nonblock);
     if (priv->ctrl_fd < 0)
@@ -204,7 +204,7 @@ int ff_bluelet_init(BlueletPriv* priv, bool nonblock)
     return 0;
 }
 
-void ff_bluelet_deinit(BlueletPriv* priv)
+void ff_bluelet_deinit(BlueletPriv *priv)
 {
     ff_bluelet_socket_disconnect(priv->ctrl_fd);
     ff_bluelet_socket_disconnect(priv->data_fd);
@@ -214,7 +214,7 @@ void ff_bluelet_deinit(BlueletPriv* priv)
     priv->state = BLUELET_STATE_IDLE;
 }
 
-int ff_bluelet_read_buffer(BlueletPriv* priv, void* buffer, size_t bytes)
+int ff_bluelet_read_buffer(BlueletPriv *priv, void *buffer, size_t bytes)
 {
     int ret;
 
@@ -227,7 +227,7 @@ int ff_bluelet_read_buffer(BlueletPriv* priv, void* buffer, size_t bytes)
     return ret;
 }
 
-int ff_bluelet_write_buffer(BlueletPriv* priv, void* buffer, size_t bytes)
+int ff_bluelet_write_buffer(BlueletPriv *priv, void *buffer, size_t bytes)
 {
     int ret;
 
@@ -248,7 +248,7 @@ int ff_bluelet_write_buffer(BlueletPriv* priv, void* buffer, size_t bytes)
     return ret;
 }
 
-static int ff_bluelet_update_config(BlueletPriv* priv)
+static int ff_bluelet_update_config(BlueletPriv *priv)
 {
     int ret;
     uint8_t is_valid;
@@ -318,14 +318,14 @@ error:
     return BLUELET_ACTION_AVAILABLE;
 }
 
-int ff_bluelet_capbility_query_ranges(struct AVOptionRanges** ranges_, void* obj,
-                                      const char* key, int flags)
+int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                      const char *key, int flags)
 {
-    struct AVDeviceCapabilitiesQuery* devcap = obj;
-    BlueletPriv* priv = devcap->device_context->priv_data;
-    struct AVOptionRanges* ranges = av_mallocz(sizeof(struct AVOptionRanges));
-    AVOptionRange** range_array = av_mallocz(sizeof(AVOptionRange*));
-    AVOptionRange* range = av_mallocz(sizeof(AVOptionRange));
+    struct AVDeviceCapabilitiesQuery *devcap = obj;
+    BlueletPriv *priv = devcap->device_context->priv_data;
+    struct AVOptionRanges *ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    AVOptionRange **range_array = av_mallocz(sizeof(AVOptionRange*));
+    AVOptionRange *range = av_mallocz(sizeof(AVOptionRange));
     int ret;
 
     if (!ranges || !range || !range_array) {
@@ -361,7 +361,7 @@ err:
     return ret;
 }
 
-int ff_bluelet_handle_event(BlueletPriv* priv)
+int ff_bluelet_handle_event(BlueletPriv *priv)
 {
     int ret;
     uint8_t event;
@@ -392,7 +392,7 @@ int ff_bluelet_handle_event(BlueletPriv* priv)
     return action;
 }
 
-int ff_bluelet_start(BlueletPriv* priv)
+int ff_bluelet_start(BlueletPriv *priv)
 {
     int ret = 0;
     uint8_t cmd = BLUELET_CTRL_CMD_START;
@@ -407,7 +407,7 @@ int ff_bluelet_start(BlueletPriv* priv)
     return ret;
 }
 
-int ff_bluelet_stop(BlueletPriv* priv)
+int ff_bluelet_stop(BlueletPriv *priv)
 {
     uint8_t cmd = BLUELET_CTRL_CMD_STOP;
 

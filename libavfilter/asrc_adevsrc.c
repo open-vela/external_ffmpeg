@@ -414,7 +414,7 @@ static void *adevsrc_child_next(void *obj, void *prev)
         return NULL;
 }
 
-static const struct AVClass* adevsrc_child_class_next(const struct AVClass *prev)
+static const struct AVClass *adevsrc_child_class_next(const struct AVClass *prev)
 {
     if (!prev)
         return avformat_get_class();
