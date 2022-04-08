@@ -32,10 +32,7 @@
 
 #define UNCHECKED_BITSTREAM_READER 1
 
-#include "config_components.h"
-
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "huffyuv.h"
 #include "huffyuvdsp.h"
@@ -351,7 +348,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
         if ((ret = read_huffman_tables(s, avctx->extradata + 4,
                                        avctx->extradata_size - 4)) < 0)
-            return ret;
+            goto error;
     } else {
         switch (avctx->bits_per_coded_sample & 7) {
         case 1:
@@ -379,7 +376,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         s->context       = 0;
 
         if ((ret = read_old_huffman_tables(s)) < 0)
-            return ret;
+            goto error;
     }
 
     if (s->version <= 2) {
@@ -407,7 +404,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
             s->alpha = 1;
             break;
         default:
-            return AVERROR_INVALIDDATA;
+            ret = AVERROR_INVALIDDATA;
+            goto error;
         }
         av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt,
                                          &s->chroma_h_shift,
@@ -541,7 +539,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
             avctx->pix_fmt = AV_PIX_FMT_YUVA420P16;
             break;
         default:
-            return AVERROR_INVALIDDATA;
+            ret = AVERROR_INVALIDDATA;
+            goto error;
         }
     }
 
@@ -549,19 +548,26 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     if ((avctx->pix_fmt == AV_PIX_FMT_YUV422P || avctx->pix_fmt == AV_PIX_FMT_YUV420P) && avctx->width & 1) {
         av_log(avctx, AV_LOG_ERROR, "width must be even for this colorspace\n");
-        return AVERROR_INVALIDDATA;
+        ret = AVERROR_INVALIDDATA;
+        goto error;
     }
     if (s->predictor == MEDIAN && avctx->pix_fmt == AV_PIX_FMT_YUV422P &&
         avctx->width % 4) {
         av_log(avctx, AV_LOG_ERROR, "width must be a multiple of 4 "
                "for this combination of colorspace and predictor type.\n");
-        return AVERROR_INVALIDDATA;
+        ret = AVERROR_INVALIDDATA;
+        goto error;
     }
 
-    if ((ret = ff_huffyuv_alloc_temp(s)) < 0)
-        return ret;
+    if ((ret = ff_huffyuv_alloc_temp(s)) < 0) {
+        ff_huffyuv_common_end(s);
+        goto error;
+    }
 
     return 0;
+  error:
+    decode_end(avctx);
+    return ret;
 }
 
 /** Subset of GET_VLC for use in hand-roller VLC code */
@@ -1179,14 +1185,16 @@ static int decode_slice(AVCodecContext *avctx, AVFrame *p, int height,
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *p,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
     HYuvContext *s = avctx->priv_data;
     const int width  = s->width;
     const int height = s->height;
+    ThreadFrame frame = { .f = data };
+    AVFrame *const p = data;
     int slice, table_size = 0, ret, nb_slices;
     unsigned slices_info_offset;
     int slice_height;
@@ -1203,7 +1211,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     s->bdsp.bswap_buf((uint32_t *) s->bitstream_buffer,
                       (const uint32_t *) buf, buf_size / 4);
 
-    if ((ret = ff_thread_get_buffer(avctx, p, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
 
     if (s->context) {
@@ -1262,48 +1270,45 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     return (get_bits_count(&s->gb) + 31) / 32 * 4 + table_size;
 }
 
-const FFCodec ff_huffyuv_decoder = {
-    .p.name           = "huffyuv",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("Huffyuv / HuffYUV"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_HUFFYUV,
+AVCodec ff_huffyuv_decoder = {
+    .name             = "huffyuv",
+    .long_name        = NULL_IF_CONFIG_SMALL("Huffyuv / HuffYUV"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_HUFFYUV,
     .priv_data_size   = sizeof(HYuvContext),
     .init             = decode_init,
     .close            = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
                         AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
 
 #if CONFIG_FFVHUFF_DECODER
-const FFCodec ff_ffvhuff_decoder = {
-    .p.name           = "ffvhuff",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("Huffyuv FFmpeg variant"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_FFVHUFF,
+AVCodec ff_ffvhuff_decoder = {
+    .name             = "ffvhuff",
+    .long_name        = NULL_IF_CONFIG_SMALL("Huffyuv FFmpeg variant"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_FFVHUFF,
     .priv_data_size   = sizeof(HYuvContext),
     .init             = decode_init,
     .close            = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
                         AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
 #endif /* CONFIG_FFVHUFF_DECODER */
 
 #if CONFIG_HYMT_DECODER
-const FFCodec ff_hymt_decoder = {
-    .p.name           = "hymt",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("HuffYUV MT"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_HYMT,
+AVCodec ff_hymt_decoder = {
+    .name             = "hymt",
+    .long_name        = NULL_IF_CONFIG_SMALL("HuffYUV MT"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_HYMT,
     .priv_data_size   = sizeof(HYuvContext),
     .init             = decode_init,
     .close            = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
                         AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
 #endif /* CONFIG_HYMT_DECODER */
