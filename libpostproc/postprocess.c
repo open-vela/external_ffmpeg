@@ -76,6 +76,7 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "config.h"
 #include "libavutil/avutil.h"
 #include "libavutil/avassert.h"
+#include "libavutil/cpu.h"
 #include "libavutil/intreadwrite.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -88,6 +89,7 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 //#define DEBUG_BRIGHTNESS
 #include "postprocess.h"
 #include "postprocess_internal.h"
+#include "version.h"
 #include "libavutil/avstring.h"
 #include "libavutil/ppc/util_altivec.h"
 
