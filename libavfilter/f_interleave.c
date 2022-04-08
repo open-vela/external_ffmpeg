@@ -23,8 +23,6 @@
  * audio and video interleaver
  */
 
-#include "config_components.h"
-
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
@@ -67,27 +65,9 @@ static int activate(AVFilterContext *ctx)
     InterleaveContext *s = ctx->priv;
     int64_t q_pts, pts = INT64_MAX;
     int i, nb_eofs = 0, input_idx = -1;
-    int first_eof = 0;
-    int64_t rpts;
-    int status;
     int nb_inputs_with_frames = 0;
 
     FF_FILTER_FORWARD_STATUS_BACK_ALL(outlink, ctx);
-
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        int is_eof = !!ff_inlink_acknowledge_status(ctx->inputs[i], &status, &rpts);
-
-        nb_eofs += is_eof;
-        if (i == 0)
-            first_eof = is_eof;
-    }
-
-    if ((nb_eofs > 0 && s->duration_mode == DURATION_SHORTEST) ||
-        (nb_eofs == ctx->nb_inputs && s->duration_mode == DURATION_LONGEST) ||
-        (first_eof && s->duration_mode == DURATION_FIRST)) {
-        ff_outlink_set_status(outlink, AVERROR_EOF, s->pts);
-        return 0;
-    }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (!ff_inlink_queued_frames(ctx->inputs[i]))
@@ -95,7 +75,7 @@ static int activate(AVFilterContext *ctx)
         nb_inputs_with_frames++;
     }
 
-    if (nb_inputs_with_frames >= ctx->nb_inputs - nb_eofs) {
+    if (nb_inputs_with_frames > 0) {
         for (i = 0; i < ctx->nb_inputs; i++) {
             AVFrame *frame;
 
@@ -135,6 +115,16 @@ static int activate(AVFilterContext *ctx)
         }
     }
 
+    for (i = 0; i < ctx->nb_inputs; i++)
+        nb_eofs += !!ff_outlink_get_status(ctx->inputs[i]);
+
+    if ((nb_eofs > 0 && s->duration_mode == DURATION_SHORTEST) ||
+        (nb_eofs == ctx->nb_inputs && s->duration_mode == DURATION_LONGEST) ||
+        (ff_outlink_get_status(ctx->inputs[0]) && s->duration_mode == DURATION_FIRST)) {
+        ff_outlink_set_status(outlink, AVERROR_EOF, s->pts);
+        return 0;
+    }
+
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (ff_inlink_queued_frames(ctx->inputs[i]))
             continue;
@@ -145,7 +135,7 @@ static int activate(AVFilterContext *ctx)
         }
     }
 
-    if (i == ctx->nb_inputs - nb_eofs && ff_outlink_frame_wanted(outlink)) {
+    if (i) {
         ff_filter_set_ready(ctx, 100);
         return 0;
     }
@@ -169,17 +159,25 @@ static av_cold int init(AVFilterContext *ctx)
 
         switch (outpad->type) {
         case AVMEDIA_TYPE_VIDEO:
-            inpad.get_buffer.video = ff_null_get_video_buffer; break;
+            inpad.get_video_buffer = ff_null_get_video_buffer; break;
         case AVMEDIA_TYPE_AUDIO:
-            inpad.get_buffer.audio = ff_null_get_audio_buffer; break;
+            inpad.get_audio_buffer = ff_null_get_audio_buffer; break;
         default:
             av_assert0(0);
         }
-        if ((ret = ff_append_inpad_free_name(ctx, &inpad)) < 0)
+        if ((ret = ff_insert_inpad(ctx, i, &inpad)) < 0) {
+            av_freep(&inpad.name);
             return ret;
+        }
     }
 
     return 0;
+}
+
+static av_cold void uninit(AVFilterContext *ctx)
+{
+    for (int i = 0; i < ctx->nb_inputs; i++)
+        av_freep(&ctx->input_pads[i].name);
 }
 
 static int config_output(AVFilterLink *outlink)
@@ -229,15 +227,17 @@ static const AVFilterPad interleave_outputs[] = {
         .type          = AVMEDIA_TYPE_VIDEO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_interleave = {
+AVFilter ff_vf_interleave = {
     .name        = "interleave",
     .description = NULL_IF_CONFIG_SMALL("Temporally interleave video inputs."),
     .priv_size   = sizeof(InterleaveContext),
     .init        = init,
+    .uninit      = uninit,
     .activate    = activate,
-    FILTER_OUTPUTS(interleave_outputs),
+    .outputs     = interleave_outputs,
     .priv_class  = &interleave_class,
     .flags       = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
@@ -255,15 +255,17 @@ static const AVFilterPad ainterleave_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_ainterleave = {
+AVFilter ff_af_ainterleave = {
     .name        = "ainterleave",
     .description = NULL_IF_CONFIG_SMALL("Temporally interleave audio inputs."),
     .priv_size   = sizeof(InterleaveContext),
     .init        = init,
+    .uninit      = uninit,
     .activate    = activate,
-    FILTER_OUTPUTS(ainterleave_outputs),
+    .outputs     = ainterleave_outputs,
     .priv_class  = &ainterleave_class,
     .flags       = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

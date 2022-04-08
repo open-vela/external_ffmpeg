@@ -25,18 +25,17 @@
 #include "libavutil/bprint.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
+#include "filters.h"
 #include "internal.h"
 
 static int print_link_prop(AVBPrint *buf, AVFilterLink *link)
 {
-    const char *format;
-    char layout[128];
-    AVBPrint dummy_buffer;
+    char *format;
+    char layout[64];
+    AVBPrint dummy_buffer = { 0 };
 
-    if (!buf) {
+    if (!buf)
         buf = &dummy_buffer;
-        av_bprint_init(buf, 0, AV_BPRINT_SIZE_COUNT_ONLY);
-    }
     switch (link->type) {
         case AVMEDIA_TYPE_VIDEO:
             format = av_x_if_null(av_get_pix_fmt_name(link->format), "?");
@@ -47,12 +46,11 @@ static int print_link_prop(AVBPrint *buf, AVFilterLink *link)
             break;
 
         case AVMEDIA_TYPE_AUDIO:
+            av_get_channel_layout_string(layout, sizeof(layout),
+                                         link->channels, link->channel_layout);
             format = av_x_if_null(av_get_sample_fmt_name(link->format), "?");
-            av_bprintf(buf, "[%dHz %s:",
-                       (int)link->sample_rate, format);
-            av_channel_layout_describe(&link->ch_layout, layout, sizeof(layout));
-            av_bprintf(buf, "%s", layout);
-            av_bprint_chars(buf, ']', 1);
+            av_bprintf(buf, "[%dHz %s:%s]",
+                       (int)link->sample_rate, format, layout);
             break;
 
         default:
@@ -161,10 +159,98 @@ char *avfilter_graph_dump(AVFilterGraph *graph, const char *options)
 
     av_bprint_init(&buf, 0, AV_BPRINT_SIZE_COUNT_ONLY);
     avfilter_graph_dump_to_buf(&buf, graph);
-    dump = av_malloc(buf.len + 1);
-    if (!dump)
-        return NULL;
-    av_bprint_init_for_buffer(&buf, dump, buf.len + 1);
+    av_bprint_init(&buf, buf.len + 1, buf.len + 1);
     avfilter_graph_dump_to_buf(&buf, graph);
+    av_bprint_finalize(&buf, &dump);
+    return dump;
+}
+
+static void graph_link_dump(AVBPrint *buf, AVFilterContext *cur, AVFilterLink *link)
+{
+    char *format;
+    char tmp[64];
+
+    if (!link) {
+        av_bprintf(buf, "%79s", "");
+        return;
+    }
+
+    av_bprintf(buf, "f:%d|%d ", !!link->in_formats, !!link->out_formats);
+
+    switch (link->type) {
+        case AVMEDIA_TYPE_VIDEO:
+            format = av_x_if_null(av_get_pix_fmt_name(link->format), "?");
+            av_bprintf(buf, "wh:%-10d|%-10d ra:%-4d|%-4d %-8s ",
+                       link->w, link->h,
+                       link->sample_aspect_ratio.num,
+                       link->sample_aspect_ratio.den,
+                       format);
+            break;
+
+        case AVMEDIA_TYPE_AUDIO:
+            av_get_channel_layout_string(tmp, sizeof(tmp),
+                                         link->channels, link->channel_layout);
+            format = av_x_if_null(av_get_sample_fmt_name(link->format), "?");
+            av_bprintf(buf, "fmt:%-4s sr:%-6d cl:%-12s ",
+                       format, link->sample_rate, tmp);
+            break;
+
+        default:
+            av_bprintf(buf, "?");
+            break;
+    }
+
+    av_bprintf(buf, "st:%d wn:%d cnt:%-8lld cur:%d|%-8d ", !ff_outlink_get_status(link),
+               ff_outlink_frame_wanted(link), link->frame_count_in,
+               ff_inlink_queued_frames(link), ff_inlink_queued_samples(link));
+}
+
+static void graph_filter_dump(AVBPrint *buf, AVFilterContext *cur)
+{
+    char tmp[64];
+    int i = 0;
+
+    do {
+        AVFilterLink *link = NULL;
+        AVFilterContext *next = NULL;
+
+        if (cur->nb_outputs) {
+            link = cur->outputs[i];
+            next = link->dst;
+        }
+
+        av_bprintf(buf, "%-24s -> %-24s", cur->name, next ? next->name : "NULL");
+        graph_link_dump(buf, cur, link);
+
+        av_bprintf(buf, "elap:%-4d|%-4d|%-5d ",
+                cur->elapsed, cur->elapsed_min, cur->elapsed_max);
+
+        if (avfilter_process_command(cur, "dump", NULL, tmp, sizeof(tmp), 0) >= 0)
+            av_bprintf(buf, "ex:%s\n", tmp);
+        else
+            av_bprintf(buf, "ex:N/A\n");
+
+        if (next && !(next->nb_inputs > 1 || next->nb_outputs > 1))
+            graph_filter_dump(buf, next);
+    } while (++i < cur->nb_outputs);
+}
+
+char *avfilter_graph_dump_ext(AVFilterGraph *graph, const char *options)
+{
+    AVFilterContext *cur;
+    AVBPrint buf;
+    char *dump = NULL;
+    int i;
+
+    av_bprint_init(&buf, 0, AV_BPRINT_SIZE_UNLIMITED);
+
+    for (i = 0; i < graph->nb_filters; i++) {
+        cur = graph->filters[i];
+
+        if (!cur->nb_inputs || cur->nb_inputs > 1 || cur->nb_outputs > 1)
+            graph_filter_dump(&buf, cur);
+    }
+
+    av_bprint_finalize(&buf, &dump);
     return dump;
 }

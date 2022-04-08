@@ -31,7 +31,8 @@
 #include "rawdec.h"
 
 typedef struct TAKDemuxContext {
-    FFRawDemuxerContext rawctx;
+    AVClass *class;
+    int     raw_packet_size;
     int     mlast_frame;
     int64_t data_end;
 } TAKDemuxContext;
@@ -64,7 +65,7 @@ static int tak_read_header(AVFormatContext *s)
 
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id   = AV_CODEC_ID_TAK;
-    ffstream(st)->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+    st->need_parsing         = AVSTREAM_PARSE_FULL_RAW;
 
     tc->mlast_frame = 0;
     if (avio_rl32(pb) != MKTAG('t', 'B', 'a', 'K')) {
@@ -109,7 +110,7 @@ static int tak_read_header(AVFormatContext *s)
             break;
         case TAK_METADATA_MD5: {
             uint8_t md5[16];
-            char md5_hex[2 * sizeof(md5) + 1];
+            int i;
 
             if (size != 19)
                 return AVERROR_INVALIDDATA;
@@ -121,8 +122,10 @@ static int tak_read_header(AVFormatContext *s)
                     return AVERROR_INVALIDDATA;
             }
 
-            ff_data_to_hex(md5_hex, md5, sizeof(md5), 1);
-            av_log(s, AV_LOG_VERBOSE, "MD5=%s\n", md5_hex);
+            av_log(s, AV_LOG_VERBOSE, "MD5=");
+            for (i = 0; i < 16; i++)
+                av_log(s, AV_LOG_VERBOSE, "%02x", md5[i]);
+            av_log(s, AV_LOG_VERBOSE, "\n");
             break;
         }
         case TAK_METADATA_END: {
@@ -152,13 +155,9 @@ static int tak_read_header(AVFormatContext *s)
                 st->duration = ti.samples;
             st->codecpar->bits_per_coded_sample = ti.bps;
             if (ti.ch_layout)
-                av_channel_layout_from_mask(&st->codecpar->ch_layout, ti.ch_layout);
-            else {
-                av_channel_layout_uninit(&st->codecpar->ch_layout);
-                st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
-                st->codecpar->ch_layout.nb_channels = ti.channels;
-            }
+                st->codecpar->channel_layout = ti.ch_layout;
             st->codecpar->sample_rate           = ti.sample_rate;
+            st->codecpar->channels              = ti.channels;
             st->start_time                   = 0;
             avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
             st->codecpar->extradata             = buffer;
@@ -175,8 +174,9 @@ static int tak_read_header(AVFormatContext *s)
                               get_bits(&gb, TAK_LAST_FRAME_SIZE_BITS);
             av_freep(&buffer);
         } else if (type == TAK_METADATA_ENCODER) {
+            init_get_bits8(&gb, buffer, size - 3);
             av_log(s, AV_LOG_VERBOSE, "encoder version: %0X\n",
-                   AV_RL24(buffer));
+                   get_bits_long(&gb, TAK_ENCODER_VERSION_BITS));
             av_freep(&buffer);
         }
     }
@@ -213,7 +213,8 @@ static int raw_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ret;
 }
 
-const AVInputFormat ff_tak_demuxer = {
+FF_RAW_DEMUXER_CLASS(tak)
+AVInputFormat ff_tak_demuxer = {
     .name           = "tak",
     .long_name      = NULL_IF_CONFIG_SMALL("raw TAK"),
     .priv_data_size = sizeof(TAKDemuxContext),
@@ -223,5 +224,5 @@ const AVInputFormat ff_tak_demuxer = {
     .flags          = AVFMT_GENERIC_INDEX,
     .extensions     = "tak",
     .raw_codec_id   = AV_CODEC_ID_TAK,
-    .priv_class     = &ff_raw_demuxer_class,
+    .priv_class     = &tak_demuxer_class,
 };

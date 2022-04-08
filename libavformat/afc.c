@@ -38,11 +38,12 @@ static int afc_read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id   = AV_CODEC_ID_ADPCM_AFC;
-    st->codecpar->ch_layout  = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+    st->codecpar->channels   = 2;
+    st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
 
     if ((ret = ff_alloc_extradata(st->codecpar, 1)) < 0)
         return ret;
-    st->codecpar->extradata[0] = 8 * st->codecpar->ch_layout.nb_channels;
+    st->codecpar->extradata[0] = 8 * st->codecpar->channels;
 
     c->data_end = avio_rb32(s->pb) + 32LL;
     st->duration = avio_rb32(s->pb);
@@ -56,10 +57,10 @@ static int afc_read_header(AVFormatContext *s)
 static int afc_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AFCDemuxContext *c = s->priv_data;
-    int64_t size = c->data_end - avio_tell(s->pb);
+    int64_t size;
     int ret;
 
-    size = FFMIN(size, 18 * 128);
+    size = FFMIN(c->data_end - avio_tell(s->pb), 18 * 128);
     if (size <= 0)
         return AVERROR_EOF;
 
@@ -68,7 +69,7 @@ static int afc_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ret;
 }
 
-const AVInputFormat ff_afc_demuxer = {
+AVInputFormat ff_afc_demuxer = {
     .name           = "afc",
     .long_name      = NULL_IF_CONFIG_SMALL("AFC"),
     .priv_data_size = sizeof(AFCDemuxContext),
