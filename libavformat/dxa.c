@@ -79,7 +79,7 @@ static int dxa_read_header(AVFormatContext *s)
     if(fps > 0){
         den = 1000;
         num = fps;
-    }else if (fps < 0 && fps > INT_MIN){
+    }else if (fps < 0){
         den = 100000;
         num = -fps;
     }else{
@@ -143,7 +143,7 @@ static int dxa_read_header(AVFormatContext *s)
     c->readvid = !c->has_sound;
     c->vidpos  = avio_tell(pb);
     s->start_time = 0;
-    s->duration = av_rescale(c->frames, AV_TIME_BASE * (int64_t)num, den);
+    s->duration = (int64_t)c->frames * AV_TIME_BASE * num / den;
     av_log(s, AV_LOG_DEBUG, "%d frame(s)\n",c->frames);
 
     return 0;
@@ -226,7 +226,7 @@ static int dxa_read_packet(AVFormatContext *s, AVPacket *pkt)
     return AVERROR_EOF;
 }
 
-const AVInputFormat ff_dxa_demuxer = {
+AVInputFormat ff_dxa_demuxer = {
     .name           = "dxa",
     .long_name      = NULL_IF_CONFIG_SMALL("DXA"),
     .priv_data_size = sizeof(DXAContext),
