@@ -37,11 +37,8 @@
  * http://aminet.net/mods/smpl/
  */
 
-#include "config_components.h"
-
 #include "libavutil/avassert.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "libavutil/common.h"
 
@@ -86,43 +83,43 @@ static void delta_decode(uint8_t *dst, const uint8_t *src, int src_size,
 }
 
 /** decode a frame */
-static int eightsvx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int eightsvx_decode_frame(AVCodecContext *avctx, void *data,
                                  int *got_frame_ptr, AVPacket *avpkt)
 {
     EightSvxContext *esc = avctx->priv_data;
-    int channels         = avctx->ch_layout.nb_channels;
+    AVFrame *frame       = data;
     int buf_size;
     int ch, ret;
     int hdr_size = 2;
 
     /* decode and interleave the first packet */
     if (!esc->data[0] && avpkt) {
-        int chan_size = avpkt->size / channels - hdr_size;
+        int chan_size = avpkt->size / avctx->channels - hdr_size;
 
-        if (avpkt->size % channels) {
+        if (avpkt->size % avctx->channels) {
             av_log(avctx, AV_LOG_WARNING, "Packet with odd size, ignoring last byte\n");
         }
-        if (avpkt->size < (hdr_size + 1) * channels) {
+        if (avpkt->size < (hdr_size + 1) * avctx->channels) {
             av_log(avctx, AV_LOG_ERROR, "packet size is too small\n");
             return AVERROR_INVALIDDATA;
         }
 
         esc->fib_acc[0] = avpkt->data[1] + 128;
-        if (channels == 2)
+        if (avctx->channels == 2)
             esc->fib_acc[1] = avpkt->data[2+chan_size+1] + 128;
 
         esc->data_idx  = 0;
         esc->data_size = chan_size;
         if (!(esc->data[0] = av_malloc(chan_size)))
             return AVERROR(ENOMEM);
-        if (channels == 2) {
+        if (avctx->channels == 2) {
             if (!(esc->data[1] = av_malloc(chan_size))) {
                 av_freep(&esc->data[0]);
                 return AVERROR(ENOMEM);
             }
         }
         memcpy(esc->data[0], &avpkt->data[hdr_size], chan_size);
-        if (channels == 2)
+        if (avctx->channels == 2)
             memcpy(esc->data[1], &avpkt->data[2*hdr_size+chan_size], chan_size);
     }
     if (!esc->data[0]) {
@@ -142,7 +139,7 @@ static int eightsvx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
-    for (ch = 0; ch < channels; ch++) {
+    for (ch = 0; ch < avctx->channels; ch++) {
         delta_decode(frame->data[ch], &esc->data[ch][esc->data_idx],
                      buf_size, &esc->fib_acc[ch], esc->table);
     }
@@ -151,14 +148,14 @@ static int eightsvx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     *got_frame_ptr = 1;
 
-    return ((avctx->frame_number == 0) * hdr_size + buf_size) * channels;
+    return ((avctx->frame_number == 0)*hdr_size + buf_size)*avctx->channels;
 }
 
 static av_cold int eightsvx_decode_init(AVCodecContext *avctx)
 {
     EightSvxContext *esc = avctx->priv_data;
 
-    if (avctx->ch_layout.nb_channels < 1 || avctx->ch_layout.nb_channels > 2) {
+    if (avctx->channels < 1 || avctx->channels > 2) {
         av_log(avctx, AV_LOG_ERROR, "8SVX does not support more than 2 channels\n");
         return AVERROR_INVALIDDATA;
     }
@@ -187,34 +184,32 @@ static av_cold int eightsvx_decode_close(AVCodecContext *avctx)
 }
 
 #if CONFIG_EIGHTSVX_FIB_DECODER
-const FFCodec ff_eightsvx_fib_decoder = {
-  .p.name         = "8svx_fib",
-  .p.long_name    = NULL_IF_CONFIG_SMALL("8SVX fibonacci"),
-  .p.type         = AVMEDIA_TYPE_AUDIO,
-  .p.id           = AV_CODEC_ID_8SVX_FIB,
+AVCodec ff_eightsvx_fib_decoder = {
+  .name           = "8svx_fib",
+  .long_name      = NULL_IF_CONFIG_SMALL("8SVX fibonacci"),
+  .type           = AVMEDIA_TYPE_AUDIO,
+  .id             = AV_CODEC_ID_8SVX_FIB,
   .priv_data_size = sizeof (EightSvxContext),
   .init           = eightsvx_decode_init,
-  FF_CODEC_DECODE_CB(eightsvx_decode_frame),
+  .decode         = eightsvx_decode_frame,
   .close          = eightsvx_decode_close,
-  .p.capabilities = AV_CODEC_CAP_DR1,
-  .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
+  .capabilities   = AV_CODEC_CAP_DR1,
+  .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
                                                     AV_SAMPLE_FMT_NONE },
-  .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
 #if CONFIG_EIGHTSVX_EXP_DECODER
-const FFCodec ff_eightsvx_exp_decoder = {
-  .p.name         = "8svx_exp",
-  .p.long_name    = NULL_IF_CONFIG_SMALL("8SVX exponential"),
-  .p.type         = AVMEDIA_TYPE_AUDIO,
-  .p.id           = AV_CODEC_ID_8SVX_EXP,
+AVCodec ff_eightsvx_exp_decoder = {
+  .name           = "8svx_exp",
+  .long_name      = NULL_IF_CONFIG_SMALL("8SVX exponential"),
+  .type           = AVMEDIA_TYPE_AUDIO,
+  .id             = AV_CODEC_ID_8SVX_EXP,
   .priv_data_size = sizeof (EightSvxContext),
   .init           = eightsvx_decode_init,
-  FF_CODEC_DECODE_CB(eightsvx_decode_frame),
+  .decode         = eightsvx_decode_frame,
   .close          = eightsvx_decode_close,
-  .p.capabilities = AV_CODEC_CAP_DR1,
-  .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
+  .capabilities   = AV_CODEC_CAP_DR1,
+  .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_U8P,
                                                     AV_SAMPLE_FMT_NONE },
-  .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif

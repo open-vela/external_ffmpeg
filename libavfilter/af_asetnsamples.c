@@ -24,6 +24,7 @@
  * Filter that changes number of samples on single output operation
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
@@ -87,9 +88,9 @@ static int activate(AVFilterContext *ctx)
         }
 
         av_samples_copy(pad_frame->extended_data, frame->extended_data,
-                        0, 0, frame->nb_samples, frame->ch_layout.nb_channels, frame->format);
+                        0, 0, frame->nb_samples, frame->channels, frame->format);
         av_samples_set_silence(pad_frame->extended_data, frame->nb_samples,
-                               s->nb_out_samples - frame->nb_samples, frame->ch_layout.nb_channels,
+                               s->nb_out_samples - frame->nb_samples, frame->channels,
                                frame->format);
         av_frame_free(&frame);
         return ff_filter_frame(outlink, pad_frame);
@@ -106,6 +107,7 @@ static const AVFilterPad asetnsamples_inputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
 static const AVFilterPad asetnsamples_outputs[] = {
@@ -113,14 +115,15 @@ static const AVFilterPad asetnsamples_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_asetnsamples = {
+AVFilter ff_af_asetnsamples = {
     .name        = "asetnsamples",
     .description = NULL_IF_CONFIG_SMALL("Set the number of samples for each output audio frames."),
     .priv_size   = sizeof(ASNSContext),
     .priv_class  = &asetnsamples_class,
-    FILTER_INPUTS(asetnsamples_inputs),
-    FILTER_OUTPUTS(asetnsamples_outputs),
+    .inputs      = asetnsamples_inputs,
+    .outputs     = asetnsamples_outputs,
     .activate    = activate,
 };
