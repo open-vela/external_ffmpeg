@@ -25,6 +25,7 @@
 
 #include "libavcodec/codec_id.h"
 #include "libavutil/samplefmt.h"
+#include "libavutil/avstring.h"
 
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -279,6 +280,8 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device)
 
     priv->volume = NAN;
 
+    av_strlcpy(priv->devname, device, sizeof(priv->devname));
+
     return 0;
 
 out:
@@ -465,7 +468,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 
     new = dq_count(&priv->bufferq);
     if (new == priv->periods && new > old)
-        av_log(priv, AV_LOG_WARNING, "audio %s !\n",
+        av_log(priv, AV_LOG_WARNING, "audio %s, %s !\n", priv->devname,
                priv->captured ? "capture overflow" : "playback underflow");
 
     return new;

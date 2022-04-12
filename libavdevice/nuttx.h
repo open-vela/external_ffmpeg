@@ -40,6 +40,7 @@ typedef struct NuttxPriv {
     bool       running;
     bool       flushing;
 
+    char       devname[32];  ///< device name
     char       mqname[16];   ///< message queue name
     mqd_t      mq;           ///< message queue
     int        fd;           ///< nuttx device fd
