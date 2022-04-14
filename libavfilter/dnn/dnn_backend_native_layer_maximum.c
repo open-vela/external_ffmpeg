@@ -24,9 +24,10 @@
  */
 
 #include "dnn_backend_native.h"
+#include "libavutil/avassert.h"
 #include "dnn_backend_native_layer_maximum.h"
 
-int ff_dnn_load_layer_maximum(Layer *layer, AVIOContext *model_file_context, int file_size, int operands_num)
+int dnn_load_layer_maximum(Layer *layer, AVIOContext *model_file_context, int file_size, int operands_num)
 {
     DnnLayerMaximumParams *params;
     int dnn_size = 0;
@@ -48,12 +49,12 @@ int ff_dnn_load_layer_maximum(Layer *layer, AVIOContext *model_file_context, int
     return dnn_size;
 }
 
-int ff_dnn_execute_layer_maximum(DnnOperand *operands, const int32_t *input_operand_indexes,
-                                 int32_t output_operand_index, const void *parameters, NativeContext *ctx)
+int dnn_execute_layer_maximum(DnnOperand *operands, const int32_t *input_operand_indexes,
+                              int32_t output_operand_index, const void *parameters)
 {
     const DnnOperand *input = &operands[input_operand_indexes[0]];
     DnnOperand *output = &operands[output_operand_index];
-    const DnnLayerMaximumParams *params = parameters;
+    const DnnLayerMaximumParams *params = (const DnnLayerMaximumParams *)parameters;
     int dims_count;
     const float *src;
     float *dst;
@@ -62,18 +63,12 @@ int ff_dnn_execute_layer_maximum(DnnOperand *operands, const int32_t *input_oper
         output->dims[i] = input->dims[i];
 
     output->data_type = input->data_type;
-    output->length = ff_calculate_operand_data_length(output);
-    if (output->length <= 0) {
-        av_log(ctx, AV_LOG_ERROR, "The output data length overflow\n");
-        return AVERROR(EINVAL);
-    }
+    output->length = calculate_operand_data_length(output);
     output->data = av_realloc(output->data, output->length);
-    if (!output->data) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to reallocate memory for output\n");
-        return AVERROR(ENOMEM);
-    }
+    if (!output->data)
+        return DNN_ERROR;
 
-    dims_count = ff_calculate_operand_dims_count(output);
+    dims_count = calculate_operand_dims_count(output);
     src = input->data;
     dst = output->data;
     for (int i = 0; i < dims_count; ++i)
