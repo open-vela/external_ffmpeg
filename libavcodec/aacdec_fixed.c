@@ -59,17 +59,18 @@
  */
 
 #define FFT_FLOAT 0
+#define FFT_FIXED_32 1
 #define USE_FIXED 1
 
 #include "libavutil/fixed_dsp.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
-#include "codec_internal.h"
+#include "internal.h"
 #include "get_bits.h"
 #include "fft.h"
 #include "lpc.h"
 #include "kbdwin.h"
-#include "sinewin_fixed_tablegen.h"
+#include "sinewin.h"
 
 #include "aac.h"
 #include "aactab.h"
@@ -84,9 +85,6 @@
 
 #include <math.h>
 #include <string.h>
-
-DECLARE_ALIGNED(32, static int, AAC_RENAME2(aac_kbd_long_1024))[1024];
-DECLARE_ALIGNED(32, static int, AAC_RENAME2(aac_kbd_short_128))[128];
 
 static av_always_inline void reset_predict_state(PredictorState *ps)
 {
@@ -157,9 +155,9 @@ static void vector_pow43(int *coefs, int len)
     for (i=0; i<len; i++) {
         coef = coefs[i];
         if (coef < 0)
-            coef = -(int)ff_cbrt_tab_fixed[(-coef) & 8191];
+            coef = -(int)ff_cbrt_tab_fixed[-coef];
         else
-            coef =  (int)ff_cbrt_tab_fixed[  coef  & 8191];
+            coef = (int)ff_cbrt_tab_fixed[coef];
         coefs[i] = coef;
     }
 }
@@ -450,24 +448,21 @@ static void apply_independent_coupling_fixed(AACContext *ac,
 
 #include "aacdec_template.c"
 
-const FFCodec ff_aac_fixed_decoder = {
-    .p.name          = "aac_fixed",
-    .p.long_name     = NULL_IF_CONFIG_SMALL("AAC (Advanced Audio Coding)"),
-    .p.type          = AVMEDIA_TYPE_AUDIO,
-    .p.id            = AV_CODEC_ID_AAC,
+AVCodec ff_aac_fixed_decoder = {
+    .name            = "aac_fixed",
+    .long_name       = NULL_IF_CONFIG_SMALL("AAC (Advanced Audio Coding)"),
+    .type            = AVMEDIA_TYPE_AUDIO,
+    .id              = AV_CODEC_ID_AAC,
     .priv_data_size  = sizeof(AACContext),
     .init            = aac_decode_init,
     .close           = aac_decode_close,
-    FF_CODEC_DECODE_CB(aac_decode_frame),
-    .p.sample_fmts   = (const enum AVSampleFormat[]) {
+    .decode          = aac_decode_frame,
+    .sample_fmts     = (const enum AVSampleFormat[]) {
         AV_SAMPLE_FMT_S32P, AV_SAMPLE_FMT_NONE
     },
-    .p.capabilities  = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
+    .capabilities    = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
     .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts = aac_channel_layout,
-#endif
-    .p.ch_layouts    = aac_ch_layout,
-    .p.profiles      = NULL_IF_CONFIG_SMALL(ff_aac_profiles),
+    .channel_layouts = aac_channel_layout,
+    .profiles        = NULL_IF_CONFIG_SMALL(ff_aac_profiles),
     .flush = flush,
 };
