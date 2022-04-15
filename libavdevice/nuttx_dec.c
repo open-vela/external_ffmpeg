@@ -101,6 +101,8 @@ static int nuttx_read_header(AVFormatContext *s1)
     AVStream *st;
     int ret;
 
+    priv->captured = 1;
+
     st = avformat_new_stream(s1, NULL);
     if (!st)
         return AVERROR(ENOMEM);
@@ -127,7 +129,6 @@ static int nuttx_read_header(AVFormatContext *s1)
     st->codecpar->channels       = priv->channels;
     st->codecpar->frame_size     = priv->frame_size;
     st->codecpar->channel_layout = priv->channel_layout;
-    priv->captured = 0;
 
     return 0;
 }

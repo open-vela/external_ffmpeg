@@ -430,10 +430,10 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
 
 int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 {
+    struct audio_buf_desc_s buf_desc;
     int new, old = dq_count(&priv->bufferq);
 
     while (1) {
-        struct audio_buf_desc_s buf_desc;
         struct ap_buffer_s *buffer;
         struct audio_msg_s msg;
         struct mq_attr stat;
@@ -467,9 +467,20 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
     }
 
     new = dq_count(&priv->bufferq);
-    if (new == priv->periods && new > old)
+    if (new == priv->periods && new > old) {
         av_log(priv, AV_LOG_WARNING, "audio %s, %s !\n", priv->devname,
                priv->captured ? "capture overflow" : "playback underflow");
+
+        if (priv->captured) {
+            while (!dq_empty(&priv->bufferq)) {
+                buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
+                ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
+            }
+        } else {
+            ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+            priv->underflow = true;
+        }
+    }
 
     return new;
 }
@@ -536,6 +547,16 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
                 }
 
                 priv->running = true;
+            }
+
+            if (priv->underflow && dq_count(&priv->bufferq) == 0) {
+                ret = ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+                if (ret < 0) {
+                    ret = AVERROR(errno);
+                    break;
+                }
+
+                priv->underflow = false;
             }
         }
 
