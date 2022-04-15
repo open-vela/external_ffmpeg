@@ -23,11 +23,8 @@
  */
 
 #include "xavs2.h"
-#include "codec_internal.h"
-#include "encode.h"
 #include "mpeg12.h"
 #include "libavutil/avstring.h"
-#include "libavutil/opt.h"
 
 #define xavs2_opt_set2(name, format, ...) do{ \
     char opt_str[16] = {0}; \
@@ -217,21 +214,17 @@ static int xavs2_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     if ((cae->packet.len) && (cae->packet.state != XAVS2_STATE_FLUSH_END)) {
-        if ((ret = ff_get_encode_buffer(avctx, pkt, cae->packet.len, 0)) < 0) {
+        if (av_new_packet(pkt, cae->packet.len) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to alloc xavs2 packet.\n");
             cae->api->encoder_packet_unref(cae->encoder, &cae->packet);
-            return ret;
+            return AVERROR(ENOMEM);
         }
 
         pkt->pts = cae->packet.pts;
         pkt->dts = cae->packet.dts;
 
-        if (cae->packet.type == XAVS2_TYPE_IDR ||
-            cae->packet.type == XAVS2_TYPE_I ||
-            cae->packet.type == XAVS2_TYPE_KEYFRAME) {
-            pkt->flags |= AV_PKT_FLAG_KEY;
-        }
-
         memcpy(pkt->data, cae->packet.stream, cae->packet.len);
+        pkt->size = cae->packet.len;
 
         cae->api->encoder_packet_unref(cae->encoder, &cae->packet);
 
@@ -279,28 +272,26 @@ static const AVClass libxavs2 = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static const FFCodecDefault xavs2_defaults[] = {
+static const AVCodecDefault xavs2_defaults[] = {
     { "b",                "0" },
     { "g",                "48"},
     { "bf",               "7" },
     { NULL },
 };
 
-const FFCodec ff_libxavs2_encoder = {
-    .p.name         = "libxavs2",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("libxavs2 AVS2-P2/IEEE1857.4"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_AVS2,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
-                      AV_CODEC_CAP_OTHER_THREADS,
+AVCodec ff_libxavs2_encoder = {
+    .name           = "libxavs2",
+    .long_name      = NULL_IF_CONFIG_SMALL("libxavs2 AVS2-P2/IEEE1857.4"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_AVS2,
     .priv_data_size = sizeof(XAVS2EContext),
     .init           = xavs2_init,
-    FF_CODEC_ENCODE_CB(xavs2_encode_frame),
+    .encode2        = xavs2_encode_frame,
     .close          = xavs2_close,
-    .caps_internal  = FF_CODEC_CAP_AUTO_THREADS,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE },
-    .p.priv_class   = &libxavs2,
+    .priv_class     = &libxavs2,
     .defaults       = xavs2_defaults,
-    .p.wrapper_name = "libxavs2",
+    .wrapper_name   = "libxavs2",
 } ;
