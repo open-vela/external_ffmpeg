@@ -21,38 +21,31 @@
  */
 
 #include "libavutil/avstring.h"
-#include "libavutil/reverse.h"
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "mathops.h"
 
-static int get_nibble(uint8_t x)
+static int convert(uint8_t x)
 {
-    int ret = 255;
-
-    if (x <= '9') {
-        if (x >= '0')
-            ret = x - '0';
-    } else if (x >= 'a') {
-        if (x <= 'f')
-            ret = x - ('a' - 10);
-    } else if (x >= 'A' && x <= 'F')
-        ret = x - ('A' - 10);
-    return ret;
+    if (x >= 'a')
+        x -= 87;
+    else if (x >= 'A')
+        x -= 55;
+    else
+        x -= '0';
+    return x;
 }
 
-static int parse_str_int(const uint8_t *p, const uint8_t *end, const uint8_t *key)
+static int parse_str_int(const uint8_t *p, int len, const uint8_t *key)
 {
-    int keylen = strlen(key);
-    const uint8_t *e = end - keylen;
+    const uint8_t *end = p + len;
 
-    for(; p < e; p++) {
-        if (!memcmp(p, key, keylen))
+    for(; p<end - strlen(key); p++) {
+        if (!memcmp(p, key, strlen(key)))
             break;
     }
-    p += keylen;
+    p += strlen(key);
     if (p >= end)
         return INT_MIN;
 
@@ -65,9 +58,10 @@ static int parse_str_int(const uint8_t *p, const uint8_t *end, const uint8_t *ke
     return INT_MIN;
 }
 
-static int xbm_decode_frame(AVCodecContext *avctx, AVFrame *p,
+static int xbm_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame, AVPacket *avpkt)
 {
+    AVFrame *p = data;
     int ret, linesize, i, j;
     int width  = 0;
     int height = 0;
@@ -78,8 +72,8 @@ static int xbm_decode_frame(AVCodecContext *avctx, AVFrame *p,
     avctx->pix_fmt = AV_PIX_FMT_MONOWHITE;
     end = avpkt->data + avpkt->size;
 
-    width  = parse_str_int(avpkt->data, end, "_width");
-    height = parse_str_int(avpkt->data, end, "_height");
+    width  = parse_str_int(avpkt->data, avpkt->size, "_width");
+    height = parse_str_int(avpkt->data, avpkt->size, "_height");
 
     if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
         return ret;
@@ -99,26 +93,22 @@ static int xbm_decode_frame(AVCodecContext *avctx, AVFrame *p,
     for (i = 0; i < avctx->height; i++) {
         dst = p->data[0] + i * p->linesize[0];
         for (j = 0; j < linesize; j++) {
-            uint8_t nib, val;
+            uint8_t val;
 
             while (ptr < end && *ptr != 'x' && *ptr != '$')
                 ptr++;
 
             ptr ++;
-            if (ptr < end && (val = get_nibble(*ptr)) <= 15) {
-                ptr++;
-                if ((nib = get_nibble(*ptr)) <= 15) {
-                    val = (val << 4) + nib;
-                    ptr++;
-                }
+            if (ptr < end && av_isxdigit(*ptr)) {
+                val = convert(*ptr++);
+                if (av_isxdigit(*ptr))
+                    val = (val << 4) + convert(*ptr++);
                 *dst++ = ff_reverse[val];
-                if ((val = get_nibble(*ptr)) <= 15 && j+1 < linesize) {
+                if (av_isxdigit(*ptr) && j+1 < linesize) {
                     j++;
-                    ptr++;
-                    if ((nib = get_nibble(*ptr)) <= 15) {
-                        val = (val << 4) + nib;
-                        ptr++;
-                    }
+                    val = convert(*ptr++);
+                    if (av_isxdigit(*ptr))
+                        val = (val << 4) + convert(*ptr++);
                     *dst++ = ff_reverse[val];
                 }
             } else {
@@ -137,11 +127,11 @@ static int xbm_decode_frame(AVCodecContext *avctx, AVFrame *p,
     return avpkt->size;
 }
 
-const FFCodec ff_xbm_decoder = {
-    .p.name       = "xbm",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("XBM (X BitMap) image"),
-    .p.type       = AVMEDIA_TYPE_VIDEO,
-    .p.id         = AV_CODEC_ID_XBM,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    FF_CODEC_DECODE_CB(xbm_decode_frame),
+AVCodec ff_xbm_decoder = {
+    .name         = "xbm",
+    .long_name    = NULL_IF_CONFIG_SMALL("XBM (X BitMap) image"),
+    .type         = AVMEDIA_TYPE_VIDEO,
+    .id           = AV_CODEC_ID_XBM,
+    .decode       = xbm_decode_frame,
+    .capabilities = AV_CODEC_CAP_DR1,
 };
