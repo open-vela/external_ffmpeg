@@ -53,6 +53,7 @@ static int activate(AVFilterContext *ctx)
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         AVFrame *frame = NULL;
+        bool first = true;
         bool request = true;
         bool eof = true;
         int64_t rpts;
@@ -75,18 +76,27 @@ static int activate(AVFilterContext *ctx)
                 if (status) {
                     ff_outlink_set_status(ctx->outputs[j], AVERROR_EOF, AV_NOPTS_VALUE);
                 } else if (frame) {
-                    AVFrame *out = av_frame_clone(frame);
+                    if (first) { // do not clone at fisrt sending.
+                        ret = ff_filter_frame(ctx->outputs[j], frame);
+                        if (ret < 0) {
+                            av_frame_free(&frame);
+                            return ret;
+                        }
+                        first = false;
+                    } else {
+                        AVFrame *out = av_frame_clone(frame);
 
-                    if (!out) {
-                        av_frame_free(&frame);
-                        return AVERROR(ENOMEM);
-                    }
+                        if (!out) {
+                            av_frame_free(&frame);
+                            return AVERROR(ENOMEM);
+                        }
 
-                    ret = ff_filter_frame(ctx->outputs[j], out);
-                    if (ret < 0) {
-                        av_frame_free(&out);
-                        av_frame_free(&frame);
-                        return ret;
+                        ret = ff_filter_frame(ctx->outputs[j], out);
+                        if (ret < 0) {
+                            av_frame_free(&out);
+                            av_frame_free(&frame);
+                            return ret;
+                        }
                     }
                 } else if (!ff_outlink_frame_wanted(ctx->outputs[j])) {
                     request = false;
@@ -103,7 +113,8 @@ static int activate(AVFilterContext *ctx)
                 ff_inlink_request_frame(ctx->inputs[i]);
         }
 
-        av_frame_free(&frame);
+        if (first) // frame not taken by ouputs
+            av_frame_free(&frame);
     }
 
     return 0;
