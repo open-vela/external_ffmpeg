@@ -29,7 +29,6 @@
 
 #include "avcodec.h"
 #include "blockdsp.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 
@@ -144,8 +143,8 @@ static inline void decode8x8(GetBitContext *gb, uint8_t *dst, int linesize,
     }
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     JvContext *s = avctx->priv_data;
     const uint8_t *buf = avpkt->data;
@@ -217,7 +216,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
         s->palette_has_changed        = 0;
         memcpy(s->frame->data[1], s->palette, AVPALETTE_SIZE);
 
-        if ((ret = av_frame_ref(rframe, s->frame)) < 0)
+        if ((ret = av_frame_ref(data, s->frame)) < 0)
             return ret;
         *got_frame = 1;
     }
@@ -234,15 +233,14 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_jv_decoder = {
-    .p.name         = "jv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Bitmap Brothers JV video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_JV,
+AVCodec ff_jv_decoder = {
+    .name           = "jv",
+    .long_name      = NULL_IF_CONFIG_SMALL("Bitmap Brothers JV video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_JV,
     .priv_data_size = sizeof(JvContext),
     .init           = decode_init,
     .close          = decode_close,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .decode         = decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
