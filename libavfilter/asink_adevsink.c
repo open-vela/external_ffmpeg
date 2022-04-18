@@ -511,4 +511,5 @@ AVFilter ff_asink_adevsink = {
     .query_formats   = adevsink_query_formats,
     .inputs          = adevsink_inputs,
     .process_command = adevsink_process_command,
+    .flags           = AVFILTER_FLAG_SUPPORT_POLL,
 };

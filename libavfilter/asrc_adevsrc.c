@@ -467,4 +467,5 @@ AVFilter ff_asrc_adevsrc = {
     .outputs         = adevsrc_outputs,
     .activate        = adevsrc_activate,
     .process_command = adevsrc_process_command,
+    .flags           = AVFILTER_FLAG_SUPPORT_POLL,
 };
