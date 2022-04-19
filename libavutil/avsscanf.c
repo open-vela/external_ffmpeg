@@ -21,18 +21,18 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <float.h>
 
-#include "config.h"
-#include "common.h"
-#include "mem.h"
-#include "avassert.h"
 #include "avstring.h"
-#include "bprint.h"
+#include "libm.h"
 
 typedef struct FFFILE {
     size_t buf_size;
@@ -113,7 +113,7 @@ static int ffshgetc(FFFILE *f)
 }
 
 #define shlim(f, lim) ffshlim((f), (lim))
-#define shgetc(f) (((f)->rpos != (f)->shend) ? *(f)->rpos++ : ffshgetc(f))
+#define shgetc(f) (((f)->rpos < (f)->shend) ? *(f)->rpos++ : ffshgetc(f))
 #define shunget(f) ((f)->shend ? (void)(f)->rpos-- : (void)0)
 
 static const unsigned char table[] = { -1,
