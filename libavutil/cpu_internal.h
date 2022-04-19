@@ -41,14 +41,18 @@
 #define CPUEXT_FAST(flags, cpuext) CPUEXT_SUFFIX_FAST(flags, , cpuext)
 #define CPUEXT_SLOW(flags, cpuext) CPUEXT_SUFFIX_SLOW(flags, , cpuext)
 
+int ff_get_cpu_flags_mips(void);
 int ff_get_cpu_flags_aarch64(void);
 int ff_get_cpu_flags_arm(void);
 int ff_get_cpu_flags_ppc(void);
 int ff_get_cpu_flags_x86(void);
+int ff_get_cpu_flags_loongarch(void);
 
+size_t ff_get_cpu_max_align_mips(void);
 size_t ff_get_cpu_max_align_aarch64(void);
 size_t ff_get_cpu_max_align_arm(void);
 size_t ff_get_cpu_max_align_ppc(void);
 size_t ff_get_cpu_max_align_x86(void);
+size_t ff_get_cpu_max_align_loongarch(void);
 
 #endif /* AVUTIL_CPU_INTERNAL_H */
