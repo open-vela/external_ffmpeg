@@ -49,8 +49,8 @@
 #define AVUTIL_FIXED_DSP_H
 
 #include <stdint.h>
+#include "config.h"
 #include "attributes.h"
-#include "common.h"
 #include "libavcodec/mathops.h"
 
 typedef struct AVFixedDSPContext {
@@ -131,22 +131,6 @@ typedef struct AVFixedDSPContext {
      */
     void (*vector_fmul_add)(int *dst, const int *src0, const int *src1,
                             const int *src2, int len);
-
-    /**
-     * Multiply a vector of integer by a scalar integer and add to
-     * destination vector.  Source and destination vectors must
-     * overlap exactly or not at all.
-     *
-     * @param dst result vector
-     *            constraints: 32-byte aligned
-     * @param src input vector
-     *            constraints: 32-byte aligned
-     * @param mul scalar value
-     * @param len length of vector
-     *            constraints: multiple of 16
-     */
-    void (*vector_fmac_scalar)(int16_t *dst, const int16_t *src, int16_t mul,
-                               int len);
 
     /**
      * Calculate the scalar product of two vectors of integers.
