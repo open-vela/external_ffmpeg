@@ -20,7 +20,6 @@
  */
 
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 enum PsdCompr {
@@ -289,7 +288,7 @@ static int decode_rle(PSDContext * s){
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
+static int decode_frame(AVCodecContext *avctx, void *data,
                         int *got_frame, AVPacket *avpkt)
 {
     int ret;
@@ -298,6 +297,8 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
     int index_out, c, y, x, p;
     uint8_t eq_channel[4] = {2,0,1,3};/* RGBA -> GBRA channel order */
     uint8_t plane_number;
+
+    AVFrame *picture = data;
 
     PSDContext *s = avctx->priv_data;
     s->avctx     = avctx;
@@ -544,12 +545,12 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
     return avpkt->size;
 }
 
-const FFCodec ff_psd_decoder = {
-    .p.name           = "psd",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("Photoshop PSD file"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_PSD,
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+AVCodec ff_psd_decoder = {
+    .name             = "psd",
+    .long_name        = NULL_IF_CONFIG_SMALL("Photoshop PSD file"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_PSD,
     .priv_data_size   = sizeof(PSDContext),
-    FF_CODEC_DECODE_CB(decode_frame),
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
 };

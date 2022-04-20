@@ -28,7 +28,7 @@
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
-#include "codec_internal.h"
+#include "internal.h"
 #include "qsv.h"
 #include "qsv_internal.h"
 #include "qsvenc.h"
@@ -74,26 +74,26 @@ static const AVClass class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static const FFCodecDefault qsv_enc_defaults[] = {
+static const AVCodecDefault qsv_enc_defaults[] = {
     { "global_quality",  "80" },
     { NULL },
 };
 
-const FFCodec ff_mjpeg_qsv_encoder = {
-    .p.name         = "mjpeg_qsv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("MJPEG (Intel Quick Sync Video acceleration)"),
+AVCodec ff_mjpeg_qsv_encoder = {
+    .name           = "mjpeg_qsv",
+    .long_name      = NULL_IF_CONFIG_SMALL("MJPEG (Intel Quick Sync Video acceleration)"),
     .priv_data_size = sizeof(QSVMJPEGEncContext),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_MJPEG,
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MJPEG,
     .init           = qsv_enc_init,
-    FF_CODEC_ENCODE_CB(qsv_enc_frame),
+    .encode2        = qsv_enc_frame,
     .close          = qsv_enc_close,
-    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HYBRID,
-    .p.pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HYBRID,
+    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_NONE },
-    .p.priv_class   = &class,
+    .priv_class     = &class,
     .defaults       = qsv_enc_defaults,
-    .p.wrapper_name = "qsv",
+    .wrapper_name   = "qsv",
     .hw_configs     = ff_qsv_enc_hw_configs,
 };
