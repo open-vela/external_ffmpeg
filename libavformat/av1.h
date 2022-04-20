@@ -46,14 +46,12 @@ typedef struct AV1SequenceParameters {
  * the resulting bitstream to the provided AVIOContext.
  *
  * @param pb pointer to the AVIOContext where the filtered bitstream shall be
- *           written; may be NULL, in which case nothing is written.
+ *           written
  * @param buf input data buffer
  * @param size size of the input data buffer
  *
- * @return the amount of bytes written (or would have been written in case
- *         pb had been supplied) in case of success, a negative AVERROR
+ * @return the amount of bytes written in case of success, a negative AVERROR
  *         code in case of failure
- * @note   One can use NULL for pb to just get the output size.
  */
 int ff_av1_filter_obus(AVIOContext *pb, const uint8_t *buf, int size);
 
