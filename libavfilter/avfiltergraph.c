@@ -1347,6 +1347,6 @@ int ff_filter_graph_run_once(AVFilterGraph *graph)
         if (graph->filters[i]->ready > filter->ready)
             filter = graph->filters[i];
     if (!filter->ready)
-        return AVERROR(EAGAIN);
+        return FFERROR_NOT_READY;
     return ff_filter_activate(filter);
 }
