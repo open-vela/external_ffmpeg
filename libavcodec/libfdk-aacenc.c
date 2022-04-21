@@ -17,7 +17,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <fdk-aac/aacenc_lib.h>
+#include <aacenc_lib.h>
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
@@ -45,6 +45,7 @@ typedef struct AACContext {
     int latm;
     int header_period;
     int vbr;
+    int peak;
 
     AudioFrameQueue afq;
 } AACContext;
@@ -63,6 +64,7 @@ static const AVOption aac_enc_options[] = {
     { "latm", "Output LATM/LOAS encapsulated data", offsetof(AACContext, latm), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
     { "header_period", "StreamMuxConfig and PCE repetition period (in frames)", offsetof(AACContext, header_period), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xffff, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
     { "vbr", "VBR mode (1-5)", offsetof(AACContext, vbr), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 5, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
+    { "peak", "Peak bitrate limit", offsetof(AACContext, peak), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
     FF_AAC_PROFILE_OPTS
     { NULL }
 };
@@ -254,6 +256,15 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
         if ((err = aacEncoder_SetParam(s->handle, AACENC_BITRATE,
                                        avctx->bit_rate)) != AACENC_OK) {
             av_log(avctx, AV_LOG_ERROR, "Unable to set the bitrate %"PRId64": %s\n",
+                   avctx->bit_rate, aac_get_error(err));
+            goto error;
+        }
+    }
+
+    if (s->peak) {
+        if ((err = aacEncoder_SetParam(s->handle, AACENC_PEAK_BITRATE,
+                                       avctx->bit_rate)) != AACENC_OK) {
+            av_log(avctx, AV_LOG_ERROR, "Unable to set the peak bitrate %"PRId64": %s\n",
                    avctx->bit_rate, aac_get_error(err));
             goto error;
         }
