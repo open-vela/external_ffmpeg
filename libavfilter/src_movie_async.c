@@ -464,7 +464,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     ret = avformat_open_input(&movie->format_ctx, filename, iformat, &movie->format_opt);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR,
-               "Failed to avformat_open_input '%s' ret %d, %s.\n", filename, ret, av_err2str(ret));
+               "Failed to avformat_open_input ret %d, %s.\n", ret, av_err2str(ret));
         goto out;
     }
 
@@ -500,8 +500,9 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
             movie->streams[i].codec_ctx->channel_layout =
                 av_get_default_channel_layout(stream->codecpar->channels);
         }
-        movie->streams[i].index = stream->index;
+        movie->streams[i].index     = stream->index;
         movie->streams[i].time_base = stream->time_base;
+        movie->streams[i].codec_ctx->pkt_timebase = stream->time_base;
     }
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", filename);
 
