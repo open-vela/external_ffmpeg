@@ -31,9 +31,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
-#include "zlib_wrapper.h"
 
 #include <zlib.h>
 
@@ -72,7 +70,7 @@ typedef struct ZmbvContext {
     int bw, bh, bx, by;
     int decomp_len;
     int got_keyframe;
-    FFZStream zstream;
+    z_stream zstream;
     int (*decode_xor)(struct ZmbvContext *c);
 } ZmbvContext;
 
@@ -410,9 +408,9 @@ static int zmbv_decode_intra(ZmbvContext *c)
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
 {
+    AVFrame *frame = data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     ZmbvContext * const c = avctx->priv_data;
@@ -494,7 +492,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
             return AVERROR_PATCHWELCOME;
         }
 
-        zret = inflateReset(&c->zstream.zstream);
+        zret = inflateReset(&c->zstream);
         if (zret != Z_OK) {
             av_log(avctx, AV_LOG_ERROR, "Inflate reset error: %d\n", zret);
             return AVERROR_UNKNOWN;
@@ -537,19 +535,17 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
         memcpy(c->decomp_buf, buf, len);
         c->decomp_len = len;
     } else { // ZLIB-compressed data
-        z_stream *const zstream = &c->zstream.zstream;
-
-        zstream->total_in  = zstream->total_out = 0;
-        zstream->next_in   = buf;
-        zstream->avail_in  = len;
-        zstream->next_out  = c->decomp_buf;
-        zstream->avail_out = c->decomp_size;
-        zret = inflate(zstream, Z_SYNC_FLUSH);
+        c->zstream.total_in = c->zstream.total_out = 0;
+        c->zstream.next_in = buf;
+        c->zstream.avail_in = len;
+        c->zstream.next_out = c->decomp_buf;
+        c->zstream.avail_out = c->decomp_size;
+        zret = inflate(&c->zstream, Z_SYNC_FLUSH);
         if (zret != Z_OK && zret != Z_STREAM_END) {
             av_log(avctx, AV_LOG_ERROR, "inflate error %d\n", zret);
             return AVERROR_INVALIDDATA;
         }
-        c->decomp_len = zstream->total_out;
+        c->decomp_len = c->zstream.total_out;
     }
     if (expected_size > c->decomp_len ||
         (c->flags & ZMBV_KEYFRAME) && expected_size < c->decomp_len) {
@@ -606,6 +602,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     ZmbvContext * const c = avctx->priv_data;
+    int zret; // Zlib return code
 
     c->avctx = avctx;
 
@@ -613,6 +610,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->height = avctx->height;
 
     c->bpp = avctx->bits_per_coded_sample;
+
+    // Needed if zlib unused or init aborted before inflateInit
+    memset(&c->zstream, 0, sizeof(z_stream));
 
     if ((avctx->width + 255ULL) * (avctx->height + 64ULL) > FFMIN(avctx->max_pixels, INT_MAX / 4) ) {
         av_log(avctx, AV_LOG_ERROR, "Internal buffer (decomp_size) larger than max_pixels or too large\n");
@@ -629,7 +629,16 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
-    return ff_inflate_init(&c->zstream, avctx);
+    c->zstream.zalloc = Z_NULL;
+    c->zstream.zfree = Z_NULL;
+    c->zstream.opaque = Z_NULL;
+    zret = inflateInit(&c->zstream);
+    if (zret != Z_OK) {
+        av_log(avctx, AV_LOG_ERROR, "Inflate init error: %d\n", zret);
+        return AVERROR_UNKNOWN;
+    }
+
+    return 0;
 }
 
 static av_cold int decode_end(AVCodecContext *avctx)
@@ -638,22 +647,22 @@ static av_cold int decode_end(AVCodecContext *avctx)
 
     av_freep(&c->decomp_buf);
 
+    inflateEnd(&c->zstream);
     av_freep(&c->cur);
     av_freep(&c->prev);
-    ff_inflate_end(&c->zstream);
 
     return 0;
 }
 
-const FFCodec ff_zmbv_decoder = {
-    .p.name         = "zmbv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Zip Motion Blocks Video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_ZMBV,
+AVCodec ff_zmbv_decoder = {
+    .name           = "zmbv",
+    .long_name      = NULL_IF_CONFIG_SMALL("Zip Motion Blocks Video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_ZMBV,
     .priv_data_size = sizeof(ZmbvContext),
     .init           = decode_init,
     .close          = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .decode         = decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
