@@ -30,8 +30,6 @@
 
 #include "libavutil/internal.h"
 
-#include "libavcodec/avcodec.h"
-
 #include "avdevice.h"
 #include "libavformat/internal.h"
 
@@ -45,7 +43,7 @@ static int audio_write_header(AVFormatContext *s1)
 
     st = s1->streams[0];
     s->sample_rate = st->codecpar->sample_rate;
-    s->channels = st->codecpar->channels;
+    s->channels = st->codecpar->ch_layout.nb_channels;
     ret = ff_oss_audio_open(s1, 1, s1->url);
     if (ret < 0) {
         return AVERROR(EIO);
@@ -96,7 +94,7 @@ static const AVClass oss_muxer_class = {
     .category       = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
 };
 
-AVOutputFormat ff_oss_muxer = {
+const AVOutputFormat ff_oss_muxer = {
     .name           = "oss",
     .long_name      = NULL_IF_CONFIG_SMALL("OSS (Open Sound System) playback"),
     .priv_data_size = sizeof(OSSAudioData),
