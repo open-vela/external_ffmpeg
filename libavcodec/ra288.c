@@ -22,12 +22,10 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/internal.h"
-#include "libavutil/mem_internal.h"
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "celp_filters.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 #include "lpc.h"
@@ -41,8 +39,7 @@
 #define RA288_BLOCKS_PER_FRAME 32
 
 typedef struct RA288Context {
-    void (*vector_fmul)(float *dst, const float *src0, const float *src1,
-                        int len);
+    AVFloatDSPContext *fdsp;
     DECLARE_ALIGNED(32, float,   sp_lpc)[FFALIGN(36, 16)];   ///< LPC coefficients for speech data (spec: A)
     DECLARE_ALIGNED(32, float, gain_lpc)[FFALIGN(10, 16)];   ///< LPC coefficients for gain        (spec: GB)
 
@@ -63,13 +60,21 @@ typedef struct RA288Context {
     float gain_rec[11];
 } RA288Context;
 
+static av_cold int ra288_decode_close(AVCodecContext *avctx)
+{
+    RA288Context *ractx = avctx->priv_data;
+
+    av_freep(&ractx->fdsp);
+
+    return 0;
+}
+
 static av_cold int ra288_decode_init(AVCodecContext *avctx)
 {
     RA288Context *ractx = avctx->priv_data;
-    AVFloatDSPContext *fdsp;
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    avctx->channels       = 1;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
     avctx->sample_fmt     = AV_SAMPLE_FMT_FLT;
 
     if (avctx->block_align != 38) {
@@ -77,11 +82,9 @@ static av_cold int ra288_decode_init(AVCodecContext *avctx)
         return AVERROR_PATCHWELCOME;
     }
 
-    fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
-    if (!fdsp)
+    ractx->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!ractx->fdsp)
         return AVERROR(ENOMEM);
-    ractx->vector_fmul = fdsp->vector_fmul;
-    av_free(fdsp);
 
     return 0;
 }
@@ -155,7 +158,7 @@ static void do_hybrid_window(RA288Context *ractx,
 
     av_assert2(order>=0);
 
-    ractx->vector_fmul(work, window, hist, FFALIGN(order + n + non_rec, 16));
+    ractx->fdsp->vector_fmul(work, window, hist, FFALIGN(order + n + non_rec, 16));
 
     convolve(buffer1, work + order    , n      , order);
     convolve(buffer2, work + order + n, non_rec, order);
@@ -182,14 +185,15 @@ static void backward_filter(RA288Context *ractx,
     do_hybrid_window(ractx, order, n, non_rec, temp, hist, rec, window);
 
     if (!compute_lpc_coefs(temp, order, lpc, 0, 1, 1))
-        ractx->vector_fmul(lpc, lpc, tab, FFALIGN(order, 16));
+        ractx->fdsp->vector_fmul(lpc, lpc, tab, FFALIGN(order, 16));
 
     memmove(hist, hist + n, move_size*sizeof(*hist));
 }
 
-static int ra288_decode_frame(AVCodecContext * avctx, AVFrame *frame,
+static int ra288_decode_frame(AVCodecContext * avctx, void *data,
                               int *got_frame_ptr, AVPacket *avpkt)
 {
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     float *out;
@@ -237,14 +241,14 @@ static int ra288_decode_frame(AVCodecContext * avctx, AVFrame *frame,
     return avctx->block_align;
 }
 
-const FFCodec ff_ra_288_decoder = {
-    .p.name         = "real_288",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("RealAudio 2.0 (28.8K)"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_RA_288,
+AVCodec ff_ra_288_decoder = {
+    .name           = "real_288",
+    .long_name      = NULL_IF_CONFIG_SMALL("RealAudio 2.0 (28.8K)"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_RA_288,
     .priv_data_size = sizeof(RA288Context),
     .init           = ra288_decode_init,
-    FF_CODEC_DECODE_CB(ra288_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .decode         = ra288_decode_frame,
+    .close          = ra288_decode_close,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

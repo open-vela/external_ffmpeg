@@ -25,6 +25,7 @@
 
 #include <stdint.h>
 #include <math.h>
+#include "libavutil/log.h"
 #include "libavutil/attributes.h"
 #include "libavutil/intfloat.h"
 #include "libavcodec/aac_defines.h"
@@ -39,10 +40,17 @@ uint32_t AAC_RENAME(ff_cbrt_tab)[1 << 13];
 
 av_cold void AAC_RENAME(ff_cbrt_tableinit)(void)
 {
-    static double cbrt_tab_dbl[1 << 13];
     if (!AAC_RENAME(ff_cbrt_tab)[(1<<13) - 1]) {
+        double *cbrt_tab_dbl;
         int i, j, k;
         double cbrt_val;
+
+        cbrt_tab_dbl = av_malloc((1 << 13) * sizeof(double));
+        if (!cbrt_tab_dbl) {
+            av_log(NULL, AV_LOG_FATAL, "cbrt_tableinit malloc failed %d\n",
+                   (1 << 13) * sizeof(double));
+            return;
+        }
 
         for (i = 1; i < 1<<13; i++)
             cbrt_tab_dbl[i] = 1;
@@ -67,6 +75,8 @@ av_cold void AAC_RENAME(ff_cbrt_tableinit)(void)
 
         for (i = 0; i < 1<<13; i++)
             AAC_RENAME(ff_cbrt_tab)[i] = CBRT(cbrt_tab_dbl[i]);
+
+        av_free(cbrt_tab_dbl);
     }
 }
 
