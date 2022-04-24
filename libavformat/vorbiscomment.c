@@ -66,9 +66,10 @@ int ff_vorbiscomment_write(AVIOContext *pb, const AVDictionary *m,
                            const char *vendor_string,
                            AVChapter **chapters, unsigned int nb_chapters)
 {
+    size_t vendor_string_length = strlen(vendor_string);
     int cm_count = 0;
-    avio_wl32(pb, strlen(vendor_string));
-    avio_write(pb, vendor_string, strlen(vendor_string));
+    avio_wl32(pb, vendor_string_length);
+    avio_write(pb, vendor_string, vendor_string_length);
     if (chapters && nb_chapters) {
         for (int i = 0; i < nb_chapters; i++) {
             cm_count += av_dict_count(chapters[i]->metadata) + 1;
@@ -92,15 +93,15 @@ int ff_vorbiscomment_write(AVIOContext *pb, const AVDictionary *m,
             AVChapter *chp = chapters[i];
             char chapter_time[13];
             char chapter_number[4];
-            unsigned h, m, s, ms;
+            int h, m, s, ms;
 
             s  = av_rescale(chp->start, chp->time_base.num, chp->time_base.den);
-            h  = (s / 3600) % 24;
+            h  = s / 3600;
             m  = (s / 60) % 60;
             ms = av_rescale_q(chp->start, chp->time_base, av_make_q(   1, 1000)) % 1000;
             s  = s % 60;
-            snprintf(chapter_number, sizeof(chapter_number), "%03u", i % 1000);
-            snprintf(chapter_time, sizeof(chapter_time), "%02u:%02u:%02u.%03u", h, m, s, ms);
+            snprintf(chapter_number, sizeof(chapter_number), "%03d", i);
+            snprintf(chapter_time, sizeof(chapter_time), "%02d:%02d:%02d.%03d", h, m, s, ms);
             avio_wl32(pb, 10 + 1 + 12);
             avio_write(pb, "CHAPTER", 7);
             avio_write(pb, chapter_number, 3);
