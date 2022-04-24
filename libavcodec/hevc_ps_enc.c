@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "put_golomb.h"
+#include "golomb.h"
 #include "hevc_ps.h"
 #include "put_bits.h"
 
@@ -113,9 +113,10 @@ int ff_hevc_encode_nal_vps(HEVCVPS *vps, unsigned int id,
     put_bits(&pb, 1, 0);    // extension flag
 
     put_bits(&pb, 1, 1);    // stop bit
-    flush_put_bits(&pb);
+    avpriv_align_put_bits(&pb);
 
-    data_size = put_bytes_output(&pb);
+    data_size = put_bits_count(&pb) / 8;
+    flush_put_bits(&pb);
 
     return data_size;
 }

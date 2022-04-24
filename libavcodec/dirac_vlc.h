@@ -19,7 +19,7 @@
 #ifndef AVCODEC_DIRAC_VLC_H
 #define AVCODEC_DIRAC_VLC_H
 
-#include <stdint.h>
+#include "libavutil/avutil.h"
 
 int ff_dirac_golomb_read_16bit(const uint8_t *buf, int bytes,
                                uint8_t *_dst, int coeffs);
