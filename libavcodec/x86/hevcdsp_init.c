@@ -22,6 +22,7 @@
 #include "config.h"
 
 #include "libavutil/cpu.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/get_bits.h" /* required for hevcdsp.h GetBitContext */
@@ -876,6 +877,14 @@ void ff_hevc_dsp_init_x86(HEVCDSPContext *c, const int bit_depth)
             c->sao_edge_filter[4] = ff_hevc_sao_edge_filter_64_8_avx2;
 
             c->add_residual[3] = ff_hevc_add_residual_32_8_avx2;
+        }
+        if (EXTERNAL_AVX512ICL(cpu_flags) && ARCH_X86_64) {
+            c->put_hevc_qpel[1][0][1] = ff_hevc_put_hevc_qpel_h4_8_avx512icl;
+            c->put_hevc_qpel[3][0][1] = ff_hevc_put_hevc_qpel_h8_8_avx512icl;
+            c->put_hevc_qpel[5][0][1] = ff_hevc_put_hevc_qpel_h16_8_avx512icl;
+            c->put_hevc_qpel[7][0][1] = ff_hevc_put_hevc_qpel_h32_8_avx512icl;
+            c->put_hevc_qpel[9][0][1] = ff_hevc_put_hevc_qpel_h64_8_avx512icl;
+            c->put_hevc_qpel[3][1][1] = ff_hevc_put_hevc_qpel_hv8_8_avx512icl;
         }
     } else if (bit_depth == 10) {
         if (EXTERNAL_MMXEXT(cpu_flags)) {
