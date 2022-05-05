@@ -119,14 +119,15 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
     AVFilterContext *ctx = av_format_get_opaque(s);
     ADevSrcPriv *priv = ctx->priv;
 
-    if (type == AV_DEV_TO_APP_BUFFER_READABLE) {
+    if (type == AV_DEV_TO_APP_STATE_CHANGED)
+        avfilter_graph_reconfig(ctx->graph, NULL);
+
+    if (type == AV_DEV_TO_APP_STATE_CHANGED ||
+        type == AV_DEV_TO_APP_BUFFER_READABLE) {
         if (priv->dec_ctx)
             ff_filter_set_ready(ctx, 300);
         else
             avdevsrc_force_request(ctx);
-    } else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
-        avfilter_graph_reconfig(ctx->graph, NULL);
-        ff_filter_set_ready(ctx, 100);
     }
 
     return 0;

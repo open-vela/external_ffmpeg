@@ -179,12 +179,13 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
         }
         case AV_APP_TO_DEV_PLAY: {
             priv->pause = false;
-            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
         }
         case AV_APP_TO_DEV_PAUSE: {
             priv->pause = true;
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
         }
