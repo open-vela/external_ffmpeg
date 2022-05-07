@@ -383,6 +383,12 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
         }
     }
 
+    ret = ioctl(priv->fd, AUDIOIOC_REGISTERMQ, priv->mq);
+    if (ret < 0) {
+        ret = AVERROR(errno);
+        goto out;
+    }
+
     if (!playback) {
         ret = ioctl(priv->fd, AUDIOIOC_START, 0);
         if (ret < 0) {
@@ -461,6 +467,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             }
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
             priv->flushing = false;
+            ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
         }
 
         nonblock = true;
