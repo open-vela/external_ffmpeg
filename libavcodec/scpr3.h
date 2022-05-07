@@ -23,7 +23,12 @@
 #ifndef AVCODEC_SCPR3_H
 #define AVCODEC_SCPR3_H
 
-#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "avcodec.h"
+#include "internal.h"
 
 typedef struct PixelModel3 {
     uint8_t    type;
