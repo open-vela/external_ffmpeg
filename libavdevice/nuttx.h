@@ -76,6 +76,7 @@ void ff_nuttx_deinit(NuttxPriv *priv);
 
 int ff_nuttx_open(NuttxPriv *priv, bool playback);
 void ff_nuttx_close(NuttxPriv *priv, bool nonblock);
+int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter);
 
 int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock);
 int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size);

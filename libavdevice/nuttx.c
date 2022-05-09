@@ -434,6 +434,14 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
     }
 }
 
+int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter)
+{
+    if (!priv->fd)
+        return AVERROR(EINVAL);
+
+    return ioctl(priv->fd, AUDIOIOC_SETPARAMTER, parameter);
+}
+
 int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 {
     struct audio_buf_desc_s buf_desc;
