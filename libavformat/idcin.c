@@ -72,7 +72,6 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
-#include "demux.h"
 #include "internal.h"
 
 #define HUFFMAN_TABLE_SIZE (64 * 1024)
@@ -219,7 +218,9 @@ static int idcin_read_header(AVFormatContext *s)
         idcin->audio_stream_index = st->index;
         st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
         st->codecpar->codec_tag = 1;
-        av_channel_layout_default(&st->codecpar->ch_layout, channels);
+        st->codecpar->channels = channels;
+        st->codecpar->channel_layout = channels > 1 ? AV_CH_LAYOUT_STEREO :
+                                                      AV_CH_LAYOUT_MONO;
         st->codecpar->sample_rate = sample_rate;
         st->codecpar->bits_per_coded_sample = bytes_per_sample * 8;
         st->codecpar->bit_rate = sample_rate * bytes_per_sample * 8 * channels;
@@ -357,7 +358,7 @@ static int idcin_read_seek(AVFormatContext *s, int stream_index,
         int64_t ret = avio_seek(s->pb, idcin->first_pkt_pos, SEEK_SET);
         if (ret < 0)
             return ret;
-        avpriv_update_cur_dts(s, s->streams[idcin->video_stream_index], 0);
+        ff_update_cur_dts(s, s->streams[idcin->video_stream_index], 0);
         idcin->next_chunk_is_video = 1;
         idcin->current_audio_chunk = 0;
         return 0;
@@ -365,7 +366,7 @@ static int idcin_read_seek(AVFormatContext *s, int stream_index,
     return -1;
 }
 
-const AVInputFormat ff_idcin_demuxer = {
+AVInputFormat ff_idcin_demuxer = {
     .name           = "idcin",
     .long_name      = NULL_IF_CONFIG_SMALL("id Cinematic"),
     .priv_data_size = sizeof(IdcinDemuxContext),

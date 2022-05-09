@@ -21,11 +21,8 @@
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mem_internal.h"
-
 #include "avcodec.h"
 #include "bswapdsp.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 
@@ -65,13 +62,12 @@ static av_cold int truespeech_decode_init(AVCodecContext * avctx)
 {
     TSContext *c = avctx->priv_data;
 
-    if (avctx->ch_layout.nb_channels != 1) {
-        avpriv_request_sample(avctx, "Channel count %d", avctx->ch_layout.nb_channels);
+    if (avctx->channels != 1) {
+        avpriv_request_sample(avctx, "Channel count %d", avctx->channels);
         return AVERROR_PATCHWELCOME;
     }
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout      = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
     ff_bswapdsp_init(&c->bdsp);
@@ -306,9 +302,10 @@ static void truespeech_save_prevvec(TSContext *c)
         c->prevfilt[i] = c->cvector[i];
 }
 
-static int truespeech_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int truespeech_decode_frame(AVCodecContext *avctx, void *data,
                                    int *got_frame_ptr, AVPacket *avpkt)
 {
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     TSContext *c = avctx->priv_data;
@@ -356,14 +353,13 @@ static int truespeech_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return buf_size;
 }
 
-const FFCodec ff_truespeech_decoder = {
-    .p.name         = "truespeech",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("DSP Group TrueSpeech"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_TRUESPEECH,
+AVCodec ff_truespeech_decoder = {
+    .name           = "truespeech",
+    .long_name      = NULL_IF_CONFIG_SMALL("DSP Group TrueSpeech"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_TRUESPEECH,
     .priv_data_size = sizeof(TSContext),
     .init           = truespeech_decode_init,
-    FF_CODEC_DECODE_CB(truespeech_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .decode         = truespeech_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
