@@ -831,6 +831,28 @@ int avfilter_insert_filter(AVFilterLink *link, AVFilterContext *filt,
                            unsigned filt_srcpad_idx, unsigned filt_dstpad_idx);
 
 /**
+ * A function pointer passed to avfilter_find_by_name, use for extra condition.
+ *
+ * @param ctx the filter
+ *
+ * @return true meets the condition, others false
+ */
+typedef bool (avfilter_find_extra)(AVFilterContext *ctx, void *args);
+
+/**
+ * Lookup a filter by name and extra condition on link.
+ *
+ * @param ctx      the started filter context
+ * @param name     the target filter name
+ * @param extra    extra condition
+ * @param forward  find forward or backward
+ * @return filter or NULL not found
+ */
+
+AVFilterContext *avfilter_find_on_link(AVFilterContext *ctx, const char *name,
+                                       avfilter_find_extra *extra, bool forward, void *args);
+
+/**
  * @return AVClass for AVFilterContext.
  *
  * @see av_opt_find().

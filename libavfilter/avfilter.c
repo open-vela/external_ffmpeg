@@ -267,6 +267,33 @@ int avfilter_insert_filter(AVFilterLink *link, AVFilterContext *filt,
     return 0;
 }
 
+AVFilterContext *avfilter_find_on_link(AVFilterContext *ctx, const char *name,
+                                       avfilter_find_extra *extra, bool forward, void *args)
+{
+    AVFilterContext *target;
+    int i, count;
+
+    if (!name && !extra)
+        return NULL;
+
+    if (!name || !strcmp(name, ctx->filter->name) || !strcmp(name, ctx->name)) {
+        if (!extra || extra(ctx, args))
+            return ctx;
+    }
+
+    count = forward ? ctx->nb_outputs : ctx->nb_inputs;
+    for (i = 0; i < count; i++) {
+        AVFilterContext *next = forward ? ctx->outputs[i]->dst :
+                                ctx->inputs[i]->src;
+
+        target = avfilter_find_on_link(next, name, extra, forward, args);
+        if (target)
+            return target;
+    }
+
+    return NULL;
+}
+
 int avfilter_config_links(AVFilterContext *filter)
 {
     int (*config_link)(AVFilterLink *);
