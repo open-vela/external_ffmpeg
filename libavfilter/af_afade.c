@@ -53,6 +53,10 @@ typedef struct AudioFadeContext {
 
 enum CurveType { TRI, QSIN, ESIN, HSIN, LOG, IPAR, QUA, CUB, SQU, CBR, PAR, EXP, IQSIN, IHSIN, DESE, DESI, LOSI, NONE, NB_CURVES };
 
+#define AFADE_BEGIN -1
+#define AFADE_DOING -2
+#define AFADE_DONE  -3
+
 #define OFFSET(x) offsetof(AudioFadeContext, x)
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 #define T AV_OPT_FLAG_RUNTIME_PARAM
@@ -241,7 +245,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     if (ret < 0)
         return ret;
 
-    if (!strcmp(cmd, "start_time"))
+    if (!strcmp(cmd, "st") || !strcmp(cmd, "start_time"))
         s->start_sample = av_rescale(s->start_time, outlink->sample_rate, AV_TIME_BASE);
     else if (!strcmp(cmd, "duration"))
         s->nb_samples = av_rescale(s->duration, outlink->sample_rate, AV_TIME_BASE);
@@ -252,38 +256,38 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 #if CONFIG_AFADE_FILTER
 
 static const AVOption afade_options[] = {
-    { "type",         "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,    {.i64 = 0    }, 0, 1, FLAGS, "type" },
-    { "t",            "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,    {.i64 = 0    }, 0, 1, FLAGS, "type" },
-    { "in",           "fade-in",                                     0,                    AV_OPT_TYPE_CONST,  {.i64 = 0    }, 0, 0, FLAGS, "type" },
-    { "out",          "fade-out",                                    0,                    AV_OPT_TYPE_CONST,  {.i64 = 1    }, 0, 0, FLAGS, "type" },
-    { "start_sample", "set number of first sample to start fading",  OFFSET(start_sample), AV_OPT_TYPE_INT64,  {.i64 = 0    }, 0, INT64_MAX, FLAGS },
-    { "ss",           "set number of first sample to start fading",  OFFSET(start_sample), AV_OPT_TYPE_INT64,  {.i64 = 0    }, 0, INT64_MAX, FLAGS },
-    { "nb_samples",   "set number of samples for fade duration",     OFFSET(nb_samples),   AV_OPT_TYPE_INT64,  {.i64 = 44100}, 1, INT64_MAX, FLAGS|T },
-    { "ns",           "set number of samples for fade duration",     OFFSET(nb_samples),   AV_OPT_TYPE_INT64,  {.i64 = 44100}, 1, INT64_MAX, FLAGS|T },
-    { "start_time",   "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_DURATION, {.i64 = 0. }, 0, INT64_MAX, FLAGS|T },
-    { "st",           "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_DURATION, {.i64 = 0. }, 0, INT64_MAX, FLAGS|T },
-    { "duration",     "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0. }, 0, INT64_MAX, FLAGS|T },
-    { "d",            "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0. }, 0, INT64_MAX, FLAGS|T },
-    { "curve",        "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,    {.i64 = TRI  }, 0, NB_CURVES - 1, FLAGS, "curve" },
-    { "c",            "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,    {.i64 = TRI  }, 0, NB_CURVES - 1, FLAGS, "curve" },
-    { "tri",          "linear slope",                                0,                    AV_OPT_TYPE_CONST,  {.i64 = TRI  }, 0, 0, FLAGS, "curve" },
-    { "qsin",         "quarter of sine wave",                        0,                    AV_OPT_TYPE_CONST,  {.i64 = QSIN }, 0, 0, FLAGS, "curve" },
-    { "esin",         "exponential sine wave",                       0,                    AV_OPT_TYPE_CONST,  {.i64 = ESIN }, 0, 0, FLAGS, "curve" },
-    { "hsin",         "half of sine wave",                           0,                    AV_OPT_TYPE_CONST,  {.i64 = HSIN }, 0, 0, FLAGS, "curve" },
-    { "log",          "logarithmic",                                 0,                    AV_OPT_TYPE_CONST,  {.i64 = LOG  }, 0, 0, FLAGS, "curve" },
-    { "ipar",         "inverted parabola",                           0,                    AV_OPT_TYPE_CONST,  {.i64 = IPAR }, 0, 0, FLAGS, "curve" },
-    { "qua",          "quadratic",                                   0,                    AV_OPT_TYPE_CONST,  {.i64 = QUA  }, 0, 0, FLAGS, "curve" },
-    { "cub",          "cubic",                                       0,                    AV_OPT_TYPE_CONST,  {.i64 = CUB  }, 0, 0, FLAGS, "curve" },
-    { "squ",          "square root",                                 0,                    AV_OPT_TYPE_CONST,  {.i64 = SQU  }, 0, 0, FLAGS, "curve" },
-    { "cbr",          "cubic root",                                  0,                    AV_OPT_TYPE_CONST,  {.i64 = CBR  }, 0, 0, FLAGS, "curve" },
-    { "par",          "parabola",                                    0,                    AV_OPT_TYPE_CONST,  {.i64 = PAR  }, 0, 0, FLAGS, "curve" },
-    { "exp",          "exponential",                                 0,                    AV_OPT_TYPE_CONST,  {.i64 = EXP  }, 0, 0, FLAGS, "curve" },
-    { "iqsin",        "inverted quarter of sine wave",               0,                    AV_OPT_TYPE_CONST,  {.i64 = IQSIN}, 0, 0, FLAGS, "curve" },
-    { "ihsin",        "inverted half of sine wave",                  0,                    AV_OPT_TYPE_CONST,  {.i64 = IHSIN}, 0, 0, FLAGS, "curve" },
-    { "dese",         "double-exponential seat",                     0,                    AV_OPT_TYPE_CONST,  {.i64 = DESE }, 0, 0, FLAGS, "curve" },
-    { "desi",         "double-exponential sigmoid",                  0,                    AV_OPT_TYPE_CONST,  {.i64 = DESI }, 0, 0, FLAGS, "curve" },
-    { "losi",         "logistic sigmoid",                            0,                    AV_OPT_TYPE_CONST,  {.i64 = LOSI }, 0, 0, FLAGS, "curve" },
-    { "nofade",       "no fade; keep audio as-is",                   0,                    AV_OPT_TYPE_CONST,  {.i64 = NONE }, 0, 0, FLAGS, "curve" },
+    { "type",         "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,      {.i64 = 0    }, 0,  1, FLAGS|T, "type" },
+    { "t",            "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,      {.i64 = 0    }, 0,  1, FLAGS|T, "type" },
+    { "in",           "fade-in",                                     0,                    AV_OPT_TYPE_CONST,    {.i64 = 0    }, 0,  0, FLAGS|T, "type" },
+    { "out",          "fade-out",                                    0,                    AV_OPT_TYPE_CONST,    {.i64 = 1    }, 0,  0, FLAGS|T, "type" },
+    { "start_sample", "set number of first sample to start fading",  OFFSET(start_sample), AV_OPT_TYPE_INT64,    {.i64 = 0    }, 0,  INT64_MAX, FLAGS|T },
+    { "ss",           "set number of first sample to start fading",  OFFSET(start_sample), AV_OPT_TYPE_INT64,    {.i64 = 0    }, 0,  INT64_MAX, FLAGS|T },
+    { "nb_samples",   "set number of samples for fade duration",     OFFSET(nb_samples),   AV_OPT_TYPE_INT64,    {.i64 = 44100}, 1,  INT64_MAX, FLAGS|T },
+    { "ns",           "set number of samples for fade duration",     OFFSET(nb_samples),   AV_OPT_TYPE_INT64,    {.i64 = 44100}, 1,  INT64_MAX, FLAGS|T },
+    { "start_time",   "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_INT64,    {.i64 = 0. },   -1, INT64_MAX, FLAGS|T },
+    { "st",           "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_INT64,    {.i64 = 0. },   -1, INT64_MAX, FLAGS|T },
+    { "duration",     "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0. },   0,  INT64_MAX, FLAGS|T },
+    { "d",            "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0. },   0,  INT64_MAX, FLAGS|T },
+    { "curve",        "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,      {.i64 = TRI  }, 0,  NB_CURVES - 1, FLAGS, "curve" },
+    { "c",            "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,      {.i64 = TRI  }, 0,  NB_CURVES - 1, FLAGS, "curve" },
+    { "tri",          "linear slope",                                0,                    AV_OPT_TYPE_CONST,    {.i64 = TRI  }, 0,  0, FLAGS, "curve" },
+    { "qsin",         "quarter of sine wave",                        0,                    AV_OPT_TYPE_CONST,    {.i64 = QSIN }, 0,  0, FLAGS, "curve" },
+    { "esin",         "exponential sine wave",                       0,                    AV_OPT_TYPE_CONST,    {.i64 = ESIN }, 0,  0, FLAGS, "curve" },
+    { "hsin",         "half of sine wave",                           0,                    AV_OPT_TYPE_CONST,    {.i64 = HSIN }, 0,  0, FLAGS, "curve" },
+    { "log",          "logarithmic",                                 0,                    AV_OPT_TYPE_CONST,    {.i64 = LOG  }, 0,  0, FLAGS, "curve" },
+    { "ipar",         "inverted parabola",                           0,                    AV_OPT_TYPE_CONST,    {.i64 = IPAR }, 0,  0, FLAGS, "curve" },
+    { "qua",          "quadratic",                                   0,                    AV_OPT_TYPE_CONST,    {.i64 = QUA  }, 0,  0, FLAGS, "curve" },
+    { "cub",          "cubic",                                       0,                    AV_OPT_TYPE_CONST,    {.i64 = CUB  }, 0,  0, FLAGS, "curve" },
+    { "squ",          "square root",                                 0,                    AV_OPT_TYPE_CONST,    {.i64 = SQU  }, 0,  0, FLAGS, "curve" },
+    { "cbr",          "cubic root",                                  0,                    AV_OPT_TYPE_CONST,    {.i64 = CBR  }, 0,  0, FLAGS, "curve" },
+    { "par",          "parabola",                                    0,                    AV_OPT_TYPE_CONST,    {.i64 = PAR  }, 0,  0, FLAGS, "curve" },
+    { "exp",          "exponential",                                 0,                    AV_OPT_TYPE_CONST,    {.i64 = EXP  }, 0,  0, FLAGS, "curve" },
+    { "iqsin",        "inverted quarter of sine wave",               0,                    AV_OPT_TYPE_CONST,    {.i64 = IQSIN}, 0,  0, FLAGS, "curve" },
+    { "ihsin",        "inverted half of sine wave",                  0,                    AV_OPT_TYPE_CONST,    {.i64 = IHSIN}, 0,  0, FLAGS, "curve" },
+    { "dese",         "double-exponential seat",                     0,                    AV_OPT_TYPE_CONST,    {.i64 = DESE }, 0,  0, FLAGS, "curve" },
+    { "desi",         "double-exponential sigmoid",                  0,                    AV_OPT_TYPE_CONST,    {.i64 = DESI }, 0,  0, FLAGS, "curve" },
+    { "losi",         "logistic sigmoid",                            0,                    AV_OPT_TYPE_CONST,    {.i64 = LOSI }, 0,  0, FLAGS, "curve" },
+    { "nofade",       "no fade; keep audio as-is",                   0,                    AV_OPT_TYPE_CONST,    {.i64 = NONE }, 0,  0, FLAGS, "curve" },
     { NULL }
 };
 
@@ -307,8 +311,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     AVFrame *out_buf;
     int64_t cur_sample = av_rescale_q(buf->pts, inlink->time_base, (AVRational){1, inlink->sample_rate});
 
-    if ((!s->type && (s->start_sample + s->nb_samples < cur_sample)) ||
-        ( s->type && (cur_sample + nb_samples < s->start_sample)))
+    if (s->start_time == AFADE_BEGIN) {
+        s->start_sample = cur_sample;
+        s->start_time   = AFADE_DOING;
+    }
+
+    if ((!s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample)) ||
+        (s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)) ||
+        !s->nb_samples)
         return ff_filter_frame(outlink, buf);
 
     if (av_frame_is_writable(buf)) {
@@ -320,8 +330,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         av_frame_copy_props(out_buf, buf);
     }
 
-    if ((!s->type && (cur_sample + nb_samples < s->start_sample)) ||
-        ( s->type && (s->start_sample + s->nb_samples < cur_sample))) {
+    if ((!s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)) ||
+        (s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample))) {
         av_samples_set_silence(out_buf->extended_data, 0, nb_samples,
                                out_buf->channels, out_buf->format);
     } else {
@@ -336,6 +346,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
                         nb_samples, buf->channels,
                         s->type ? -1 : 1, start,
                         s->nb_samples, s->curve);
+
+        if (s->start_time == AFADE_DOING &&
+            (cur_sample + nb_samples >= s->start_sample + s->nb_samples))
+            s->start_time = AFADE_DONE;
     }
 
     if (buf != out_buf)
