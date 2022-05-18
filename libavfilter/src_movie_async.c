@@ -65,6 +65,7 @@ typedef struct MovieAsyncContext {
     int                       silent_samples;
     int                       stack_size;
     int                       priority;
+    int                       fadein;         /** fadein duration, ms */
 
     MovieStream               *streams;       /**< array of all streams, one per output */
     AVFormatContext           *format_ctx;
@@ -78,6 +79,7 @@ typedef struct MovieAsyncContext {
     int                       state;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
+    unsigned                  duration_ms;    /** < duration of whole stream */
     int                       loop_count;
     int                       pending_stop;
 
@@ -89,11 +91,12 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",        "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT, {.i64 = 4 },     2, 8,         FLAGS },
-    { "cmdqmax",        "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT, {.i64 = 16 },    8, 32,        FLAGS },
-    { "silent_samples", "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT, {.i64 = 1024 },  0, 2048,      FLAGS },
-    { "stack_size",     "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT, {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
-    { "priority",       "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT, {.i64 = 244 },   0, INT16_MAX, FLAGS },
+    { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT, {.i64 = 4 },     2, 8,         FLAGS },
+    { "cmdqmax",         "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT, {.i64 = 16 },    8, 32,        FLAGS },
+    { "silent_samples",  "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT, {.i64 = 1024 },  0, 2048,      FLAGS },
+    { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT, {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
+    { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT, {.i64 = 244 },   0, INT16_MAX, FLAGS },
+    { "fadein",          "duration of fadein",          OFFSET(fadein),         AV_OPT_TYPE_INT, {.i64 = 0},      0, INT32_MAX, FLAGS },
     { NULL },
 };
 
@@ -505,6 +508,12 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         movie->streams[i].codec_ctx->pkt_timebase = stream->time_base;
     }
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", filename);
+
+    if (movie->format_ctx->duration == AV_NOPTS_VALUE)
+        movie->duration_ms = 0;
+    else
+        movie->duration_ms = av_rescale(movie->format_ctx->duration,
+                                        1000, AV_TIME_BASE);
 
     /* do seek if requested */
     if ((tag = av_dict_get(movie->format_opt, "seek_point", NULL, 0))) {
@@ -1015,6 +1024,55 @@ static int movie_async_query_formats(AVFilterContext *ctx)
     return flags ? 0 : FFERROR_NOT_READY;
 }
 
+static int movie_async_set_fade(AVFilterContext *fade, int type, uint64_t duration)
+{
+    char tmp[32];
+    int ret;
+
+    /* unit 1: samples, 0: duration */
+    if (type) {
+        snprintf(tmp, sizeof(tmp), "%lld", duration);
+        ret = avfilter_process_command(fade, "ns", tmp, NULL, 0, AV_OPT_SEARCH_CHILDREN);
+    } else {
+        snprintf(tmp, sizeof(tmp), "%lldms", duration);
+        ret = avfilter_process_command(fade, "duration", tmp, NULL, 0, AV_OPT_SEARCH_CHILDREN);
+    }
+
+    if (ret < 0)
+        return ret;
+
+    snprintf(tmp, sizeof(tmp), "%d", type);
+    ret = avfilter_process_command(fade, "type", tmp, NULL, 0, AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0)
+        return ret;
+
+    return avfilter_process_command(fade, "st", "-1", NULL, 0, AV_OPT_SEARCH_CHILDREN);
+}
+
+static int movie_async_do_fade(AVFilterContext *ctx, int type)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    uint64_t duration = movie->fadein;
+    AVFilterContext *fade = NULL;
+    int i;
+
+    fade = avfilter_find_on_link(ctx, "afade", NULL, true, NULL);
+    if (!fade)
+        return 0;
+
+    if (type) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (ctx->outputs[i]->type == AVMEDIA_TYPE_AUDIO) {
+                pthread_mutex_lock(&movie->mutex);
+                duration = ff_framequeue_queued_samples(&movie->streams[i].dat_queue);
+                pthread_mutex_unlock(&movie->mutex);
+            }
+        }
+    }
+
+    return movie_async_set_fade(fade, type, duration);
+}
+
 static int movie_async_activate(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -1060,31 +1118,22 @@ static int movie_async_activate(AVFilterContext *ctx)
 static int movie_async_get_position(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieAsyncContext *movie = ctx->priv;
-    unsigned msec;
 
     if (!res || !res_len)
         return AVERROR(EINVAL);
 
-    msec = movie->current_ms;
-    snprintf(res, res_len, "%u", msec);
+    snprintf(res, res_len, "%u", movie->current_ms);
     return 0;
 }
 
 static int movie_async_get_duration(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int64_t duration;
-    unsigned msec;
 
     if (!res || !res_len)
         return AVERROR(EINVAL);
 
-    if (!movie->format_ctx || movie->format_ctx->duration == AV_NOPTS_VALUE)
-        return AVERROR(EPERM);
-
-    msec = av_rescale(movie->format_ctx->duration, 1000, AV_TIME_BASE);
-    snprintf(res, res_len, "%u", msec);
-
+    snprintf(res, res_len, "%u", movie->duration_ms);
     return 0;
 }
 
@@ -1168,17 +1217,24 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
     }  else if (!strcmp(cmd, "prepare")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "start")) {
+        movie_async_do_fade(ctx, 0);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
     } else if (!strcmp(cmd, "pause")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
     } else if (!strcmp(cmd, "seek")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SEEK, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "stop")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+            movie_async_do_fade(ctx, 1);
+
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
     } else if (!strcmp(cmd, "reset")) {
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_RESET, NULL, 0);
     } else if (!strcmp(cmd, "close")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+            movie_async_do_fade(ctx, 1);
+
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "get_playing")) {
