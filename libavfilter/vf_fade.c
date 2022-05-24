@@ -62,7 +62,6 @@ typedef struct FadeContext {
     int alpha;
     int is_planar;
     uint64_t start_time, duration;
-    uint64_t start_time_pts, duration_pts;
     enum {VF_FADE_WAITING=0, VF_FADE_FADING, VF_FADE_DONE} fade_state;
     uint8_t color_rgba[4];  ///< fade color
     int black_fade;         ///< if color_rgba is black
@@ -149,20 +148,22 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_NONE
     };
-    const enum AVPixelFormat *pixel_fmts;
+    AVFilterFormats *fmts_list;
 
     if (s->alpha) {
         if (s->black_fade)
-            pixel_fmts = pix_fmts_alpha;
+            fmts_list = ff_make_format_list(pix_fmts_alpha);
         else
-            pixel_fmts = pix_fmts_rgba;
+            fmts_list = ff_make_format_list(pix_fmts_rgba);
     } else {
         if (s->black_fade)
-            pixel_fmts = pix_fmts;
+            fmts_list = ff_make_format_list(pix_fmts);
         else
-            pixel_fmts = pix_fmts_rgb;
+            fmts_list = ff_make_format_list(pix_fmts_rgb);
     }
-    return ff_set_common_formats_from_list(ctx, pixel_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 const static enum AVPixelFormat studio_level_pix_fmts[] = {
@@ -402,7 +403,7 @@ static int filter_slice_alpha16(AVFilterContext *ctx, void *arg, int jobnr,
     return 0;
 }
 
-static int config_input(AVFilterLink *inlink)
+static int config_props(AVFilterLink *inlink)
 {
     FadeContext *s = inlink->dst->priv;
     const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(inlink->format);
@@ -420,11 +421,6 @@ static int config_input(AVFilterLink *inlink)
     s->is_planar = pixdesc->flags & AV_PIX_FMT_FLAG_PLANAR;
     s->is_rgb = pixdesc->flags & AV_PIX_FMT_FLAG_RGB;
     s->is_packed_rgb = !s->is_planar && s->is_rgb;
-
-    if (s->duration)
-        s->duration_pts = av_rescale_q(s->duration, AV_TIME_BASE_Q, inlink->time_base);
-    if (s->start_time)
-        s->start_time_pts = av_rescale_q(s->start_time, AV_TIME_BASE_Q, inlink->time_base);
 
     /* use CCIR601/709 black level for studio-level pixel non-alpha components */
     s->black_level =
@@ -444,28 +440,29 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
     FadeContext *s       = ctx->priv;
+    double frame_timestamp = frame->pts == AV_NOPTS_VALUE ? -1 : frame->pts * av_q2d(inlink->time_base);
 
     // Calculate Fade assuming this is a Fade In
     if (s->fade_state == VF_FADE_WAITING) {
         s->factor=0;
-        if (frame->pts >= s->start_time_pts
+        if (frame_timestamp >= s->start_time/(double)AV_TIME_BASE
             && inlink->frame_count_out >= s->start_frame) {
             // Time to start fading
             s->fade_state = VF_FADE_FADING;
 
             // Save start time in case we are starting based on frames and fading based on time
-            if (s->start_time_pts == 0 && s->start_frame != 0) {
-                s->start_time_pts = frame->pts;
+            if (s->start_time == 0 && s->start_frame != 0) {
+                s->start_time = frame_timestamp*(double)AV_TIME_BASE;
             }
 
             // Save start frame in case we are starting based on time and fading based on frames
-            if (s->start_time_pts != 0 && s->start_frame == 0) {
+            if (s->start_time != 0 && s->start_frame == 0) {
                 s->start_frame = inlink->frame_count_out;
             }
         }
     }
     if (s->fade_state == VF_FADE_FADING) {
-        if (s->duration_pts == 0) {
+        if (s->duration == 0) {
             // Fading based on frame count
             s->factor = (inlink->frame_count_out - s->start_frame) * s->fade_per_frame;
             if (inlink->frame_count_out > s->start_frame + s->nb_frames) {
@@ -474,8 +471,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 
         } else {
             // Fading based on duration
-            s->factor = (frame->pts - s->start_time_pts) * UINT16_MAX / s->duration_pts;
-            if (frame->pts > s->start_time_pts + s->duration_pts) {
+            s->factor = (frame_timestamp - s->start_time/(double)AV_TIME_BASE)
+                            * (float) UINT16_MAX / (s->duration/(double)AV_TIME_BASE);
+            if (frame_timestamp > s->start_time/(double)AV_TIME_BASE
+                                  + s->duration/(double)AV_TIME_BASE) {
                 s->fade_state = VF_FADE_DONE;
             }
         }
@@ -493,20 +492,20 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 
     if (s->factor < UINT16_MAX) {
         if (s->alpha) {
-            ff_filter_execute(ctx, s->filter_slice_alpha, frame, NULL,
-                              FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
+            ctx->internal->execute(ctx, s->filter_slice_alpha, frame, NULL,
+                                FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
         } else if (s->is_rgb && !s->black_fade) {
-            ff_filter_execute(ctx, filter_slice_rgb, frame, NULL,
-                              FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
+            ctx->internal->execute(ctx, filter_slice_rgb, frame, NULL,
+                                   FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
         } else {
             /* luma, or rgb plane in case of black */
-            ff_filter_execute(ctx, s->filter_slice_luma, frame, NULL,
-                              FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
+            ctx->internal->execute(ctx, s->filter_slice_luma, frame, NULL,
+                                FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
 
             if (frame->data[1] && frame->data[2] && !s->is_rgb) {
                 /* chroma planes */
-                ff_filter_execute(ctx, s->filter_slice_chroma, frame, NULL,
-                                  FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
+                ctx->internal->execute(ctx, s->filter_slice_chroma, frame, NULL,
+                                    FFMIN(frame->height, ff_filter_get_nb_threads(ctx)));
             }
         }
     }
@@ -551,10 +550,11 @@ static const AVFilterPad avfilter_vf_fade_inputs[] = {
     {
         .name           = "default",
         .type           = AVMEDIA_TYPE_VIDEO,
-        .flags          = AVFILTERPAD_FLAG_NEEDS_WRITABLE,
-        .config_props   = config_input,
+        .config_props   = config_props,
         .filter_frame   = filter_frame,
+        .needs_writable = 1,
     },
+    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_fade_outputs[] = {
@@ -562,17 +562,17 @@ static const AVFilterPad avfilter_vf_fade_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_fade = {
+AVFilter ff_vf_fade = {
     .name          = "fade",
     .description   = NULL_IF_CONFIG_SMALL("Fade in/out input video."),
     .init          = init,
     .priv_size     = sizeof(FadeContext),
     .priv_class    = &fade_class,
-    FILTER_INPUTS(avfilter_vf_fade_inputs),
-    FILTER_OUTPUTS(avfilter_vf_fade_outputs),
-    FILTER_QUERY_FUNC(query_formats),
-    .flags         = AVFILTER_FLAG_SLICE_THREADS |
-                     AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    .query_formats = query_formats,
+    .inputs        = avfilter_vf_fade_inputs,
+    .outputs       = avfilter_vf_fade_outputs,
+    .flags         = AVFILTER_FLAG_SLICE_THREADS,
 };
