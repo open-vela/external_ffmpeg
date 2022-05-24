@@ -81,6 +81,28 @@ static int ff_nuttx_samplerate_convert(int samplerate, int *sample_rates, int nu
     return i;
 }
 
+static int ff_nuttx_flush_buffer(NuttxPriv *priv)
+{
+    struct audio_buf_desc_s desc;
+    struct ap_buffer_s *buffer;
+
+    if (priv->captured)
+        return 0;
+
+    buffer = (struct ap_buffer_s *)dq_peek(&priv->bufferq);
+    if (!buffer || !buffer->curbyte)
+        return 0;
+
+    dq_remfirst(&priv->bufferq);
+
+    memset(buffer->samp + buffer->curbyte, 0,
+           buffer->nmaxbytes - buffer->curbyte);
+
+    buffer->nbytes = buffer->nmaxbytes;
+    desc.u.buffer  = buffer;
+    return ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
+}
+
 static int ff_nuttx_get_capabilities(const char *device, int ac_type,
                                      struct audio_caps_s *caps)
 {
@@ -417,6 +439,7 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
     }
 
     if (priv->running) {
+        ff_nuttx_flush_buffer(priv);
         ioctl(priv->fd, AUDIOIOC_STOP, 0);
         priv->running  = false;
         priv->flushing = true;
