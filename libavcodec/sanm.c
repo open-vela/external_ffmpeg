@@ -27,7 +27,6 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "copy_block.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 #define NGLYPHS 256
@@ -1387,13 +1386,13 @@ static int copy_output(SANMVideoContext *ctx, SANMFrameHeader *hdr)
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int decode_frame(AVCodecContext *avctx, void *data,
                         int *got_frame_ptr, AVPacket *pkt)
 {
     SANMVideoContext *ctx = avctx->priv_data;
     int i, ret;
 
-    ctx->frame = frame;
+    ctx->frame = data;
     bytestream2_init(&ctx->gb, pkt->data, pkt->size);
 
     if (!ctx->version) {
@@ -1516,15 +1515,14 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return pkt->size;
 }
 
-const FFCodec ff_sanm_decoder = {
-    .p.name         = "sanm",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("LucasArts SANM/Smush video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_SANM,
+AVCodec ff_sanm_decoder = {
+    .name           = "sanm",
+    .long_name      = NULL_IF_CONFIG_SMALL("LucasArts SANM/Smush video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_SANM,
     .priv_data_size = sizeof(SANMVideoContext),
     .init           = decode_init,
     .close          = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
+    .decode         = decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
