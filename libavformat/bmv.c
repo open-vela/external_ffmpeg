@@ -58,7 +58,8 @@ static int bmv_read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
     ast->codecpar->codec_type      = AVMEDIA_TYPE_AUDIO;
     ast->codecpar->codec_id        = AV_CODEC_ID_BMV_AUDIO;
-    ast->codecpar->ch_layout       = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+    ast->codecpar->channels        = 2;
+    ast->codecpar->channel_layout  = AV_CH_LAYOUT_STEREO;
     ast->codecpar->sample_rate     = 22050;
     avpriv_set_pts_info(ast, 16, 1, 22050);
 
@@ -124,7 +125,7 @@ static int bmv_read_close(AVFormatContext *s)
     return 0;
 }
 
-const AVInputFormat ff_bmv_demuxer = {
+AVInputFormat ff_bmv_demuxer = {
     .name           = "bmv",
     .long_name      = NULL_IF_CONFIG_SMALL("Discworld II BMV"),
     .priv_data_size = sizeof(BMVContext),

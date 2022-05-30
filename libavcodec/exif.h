@@ -28,9 +28,9 @@
 #ifndef AVCODEC_EXIF_H
 #define AVCODEC_EXIF_H
 
-#include <stdint.h>
-#include "libavutil/dict.h"
+#include "avcodec.h"
 #include "bytestream.h"
+#include "tiff.h"
 
 #define EXIF_MAX_IFD_RECURSION 2
 #define EXIF_TAG_NAME_LENGTH   32
