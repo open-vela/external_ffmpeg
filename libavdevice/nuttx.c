@@ -497,8 +497,8 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
                 dq_addlast(&buffer->dq_entry, &priv->bufferq);
             }
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
-            priv->flushing = false;
             ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
+            priv->flushing = false;
         }
 
         nonblock = true;
