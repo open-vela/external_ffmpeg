@@ -25,6 +25,7 @@
  * Unix socket url_protocol
  */
 
+#include "libavutil/parseutils.h"
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
 #include "os_support.h"
@@ -63,13 +64,24 @@ static const AVClass unix_class = {
 static int unix_open(URLContext *h, const char *filename, int flags)
 {
     UnixContext *s = h->priv_data;
+    const char *opts;
+    char buf[8];
     int fd, ret;
 
     av_strstart(filename, "unix:", &filename);
     s->addr.sun_family = AF_UNIX;
-    av_strlcpy(s->addr.sun_path, filename, sizeof(s->addr.sun_path));
 
-    if ((fd = ff_socket(AF_UNIX, s->type, 0, h)) < 0)
+    opts = strrchr(filename, '?');
+    if (opts) {
+        if (av_find_info_tag(buf, sizeof(buf), "listen", opts + 1))
+            s->listen = strtol(buf, NULL, 10);
+
+        av_strlcpy(s->addr.sun_path, filename, FFMIN(opts - filename + 1, UNIX_PATH_MAX));
+    } else {
+        av_strlcpy(s->addr.sun_path, filename, sizeof(s->addr.sun_path));
+    }
+
+    if ((fd = ff_socket(AF_UNIX, s->type, 0)) < 0)
         return ff_neterrno();
 
     if (s->timeout < 0 && h->rw_timeout)
