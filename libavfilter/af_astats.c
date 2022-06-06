@@ -223,7 +223,7 @@ static int config_output(AVFilterLink *outlink)
 {
     AudioStatsContext *s = outlink->src->priv;
 
-    s->chstats = av_calloc(sizeof(*s->chstats), outlink->channels);
+    s->chstats = av_realloc_f(s->chstats, sizeof(*s->chstats), outlink->channels);
     if (!s->chstats)
         return AVERROR(ENOMEM);
 
@@ -233,7 +233,7 @@ static int config_output(AVFilterLink *outlink)
     for (int i = 0; i < s->nb_channels; i++) {
         ChannelStats *p = &s->chstats[i];
 
-        p->win_samples = av_calloc(s->tc_samples, sizeof(*p->win_samples));
+        p->win_samples = av_realloc_f(p->win_samples, s->tc_samples, sizeof(*p->win_samples));
         if (!p->win_samples)
             return AVERROR(ENOMEM);
     }
