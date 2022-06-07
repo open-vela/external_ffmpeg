@@ -26,6 +26,7 @@
 #include "put_bits.h"
 #include "get_bits.h"
 #include "mpeg4audio.h"
+#include "internal.h"
 
 typedef struct AACBSFContext {
     int first_frame_done;
@@ -148,10 +149,10 @@ static const enum AVCodecID codec_ids[] = {
     AV_CODEC_ID_AAC, AV_CODEC_ID_NONE,
 };
 
-const FFBitStreamFilter ff_aac_adtstoasc_bsf = {
-    .p.name         = "aac_adtstoasc",
-    .p.codec_ids    = codec_ids,
+const AVBitStreamFilter ff_aac_adtstoasc_bsf = {
+    .name           = "aac_adtstoasc",
     .priv_data_size = sizeof(AACBSFContext),
     .init           = aac_adtstoasc_init,
     .filter         = aac_adtstoasc_filter,
+    .codec_ids      = codec_ids,
 };

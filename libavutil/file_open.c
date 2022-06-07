@@ -155,7 +155,7 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
     return fd; /* success */
 }
 
-FILE *avpriv_fopen_utf8(const char *path, const char *mode)
+FILE *av_fopen_utf8(const char *path, const char *mode)
 {
     int fd;
     int access;
@@ -188,10 +188,3 @@ FILE *avpriv_fopen_utf8(const char *path, const char *mode)
         return NULL;
     return fdopen(fd, mode);
 }
-
-#if FF_API_AV_FOPEN_UTF8
-FILE *av_fopen_utf8(const char *path, const char *mode)
-{
-    return avpriv_fopen_utf8(path, mode);
-}
-#endif
