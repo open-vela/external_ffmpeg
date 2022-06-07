@@ -20,11 +20,10 @@
 
 #include <string.h>
 #include "checkasm.h"
-#include "libavcodec/v210enc_init.h"
+#include "libavcodec/v210enc.h"
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mem_internal.h"
 
 #define BUF_SIZE 512
 
