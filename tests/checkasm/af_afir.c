@@ -21,9 +21,8 @@
 #include <float.h>
 #include <stdint.h>
 
-#include "libavfilter/af_afirdsp.h"
+#include "libavfilter/af_afir.h"
 #include "libavutil/internal.h"
-#include "libavutil/mem_internal.h"
 #include "checkasm.h"
 
 #define LEN 256
