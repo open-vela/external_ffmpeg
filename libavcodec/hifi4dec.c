@@ -108,8 +108,10 @@ static int hifi_decode_pre_parse(AVCodecContext *avctx, AVPacket *avpkt)
 
             if (!avctx->channels) {
                 ret = ff_mpa_decode_header(state, &r, &c, &s, &b, &id);
-                if (ret < 0)
+                if (ret < 0) {
+                    av_log(avctx, AV_LOG_ERROR, "%s h 0x%08x size %d ret %d\n", __func__, state, buf_size, ret);
                     return ret;
+                }
 
                 avctx->channels = c;
             }
