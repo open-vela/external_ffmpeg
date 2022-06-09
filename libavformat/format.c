@@ -19,8 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
 #include "libavutil/opt.h"
@@ -50,11 +48,11 @@ int av_match_ext(const char *filename, const char *extensions)
     return 0;
 }
 
-const AVOutputFormat *av_guess_format(const char *short_name, const char *filename,
-                                      const char *mime_type)
+ff_const59 AVOutputFormat *av_guess_format(const char *short_name, const char *filename,
+                                const char *mime_type)
 {
     const AVOutputFormat *fmt = NULL;
-    const AVOutputFormat *fmt_found = NULL;
+    AVOutputFormat *fmt_found = NULL;
     void *i = 0;
     int score_max, score;
 
@@ -80,18 +78,18 @@ const AVOutputFormat *av_guess_format(const char *short_name, const char *filena
         }
         if (score > score_max) {
             score_max = score;
-            fmt_found = fmt;
+            fmt_found = (AVOutputFormat*)fmt;
         }
     }
     return fmt_found;
 }
 
-enum AVCodecID av_guess_codec(const AVOutputFormat *fmt, const char *short_name,
+enum AVCodecID av_guess_codec(ff_const59 AVOutputFormat *fmt, const char *short_name,
                               const char *filename, const char *mime_type,
                               enum AVMediaType type)
 {
     if (av_match_name("segment", fmt->name) || av_match_name("ssegment", fmt->name)) {
-        const AVOutputFormat *fmt2 = av_guess_format(NULL, filename, NULL);
+        ff_const59 AVOutputFormat *fmt2 = av_guess_format(NULL, filename, NULL);
         if (fmt2)
             fmt = fmt2;
     }
@@ -99,7 +97,7 @@ enum AVCodecID av_guess_codec(const AVOutputFormat *fmt, const char *short_name,
     if (type == AVMEDIA_TYPE_VIDEO) {
         enum AVCodecID codec_id = AV_CODEC_ID_NONE;
 
-#if CONFIG_IMAGE2_MUXER || CONFIG_IMAGE2PIPE_MUXER
+#if CONFIG_IMAGE2_MUXER
         if (!strcmp(fmt->name, "image2") || !strcmp(fmt->name, "image2pipe")) {
             codec_id = ff_guess_image2_codec(filename);
         }
@@ -117,22 +115,22 @@ enum AVCodecID av_guess_codec(const AVOutputFormat *fmt, const char *short_name,
         return AV_CODEC_ID_NONE;
 }
 
-const AVInputFormat *av_find_input_format(const char *short_name)
+ff_const59 AVInputFormat *av_find_input_format(const char *short_name)
 {
     const AVInputFormat *fmt = NULL;
     void *i = 0;
     while ((fmt = av_demuxer_iterate(&i)))
         if (av_match_name(short_name, fmt->name))
-            return fmt;
+            return (AVInputFormat*)fmt;
     return NULL;
 }
 
-const AVInputFormat *av_probe_input_format3(const AVProbeData *pd,
-                                            int is_opened, int *score_ret)
+ff_const59 AVInputFormat *av_probe_input_format3(ff_const59 AVProbeData *pd, int is_opened,
+                                      int *score_ret)
 {
     AVProbeData lpd = *pd;
     const AVInputFormat *fmt1 = NULL;
-    const AVInputFormat *fmt = NULL;
+    ff_const59 AVInputFormat *fmt = NULL;
     int score, score_max = 0;
     void *i = 0;
     const static uint8_t zerobuffer[AVPROBE_PADDING_SIZE];
@@ -160,8 +158,6 @@ const AVInputFormat *av_probe_input_format3(const AVProbeData *pd,
     }
 
     while ((fmt1 = av_demuxer_iterate(&i))) {
-        if (fmt1->flags & AVFMT_EXPERIMENTAL)
-            continue;
         if (!is_opened == !(fmt1->flags & AVFMT_NOFILE) && strcmp(fmt1->name, "image2"))
             continue;
         score = 0;
@@ -195,7 +191,7 @@ const AVInputFormat *av_probe_input_format3(const AVProbeData *pd,
         }
         if (score > score_max) {
             score_max = score;
-            fmt       = fmt1;
+            fmt       = (AVInputFormat*)fmt1;
         } else if (score == score_max)
             fmt = NULL;
     }
@@ -206,11 +202,10 @@ const AVInputFormat *av_probe_input_format3(const AVProbeData *pd,
     return fmt;
 }
 
-const AVInputFormat *av_probe_input_format2(const AVProbeData *pd,
-                                            int is_opened, int *score_max)
+ff_const59 AVInputFormat *av_probe_input_format2(ff_const59 AVProbeData *pd, int is_opened, int *score_max)
 {
     int score_ret;
-    const AVInputFormat *fmt = av_probe_input_format3(pd, is_opened, &score_ret);
+    ff_const59 AVInputFormat *fmt = av_probe_input_format3(pd, is_opened, &score_ret);
     if (score_ret > *score_max) {
         *score_max = score_ret;
         return fmt;
@@ -218,15 +213,15 @@ const AVInputFormat *av_probe_input_format2(const AVProbeData *pd,
         return NULL;
 }
 
-const AVInputFormat *av_probe_input_format(const AVProbeData *pd, int is_opened)
+ff_const59 AVInputFormat *av_probe_input_format(ff_const59 AVProbeData *pd, int is_opened)
 {
     int score = 0;
     return av_probe_input_format2(pd, is_opened, &score);
 }
 
-int av_probe_input_buffer2(AVIOContext *pb, const AVInputFormat **fmt,
-                           const char *filename, void *logctx,
-                           unsigned int offset, unsigned int max_probe_size)
+int av_probe_input_buffer2(AVIOContext *pb, ff_const59 AVInputFormat **fmt,
+                          const char *filename, void *logctx,
+                          unsigned int offset, unsigned int max_probe_size)
 {
     AVProbeData pd = { filename ? filename : "" };
     uint8_t *buf = NULL;
@@ -314,7 +309,7 @@ fail:
     return ret < 0 ? ret : score;
 }
 
-int av_probe_input_buffer(AVIOContext *pb, const AVInputFormat **fmt,
+int av_probe_input_buffer(AVIOContext *pb, ff_const59 AVInputFormat **fmt,
                           const char *filename, void *logctx,
                           unsigned int offset, unsigned int max_probe_size)
 {
