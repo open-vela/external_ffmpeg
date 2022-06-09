@@ -223,6 +223,16 @@ static int config_output(AVFilterLink *outlink)
 {
     AudioStatsContext *s = outlink->src->priv;
 
+    if (s->chstats) {
+        for (int i = 0; i < s->nb_channels; i++) {
+            ChannelStats *p = &s->chstats[i];
+            if (p && p->win_samples)
+                av_freep(&p->win_samples);
+        }
+
+        av_freep(&s->chstats);
+    }
+
     s->chstats = av_calloc(sizeof(*s->chstats), outlink->channels);
     if (!s->chstats)
         return AVERROR(ENOMEM);
