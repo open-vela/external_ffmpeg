@@ -20,12 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
-#include "libavutil/channel_layout.h"
 #include "aptx.h"
-#include "codec_internal.h"
-#include "internal.h"
 
 /*
  * Half-band QMF synthesis filter realized with a polyphase FIR filter.
@@ -137,10 +132,11 @@ static int aptx_decode_samples(AptXContext *ctx,
     return ret;
 }
 
-static int aptx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int aptx_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame_ptr, AVPacket *avpkt)
 {
     AptXContext *s = avctx->priv_data;
+    AVFrame *frame = data;
     int pos, opos, channel, sample, ret;
 
     if (avpkt->size < s->block_size) {
@@ -149,7 +145,7 @@ static int aptx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     }
 
     /* get output buffer */
-    frame->ch_layout.nb_channels = NB_CHANNELS;
+    frame->channels = NB_CHANNELS;
     frame->format = AV_SAMPLE_FMT_S32P;
     frame->nb_samples = 4 * avpkt->size / s->block_size;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
@@ -174,41 +170,35 @@ static int aptx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 }
 
 #if CONFIG_APTX_DECODER
-const FFCodec ff_aptx_decoder = {
-    .p.name                = "aptx",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("aptX (Audio Processing Technology for Bluetooth)"),
-    .p.type                = AVMEDIA_TYPE_AUDIO,
-    .p.id                  = AV_CODEC_ID_APTX,
+AVCodec ff_aptx_decoder = {
+    .name                  = "aptx",
+    .long_name             = NULL_IF_CONFIG_SMALL("aptX (Audio Processing Technology for Bluetooth)"),
+    .type                  = AVMEDIA_TYPE_AUDIO,
+    .id                    = AV_CODEC_ID_APTX,
     .priv_data_size        = sizeof(AptXContext),
     .init                  = ff_aptx_init,
-    FF_CODEC_DECODE_CB(aptx_decode_frame),
-    .p.capabilities        = AV_CODEC_CAP_DR1,
+    .decode                = aptx_decode_frame,
+    .capabilities          = AV_CODEC_CAP_DR1,
     .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts     = (const uint64_t[]) { AV_CH_LAYOUT_STEREO, 0},
-#endif
-    .p.ch_layouts          = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_STEREO, { 0 } },
-    .p.sample_fmts         = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S32P,
+    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_STEREO, 0},
+    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S32P,
                                                              AV_SAMPLE_FMT_NONE },
 };
 #endif
 
 #if CONFIG_APTX_HD_DECODER
-const FFCodec ff_aptx_hd_decoder = {
-    .p.name                = "aptx_hd",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("aptX HD (Audio Processing Technology for Bluetooth)"),
-    .p.type                = AVMEDIA_TYPE_AUDIO,
-    .p.id                  = AV_CODEC_ID_APTX_HD,
+AVCodec ff_aptx_hd_decoder = {
+    .name                  = "aptx_hd",
+    .long_name             = NULL_IF_CONFIG_SMALL("aptX HD (Audio Processing Technology for Bluetooth)"),
+    .type                  = AVMEDIA_TYPE_AUDIO,
+    .id                    = AV_CODEC_ID_APTX_HD,
     .priv_data_size        = sizeof(AptXContext),
     .init                  = ff_aptx_init,
-    FF_CODEC_DECODE_CB(aptx_decode_frame),
-    .p.capabilities        = AV_CODEC_CAP_DR1,
+    .decode                = aptx_decode_frame,
+    .capabilities          = AV_CODEC_CAP_DR1,
     .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-#if FF_API_OLD_CHANNEL_LAYOUT
-    .p.channel_layouts     = (const uint64_t[]) { AV_CH_LAYOUT_STEREO, 0},
-#endif
-    .p.ch_layouts          = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_STEREO, { 0 } },
-    .p.sample_fmts         = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S32P,
+    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_STEREO, 0},
+    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S32P,
                                                              AV_SAMPLE_FMT_NONE },
 };
 #endif
