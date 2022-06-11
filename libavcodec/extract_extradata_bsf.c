@@ -18,6 +18,8 @@
 
 #include <stdint.h>
 
+#include "libavutil/common.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 
@@ -29,7 +31,6 @@
 #include "h2645_parse.h"
 #include "h264.h"
 #include "hevc.h"
-#include "startcode.h"
 #include "vc1_common.h"
 
 typedef struct ExtractExtradataContext {
@@ -102,6 +103,7 @@ static int extract_extradata_av1(AVBSFContext *ctx, AVPacket *pkt,
             av_buffer_unref(&filtered_buf);
             return AVERROR(ENOMEM);
         }
+        memset(extradata + extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
         *data = extradata;
         *size = extradata_size;
@@ -196,6 +198,7 @@ static int extract_extradata_h2645(AVBSFContext *ctx, AVPacket *pkt,
             av_buffer_unref(&filtered_buf);
             return AVERROR(ENOMEM);
         }
+        memset(extradata + extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
         *data = extradata;
         *size = extradata_size;
@@ -251,6 +254,7 @@ static int extract_extradata_vc1(AVBSFContext *ctx, AVPacket *pkt,
             return AVERROR(ENOMEM);
 
         memcpy(*data, pkt->data, extradata_size);
+        memset(*data + extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         *size = extradata_size;
 
         if (s->remove) {
@@ -274,16 +278,19 @@ static int extract_extradata_mpeg12(AVBSFContext *ctx, AVPacket *pkt,
         if (state == 0x1B3)
             found = 1;
         else if (found && state != 0x1B5 && state < 0x200 && state >= 0x100) {
-            *size = i - 3;
-            *data = av_malloc(*size + AV_INPUT_BUFFER_PADDING_SIZE);
-            if (!*data)
-                return AVERROR(ENOMEM);
+            if (i > 3) {
+                *size = i - 3;
+                *data = av_malloc(*size + AV_INPUT_BUFFER_PADDING_SIZE);
+                if (!*data)
+                    return AVERROR(ENOMEM);
 
-            memcpy(*data, pkt->data, *size);
+                memcpy(*data, pkt->data, *size);
+                memset(*data + *size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
-            if (s->remove) {
-                pkt->data += *size;
-                pkt->size -= *size;
+                if (s->remove) {
+                    pkt->data += *size;
+                    pkt->size -= *size;
+                }
             }
             break;
         }
@@ -308,6 +315,7 @@ static int extract_extradata_mpeg4(AVBSFContext *ctx, AVPacket *pkt,
                     return AVERROR(ENOMEM);
 
                 memcpy(*data, pkt->data, *size);
+                memset(*data + *size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
                 if (s->remove) {
                     pkt->data += *size;
@@ -327,7 +335,6 @@ static const struct {
 } extract_tab[] = {
     { AV_CODEC_ID_AV1,        extract_extradata_av1     },
     { AV_CODEC_ID_AVS2,       extract_extradata_mpeg4   },
-    { AV_CODEC_ID_AVS3,       extract_extradata_mpeg4   },
     { AV_CODEC_ID_CAVS,       extract_extradata_mpeg4   },
     { AV_CODEC_ID_H264,       extract_extradata_h2645   },
     { AV_CODEC_ID_HEVC,       extract_extradata_h2645   },
@@ -370,7 +377,6 @@ static int extract_extradata_filter(AVBSFContext *ctx, AVPacket *pkt)
         goto fail;
 
     if (extradata) {
-        memset(extradata + extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA,
                                       extradata, extradata_size);
         if (ret < 0) {
@@ -396,7 +402,6 @@ static void extract_extradata_close(AVBSFContext *ctx)
 static const enum AVCodecID codec_ids[] = {
     AV_CODEC_ID_AV1,
     AV_CODEC_ID_AVS2,
-    AV_CODEC_ID_AVS3,
     AV_CODEC_ID_CAVS,
     AV_CODEC_ID_H264,
     AV_CODEC_ID_HEVC,
@@ -422,11 +427,11 @@ static const AVClass extract_extradata_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFBitStreamFilter ff_extract_extradata_bsf = {
-    .p.name         = "extract_extradata",
-    .p.codec_ids    = codec_ids,
-    .p.priv_class   = &extract_extradata_class,
+const AVBitStreamFilter ff_extract_extradata_bsf = {
+    .name           = "extract_extradata",
+    .codec_ids      = codec_ids,
     .priv_data_size = sizeof(ExtractExtradataContext),
+    .priv_class     = &extract_extradata_class,
     .init           = extract_extradata_init,
     .filter         = extract_extradata_filter,
     .close          = extract_extradata_close,

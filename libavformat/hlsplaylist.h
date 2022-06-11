@@ -25,6 +25,7 @@
 
 #include <stdint.h>
 
+#include "libavutil/common.h"
 #include "avformat.h"
 #include "avio.h"
 
