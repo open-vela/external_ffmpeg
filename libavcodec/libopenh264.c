@@ -23,7 +23,6 @@
 #include <wels/codec_api.h>
 #include <wels/codec_ver.h>
 
-#include "libavutil/error.h"
 #include "libavutil/log.h"
 
 #include "libopenh264.h"

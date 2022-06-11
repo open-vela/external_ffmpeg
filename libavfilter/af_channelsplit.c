@@ -30,16 +30,13 @@
 
 #include "audio.h"
 #include "avfilter.h"
-#include "filters.h"
 #include "formats.h"
 #include "internal.h"
-
-#define MAX_CH 64
 
 typedef struct ChannelSplitContext {
     const AVClass *class;
 
-    AVChannelLayout channel_layout;
+    uint64_t channel_layout;
     char    *channel_layout_str;
     char    *channels_str;
 
@@ -60,70 +57,53 @@ AVFILTER_DEFINE_CLASS(channelsplit);
 static av_cold int init(AVFilterContext *ctx)
 {
     ChannelSplitContext *s = ctx->priv;
-    AVChannelLayout channel_layout = { 0 };
+    uint64_t channel_layout;
+    int nb_channels;
     int all = 0, ret = 0, i;
 
-    if ((ret = av_channel_layout_from_string(&s->channel_layout, s->channel_layout_str)) < 0) {
+    if (!(s->channel_layout = av_get_channel_layout(s->channel_layout_str))) {
         av_log(ctx, AV_LOG_ERROR, "Error parsing channel layout '%s'.\n",
                s->channel_layout_str);
         ret = AVERROR(EINVAL);
         goto fail;
     }
 
+
     if (!strcmp(s->channels_str, "all")) {
-        if ((ret = av_channel_layout_copy(&channel_layout, &s->channel_layout)) < 0)
-            goto fail;
+        nb_channels = av_get_channel_layout_nb_channels(s->channel_layout);
+        channel_layout = s->channel_layout;
         all = 1;
     } else {
-        if ((ret = av_channel_layout_from_string(&channel_layout, s->channels_str)) < 0)
-            goto fail;
+        if ((ret = av_get_extended_channel_layout(s->channels_str, &channel_layout, &nb_channels)) < 0)
+            return ret;
     }
 
-    if (channel_layout.nb_channels > MAX_CH) {
-        av_log(ctx, AV_LOG_ERROR, "Too many channels\n");
-        goto fail;
-    }
+    for (i = 0; i < nb_channels; i++) {
+        uint64_t channel = av_channel_layout_extract_channel(channel_layout, i);
+        AVFilterPad pad  = { 0 };
 
-    for (i = 0; i < channel_layout.nb_channels; i++) {
-        enum AVChannel channel = av_channel_layout_channel_from_index(&channel_layout, i);
-        char buf[64];
-        AVFilterPad pad = { .flags = AVFILTERPAD_FLAG_FREE_NAME };
-
-        av_channel_name(buf, sizeof(buf), channel);
         pad.type = AVMEDIA_TYPE_AUDIO;
-        pad.name = av_strdup(buf);
-        if (!pad.name) {
-            ret = AVERROR(ENOMEM);
-            goto fail;
-        }
+        pad.name = av_get_channel_name(channel);
 
         if (all) {
             s->map[i] = i;
         } else {
-            if ((ret = av_channel_layout_index_from_channel(&s->channel_layout, channel)) < 0) {
+            if ((ret = av_get_channel_layout_channel_index(s->channel_layout, channel)) < 0) {
                 av_log(ctx, AV_LOG_ERROR, "Channel name '%s' not present in channel layout '%s'.\n",
-                       pad.name, s->channel_layout_str);
-                av_freep(&pad.name);
-                goto fail;
+                       av_get_channel_name(channel), s->channel_layout_str);
+                return ret;
             }
 
             s->map[i] = ret;
         }
 
-        if ((ret = ff_append_outpad(ctx, &pad)) < 0)
-            goto fail;
+        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
+            return ret;
+        }
     }
 
 fail:
-    av_channel_layout_uninit(&channel_layout);
     return ret;
-}
-
-static av_cold void uninit(AVFilterContext *ctx)
-{
-    ChannelSplitContext *s = ctx->priv;
-
-    av_channel_layout_uninit(&s->channel_layout);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -133,122 +113,69 @@ static int query_formats(AVFilterContext *ctx)
     int i, ret;
 
     if ((ret = ff_set_common_formats(ctx, ff_planar_sample_fmts())) < 0 ||
-        (ret = ff_set_common_all_samplerates(ctx)) < 0)
+        (ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
         return ret;
 
-    if ((ret = ff_add_channel_layout(&in_layouts, &s->channel_layout)) < 0 ||
-        (ret = ff_channel_layouts_ref(in_layouts, &ctx->inputs[0]->outcfg.channel_layouts)) < 0)
+    if ((ret = ff_add_channel_layout(&in_layouts, s->channel_layout)) < 0 ||
+        (ret = ff_channel_layouts_ref(in_layouts, &ctx->inputs[0]->out_channel_layouts)) < 0)
         return ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVChannelLayout channel_layout = { 0 };
         AVFilterChannelLayouts *out_layouts = NULL;
-        enum AVChannel channel = av_channel_layout_channel_from_index(&s->channel_layout, s->map[i]);
+        uint64_t channel = av_channel_layout_extract_channel(s->channel_layout, s->map[i]);
 
-        if ((ret = av_channel_layout_from_mask(&channel_layout, 1ULL << channel)) < 0 ||
-            (ret = ff_add_channel_layout(&out_layouts, &channel_layout)) < 0 ||
-            (ret = ff_channel_layouts_ref(out_layouts, &ctx->outputs[i]->incfg.channel_layouts)) < 0)
+        if ((ret = ff_add_channel_layout(&out_layouts, channel)) < 0 ||
+            (ret = ff_channel_layouts_ref(out_layouts, &ctx->outputs[i]->in_channel_layouts)) < 0)
             return ret;
     }
 
     return 0;
 }
 
-static int filter_frame(AVFilterLink *outlink, AVFrame *buf)
+static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
 {
-    AVFilterContext *ctx = outlink->src;
+    AVFilterContext *ctx = inlink->dst;
     ChannelSplitContext *s = ctx->priv;
-    const int i = FF_OUTLINK_IDX(outlink);
-    enum AVChannel channel = av_channel_layout_channel_from_index(&buf->ch_layout, s->map[i]);
-    int ret;
+    int i, ret = 0;
 
-    AVFrame *buf_out = av_frame_clone(buf);
-    if (!buf_out)
-        return AVERROR(ENOMEM);
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        AVFrame *buf_out = av_frame_clone(buf);
 
-    buf_out->data[0] = buf_out->extended_data[0] = buf_out->extended_data[s->map[i]];
-    ret = av_channel_layout_from_mask(&buf_out->ch_layout, 1ULL << channel);
-    if (ret < 0)
-        return ret;
-#if FF_API_OLD_CHANNEL_LAYOUT
-FF_DISABLE_DEPRECATION_WARNINGS
-    buf_out->channel_layout =
-        av_channel_layout_extract_channel(buf->channel_layout, s->map[i]);
-    buf_out->channels = 1;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
-    return ff_filter_frame(ctx->outputs[i], buf_out);
-}
-
-static int activate(AVFilterContext *ctx)
-{
-    AVFilterLink *inlink = ctx->inputs[0];
-    int status, ret;
-    AVFrame *in;
-    int64_t pts;
-
-    for (int i = 0; i < ctx->nb_outputs; i++) {
-        FF_FILTER_FORWARD_STATUS_BACK_ALL(ctx->outputs[i], ctx);
-    }
-
-    ret = ff_inlink_consume_frame(inlink, &in);
-    if (ret < 0)
-        return ret;
-    if (ret > 0) {
-        for (int i = 0; i < ctx->nb_outputs; i++) {
-            if (ff_outlink_get_status(ctx->outputs[i]))
-                continue;
-
-            ret = filter_frame(ctx->outputs[i], in);
-            if (ret < 0)
-                break;
+        if (!buf_out) {
+            ret = AVERROR(ENOMEM);
+            break;
         }
 
-        av_frame_free(&in);
+        buf_out->data[0] = buf_out->extended_data[0] = buf_out->extended_data[s->map[i]];
+        buf_out->channel_layout =
+            av_channel_layout_extract_channel(buf->channel_layout, s->map[i]);
+        buf_out->channels = 1;
+
+        ret = ff_filter_frame(ctx->outputs[i], buf_out);
         if (ret < 0)
-            return ret;
+            break;
     }
-
-    if (ff_inlink_acknowledge_status(inlink, &status, &pts)) {
-        for (int i = 0; i < ctx->nb_outputs; i++) {
-            if (ff_outlink_get_status(ctx->outputs[i]))
-                continue;
-            ff_outlink_set_status(ctx->outputs[i], status, pts);
-        }
-        return 0;
-    }
-
-    for (int i = 0; i < ctx->nb_outputs; i++) {
-        if (ff_outlink_get_status(ctx->outputs[i]))
-            continue;
-
-        if (ff_outlink_frame_wanted(ctx->outputs[i])) {
-            ff_inlink_request_frame(inlink);
-            return 0;
-        }
-    }
-
-    return FFERROR_NOT_READY;
+    av_frame_free(&buf);
+    return ret;
 }
 
 static const AVFilterPad avfilter_af_channelsplit_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
+        .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_channelsplit = {
+AVFilter ff_af_channelsplit = {
     .name           = "channelsplit",
     .description    = NULL_IF_CONFIG_SMALL("Split audio into per-channel streams."),
     .priv_size      = sizeof(ChannelSplitContext),
     .priv_class     = &channelsplit_class,
     .init           = init,
-    .activate       = activate,
-    .uninit         = uninit,
-    FILTER_INPUTS(avfilter_af_channelsplit_inputs),
+    .query_formats  = query_formats,
+    .inputs         = avfilter_af_channelsplit_inputs,
     .outputs        = NULL,
-    FILTER_QUERY_FUNC(query_formats),
     .flags          = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };

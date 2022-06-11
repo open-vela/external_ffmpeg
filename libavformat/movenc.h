@@ -26,7 +26,6 @@
 
 #include "avformat.h"
 #include "movenccenc.h"
-#include "libavcodec/packet_internal.h"
 
 #define MOV_FRAG_INFO_ALLOC_INCREMENT 64
 #define MOV_INDEX_CLUSTER_SIZE 1024
@@ -43,7 +42,6 @@
 #define MODE_IPOD 0x20
 #define MODE_ISM  0x40
 #define MODE_F4V  0x80
-#define MODE_AVIF 0x100
 
 typedef struct MOVIentry {
     uint64_t     pos;
@@ -108,7 +106,6 @@ typedef struct MOVTrack {
     int         tag; ///< stsd fourcc
     AVStream        *st;
     AVCodecParameters *par;
-    int mono_as_fc;
     int multichannel_as_mono;
 
     int         vos_len;
@@ -137,10 +134,11 @@ typedef struct MOVTrack {
     uint32_t    default_size;
 
     HintSampleQueue sample_queue;
-    AVPacket *cover_image;
+    AVPacket cover_image;
 
     AVIOContext *mdat_buf;
     int64_t     data_offset;
+    int64_t     frag_start;
     int         frag_discont;
     int         entries_flushed;
 
@@ -166,10 +164,6 @@ typedef struct MOVTrack {
     int pal_done;
 
     int is_unaligned_qt_rgb;
-
-    unsigned int squash_fragment_samples_to_one; //< flag to note formats where all samples for a fragment are to be squashed
-
-    PacketList squashed_packet_queue;
 } MOVTrack;
 
 typedef enum {
@@ -221,8 +215,6 @@ typedef struct MOVMuxContext {
     int per_stream_grouping;
     AVFormatContext *fc;
 
-    AVPacket *pkt;
-
     int use_editlist;
     float gamma;
 
@@ -240,15 +232,9 @@ typedef struct MOVMuxContext {
 
     int use_stream_ids_as_track_ids;
     int track_ids_ok;
-    int write_btrt;
     int write_tmcd;
     MOVPrftBox write_prft;
     int empty_hdlr_name;
-    int movie_timescale;
-
-    int64_t avif_extent_pos;
-    int avif_extent_length;
-    int is_animated_avif;
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT              (1 <<  0)
