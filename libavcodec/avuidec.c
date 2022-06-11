@@ -21,7 +21,6 @@
  */
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "libavutil/intreadwrite.h"
 
@@ -31,10 +30,11 @@ static av_cold int avui_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int avui_decode_frame(AVCodecContext *avctx, AVFrame *pic,
+static int avui_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame, AVPacket *avpkt)
 {
     int ret;
+    AVFrame *pic = data;
     const uint8_t *src = avpkt->data, *extradata = avctx->extradata;
     const uint8_t *srca;
     uint8_t *y, *u, *v, *a;
@@ -119,13 +119,13 @@ static int avui_decode_frame(AVCodecContext *avctx, AVFrame *pic,
     return avpkt->size;
 }
 
-const FFCodec ff_avui_decoder = {
-    .p.name         = "avui",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Avid Meridien Uncompressed"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_AVUI,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+AVCodec ff_avui_decoder = {
+    .name         = "avui",
+    .long_name    = NULL_IF_CONFIG_SMALL("Avid Meridien Uncompressed"),
+    .type         = AVMEDIA_TYPE_VIDEO,
+    .id           = AV_CODEC_ID_AVUI,
     .init         = avui_decode_init,
-    FF_CODEC_DECODE_CB(avui_decode_frame),
+    .decode       = avui_decode_frame,
+    .capabilities = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

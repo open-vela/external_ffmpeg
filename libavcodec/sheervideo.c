@@ -19,13 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define CACHED_BITSTREAM_READER !ARCH_X86_32
-#define SHEER_VLC_BITS 12
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "get_bits.h"
+#include "internal.h"
 #include "thread.h"
 #include "sheervideodata.h"
 
@@ -61,10 +62,10 @@ static void decode_ca4i(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x++) {
                 int y, u, v, a;
 
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_a[x] = pred[3] = (a + pred[3]) & 0x3ff;
                 dst_y[x] = pred[0] = (y + pred[0]) & 0x3ff;
@@ -104,10 +105,10 @@ static void decode_ca4p(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int y, u, v, a;
 
-            a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_a[x] = pred[3] = (a + pred[3]) & 0x3ff;
             dst_y[x] = pred[0] = (y + pred[0]) & 0x3ff;
@@ -144,10 +145,10 @@ static void decode_ca4p(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[2] = dst_v[-p->linesize[2] / 2 + x];
                 pred_T[3] = dst_a[-p->linesize[3] / 2 + x];
 
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_a[x] = pred_L[3] = (a + ((3 * (pred_T[3] + pred_L[3]) - 2 * pred_TL[3]) >> 2)) & 0x3ff;
                 dst_y[x] = pred_L[0] = (y + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0x3ff;
@@ -191,9 +192,9 @@ static void decode_ybr10i(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x++) {
                 int y, u, v;
 
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x] = pred[0] = (y + pred[0]) & 0x3ff;
                 dst_u[x] = pred[1] = (u + pred[1]) & 0x3ff;
@@ -229,9 +230,9 @@ static void decode_ybr10(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int y, u, v;
 
-            y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x] = pred[0] = (y + pred[0]) & 0x3ff;
             dst_u[x] = pred[1] = (u + pred[1]) & 0x3ff;
@@ -263,9 +264,9 @@ static void decode_ybr10(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst_u[-p->linesize[1] / 2 + x];
                 pred_T[2] = dst_v[-p->linesize[2] / 2 + x];
 
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x] = pred_L[0] = (y + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0x3ff;
                 dst_u[x] = pred_L[1] = (u + ((3 * (pred_T[1] + pred_L[1]) - 2 * pred_TL[1]) >> 2)) & 0x3ff;
@@ -307,10 +308,10 @@ static void decode_yry10i(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x += 2) {
                 int y1, y2, u, v;
 
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0x3ff;
                 dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0x3ff;
@@ -348,10 +349,10 @@ static void decode_yry10(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x += 2) {
             int y1, y2, u, v;
 
-            y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0x3ff;
             dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0x3ff;
@@ -386,10 +387,10 @@ static void decode_yry10(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst_u[-p->linesize[1] / 2 + x / 2];
                 pred_T[2] = dst_v[-p->linesize[2] / 2 + x / 2];
 
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred_L[0] = (y1 + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0x3ff;
                 dst_u[x / 2] = pred_L[1] = (u + (((pred_L[1] - pred_TL[1]) >> 1) + pred_T[1])) & 0x3ff;
@@ -435,12 +436,12 @@ static void decode_ca2i(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x += 2) {
                 int y1, y2, u, v, a1, a2;
 
-                a1 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                a2 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a1 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                a2 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0x3ff;
                 dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0x3ff;
@@ -484,12 +485,12 @@ static void decode_ca2p(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x += 2) {
             int y1, y2, u, v, a1, a2;
 
-            a1 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            a2 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a1 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            a2 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0x3ff;
             dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0x3ff;
@@ -532,12 +533,12 @@ static void decode_ca2p(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[4] = dst_a[-p->linesize[3] / 2 + x];
                 pred_T[5] = dst_a[-p->linesize[3] / 2 + x + 1];
 
-                a1 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                a2 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a1 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                a2 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred_L[0] = (y1 + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0x3ff;
                 dst_u[x / 2] = pred_L[1] = (u + (((pred_L[1] - pred_TL[1]) >> 1) + pred_T[1])) & 0x3ff;
@@ -587,12 +588,12 @@ static void decode_c82i(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x += 2) {
                 int y1, y2, u, v, a1, a2;
 
-                a1 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                a2 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a1 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                a2 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0xff;
                 dst_y[x + 1] = pred[0] = (y2 + pred[0]) & 0xff;
@@ -636,12 +637,12 @@ static void decode_c82p(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x += 2) {
             int y1, y2, u, v, a1, a2;
 
-            a1 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            a2 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a1 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            a2 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0xff;
             dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0xff;
@@ -684,12 +685,12 @@ static void decode_c82p(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[4] = dst_a[-p->linesize[3] + x];
                 pred_T[5] = dst_a[-p->linesize[3] + x + 1];
 
-                a1 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                a2 = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a1 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                a2 = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred_L[0] = (y1 + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst_u[x / 2] = pred_L[1] = (u + (((pred_L[1] - pred_TL[1]) >> 1) + pred_T[1])) & 0xff;
@@ -735,10 +736,10 @@ static void decode_ybyr(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x += 2) {
             int y1, y2, u, v;
 
-            y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0xff;
             dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0xff;
@@ -773,10 +774,10 @@ static void decode_ybyr(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst_u[-p->linesize[1] + x / 2];
                 pred_T[2] = dst_v[-p->linesize[2] + x / 2];
 
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred_L[0] = (y1 + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst_u[x / 2] = pred_L[1] = (u + (((pred_L[1] - pred_TL[1]) >> 1) + pred_T[1])) & 0xff;
@@ -818,10 +819,10 @@ static void decode_byryi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x += 2) {
             int y1, y2, u, v;
 
-            y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0xff;
             dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0xff;
@@ -851,10 +852,10 @@ static void decode_byryi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             pred_L[2] = dst_v[-p->linesize[2]];
 
             for (x = 0; x < avctx->width; x += 2) {
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred_L[0] = (y1 + pred_L[0]) & 0xff;
                 dst_u[x / 2] = pred_L[1] = (u  + pred_L[1]) & 0xff;
@@ -892,10 +893,10 @@ static void decode_byry(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x += 2) {
             int y1, y2, u, v;
 
-            y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x    ] = pred[0] = (y1 + pred[0]) & 0xff;
             dst_u[x / 2] = pred[1] = (u  + pred[1]) & 0xff;
@@ -930,10 +931,10 @@ static void decode_byry(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst_u[-p->linesize[1] + x / 2];
                 pred_T[2] = dst_v[-p->linesize[2] + x / 2];
 
-                y1 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y2 = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                v  = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y1 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y2 = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                v  = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x    ] = pred_L[0] = (y1 + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst_u[x / 2] = pred_L[1] = (u + (((pred_L[1] - pred_TL[1]) >> 1) + pred_T[1])) & 0xff;
@@ -974,9 +975,9 @@ static void decode_ybri(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int y, u, v;
 
-            y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x] = pred[0] = (y + pred[0]) & 0xff;
             dst_u[x] = pred[1] = (u + pred[1]) & 0xff;
@@ -1004,9 +1005,9 @@ static void decode_ybri(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             pred_L[2] = dst_v[-p->linesize[2]];
 
             for (x = 0; x < avctx->width; x++) {
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x] = pred_L[0] = (y + pred_L[0]) & 0xff;
                 dst_u[x] = pred_L[1] = (u + pred_L[1]) & 0xff;
@@ -1042,9 +1043,9 @@ static void decode_ybr(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int y, u, v;
 
-            y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_y[x] = pred[0] = (y + pred[0]) & 0xff;
             dst_u[x] = pred[1] = (u + pred[1]) & 0xff;
@@ -1076,9 +1077,9 @@ static void decode_ybr(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst_u[-p->linesize[1] + x];
                 pred_T[2] = dst_v[-p->linesize[2] + x];
 
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_y[x] = pred_L[0] = (y + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst_u[x] = pred_L[1] = (u + ((3 * (pred_T[1] + pred_L[1]) - 2 * pred_TL[1]) >> 2)) & 0xff;
@@ -1120,10 +1121,10 @@ static void decode_aybri(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int a, y, u, v;
 
-            a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_a[x] = pred[0] = (a + pred[0]) & 0xff;
             dst_y[x] = pred[1] = (y + pred[1]) & 0xff;
@@ -1155,10 +1156,10 @@ static void decode_aybri(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             pred_L[3] = dst_v[-p->linesize[2]];
 
             for (x = 0; x < avctx->width; x++) {
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_a[x] = pred_L[0] = (a + pred_L[0]) & 0xff;
                 dst_y[x] = pred_L[1] = (y + pred_L[1]) & 0xff;
@@ -1198,10 +1199,10 @@ static void decode_aybr(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int a, y, u, v;
 
-            a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_a[x] = pred[0] = (a + pred[0]) & 0xff;
             dst_y[x] = pred[1] = (y + pred[1]) & 0xff;
@@ -1238,10 +1239,10 @@ static void decode_aybr(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[2] = dst_u[-p->linesize[1] + x];
                 pred_T[3] = dst_v[-p->linesize[2] + x];
 
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                y = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                u = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                v = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                y = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                u = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                v = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_a[x] = pred_L[0] = (a + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst_y[x] = pred_L[1] = (y + ((3 * (pred_T[1] + pred_L[1]) - 2 * pred_TL[1]) >> 2)) & 0xff;
@@ -1287,10 +1288,10 @@ static void decode_argxi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x++) {
                 int r, g, b, a;
 
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_a[x] = pred[3] = (a + pred[3]) & 0x3ff;
                 dst_r[x] = pred[0] = (r + pred[0]) & 0x3ff;
@@ -1330,10 +1331,10 @@ static void decode_argx(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int r, g, b, a;
 
-            a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_a[x] = pred[3] = (a + pred[3]) & 0x3ff;
             dst_r[x] = pred[0] = (r + pred[0]) & 0x3ff;
@@ -1370,10 +1371,10 @@ static void decode_argx(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[2] = dst_b[-p->linesize[1] / 2 + x];
                 pred_T[3] = dst_a[-p->linesize[3] / 2 + x];
 
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_a[x] = pred_L[3] = (a + ((3 * (pred_T[3] + pred_L[3]) - 2 * pred_TL[3]) >> 2)) & 0x3ff;
                 dst_r[x] = pred_L[0] = (r + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0x3ff;
@@ -1417,9 +1418,9 @@ static void decode_rgbxi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             for (x = 0; x < avctx->width; x++) {
                 int r, g, b;
 
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_r[x] = pred[0] = (r + pred[0]) & 0x3ff;
                 dst_g[x] = pred[1] = (r + g + pred[1]) & 0x3ff;
@@ -1455,9 +1456,9 @@ static void decode_rgbx(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int r, g, b;
 
-            r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst_r[x] = pred[0] = (r + pred[0]) & 0x3ff;
             dst_g[x] = pred[1] = (r + g + pred[1]) & 0x3ff;
@@ -1489,9 +1490,9 @@ static void decode_rgbx(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst_g[-p->linesize[0] / 2 + x];
                 pred_T[2] = dst_b[-p->linesize[1] / 2 + x];
 
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst_r[x] = pred_L[0] = (r + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0x3ff;
                 dst_g[x] = pred_L[1] = (r + g + ((3 * (pred_T[1] + pred_L[1]) - 2 * pred_TL[1]) >> 2)) & 0x3ff;
@@ -1529,10 +1530,10 @@ static void decode_argbi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int a, r, g, b;
 
-            a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst[4 * x + 0] = pred[0] = (a + pred[0]) & 0xff;
             dst[4 * x + 1] = pred[1] = (r + pred[1]) & 0xff;
@@ -1560,10 +1561,10 @@ static void decode_argbi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             pred_L[3] = dst[-p->linesize[0] + 3];
 
             for (x = 0; x < avctx->width; x++) {
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst[4 * x + 0] = pred_L[0] = (a + pred_L[0]) & 0xff;
                 dst[4 * x + 1] = pred_L[1] = (r + pred_L[1]) & 0xff;
@@ -1595,10 +1596,10 @@ static void decode_argb(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int a, r, g, b;
 
-            a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst[4 * x + 0] = pred[0] = (a + pred[0]) & 0xff;
             dst[4 * x + 1] = pred[1] = (r + pred[1]) & 0xff;
@@ -1631,10 +1632,10 @@ static void decode_argb(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[2] = dst[-p->linesize[0] + 4 * x + 2];
                 pred_T[3] = dst[-p->linesize[0] + 4 * x + 3];
 
-                a = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                a = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst[4 * x + 0] = pred_L[0] = (a + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst[4 * x + 1] = pred_L[1] = (r + ((3 * (pred_T[1] + pred_L[1]) - 2 * pred_TL[1]) >> 2)) & 0xff;
@@ -1670,9 +1671,9 @@ static void decode_rgbi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int r, g, b;
 
-            r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst[4 * x + 0] = pred[0] = (r + pred[0]) & 0xff;
             dst[4 * x + 1] = pred[1] = (r + g + pred[1]) & 0xff;
@@ -1697,9 +1698,9 @@ static void decode_rgbi(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
             pred_L[2] = dst[-p->linesize[0] + 2];
 
             for (x = 0; x < avctx->width; x++) {
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst[4 * x + 0] = pred_L[0] = (r + pred_L[0]) & 0xff;
                 dst[4 * x + 1] = pred_L[1] = (r + g + pred_L[1]) & 0xff;
@@ -1729,9 +1730,9 @@ static void decode_rgb(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
         for (x = 0; x < avctx->width; x++) {
             int r, g, b;
 
-            r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-            g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-            b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+            r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+            g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+            b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
             dst[4 * x + 0] = pred[0] = (r + pred[0]) & 0xff;
             dst[4 * x + 1] = pred[1] = (r + g + pred[1]) & 0xff;
@@ -1760,9 +1761,9 @@ static void decode_rgb(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
                 pred_T[1] = dst[-p->linesize[0] + 4 * x + 1];
                 pred_T[2] = dst[-p->linesize[0] + 4 * x + 2];
 
-                r = get_vlc2(gb, s->vlc[0].table, SHEER_VLC_BITS, 2);
-                g = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
-                b = get_vlc2(gb, s->vlc[1].table, SHEER_VLC_BITS, 2);
+                r = get_vlc2(gb, s->vlc[0].table, s->vlc[0].bits, 2);
+                g = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
+                b = get_vlc2(gb, s->vlc[1].table, s->vlc[1].bits, 2);
 
                 dst[4 * x + 0] = pred_L[0] = (r + ((3 * (pred_T[0] + pred_L[0]) - 2 * pred_TL[0]) >> 2)) & 0xff;
                 dst[4 * x + 1] = pred_L[1] = (r + g + ((3 * (pred_T[1] + pred_L[1]) - 2 * pred_TL[1]) >> 2)) & 0xff;
@@ -1777,35 +1778,36 @@ static void decode_rgb(AVCodecContext *avctx, AVFrame *p, GetBitContext *gb)
     }
 }
 
-static av_cold int build_vlc(VLC *vlc, const SheerTable *table)
+static int build_vlc(VLC *vlc, const uint8_t *len, int count)
 {
-    const uint8_t *cur = table->lens;
-    uint8_t  lens[1024];
-    unsigned count = 0;
+    uint32_t codes[1024];
+    uint8_t bits[1024];
+    uint16_t syms[1024];
+    uint64_t index;
+    int i;
 
-    for (int step = 1, len = 1; len > 0; len += step) {
-        unsigned new_count = count;
-
-        if (len == 16) {
-            new_count += table->nb_16s;
-            step       = -1;
-        } else
-            new_count += *cur++;
-
-        for (; count < new_count; count++)
-            lens[count]  = len;
+    index = 0;
+    for (i = 0; i < count; i++) {
+        codes[i]  = index >> (32 - len[i]);
+        bits[i] = len[i];
+        syms[i]  = i;
+        index += 1ULL << (32 - len[i]);
     }
 
     ff_free_vlc(vlc);
-    return ff_init_vlc_from_lengths(vlc, SHEER_VLC_BITS, count,
-                                    lens, sizeof(*lens), NULL, 0, 0, 0, 0, NULL);
+    return ff_init_vlc_sparse(vlc, 16, count,
+                              bits,  sizeof(*bits),  sizeof(*bits),
+                              codes, sizeof(*codes), sizeof(*codes),
+                              syms,  sizeof(*syms),  sizeof(*syms), 0);
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *p,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx,
+                        void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     SheerVideoContext *s = avctx->priv_data;
-    const SheerTable *table;
+    ThreadFrame frame = { .f = data };
+    AVFrame *p = data;
     GetBitContext gb;
     unsigned format;
     int ret;
@@ -1824,158 +1826,231 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     case MKTAG(' ', 'R', 'G', 'B'):
         avctx->pix_fmt = AV_PIX_FMT_RGB0;
         s->decode_frame = decode_rgb;
-        table           = rgb;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgb, 256);
+            ret |= build_vlc(&s->vlc[1], l_g_rgb, 256);
+        }
         break;
     case MKTAG(' ', 'r', 'G', 'B'):
         avctx->pix_fmt = AV_PIX_FMT_RGB0;
         s->decode_frame = decode_rgbi;
-        table           = rgbi;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgbi, 256);
+            ret |= build_vlc(&s->vlc[1], l_g_rgbi, 256);
+        }
         break;
     case MKTAG('A', 'R', 'G', 'X'):
         avctx->pix_fmt = AV_PIX_FMT_GBRAP10;
         s->decode_frame = decode_argx;
-        table           = rgbx;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgbx, 1024);
+            ret |= build_vlc(&s->vlc[1], l_g_rgbx, 1024);
+        }
         break;
     case MKTAG('A', 'r', 'G', 'X'):
         avctx->pix_fmt = AV_PIX_FMT_GBRAP10;
         s->decode_frame = decode_argxi;
-        table           = rgbxi;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgbxi, 1024);
+            ret |= build_vlc(&s->vlc[1], l_g_rgbxi, 1024);
+        }
         break;
     case MKTAG('R', 'G', 'B', 'X'):
         avctx->pix_fmt = AV_PIX_FMT_GBRP10;
         s->decode_frame = decode_rgbx;
-        table           = rgbx;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgbx, 1024);
+            ret |= build_vlc(&s->vlc[1], l_g_rgbx, 1024);
+        }
         break;
     case MKTAG('r', 'G', 'B', 'X'):
         avctx->pix_fmt = AV_PIX_FMT_GBRP10;
         s->decode_frame = decode_rgbxi;
-        table           = rgbxi;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgbxi, 1024);
+            ret |= build_vlc(&s->vlc[1], l_g_rgbxi, 1024);
+        }
         break;
     case MKTAG('A', 'R', 'G', 'B'):
         avctx->pix_fmt = AV_PIX_FMT_ARGB;
         s->decode_frame = decode_argb;
-        table           = rgb;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgb, 256);
+            ret |= build_vlc(&s->vlc[1], l_g_rgb, 256);
+        }
         break;
     case MKTAG('A', 'r', 'G', 'B'):
         avctx->pix_fmt = AV_PIX_FMT_ARGB;
         s->decode_frame = decode_argbi;
-        table           = rgbi;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_r_rgbi, 256);
+            ret |= build_vlc(&s->vlc[1], l_g_rgbi, 256);
+        }
         break;
     case MKTAG('A', 'Y', 'B', 'R'):
         s->alt = 1;
     case MKTAG('A', 'Y', 'b', 'R'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA444P;
         s->decode_frame = decode_aybr;
-        table           = ybr;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybr, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_ybr, 256);
+        }
         break;
     case MKTAG('A', 'y', 'B', 'R'):
         s->alt = 1;
     case MKTAG('A', 'y', 'b', 'R'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA444P;
         s->decode_frame = decode_aybri;
-        table           = ybri;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybri, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_ybri, 256);
+        }
         break;
     case MKTAG(' ', 'Y', 'B', 'R'):
         s->alt = 1;
     case MKTAG(' ', 'Y', 'b', 'R'):
         avctx->pix_fmt = AV_PIX_FMT_YUV444P;
         s->decode_frame = decode_ybr;
-        table           = ybr;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybr, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_ybr, 256);
+        }
         break;
     case MKTAG(' ', 'y', 'B', 'R'):
         s->alt = 1;
     case MKTAG(' ', 'y', 'b', 'R'):
         avctx->pix_fmt = AV_PIX_FMT_YUV444P;
         s->decode_frame = decode_ybri;
-        table           = ybri;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybri, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_ybri, 256);
+        }
         break;
     case MKTAG('Y', 'B', 'R', 0x0a):
         avctx->pix_fmt = AV_PIX_FMT_YUV444P10;
         s->decode_frame = decode_ybr10;
-        table           = ybr10;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybr10, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_ybr10, 1024);
+        }
         break;
     case MKTAG('y', 'B', 'R', 0x0a):
         avctx->pix_fmt = AV_PIX_FMT_YUV444P10;
         s->decode_frame = decode_ybr10i;
-        table           = ybr10i;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybr10i, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_ybr10i, 1024);
+        }
         break;
     case MKTAG('C', 'A', '4', 'p'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA444P10;
         s->decode_frame = decode_ca4p;
-        table           = ybr10;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybr10, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_ybr10, 1024);
+        }
         break;
     case MKTAG('C', 'A', '4', 'i'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA444P10;
         s->decode_frame = decode_ca4i;
-        table           = ybr10i;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybr10i, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_ybr10i, 1024);
+        }
         break;
     case MKTAG('B', 'Y', 'R', 'Y'):
         avctx->pix_fmt = AV_PIX_FMT_YUV422P;
         s->decode_frame = decode_byry;
-        table           = byry;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_byry, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_byry, 256);
+        }
         break;
     case MKTAG('B', 'Y', 'R', 'y'):
         avctx->pix_fmt = AV_PIX_FMT_YUV422P;
         s->decode_frame = decode_byryi;
-        table           = byryi;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_byryi, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_byryi, 256);
+        }
         break;
     case MKTAG('Y', 'b', 'Y', 'r'):
         avctx->pix_fmt = AV_PIX_FMT_YUV422P;
         s->decode_frame = decode_ybyr;
-        table           = ybyr;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_ybyr, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_ybyr, 256);
+        }
         break;
     case MKTAG('C', '8', '2', 'p'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA422P;
         s->decode_frame = decode_c82p;
-        table           = byry;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_byry, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_byry, 256);
+        }
         break;
     case MKTAG('C', '8', '2', 'i'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA422P;
         s->decode_frame = decode_c82i;
-        table           = byryi;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_byryi, 256);
+            ret |= build_vlc(&s->vlc[1], l_u_byryi, 256);
+        }
         break;
     case MKTAG(0xa2, 'Y', 'R', 'Y'):
         avctx->pix_fmt = AV_PIX_FMT_YUV422P10;
         s->decode_frame = decode_yry10;
-        table           = yry10;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_yry10, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_yry10, 1024);
+        }
         break;
     case MKTAG(0xa2, 'Y', 'R', 'y'):
         avctx->pix_fmt = AV_PIX_FMT_YUV422P10;
         s->decode_frame = decode_yry10i;
-        table           = yry10i;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_yry10i, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_yry10i, 1024);
+        }
         break;
     case MKTAG('C', 'A', '2', 'p'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA422P10;
         s->decode_frame = decode_ca2p;
-        table           = yry10;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_yry10, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_yry10, 1024);
+        }
         break;
     case MKTAG('C', 'A', '2', 'i'):
         avctx->pix_fmt = AV_PIX_FMT_YUVA422P10;
         s->decode_frame = decode_ca2i;
-        table           = yry10i;
+        if (s->format != format) {
+            ret  = build_vlc(&s->vlc[0], l_y_yry10i, 1024);
+            ret |= build_vlc(&s->vlc[1], l_u_yry10i, 1024);
+        }
         break;
     default:
         avpriv_request_sample(avctx, "unsupported format: 0x%X", format);
         return AVERROR_PATCHWELCOME;
     }
 
-    if (s->format != format) {
-        if ((ret = build_vlc(&s->vlc[0], &table[0])) < 0 ||
-            (ret = build_vlc(&s->vlc[1], &table[1])) < 0) {
-            s->format = 0;
-            return ret;
-        }
-        s->format = format;
-    }
     if (avpkt->size < 20 + avctx->width * avctx->height / 16) {
         av_log(avctx, AV_LOG_ERROR, "Input packet too small\n");
         return AVERROR_INVALIDDATA;
     }
 
+    if (s->format != format) {
+        if (ret < 0)
+            return ret;
+        s->format = format;
+    }
+
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
 
-    if ((ret = ff_thread_get_buffer(avctx, p, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
         return ret;
 
     if ((ret = init_get_bits8(&gb, avpkt->data + 20, avpkt->size - 20)) < 0)
@@ -1998,13 +2073,13 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_sheervideo_decoder = {
-    .p.name           = "sheervideo",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("BitJazz SheerVideo"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_SHEERVIDEO,
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+AVCodec ff_sheervideo_decoder = {
+    .name             = "sheervideo",
+    .long_name        = NULL_IF_CONFIG_SMALL("BitJazz SheerVideo"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_SHEERVIDEO,
     .priv_data_size   = sizeof(SheerVideoContext),
     .close            = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
+    .decode           = decode_frame,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
 };
