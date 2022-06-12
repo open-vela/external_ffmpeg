@@ -32,9 +32,11 @@
 #if HAVE_IO_H
 #include <io.h>
 #endif
+#include <inttypes.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include "avutil.h"
+#include <string.h>
 #include "bprint.h"
 #include "common.h"
 #include "internal.h"
@@ -359,6 +361,8 @@ void av_log_default_callback(void* ptr, int level, const char* fmt, va_list vl)
         level &= 0xff;
     }
 
+    if (level > av_log_level)
+        return;
     ff_mutex_lock(&mutex);
 
     format_line(ptr, level, fmt, vl, part, &print_prefix, type);
@@ -426,8 +430,6 @@ void av_vlog(void* avcl, int level, const char *fmt, va_list vl)
     if (avc && avc->version >= (50 << 16 | 15 << 8 | 2) &&
         avc->log_level_offset_offset && level >= AV_LOG_FATAL)
         level += *(int *) (((uint8_t *) avcl) + avc->log_level_offset_offset);
-    if (level > av_log_level)
-        return;
     if (log_callback)
         log_callback(avcl, level, fmt, vl);
 }
