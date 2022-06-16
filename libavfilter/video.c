@@ -23,22 +23,25 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/buffer.h"
-#include "libavutil/cpu.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/mem.h"
 
 #include "avfilter.h"
-#include "framepool.h"
 #include "internal.h"
 #include "video.h"
+
+#define BUFFER_ALIGN 32
+
 
 AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h)
 {
     return ff_get_video_buffer(link->dst->outputs[0], w, h);
 }
 
-AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int align)
+AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h)
 {
     AVFrame *frame = NULL;
     int pool_width = 0;
@@ -49,7 +52,7 @@ AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int alig
     if (link->hw_frames_ctx &&
         ((AVHWFramesContext*)link->hw_frames_ctx->data)->format == link->format) {
         int ret;
-        frame = av_frame_alloc();
+        AVFrame *frame = av_frame_alloc();
 
         if (!frame)
             return NULL;
@@ -63,7 +66,7 @@ AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int alig
 
     if (!link->frame_pool) {
         link->frame_pool = ff_frame_pool_video_init(av_buffer_allocz, w, h,
-                                                    link->format, align);
+                                                    link->format, BUFFER_ALIGN);
         if (!link->frame_pool)
             return NULL;
     } else {
@@ -74,11 +77,11 @@ AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int alig
         }
 
         if (pool_width != w || pool_height != h ||
-            pool_format != link->format || pool_align != align) {
+            pool_format != link->format || pool_align != BUFFER_ALIGN) {
 
             ff_frame_pool_uninit((FFFramePool **)&link->frame_pool);
             link->frame_pool = ff_frame_pool_video_init(av_buffer_allocz, w, h,
-                                                        link->format, align);
+                                                        link->format, BUFFER_ALIGN);
             if (!link->frame_pool)
                 return NULL;
         }
@@ -93,19 +96,14 @@ AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int alig
     return frame;
 }
 
-AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h)
-{
-    return ff_default_get_video_buffer2(link, w, h, av_cpu_max_align());
-}
-
 AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h)
 {
     AVFrame *ret = NULL;
 
     FF_TPRINTF_START(NULL, get_video_buffer); ff_tlog_link(NULL, link, 0);
 
-    if (link->dstpad->get_buffer.video)
-        ret = link->dstpad->get_buffer.video(link, w, h);
+    if (link->dstpad->get_video_buffer)
+        ret = link->dstpad->get_video_buffer(link, w, h);
 
     if (!ret)
         ret = ff_default_get_video_buffer(link, w, h);
