@@ -124,39 +124,49 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
 
     switch (type) {
         case AV_APP_TO_DEV_GET_POLLFD:
-            {
-                if (!data || data_size < sizeof(struct pollfd) * 2)
-                    return AVERROR(EINVAL);
+            if (!data || data_size < sizeof(struct pollfd) * 2)
+                return AVERROR(EINVAL);
 
-                if (priv->ctrl_fd <= 0)
-                    return AVERROR(EPERM);
+            if (priv->ctrl_fd <= 0)
+                return AVERROR(EPERM);
 
-                poll[0].fd     = priv->ctrl_fd;
-                poll[0].events = POLLIN;
-                ret            = 1;
-                if (priv->data_fd > 0 && !priv->available) {
-                    poll[1].fd     = priv->data_fd;
-                    poll[1].events = POLLIN;
-                    ret            = 2;
-                }
-
-                break;
+            poll[0].fd     = priv->ctrl_fd;
+            poll[0].events = POLLIN;
+            ret            = 1;
+            if (priv->data_fd > 0 && !priv->available) {
+                poll[1].fd     = priv->data_fd;
+                poll[1].events = POLLIN;
+                ret            = 2;
             }
+
+            break;
         case AV_APP_TO_DEV_POLL_AVAILABLE:
-            {
-                if (priv->ctrl_fd == poll->fd) {
-                    int action = ff_bluelet_handle_event(priv);
-                    if (action == BLUELET_ACTION_AVAILABLE) {
-                        avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
-                    } else if (action == BLUELET_ACTION_CONFIG) {
-                        avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
-                    }
-                } else {
-                    priv->available = true;
+            if (priv->ctrl_fd == poll->fd) {
+                int action = ff_bluelet_handle_event(priv);
+                if (action == BLUELET_ACTION_AVAILABLE) {
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
+                } else if (action == BLUELET_ACTION_CONFIG) {
+                    avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
                 }
-                break;
+            } else {
+                priv->available = true;
+                avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
             }
+            break;
+        case AV_APP_TO_DEV_PLAY:
+            ff_bluelet_start(priv);
+            avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+
+            return 0;
+        case AV_APP_TO_DEV_PAUSE:
+            ff_bluelet_stop(priv);
+            avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+
+            return 0;
+        case AV_APP_TO_DEV_DUMP:
+            snprintf(data, data_size, "%s|%d|%d",
+                     priv->server_name, priv->codec_id, priv->state);
+            return 0;
         default:
             ret = AVERROR(ENOSYS);
             break;
