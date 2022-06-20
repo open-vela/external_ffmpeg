@@ -204,7 +204,7 @@ static int link_init_dump_pcm(AVFilterLink *link)
         return AVERROR(ENOMEM);
 
     for (i = 0; i < link->nb_dump_pcm_fds; i++) {
-        snprintf(path, sizeof(path), FFMPEG_DUMPDIR"%.16s-%.8s-%d.pcm", link->src->name, link->dst->name, i);
+        snprintf(path, sizeof(path), FFMPEG_TMPDIR"/%.16s-%.8s-%d.pcm", link->src->name, link->dst->name, i);
         fd = open(path, O_WRONLY | O_CREAT);
         if (fd < 0) {
             link_uninit_dump_pcm(link, true);
