@@ -485,7 +485,7 @@ Developer options (useful when working on FFmpeg itself):
                            in the name) of tests whose result is ignored
   --enable-linux-perf      enable Linux Performance Monitor API
   --disable-large-tests    disable tests that use a large amount of memory
-  --dumpdir=PATH           location of pcm dump files to save.
+  --tmpdir=PATH            location of tmp file to save
 
 NOTE: Object files are built at the place where configure is launched.
 EOF
@@ -2459,7 +2459,7 @@ PATHS_LIST="
     prefix
     shlibdir
     install_name_dir
-    dumpdir
+    tmpdir
 "
 
 CMDLINE_SET="
@@ -3729,7 +3729,7 @@ libdir_default='${prefix}/lib'
 mandir_default='${prefix}/share/man'
 
 # runtime path
-dumpdir_default='/tmp/'
+tmpdir_default='/tmp'
 
 # toolchain
 ar_default="ar"
@@ -7390,7 +7390,7 @@ DOCDIR=\$(DESTDIR)$docdir
 MANDIR=\$(DESTDIR)$mandir
 PKGCONFIGDIR=\$(DESTDIR)$pkgconfigdir
 INSTALL_NAME_DIR=$install_name_dir
-DUMPDIR=$dumpdir
+TMPDIR=$tmpdir
 SRC_PATH=$source_path
 SRC_LINK=$source_link
 ifndef MAIN_MAKEFILE
@@ -7531,7 +7531,7 @@ cat > $TMPH <<EOF
 #define CONFIG_THIS_YEAR 2020
 #define FFMPEG_DATADIR "$(eval c_escape $datadir)"
 #define AVCONV_DATADIR "$(eval c_escape $datadir)"
-#define FFMPEG_DUMPDIR "$(eval c_escape $dumpdir)"
+#define FFMPEG_TMPDIR  "$(eval c_escape $tmpdir)"
 #define CC_IDENT "$(c_escape ${cc_ident:-Unknown compiler})"
 #define av_restrict $restrict_keyword
 #define EXTERN_PREFIX "${extern_prefix}"
