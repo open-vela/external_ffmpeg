@@ -22,12 +22,11 @@
  */
 
 #include "libavutil/avassert.h"
-#include "libavutil/pixdesc.h"
 
-#include "internal.h"
 #include "thread.h"
 #include "hevc.h"
 #include "hevcdec.h"
+#include "threadframe.h"
 
 void ff_hevc_unref_frame(HEVCContext *s, HEVCFrame *frame, int flags)
 {
@@ -37,7 +36,9 @@ void ff_hevc_unref_frame(HEVCContext *s, HEVCFrame *frame, int flags)
 
     frame->flags &= ~flags;
     if (!frame->flags) {
-        ff_thread_release_buffer(s->avctx, &frame->tf);
+        ff_thread_release_ext_buffer(s->avctx, &frame->tf);
+        ff_thread_release_buffer(s->avctx, frame->frame_grain);
+        frame->needs_fg = 0;
 
         av_buffer_unref(&frame->tab_mvf_buf);
         frame->tab_mvf = NULL;
@@ -87,8 +88,8 @@ static HEVCFrame *alloc_frame(HEVCContext *s)
         if (frame->frame->buf[0])
             continue;
 
-        ret = ff_thread_get_buffer(s->avctx, &frame->tf,
-                                   AV_GET_BUFFER_FLAG_REF);
+        ret = ff_thread_get_ext_buffer(s->avctx, &frame->tf,
+                                       AV_GET_BUFFER_FLAG_REF);
         if (ret < 0)
             return NULL;
 
@@ -208,13 +209,19 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
         if (nb_output) {
             HEVCFrame *frame = &s->DPB[min_idx];
 
-            ret = av_frame_ref(out, frame->frame);
+            ret = av_frame_ref(out, frame->needs_fg ? frame->frame_grain : frame->frame);
             if (frame->flags & HEVC_FRAME_FLAG_BUMPING)
                 ff_hevc_unref_frame(s, frame, HEVC_FRAME_FLAG_OUTPUT | HEVC_FRAME_FLAG_BUMPING);
             else
                 ff_hevc_unref_frame(s, frame, HEVC_FRAME_FLAG_OUTPUT);
             if (ret < 0)
                 return ret;
+
+            if (frame->needs_fg && (ret = av_frame_copy_props(out, frame->frame)) < 0)
+                return ret;
+
+            if (!(s->avctx->export_side_data & AV_CODEC_EXPORT_DATA_FILM_GRAIN))
+                av_frame_remove_side_data(out, AV_FRAME_DATA_FILM_GRAIN_PARAMS);
 
             av_log(s->avctx, AV_LOG_DEBUG,
                    "Output frame with POC %d.\n", frame->poc);
@@ -394,9 +401,9 @@ static HEVCFrame *generate_missing_ref(HEVCContext *s, int poc)
 
     if (!s->avctx->hwaccel) {
         if (!s->ps.sps->pixel_shift) {
-            for (i = 0; frame->frame->buf[i]; i++)
-                memset(frame->frame->buf[i]->data, 1 << (s->ps.sps->bit_depth - 1),
-                       frame->frame->buf[i]->size);
+            for (i = 0; frame->frame->data[i]; i++)
+                memset(frame->frame->data[i], 1 << (s->ps.sps->bit_depth - 1),
+                       frame->frame->linesize[i] * AV_CEIL_RSHIFT(s->ps.sps->height, s->ps.sps->vshift[i]));
         } else {
             for (i = 0; frame->frame->data[i]; i++)
                 for (y = 0; y < (s->ps.sps->height >> s->ps.sps->vshift[i]); y++) {
