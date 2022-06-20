@@ -112,14 +112,14 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
     FileLogContext file_log_ctx = { &file_log_ctx_class, log_offset, log_ctx };
     int fd = -1;
 #if !HAVE_MKSTEMP
-    void *ptr= tempnam(NULL, prefix);
+    void *ptr= tempnam(FFMPEG_TMPDIR, prefix);
     if(!ptr)
         ptr= tempnam(".", prefix);
     *filename = av_strdup(ptr);
 #undef free
     free(ptr);
 #else
-    size_t len = strlen(prefix) + 12; /* room for "/tmp/" and "XXXXXX\0" */
+    size_t len = strlen(prefix) + strlen(FFMPEG_TMPDIR) + 8; /* room for FFMPEG_TMPDIR and "XXXXXX\0" */
     *filename  = av_malloc(len);
 #endif
     /* -----common section-----*/
@@ -136,7 +136,7 @@ int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *l
 #   endif
     fd = open(*filename, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
 #else
-    snprintf(*filename, len, "/tmp/%sXXXXXX", prefix);
+    snprintf(*filename, len, "%s/%sXXXXXX", FFMPEG_TMPDIR, prefix);
     fd = mkstemp(*filename);
 #if defined(_WIN32) || defined (__ANDROID__) || defined(__DJGPP__)
     if (fd < 0) {
