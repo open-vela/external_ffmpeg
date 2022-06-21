@@ -56,7 +56,9 @@ typedef struct BlueletPriv {
     uint32_t        bit_rate;
     bool            playback;
     int             ctrl_fd;
+    bool            ctrl_connected;
     int             data_fd;
+    bool            data_connected;
     enum AVCodecID  codec_id;
     bluelet_state_t state;
     union {
