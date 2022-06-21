@@ -6,7 +6,6 @@
 #include "libavfilter/avfilter.h"
 #include "libavfilter/buffersink.h"
 #include "libavformat/avformat.h"
-#include "libavcodec/codec_id.h"
 
 typedef struct {
     AVFormatContext *mux;
@@ -173,9 +172,8 @@ int main(int argc, char **argv)
             st->stream->codecpar->format              = av_buffersink_get_format(st->sink);
             break;
         case AVMEDIA_TYPE_AUDIO:
-            ret = av_buffersink_get_ch_layout(st->sink, &st->stream->codecpar->ch_layout);
-            if (ret < 0)
-                goto fail;
+            st->stream->codecpar->channel_layout = av_buffersink_get_channel_layout(st->sink);
+            st->stream->codecpar->channels       = av_buffersink_get_channels(st->sink);
             st->stream->codecpar->sample_rate    = av_buffersink_get_sample_rate(st->sink);
             st->stream->codecpar->format         = av_buffersink_get_format(st->sink);
             st->stream->codecpar->codec_id       = av_get_pcm_codec(st->stream->codecpar->format, -1);

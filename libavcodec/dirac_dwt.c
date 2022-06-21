@@ -20,6 +20,7 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "dirac_dwt.h"
 
@@ -58,10 +59,8 @@ int ff_spatial_idwt_init(DWTContext *d, DWTPlane *p, enum dwt_type type,
         return AVERROR_INVALIDDATA;
     }
 
-#if ARCH_X86
-    if (bit_depth == 8)
+    if (ARCH_X86 && bit_depth == 8)
         ff_spatial_idwt_init_x86(d, type);
-#endif
     return 0;
 }
 

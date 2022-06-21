@@ -20,13 +20,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
 #include "libavutil/log.h"
-#include "libavutil/reverse.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "mathops.h"
 
@@ -74,37 +71,32 @@ static int s302m_parse_frame_header(AVCodecContext *avctx, const uint8_t *buf,
     else
         avctx->sample_fmt = AV_SAMPLE_FMT_S16;
 
-    av_channel_layout_uninit(&avctx->ch_layout);
+    avctx->channels    = channels;
     switch(channels) {
         case 2:
-            avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+            avctx->channel_layout = AV_CH_LAYOUT_STEREO;
             break;
         case 4:
-            avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_QUAD;
+            avctx->channel_layout = AV_CH_LAYOUT_QUAD;
             break;
         case 6:
-            avctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT1_BACK;
+            avctx->channel_layout = AV_CH_LAYOUT_5POINT1_BACK;
             break;
         case 8:
-            av_channel_layout_from_mask(&avctx->ch_layout,
-                                        AV_CH_LAYOUT_5POINT1_BACK | AV_CH_LAYOUT_STEREO_DOWNMIX);
-            break;
-        default:
-            avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-            avctx->ch_layout.nb_channels = channels;
-            break;
+            avctx->channel_layout = AV_CH_LAYOUT_5POINT1_BACK | AV_CH_LAYOUT_STEREO_DOWNMIX;
     }
 
     return frame_size;
 }
 
-static int s302m_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int s302m_decode_frame(AVCodecContext *avctx, void *data,
                               int *got_frame_ptr, AVPacket *avpkt)
 {
     S302Context *s = avctx->priv_data;
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
-    int block_size, ret, channels;
+    int block_size, ret;
     int i;
     int non_pcm_data_type = -1;
 
@@ -117,14 +109,13 @@ static int s302m_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     /* get output buffer */
     block_size = (avctx->bits_per_raw_sample + 4) / 4;
-    channels = avctx->ch_layout.nb_channels;
-    frame->nb_samples = 2 * (buf_size / block_size) / channels;
+    frame->nb_samples = 2 * (buf_size / block_size) / avctx->channels;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
-    avctx->bit_rate = 48000 * channels * (avctx->bits_per_raw_sample + 4) +
+    avctx->bit_rate = 48000 * avctx->channels * (avctx->bits_per_raw_sample + 4) +
                       32 * 48000 / frame->nb_samples;
-    buf_size = (frame->nb_samples * channels / 2) * block_size;
+    buf_size = (frame->nb_samples * avctx->channels / 2) * block_size;
 
     if (avctx->bits_per_raw_sample == 24) {
         uint32_t *o = (uint32_t *)frame->data[0];
@@ -139,7 +130,7 @@ static int s302m_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             buf += 7;
         }
         o = (uint32_t *)frame->data[0];
-        if (channels == 2)
+        if (avctx->channels == 2)
             for (i=0; i<frame->nb_samples * 2 - 6; i+=2) {
                 if (o[i] || o[i+1] || o[i+2] || o[i+3])
                     break;
@@ -160,7 +151,7 @@ static int s302m_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             buf += 6;
         }
         o = (uint32_t *)frame->data[0];
-        if (channels == 2)
+        if (avctx->channels == 2)
             for (i=0; i<frame->nb_samples * 2 - 6; i+=2) {
                 if (o[i] || o[i+1] || o[i+2] || o[i+3])
                     break;
@@ -180,7 +171,7 @@ static int s302m_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             buf += 5;
         }
         o = (uint16_t *)frame->data[0];
-        if (channels == 2)
+        if (avctx->channels == 2)
             for (i=0; i<frame->nb_samples * 2 - 6; i+=2) {
                 if (o[i] || o[i+1] || o[i+2] || o[i+3])
                     break;
@@ -227,14 +218,13 @@ static const AVClass s302m_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_s302m_decoder = {
-    .p.name         = "s302m",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("SMPTE 302M"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_S302M,
-    .p.priv_class   = &s302m_class,
+AVCodec ff_s302m_decoder = {
+    .name           = "s302m",
+    .long_name      = NULL_IF_CONFIG_SMALL("SMPTE 302M"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_S302M,
     .priv_data_size = sizeof(S302Context),
-    FF_CODEC_DECODE_CB(s302m_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_CHANNEL_CONF |
-                      AV_CODEC_CAP_DR1,
+    .decode         = s302m_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .priv_class     = &s302m_class,
 };

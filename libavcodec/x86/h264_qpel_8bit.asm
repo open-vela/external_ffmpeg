@@ -461,6 +461,10 @@ cglobal %1_h264_qpel8or16_v_lowpass_op, 5,5,8 ; dst, src, dstStride, srcStride, 
     REP_RET
 %endmacro
 
+INIT_MMX mmxext
+QPEL8OR16_V_LOWPASS_OP put
+QPEL8OR16_V_LOWPASS_OP avg
+
 INIT_XMM sse2
 QPEL8OR16_V_LOWPASS_OP put
 QPEL8OR16_V_LOWPASS_OP avg
@@ -576,6 +580,10 @@ cglobal %1_h264_qpel8or16_hv1_lowpass_op, 4,4,8 ; src, tmp, srcStride, size
 .end:
     REP_RET
 %endmacro
+
+INIT_MMX mmxext
+QPEL8OR16_HV1_LOWPASS_OP put
+QPEL8OR16_HV1_LOWPASS_OP avg
 
 INIT_XMM sse2
 QPEL8OR16_HV1_LOWPASS_OP put
