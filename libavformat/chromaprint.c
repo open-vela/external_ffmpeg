@@ -1,6 +1,6 @@
 /*
  * Chromaprint fingerprinting muxer
- * Copyright (c) 2015 rcombs
+ * Copyright (c) 2015 Rodger Combs
  *
  * This file is part of FFmpeg.
  *
@@ -22,6 +22,7 @@
 #include "avformat.h"
 #include "internal.h"
 #include "libavutil/opt.h"
+#include "libavcodec/internal.h"
 #include <chromaprint.h>
 
 #define CPR_VERSION_INT AV_VERSION_INT(CHROMAPRINT_VERSION_MAJOR, \
@@ -46,10 +47,8 @@ typedef struct ChromaprintMuxContext {
 #endif
 } ChromaprintMuxContext;
 
-static void deinit(AVFormatContext *s)
+static void cleanup(ChromaprintMuxContext *cpr)
 {
-    ChromaprintMuxContext *const cpr = s->priv_data;
-
     if (cpr->ctx) {
         ff_lock_avformat();
         chromaprint_free(cpr->ctx);
@@ -68,45 +67,48 @@ static int write_header(AVFormatContext *s)
 
     if (!cpr->ctx) {
         av_log(s, AV_LOG_ERROR, "Failed to create chromaprint context.\n");
-        return AVERROR_EXTERNAL;
+        return AVERROR(ENOMEM);
     }
 
     if (cpr->silence_threshold != -1) {
 #if CPR_VERSION_INT >= AV_VERSION_INT(0, 7, 0)
         if (!chromaprint_set_option(cpr->ctx, "silence_threshold", cpr->silence_threshold)) {
             av_log(s, AV_LOG_ERROR, "Failed to set silence threshold. Setting silence_threshold requires -algorithm 3 option.\n");
-            return AVERROR_EXTERNAL;
+            goto fail;
         }
 #else
         av_log(s, AV_LOG_ERROR, "Setting the silence threshold requires Chromaprint "
                                 "version 0.7.0 or later.\n");
-        return AVERROR(ENOSYS);
+        goto fail;
 #endif
     }
 
     if (s->nb_streams != 1) {
         av_log(s, AV_LOG_ERROR, "Only one stream is supported\n");
-        return AVERROR(EINVAL);
+        goto fail;
     }
 
     st = s->streams[0];
 
-    if (st->codecpar->ch_layout.nb_channels > 2) {
+    if (st->codecpar->channels > 2) {
         av_log(s, AV_LOG_ERROR, "Only up to 2 channels are supported\n");
-        return AVERROR(EINVAL);
+        goto fail;
     }
 
     if (st->codecpar->sample_rate < 1000) {
         av_log(s, AV_LOG_ERROR, "Sampling rate must be at least 1000\n");
-        return AVERROR(EINVAL);
+        goto fail;
     }
 
-    if (!chromaprint_start(cpr->ctx, st->codecpar->sample_rate, st->codecpar->ch_layout.nb_channels)) {
+    if (!chromaprint_start(cpr->ctx, st->codecpar->sample_rate, st->codecpar->channels)) {
         av_log(s, AV_LOG_ERROR, "Failed to start chromaprint\n");
-        return AVERROR_EXTERNAL;
+        goto fail;
     }
 
     return 0;
+fail:
+    cleanup(cpr);
+    return AVERROR(EINVAL);
 }
 
 static int write_packet(AVFormatContext *s, AVPacket *pkt)
@@ -121,7 +123,7 @@ static int write_trailer(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     void *fp = NULL;
     char *enc_fp = NULL;
-    int size, enc_size, ret = AVERROR_EXTERNAL;
+    int size, enc_size, ret = AVERROR(EINVAL);
 
     if (!chromaprint_finish(cpr->ctx)) {
         av_log(s, AV_LOG_ERROR, "Failed to generate fingerprint\n");
@@ -154,6 +156,7 @@ fail:
         chromaprint_dealloc(fp);
     if (enc_fp)
         chromaprint_dealloc(enc_fp);
+    cleanup(cpr);
     return ret;
 }
 
@@ -176,7 +179,7 @@ static const AVClass chromaprint_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVOutputFormat ff_chromaprint_muxer = {
+AVOutputFormat ff_chromaprint_muxer = {
     .name              = "chromaprint",
     .long_name         = NULL_IF_CONFIG_SMALL("Chromaprint"),
     .priv_data_size    = sizeof(ChromaprintMuxContext),
@@ -184,7 +187,6 @@ const AVOutputFormat ff_chromaprint_muxer = {
     .write_header      = write_header,
     .write_packet      = write_packet,
     .write_trailer     = write_trailer,
-    .deinit            = deinit,
     .flags             = AVFMT_NOTIMESTAMPS,
     .priv_class        = &chromaprint_class,
 };

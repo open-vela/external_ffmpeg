@@ -29,7 +29,6 @@
 #include <stdint.h>
 
 #include "config.h"
-#include "config_components.h"
 #include "libavutil/attributes.h"
 #include "copy_block.h"
 #include "qpeldsp.h"
@@ -810,9 +809,8 @@ av_cold void ff_qpeldsp_init(QpelDSPContext *c)
     dspfunc(avg_qpel, 0, 16);
     dspfunc(avg_qpel, 1, 8);
 
-#if ARCH_X86
-    ff_qpeldsp_init_x86(c);
-#elif ARCH_MIPS
-    ff_qpeldsp_init_mips(c);
-#endif
+    if (ARCH_X86)
+        ff_qpeldsp_init_x86(c);
+    if (ARCH_MIPS)
+        ff_qpeldsp_init_mips(c);
 }
