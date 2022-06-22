@@ -96,7 +96,7 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
                                 options, h->protocol_whitelist, h->protocol_blacklist, h);
 }
 
-static int add_entry(URLContext *h, const unsigned char *buf, int size)
+static int add_entry(URLContext *h, const unsigned char *buf, int size, int64_t offset)
 {
     Context *c= h->priv_data;
     int64_t pos = -1;
@@ -122,13 +122,13 @@ static int add_entry(URLContext *h, const unsigned char *buf, int size)
     }
     c->cache_pos += ret;
 
-    entry = av_tree_find(c->root, &c->logical_pos, cmp, (void**)next);
+    entry = av_tree_find(c->root, &offset, cmp, (void**)next);
 
     if (!entry)
         entry = next[0];
 
     if (!entry ||
-        entry->logical_pos  + entry->size != c->logical_pos ||
+        entry->logical_pos  + entry->size != offset ||
         entry->physical_pos + entry->size != pos
     ) {
         entry = av_malloc(sizeof(*entry));
@@ -137,7 +137,7 @@ static int add_entry(URLContext *h, const unsigned char *buf, int size)
             ret = AVERROR(ENOMEM);
             goto fail;
         }
-        entry->logical_pos = c->logical_pos;
+        entry->logical_pos = offset;
         entry->physical_pos = pos;
         entry->size = ret;
 
@@ -159,26 +159,25 @@ fail:
     return ret;
 }
 
-static int cache_read(URLContext *h, unsigned char *buf, int size)
+static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset)
 {
     Context *c= h->priv_data;
     CacheEntry *entry, *next[2] = {NULL, NULL};
     int64_t r;
 
-    entry = av_tree_find(c->root, &c->logical_pos, cmp, (void**)next);
-
+    entry = av_tree_find(c->root, &offset, cmp, (void**)next);
     if (!entry)
         entry = next[0];
 
     if (entry) {
-        int64_t in_block_pos = c->logical_pos - entry->logical_pos;
-        av_assert0(entry->logical_pos <= c->logical_pos);
+        int64_t in_block_pos = offset - entry->logical_pos;
+        av_assert0(entry->logical_pos <= offset);
         if (in_block_pos < entry->size) {
             int64_t physical_target = entry->physical_pos + in_block_pos;
 
-            if (c->cache_pos != physical_target) {
+            if (c->cache_pos != physical_target)
                 r = lseek(c->fd, physical_target, SEEK_SET);
-            } else
+            else
                 r = c->cache_pos;
 
             if (r >= 0) {
@@ -188,7 +187,6 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
             if (r > 0) {
                 c->cache_pos += r;
-                c->logical_pos += r;
                 c->cache_hit ++;
                 return r;
             }
@@ -197,8 +195,8 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
     // Cache miss or some kind of fault with the cache
 
-    if (c->logical_pos != c->inner_pos) {
-        r = ffurl_seek(c->inner, c->logical_pos, SEEK_SET);
+    if (offset != c->inner_pos) {
+        r = ffurl_seek(c->inner, offset, SEEK_SET);
         if (r<0) {
             av_log(h, AV_LOG_ERROR, "Failed to perform internal seek\n");
             return r;
@@ -209,7 +207,7 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
     r = ffurl_read(c->inner, buf, size);
     if (r == AVERROR_EOF && size>0) {
         c->is_true_eof = 1;
-        av_assert0(c->end >= c->logical_pos);
+        av_assert0(c->end >= offset);
     }
     if (r<=0)
         return r;
@@ -217,9 +215,20 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
     c->cache_miss ++;
 
-    add_entry(h, buf, r);
-    c->logical_pos += r;
-    c->end = FFMAX(c->end, c->logical_pos);
+    add_entry(h, buf, r, offset);
+    c->end = FFMAX(c->end, offset + r);
+
+    return r;
+}
+
+static int cache_read(URLContext *h, unsigned char *buf, int size)
+{
+    Context *c= h->priv_data;
+    int r;
+
+    r = cache_pread(h, buf, size, c->logical_pos);
+    if (r > 0)
+        c->logical_pos += r;
 
     return r;
 }
