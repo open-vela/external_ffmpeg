@@ -242,8 +242,10 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
             return ret;
     }
     ret = recv(s->fd, buf, size, 0);
-    if (ret == 0)
+    if (ret == 0) {
+        av_log(h, AV_LOG_INFO, "%s receive eof.\n", __func__);
         return AVERROR_EOF;
+    }
     return ret < 0 ? ff_neterrno() : ret;
 }
 
