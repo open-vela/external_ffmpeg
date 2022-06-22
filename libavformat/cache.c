@@ -32,6 +32,7 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/tree.h"
+#include "libavutil/time.h"
 #include "avformat.h"
 #include <fcntl.h>
 #if HAVE_IO_H
@@ -99,9 +100,12 @@ static void *cache_thread(void *arg)
 {
     URLContext *h = arg;
     Context *c = h->priv_data;
-    int64_t offset = 0;
     uint8_t buf[CACHE_BUFSIZE];
+    int64_t time, bps, diff;
+    int64_t offset = 0;
     int ret;
+
+    time = av_gettime_relative();
 
     while (1) {
         pthread_mutex_lock(&c->mutex);
@@ -120,6 +124,10 @@ static void *cache_thread(void *arg)
         else if (ret != AVERROR(EINTR))
             break;
     }
+
+    diff = (av_gettime_relative() - time) / AV_TIME_BASE;
+    bps = diff ? offset * 8 / diff : 0;
+    av_log(h, AV_LOG_INFO, "%s end ret %d bytes %lld %lldbps\n", __func__, ret, offset, bps);
 
     return NULL;
 }
@@ -140,7 +148,7 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
 
     c->fd = avpriv_tempfile("ffcache", &buffername, 0, h);
     if (c->fd < 0){
-        av_log(h, AV_LOG_ERROR, "Failed to create tempfile\n");
+        av_log(h, AV_LOG_ERROR, "Failed to create tempfile %d\n", c->fd);
         return c->fd;
     }
 
