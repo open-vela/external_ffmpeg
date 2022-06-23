@@ -106,15 +106,14 @@ static int hifi_decode_pre_parse(AVCodecContext *avctx, AVPacket *avpkt)
             enum AVCodecID id;
             int r, c, s, b;
 
-            if (!avctx->channels) {
-                ret = ff_mpa_decode_header(state, &r, &c, &s, &b, &id);
-                if (ret < 0) {
-                    av_log(avctx, AV_LOG_ERROR, "%s h 0x%08x size %d ret %d\n", __func__, state, buf_size, ret);
-                    return ret;
-                }
-
-                avctx->channels = c;
+            ret = ff_mpa_decode_header(state, &r, &c, &s, &b, &id);
+            if (ret < 0) {
+                av_log(avctx, AV_LOG_ERROR, "%s h 0x%08x size %d ret %d\n", __func__, state, buf_size, ret);
+                return ret;
             }
+
+            avctx->channels   = c;
+            avctx->frame_size = s;
             break;
         }
 
@@ -220,7 +219,9 @@ static int hifi_decode_frame(AVCodecContext *avctx,
     if (!avctx->channel_layout)
         avctx->channel_layout = av_get_default_channel_layout(avctx->channels);
 
-    avctx->frame_size = output.size / (info.channels * av_get_bytes_per_sample(avctx->sample_fmt));
+    if (!avctx->frame_size)
+        avctx->frame_size = output.size / (info.channels * av_get_bytes_per_sample(avctx->sample_fmt));
+
     frame->nb_samples = avctx->frame_size;
     *got_frame_ptr = 1;
 
