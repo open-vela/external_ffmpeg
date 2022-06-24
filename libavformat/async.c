@@ -47,7 +47,7 @@
 
 typedef struct RingBuffer
 {
-    AVFifo       *fifo;
+    AVFifoBuffer *fifo;
     int           read_back_capacity;
 
     int           read_pos;
@@ -83,7 +83,7 @@ typedef struct Context {
 static int ring_init(RingBuffer *ring, unsigned int capacity, int read_back_capacity)
 {
     memset(ring, 0, sizeof(RingBuffer));
-    ring->fifo = av_fifo_alloc2(capacity + read_back_capacity, 1, 0);
+    ring->fifo = av_fifo_alloc(capacity + read_back_capacity);
     if (!ring->fifo)
         return AVERROR(ENOMEM);
 
@@ -93,59 +93,45 @@ static int ring_init(RingBuffer *ring, unsigned int capacity, int read_back_capa
 
 static void ring_destroy(RingBuffer *ring)
 {
-    av_fifo_freep2(&ring->fifo);
+    av_fifo_freep(&ring->fifo);
 }
 
 static void ring_reset(RingBuffer *ring)
 {
-    av_fifo_reset2(ring->fifo);
+    av_fifo_reset(ring->fifo);
     ring->read_pos = 0;
 }
 
 static int ring_size(RingBuffer *ring)
 {
-    return av_fifo_can_read(ring->fifo) - ring->read_pos;
+    return av_fifo_size(ring->fifo) - ring->read_pos;
 }
 
 static int ring_space(RingBuffer *ring)
 {
-    return av_fifo_can_write(ring->fifo);
+    return av_fifo_space(ring->fifo);
 }
 
-static int ring_read(RingBuffer *ring, void *dest, int buf_size)
+static int ring_generic_read(RingBuffer *ring, void *dest, int buf_size, void (*func)(void*, void*, int))
 {
-    int ret = 0;
+    int ret;
 
     av_assert2(buf_size <= ring_size(ring));
-    if (dest)
-        ret = av_fifo_peek(ring->fifo, dest, buf_size, ring->read_pos);
+    ret = av_fifo_generic_peek_at(ring->fifo, dest, ring->read_pos, buf_size, func);
     ring->read_pos += buf_size;
 
     if (ring->read_pos > ring->read_back_capacity) {
-        av_fifo_drain2(ring->fifo, ring->read_pos - ring->read_back_capacity);
+        av_fifo_drain(ring->fifo, ring->read_pos - ring->read_back_capacity);
         ring->read_pos = ring->read_back_capacity;
     }
 
     return ret;
 }
 
-static int wrapped_url_read(void *src, void *dst, size_t *size)
-{
-    URLContext *h   = src;
-    Context    *c   = h->priv_data;
-    int         ret;
-
-    ret = ffurl_read(c->inner, dst, *size);
-    *size             = ret > 0 ? ret : 0;
-    c->inner_io_error = ret < 0 ? ret : 0;
-
-    return c->inner_io_error;
-}
-
-static int ring_write(RingBuffer *ring, URLContext *h, size_t size)
+static int ring_generic_write(RingBuffer *ring, void *src, int size, int (*func)(void*, void*, int))
 {
     av_assert2(size <= ring_space(ring));
-    return av_fifo_write_from_cb(ring->fifo, wrapped_url_read, h, &size);
+    return av_fifo_generic_write(ring->fifo, src, size, func);
 }
 
 static int ring_size_of_read_back(RingBuffer *ring)
@@ -173,6 +159,18 @@ static int async_check_interrupt(void *arg)
         c->abort_request = 1;
 
     return c->abort_request;
+}
+
+static int wrapped_url_read(void *src, void *dst, int size)
+{
+    URLContext *h   = src;
+    Context    *c   = h->priv_data;
+    int         ret;
+
+    ret = ffurl_read(c->inner, dst, size);
+    c->inner_io_error = ret < 0 ? ret : 0;
+
+    return ret;
 }
 
 static void *async_buffer_task(void *arg)
@@ -223,7 +221,7 @@ static void *async_buffer_task(void *arg)
         pthread_mutex_unlock(&c->mutex);
 
         to_copy = FFMIN(4096, fifo_space);
-        ret = ring_write(ring, h, to_copy);
+        ret = ring_generic_write(ring, (void *)h, to_copy, wrapped_url_read);
 
         pthread_mutex_lock(&c->mutex);
         if (ret <= 0) {
@@ -264,28 +262,24 @@ static int async_open(URLContext *h, const char *arg, int flags, AVDictionary **
 
     ret = pthread_mutex_init(&c->mutex, NULL);
     if (ret != 0) {
-        ret = AVERROR(ret);
         av_log(h, AV_LOG_ERROR, "pthread_mutex_init failed : %s\n", av_err2str(ret));
         goto mutex_fail;
     }
 
     ret = pthread_cond_init(&c->cond_wakeup_main, NULL);
     if (ret != 0) {
-        ret = AVERROR(ret);
         av_log(h, AV_LOG_ERROR, "pthread_cond_init failed : %s\n", av_err2str(ret));
         goto cond_wakeup_main_fail;
     }
 
     ret = pthread_cond_init(&c->cond_wakeup_background, NULL);
     if (ret != 0) {
-        ret = AVERROR(ret);
         av_log(h, AV_LOG_ERROR, "pthread_cond_init failed : %s\n", av_err2str(ret));
         goto cond_wakeup_background_fail;
     }
 
     ret = pthread_create(&c->async_buffer_thread, NULL, async_buffer_task, h);
     if (ret) {
-        ret = AVERROR(ret);
         av_log(h, AV_LOG_ERROR, "pthread_create failed : %s\n", av_err2str(ret));
         goto thread_fail;
     }
@@ -329,11 +323,11 @@ static int async_close(URLContext *h)
     return 0;
 }
 
-static int async_read_internal(URLContext *h, void *dest, int size)
+static int async_read_internal(URLContext *h, void *dest, int size, int read_complete,
+                               void (*func)(void*, void*, int))
 {
     Context      *c       = h->priv_data;
     RingBuffer   *ring    = &c->ring;
-    int     read_complete = !dest;
     int           to_read = size;
     int           ret     = 0;
 
@@ -348,8 +342,8 @@ static int async_read_internal(URLContext *h, void *dest, int size)
         fifo_size = ring_size(ring);
         to_copy   = FFMIN(to_read, fifo_size);
         if (to_copy > 0) {
-            ring_read(ring, dest, to_copy);
-            if (dest)
+            ring_generic_read(ring, dest, to_copy, func);
+            if (!func)
                 dest = (uint8_t *)dest + to_copy;
             c->logical_pos += to_copy;
             to_read        -= to_copy;
@@ -378,7 +372,11 @@ static int async_read_internal(URLContext *h, void *dest, int size)
 
 static int async_read(URLContext *h, unsigned char *buf, int size)
 {
-    return async_read_internal(h, buf, size);
+    return async_read_internal(h, buf, size, 0, NULL);
+}
+
+static void fifo_do_not_copy_func(void* dest, void* src, int size) {
+    // do not copy
 }
 
 static int64_t async_seek(URLContext *h, int64_t pos, int whence)
@@ -420,7 +418,7 @@ static int64_t async_seek(URLContext *h, int64_t pos, int whence)
 
         if (pos_delta > 0) {
             // fast seek forwards
-            async_read_internal(h, NULL, pos_delta);
+            async_read_internal(h, NULL, pos_delta, 1, fifo_do_not_copy_func);
         } else {
             // fast seek backwards
             ring_drain(ring, pos_delta);
@@ -610,8 +608,7 @@ int main(void)
     /*
      * test normal read
      */
-    ret = ffurl_open_whitelist(&h, "async:async-test:", AVIO_FLAG_READ,
-                               NULL, NULL, NULL, NULL, NULL);
+    ret = ffurl_open(&h, "async:async-test:", AVIO_FLAG_READ, NULL, NULL);
     printf("open: %d\n", ret);
 
     size = ffurl_size(h);
@@ -687,8 +684,7 @@ int main(void)
      */
     ffurl_close(h);
     av_dict_set_int(&opts, "async-test-read-error", -10000, 0);
-    ret = ffurl_open_whitelist(&h, "async:async-test:", AVIO_FLAG_READ,
-                               NULL, &opts, NULL, NULL, NULL);
+    ret = ffurl_open(&h, "async:async-test:", AVIO_FLAG_READ, NULL, &opts);
     printf("open: %d\n", ret);
 
     ret = ffurl_read(h, buf, 1);
