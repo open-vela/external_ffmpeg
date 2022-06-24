@@ -25,8 +25,8 @@
 
 #include "avcodec.h"
 #include "canopus.h"
-#include "codec_internal.h"
 #include "get_bits.h"
+#include "internal.h"
 #include "thread.h"
 
 #include "hqx.h"
@@ -122,6 +122,8 @@ static int decode_block(GetBitContext *gb, VLC *vlc,
 
     memset(block, 0, 64 * sizeof(*block));
     dc = get_vlc2(gb, vlc->table, HQX_DC_VLC_BITS, 2);
+    if (dc < 0)
+        return AVERROR_INVALIDDATA;
     *last_dc += dc;
 
     block[0] = sign_extend(*last_dc << (12 - dcb), 12);
@@ -195,7 +197,7 @@ static int hqx_decode_422a(HQXContext *ctx, int slice_no, int x, int y)
     int i, ret;
     int cbp;
 
-    cbp = get_vlc2(gb, ctx->cbp_vlc.table, HQX_CBP_VLC_BITS, 1);
+    cbp = get_vlc2(gb, ctx->cbp_vlc.table, ctx->cbp_vlc.bits, 1);
 
     for (i = 0; i < 12; i++)
         memset(slice->block[i], 0, sizeof(**slice->block) * 64);
@@ -281,7 +283,7 @@ static int hqx_decode_444a(HQXContext *ctx, int slice_no, int x, int y)
     int i, ret;
     int cbp;
 
-    cbp = get_vlc2(gb, ctx->cbp_vlc.table, HQX_CBP_VLC_BITS, 1);
+    cbp = get_vlc2(gb, ctx->cbp_vlc.table, ctx->cbp_vlc.bits, 1);
 
     for (i = 0; i < 16; i++)
         memset(slice->block[i], 0, sizeof(**slice->block) * 64);
@@ -400,10 +402,11 @@ static int decode_slice_thread(AVCodecContext *avctx, void *arg,
     return decode_slice(ctx, slice_no);
 }
 
-static int hqx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int hqx_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_picture_ptr, AVPacket *avpkt)
 {
     HQXContext *ctx = avctx->priv_data;
+    ThreadFrame frame = { .f = data };
     uint8_t *src = avpkt->data;
     uint32_t info_tag;
     int data_start;
@@ -432,7 +435,7 @@ static int hqx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     data_start     = src - avpkt->data;
     ctx->data_size = avpkt->size - data_start;
     ctx->src       = src;
-    ctx->pic       = frame;
+    ctx->pic       = data;
 
     if (ctx->data_size < HQX_HEADER_SIZE) {
         av_log(avctx, AV_LOG_ERROR, "Frame too small.\n");
@@ -498,7 +501,7 @@ static int hqx_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR_INVALIDDATA;
     }
 
-    ret = ff_thread_get_buffer(avctx, frame, 0);
+    ret = ff_thread_get_buffer(avctx, &frame, 0);
     if (ret < 0)
         return ret;
 
@@ -534,16 +537,16 @@ static av_cold int hqx_decode_init(AVCodecContext *avctx)
     return ff_hqx_init_vlcs(ctx);
 }
 
-const FFCodec ff_hqx_decoder = {
-    .p.name         = "hqx",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Canopus HQX"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_HQX,
+AVCodec ff_hqx_decoder = {
+    .name           = "hqx",
+    .long_name      = NULL_IF_CONFIG_SMALL("Canopus HQX"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HQX,
     .priv_data_size = sizeof(HQXContext),
     .init           = hqx_decode_init,
-    FF_CODEC_DECODE_CB(hqx_decode_frame),
+    .decode         = hqx_decode_frame,
     .close          = hqx_decode_close,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS |
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS |
                       AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,

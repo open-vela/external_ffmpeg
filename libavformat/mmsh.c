@@ -31,6 +31,7 @@
 #include "libavutil/opt.h"
 #include "internal.h"
 #include "mms.h"
+#include "asf.h"
 #include "http.h"
 #include "url.h"
 
