@@ -3,22 +3,22 @@ DESC    = FFmpeg device handling library
 
 HEADERS = avdevice.h                                                    \
           version.h                                                     \
-          version_major.h                                               \
 
 OBJS    = alldevices.o                                                  \
           avdevice.o                                                    \
           utils.o                                                       \
-          version.o                                                     \
 
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
+OBJS-$(CONFIG_SHARED)                    += reverse.o
 
 # input/output devices
 OBJS-$(CONFIG_ALSA_INDEV)                += alsa_dec.o alsa.o timefilter.o
 OBJS-$(CONFIG_ALSA_OUTDEV)               += alsa_enc.o alsa.o
 OBJS-$(CONFIG_ANDROID_CAMERA_INDEV)      += android_camera.o
-OBJS-$(CONFIG_AUDIOTOOLBOX_OUTDEV)       += audiotoolbox.o
 OBJS-$(CONFIG_AVFOUNDATION_INDEV)        += avfoundation.o
 OBJS-$(CONFIG_BKTR_INDEV)                += bktr.o
+OBJS-$(CONFIG_BLUELET_INDEV)             += bluelet_dec.o bluelet.o
+OBJS-$(CONFIG_BLUELET_OUTDEV)            += bluelet_enc.o bluelet.o
 OBJS-$(CONFIG_CACA_OUTDEV)               += caca.o
 OBJS-$(CONFIG_DECKLINK_OUTDEV)           += decklink_enc.o decklink_enc_c.o decklink_common.o
 OBJS-$(CONFIG_DECKLINK_INDEV)            += decklink_dec.o decklink_dec_c.o decklink_common.o
@@ -29,11 +29,15 @@ OBJS-$(CONFIG_FBDEV_INDEV)               += fbdev_dec.o \
                                             fbdev_common.o
 OBJS-$(CONFIG_FBDEV_OUTDEV)              += fbdev_enc.o \
                                             fbdev_common.o
+OBJS-$(CONFIG_FLUORIDE_INDEV)            += fluoride_dec.o fluoride.o
+OBJS-$(CONFIG_FLUORIDE_OUTDEV)           += fluoride_enc.o fluoride.o
 OBJS-$(CONFIG_GDIGRAB_INDEV)             += gdigrab.o
 OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
 OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
 OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
 OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
+OBJS-$(CONFIG_NUTTX_INDEV)               += nuttx_dec.o nuttx.o timefilter.o
+OBJS-$(CONFIG_NUTTX_OUTDEV)              += nuttx_enc.o nuttx.o
 OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
 OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
 OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o
@@ -45,6 +49,7 @@ OBJS-$(CONFIG_PULSE_OUTDEV)              += pulse_audio_enc.o \
 OBJS-$(CONFIG_SDL2_OUTDEV)               += sdl2.o
 OBJS-$(CONFIG_SNDIO_INDEV)               += sndio_dec.o sndio.o
 OBJS-$(CONFIG_SNDIO_OUTDEV)              += sndio_enc.o sndio.o
+OBJS-$(CONFIG_UORB_OUTDEV)               += uorb_enc.o
 OBJS-$(CONFIG_V4L2_INDEV)                += v4l2.o v4l2-common.o timefilter.o
 OBJS-$(CONFIG_V4L2_OUTDEV)               += v4l2enc.o v4l2-common.o
 OBJS-$(CONFIG_VFWCAP_INDEV)              += vfwcap.o
@@ -54,9 +59,6 @@ OBJS-$(CONFIG_XV_OUTDEV)                 += xv.o
 # external libraries
 OBJS-$(CONFIG_LIBCDIO_INDEV)             += libcdio.o
 OBJS-$(CONFIG_LIBDC1394_INDEV)           += libdc1394.o
-
-# Objects duplicated from other libraries for shared builds
-SHLIBOBJS-$(CONFIG_DECKLINK_INDEV)       += reverse.o
 
 # Windows resource file
 SLIBOBJS-$(HAVE_GNU_WINDRES)             += avdeviceres.o
