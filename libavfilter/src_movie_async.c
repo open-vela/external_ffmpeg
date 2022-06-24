@@ -28,6 +28,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
+#include <limits.h>
 
 #include "libavutil/avstring.h"
 #include "libavutil/avassert.h"
@@ -66,6 +67,7 @@ typedef struct MovieAsyncContext {
     int                       stack_size;
     int                       priority;
     int                       fadein;         /** fadein duration, ms */
+    char                      *protocol_map;
 
     MovieStream               *streams;       /**< array of all streams, one per output */
     AVFormatContext           *format_ctx;
@@ -92,12 +94,13 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT, {.i64 = 4 },     2, INT16_MAX, FLAGS },
-    { "cmdqmax",         "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT, {.i64 = 16 },    8, 32,        FLAGS },
-    { "silent_samples",  "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT, {.i64 = 1024 },  0, 2048,      FLAGS },
-    { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT, {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
-    { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT, {.i64 = 244 },   0, INT16_MAX, FLAGS },
-    { "fadein",          "duration of fadein",          OFFSET(fadein),         AV_OPT_TYPE_INT, {.i64 = 0},      0, INT32_MAX, FLAGS },
+    { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT,    {.i64 = 4 },     2, INT16_MAX, FLAGS },
+    { "cmdqmax",         "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT,    {.i64 = 16 },    8, 32,        FLAGS },
+    { "silent_samples",  "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT,    {.i64 = 1024 },  0, 2048,      FLAGS },
+    { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT,    {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
+    { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT,    {.i64 = 244 },   0, INT16_MAX, FLAGS },
+    { "fadein",          "duration of fadein",          OFFSET(fadein),         AV_OPT_TYPE_INT,    {.i64 = 0},      0, INT32_MAX, FLAGS },
+    { "protocol_map",    "mapping of protocol",         OFFSET(protocol_map),   AV_OPT_TYPE_STRING, {.str = NULL},   0, 0,         FLAGS },
     { NULL },
 };
 
@@ -447,10 +450,34 @@ end:
     return ret;
 }
 
+static void movie_async_map_protocol(AVFilterContext *ctx, const char *url, char *dst, int length)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    AVDictionary *opts = NULL;
+    AVDictionaryEntry *tag;
+    char proto[128];
+
+    av_url_split(proto, sizeof(proto), NULL, 0, NULL, 0, NULL, NULL, 0, url);
+
+    if (movie->protocol_map && proto[0]) {
+        av_dict_parse_string(&opts, movie->protocol_map, ">", "|", 0);
+        if ((tag = av_dict_get(opts, proto, NULL, 0))) {
+            snprintf(dst, length, "%s:%s", tag->value, url);
+            av_dict_free(&opts);
+            return ;
+        }
+
+        av_dict_free(&opts);
+    }
+
+    av_strlcpy(dst, url, length);
+}
+
 static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 {
     MovieAsyncContext *movie = ctx->priv;
     AVInputFormat *iformat = NULL;
+    char name[PATH_MAX];
     unsigned seek_point = 0;
     AVDictionaryEntry *tag;
     AVStream *stream;
@@ -472,15 +499,17 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     if (movie->global_opts)
         av_dict_copy(&movie->format_opt, movie->global_opts, 0);
 
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s start open input.\n", filename);
-    ret = avformat_open_input(&movie->format_ctx, filename, iformat, &movie->format_opt);
+    movie_async_map_protocol(ctx, filename, name, sizeof(name));
+
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s start open input.\n", name);
+    ret = avformat_open_input(&movie->format_ctx, name, iformat, &movie->format_opt);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR,
                "Failed to avformat_open_input ret %d, %s.\n", ret, av_err2str(ret));
         goto out;
     }
 
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open input done.\n", filename);
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open input done.\n", name);
 
     ret = avformat_find_stream_info(movie->format_ctx, NULL);
     if (ret < 0) {
@@ -491,7 +520,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     for (i = 0; i < movie->format_ctx->nb_streams; i++)
         movie->format_ctx->streams[i]->discard = AVDISCARD_ALL;
 
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s find stream info done.\n", filename);
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s find stream info done.\n", name);
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         ret = av_find_best_stream(movie->format_ctx, movie->streams[i].type, -1, -1, NULL, 0);
@@ -516,7 +545,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         movie->streams[i].time_base = stream->time_base;
         movie->streams[i].codec_ctx->pkt_timebase = stream->time_base;
     }
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", filename);
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", name);
 
     if (movie->format_ctx->duration == AV_NOPTS_VALUE)
         movie->duration_ms = 0;
