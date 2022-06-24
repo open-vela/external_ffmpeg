@@ -41,7 +41,7 @@ static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
     FILE *f;
     int i;
 
-    f = fopen(filename,"wb");
+    f = fopen(filename,"w");
     fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
     for (i = 0; i < ysize; i++)
         fwrite(buf + i * wrap, 1, xsize, f);
@@ -92,7 +92,6 @@ int main(int argc, char **argv)
     uint8_t *data;
     size_t   data_size;
     int ret;
-    int eof;
     AVPacket *pkt;
 
     if (argc <= 2) {
@@ -151,16 +150,15 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    do {
+    while (!feof(f)) {
         /* read raw data from the input file */
         data_size = fread(inbuf, 1, INBUF_SIZE, f);
-        if (ferror(f))
+        if (!data_size)
             break;
-        eof = !data_size;
 
         /* use the parser to split the data into frames */
         data = inbuf;
-        while (data_size > 0 || eof) {
+        while (data_size > 0) {
             ret = av_parser_parse2(parser, c, &pkt->data, &pkt->size,
                                    data, data_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
             if (ret < 0) {
@@ -172,10 +170,8 @@ int main(int argc, char **argv)
 
             if (pkt->size)
                 decode(c, frame, pkt, outfilename);
-            else if (eof)
-                break;
         }
-    } while (!eof);
+    }
 
     /* flush the decoder */
     decode(c, frame, NULL, outfilename);

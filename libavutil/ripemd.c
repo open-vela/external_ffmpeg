@@ -19,15 +19,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <stddef.h>
 #include <string.h>
 
-#include "config.h"
 #include "attributes.h"
+#include "avutil.h"
 #include "bswap.h"
-#include "error.h"
 #include "intreadwrite.h"
-#include "macros.h"
 #include "ripemd.h"
 #include "mem.h"
 
@@ -513,10 +510,13 @@ av_cold int av_ripemd_init(AVRIPEMD *ctx, int bits)
     return 0;
 }
 
+#if FF_API_CRYPTO_SIZE_T
+void av_ripemd_update(AVRIPEMD* ctx, const uint8_t* data, unsigned int len)
+#else
 void av_ripemd_update(AVRIPEMD* ctx, const uint8_t* data, size_t len)
+#endif
 {
-    unsigned int j;
-    size_t i;
+    unsigned int i, j;
 
     j = ctx->count & 63;
     ctx->count += len;
@@ -529,19 +529,15 @@ void av_ripemd_update(AVRIPEMD* ctx, const uint8_t* data, size_t len)
         }
     }
 #else
-    if (len >= 64 - j) {
-        const uint8_t *end;
+    if ((j + len) > 63) {
         memcpy(&ctx->buffer[j], data, (i = 64 - j));
         ctx->transform(ctx->state, ctx->buffer);
-        data += i;
-        len  -= i;
-        end   = data + (len & ~63);
-        len   = len % 64;
-        for (; data < end; data += 64)
-            ctx->transform(ctx->state, data);
+        for (; i + 63 < len; i += 64)
+            ctx->transform(ctx->state, &data[i]);
         j = 0;
-    }
-    memcpy(&ctx->buffer[j], data, len);
+    } else
+        i = 0;
+    memcpy(&ctx->buffer[j], &data[i], len - i);
 #endif
 }
 
