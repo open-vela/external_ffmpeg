@@ -35,8 +35,7 @@ void ff_rtp_send_vp8(AVFormatContext *s1, const uint8_t *buf, int size)
     // partition id 0
     *s->buf_ptr++ = 0x90;
     *s->buf_ptr++ = 0x80; // Picture id present
-    *s->buf_ptr++ = ((s->frame_count & 0x7f00) >> 8) | 0x80;
-    *s->buf_ptr++ = s->frame_count++ & 0xff;
+    *s->buf_ptr++ = s->frame_count++ & 0x7f;
     // Calculate the number of remaining bytes
     header_size     = s->buf_ptr - s->buf;
     max_packet_size = s->max_payload_size - header_size;

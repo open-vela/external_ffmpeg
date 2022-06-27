@@ -23,8 +23,6 @@
  * filter for selecting which frame passes in the filterchain
  */
 
-#include "config_components.h"
-
 #include "libavutil/avstring.h"
 #include "libavutil/eval.h"
 #include "libavutil/fifo.h"
@@ -194,8 +192,10 @@ static av_cold int init(AVFilterContext *ctx)
             return AVERROR(ENOMEM);
         pad.type = ctx->filter->inputs[0].type;
         pad.request_frame = request_frame;
-        if ((ret = ff_append_outpad_free_name(ctx, &pad)) < 0)
+        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
+            av_freep(&pad.name);
             return ret;
+        }
     }
 
     return 0;
@@ -325,6 +325,9 @@ static double get_concatdec_select(AVFrame *frame, int64_t pts)
     return NAN;
 }
 
+#define D2TS(d)  (isnan(d) ? AV_NOPTS_VALUE : (int64_t)(d))
+#define TS2D(ts) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
+
 static void select_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     SelectContext *select = ctx->priv;
@@ -432,9 +435,13 @@ static int request_frame(AVFilterLink *outlink)
 static av_cold void uninit(AVFilterContext *ctx)
 {
     SelectContext *select = ctx->priv;
+    int i;
 
     av_expr_free(select->expr);
     select->expr = NULL;
+
+    for (i = 0; i < ctx->nb_outputs; i++)
+        av_freep(&ctx->output_pads[i].name);
 
     if (select->do_scene_detect) {
         av_frame_free(&select->prev_picref);
@@ -469,15 +476,16 @@ static const AVFilterPad avfilter_af_aselect_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_aselect = {
+AVFilter ff_af_aselect = {
     .name        = "aselect",
     .description = NULL_IF_CONFIG_SMALL("Select audio frames to pass in output."),
     .init        = aselect_init,
     .uninit      = uninit,
     .priv_size   = sizeof(SelectContext),
-    FILTER_INPUTS(avfilter_af_aselect_inputs),
+    .inputs      = avfilter_af_aselect_inputs,
     .priv_class  = &aselect_class,
     .flags       = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
@@ -492,6 +500,7 @@ static int query_formats(AVFilterContext *ctx)
     if (!select->do_scene_detect) {
         return ff_default_query_formats(ctx);
     } else {
+        int ret;
         static const enum AVPixelFormat pix_fmts[] = {
             AV_PIX_FMT_RGB24, AV_PIX_FMT_BGR24, AV_PIX_FMT_RGBA,
             AV_PIX_FMT_ABGR, AV_PIX_FMT_BGRA, AV_PIX_FMT_GRAY8,
@@ -500,8 +509,15 @@ static int query_formats(AVFilterContext *ctx)
             AV_PIX_FMT_YUV420P10,
             AV_PIX_FMT_NONE
         };
-        return ff_set_common_formats_from_list(ctx, pix_fmts);
+        AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+
+        if (!fmts_list)
+            return AVERROR(ENOMEM);
+        ret = ff_set_common_formats(ctx, fmts_list);
+        if (ret < 0)
+            return ret;
     }
+    return 0;
 }
 
 DEFINE_OPTIONS(select, AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM);
@@ -524,17 +540,18 @@ static const AVFilterPad avfilter_vf_select_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_select = {
+AVFilter ff_vf_select = {
     .name          = "select",
     .description   = NULL_IF_CONFIG_SMALL("Select video frames to pass in output."),
     .init          = select_init,
     .uninit        = uninit,
+    .query_formats = query_formats,
     .priv_size     = sizeof(SelectContext),
     .priv_class    = &select_class,
-    FILTER_INPUTS(avfilter_vf_select_inputs),
-    FILTER_QUERY_FUNC(query_formats),
-    .flags         = AVFILTER_FLAG_DYNAMIC_OUTPUTS | AVFILTER_FLAG_METADATA_ONLY,
+    .inputs        = avfilter_vf_select_inputs,
+    .flags         = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
 #endif /* CONFIG_SELECT_FILTER */
