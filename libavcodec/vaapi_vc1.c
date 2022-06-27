@@ -20,10 +20,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "hwconfig.h"
-#include "mpegvideodec.h"
+#include "internal.h"
 #include "vaapi_decode.h"
 #include "vc1.h"
 #include "vc1data.h"

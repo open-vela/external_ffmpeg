@@ -18,10 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/imgutils.h"
-#include "libavutil/pixdesc.h"
-#include "libavformat/avformat.h"
 #include "v4l2-common.h"
+#include "avdevice.h"
 
 typedef struct {
     AVClass *class;
@@ -111,7 +109,7 @@ static const AVClass v4l2_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT,
 };
 
-const AVOutputFormat ff_v4l2_muxer = {
+AVOutputFormat ff_v4l2_muxer = {
     .name           = "video4linux2,v4l2",
     .long_name      = NULL_IF_CONFIG_SMALL("Video4Linux2 output device"),
     .priv_data_size = sizeof(V4L2Context),

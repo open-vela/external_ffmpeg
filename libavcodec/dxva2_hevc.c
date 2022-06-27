@@ -20,8 +20,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "libavutil/avassert.h"
 
 #include "dxva2_internal.h"
@@ -184,7 +182,7 @@ static void fill_picture_parameters(const AVCodecContext *avctx, AVDXVAContext *
             const HEVCFrame *frame = NULL; \
             while (!frame && j < rpl->nb_refs) \
                 frame = rpl->ref[j++]; \
-            if (frame && frame->flags & (HEVC_FRAME_FLAG_LONG_REF | HEVC_FRAME_FLAG_SHORT_REF)) \
+            if (frame) \
                 pp->ref_list[i] = get_refpic_index(pp, ff_dxva2_get_surface_index(avctx, ctx, frame->frame)); \
             else \
                 pp->ref_list[i] = 0xff; \
