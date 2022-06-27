@@ -26,7 +26,7 @@
 #include <stdint.h>
 
 #include "libavutil/attributes.h"
-#include "startcode.h"
+#include "internal.h"
 
 /** Markers used in VC-1 AP frame data */
 //@{

@@ -22,24 +22,26 @@
 #include "dshow_capture.h"
 
 #include <stddef.h>
-#define imemoffset offsetof(DShowPin, imemvtbl)
+#define imemoffset offsetof(libAVPin, imemvtbl)
 
-DECLARE_QUERYINTERFACE(pin, DShowPin,
+DECLARE_QUERYINTERFACE(libAVPin,
     { {&IID_IUnknown,0}, {&IID_IPin,0}, {&IID_IMemInputPin,imemoffset} })
-DECLARE_ADDREF(pin, DShowPin)
-DECLARE_RELEASE(pin, DShowPin)
+DECLARE_ADDREF(libAVPin)
+DECLARE_RELEASE(libAVPin)
 
-long WINAPI ff_dshow_pin_Connect(DShowPin *this, IPin *pin, const AM_MEDIA_TYPE *type)
+long WINAPI
+libAVPin_Connect(libAVPin *this, IPin *pin, const AM_MEDIA_TYPE *type)
 {
-    dshowdebug("ff_dshow_pin_Connect(%p, %p, %p)\n", this, pin, type);
+    dshowdebug("libAVPin_Connect(%p, %p, %p)\n", this, pin, type);
     /* Input pins receive connections. */
     return S_FALSE;
 }
-long WINAPI ff_dshow_pin_ReceiveConnection(DShowPin *this, IPin *pin,
+long WINAPI
+libAVPin_ReceiveConnection(libAVPin *this, IPin *pin,
                            const AM_MEDIA_TYPE *type)
 {
     enum dshowDeviceType devtype = this->filter->type;
-    dshowdebug("ff_dshow_pin_ReceiveConnection(%p)\n", this);
+    dshowdebug("libAVPin_ReceiveConnection(%p)\n", this);
 
     if (!pin)
         return E_POINTER;
@@ -62,9 +64,10 @@ long WINAPI ff_dshow_pin_ReceiveConnection(DShowPin *this, IPin *pin,
 
     return S_OK;
 }
-long WINAPI ff_dshow_pin_Disconnect(DShowPin *this)
+long WINAPI
+libAVPin_Disconnect(libAVPin *this)
 {
-    dshowdebug("ff_dshow_pin_Disconnect(%p)\n", this);
+    dshowdebug("libAVPin_Disconnect(%p)\n", this);
 
     if (this->filter->state != State_Stopped)
         return VFW_E_NOT_STOPPED;
@@ -75,9 +78,10 @@ long WINAPI ff_dshow_pin_Disconnect(DShowPin *this)
 
     return S_OK;
 }
-long WINAPI ff_dshow_pin_ConnectedTo(DShowPin *this, IPin **pin)
+long WINAPI
+libAVPin_ConnectedTo(libAVPin *this, IPin **pin)
 {
-    dshowdebug("ff_dshow_pin_ConnectedTo(%p)\n", this);
+    dshowdebug("libAVPin_ConnectedTo(%p)\n", this);
 
     if (!pin)
         return E_POINTER;
@@ -88,9 +92,10 @@ long WINAPI ff_dshow_pin_ConnectedTo(DShowPin *this, IPin **pin)
 
     return S_OK;
 }
-long WINAPI ff_dshow_pin_ConnectionMediaType(DShowPin *this, AM_MEDIA_TYPE *type)
+long WINAPI
+libAVPin_ConnectionMediaType(libAVPin *this, AM_MEDIA_TYPE *type)
 {
-    dshowdebug("ff_dshow_pin_ConnectionMediaType(%p)\n", this);
+    dshowdebug("libAVPin_ConnectionMediaType(%p)\n", this);
 
     if (!type)
         return E_POINTER;
@@ -99,15 +104,16 @@ long WINAPI ff_dshow_pin_ConnectionMediaType(DShowPin *this, AM_MEDIA_TYPE *type
 
     return ff_copy_dshow_media_type(type, &this->type);
 }
-long WINAPI ff_dshow_pin_QueryPinInfo(DShowPin *this, PIN_INFO *info)
+long WINAPI
+libAVPin_QueryPinInfo(libAVPin *this, PIN_INFO *info)
 {
-    dshowdebug("ff_dshow_pin_QueryPinInfo(%p)\n", this);
+    dshowdebug("libAVPin_QueryPinInfo(%p)\n", this);
 
     if (!info)
         return E_POINTER;
 
     if (this->filter)
-        ff_dshow_filter_AddRef(this->filter);
+        libAVFilter_AddRef(this->filter);
 
     info->pFilter = (IBaseFilter *) this->filter;
     info->dir     = PINDIR_INPUT;
@@ -115,17 +121,19 @@ long WINAPI ff_dshow_pin_QueryPinInfo(DShowPin *this, PIN_INFO *info)
 
     return S_OK;
 }
-long WINAPI ff_dshow_pin_QueryDirection(DShowPin *this, PIN_DIRECTION *dir)
+long WINAPI
+libAVPin_QueryDirection(libAVPin *this, PIN_DIRECTION *dir)
 {
-    dshowdebug("ff_dshow_pin_QueryDirection(%p)\n", this);
+    dshowdebug("libAVPin_QueryDirection(%p)\n", this);
     if (!dir)
         return E_POINTER;
     *dir = PINDIR_INPUT;
     return S_OK;
 }
-long WINAPI ff_dshow_pin_QueryId(DShowPin *this, wchar_t **id)
+long WINAPI
+libAVPin_QueryId(libAVPin *this, wchar_t **id)
 {
-    dshowdebug("ff_dshow_pin_QueryId(%p)\n", this);
+    dshowdebug("libAVPin_QueryId(%p)\n", this);
 
     if (!id)
         return E_POINTER;
@@ -134,59 +142,67 @@ long WINAPI ff_dshow_pin_QueryId(DShowPin *this, wchar_t **id)
 
     return S_OK;
 }
-long WINAPI ff_dshow_pin_QueryAccept(DShowPin *this, const AM_MEDIA_TYPE *type)
+long WINAPI
+libAVPin_QueryAccept(libAVPin *this, const AM_MEDIA_TYPE *type)
 {
-    dshowdebug("ff_dshow_pin_QueryAccept(%p)\n", this);
+    dshowdebug("libAVPin_QueryAccept(%p)\n", this);
     return S_FALSE;
 }
-long WINAPI ff_dshow_pin_EnumMediaTypes(DShowPin *this, IEnumMediaTypes **enumtypes)
+long WINAPI
+libAVPin_EnumMediaTypes(libAVPin *this, IEnumMediaTypes **enumtypes)
 {
     const AM_MEDIA_TYPE *type = NULL;
-    DShowEnumMediaTypes *new;
-    dshowdebug("ff_dshow_pin_EnumMediaTypes(%p)\n", this);
+    libAVEnumMediaTypes *new;
+    dshowdebug("libAVPin_EnumMediaTypes(%p)\n", this);
 
     if (!enumtypes)
         return E_POINTER;
-    new = ff_dshow_enummediatypes_Create(type);
+    new = libAVEnumMediaTypes_Create(type);
     if (!new)
         return E_OUTOFMEMORY;
 
     *enumtypes = (IEnumMediaTypes *) new;
     return S_OK;
 }
-long WINAPI ff_dshow_pin_QueryInternalConnections(DShowPin *this, IPin **pin,
+long WINAPI
+libAVPin_QueryInternalConnections(libAVPin *this, IPin **pin,
                                   unsigned long *npin)
 {
-    dshowdebug("ff_dshow_pin_QueryInternalConnections(%p)\n", this);
+    dshowdebug("libAVPin_QueryInternalConnections(%p)\n", this);
     return E_NOTIMPL;
 }
-long WINAPI ff_dshow_pin_EndOfStream(DShowPin *this)
+long WINAPI
+libAVPin_EndOfStream(libAVPin *this)
 {
-    dshowdebug("ff_dshow_pin_EndOfStream(%p)\n", this);
+    dshowdebug("libAVPin_EndOfStream(%p)\n", this);
     /* I don't care. */
     return S_OK;
 }
-long WINAPI ff_dshow_pin_BeginFlush(DShowPin *this)
+long WINAPI
+libAVPin_BeginFlush(libAVPin *this)
 {
-    dshowdebug("ff_dshow_pin_BeginFlush(%p)\n", this);
+    dshowdebug("libAVPin_BeginFlush(%p)\n", this);
     /* I don't care. */
     return S_OK;
 }
-long WINAPI ff_dshow_pin_EndFlush(DShowPin *this)
+long WINAPI
+libAVPin_EndFlush(libAVPin *this)
 {
-    dshowdebug("ff_dshow_pin_EndFlush(%p)\n", this);
+    dshowdebug("libAVPin_EndFlush(%p)\n", this);
     /* I don't care. */
     return S_OK;
 }
-long WINAPI ff_dshow_pin_NewSegment(DShowPin *this, REFERENCE_TIME start, REFERENCE_TIME stop,
+long WINAPI
+libAVPin_NewSegment(libAVPin *this, REFERENCE_TIME start, REFERENCE_TIME stop,
                     double rate)
 {
-    dshowdebug("ff_dshow_pin_NewSegment(%p)\n", this);
+    dshowdebug("libAVPin_NewSegment(%p)\n", this);
     /* I don't care. */
     return S_OK;
 }
 
-static int ff_dshow_pin_Setup(DShowPin *this, DShowFilter *filter)
+static int
+libAVPin_Setup(libAVPin *this, libAVFilter *filter)
 {
     IPinVtbl *vtbl = this->vtbl;
     IMemInputPinVtbl *imemvtbl;
@@ -198,43 +214,44 @@ static int ff_dshow_pin_Setup(DShowPin *this, DShowFilter *filter)
     if (!imemvtbl)
         return 0;
 
-    SETVTBL(imemvtbl, meminputpin, QueryInterface);
-    SETVTBL(imemvtbl, meminputpin, AddRef);
-    SETVTBL(imemvtbl, meminputpin, Release);
-    SETVTBL(imemvtbl, meminputpin, GetAllocator);
-    SETVTBL(imemvtbl, meminputpin, NotifyAllocator);
-    SETVTBL(imemvtbl, meminputpin, GetAllocatorRequirements);
-    SETVTBL(imemvtbl, meminputpin, Receive);
-    SETVTBL(imemvtbl, meminputpin, ReceiveMultiple);
-    SETVTBL(imemvtbl, meminputpin, ReceiveCanBlock);
+    SETVTBL(imemvtbl, libAVMemInputPin, QueryInterface);
+    SETVTBL(imemvtbl, libAVMemInputPin, AddRef);
+    SETVTBL(imemvtbl, libAVMemInputPin, Release);
+    SETVTBL(imemvtbl, libAVMemInputPin, GetAllocator);
+    SETVTBL(imemvtbl, libAVMemInputPin, NotifyAllocator);
+    SETVTBL(imemvtbl, libAVMemInputPin, GetAllocatorRequirements);
+    SETVTBL(imemvtbl, libAVMemInputPin, Receive);
+    SETVTBL(imemvtbl, libAVMemInputPin, ReceiveMultiple);
+    SETVTBL(imemvtbl, libAVMemInputPin, ReceiveCanBlock);
 
     this->imemvtbl = imemvtbl;
 
-    SETVTBL(vtbl, pin, QueryInterface);
-    SETVTBL(vtbl, pin, AddRef);
-    SETVTBL(vtbl, pin, Release);
-    SETVTBL(vtbl, pin, Connect);
-    SETVTBL(vtbl, pin, ReceiveConnection);
-    SETVTBL(vtbl, pin, Disconnect);
-    SETVTBL(vtbl, pin, ConnectedTo);
-    SETVTBL(vtbl, pin, ConnectionMediaType);
-    SETVTBL(vtbl, pin, QueryPinInfo);
-    SETVTBL(vtbl, pin, QueryDirection);
-    SETVTBL(vtbl, pin, QueryId);
-    SETVTBL(vtbl, pin, QueryAccept);
-    SETVTBL(vtbl, pin, EnumMediaTypes);
-    SETVTBL(vtbl, pin, QueryInternalConnections);
-    SETVTBL(vtbl, pin, EndOfStream);
-    SETVTBL(vtbl, pin, BeginFlush);
-    SETVTBL(vtbl, pin, EndFlush);
-    SETVTBL(vtbl, pin, NewSegment);
+    SETVTBL(vtbl, libAVPin, QueryInterface);
+    SETVTBL(vtbl, libAVPin, AddRef);
+    SETVTBL(vtbl, libAVPin, Release);
+    SETVTBL(vtbl, libAVPin, Connect);
+    SETVTBL(vtbl, libAVPin, ReceiveConnection);
+    SETVTBL(vtbl, libAVPin, Disconnect);
+    SETVTBL(vtbl, libAVPin, ConnectedTo);
+    SETVTBL(vtbl, libAVPin, ConnectionMediaType);
+    SETVTBL(vtbl, libAVPin, QueryPinInfo);
+    SETVTBL(vtbl, libAVPin, QueryDirection);
+    SETVTBL(vtbl, libAVPin, QueryId);
+    SETVTBL(vtbl, libAVPin, QueryAccept);
+    SETVTBL(vtbl, libAVPin, EnumMediaTypes);
+    SETVTBL(vtbl, libAVPin, QueryInternalConnections);
+    SETVTBL(vtbl, libAVPin, EndOfStream);
+    SETVTBL(vtbl, libAVPin, BeginFlush);
+    SETVTBL(vtbl, libAVPin, EndFlush);
+    SETVTBL(vtbl, libAVPin, NewSegment);
 
     this->filter = filter;
 
     return 1;
 }
 
-static void ff_dshow_pin_Free(DShowPin *this)
+static void
+libAVPin_Free(libAVPin *this)
 {
     if (!this)
         return;
@@ -244,138 +261,136 @@ static void ff_dshow_pin_Free(DShowPin *this)
         this->type.pbFormat = NULL;
     }
 }
-DECLARE_CREATE(pin, DShowPin, ff_dshow_pin_Setup(this, filter), DShowFilter *filter)
-DECLARE_DESTROY(pin, DShowPin, ff_dshow_pin_Free)
+DECLARE_CREATE(libAVPin, libAVPin_Setup(this, filter), libAVFilter *filter)
+DECLARE_DESTROY(libAVPin, libAVPin_Free)
 
 /*****************************************************************************
- * DShowMemInputPin
+ * libAVMemInputPin
  ****************************************************************************/
-long WINAPI ff_dshow_meminputpin_QueryInterface(DShowMemInputPin *this, const GUID *riid,
+long WINAPI
+libAVMemInputPin_QueryInterface(libAVMemInputPin *this, const GUID *riid,
                                 void **ppvObject)
 {
-    DShowPin *pin = (DShowPin *) ((uint8_t *) this - imemoffset);
-    dshowdebug("ff_dshow_meminputpin_QueryInterface(%p)\n", this);
-    return ff_dshow_pin_QueryInterface(pin, riid, ppvObject);
+    libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
+    dshowdebug("libAVMemInputPin_QueryInterface(%p)\n", this);
+    return libAVPin_QueryInterface(pin, riid, ppvObject);
 }
-unsigned long WINAPI ff_dshow_meminputpin_AddRef(DShowMemInputPin *this)
+unsigned long WINAPI
+libAVMemInputPin_AddRef(libAVMemInputPin *this)
 {
-    DShowPin *pin = (DShowPin *) ((uint8_t *) this - imemoffset);
-    dshowdebug("ff_dshow_meminputpin_AddRef(%p)\n", this);
-    return ff_dshow_pin_AddRef(pin);
+    libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
+    dshowdebug("libAVMemInputPin_AddRef(%p)\n", this);
+    return libAVPin_AddRef(pin);
 }
-unsigned long WINAPI ff_dshow_meminputpin_Release(DShowMemInputPin *this)
+unsigned long WINAPI
+libAVMemInputPin_Release(libAVMemInputPin *this)
 {
-    DShowPin *pin = (DShowPin *) ((uint8_t *) this - imemoffset);
-    dshowdebug("ff_dshow_meminputpin_Release(%p)\n", this);
-    return ff_dshow_pin_Release(pin);
+    libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
+    dshowdebug("libAVMemInputPin_Release(%p)\n", this);
+    return libAVPin_Release(pin);
 }
-long WINAPI ff_dshow_meminputpin_GetAllocator(DShowMemInputPin *this, IMemAllocator **alloc)
+long WINAPI
+libAVMemInputPin_GetAllocator(libAVMemInputPin *this, IMemAllocator **alloc)
 {
-    dshowdebug("ff_dshow_meminputpin_GetAllocator(%p)\n", this);
+    dshowdebug("libAVMemInputPin_GetAllocator(%p)\n", this);
     return VFW_E_NO_ALLOCATOR;
 }
-long WINAPI ff_dshow_meminputpin_NotifyAllocator(DShowMemInputPin *this, IMemAllocator *alloc,
+long WINAPI
+libAVMemInputPin_NotifyAllocator(libAVMemInputPin *this, IMemAllocator *alloc,
                                  BOOL rdwr)
 {
-    dshowdebug("ff_dshow_meminputpin_NotifyAllocator(%p)\n", this);
+    dshowdebug("libAVMemInputPin_NotifyAllocator(%p)\n", this);
     return S_OK;
 }
-long WINAPI ff_dshow_meminputpin_GetAllocatorRequirements(DShowMemInputPin *this,
+long WINAPI
+libAVMemInputPin_GetAllocatorRequirements(libAVMemInputPin *this,
                                           ALLOCATOR_PROPERTIES *props)
 {
-    dshowdebug("ff_dshow_meminputpin_GetAllocatorRequirements(%p)\n", this);
+    dshowdebug("libAVMemInputPin_GetAllocatorRequirements(%p)\n", this);
     return E_NOTIMPL;
 }
-long WINAPI ff_dshow_meminputpin_Receive(DShowMemInputPin *this, IMediaSample *sample)
+long WINAPI
+libAVMemInputPin_Receive(libAVMemInputPin *this, IMediaSample *sample)
 {
-    DShowPin *pin = (DShowPin *) ((uint8_t *) this - imemoffset);
+    libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
     enum dshowDeviceType devtype = pin->filter->type;
     void *priv_data;
     AVFormatContext *s;
     uint8_t *buf;
     int buf_size; /* todo should be a long? */
     int index;
-    int64_t chosentime = 0;
-    int64_t sampletime = 0;
-    int64_t graphtime = 0;
-    int use_sample_time = 1;
+    int64_t curtime;
+    int64_t orig_curtime;
+    int64_t graphtime;
     const char *devtypename = (devtype == VideoDevice) ? "video" : "audio";
     IReferenceClock *clock = pin->filter->clock;
     int64_t dummy;
     struct dshow_ctx *ctx;
-    HRESULT hr;
 
 
-    dshowdebug("ff_dshow_meminputpin_Receive(%p)\n", this);
+    dshowdebug("libAVMemInputPin_Receive(%p)\n", this);
 
     if (!sample)
         return E_POINTER;
 
-    priv_data = pin->filter->priv_data;
-    s = priv_data;
-    ctx = s->priv_data;
-
-    hr = IMediaSample_GetTime(sample, &sampletime, &dummy);
+    IMediaSample_GetTime(sample, &orig_curtime, &dummy);
+    orig_curtime += pin->filter->start_time;
     IReferenceClock_GetTime(clock, &graphtime);
-    if (devtype == VideoDevice && !ctx->use_video_device_timestamps) {
+    if (devtype == VideoDevice) {
         /* PTS from video devices is unreliable. */
-        chosentime = graphtime;
-        use_sample_time = 0;
+        IReferenceClock_GetTime(clock, &curtime);
     } else {
-        if (hr == VFW_E_SAMPLE_TIME_NOT_SET || sampletime == 0) {
-            chosentime = graphtime;
-            use_sample_time = 0;
-            av_log(s, AV_LOG_DEBUG,
-                "frame with missing sample timestamp encountered, falling back to graph timestamp\n");
-        }
-        else if (sampletime > 400000000000000000LL) {
+        IMediaSample_GetTime(sample, &curtime, &dummy);
+        if(curtime > 400000000000000000LL) {
             /* initial frames sometimes start < 0 (shown as a very large number here,
-               like 437650244077016960 which FFmpeg doesn't like).
+               like 437650244077016960 which FFmpeg doesn't like.
                TODO figure out math. For now just drop them. */
-            av_log(s, AV_LOG_DEBUG,
-                "dropping initial (or ending) sample with odd PTS too high %"PRId64"\n", sampletime);
+            av_log(NULL, AV_LOG_DEBUG,
+                "dshow dropping initial (or ending) audio frame with odd PTS too high %"PRId64"\n", curtime);
             return S_OK;
-        } else
-            chosentime = sampletime;
+        }
+        curtime += pin->filter->start_time;
     }
-    // media sample time is relative to graph start time
-    sampletime += pin->filter->start_time;
-    if (use_sample_time)
-        chosentime += pin->filter->start_time;
 
     buf_size = IMediaSample_GetActualDataLength(sample);
     IMediaSample_GetPointer(sample, &buf);
+    priv_data = pin->filter->priv_data;
+    s = priv_data;
+    ctx = s->priv_data;
     index = pin->filter->stream_index;
 
-    av_log(s, AV_LOG_VERBOSE, "passing through packet of type %s size %8d "
+    av_log(NULL, AV_LOG_VERBOSE, "dshow passing through packet of type %s size %8d "
         "timestamp %"PRId64" orig timestamp %"PRId64" graph timestamp %"PRId64" diff %"PRId64" %s\n",
-        devtypename, buf_size, chosentime, sampletime, graphtime, graphtime - sampletime, ctx->device_name[devtype]);
-    pin->filter->callback(priv_data, index, buf, buf_size, chosentime, devtype);
+        devtypename, buf_size, curtime, orig_curtime, graphtime, graphtime - orig_curtime, ctx->device_name[devtype]);
+    pin->filter->callback(priv_data, index, buf, buf_size, curtime, devtype);
 
     return S_OK;
 }
-long WINAPI ff_dshow_meminputpin_ReceiveMultiple(DShowMemInputPin *this,
+long WINAPI
+libAVMemInputPin_ReceiveMultiple(libAVMemInputPin *this,
                                  IMediaSample **samples, long n, long *nproc)
 {
     int i;
-    dshowdebug("ff_dshow_meminputpin_ReceiveMultiple(%p)\n", this);
+    dshowdebug("libAVMemInputPin_ReceiveMultiple(%p)\n", this);
 
     for (i = 0; i < n; i++)
-        ff_dshow_meminputpin_Receive(this, samples[i]);
+        libAVMemInputPin_Receive(this, samples[i]);
 
     *nproc = n;
     return S_OK;
 }
-long WINAPI ff_dshow_meminputpin_ReceiveCanBlock(DShowMemInputPin *this)
+long WINAPI
+libAVMemInputPin_ReceiveCanBlock(libAVMemInputPin *this)
 {
-    dshowdebug("ff_dshow_meminputpin_ReceiveCanBlock(%p)\n", this);
+    dshowdebug("libAVMemInputPin_ReceiveCanBlock(%p)\n", this);
     /* I swear I will not block. */
     return S_FALSE;
 }
 
-void ff_dshow_meminputpin_Destroy(DShowMemInputPin *this)
+void
+libAVMemInputPin_Destroy(libAVMemInputPin *this)
 {
-    DShowPin *pin = (DShowPin *) ((uint8_t *) this - imemoffset);
-    dshowdebug("ff_dshow_meminputpin_Destroy(%p)\n", this);
-    ff_dshow_pin_Destroy(pin);
+    libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
+    dshowdebug("libAVMemInputPin_Destroy(%p)\n", this);
+    libAVPin_Destroy(pin);
 }
