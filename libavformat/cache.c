@@ -199,15 +199,15 @@ static int add_entry(URLContext *h, const unsigned char *buf, int size, int64_t 
     pos = lseek(c->fd, 0, SEEK_END);
     if (pos < 0) {
         ret = AVERROR(errno);
-        av_log(h, AV_LOG_ERROR, "seek in cache failed\n");
+        av_log(h, AV_LOG_ERROR, "Failed to seek in cache, ret %lld errno %d\n", pos, errno);
         goto fail;
     }
     c->cache_pos = pos;
 
     ret = write(c->fd, buf, size);
     if (ret < 0) {
+        av_log(h, AV_LOG_ERROR, "Failed to write %dB in cache, ret %d errno %d\n", size, ret, errno);
         ret = AVERROR(errno);
-        av_log(h, AV_LOG_ERROR, "write in cache failed\n");
         goto fail;
     }
     c->cache_pos += ret;
