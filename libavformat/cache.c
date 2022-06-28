@@ -144,12 +144,7 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
         return c->fd;
     }
 
-    ret = unlink(buffername);
-
-    if (ret >= 0)
-        av_freep(&buffername);
-    else
-        c->filename = buffername;
+    c->filename = buffername;
 
     c->interrupt_callback = h->interrupt_callback;
     ret = ffurl_open_whitelist(&c->inner, arg, flags, &interrupt_callback,
