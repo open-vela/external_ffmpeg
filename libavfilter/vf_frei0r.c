@@ -22,16 +22,15 @@
  * frei0r wrapper
  */
 
+#include <dlfcn.h>
 #include <frei0r.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "config.h"
-#include "compat/w32dlfcn.h"
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
-#include "libavutil/getenv_utf8.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "libavutil/mathematics.h"
@@ -205,7 +204,7 @@ static av_cold int frei0r_init(AVFilterContext *ctx,
     }
 
     /* see: http://frei0r.dyne.org/codedoc/html/group__pluglocations.html */
-    if (path = getenv_dup("FREI0R_PATH")) {
+    if ((path = av_strdup(getenv("FREI0R_PATH")))) {
 #ifdef _WIN32
         const char *separator = ";";
 #else
@@ -232,17 +231,12 @@ static av_cold int frei0r_init(AVFilterContext *ctx,
         if (ret < 0)
             return ret;
     }
-    if (!s->dl_handle && (path = getenv_utf8("HOME"))) {
+    if (!s->dl_handle && (path = getenv("HOME"))) {
         char *prefix = av_asprintf("%s/.frei0r-1/lib/", path);
-        if (!prefix) {
-            ret = AVERROR(ENOMEM);
-            goto home_path_end;
-        }
+        if (!prefix)
+            return AVERROR(ENOMEM);
         ret = load_path(ctx, &s->dl_handle, prefix, dl_name);
         av_free(prefix);
-
-    home_path_end:
-        freeenv_utf8(path);
         if (ret < 0)
             return ret;
     }
@@ -344,7 +338,7 @@ static int query_formats(AVFilterContext *ctx)
             return ret;
     } else {                                   /* F0R_COLOR_MODEL_PACKED32 */
         static const enum AVPixelFormat pix_fmts[] = {
-            AV_PIX_FMT_BGRA, AV_PIX_FMT_ARGB, AV_PIX_FMT_ABGR, AV_PIX_FMT_NONE
+            AV_PIX_FMT_BGRA, AV_PIX_FMT_ARGB, AV_PIX_FMT_ABGR, AV_PIX_FMT_ARGB, AV_PIX_FMT_NONE
         };
         formats = ff_make_format_list(pix_fmts);
     }
@@ -359,20 +353,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
     Frei0rContext *s = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
-    AVFrame *out = ff_default_get_video_buffer2(outlink, outlink->w, outlink->h, 16);
-    if (!out)
-        goto fail;
+    AVFrame *out;
 
-    av_frame_copy_props(out, in);
-
-    if (in->linesize[0] != out->linesize[0]) {
-        AVFrame *in2 = ff_default_get_video_buffer2(outlink, outlink->w, outlink->h, 16);
-        if (!in2)
-            goto fail;
-        av_frame_copy(in2, in);
+    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    if (!out) {
         av_frame_free(&in);
-        in = in2;
+        return AVERROR(ENOMEM);
     }
+    av_frame_copy_props(out, in);
 
     s->update(s->instance, in->pts * av_q2d(inlink->time_base) * 1000,
                    (const uint32_t *)in->data[0],
@@ -381,31 +369,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     av_frame_free(&in);
 
     return ff_filter_frame(outlink, out);
-fail:
-    av_frame_free(&in);
-    av_frame_free(&out);
-    return AVERROR(ENOMEM);
-}
-
-static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
-                           char *res, int res_len, int flags)
-{
-    Frei0rContext *s = ctx->priv;
-    int ret;
-
-    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-    if (ret < 0)
-        return ret;
-
-    return set_params(ctx, s->params);
 }
 
 #define OFFSET(x) offsetof(Frei0rContext, x)
 #define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
-#define TFLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption frei0r_options[] = {
     { "filter_name",   NULL, OFFSET(dl_name), AV_OPT_TYPE_STRING, .flags = FLAGS },
-    { "filter_params", NULL, OFFSET(params),  AV_OPT_TYPE_STRING, .flags = TFLAGS },
+    { "filter_params", NULL, OFFSET(params),  AV_OPT_TYPE_STRING, .flags = FLAGS },
     { NULL }
 };
 
@@ -418,6 +388,7 @@ static const AVFilterPad avfilter_vf_frei0r_inputs[] = {
         .config_props = config_input_props,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_frei0r_outputs[] = {
@@ -425,20 +396,19 @@ static const AVFilterPad avfilter_vf_frei0r_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_frei0r = {
+AVFilter ff_vf_frei0r = {
     .name          = "frei0r",
     .description   = NULL_IF_CONFIG_SMALL("Apply a frei0r effect."),
+    .query_formats = query_formats,
     .init          = filter_init,
     .uninit        = uninit,
     .priv_size     = sizeof(Frei0rContext),
     .priv_class    = &frei0r_class,
-    FILTER_INPUTS(avfilter_vf_frei0r_inputs),
-    FILTER_OUTPUTS(avfilter_vf_frei0r_outputs),
-    FILTER_QUERY_FUNC(query_formats),
-    .process_command = process_command,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    .inputs        = avfilter_vf_frei0r_inputs,
+    .outputs       = avfilter_vf_frei0r_outputs,
 };
 
 static av_cold int source_init(AVFilterContext *ctx)
@@ -481,7 +451,7 @@ static int source_config_props(AVFilterLink *outlink)
 static int source_request_frame(AVFilterLink *outlink)
 {
     Frei0rContext *s = outlink->src->priv;
-    AVFrame *frame = ff_default_get_video_buffer2(outlink, outlink->w, outlink->h, 16);
+    AVFrame *frame = ff_get_video_buffer(outlink, outlink->w, outlink->h);
 
     if (!frame)
         return AVERROR(ENOMEM);
@@ -512,16 +482,17 @@ static const AVFilterPad avfilter_vsrc_frei0r_src_outputs[] = {
         .request_frame = source_request_frame,
         .config_props  = source_config_props
     },
+    { NULL }
 };
 
-const AVFilter ff_vsrc_frei0r_src = {
+AVFilter ff_vsrc_frei0r_src = {
     .name          = "frei0r_src",
     .description   = NULL_IF_CONFIG_SMALL("Generate a frei0r source."),
     .priv_size     = sizeof(Frei0rContext),
     .priv_class    = &frei0r_src_class,
     .init          = source_init,
     .uninit        = uninit,
+    .query_formats = query_formats,
     .inputs        = NULL,
-    FILTER_OUTPUTS(avfilter_vsrc_frei0r_src_outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .outputs       = avfilter_vsrc_frei0r_src_outputs,
 };
