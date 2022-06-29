@@ -48,7 +48,7 @@
 #include "os_support.h"
 #include "url.h"
 
-#define CACHE_BUFSIZE   4096
+#define CACHE_BUFSIZE   2048
 
 typedef struct CacheEntry {
     int64_t logical_pos;
@@ -77,7 +77,7 @@ typedef struct CacheContext {
     AVIOInterruptCB interrupt_callback;
 } Context;
 
-static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset);
+static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset, bool complete);
 
 static int cmp(const void *key, const void *node)
 {
@@ -118,7 +118,7 @@ static void *cache_thread(void *arg)
             break;
         }
 
-        ret = cache_pread(h, buf, sizeof(buf), offset);
+        ret = cache_pread(h, buf, sizeof(buf), offset, true);
         pthread_mutex_unlock(&c->mutex);
 
         if (ret > 0)
@@ -240,7 +240,7 @@ fail:
     return ret;
 }
 
-static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset)
+static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset, bool complete)
 {
     CacheContext *c = h->priv_data;
     CacheEntry *entry, *next[2] = {NULL, NULL};
@@ -285,7 +285,11 @@ static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offs
         c->inner_pos = r;
     }
 
-    r = ffurl_read(c->inner, buf, size);
+    if (complete)
+        r = ffurl_read_complete(c->inner, buf, size);
+    else
+        r = ffurl_read(c->inner, buf, size);
+
     if (r == AVERROR_EOF && size>0) {
         c->is_true_eof = 1;
         av_assert0(c->end >= offset);
@@ -307,7 +311,7 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
     Context *c= h->priv_data;
     int r;
 
-    r = cache_pread(h, buf, size, c->logical_pos);
+    r = cache_pread(h, buf, size, c->logical_pos, false);
     if (r > 0)
         c->logical_pos += r;
 
