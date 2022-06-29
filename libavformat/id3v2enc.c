@@ -28,7 +28,6 @@
 #include "avio.h"
 #include "avio_internal.h"
 #include "id3v2.h"
-#include "mux.h"
 
 static void id3v2_put_size(AVIOContext *pb, int size)
 {
