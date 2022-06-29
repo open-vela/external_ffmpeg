@@ -39,6 +39,7 @@
 
 
 #include "avcodec.h"
+#include "internal.h"
 #include "aac_ac3_parser.h"
 #include "ac3.h"
 #include "ac3dec.h"
