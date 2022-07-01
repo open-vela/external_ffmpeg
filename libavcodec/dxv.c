@@ -27,7 +27,7 @@
 #include "mathops.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
+#include "internal.h"
 #include "lzf.h"
 #include "texturedsp.h"
 #include "thread.h"
@@ -1038,10 +1038,11 @@ static int dxv_decompress_raw(AVCodecContext *avctx)
     return 0;
 }
 
-static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
+static int dxv_decode(AVCodecContext *avctx, void *data,
                       int *got_frame, AVPacket *avpkt)
 {
     DXVContext *ctx = avctx->priv_data;
+    ThreadFrame tframe;
     GetByteContext *gbc = &ctx->gbc;
     int (*decompress_tex)(AVCodecContext *avctx);
     const char *msgcomp, *msgtext;
@@ -1210,17 +1211,18 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
             return AVERROR_INVALIDDATA;
     }
 
-    ret = ff_thread_get_buffer(avctx, frame, 0);
+    tframe.f = data;
+    ret = ff_thread_get_buffer(avctx, &tframe, 0);
     if (ret < 0)
         return ret;
 
     /* Now decompress the texture with the standard functions. */
     avctx->execute2(avctx, decompress_texture_thread,
-                    frame, NULL, ctx->slice_count);
+                    tframe.f, NULL, ctx->slice_count);
 
     /* Frame is ready to be output. */
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->key_frame = 1;
+    tframe.f->pict_type = AV_PICTURE_TYPE_I;
+    tframe.f->key_frame = 1;
     *got_frame = 1;
 
     return avpkt->size;
@@ -1260,16 +1262,16 @@ static int dxv_close(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_dxv_decoder = {
-    .p.name         = "dxv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Resolume DXV"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_DXV,
+AVCodec ff_dxv_decoder = {
+    .name           = "dxv",
+    .long_name      = NULL_IF_CONFIG_SMALL("Resolume DXV"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_DXV,
     .init           = dxv_init,
-    FF_CODEC_DECODE_CB(dxv_decode),
+    .decode         = dxv_decode,
     .close          = dxv_close,
     .priv_data_size = sizeof(DXVContext),
-    .p.capabilities = AV_CODEC_CAP_DR1 |
+    .capabilities   = AV_CODEC_CAP_DR1 |
                       AV_CODEC_CAP_SLICE_THREADS |
                       AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
