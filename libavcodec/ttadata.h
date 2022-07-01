@@ -21,7 +21,7 @@
 #ifndef AVCODEC_TTADATA_H
 #define AVCODEC_TTADATA_H
 
-#include <stdint.h>
+#include "internal.h"
 
 #define MAX_ORDER 16
 typedef struct TTAFilter {
