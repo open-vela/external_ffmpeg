@@ -39,11 +39,7 @@ int ff_pcm_read_packet(AVFormatContext *s, AVPacket *pkt)
      * Clamp to RAW_SAMPLES if larger.
      */
     size = FFMAX(par->sample_rate/25, 1);
-    if (par->block_align <= INT_MAX / RAW_SAMPLES) {
-        size = FFMIN(size, RAW_SAMPLES) * par->block_align;
-    } else {
-        size = par->block_align;
-    }
+    size = FFMIN(size, RAW_SAMPLES) * par->block_align;
 
     ret = av_get_packet(s->pb, pkt, size);
 
@@ -63,7 +59,7 @@ int ff_pcm_read_seek(AVFormatContext *s,
     st = s->streams[0];
 
     block_align = st->codecpar->block_align ? st->codecpar->block_align :
-        (av_get_bits_per_sample(st->codecpar->codec_id) * st->codecpar->ch_layout.nb_channels) >> 3;
+        (av_get_bits_per_sample(st->codecpar->codec_id) * st->codecpar->channels) >> 3;
     byte_rate = st->codecpar->bit_rate ? st->codecpar->bit_rate >> 3 :
         block_align * st->codecpar->sample_rate;
 
@@ -79,8 +75,8 @@ int ff_pcm_read_seek(AVFormatContext *s,
     pos *= block_align;
 
     /* recompute exact position */
-    ffstream(st)->cur_dts = av_rescale(pos, st->time_base.den, byte_rate * (int64_t)st->time_base.num);
-    if ((ret = avio_seek(s->pb, pos + ffformatcontext(s)->data_offset, SEEK_SET)) < 0)
+    st->cur_dts = av_rescale(pos, st->time_base.den, byte_rate * (int64_t)st->time_base.num);
+    if ((ret = avio_seek(s->pb, pos + s->internal->data_offset, SEEK_SET)) < 0)
         return ret;
     return 0;
 }
