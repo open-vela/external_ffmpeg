@@ -270,8 +270,12 @@ static int adevsink_query_formats(AVFilterContext *ctx)
     AVDeviceCapabilitiesQuery *caps = NULL;
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
+    AVOptionRanges *ranges = NULL;
     ADevSinkPriv *priv = ctx->priv;
-    AVOptionRanges *ranges;
+    int      sample_fmt;
+    uint32_t sample_rate;
+    uint32_t channels;
+    uint64_t channel_layout;
     bool codec = false;
     int ret, i;
 
@@ -279,8 +283,20 @@ static int adevsink_query_formats(AVFilterContext *ctx)
     if (ret < 0)
         return ret == AVERROR(ENOSYS) ? 0 : ret;
 
-    if (priv->sample_fmt != AV_SAMPLE_FMT_NONE) {
-        ret = ff_add_format(&formats, priv->sample_fmt);
+    if (priv->enc_ctx) {
+        sample_fmt     = priv->enc_ctx->sample_fmt;
+        sample_rate    = priv->enc_ctx->sample_rate;
+        channels       = priv->enc_ctx->channels;
+        channel_layout = priv->enc_ctx->channel_layout;
+    } else {
+        sample_fmt     = priv->sample_fmt;
+        sample_rate    = priv->sample_rate;
+        channels       = priv->channels;
+        channel_layout = priv->channel_layout;
+    }
+
+    if (sample_fmt != AV_SAMPLE_FMT_NONE) {
+        ret = ff_add_format(&formats, sample_fmt);
         if (ret < 0)
             goto out;
     } else {
@@ -323,8 +339,8 @@ static int adevsink_query_formats(AVFilterContext *ctx)
 
     formats = NULL;
 
-    if (priv->sample_rate) {
-        ret = ff_add_format(&formats, priv->sample_rate);
+    if (sample_rate) {
+        ret = ff_add_format(&formats, sample_rate);
         if (ret < 0)
             goto out;
     } else {
@@ -343,12 +359,12 @@ static int adevsink_query_formats(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    if (priv->channels) {
-        ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(priv->channels));
+    if (channels) {
+        ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(channels));
         if (ret < 0)
             goto out;
-    } else if (priv->channel_layout) {
-        ret = ff_add_channel_layout(&layouts, priv->channel_layout);
+    } else if (channel_layout) {
+        ret = ff_add_channel_layout(&layouts, channel_layout);
         if (ret < 0)
             goto out;
     } else {
