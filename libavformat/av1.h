@@ -46,14 +46,12 @@ typedef struct AV1SequenceParameters {
  * the resulting bitstream to the provided AVIOContext.
  *
  * @param pb pointer to the AVIOContext where the filtered bitstream shall be
- *           written; may be NULL, in which case nothing is written.
+ *           written
  * @param buf input data buffer
  * @param size size of the input data buffer
  *
- * @return the amount of bytes written (or would have been written in case
- *         pb had been supplied) in case of success, a negative AVERROR
+ * @return the amount of bytes written in case of success, a negative AVERROR
  *         code in case of failure
- * @note   One can use NULL for pb to just get the output size.
  */
 int ff_av1_filter_obus(AVIOContext *pb, const uint8_t *buf, int size);
 
@@ -96,11 +94,9 @@ int ff_av1_parse_seq_header(AV1SequenceParameters *seq, const uint8_t *buf, int 
  * @param pb pointer to the AVIOContext where the av1C box shall be written
  * @param buf input data buffer
  * @param size size in bytes of the input data buffer
- * @param write_seq_header If 1, Sequence Header OBU will be written inside the
- *           av1C box. Otherwise, Sequence Header OBU will be omitted.
  *
  * @return >= 0 in case of success, a negative AVERROR code in case of failure
  */
-int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size, int write_seq_header);
+int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size);
 
 #endif /* AVFORMAT_AV1_H */

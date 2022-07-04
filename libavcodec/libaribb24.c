@@ -21,7 +21,6 @@
 
 #include "avcodec.h"
 #include "libavcodec/ass.h"
-#include "codec_internal.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 
@@ -283,10 +282,10 @@ next_region:
     return ret;
 }
 
-static int libaribb24_decode(AVCodecContext *avctx, AVSubtitle *sub,
-                             int *got_sub_ptr, const AVPacket *pkt)
+static int libaribb24_decode(AVCodecContext *avctx, void *data, int *got_sub_ptr, AVPacket *pkt)
 {
     Libaribb24Context *b24 = avctx->priv_data;
+    AVSubtitle *sub = data;
     size_t parsed_data_size = 0;
     size_t decoded_subtitle_size = 0;
     const unsigned char *parsed_data = NULL;
@@ -381,16 +380,16 @@ static const AVClass aribb24_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_libaribb24_decoder = {
-    .p.name         = "libaribb24",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("libaribb24 ARIB STD-B24 caption decoder"),
-    .p.type         = AVMEDIA_TYPE_SUBTITLE,
-    .p.id           = AV_CODEC_ID_ARIB_CAPTION,
-    .p.priv_class   = &aribb24_class,
-    .p.wrapper_name = "libaribb24",
+AVCodec ff_libaribb24_decoder = {
+    .name      = "libaribb24",
+    .long_name = NULL_IF_CONFIG_SMALL("libaribb24 ARIB STD-B24 caption decoder"),
+    .type      = AVMEDIA_TYPE_SUBTITLE,
+    .id        = AV_CODEC_ID_ARIB_CAPTION,
     .priv_data_size = sizeof(Libaribb24Context),
     .init      = libaribb24_init,
     .close     = libaribb24_close,
-    FF_CODEC_DECODE_SUB_CB(libaribb24_decode),
+    .decode    = libaribb24_decode,
     .flush     = libaribb24_flush,
+    .priv_class= &aribb24_class,
+    .wrapper_name = "libaribb24",
 };
