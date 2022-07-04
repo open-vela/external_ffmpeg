@@ -30,8 +30,6 @@
  * iCEDraw File demuxer
  */
 
-#include "config_components.h"
-
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
@@ -132,6 +130,8 @@ static int bin_probe(const AVProbeData *p)
 {
     const uint8_t *d = p->buf;
     int magic = 0, sauce = 0;
+    int invisible = 0;
+    int i;
 
     if (p->buf_size > 256)
         magic = !memcmp(d + p->buf_size - 256, next_magic, sizeof(next_magic));
@@ -154,6 +154,12 @@ static int bin_probe(const AVProbeData *p)
         calculate_height(&par, p->buf_size);
         if (par.height <= 0)
             return 0;
+
+        for (i = 0; i < p->buf_size - 256;  i+=2) {
+            if ((d[i+1] & 15) == (d[i+1] >> 4) && d[i] && d[i] != 0xFF && d[i] != ' ') {
+                invisible ++;
+            }
+        }
 
         if (par.width * par.height * 2 / (8*16) == p->buf_size)
             return AVPROBE_SCORE_MAX / 2;
@@ -287,8 +293,6 @@ static int adf_read_header(AVFormatContext *s)
         bin->fsize = avio_size(pb) - 1 - 192 - 4096;
         st->codecpar->width = 80<<3;
         ff_sauce_read(s, &bin->fsize, &got_width, 0);
-        if (st->codecpar->width < 8)
-            return AVERROR_INVALIDDATA;
         if (!bin->width)
             calculate_height(st->codecpar, bin->fsize);
         avio_seek(pb, 1 + 192 + 4096, SEEK_SET);
@@ -340,8 +344,6 @@ static int idf_read_header(AVFormatContext *s)
 
     bin->fsize = avio_size(pb) - 12 - 4096 - 48;
     ff_sauce_read(s, &bin->fsize, &got_width, 0);
-    if (st->codecpar->width < 8)
-        return AVERROR_INVALIDDATA;
     if (!bin->width)
         calculate_height(st->codecpar, bin->fsize);
     avio_seek(pb, 12, SEEK_SET);
@@ -388,7 +390,7 @@ static const AVOption options[] = {
 }}
 
 #if CONFIG_BINTEXT_DEMUXER
-const AVInputFormat ff_bintext_demuxer = {
+AVInputFormat ff_bintext_demuxer = {
     .name           = "bin",
     .long_name      = NULL_IF_CONFIG_SMALL("Binary text"),
     .priv_data_size = sizeof(BinDemuxContext),
@@ -400,7 +402,7 @@ const AVInputFormat ff_bintext_demuxer = {
 #endif
 
 #if CONFIG_XBIN_DEMUXER
-const AVInputFormat ff_xbin_demuxer = {
+AVInputFormat ff_xbin_demuxer = {
     .name           = "xbin",
     .long_name      = NULL_IF_CONFIG_SMALL("eXtended BINary text (XBIN)"),
     .priv_data_size = sizeof(BinDemuxContext),
@@ -412,7 +414,7 @@ const AVInputFormat ff_xbin_demuxer = {
 #endif
 
 #if CONFIG_ADF_DEMUXER
-const AVInputFormat ff_adf_demuxer = {
+AVInputFormat ff_adf_demuxer = {
     .name           = "adf",
     .long_name      = NULL_IF_CONFIG_SMALL("Artworx Data Format"),
     .priv_data_size = sizeof(BinDemuxContext),
@@ -424,7 +426,7 @@ const AVInputFormat ff_adf_demuxer = {
 #endif
 
 #if CONFIG_IDF_DEMUXER
-const AVInputFormat ff_idf_demuxer = {
+AVInputFormat ff_idf_demuxer = {
     .name           = "idf",
     .long_name      = NULL_IF_CONFIG_SMALL("iCE Draw File"),
     .priv_data_size = sizeof(BinDemuxContext),

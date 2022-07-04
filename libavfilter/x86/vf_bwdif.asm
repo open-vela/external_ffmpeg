@@ -264,3 +264,7 @@ INIT_XMM ssse3
 BWDIF
 INIT_XMM sse2
 BWDIF
+%if ARCH_X86_32
+INIT_MMX mmxext
+BWDIF
+%endif
