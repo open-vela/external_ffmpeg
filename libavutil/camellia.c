@@ -18,13 +18,9 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#include <string.h>
-
 #include "camellia.h"
-#include "error.h"
+#include "common.h"
 #include "intreadwrite.h"
-#include "mem.h"
 #include "attributes.h"
 
 #define LR32(x,c) ((x) << (c) | (x) >> (32 - (c)))

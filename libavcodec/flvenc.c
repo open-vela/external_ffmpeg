@@ -18,18 +18,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "codec_internal.h"
-#include "flvenc.h"
+#include "flv.h"
+#include "h263.h"
 #include "h263data.h"
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
-#include "mpegvideoenc.h"
 
 void ff_flv_encode_picture_header(MpegEncContext *s, int picture_number)
 {
     int format;
 
-    align_put_bits(&s->pb);
+    avpriv_align_put_bits(&s->pb);
 
     put_bits(&s->pb, 17, 1);
     /* 0: H.263 escape codes 1: 11-bit escape codes */
@@ -92,17 +91,24 @@ void ff_flv2_encode_ac_esc(PutBitContext *pb, int slevel, int level,
     }
 }
 
-const FFCodec ff_flv_encoder = {
-    .p.name         = "flv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("FLV / Sorenson Spark / Sorenson H.263 (Flash Video)"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_FLV1,
-    .p.priv_class   = &ff_mpv_enc_class,
+static const AVClass flv_class = {
+    .class_name = "flv encoder",
+    .item_name  = av_default_item_name,
+    .option     = ff_mpv_generic_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
+AVCodec ff_flv_encoder = {
+    .name           = "flv",
+    .long_name      = NULL_IF_CONFIG_SMALL("FLV / Sorenson Spark / Sorenson H.263 (Flash Video)"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_FLV1,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_mpv_encode_init,
-    FF_CODEC_ENCODE_CB(ff_mpv_encode_picture),
+    .encode2        = ff_mpv_encode_picture,
     .close          = ff_mpv_encode_end,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE},
+    .priv_class     = &flv_class,
 };

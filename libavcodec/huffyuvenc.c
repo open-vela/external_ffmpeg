@@ -28,14 +28,11 @@
  * huffyuv encoder
  */
 
-#include "config_components.h"
-
 #include "avcodec.h"
-#include "codec_internal.h"
-#include "encode.h"
 #include "huffyuv.h"
 #include "huffman.h"
 #include "huffyuvencdsp.h"
+#include "internal.h"
 #include "lossless_videoencdsp.h"
 #include "put_bits.h"
 #include "libavutil/opt.h"
@@ -225,6 +222,19 @@ static av_cold int encode_init(AVCodecContext *avctx)
     if (!avctx->extradata)
         return AVERROR(ENOMEM);
 
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+    avctx->coded_frame->key_frame = 1;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+#if FF_API_PRIVATE_OPT
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->context_model == 1)
+        s->context = avctx->context_model;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
     s->bps = desc->comp[0].depth;
     s->yuv = !(desc->flags & AV_PIX_FMT_FLAG_RGB) && desc->nb_components >= 2;
     s->chroma = desc->nb_components > 2;
@@ -299,6 +309,12 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     avctx->bits_per_coded_sample = s->bitstream_bpp;
     s->decorrelate = s->bitstream_bpp >= 24 && !s->yuv && !(desc->flags & AV_PIX_FMT_FLAG_PLANAR);
+#if FF_API_PRIVATE_OPT
+FF_DISABLE_DEPRECATION_WARNINGS
+    if (avctx->prediction_method)
+        s->predictor = avctx->prediction_method;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     s->interlaced = avctx->flags & AV_CODEC_FLAG_INTERLACED_ME ? 1 : 0;
     if (s->context) {
         if (s->flags & (AV_CODEC_FLAG_PASS1 | AV_CODEC_FLAG_PASS2)) {
@@ -316,6 +332,20 @@ static av_cold int encode_init(AVCodecContext *avctx)
                    "vcodec=ffvhuff or format=422p\n");
             return AVERROR(EINVAL);
         }
+#if FF_API_PRIVATE_OPT
+        if (s->context) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Error: per-frame huffman tables are not supported "
+                   "by huffyuv; use vcodec=ffvhuff\n");
+            return AVERROR(EINVAL);
+        }
+        if (s->version > 2) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Error: ver>2 is not supported "
+                   "by huffyuv; use vcodec=ffvhuff\n");
+            return AVERROR(EINVAL);
+        }
+#endif
         if (s->interlaced != ( s->height > 288 ))
             av_log(avctx, AV_LOG_INFO,
                    "using huffyuv 2.2.0 or newer interlacing flag\n");
@@ -413,7 +443,7 @@ static int encode_422_bitstream(HYuvContext *s, int offset, int count)
     const uint8_t *u = s->temp[1] + offset / 2;
     const uint8_t *v = s->temp[2] + offset / 2;
 
-    if (put_bytes_left(&s->pb, 0) < 2 * 4 * count) {
+    if (s->pb.buf_end - s->pb.buf - (put_bits_count(&s->pb) >> 3) < 2 * 4 * count) {
         av_log(s->avctx, AV_LOG_ERROR, "encoded frame too large\n");
         return -1;
     }
@@ -465,7 +495,7 @@ static int encode_plane_bitstream(HYuvContext *s, int width, int plane)
 {
     int i, count = width/2;
 
-    if (put_bytes_left(&s->pb, 0) < count * s->bps / 2) {
+    if (s->pb.buf_end - s->pb.buf - (put_bits_count(&s->pb) >> 3) < count * s->bps / 2) {
         av_log(s->avctx, AV_LOG_ERROR, "encoded frame too large\n");
         return -1;
     }
@@ -627,7 +657,7 @@ static int encode_gray_bitstream(HYuvContext *s, int count)
 {
     int i;
 
-    if (put_bytes_left(&s->pb, 0) < 4 * count) {
+    if (s->pb.buf_end - s->pb.buf - (put_bits_count(&s->pb) >> 3) < 4 * count) {
         av_log(s->avctx, AV_LOG_ERROR, "encoded frame too large\n");
         return -1;
     }
@@ -672,7 +702,8 @@ static inline int encode_bgra_bitstream(HYuvContext *s, int count, int planes)
 {
     int i;
 
-    if (put_bytes_left(&s->pb, 0) < 4 * planes * count) {
+    if (s->pb.buf_end - s->pb.buf - (put_bits_count(&s->pb) >> 3) <
+        4 * planes * count) {
         av_log(s->avctx, AV_LOG_ERROR, "encoded frame too large\n");
         return -1;
     }
@@ -731,7 +762,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     const AVFrame * const p = pict;
     int i, j, size = 0, ret;
 
-    if ((ret = ff_alloc_packet(avctx, pkt, width * height * 3 * 4 + AV_INPUT_BUFFER_MIN_SIZE)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, width * height * 3 * 4 + AV_INPUT_BUFFER_MIN_SIZE, 0)) < 0)
         return ret;
 
     if (s->context) {
@@ -996,6 +1027,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     s->picture_number++;
 
     pkt->size   = size * 4;
+    pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
 
     return 0;
@@ -1007,6 +1039,7 @@ static av_cold int encode_end(AVCodecContext *avctx)
 
     ff_huffyuv_common_end(s);
 
+    av_freep(&avctx->extradata);
     av_freep(&avctx->stats_out);
 
     return 0;
@@ -1017,7 +1050,7 @@ static av_cold int encode_end(AVCodecContext *avctx)
 
 #define COMMON_OPTIONS \
     { "non_deterministic", "Allow multithreading for e.g. context=1 at the expense of determinism", \
-      OFFSET(non_determ), AV_OPT_TYPE_BOOL, { .i64 = 0 }, \
+      OFFSET(non_determ), AV_OPT_TYPE_BOOL, { .i64 = 1 }, \
       0, 1, VE }, \
     { "pred", "Prediction method", OFFSET(predictor), AV_OPT_TYPE_INT, { .i64 = LEFT }, LEFT, MEDIAN, VE, "pred" }, \
         { "left",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = LEFT },   INT_MIN, INT_MAX, VE, "pred" }, \
@@ -1049,18 +1082,18 @@ static const AVClass ff_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_huffyuv_encoder = {
-    .p.name         = "huffyuv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Huffyuv / HuffYUV"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_HUFFYUV,
+AVCodec ff_huffyuv_encoder = {
+    .name           = "huffyuv",
+    .long_name      = NULL_IF_CONFIG_SMALL("Huffyuv / HuffYUV"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HUFFYUV,
     .priv_data_size = sizeof(HYuvContext),
     .init           = encode_init,
-    FF_CODEC_ENCODE_CB(encode_frame),
+    .encode2        = encode_frame,
     .close          = encode_end,
-    .p.capabilities = AV_CODEC_CAP_FRAME_THREADS,
-    .p.priv_class   = &normal_class,
-    .p.pix_fmts     = (const enum AVPixelFormat[]){
+    .capabilities   = AV_CODEC_CAP_FRAME_THREADS,
+    .priv_class     = &normal_class,
+    .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_YUV422P, AV_PIX_FMT_RGB24,
         AV_PIX_FMT_RGB32, AV_PIX_FMT_NONE
     },
@@ -1069,18 +1102,18 @@ const FFCodec ff_huffyuv_encoder = {
 };
 
 #if CONFIG_FFVHUFF_ENCODER
-const FFCodec ff_ffvhuff_encoder = {
-    .p.name         = "ffvhuff",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Huffyuv FFmpeg variant"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_FFVHUFF,
+AVCodec ff_ffvhuff_encoder = {
+    .name           = "ffvhuff",
+    .long_name      = NULL_IF_CONFIG_SMALL("Huffyuv FFmpeg variant"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_FFVHUFF,
     .priv_data_size = sizeof(HYuvContext),
     .init           = encode_init,
-    FF_CODEC_ENCODE_CB(encode_frame),
+    .encode2        = encode_frame,
     .close          = encode_end,
-    .p.capabilities = AV_CODEC_CAP_FRAME_THREADS,
-    .p.priv_class   = &ff_class,
-    .p.pix_fmts     = (const enum AVPixelFormat[]){
+    .capabilities   = AV_CODEC_CAP_FRAME_THREADS,
+    .priv_class     = &ff_class,
+    .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV440P,
         AV_PIX_FMT_GBRP,

@@ -19,10 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 static av_cold int v408_decode_init(AVCodecContext *avctx)
@@ -32,9 +29,10 @@ static av_cold int v408_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int v408_decode_frame(AVCodecContext *avctx, AVFrame *pic,
+static int v408_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame, AVPacket *avpkt)
 {
+    AVFrame *pic = data;
     const uint8_t *src = avpkt->data;
     uint8_t *y, *u, *v, *a;
     int i, j, ret;
@@ -82,26 +80,26 @@ static int v408_decode_frame(AVCodecContext *avctx, AVFrame *pic,
 }
 
 #if CONFIG_AYUV_DECODER
-const FFCodec ff_ayuv_decoder = {
-    .p.name       = "ayuv",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("Uncompressed packed MS 4:4:4:4"),
-    .p.type       = AVMEDIA_TYPE_VIDEO,
-    .p.id         = AV_CODEC_ID_AYUV,
+AVCodec ff_ayuv_decoder = {
+    .name         = "ayuv",
+    .long_name    = NULL_IF_CONFIG_SMALL("Uncompressed packed MS 4:4:4:4"),
+    .type         = AVMEDIA_TYPE_VIDEO,
+    .id           = AV_CODEC_ID_AYUV,
     .init         = v408_decode_init,
-    FF_CODEC_DECODE_CB(v408_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .decode       = v408_decode_frame,
+    .capabilities = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif
 #if CONFIG_V408_DECODER
-const FFCodec ff_v408_decoder = {
-    .p.name       = "v408",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("Uncompressed packed QT 4:4:4:4"),
-    .p.type       = AVMEDIA_TYPE_VIDEO,
-    .p.id         = AV_CODEC_ID_V408,
+AVCodec ff_v408_decoder = {
+    .name         = "v408",
+    .long_name    = NULL_IF_CONFIG_SMALL("Uncompressed packed QT 4:4:4:4"),
+    .type         = AVMEDIA_TYPE_VIDEO,
+    .id           = AV_CODEC_ID_V408,
     .init         = v408_decode_init,
-    FF_CODEC_DECODE_CB(v408_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .decode       = v408_decode_frame,
+    .capabilities = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
 #endif

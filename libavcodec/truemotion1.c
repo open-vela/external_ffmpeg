@@ -34,7 +34,6 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
@@ -492,8 +491,10 @@ static av_cold int truemotion1_decode_init(AVCodecContext *avctx)
     /* there is a vertical predictor for each pixel in a line; each vertical
      * predictor is 0 to start with */
     av_fast_malloc(&s->vert_pred, &s->vert_pred_size, s->avctx->width * sizeof(unsigned int));
-    if (!s->vert_pred)
+    if (!s->vert_pred) {
+        av_frame_free(&s->frame);
         return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -869,8 +870,9 @@ static void truemotion1_decode_24bit(TrueMotion1Context *s)
 }
 
 
-static int truemotion1_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
-                                    int *got_frame, AVPacket *avpkt)
+static int truemotion1_decode_frame(AVCodecContext *avctx,
+                                    void *data, int *got_frame,
+                                    AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
     int ret, buf_size = avpkt->size;
@@ -891,7 +893,7 @@ static int truemotion1_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
         truemotion1_decode_16bit(s);
     }
 
-    if ((ret = av_frame_ref(rframe, s->frame)) < 0)
+    if ((ret = av_frame_ref(data, s->frame)) < 0)
         return ret;
 
     *got_frame      = 1;
@@ -910,15 +912,14 @@ static av_cold int truemotion1_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_truemotion1_decoder = {
-    .p.name         = "truemotion1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Duck TrueMotion 1.0"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_TRUEMOTION1,
+AVCodec ff_truemotion1_decoder = {
+    .name           = "truemotion1",
+    .long_name      = NULL_IF_CONFIG_SMALL("Duck TrueMotion 1.0"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_TRUEMOTION1,
     .priv_data_size = sizeof(TrueMotion1Context),
     .init           = truemotion1_decode_init,
     .close          = truemotion1_decode_end,
-    FF_CODEC_DECODE_CB(truemotion1_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .decode         = truemotion1_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
