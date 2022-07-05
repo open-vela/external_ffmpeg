@@ -594,3 +594,27 @@ AVCodec ff_aac_latm_decoder = {
     .flush = flush,
     .profiles        = NULL_IF_CONFIG_SMALL(ff_aac_profiles),
 };
+
+/*
+    Note: This decoder filter is intended to decode A2DP LATM streams transferred,
+    frame received from socket, need do rechunk process
+*/
+AVCodec ff_aac_latm_a2dp_decoder = {
+    .name            = "aac_latm_a2dp",
+    .long_name       = NULL_IF_CONFIG_SMALL("AAC LATM (Advanced Audio Coding LATM syntax)"),
+    .type            = AVMEDIA_TYPE_AUDIO,
+    .id              = AV_CODEC_ID_AAC_LATM_A2DP,
+    .priv_data_size  = sizeof(struct LATMContext),
+    .init            = latm_decode_init,
+    .close           = aac_decode_close,
+    .decode          = latm_decode_frame,
+    .sample_fmts     = (const enum AVSampleFormat[]) {
+        AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_NONE
+    },
+    .capabilities    = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
+    .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .channel_layouts = aac_channel_layout,
+    .flush = flush,
+    .profiles        = NULL_IF_CONFIG_SMALL(ff_aac_profiles),
+    .bsfs            = "a2dp_rechunk",
+};
