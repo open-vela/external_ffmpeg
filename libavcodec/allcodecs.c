@@ -426,6 +426,7 @@ extern const FFCodec ff_aac_encoder;
 extern const FFCodec ff_aac_decoder;
 extern const FFCodec ff_aac_fixed_decoder;
 extern const FFCodec ff_aac_latm_decoder;
+extern const FFCodec ff_aac_latm_a2dp_decoder;
 extern const FFCodec ff_ac3_encoder;
 extern const FFCodec ff_ac3_decoder;
 extern const FFCodec ff_ac3_fixed_encoder;
