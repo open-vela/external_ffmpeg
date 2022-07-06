@@ -24,8 +24,6 @@
  * video presentation timestamp (PTS) modification filter
  */
 
-#include "config_components.h"
-
 #include <inttypes.h>
 
 #include "libavutil/eval.h"
@@ -143,6 +141,10 @@ static int config_input(AVFilterLink *inlink)
            setpts->var_values[VAR_SAMPLE_RATE]);
     return 0;
 }
+
+#define D2TS(d)  (isnan(d) ? AV_NOPTS_VALUE : (int64_t)(d))
+#define TS2D(ts) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts))
+#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts)*av_q2d(tb))
 
 #define BUF_SIZE 64
 
@@ -264,15 +266,14 @@ static av_cold void uninit(AVFilterContext *ctx)
 }
 
 #define OFFSET(x) offsetof(SetPTSContext, x)
-#define V AV_OPT_FLAG_VIDEO_PARAM
-#define A AV_OPT_FLAG_AUDIO_PARAM
-#define F AV_OPT_FLAG_FILTERING_PARAM
-
-#if CONFIG_SETPTS_FILTER
-static const AVOption setpts_options[] = {
-    { "expr", "Expression determining the frame timestamp", OFFSET(expr_str), AV_OPT_TYPE_STRING, { .str = "PTS" }, .flags = V|F },
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
+static const AVOption options[] = {
+    { "expr", "Expression determining the frame timestamp", OFFSET(expr_str), AV_OPT_TYPE_STRING, { .str = "PTS" }, .flags = FLAGS },
     { NULL }
 };
+
+#if CONFIG_SETPTS_FILTER
+#define setpts_options options
 AVFILTER_DEFINE_CLASS(setpts);
 
 static const AVFilterPad avfilter_vf_setpts_inputs[] = {
@@ -281,6 +282,7 @@ static const AVFilterPad avfilter_vf_setpts_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_setpts_outputs[] = {
@@ -288,30 +290,27 @@ static const AVFilterPad avfilter_vf_setpts_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_setpts = {
+AVFilter ff_vf_setpts = {
     .name      = "setpts",
     .description = NULL_IF_CONFIG_SMALL("Set PTS for the output video frame."),
     .init      = init,
     .activate  = activate,
     .uninit    = uninit,
-    .flags     = AVFILTER_FLAG_METADATA_ONLY,
 
     .priv_size = sizeof(SetPTSContext),
     .priv_class = &setpts_class,
 
-    FILTER_INPUTS(avfilter_vf_setpts_inputs),
-    FILTER_OUTPUTS(avfilter_vf_setpts_outputs),
+    .inputs    = avfilter_vf_setpts_inputs,
+    .outputs   = avfilter_vf_setpts_outputs,
 };
 #endif /* CONFIG_SETPTS_FILTER */
 
 #if CONFIG_ASETPTS_FILTER
 
-static const AVOption asetpts_options[] = {
-    { "expr", "Expression determining the frame timestamp", OFFSET(expr_str), AV_OPT_TYPE_STRING, { .str = "PTS" }, .flags = A|F },
-    { NULL }
-};
+#define asetpts_options options
 AVFILTER_DEFINE_CLASS(asetpts);
 
 static const AVFilterPad asetpts_inputs[] = {
@@ -320,6 +319,7 @@ static const AVFilterPad asetpts_inputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad asetpts_outputs[] = {
@@ -327,9 +327,10 @@ static const AVFilterPad asetpts_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
+    { NULL }
 };
 
-const AVFilter ff_af_asetpts = {
+AVFilter ff_af_asetpts = {
     .name        = "asetpts",
     .description = NULL_IF_CONFIG_SMALL("Set PTS for the output audio frame."),
     .init        = init,
@@ -337,8 +338,7 @@ const AVFilter ff_af_asetpts = {
     .uninit      = uninit,
     .priv_size   = sizeof(SetPTSContext),
     .priv_class  = &asetpts_class,
-    .flags       = AVFILTER_FLAG_METADATA_ONLY,
-    FILTER_INPUTS(asetpts_inputs),
-    FILTER_OUTPUTS(asetpts_outputs),
+    .inputs      = asetpts_inputs,
+    .outputs     = asetpts_outputs,
 };
 #endif /* CONFIG_ASETPTS_FILTER */
