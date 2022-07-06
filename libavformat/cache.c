@@ -161,7 +161,7 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
                                 options, h->protocol_whitelist, h->protocol_blacklist, h);
     if (ret != 0) {
         av_log(h, AV_LOG_ERROR, "Failed to open: %s, %s\n", av_err2str(ret), arg);
-        return ret;
+        goto out;
     }
 
     pthread_mutex_init(&c->mutex, NULL);
@@ -175,6 +175,15 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
     pthread_attr_destroy(&attr);
 
     return 0;
+
+out:
+    close(c->fd);
+    if (c->filename) {
+        unlink(c->filename);
+        av_freep(&c->filename);
+    }
+
+    return ret;
 }
 
 static int add_entry(URLContext *h, const unsigned char *buf, int size, int64_t offset)
