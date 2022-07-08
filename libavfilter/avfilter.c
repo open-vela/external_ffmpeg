@@ -1773,11 +1773,10 @@ int ff_inlink_evaluate_timeline_at_frame(AVFilterLink *link, const AVFrame *fram
 
 void ff_inlink_request_frame(AVFilterLink *link)
 {
-    if (!link->out_formats)
+    if (!link->out_formats || link->status_out)
         return;
 
     av_assert1(!link->status_in);
-    av_assert1(!link->status_out);
     link->frame_wanted_out = 1;
     ff_filter_set_ready(link->src, 100);
 }
