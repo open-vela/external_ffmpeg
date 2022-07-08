@@ -1104,7 +1104,7 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
     } else if (!strcmp(cmd, "pause")) {
         return amoviesink_process_pause(ctx);
     } else if (!strcmp(cmd, "stop") || !strcmp(cmd, "reset") || !strcmp(cmd, "close")) {
-        av_log(ctx, AV_LOG_INFO, "%s filter %s %s.\n", __func__, ctx->name, cmd);
+        av_log(ctx, AV_LOG_INFO, "%s filter %s %s. pos %d\n", __func__, ctx->name, cmd, priv->current_ms);
         return amoviesink_process_quit(ctx, cmd);
     } else if (!strcmp(cmd, "get_position")) {
         return amoviesink_get_position(ctx, res, res_len);
@@ -1121,7 +1121,7 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption amoviesink_async_options[] = {
-    { "datqmax",    "maximum number of dat queue", OFFSET(dat_max),    AV_OPT_TYPE_INT,    {.i64 = 4},       2, 8,         FLAGS },
+    { "datqmax",    "maximum number of dat queue", OFFSET(dat_max),    AV_OPT_TYPE_INT,    {.i64 = 4 },      2, 8,         FLAGS },
     { "cmdqmax",    "maximum number of cmd queue", OFFSET(cmd_max),    AV_OPT_TYPE_INT,    {.i64 = 16 },     8, 32,        FLAGS },
     { "stack_size", "stack size of work thread",   OFFSET(stack_size), AV_OPT_TYPE_INT,    {.i64 = 61440 },  0, INT32_MAX, FLAGS },
     { "priority",   "priority of work thread",     OFFSET(priority),   AV_OPT_TYPE_INT,    {.i64 = 244 },    0, INT16_MAX, FLAGS },
