@@ -510,8 +510,7 @@ static int request_samples(AVFilterContext *ctx, int min_samples)
         if (i == s->first_input)
             continue;
 
-        if (!(s->input_state[i] & INPUT_ON) ||
-             (s->input_state[i] & INPUT_EOF))
+        if (!(s->input_state[i] & INPUT_ON))
             continue;
         if (av_audio_fifo_size(s->fifos[i]) >= min_samples)
             continue;
