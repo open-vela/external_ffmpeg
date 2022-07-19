@@ -221,7 +221,7 @@ int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback
     while (1) {
         struct dirent *entryp = readdir(dirp);
         struct audio_caps_s caps;
-        char str[64];
+        char str[PATH_MAX];
 
         if (!entryp)
             break;
@@ -229,7 +229,7 @@ int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback
         if (DIRENT_ISDIRECTORY(entryp->d_type))
             continue;
 
-        snprintf(str, 64, "/dev/audio/%s", entryp->d_name);
+        snprintf(str, sizeof(str), "/dev/audio/%s", entryp->d_name);
         ret = ff_nuttx_get_capabilities(str, AUDIO_TYPE_QUERY, &caps);
         if (ret < 0)
             continue;
