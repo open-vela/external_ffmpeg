@@ -59,17 +59,6 @@ static const uint64_t leaf_table[] = {
     0x1573cd93da7df623, 0x47f98d79620dd535
 };
 
-/** map ATRAC-X channel id to internal channel layout */
-static const AVChannelLayout  oma_chid_to_native_layout[7] = {
-    AV_CHANNEL_LAYOUT_MONO,
-    AV_CHANNEL_LAYOUT_STEREO,
-    AV_CHANNEL_LAYOUT_SURROUND,
-    AV_CHANNEL_LAYOUT_4POINT0,
-    AV_CHANNEL_LAYOUT_5POINT1_BACK,
-    AV_CHANNEL_LAYOUT_6POINT1_BACK,
-    AV_CHANNEL_LAYOUT_7POINT1
-};
-
 typedef struct OMAContext {
     uint64_t content_start;
     int encrypted;
@@ -105,6 +94,7 @@ static void hex_log(AVFormatContext *s, int level,
     if (av_log_get_level() < level)
         return;
     ff_data_to_hex(buf, value, len, 1);
+    buf[len << 1] = '\0';
     av_log(s, level, "%s: %s\n", name, buf);
 }
 
@@ -409,7 +399,7 @@ static int oma_read_header(AVFormatContext *s)
     uint8_t buf[EA3_HEADER_SIZE];
     uint8_t *edata;
     AVStream *st;
-    ID3v2ExtraMeta *extra_meta;
+    ID3v2ExtraMeta *extra_meta = NULL;
     OMAContext *oc = s->priv_data;
 
     ff_id3v2_read(s, ID3v2_EA3_MAGIC, &extra_meta, 0);
@@ -445,8 +435,10 @@ static int oma_read_header(AVFormatContext *s)
     codec_params = AV_RB24(&buf[33]);
 
     st = avformat_new_stream(s, NULL);
-    if (!st)
-        return AVERROR(ENOMEM);
+    if (!st) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
 
     st->start_time = 0;
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
@@ -461,7 +453,8 @@ static int oma_read_header(AVFormatContext *s)
         samplerate = ff_oma_srate_tab[(codec_params >> 13) & 7] * 100;
         if (!samplerate) {
             av_log(s, AV_LOG_ERROR, "Unsupported sample rate\n");
-            return AVERROR_INVALIDDATA;
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
         }
         if (samplerate != 44100)
             avpriv_request_sample(s, "Sample rate %d", samplerate);
@@ -471,14 +464,15 @@ static int oma_read_header(AVFormatContext *s)
         /* get stereo coding mode, 1 for joint-stereo */
         jsflag = (codec_params >> 17) & 1;
 
-        st->codecpar->ch_layout   = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+        st->codecpar->channels    = 2;
+        st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
         st->codecpar->sample_rate = samplerate;
         st->codecpar->bit_rate    = st->codecpar->sample_rate * framesize / (1024 / 8);
 
         /* fake the ATRAC3 extradata
          * (wav format, makes stream copy to wav work) */
         if ((ret = ff_alloc_extradata(st->codecpar, 14)) < 0)
-            return ret;
+            goto fail;
 
         edata = st->codecpar->extradata;
         AV_WL16(&edata[0],  1);             // always 1
@@ -486,7 +480,7 @@ static int oma_read_header(AVFormatContext *s)
         AV_WL16(&edata[6],  jsflag);        // coding mode
         AV_WL16(&edata[8],  jsflag);        // coding mode
         AV_WL16(&edata[10], 1);             // always 1
-        AV_WL16(&edata[12], 0);             // always 0
+        // AV_WL16(&edata[12], 0);          // always 0
 
         avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
         break;
@@ -495,27 +489,30 @@ static int oma_read_header(AVFormatContext *s)
         if (!channel_id) {
             av_log(s, AV_LOG_ERROR,
                    "Invalid ATRAC-X channel id: %"PRIu32"\n", channel_id);
-            return AVERROR_INVALIDDATA;
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
         }
-        av_channel_layout_copy(&st->codecpar->ch_layout,
-                               &oma_chid_to_native_layout[channel_id - 1]);
+        st->codecpar->channel_layout = ff_oma_chid_to_native_layout[channel_id - 1];
+        st->codecpar->channels       = ff_oma_chid_to_num_channels[channel_id - 1];
         framesize = ((codec_params & 0x3FF) * 8) + 8;
         samplerate = ff_oma_srate_tab[(codec_params >> 13) & 7] * 100;
         if (!samplerate) {
             av_log(s, AV_LOG_ERROR, "Unsupported sample rate\n");
-            return AVERROR_INVALIDDATA;
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
         }
         st->codecpar->sample_rate = samplerate;
         st->codecpar->bit_rate    = samplerate * framesize / (2048 / 8);
         avpriv_set_pts_info(st, 64, 1, samplerate);
         break;
     case OMA_CODECID_MP3:
-        ffstream(st)->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+        st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
         framesize = 1024;
         break;
     case OMA_CODECID_LPCM:
         /* PCM 44.1 kHz 16 bit stereo big-endian */
-        st->codecpar->ch_layout   = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+        st->codecpar->channels = 2;
+        st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
         st->codecpar->sample_rate = 44100;
         framesize = 1024;
         /* bit rate = sample rate x PCM block align (= 4) x 8 */
@@ -525,14 +522,16 @@ static int oma_read_header(AVFormatContext *s)
         avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
         break;
     case OMA_CODECID_ATRAC3AL:
-        st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+        st->codecpar->channels    = 2;
+        st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
         st->codecpar->sample_rate = 44100;
         avpriv_set_pts_info(st, 64, 1, 44100);
         oc->read_packet = aal_read_packet;
         framesize = 4096;
         break;
     case OMA_CODECID_ATRAC3PAL:
-        st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+        st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
+        st->codecpar->channels       = 2;
         st->codecpar->sample_rate = 44100;
         avpriv_set_pts_info(st, 64, 1, 44100);
         oc->read_packet = aal_read_packet;
@@ -540,12 +539,16 @@ static int oma_read_header(AVFormatContext *s)
         break;
     default:
         av_log(s, AV_LOG_ERROR, "Unsupported codec %d!\n", buf[32]);
-        return AVERROR(ENOSYS);
+        ret = AVERROR(ENOSYS);
+        goto fail;
     }
 
     st->codecpar->block_align = framesize;
 
     return 0;
+fail:
+    oma_read_close(s);
+    return ret;
 }
 
 static int oma_read_packet(AVFormatContext *s, AVPacket *pkt)
@@ -607,11 +610,10 @@ wipe:
     return err;
 }
 
-const AVInputFormat ff_oma_demuxer = {
+AVInputFormat ff_oma_demuxer = {
     .name           = "oma",
     .long_name      = NULL_IF_CONFIG_SMALL("Sony OpenMG audio"),
     .priv_data_size = sizeof(OMAContext),
-    .flags_internal = FF_FMT_INIT_CLEANUP,
     .read_probe     = oma_read_probe,
     .read_header    = oma_read_header,
     .read_packet    = oma_read_packet,
@@ -619,5 +621,5 @@ const AVInputFormat ff_oma_demuxer = {
     .read_close     = oma_read_close,
     .flags          = AVFMT_GENERIC_INDEX,
     .extensions     = "oma,omg,aa3",
-    .codec_tag      = ff_oma_codec_tags_list,
+    .codec_tag      = (const AVCodecTag* const []){ff_oma_codec_tags, 0},
 };
