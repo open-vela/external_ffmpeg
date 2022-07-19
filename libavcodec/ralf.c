@@ -29,7 +29,6 @@
 #include "libavutil/attributes.h"
 #include "libavutil/channel_layout.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "golomb.h"
 #include "internal.h"
@@ -129,7 +128,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
 {
     RALFContext *ctx = avctx->priv_data;
     int i, j, k;
-    int ret, channels;
+    int ret;
 
     if (avctx->extradata_size < 24 || memcmp(avctx->extradata, "LSD:", 4)) {
         av_log(avctx, AV_LOG_ERROR, "Extradata is not groovy, dude\n");
@@ -142,17 +141,17 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR_PATCHWELCOME;
     }
 
-    channels           = AV_RB16(avctx->extradata + 8);
+    avctx->channels    = AV_RB16(avctx->extradata + 8);
     avctx->sample_rate = AV_RB32(avctx->extradata + 12);
-    if (channels < 1 || channels > 2
+    if (avctx->channels < 1 || avctx->channels > 2
         || avctx->sample_rate < 8000 || avctx->sample_rate > 96000) {
         av_log(avctx, AV_LOG_ERROR, "Invalid coding parameters %d Hz %d ch\n",
-               avctx->sample_rate, channels);
+               avctx->sample_rate, avctx->channels);
         return AVERROR_INVALIDDATA;
     }
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16P;
-    av_channel_layout_uninit(&avctx->ch_layout);
-    av_channel_layout_default(&avctx->ch_layout, channels);
+    avctx->channel_layout = (avctx->channels == 2) ? AV_CH_LAYOUT_STEREO
+                                                   : AV_CH_LAYOUT_MONO;
 
     ctx->max_frame_size = AV_RB32(avctx->extradata + 16);
     if (ctx->max_frame_size > (1 << 20) || !ctx->max_frame_size) {
@@ -164,35 +163,47 @@ static av_cold int decode_init(AVCodecContext *avctx)
     for (i = 0; i < 3; i++) {
         ret = init_ralf_vlc(&ctx->sets[i].filter_params, filter_param_def[i],
                             FILTERPARAM_ELEMENTS);
-        if (ret < 0)
+        if (ret < 0) {
+            decode_close(avctx);
             return ret;
+        }
         ret = init_ralf_vlc(&ctx->sets[i].bias, bias_def[i], BIAS_ELEMENTS);
-        if (ret < 0)
+        if (ret < 0) {
+            decode_close(avctx);
             return ret;
+        }
         ret = init_ralf_vlc(&ctx->sets[i].coding_mode, coding_mode_def[i],
                             CODING_MODE_ELEMENTS);
-        if (ret < 0)
+        if (ret < 0) {
+            decode_close(avctx);
             return ret;
+        }
         for (j = 0; j < 10; j++) {
             for (k = 0; k < 11; k++) {
                 ret = init_ralf_vlc(&ctx->sets[i].filter_coeffs[j][k],
                                     filter_coeffs_def[i][j][k],
                                     FILTER_COEFFS_ELEMENTS);
-                if (ret < 0)
+                if (ret < 0) {
+                    decode_close(avctx);
                     return ret;
+                }
             }
         }
         for (j = 0; j < 15; j++) {
             ret = init_ralf_vlc(&ctx->sets[i].short_codes[j],
                                 short_codes_def[i][j], SHORT_CODES_ELEMENTS);
-            if (ret < 0)
+            if (ret < 0) {
+                decode_close(avctx);
                 return ret;
+            }
         }
         for (j = 0; j < 125; j++) {
             ret = init_ralf_vlc(&ctx->sets[i].long_codes[j],
                                 long_codes_def[i][j], LONG_CODES_ELEMENTS);
-            if (ret < 0)
+            if (ret < 0) {
+                decode_close(avctx);
                 return ret;
+            }
         }
     }
 
@@ -347,7 +358,7 @@ static int decode_block(AVCodecContext *avctx, GetBitContext *gb,
         return AVERROR_INVALIDDATA;
     }
 
-    if (avctx->ch_layout.nb_channels > 1)
+    if (avctx->channels > 1)
         dmode = get_bits(gb, 2) + 1;
     else
         dmode = 0;
@@ -357,7 +368,7 @@ static int decode_block(AVCodecContext *avctx, GetBitContext *gb,
     bits[0] = 16;
     bits[1] = (mode[1] == 2) ? 17 : 16;
 
-    for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++) {
+    for (ch = 0; ch < avctx->channels; ch++) {
         if ((ret = decode_channel(ctx, gb, ch, len, mode[ch], bits[ch])) < 0)
             return ret;
         if (ctx->filter_params > 1 && ctx->filter_params != FILTER_RAW) {
@@ -410,10 +421,11 @@ static int decode_block(AVCodecContext *avctx, GetBitContext *gb,
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                        int *got_frame_ptr, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame_ptr,
+                        AVPacket *avpkt)
 {
     RALFContext *ctx = avctx->priv_data;
+    AVFrame *frame   = data;
     int16_t *samples0;
     int16_t *samples1;
     int ret;
@@ -472,7 +484,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     while (get_bits_left(&gb) > 0) {
         if (ctx->num_blocks >= FF_ARRAY_ELEMS(ctx->block_size))
             return AVERROR_INVALIDDATA;
-        ctx->block_size[ctx->num_blocks] = get_bits(&gb, 13 + avctx->ch_layout.nb_channels);
+        ctx->block_size[ctx->num_blocks] = get_bits(&gb, 13 + avctx->channels);
         if (get_bits1(&gb)) {
             ctx->block_pts[ctx->num_blocks] = get_bits(&gb, 9);
         } else {
@@ -513,19 +525,17 @@ static void decode_flush(AVCodecContext *avctx)
 }
 
 
-const FFCodec ff_ralf_decoder = {
-    .p.name         = "ralf",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("RealAudio Lossless"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_RALF,
+AVCodec ff_ralf_decoder = {
+    .name           = "ralf",
+    .long_name      = NULL_IF_CONFIG_SMALL("RealAudio Lossless"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_RALF,
     .priv_data_size = sizeof(RALFContext),
     .init           = decode_init,
     .close          = decode_close,
-    FF_CODEC_DECODE_CB(decode_frame),
+    .decode         = decode_frame,
     .flush          = decode_flush,
-    .p.capabilities = AV_CODEC_CAP_CHANNEL_CONF |
-                      AV_CODEC_CAP_DR1,
-    .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
