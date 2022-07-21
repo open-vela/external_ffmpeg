@@ -21,12 +21,15 @@
 #ifndef AVFILTER_AFIR_H
 #define AVFILTER_AFIR_H
 
+#include "libavutil/common.h"
 #include "libavutil/float_dsp.h"
-#include "libavutil/frame.h"
-#include "libavutil/rational.h"
-#include "libavutil/tx.h"
+#include "libavutil/opt.h"
+#include "libavcodec/avfft.h"
+
+#include "audio.h"
 #include "avfilter.h"
-#include "af_afirdsp.h"
+#include "formats.h"
+#include "internal.h"
 
 typedef struct AudioFIRSegment {
     int nb_partitions;
@@ -40,18 +43,20 @@ typedef struct AudioFIRSegment {
     int *output_offset;
     int *part_index;
 
-    AVFrame *sumin;
-    AVFrame *sumout;
-    AVFrame *blockin;
-    AVFrame *blockout;
+    AVFrame *sum;
+    AVFrame *block;
     AVFrame *buffer;
     AVFrame *coeff;
     AVFrame *input;
     AVFrame *output;
 
-    AVTXContext **tx, **itx;
-    av_tx_fn tx_fn, itx_fn;
+    RDFTContext **rdft, **irdft;
 } AudioFIRSegment;
+
+typedef struct AudioFIRDSPContext {
+    void (*fcmul_add)(float *sum, const float *t, const float *c,
+                      ptrdiff_t len);
+} AudioFIRDSPContext;
 
 typedef struct AudioFIRContext {
     const AVClass *class;
@@ -71,10 +76,8 @@ typedef struct AudioFIRContext {
     int maxp;
     int nb_irs;
     int selir;
-    int precision;
-    int format;
 
-    double gain;
+    float gain;
 
     int eof_coeffs[32];
     int have_coeffs;
@@ -94,6 +97,10 @@ typedef struct AudioFIRContext {
 
     AudioFIRDSPContext afirdsp;
     AVFloatDSPContext *fdsp;
+
 } AudioFIRContext;
+
+void ff_afir_init(AudioFIRDSPContext *s);
+void ff_afir_init_x86(AudioFIRDSPContext *s);
 
 #endif /* AVFILTER_AFIR_H */
