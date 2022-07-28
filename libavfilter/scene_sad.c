@@ -59,9 +59,8 @@ void ff_scene_sad_c(SCENE_SAD_PARAMS)
 ff_scene_sad_fn ff_scene_sad_get_fn(int depth)
 {
     ff_scene_sad_fn sad = NULL;
-#if ARCH_X86
-    sad = ff_scene_sad_get_fn_x86(depth);
-#endif
+    if (ARCH_X86)
+        sad = ff_scene_sad_get_fn_x86(depth);
     if (!sad) {
         if (depth == 8)
             sad = ff_scene_sad_c;
