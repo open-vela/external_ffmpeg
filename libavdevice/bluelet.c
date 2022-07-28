@@ -442,8 +442,10 @@ int ff_bluelet_start(BlueletPriv *priv)
         ret = ff_bluelet_send_ctrl(priv, &cmd, 1);
         if (ret == 0)
             priv->state = BLUELET_STATE_STARTING;
-    } else if (priv->state != BLUELET_STATE_STARTED)
+    } else if (priv->state == BLUELET_STATE_IDLE)
         ret = AVERROR(EPERM);
+    else if (priv->state == BLUELET_STATE_STARTING)
+        ret = AVERROR(EAGAIN);
 
     return ret;
 }
