@@ -21,8 +21,10 @@
 
 #include "libavutil/avstring.h"
 
+#include "libavcodec/bytestream.h"
+
 #include "avio_internal.h"
-#include "rtpdec.h"
+#include "rtpdec_formats.h"
 
 struct PayloadContext {
     AVIOContext *buf;
