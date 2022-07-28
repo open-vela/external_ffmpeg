@@ -228,6 +228,12 @@ int ff_bluelet_read_buffer(BlueletPriv *priv, void *buffer, size_t bytes)
 {
     int ret;
 
+    if (priv->state == BLUELET_STATE_STARTING)
+        return AVERROR(EAGAIN);
+
+    if (priv->state != BLUELET_STATE_STARTED)
+        return AVERROR_EOF;
+
     ret = recv(priv->data_fd, buffer, bytes, MSG_NOSIGNAL);
     if (ret < 0)
         return AVERROR(errno);
