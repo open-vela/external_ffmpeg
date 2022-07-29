@@ -27,6 +27,7 @@
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "bytestream.h"
+#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 #include "lzf.h"
@@ -51,7 +52,7 @@ typedef struct NotchLCContext {
     unsigned y_data_offset;
     unsigned uv_data_offset;
     unsigned y_data_size;
-    unsigned uv_count_size;
+    unsigned a_data_offset;
     unsigned uv_count_offset;
     unsigned a_count_size;
     unsigned data_end;
@@ -62,7 +63,7 @@ typedef struct NotchLCContext {
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
-    avctx->pix_fmt = AV_PIX_FMT_YUV444P12;
+    avctx->pix_fmt = AV_PIX_FMT_YUVA444P12;
     avctx->color_range = AVCOL_RANGE_JPEG;
     avctx->colorspace = AVCOL_SPC_RGB;
     avctx->color_primaries = AVCOL_PRI_BT709;
@@ -108,8 +109,7 @@ static int lz4_decompress(AVCodecContext *avctx,
         if (bytestream2_get_bytes_left(gb) <= 0)
             break;
 
-        delta = bytestream2_get_byte(gb);
-        delta |= (unsigned)bytestream2_get_byte(gb) << 8;
+        delta = bytestream2_get_le16(gb);
         if (delta == 0)
             return 0;
         match_length = 4 + (token & 0x0F);
@@ -147,7 +147,7 @@ static int lz4_decompress(AVCodecContext *avctx,
     return bytestream2_tell_p(pb);
 }
 
-static int decode_blocks(AVCodecContext *avctx, AVFrame *p, ThreadFrame *frame,
+static int decode_blocks(AVCodecContext *avctx, AVFrame *p,
                          unsigned uncompressed_size)
 {
     NotchLCContext *s = avctx->priv_data;
@@ -196,11 +196,11 @@ static int decode_blocks(AVCodecContext *avctx, AVFrame *p, ThreadFrame *frame,
     if (s->y_data_size >= UINT_MAX / 4)
         return AVERROR_INVALIDDATA;
 
-    s->uv_count_size = bytestream2_get_le32(gb);
-    if (s->uv_count_size >= UINT_MAX / 4)
+    s->a_data_offset = bytestream2_get_le32(gb);
+    if (s->a_data_offset >= UINT_MAX / 4)
         return AVERROR_INVALIDDATA;
-    s->uv_count_size *= 4;
-    if (s->uv_count_size >= uncompressed_size)
+    s->a_data_offset *= 4;
+    if (s->a_data_offset >= uncompressed_size)
         return AVERROR_INVALIDDATA;
 
     s->a_count_size = bytestream2_get_le32(gb);
@@ -218,17 +218,20 @@ static int decode_blocks(AVCodecContext *avctx, AVFrame *p, ThreadFrame *frame,
     if (s->data_end <= s->y_data_size)
         return AVERROR_INVALIDDATA;
     s->y_data_offset = s->data_end - s->y_data_size;
-    if (s->y_data_offset <= s->uv_count_size)
+    if (s->y_data_offset <= s->a_data_offset)
         return AVERROR_INVALIDDATA;
-    s->uv_count_offset = s->y_data_offset - s->uv_count_size;
+    s->uv_count_offset = s->y_data_offset - s->a_data_offset;
 
-    if ((ret = ff_thread_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_thread_get_buffer(avctx, p, 0)) < 0)
         return ret;
 
     rgb = *gb;
     dgb = *gb;
     bytestream2_seek(&rgb, s->y_data_row_offsets, SEEK_SET);
     bytestream2_seek(gb, s->y_control_data_offset, SEEK_SET);
+
+    if (bytestream2_get_bytes_left(gb) < (avctx->height + 3) / 4 * ((avctx->width + 3) / 4) * 4)
+        return AVERROR_INVALIDDATA;
 
     dsty = (uint16_t *)p->data[0];
     dsta = (uint16_t *)p->data[3];
@@ -266,13 +269,79 @@ static int decode_blocks(AVCodecContext *avctx, AVFrame *p, ThreadFrame *frame,
         }
 
         dsty += 4 * ylinesize;
-        dsta += 4 * alinesize;
     }
 
     rgb = *gb;
     dgb = *gb;
-    bytestream2_seek(&rgb, s->uv_offset_data_offset, SEEK_SET);
     bytestream2_seek(gb, s->a_control_word_offset, SEEK_SET);
+    if (s->uv_count_offset == s->a_control_word_offset) {
+        for (int y = 0; y < avctx->height; y++) {
+            for (int x = 0; x < avctx->width; x++)
+                dsta[x] = 4095;
+            dsta += alinesize;
+        }
+    } else {
+        if (bytestream2_get_bytes_left(gb) < (avctx->height + 15) / 16 * ((avctx->width + 15) / 16) * 8)
+            return AVERROR_INVALIDDATA;
+
+        for (int y = 0; y < avctx->height; y += 16) {
+            for (int x = 0; x < avctx->width; x += 16) {
+                unsigned m = bytestream2_get_le32(gb);
+                unsigned offset = bytestream2_get_le32(gb);
+                unsigned alpha0, alpha1;
+                uint64_t control;
+
+                if (offset >= UINT_MAX / 4)
+                    return AVERROR_INVALIDDATA;
+                offset = offset * 4 + s->uv_data_offset + s->a_data_offset;
+                if (offset >= s->data_end)
+                    return AVERROR_INVALIDDATA;
+
+                bytestream2_seek(&dgb, offset, SEEK_SET);
+                control = bytestream2_get_le64(&dgb);
+                alpha0 = control & 0xFF;
+                alpha1 = (control >> 8) & 0xFF;
+                control = control >> 16;
+
+                for (int by = 0; by < 4; by++) {
+                    for (int bx = 0; bx < 4; bx++) {
+                        switch (m & 3) {
+                        case 0:
+                            for (int i = 0; i < 4; i++) {
+                                for (int j = 0; j < 4; j++) {
+                                    dsta[x + (i + by * 4) * alinesize + bx * 4 + j] = 0;
+                                }
+                            }
+                            break;
+                        case 1:
+                            for (int i = 0; i < 4; i++) {
+                                for (int j = 0; j < 4; j++) {
+                                    dsta[x + (i + by * 4) * alinesize + bx * 4 + j] = 4095;
+                                }
+                            }
+                            break;
+                        case 2:
+                            for (int i = 0; i < 4; i++) {
+                                for (int j = 0; j < 4; j++) {
+                                    dsta[x + (i + by * 4) * alinesize + bx * 4 + j] = (alpha0 + (alpha1 - alpha0) * (control & 7)) << 4;
+                                }
+                            }
+                            break;
+                        default:
+                            return AVERROR_INVALIDDATA;
+                        }
+
+                        control >>= 3;
+                        m >>= 2;
+                    }
+                }
+            }
+
+            dsta += 16 * alinesize;
+        }
+    }
+
+    bytestream2_seek(&rgb, s->uv_offset_data_offset, SEEK_SET);
 
     dstu = (uint16_t *)p->data[1];
     dstv = (uint16_t *)p->data[2];
@@ -391,16 +460,13 @@ static int decode_blocks(AVCodecContext *avctx, AVFrame *p, ThreadFrame *frame,
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx,
-                        void *data, int *got_frame,
-                        AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, AVFrame *p,
+                        int *got_frame, AVPacket *avpkt)
 {
     NotchLCContext *s = avctx->priv_data;
-    ThreadFrame frame = { .f = data };
     GetByteContext *gb = &s->gb;
     PutByteContext *pb = &s->pb;
     unsigned uncompressed_size;
-    AVFrame *p = data;
     int ret;
 
     if (avpkt->size <= 40)
@@ -428,6 +494,9 @@ static int decode_frame(AVCodecContext *avctx,
 
         bytestream2_init(gb, s->lzf_buffer, uncompressed_size);
     } else if (s->format == 1) {
+        if (bytestream2_get_bytes_left(gb) < uncompressed_size / 255)
+            return AVERROR_INVALIDDATA;
+
         av_fast_padded_malloc(&s->uncompressed_buffer, &s->uncompressed_size,
                               uncompressed_size);
         if (!s->uncompressed_buffer)
@@ -442,7 +511,7 @@ static int decode_frame(AVCodecContext *avctx,
         bytestream2_init(gb, s->uncompressed_buffer, uncompressed_size);
     }
 
-    ret = decode_blocks(avctx, p, &frame, uncompressed_size);
+    ret = decode_blocks(avctx, p, uncompressed_size);
     if (ret < 0)
         return ret;
 
@@ -466,14 +535,15 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_notchlc_decoder = {
-    .name             = "notchlc",
-    .long_name        = NULL_IF_CONFIG_SMALL("NotchLC"),
-    .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = AV_CODEC_ID_NOTCHLC,
+const FFCodec ff_notchlc_decoder = {
+    .p.name           = "notchlc",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("NotchLC"),
+    .p.type           = AVMEDIA_TYPE_VIDEO,
+    .p.id             = AV_CODEC_ID_NOTCHLC,
     .priv_data_size   = sizeof(NotchLCContext),
     .init             = decode_init,
     .close            = decode_end,
-    .decode           = decode_frame,
-    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    FF_CODEC_DECODE_CB(decode_frame),
+    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE,
 };
