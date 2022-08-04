@@ -244,19 +244,9 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         if (ret < 0)
             return ret;
 
-        for (i = 0; i < ctx->nb_inputs; i++) {
-            bool eof = true;
-
-            for (j = 0; j < s->nb_map; j++) {
-                if (s->map[i] < 0)
-                    ff_outlink_set_status(ctx->outputs[j], AVERROR_EOF, AV_NOPTS_VALUE);
-                else
-                    eof = false;
-            }
-
-            if (eof)
-                ff_inlink_set_status(ctx->inputs[i], AVERROR_EOF);
-        }
+        for (i = 0; i < s->nb_map; i++)
+            if (s->map[i] < 0)
+                ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
 
         ret = avfilter_graph_reconfig(ctx->graph, NULL);
         if (ret >= 0) {
