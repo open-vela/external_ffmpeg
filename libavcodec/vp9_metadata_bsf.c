@@ -16,17 +16,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/log.h"
+#include "libavutil/avstring.h"
+#include "libavutil/common.h"
 #include "libavutil/opt.h"
 
 #include "bsf.h"
 #include "bsf_internal.h"
 #include "cbs.h"
-#include "cbs_bsf.h"
 #include "cbs_vp9.h"
 
 typedef struct VP9MetadataContext {
-    CBSBSFContext common;
+    const AVClass *class;
+
+    CodedBitstreamContext *cbc;
+    CodedBitstreamFragment fragment;
 
     int color_space;
     int color_range;
@@ -35,11 +38,21 @@ typedef struct VP9MetadataContext {
 } VP9MetadataContext;
 
 
-static int vp9_metadata_update_fragment(AVBSFContext *bsf, AVPacket *pkt,
-                                        CodedBitstreamFragment *frag)
+static int vp9_metadata_filter(AVBSFContext *bsf, AVPacket *pkt)
 {
     VP9MetadataContext *ctx = bsf->priv_data;
-    int i;
+    CodedBitstreamFragment *frag = &ctx->fragment;
+    int err, i;
+
+    err = ff_bsf_get_packet_ref(bsf, pkt);
+    if (err < 0)
+        return err;
+
+    err = ff_cbs_read_packet(ctx->cbc, frag, pkt);
+    if (err < 0) {
+        av_log(bsf, AV_LOG_ERROR, "Failed to read packet.\n");
+        goto fail;
+    }
 
     for (i = 0; i < frag->nb_units; i++) {
         VP9RawFrame *frame = frag->units[i].content;
@@ -77,19 +90,35 @@ static int vp9_metadata_update_fragment(AVBSFContext *bsf, AVPacket *pkt,
         }
     }
 
-    return 0;
-}
+    err = ff_cbs_write_packet(ctx->cbc, pkt, frag);
+    if (err < 0) {
+        av_log(bsf, AV_LOG_ERROR, "Failed to write packet.\n");
+        goto fail;
+    }
 
-static const CBSBSFType vp9_metadata_type = {
-    .codec_id        = AV_CODEC_ID_VP9,
-    .fragment_name   = "superframe",
-    .unit_name       = "frame",
-    .update_fragment = &vp9_metadata_update_fragment,
-};
+    err = 0;
+fail:
+    ff_cbs_fragment_reset(ctx->cbc, frag);
+
+    if (err < 0)
+        av_packet_unref(pkt);
+
+    return err;
+}
 
 static int vp9_metadata_init(AVBSFContext *bsf)
 {
-    return ff_cbs_bsf_generic_init(bsf, &vp9_metadata_type);
+    VP9MetadataContext *ctx = bsf->priv_data;
+
+    return ff_cbs_init(&ctx->cbc, AV_CODEC_ID_VP9, bsf);
+}
+
+static void vp9_metadata_close(AVBSFContext *bsf)
+{
+    VP9MetadataContext *ctx = bsf->priv_data;
+
+    ff_cbs_fragment_free(ctx->cbc, &ctx->fragment);
+    ff_cbs_close(&ctx->cbc);
 }
 
 #define OFFSET(x) offsetof(VP9MetadataContext, x)
@@ -135,12 +164,12 @@ static const enum AVCodecID vp9_metadata_codec_ids[] = {
     AV_CODEC_ID_VP9, AV_CODEC_ID_NONE,
 };
 
-const FFBitStreamFilter ff_vp9_metadata_bsf = {
-    .p.name         = "vp9_metadata",
-    .p.codec_ids    = vp9_metadata_codec_ids,
-    .p.priv_class   = &vp9_metadata_class,
+const AVBitStreamFilter ff_vp9_metadata_bsf = {
+    .name           = "vp9_metadata",
     .priv_data_size = sizeof(VP9MetadataContext),
+    .priv_class     = &vp9_metadata_class,
     .init           = &vp9_metadata_init,
-    .close          = &ff_cbs_bsf_generic_close,
-    .filter         = &ff_cbs_bsf_generic_filter,
+    .close          = &vp9_metadata_close,
+    .filter         = &vp9_metadata_filter,
+    .codec_ids      = vp9_metadata_codec_ids,
 };

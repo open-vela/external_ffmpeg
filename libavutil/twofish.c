@@ -18,13 +18,9 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#include <string.h>
-
 #include "twofish.h"
-#include "error.h"
+#include "common.h"
 #include "intreadwrite.h"
-#include "mem.h"
 #include "attributes.h"
 
 #define LR(x, n) ((x) << (n) | (x) >> (32 - (n)))
@@ -264,10 +260,10 @@ static void twofish_decrypt(AVTWOFISH *cs, uint8_t *dst, const uint8_t *src, uin
         P[3] ^= AV_RL32(iv + 12);
         memcpy(iv, src, 16);
     }
-    AV_WL32(dst, P[0]);
-    AV_WL32(dst + 4, P[1]);
-    AV_WL32(dst + 8, P[2]);
-    AV_WL32(dst + 12, P[3]);
+    AV_WL32(dst, P[2]);
+    AV_WL32(dst + 4, P[3]);
+    AV_WL32(dst + 8, P[0]);
+    AV_WL32(dst + 12, P[1]);
 }
 
 av_cold int av_twofish_init(AVTWOFISH *cs, const uint8_t *key, int key_bits)

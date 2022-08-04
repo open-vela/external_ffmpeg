@@ -29,7 +29,6 @@
 #include "avcodec.h"
 #include "bswapdsp.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "golomb.h"
 #include "internal.h"
@@ -429,11 +428,7 @@ static int read_header(ShortenContext *s)
         s->channels = 0;
         return AVERROR_INVALIDDATA;
     }
-    if (s->avctx->ch_layout.nb_channels != s->channels) {
-        av_channel_layout_uninit(&s->avctx->ch_layout);
-        s->avctx->ch_layout.nb_channels = s->channels;
-        s->avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-    }
+    s->avctx->channels = s->channels;
 
     /* get blocksize if version > 0 */
     if (s->version > 0) {
@@ -522,9 +517,10 @@ end:
     return 0;
 }
 
-static int shorten_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+static int shorten_decode_frame(AVCodecContext *avctx, void *data,
                                 int *got_frame_ptr, AVPacket *avpkt)
 {
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
     ShortenContext *s  = avctx->priv_data;
@@ -803,21 +799,17 @@ static av_cold int shorten_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_shorten_decoder = {
-    .p.name         = "shorten",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Shorten"),
-    .p.type         = AVMEDIA_TYPE_AUDIO,
-    .p.id           = AV_CODEC_ID_SHORTEN,
+AVCodec ff_shorten_decoder = {
+    .name           = "shorten",
+    .long_name      = NULL_IF_CONFIG_SMALL("Shorten"),
+    .type           = AVMEDIA_TYPE_AUDIO,
+    .id             = AV_CODEC_ID_SHORTEN,
     .priv_data_size = sizeof(ShortenContext),
     .init           = shorten_decode_init,
     .close          = shorten_decode_close,
-    FF_CODEC_DECODE_CB(shorten_decode_frame),
-    .p.capabilities = AV_CODEC_CAP_CHANNEL_CONF |
-                      AV_CODEC_CAP_DELAY |
-                      AV_CODEC_CAP_DR1 |
-                      AV_CODEC_CAP_SUBFRAMES ,
-    .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
+    .decode         = shorten_decode_frame,
+    .capabilities   = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
+    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_U8P,
                                                       AV_SAMPLE_FMT_NONE },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };
