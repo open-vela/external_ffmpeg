@@ -22,6 +22,7 @@
 #ifndef AVCODEC_OPUSENC_H
 #define AVCODEC_OPUSENC_H
 
+#include "internal.h"
 #include "opus_celt.h"
 
 /* Determines the maximum delay the psychoacoustic system will use for lookahead */
