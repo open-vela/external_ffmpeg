@@ -18,19 +18,18 @@
 
 #include "libavutil/random_seed.h"
 #include "libavutil/opt.h"
-#include "vulkan_filter.h"
+#include "vulkan.h"
 #include "internal.h"
 #include "framesync.h"
 
 #define CGROUPS (int [3]){ 32, 32, 1 }
 
 typedef struct OverlayVulkanContext {
-    FFVulkanContext vkctx;
+    VulkanFilterContext vkctx;
 
     int initialized;
-    FFVkQueueFamilyCtx qf;
+    VulkanPipeline *pl;
     FFVkExecContext *exec;
-    FFVulkanPipeline *pl;
     FFFrameSync fs;
     FFVkBuffer params_buf;
 
@@ -80,25 +79,24 @@ static const char overlay_alpha[] = {
 static av_cold int init_filter(AVFilterContext *ctx)
 {
     int err;
-    FFVkSampler *sampler;
     OverlayVulkanContext *s = ctx->priv;
-    FFVulkanContext *vkctx = &s->vkctx;
-    const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
-
-    ff_vk_qf_init(vkctx, &s->qf, VK_QUEUE_COMPUTE_BIT, 0);
-
-    sampler = ff_vk_init_sampler(vkctx, 1, VK_FILTER_NEAREST);
+    VkSampler *sampler = ff_vk_init_sampler(ctx, 1, VK_FILTER_NEAREST);
     if (!sampler)
         return AVERROR_EXTERNAL;
 
-    s->pl = ff_vk_create_pipeline(vkctx, &s->qf);
+    s->pl = ff_vk_create_pipeline(ctx);
     if (!s->pl)
         return AVERROR(ENOMEM);
 
+    s->vkctx.queue_family_idx = s->vkctx.hwctx->queue_family_comp_index;
+    s->vkctx.queue_count = GET_QUEUE_COUNT(s->vkctx.hwctx, 0, 1, 0);
+    s->vkctx.cur_queue_idx = av_get_random_seed() % s->vkctx.queue_count;
+
     { /* Create the shader */
+        const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
         const int ialpha = av_pix_fmt_desc_get(s->vkctx.input_format)->flags & AV_PIX_FMT_FLAG_ALPHA;
 
-        FFVulkanDescriptorSetBinding desc_i[3] = {
+        VulkanDescriptorSetBinding desc_i[3] = {
             {
                 .name       = "main_img",
                 .type       = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -106,7 +104,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
                 .elems      = planes,
                 .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
                 .updater    = s->main_images,
-                .sampler    = sampler,
+                .samplers   = DUP_SAMPLER_ARRAY4(*sampler),
             },
             {
                 .name       = "overlay_img",
@@ -115,7 +113,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
                 .elems      = planes,
                 .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
                 .updater    = s->overlay_images,
-                .sampler    = sampler,
+                .samplers   = DUP_SAMPLER_ARRAY4(*sampler),
             },
             {
                 .name       = "output_img",
@@ -129,7 +127,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
             },
         };
 
-        FFVulkanDescriptorSetBinding desc_b = {
+        VulkanDescriptorSetBinding desc_b = {
             .name        = "params",
             .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             .mem_quali   = "readonly",
@@ -139,15 +137,15 @@ static av_cold int init_filter(AVFilterContext *ctx)
             .buf_content = "ivec2 o_offset[3], o_size[3];",
         };
 
-        FFVkSPIRVShader *shd = ff_vk_init_shader(s->pl, "overlay_compute",
-                                                 VK_SHADER_STAGE_COMPUTE_BIT);
+        SPIRVShader *shd = ff_vk_init_shader(ctx, s->pl, "overlay_compute",
+                                             VK_SHADER_STAGE_COMPUTE_BIT);
         if (!shd)
             return AVERROR(ENOMEM);
 
-        ff_vk_set_compute_shader_sizes(shd, CGROUPS);
+        ff_vk_set_compute_shader_sizes(ctx, shd, CGROUPS);
 
-        RET(ff_vk_add_descriptor_set(vkctx, s->pl, shd,  desc_i, FF_ARRAY_ELEMS(desc_i), 0)); /* set 0 */
-        RET(ff_vk_add_descriptor_set(vkctx, s->pl, shd, &desc_b, 1, 0)); /* set 1 */
+        RET(ff_vk_add_descriptor_set(ctx, s->pl, shd,  desc_i, 3, 0)); /* set 0 */
+        RET(ff_vk_add_descriptor_set(ctx, s->pl, shd, &desc_b, 1, 0)); /* set 1 */
 
         GLSLD(   overlay_noalpha                                              );
         GLSLD(   overlay_alpha                                                );
@@ -163,11 +161,11 @@ static av_cold int init_filter(AVFilterContext *ctx)
         GLSLC(1,     }                                                        );
         GLSLC(0, }                                                            );
 
-        RET(ff_vk_compile_shader(vkctx, shd, "main"));
+        RET(ff_vk_compile_shader(ctx, shd, "main"));
     }
 
-    RET(ff_vk_init_pipeline_layout(vkctx, s->pl));
-    RET(ff_vk_init_compute_pipeline(vkctx, s->pl));
+    RET(ff_vk_init_pipeline_layout(ctx, s->pl));
+    RET(ff_vk_init_compute_pipeline(ctx, s->pl));
 
     { /* Create and update buffer */
         const AVPixFmtDescriptor *desc;
@@ -180,14 +178,14 @@ static av_cold int init_filter(AVFilterContext *ctx)
             int32_t o_size[2*3];
         } *par;
 
-        err = ff_vk_create_buf(vkctx, &s->params_buf,
+        err = ff_vk_create_buf(ctx, &s->params_buf,
                                sizeof(*par),
                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
         if (err)
             return err;
 
-        err = ff_vk_map_buffers(vkctx, &s->params_buf, (uint8_t **)&par, 1, 0);
+        err = ff_vk_map_buffers(ctx, &s->params_buf, (uint8_t **)&par, 1, 0);
         if (err)
             return err;
 
@@ -207,18 +205,18 @@ static av_cold int init_filter(AVFilterContext *ctx)
         par->o_size[4] = par->o_size[0] >> desc->log2_chroma_w;
         par->o_size[5] = par->o_size[1] >> desc->log2_chroma_h;
 
-        err = ff_vk_unmap_buffers(vkctx, &s->params_buf, 1, 1);
+        err = ff_vk_unmap_buffers(ctx, &s->params_buf, 1, 1);
         if (err)
             return err;
 
         s->params_desc.buffer = s->params_buf.buf;
         s->params_desc.range  = VK_WHOLE_SIZE;
 
-        ff_vk_update_descriptor_set(vkctx, s->pl, 1);
+        ff_vk_update_descriptor_set(ctx, s->pl, 1);
     }
 
     /* Execution context */
-    RET(ff_vk_create_exec_ctx(vkctx, &s->exec, &s->qf));
+    RET(ff_vk_create_exec_ctx(ctx, &s->exec));
 
     s->initialized = 1;
 
@@ -234,39 +232,33 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
     int err;
     VkCommandBuffer cmd_buf;
     OverlayVulkanContext *s = avctx->priv;
-    FFVulkanContext *vkctx = &s->vkctx;
-    FFVulkanFunctions *vk = &vkctx->vkfn;
     int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
 
     AVVkFrame *out     = (AVVkFrame *)out_f->data[0];
     AVVkFrame *main    = (AVVkFrame *)main_f->data[0];
     AVVkFrame *overlay = (AVVkFrame *)overlay_f->data[0];
 
-    AVHWFramesContext *main_fc    = (AVHWFramesContext*)main_f->hw_frames_ctx->data;
+    AVHWFramesContext *main_fc = (AVHWFramesContext*)main_f->hw_frames_ctx->data;
     AVHWFramesContext *overlay_fc = (AVHWFramesContext*)overlay_f->hw_frames_ctx->data;
 
-    const VkFormat *output_formats     = av_vkfmt_from_pixfmt(s->vkctx.output_format);
-    const VkFormat *main_sw_formats    = av_vkfmt_from_pixfmt(main_fc->sw_format);
-    const VkFormat *overlay_sw_formats = av_vkfmt_from_pixfmt(overlay_fc->sw_format);
-
     /* Update descriptors and init the exec context */
-    ff_vk_start_exec_recording(vkctx, s->exec);
-    cmd_buf = ff_vk_get_exec_buf(s->exec);
+    ff_vk_start_exec_recording(avctx, s->exec);
+    cmd_buf = ff_vk_get_exec_buf(avctx, s->exec);
 
     for (int i = 0; i < planes; i++) {
-        RET(ff_vk_create_imageview(vkctx, s->exec,
-                                   &s->main_images[i].imageView, main->img[i],
-                                   main_sw_formats[i],
+        RET(ff_vk_create_imageview(avctx, s->exec, &s->main_images[i].imageView,
+                                   main->img[i],
+                                   av_vkfmt_from_pixfmt(main_fc->sw_format)[i],
                                    ff_comp_identity_map));
 
-        RET(ff_vk_create_imageview(vkctx, s->exec,
-                                   &s->overlay_images[i].imageView, overlay->img[i],
-                                   overlay_sw_formats[i],
+        RET(ff_vk_create_imageview(avctx, s->exec, &s->overlay_images[i].imageView,
+                                   overlay->img[i],
+                                   av_vkfmt_from_pixfmt(overlay_fc->sw_format)[i],
                                    ff_comp_identity_map));
 
-        RET(ff_vk_create_imageview(vkctx, s->exec,
-                                   &s->output_images[i].imageView, out->img[i],
-                                   output_formats[i],
+        RET(ff_vk_create_imageview(avctx, s->exec, &s->output_images[i].imageView,
+                                   out->img[i],
+                                   av_vkfmt_from_pixfmt(s->vkctx.output_format)[i],
                                    ff_comp_identity_map));
 
         s->main_images[i].imageLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -274,7 +266,7 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
         s->output_images[i].imageLayout  = VK_IMAGE_LAYOUT_GENERAL;
     }
 
-    ff_vk_update_descriptor_set(vkctx, s->pl, 0);
+    ff_vk_update_descriptor_set(avctx, s->pl, 0);
 
     for (int i = 0; i < planes; i++) {
         VkImageMemoryBarrier bar[3] = {
@@ -319,9 +311,9 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
             },
         };
 
-        vk->CmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                               0, NULL, 0, NULL, FF_ARRAY_ELEMS(bar), bar);
+        vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+                             0, NULL, 0, NULL, FF_ARRAY_ELEMS(bar), bar);
 
         main->layout[i]    = bar[0].newLayout;
         main->access[i]    = bar[0].dstAccessMask;
@@ -333,26 +325,24 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out_f,
         out->access[i]     = bar[2].dstAccessMask;
     }
 
-    ff_vk_bind_pipeline_exec(vkctx, s->exec, s->pl);
+    ff_vk_bind_pipeline_exec(avctx, s->exec, s->pl);
 
-    vk->CmdDispatch(cmd_buf,
-                    FFALIGN(s->vkctx.output_width,  CGROUPS[0])/CGROUPS[0],
-                    FFALIGN(s->vkctx.output_height, CGROUPS[1])/CGROUPS[1], 1);
+    vkCmdDispatch(cmd_buf,
+                  FFALIGN(s->vkctx.output_width,  CGROUPS[0])/CGROUPS[0],
+                  FFALIGN(s->vkctx.output_height, CGROUPS[1])/CGROUPS[1], 1);
 
-    ff_vk_add_exec_dep(vkctx, s->exec, main_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-    ff_vk_add_exec_dep(vkctx, s->exec, overlay_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-    ff_vk_add_exec_dep(vkctx, s->exec, out_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+    ff_vk_add_exec_dep(avctx, s->exec, main_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+    ff_vk_add_exec_dep(avctx, s->exec, overlay_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+    ff_vk_add_exec_dep(avctx, s->exec, out_f, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 
-    err = ff_vk_submit_exec_queue(vkctx, s->exec);
+    err = ff_vk_submit_exec_queue(avctx, s->exec);
     if (err)
         return err;
-
-    ff_vk_qf_rotate(&s->qf);
 
     return err;
 
 fail:
-    ff_vk_discard_exec_deps(s->exec);
+    ff_vk_discard_exec_deps(avctx, s->exec);
     return err;
 }
 
@@ -444,9 +434,10 @@ static void overlay_vulkan_uninit(AVFilterContext *avctx)
 {
     OverlayVulkanContext *s = avctx->priv;
 
-    ff_vk_free_buf(&s->vkctx, &s->params_buf);
-    ff_vk_uninit(&s->vkctx);
+    ff_vk_filter_uninit(avctx);
     ff_framesync_uninit(&s->fs);
+
+    ff_vk_free_buf(avctx, &s->params_buf);
 
     s->initialized = 0;
 }
@@ -472,6 +463,7 @@ static const AVFilterPad overlay_vulkan_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = &ff_vk_filter_config_input,
     },
+    { NULL }
 };
 
 static const AVFilterPad overlay_vulkan_outputs[] = {
@@ -480,18 +472,19 @@ static const AVFilterPad overlay_vulkan_outputs[] = {
         .type = AVMEDIA_TYPE_VIDEO,
         .config_props = &overlay_vulkan_config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_overlay_vulkan = {
+AVFilter ff_vf_overlay_vulkan = {
     .name           = "overlay_vulkan",
     .description    = NULL_IF_CONFIG_SMALL("Overlay a source on top of another"),
     .priv_size      = sizeof(OverlayVulkanContext),
     .init           = &overlay_vulkan_init,
     .uninit         = &overlay_vulkan_uninit,
+    .query_formats  = &ff_vk_filter_query_formats,
     .activate       = &overlay_vulkan_activate,
-    FILTER_INPUTS(overlay_vulkan_inputs),
-    FILTER_OUTPUTS(overlay_vulkan_outputs),
-    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .inputs         = overlay_vulkan_inputs,
+    .outputs        = overlay_vulkan_outputs,
     .priv_class     = &overlay_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

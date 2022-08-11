@@ -30,7 +30,7 @@ typedef struct MaskedMergeContext {
     int linesize[4];
     int nb_planes;
     int planes;
-    int half, depth, max;
+    int half, depth;
     FFFrameSync fs;
 
     void (*maskedmerge)(const uint8_t *bsrc, const uint8_t *osrc,

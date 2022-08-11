@@ -59,27 +59,32 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->square_sat);
 }
 
-static const enum AVPixelFormat pix_fmts[] = {
-    AV_PIX_FMT_YUVA444P, AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUV440P,
-    AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ440P,
-    AV_PIX_FMT_YUVA422P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUVA420P, AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_YUVJ422P, AV_PIX_FMT_YUVJ420P,
-    AV_PIX_FMT_YUVJ411P, AV_PIX_FMT_YUV411P, AV_PIX_FMT_YUV410P,
-    AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9,
-    AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10,
-    AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV444P12, AV_PIX_FMT_YUV440P12,
-    AV_PIX_FMT_YUV420P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV444P14,
-    AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
-    AV_PIX_FMT_YUVA420P9, AV_PIX_FMT_YUVA422P9, AV_PIX_FMT_YUVA444P9,
-    AV_PIX_FMT_YUVA420P10, AV_PIX_FMT_YUVA422P10, AV_PIX_FMT_YUVA444P10,
-    AV_PIX_FMT_YUVA422P12, AV_PIX_FMT_YUVA444P12,
-    AV_PIX_FMT_YUVA420P16, AV_PIX_FMT_YUVA422P16, AV_PIX_FMT_YUVA444P16,
-    AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10,
-    AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
-    AV_PIX_FMT_GBRAP, AV_PIX_FMT_GBRAP10, AV_PIX_FMT_GBRAP12, AV_PIX_FMT_GBRAP16,
-    AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY9, AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12, AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
-    AV_PIX_FMT_NONE
-};
+static int query_formats(AVFilterContext *ctx)
+{
+    static const enum AVPixelFormat pix_fmts[] = {
+        AV_PIX_FMT_YUVA444P, AV_PIX_FMT_YUV444P, AV_PIX_FMT_YUV440P,
+        AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ440P,
+        AV_PIX_FMT_YUVA422P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUVA420P, AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_YUVJ422P, AV_PIX_FMT_YUVJ420P,
+        AV_PIX_FMT_YUVJ411P, AV_PIX_FMT_YUV411P, AV_PIX_FMT_YUV410P,
+        AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9,
+        AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10,
+        AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV444P12, AV_PIX_FMT_YUV440P12,
+        AV_PIX_FMT_YUV420P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV444P14,
+        AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16,
+        AV_PIX_FMT_YUVA420P9, AV_PIX_FMT_YUVA422P9, AV_PIX_FMT_YUVA444P9,
+        AV_PIX_FMT_YUVA420P10, AV_PIX_FMT_YUVA422P10, AV_PIX_FMT_YUVA444P10,
+        AV_PIX_FMT_YUVA422P12, AV_PIX_FMT_YUVA444P12,
+        AV_PIX_FMT_YUVA420P16, AV_PIX_FMT_YUVA422P16, AV_PIX_FMT_YUVA444P16,
+        AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10,
+        AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
+        AV_PIX_FMT_GBRAP, AV_PIX_FMT_GBRAP10, AV_PIX_FMT_GBRAP12, AV_PIX_FMT_GBRAP16,
+        AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY9, AV_PIX_FMT_GRAY10, AV_PIX_FMT_GRAY12, AV_PIX_FMT_GRAY14, AV_PIX_FMT_GRAY16,
+        AV_PIX_FMT_NONE
+    };
+
+    return ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+}
 
 typedef struct ThreadData {
     int width;
@@ -248,15 +253,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         td.height       = s->planeheight[plane];
         td.src          = in->data[plane];
         td.src_linesize = in->linesize[plane];
-        ff_filter_execute(ctx, s->pre_calculate_row, &td, NULL,
-                          FFMIN(td.height, nb_threads));
-        ff_filter_execute(ctx, pre_calculate_col, &td, NULL,
-                          FFMIN(td.width,  nb_threads));
+        ctx->internal->execute(ctx, s->pre_calculate_row, &td, NULL, FFMIN(td.height, nb_threads));
+        ctx->internal->execute(ctx, pre_calculate_col, &td, NULL, FFMIN(td.width,  nb_threads));
 
         td.dst          = out->data[plane];
         td.dst_linesize = out->linesize[plane];
-        ff_filter_execute(ctx, s->filter_slice, &td, NULL,
-                          FFMIN(td.height, nb_threads));
+        ctx->internal->execute(ctx, s->filter_slice, &td, NULL, FFMIN(td.height, nb_threads));
     }
 
     if (out != in)
@@ -289,11 +291,11 @@ static int config_input(AVFilterLink *inlink)
 
     // padding one row on the top, and padding one col on the left, that is why + 1 below
     s->sat_linesize = inlink->w + 1;
-    s->sat = av_calloc(inlink->h + 1, s->sat_linesize * sizeof(*s->sat));
+    s->sat = av_mallocz_array(inlink->h + 1, s->sat_linesize*sizeof(*s->sat));
     if (!s->sat)
         return AVERROR(ENOMEM);
 
-    s->square_sat = av_calloc(inlink->h + 1, s->sat_linesize * sizeof(*s->square_sat));
+    s->square_sat = av_mallocz_array(inlink->h + 1, s->sat_linesize*sizeof(*s->square_sat));
     if (!s->square_sat)
         return AVERROR(ENOMEM);
 
@@ -307,6 +309,7 @@ static const AVFilterPad yaep_inputs[] = {
         .config_props = config_input,
         .filter_frame = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad yaep_outputs[] = {
@@ -314,12 +317,13 @@ static const AVFilterPad yaep_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
+    { NULL }
 };
 
 #define OFFSET(x) offsetof(YAEPContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
-static const AVOption yaepblur_options[] = {
+static const AVOption yaep_options[] = {
     { "radius", "set window radius",    OFFSET(radius), AV_OPT_TYPE_INT, {.i64=3},   0, INT_MAX, .flags=FLAGS },
     { "r"     , "set window radius",    OFFSET(radius), AV_OPT_TYPE_INT, {.i64=3},   0, INT_MAX, .flags=FLAGS },
     { "planes", "set planes to filter", OFFSET(planes), AV_OPT_TYPE_INT, {.i64=1},   0,     0xF, .flags=FLAGS },
@@ -329,17 +333,17 @@ static const AVOption yaepblur_options[] = {
     { NULL }
 };
 
-AVFILTER_DEFINE_CLASS(yaepblur);
+AVFILTER_DEFINE_CLASS(yaep);
 
-const AVFilter ff_vf_yaepblur = {
+AVFilter ff_vf_yaepblur = {
     .name            = "yaepblur",
     .description     = NULL_IF_CONFIG_SMALL("Yet another edge preserving blur filter."),
     .priv_size       = sizeof(YAEPContext),
-    .priv_class      = &yaepblur_class,
+    .priv_class      = &yaep_class,
     .uninit          = uninit,
-    FILTER_INPUTS(yaep_inputs),
-    FILTER_OUTPUTS(yaep_outputs),
-    FILTER_PIXFMTS_ARRAY(pix_fmts),
+    .query_formats   = query_formats,
+    .inputs          = yaep_inputs,
+    .outputs         = yaep_outputs,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
     .process_command = ff_filter_process_command,
 };
