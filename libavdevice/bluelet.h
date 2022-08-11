@@ -70,6 +70,10 @@ typedef struct BlueletPriv {
     bool            data_connected;
     enum AVCodecID  codec_id;
     bluelet_state_t state;
+    bool            nonblock;
+#ifdef CONFIG_UORB
+    int             uorb_fd;
+#endif
     union {
         AVPacket*   lastpkt;
         bool        available;
@@ -91,6 +95,9 @@ int ff_bluelet_init(BlueletPriv* priv, bool nonblock);
 void ff_bluelet_deinit(BlueletPriv* priv);
 int ff_bluelet_read_buffer(BlueletPriv* priv, void* buffer, size_t bytes);
 int ff_bluelet_write_buffer(BlueletPriv* priv, void* buffer, size_t bytes);
+#ifdef CONFIG_UORB
+int ff_bluelet_handle_uorb_event(BlueletPriv *priv);
+#endif
 int ff_bluelet_handle_event(BlueletPriv* priv);
 int ff_bluelet_capbility_query_ranges(struct AVOptionRanges** ranges_, void* obj,
                                       const char* key, int flags);

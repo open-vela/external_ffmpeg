@@ -35,6 +35,10 @@
 #ifdef CONFIG_NET_RPMSG
 #include <netpacket/rpmsg.h>
 #endif // CONFIG_NET_RPMSG
+#ifdef CONFIG_UORB
+#include <connectivity/bt.h>
+#include <uORB/uORB.h>
+#endif
 
 #include "bluelet.h"
 #include "libavutil/time.h"
@@ -199,16 +203,38 @@ static int ff_bluelet_send_ctrl(BlueletPriv *priv, const void *buffer, size_t le
     return 0;
 }
 
+static int ff_bluelet_connect(BlueletPriv *priv, bool nonblock)
+{
+    if (priv->ctrl_fd <= 0) {
+        priv->ctrl_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].ctrl, nonblock);
+        if (priv->ctrl_fd < 0)
+            return AVERROR(errno);
+    }
+
+    if (priv->data_fd <= 0) {
+        priv->data_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].data, nonblock);
+        if (priv->data_fd < 0)
+            return AVERROR(errno);
+    }
+    priv->state = BLUELET_STATE_IDLE;
+
+    return 0;
+}
+
 int ff_bluelet_init(BlueletPriv *priv, bool nonblock)
 {
-    priv->ctrl_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].ctrl, nonblock);
-    if (priv->ctrl_fd < 0)
-        return AVERROR(errno);
+    priv->nonblock = nonblock;
+#ifdef CONFIG_UORB
+    priv->uorb_fd = orb_subscribe(ORB_ID(bt_stack_state));
+    if (priv->uorb_fd < 0)
+        return priv->uorb_fd;
+#else
+    /* if can't receive orb message, try connect a2dp server */
 
-    priv->data_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].data, nonblock);
-    if (priv->data_fd < 0)
-        return AVERROR(errno);
-
+    int ret = ff_bluelet_connect(priv, nonblock);
+    if (ret < 0)
+        return ret;
+#endif
     priv->state = BLUELET_STATE_IDLE;
 
     return 0;
@@ -216,6 +242,10 @@ int ff_bluelet_init(BlueletPriv *priv, bool nonblock)
 
 void ff_bluelet_deinit(BlueletPriv *priv)
 {
+#ifdef CONFIG_UORB
+    if (priv->uorb_fd > 0)
+        orb_unsubscribe(priv->uorb_fd);
+#endif
     ff_bluelet_socket_disconnect(priv->ctrl_fd);
     ff_bluelet_socket_disconnect(priv->data_fd);
 
@@ -401,6 +431,23 @@ err:
     av_opt_freep_ranges(&ranges);
     return ret;
 }
+
+#ifdef CONFIG_UORB
+int ff_bluelet_handle_uorb_event(BlueletPriv *priv)
+{
+    int ret;
+    struct bt_stack_state state;
+
+    ret = read(priv->uorb_fd, &state, sizeof(struct bt_stack_state));
+    if (ret < 0)
+        return ret;
+
+    if (state.state == BT_STACK_STATE_ON)
+        ret = ff_bluelet_connect(priv, priv->nonblock);
+
+    return ret < 0 ? ret : 0;
+}
+#endif
 
 int ff_bluelet_handle_event(BlueletPriv *priv)
 {
