@@ -25,10 +25,29 @@
 
 typedef struct SBCParseContext {
     ParseContext pc;
-    uint8_t header[3];
-    int header_size;
-    int buffered_size;
+    uint8_t      header[3];
+    int          frame_len;
+    int          buffered_size;
 } SBCParseContext;
+
+static int max_bitpool(int mode, int subbands)
+{
+    switch (mode) {
+        case SBC_MODE_MONO:
+        case SBC_MODE_DUAL_CHANNEL:
+            return 16 * subbands;
+        case SBC_MODE_STEREO:
+        case SBC_MODE_JOINT_STEREO:
+            return 32 * subbands;
+    }
+
+    return 0;
+}
+
+static int is_sbc_syncword(const uint8_t *data)
+{
+    return data[0] == MSBC_SYNCWORD || data[0] == SBC_SYNCWORD;
+}
 
 static int sbc_parse_header(AVCodecParserContext *s, AVCodecContext *avctx,
                             const uint8_t *data, size_t len)
@@ -41,9 +60,8 @@ static int sbc_parse_header(AVCodecParserContext *s, AVCodecContext *avctx,
         return -1;
 
     if (data[0] == MSBC_SYNCWORD && data[1] == 0 && data[2] == 0) {
-        av_channel_layout_uninit(&avctx->ch_layout);
-        avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-        avctx->ch_layout.nb_channels = 1;
+        avctx->channels = 1;
+        avctx->sample_fmt = AV_SAMPLE_FMT_S16;
         avctx->sample_rate = 16000;
         avctx->frame_size = 120;
         s->duration = avctx->frame_size;
@@ -58,6 +76,8 @@ static int sbc_parse_header(AVCodecParserContext *s, AVCodecContext *avctx,
     mode     =   (data[1] >> 2) & 0x03;
     subbands = (((data[1] >> 0) & 0x01) + 1) << 2;
     bitpool  = data[2];
+    if (bitpool < 2 || bitpool > max_bitpool(mode, subbands))
+        return -3;
 
     channels = mode == SBC_MODE_MONO ? 1 : 2;
     joint    = mode == SBC_MODE_JOINT_STEREO;
@@ -66,9 +86,8 @@ static int sbc_parse_header(AVCodecParserContext *s, AVCodecContext *avctx,
              + ((((mode == SBC_MODE_DUAL_CHANNEL) + 1) * blocks * bitpool
                  + (joint * subbands)) + 7) / 8;
 
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-    avctx->ch_layout.nb_channels = channels;
+    avctx->channels = channels;
+    avctx->sample_fmt = AV_SAMPLE_FMT_S16;
     avctx->sample_rate = sample_rates[sr];
     avctx->frame_size = subbands * blocks;
     s->duration = avctx->frame_size;
@@ -79,44 +98,72 @@ static int sbc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                      const uint8_t **poutbuf, int *poutbuf_size,
                      const uint8_t *buf, int buf_size)
 {
-    SBCParseContext *pc = s->priv_data;
-    int next;
+    SBCParseContext *sbc = s->priv_data;
+    ParseContext *pc = &sbc->pc;
+    int left_size = buf_size;
+    int i, next;
 
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES) {
-        next = buf_size;
-    } else {
-        if (pc->header_size) {
-            memcpy(pc->header + pc->header_size, buf,
-                   sizeof(pc->header) - pc->header_size);
-            next = sbc_parse_header(s, avctx, pc->header, sizeof(pc->header))
-                 - pc->buffered_size;
-            pc->header_size = 0;
-        } else {
-            next = sbc_parse_header(s, avctx, buf, buf_size);
-            if (next >= buf_size)
-                next = -1;
+        *poutbuf      = buf;
+        *poutbuf_size = buf_size;
+        return buf_size;
+    }
+
+    if (!pc->frame_start_found) {
+        for (i = 0; i < buf_size; i++) {
+            memmove(sbc->header, &sbc->header[1], 2);
+            sbc->header[2] = buf[i];
+            if (!is_sbc_syncword(sbc->header))
+                continue;
+
+            sbc->frame_len = sbc_parse_header(s, avctx, sbc->header, 3);
+            if (sbc->frame_len > 0) {
+                pc->frame_start_found = 1;
+
+                if (i < 2) {
+                    int header_size = 2 - i;
+                    const uint8_t *header = sbc->header;
+                    sbc->buffered_size = header_size;
+                    ff_combine_frame(pc, END_NOT_FOUND, &header, &header_size);
+                } else {
+                    sbc->buffered_size = 0;
+                    buf       = &buf[i - 2];
+                    left_size = buf_size - i + 2;
+                }
+                break;
+            }
         }
 
-        if (next < 0) {
-            pc->header_size = FFMIN(sizeof(pc->header), buf_size);
-            memcpy(pc->header, buf, pc->header_size);
-            pc->buffered_size = buf_size;
-            next = END_NOT_FOUND;
-        }
-
-        if (ff_combine_frame(&pc->pc, next, &buf, &buf_size) < 0) {
+        if (i == buf_size) {
+            /* AVERROR_INVALIDDATA */
             *poutbuf      = NULL;
             *poutbuf_size = 0;
             return buf_size;
         }
     }
 
-    *poutbuf      = buf;
-    *poutbuf_size = buf_size;
-    return next;
+    next = sbc->frame_len - sbc->buffered_size;
+    if (next > left_size) {
+        sbc->buffered_size += left_size;
+        next = END_NOT_FOUND;
+    }
+
+    *poutbuf_size = left_size;
+    if (ff_combine_frame(pc, next, &buf, poutbuf_size) < 0) {
+        /* NO ENOUGH DATA */
+        *poutbuf      = NULL;
+        *poutbuf_size = 0;
+        return buf_size;
+    }
+
+    *poutbuf              = buf;
+    pc->frame_start_found = 0;
+    memset(sbc->header, 0, sizeof(sbc->header));
+
+    return buf_size - left_size + next;
 }
 
-const AVCodecParser ff_sbc_parser = {
+AVCodecParser ff_sbc_parser = {
     .codec_ids      = { AV_CODEC_ID_SBC },
     .priv_data_size = sizeof(SBCParseContext),
     .parser_parse   = sbc_parse,
