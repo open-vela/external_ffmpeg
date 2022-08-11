@@ -127,7 +127,9 @@ static int movie_async_send_cmd(AVFilterContext *ctx, const int cmd, const void 
         return AVERROR(ENOMEM);
 
     msg->cmd = cmd;
-    memcpy(msg->data, data, size);
+
+    if (data && size)
+        memcpy(msg->data, data, size);
 
     pthread_mutex_lock(&movie->mutex);
     if (dq_count(&movie->cmd_queue) >= movie->cmd_max &&

@@ -86,7 +86,9 @@ static int amoviesink_send_cmd(AVFilterContext *ctx, int cmd, const void *data, 
         return AVERROR(ENOMEM);
 
     msg->cmd = cmd;
-    memcpy(msg->data, data, size);
+
+    if (data && size)
+        memcpy(msg->data, data, size);
 
     pthread_mutex_lock(&priv->mutex);
     dq_addlast(&msg->dq_entry, &priv->cmd_queue);
