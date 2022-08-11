@@ -435,7 +435,6 @@ static int mp3_read_header(AVFormatContext *s)
         st->index_entries[i].pos += avio_tell(s->pb);
 
     /* the parameters will be extracted from the compressed bitstream */
-    av_log(s, AV_LOG_ERROR, "%s complete, offset %lld.\n", __func__, off);
     return 0;
 }
 
