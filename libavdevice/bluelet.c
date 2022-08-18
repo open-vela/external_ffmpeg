@@ -223,7 +223,10 @@ static int ff_bluelet_connect(BlueletPriv *priv, bool nonblock)
 
 int ff_bluelet_init(BlueletPriv *priv, bool nonblock)
 {
+    int ret;
+
     priv->nonblock = nonblock;
+
 #ifdef CONFIG_UORB
     priv->uorb_fd = orb_subscribe(ORB_ID(bt_stack_state));
     if (priv->uorb_fd < 0)
@@ -231,7 +234,7 @@ int ff_bluelet_init(BlueletPriv *priv, bool nonblock)
 #else
     /* if can't receive orb message, try connect a2dp server */
 
-    int ret = ff_bluelet_connect(priv, nonblock);
+    ret = ff_bluelet_connect(priv, nonblock);
     if (ret < 0)
         return ret;
 #endif
@@ -351,7 +354,7 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
             goto error;
 
         snprintf(priv->sbc.param, sizeof(priv->sbc.param),
-                "channel_mode=%d:blocks=%d:subbands=%d:alloc_method=%d:bitpool=%d",
+                "channel_mode=%lu:blocks=%lu:subbands=%lu:alloc_method=%lu:bitpool=%lu",
                 param.channel_mode, param.blocks, param.subbands, param.alloc_method, param.bitpool);
     } else if (config.codec_type == BLUELET_CODEC_TYPE_MPEG2_4_AAC) {
         bluelet_aac_param_t param;
