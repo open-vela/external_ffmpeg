@@ -20,7 +20,7 @@
 
 #include <string.h>
 #include "checkasm.h"
-#include "libavcodec/v210dec_init.h"
+#include "libavcodec/v210dec.h"
 
 static uint32_t get_v210(void)
 {

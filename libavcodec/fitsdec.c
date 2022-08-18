@@ -31,7 +31,6 @@
  */
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include <float.h>
 #include "libavutil/intreadwrite.h"
@@ -64,7 +63,7 @@ static int fill_data_min_max(const uint8_t *ptr8, FITSHeader *header, const uint
     int i, j;
 
     header->data_min = DBL_MAX;
-    header->data_max = -DBL_MAX;
+    header->data_max = DBL_MIN;
     switch (header->bitpix) {
 #define CASE_N(a, t, rd) \
     case a: \
@@ -181,9 +180,9 @@ static int fits_read_header(AVCodecContext *avctx, const uint8_t **ptr, FITSHead
     return 0;
 }
 
-static int fits_decode_frame(AVCodecContext *avctx, AVFrame *p,
-                             int *got_frame, AVPacket *avpkt)
+static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *avpkt)
 {
+    AVFrame *p=data;
     const uint8_t *ptr8 = avpkt->data, *end;
     uint8_t t8;
     int16_t t16;
@@ -321,13 +320,13 @@ static const AVClass fits_decoder_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_fits_decoder = {
-    .p.name         = "fits",
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_FITS,
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Flexible Image Transport System"),
-    .p.priv_class   = &fits_decoder_class,
+AVCodec ff_fits_decoder = {
+    .name           = "fits",
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_FITS,
     .priv_data_size = sizeof(FITSContext),
-    FF_CODEC_DECODE_CB(fits_decode_frame),
+    .decode         = fits_decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
+    .long_name      = NULL_IF_CONFIG_SMALL("Flexible Image Transport System"),
+    .priv_class     = &fits_decoder_class
 };

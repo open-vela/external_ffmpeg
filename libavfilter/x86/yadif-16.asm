@@ -287,3 +287,7 @@ INIT_XMM ssse3
 YADIF
 INIT_XMM sse2
 YADIF
+%if ARCH_X86_32
+INIT_MMX mmxext
+YADIF
+%endif

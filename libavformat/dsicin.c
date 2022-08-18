@@ -132,12 +132,11 @@ static int cin_read_header(AVFormatContext *s)
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id = AV_CODEC_ID_DSICINAUDIO;
     st->codecpar->codec_tag = 0;  /* no tag */
-    st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+    st->codecpar->channels = 1;
+    st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
     st->codecpar->sample_rate = 22050;
     st->codecpar->bits_per_coded_sample = 8;
-    st->codecpar->bit_rate = st->codecpar->sample_rate *
-                             st->codecpar->bits_per_coded_sample *
-                             st->codecpar->ch_layout.nb_channels;
+    st->codecpar->bit_rate = st->codecpar->sample_rate * st->codecpar->bits_per_coded_sample * st->codecpar->channels;
 
     return 0;
 }
@@ -167,8 +166,7 @@ static int cin_read_packet(AVFormatContext *s, AVPacket *pkt)
     CinDemuxContext *cin = s->priv_data;
     AVIOContext *pb = s->pb;
     CinFrameHeader *hdr = &cin->frame_header;
-    int rc, palette_type;
-    int64_t pkt_size;
+    int rc, palette_type, pkt_size;
     int ret;
 
     if (cin->audio_buffer_size == 0) {
@@ -184,9 +182,7 @@ static int cin_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
 
         /* palette and video packet */
-        pkt_size = (palette_type + 3LL) * hdr->pal_colors_count + hdr->video_frame_size;
-        if (pkt_size + 4 > INT_MAX)
-            return AVERROR_INVALIDDATA;
+        pkt_size = (palette_type + 3) * hdr->pal_colors_count + hdr->video_frame_size;
 
         pkt_size = ffio_limit(pb, pkt_size);
 
@@ -227,7 +223,7 @@ static int cin_read_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
-const AVInputFormat ff_dsicin_demuxer = {
+AVInputFormat ff_dsicin_demuxer = {
     .name           = "dsicin",
     .long_name      = NULL_IF_CONFIG_SMALL("Delphine Software International CIN"),
     .priv_data_size = sizeof(CinDemuxContext),
