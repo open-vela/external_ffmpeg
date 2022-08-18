@@ -355,7 +355,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     if (needs_copy) {
         av_log(inlink->dst, AV_LOG_DEBUG, "Direct padding impossible allocating new frame\n");
-        out = ff_get_video_buffer(outlink,
+        out = ff_get_video_buffer(inlink->dst->outputs[0],
                                   FFMAX(inlink->w, s->w),
                                   FFMAX(inlink->h, s->h));
         if (!out) {
@@ -410,7 +410,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     if (in != out)
         av_frame_free(&in);
-    return ff_filter_frame(outlink, out);
+    return ff_filter_frame(inlink->dst->outputs[0], out);
 }
 
 #define OFFSET(x) offsetof(PadContext, x)
@@ -438,9 +438,10 @@ static const AVFilterPad avfilter_vf_pad_inputs[] = {
         .name             = "default",
         .type             = AVMEDIA_TYPE_VIDEO,
         .config_props     = config_input,
-        .get_buffer.video = get_video_buffer,
+        .get_video_buffer = get_video_buffer,
         .filter_frame     = filter_frame,
     },
+    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_pad_outputs[] = {
@@ -449,14 +450,15 @@ static const AVFilterPad avfilter_vf_pad_outputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .config_props = config_output,
     },
+    { NULL }
 };
 
-const AVFilter ff_vf_pad = {
+AVFilter ff_vf_pad = {
     .name          = "pad",
     .description   = NULL_IF_CONFIG_SMALL("Pad the input video."),
     .priv_size     = sizeof(PadContext),
     .priv_class    = &pad_class,
-    FILTER_INPUTS(avfilter_vf_pad_inputs),
-    FILTER_OUTPUTS(avfilter_vf_pad_outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .query_formats = query_formats,
+    .inputs        = avfilter_vf_pad_inputs,
+    .outputs       = avfilter_vf_pad_outputs,
 };

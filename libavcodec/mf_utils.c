@@ -47,6 +47,39 @@ HRESULT ff_MFSetAttributeSize(IMFAttributes *pattr, REFGUID guid,
 #define ff_MFSetAttributeRatio ff_MFSetAttributeSize
 #define ff_MFGetAttributeRatio ff_MFGetAttributeSize
 
+// MFTEnumEx was missing from mingw-w64's mfplat import library until
+// mingw-w64 v6.0.0, thus wrap it and load it using GetProcAddress.
+// It's also missing in Windows Vista's mfplat.dll.
+HRESULT ff_MFTEnumEx(GUID guidCategory, UINT32 Flags,
+                     const MFT_REGISTER_TYPE_INFO *pInputType,
+                     const MFT_REGISTER_TYPE_INFO *pOutputType,
+                     IMFActivate ***pppMFTActivate, UINT32 *pnumMFTActivate)
+{
+    HRESULT (WINAPI *MFTEnumEx_ptr)(GUID guidCategory, UINT32 Flags,
+                                    const MFT_REGISTER_TYPE_INFO *pInputType,
+                                    const MFT_REGISTER_TYPE_INFO *pOutputType,
+                                    IMFActivate ***pppMFTActivate,
+                                    UINT32 *pnumMFTActivate) = NULL;
+#if !HAVE_UWP
+    HANDLE lib = GetModuleHandleW(L"mfplat.dll");
+    if (lib)
+        MFTEnumEx_ptr = (void *)GetProcAddress(lib, "MFTEnumEx");
+#else
+    // In UWP (which lacks GetModuleHandle), just link directly against
+    // the functions - this requires building with new/complete enough
+    // import libraries.
+    MFTEnumEx_ptr = MFTEnumEx;
+#endif
+    if (!MFTEnumEx_ptr)
+        return E_FAIL;
+    return MFTEnumEx_ptr(guidCategory,
+                         Flags,
+                         pInputType,
+                         pOutputType,
+                         pppMFTActivate,
+                         pnumMFTActivate);
+}
+
 char *ff_hr_str_buf(char *buf, size_t size, HRESULT hr)
 {
 #define HR(x) case x: return (char *) # x;
@@ -73,20 +106,19 @@ char *ff_hr_str_buf(char *buf, size_t size, HRESULT hr)
 // If fill_data!=NULL, initialize the buffer and set the length. (This is a
 // subtle but important difference: some decoders want CurrentLength==0 on
 // provided output buffers.)
-IMFSample *ff_create_memory_sample(MFFunctions *f,void *fill_data, size_t size,
-                                   size_t align)
+IMFSample *ff_create_memory_sample(void *fill_data, size_t size, size_t align)
 {
     HRESULT hr;
     IMFSample *sample;
     IMFMediaBuffer *buffer;
 
-    hr = f->MFCreateSample(&sample);
+    hr = MFCreateSample(&sample);
     if (FAILED(hr))
         return NULL;
 
     align = FFMAX(align, 16); // 16 is "recommended", even if not required
 
-    hr = f->MFCreateAlignedMemoryBuffer(size, align - 1, &buffer);
+    hr = MFCreateAlignedMemoryBuffer(size, align - 1, &buffer);
     if (FAILED(hr))
         return NULL;
 
@@ -516,7 +548,7 @@ const CLSID *ff_codec_to_mf_subtype(enum AVCodecID codec)
     }
 }
 
-static int init_com_mf(void *log, MFFunctions *f)
+static int init_com_mf(void *log)
 {
     HRESULT hr;
 
@@ -529,7 +561,7 @@ static int init_com_mf(void *log, MFFunctions *f)
         return AVERROR(ENOSYS);
     }
 
-    hr = f->MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
     if (FAILED(hr)) {
         av_log(log, AV_LOG_ERROR, "could not initialize MediaFoundation\n");
         CoUninitialize();
@@ -539,16 +571,15 @@ static int init_com_mf(void *log, MFFunctions *f)
     return 0;
 }
 
-static void uninit_com_mf(MFFunctions *f)
+static void uninit_com_mf(void)
 {
-    f->MFShutdown();
+    MFShutdown();
     CoUninitialize();
 }
 
 // Find and create a IMFTransform with the given input/output types. When done,
 // you should use ff_free_mf() to destroy it, which will also uninit COM.
 int ff_instantiate_mf(void *log,
-                      MFFunctions *f,
                       GUID category,
                       MFT_REGISTER_TYPE_INFO *in_type,
                       MFT_REGISTER_TYPE_INFO *out_type,
@@ -563,7 +594,7 @@ int ff_instantiate_mf(void *log,
     IMFActivate *winner = 0;
     UINT32 flags;
 
-    ret = init_com_mf(log, f);
+    ret = init_com_mf(log);
     if (ret < 0)
         return ret;
 
@@ -575,7 +606,7 @@ int ff_instantiate_mf(void *log,
         flags |= MFT_ENUM_FLAG_SYNCMFT;
     }
 
-    hr = f->MFTEnumEx(category, flags, in_type, out_type, &activate,
+    hr = ff_MFTEnumEx(category, flags, in_type, out_type, &activate,
                       &num_activate);
     if (FAILED(hr))
         goto error_uninit_mf;
@@ -636,14 +667,14 @@ int ff_instantiate_mf(void *log,
     return 0;
 
 error_uninit_mf:
-    uninit_com_mf(f);
+    uninit_com_mf();
     return AVERROR(ENOSYS);
 }
 
-void ff_free_mf(MFFunctions *f, IMFTransform **mft)
+void ff_free_mf(IMFTransform **mft)
 {
     if (*mft)
         IMFTransform_Release(*mft);
     *mft = NULL;
-    uninit_com_mf(f);
+    uninit_com_mf();
 }

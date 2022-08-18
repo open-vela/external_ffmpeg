@@ -250,19 +250,13 @@ static int ftp_auth(FTPContext *s)
 
     if (strpbrk(s->user, "\r\n"))
         return AVERROR(EINVAL);
-    err = snprintf(buf, sizeof(buf), "USER %s\r\n", s->user);
-    if (err >= sizeof(buf))
-        return AVERROR(ENOSYS);
-
+    snprintf(buf, sizeof(buf), "USER %s\r\n", s->user);
     err = ftp_send_command(s, buf, user_codes, NULL);
     if (err == 331) {
         if (s->password) {
             if (strpbrk(s->password, "\r\n"))
                 return AVERROR(EINVAL);
-            err = snprintf(buf, sizeof(buf), "PASS %s\r\n", s->password);
-            if (err >= sizeof(buf))
-                return AVERROR(ENOSYS);
-
+            snprintf(buf, sizeof(buf), "PASS %s\r\n", s->password);
             err = ftp_send_command(s, buf, pass_codes, NULL);
         } else
             return AVERROR(EACCES);
@@ -403,13 +397,9 @@ static int ftp_file_size(FTPContext *s)
 {
     char command[CONTROL_BUFFER_SIZE];
     char *res = NULL;
-    int ret;
     static const int size_codes[] = {213, 0};
 
-    ret = snprintf(command, sizeof(command), "SIZE %s\r\n", s->path);
-    if (ret >= sizeof(command))
-        return AVERROR(ENOSYS);
-
+    snprintf(command, sizeof(command), "SIZE %s\r\n", s->path);
     if (ftp_send_command(s, command, size_codes, &res) == 213 && res && strlen(res) > 4) {
         s->filesize = strtoll(&res[4], NULL, 10);
     } else {
@@ -426,12 +416,9 @@ static int ftp_retrieve(FTPContext *s)
 {
     char command[CONTROL_BUFFER_SIZE];
     static const int retr_codes[] = {150, 125, 0};
-    int resp_code, ret;
+    int resp_code;
 
-    ret = snprintf(command, sizeof(command), "RETR %s\r\n", s->path);
-    if (ret >= sizeof(command))
-        return AVERROR(ENOSYS);
-
+    snprintf(command, sizeof(command), "RETR %s\r\n", s->path);
     resp_code = ftp_send_command(s, command, retr_codes, NULL);
     if (resp_code != 125 && resp_code != 150)
         return AVERROR(EIO);
@@ -445,12 +432,9 @@ static int ftp_store(FTPContext *s)
 {
     char command[CONTROL_BUFFER_SIZE];
     static const int stor_codes[] = {150, 125, 0};
-    int resp_code, ret;
+    int resp_code;
 
-    ret = snprintf(command, sizeof(command), "STOR %s\r\n", s->path);
-    if (ret >= sizeof(command))
-        return AVERROR(ENOSYS);
-
+    snprintf(command, sizeof(command), "STOR %s\r\n", s->path);
     resp_code = ftp_send_command(s, command, stor_codes, NULL);
     if (resp_code != 125 && resp_code != 150)
         return AVERROR(EIO);
@@ -487,12 +471,8 @@ static int ftp_set_dir(FTPContext *s)
 {
     static const int cwd_codes[] = {250, 550, 0}; /* 550 is incorrect code */
     char command[MAX_URL_SIZE];
-    int ret;
 
-    ret = snprintf(command, sizeof(command), "CWD %s\r\n", s->path);
-    if (ret >= sizeof(command))
-        return AVERROR(ENOSYS);
-
+    snprintf(command, sizeof(command), "CWD %s\r\n", s->path);
     if (ftp_send_command(s, command, cwd_codes, NULL) != 250)
         return AVERROR(EIO);
     return 0;
@@ -992,8 +972,6 @@ static int ftp_parse_entry_mlsd(char *mlsd, AVIODirEntry *next)
             continue;
         }
         fact = av_strtok(fact, "=", &value);
-        if (!fact)
-            continue;
         if (!av_strcasecmp(fact, "type")) {
             if (!av_strcasecmp(value, "cdir") || !av_strcasecmp(value, "pdir"))
                 return 1;
@@ -1102,23 +1080,13 @@ static int ftp_delete(URLContext *h)
     if ((ret = ftp_connect(h, h->filename)) < 0)
         goto cleanup;
 
-    ret = snprintf(command, sizeof(command), "DELE %s\r\n", s->path);
-    if (ret >= sizeof(command)) {
-        ret = AVERROR(ENOSYS);
-        goto cleanup;
-    }
-
+    snprintf(command, sizeof(command), "DELE %s\r\n", s->path);
     if (ftp_send_command(s, command, del_codes, NULL) == 250) {
         ret = 0;
         goto cleanup;
     }
 
-    ret = snprintf(command, sizeof(command), "RMD %s\r\n", s->path);
-    if (ret >= sizeof(command)) {
-        ret = AVERROR(ENOSYS);
-        goto cleanup;
-    }
-
+    snprintf(command, sizeof(command), "RMD %s\r\n", s->path);
     if (ftp_send_command(s, command, rmd_codes, NULL) == 250)
         ret = 0;
     else
@@ -1132,7 +1100,7 @@ cleanup:
 static int ftp_move(URLContext *h_src, URLContext *h_dst)
 {
     FTPContext *s = h_src->priv_data;
-    char command[MAX_URL_SIZE], path[MAX_URL_SIZE];
+    char command[MAX_URL_SIZE+8], path[MAX_URL_SIZE];
     static const int rnfr_codes[] = {350, 421, 450, 500, 501, 502, 503, 530, 0};
     static const int rnto_codes[] = {250, 421, 500, 501, 502, 503, 530, 532, 553, 0};
     int ret;
@@ -1140,12 +1108,7 @@ static int ftp_move(URLContext *h_src, URLContext *h_dst)
     if ((ret = ftp_connect(h_src, h_src->filename)) < 0)
         goto cleanup;
 
-    ret = snprintf(command, sizeof(command), "RNFR %s\r\n", s->path);
-    if (ret >= sizeof(command)) {
-        ret = AVERROR(ENOSYS);
-        goto cleanup;
-    }
-
+    snprintf(command, sizeof(command), "RNFR %s\r\n", s->path);
     if (ftp_send_command(s, command, rnfr_codes, NULL) != 350) {
         ret = AVERROR(EIO);
         goto cleanup;
@@ -1154,12 +1117,7 @@ static int ftp_move(URLContext *h_src, URLContext *h_dst)
     av_url_split(0, 0, 0, 0, 0, 0, 0,
                  path, sizeof(path),
                  h_dst->filename);
-    ret = snprintf(command, sizeof(command), "RNTO %s\r\n", path);
-    if (ret >= sizeof(command)) {
-        ret = AVERROR(ENOSYS);
-        goto cleanup;
-    }
-
+    snprintf(command, sizeof(command), "RNTO %s\r\n", path);
     if (ftp_send_command(s, command, rnto_codes, NULL) == 250)
         ret = 0;
     else

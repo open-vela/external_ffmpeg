@@ -26,12 +26,11 @@
 #include <stdatomic.h>
 
 #include "libavutil/buffer.h"
-#include "libavutil/mem_internal.h"
+#include "libavutil/md5.h"
 
 #include "avcodec.h"
 #include "bswapdsp.h"
 #include "cabac.h"
-#include "dovi_rpu.h"
 #include "get_bits.h"
 #include "hevcpred.h"
 #include "h2645_parse.h"
@@ -39,18 +38,21 @@
 #include "hevc_ps.h"
 #include "hevc_sei.h"
 #include "hevcdsp.h"
-#include "h274.h"
-#include "threadframe.h"
+#include "internal.h"
+#include "thread.h"
 #include "videodsp.h"
 
+#define MAX_NB_THREADS 16
 #define SHIFT_CTB_WPP 2
+
+//TODO: check if this is really the maximum
+#define MAX_TRANSFORM_DEPTH 5
 
 #define MAX_TB_SIZE 32
 #define MAX_QP 51
 #define DEFAULT_INTRA_TC_OFFSET 2
 
 #define HEVC_CONTEXTS 199
-#define HEVC_STAT_COEFFS 4
 
 #define MRG_MAX_NUM_CANDS     5
 
@@ -392,9 +394,7 @@ typedef struct DBParams {
 
 typedef struct HEVCFrame {
     AVFrame *frame;
-    AVFrame *frame_grain;
     ThreadFrame tf;
-    int needs_fg; /* 1 if grain needs to be applied by the decoder */
     MvField *tab_mvf;
     RefPicList *refPicList;
     RefPicListTab **rpl_tab;
@@ -424,7 +424,7 @@ typedef struct HEVCFrame {
 typedef struct HEVCLocalContext {
     uint8_t cabac_state[HEVC_CONTEXTS];
 
-    uint8_t stat_coeff[HEVC_STAT_COEFFS];
+    uint8_t stat_coeff[4];
 
     uint8_t first_qp_group;
 
@@ -468,9 +468,9 @@ typedef struct HEVCContext {
     const AVClass *c;  // needed by private avoptions
     AVCodecContext *avctx;
 
-    struct HEVCContext  **sList;
+    struct HEVCContext  *sList[MAX_NB_THREADS];
 
-    HEVCLocalContext    **HEVClcList;
+    HEVCLocalContext    *HEVClcList[MAX_NB_THREADS];
     HEVCLocalContext    *HEVClc;
 
     uint8_t             threads_type;
@@ -480,7 +480,6 @@ typedef struct HEVCContext {
     int                 height;
 
     uint8_t *cabac_state;
-    uint8_t stat_coeff[HEVC_STAT_COEFFS];
 
     /** 1 if the independent slice segment header was successfully parsed */
     uint8_t slice_initialized;
@@ -524,7 +523,6 @@ typedef struct HEVCContext {
     HEVCDSPContext hevcdsp;
     VideoDSPContext vdsp;
     BswapDSPContext bdsp;
-    H274FilmGrainDatabase h274db;
     int8_t *qp_y_tab;
     uint8_t *horizontal_bs;
     uint8_t *vertical_bs;
@@ -563,15 +561,13 @@ typedef struct HEVCContext {
     // type of the first VCL NAL of the current frame
     enum HEVCNALUnitType first_nal_type;
 
+    uint8_t context_initialized;
     int is_nalff;           ///< this flag is != 0 if bitstream is encapsulated
                             ///< as a format defined in 14496-15
     int apply_defdispwin;
 
     int nal_length_size;    ///< Number of bytes used for nal length (1, 2 or 4)
     int nuh_layer_id;
-
-    AVBufferRef *rpu_buf;       ///< 0 or 1 Dolby Vision RPUs.
-    DOVIContext dovi_ctx;       ///< Dolby Vision decoding context
 } HEVCContext;
 
 /**
@@ -584,8 +580,8 @@ void ff_hevc_clear_refs(HEVCContext *s);
  */
 void ff_hevc_flush_dpb(HEVCContext *s);
 
-const RefPicList *ff_hevc_get_ref_list(const HEVCContext *s, const HEVCFrame *frame,
-                                       int x0, int y0);
+RefPicList *ff_hevc_get_ref_list(HEVCContext *s, HEVCFrame *frame,
+                                 int x0, int y0);
 
 /**
  * Construct the reference picture sets for the current frame.
@@ -598,7 +594,7 @@ int ff_hevc_frame_rps(HEVCContext *s);
 int ff_hevc_slice_rpl(HEVCContext *s);
 
 void ff_hevc_save_states(HEVCContext *s, int ctb_addr_ts);
-int ff_hevc_cabac_init(HEVCContext *s, int ctb_addr_ts, int thread);
+int ff_hevc_cabac_init(HEVCContext *s, int ctb_addr_ts);
 int ff_hevc_sao_merge_flag_decode(HEVCContext *s);
 int ff_hevc_sao_type_idx_decode(HEVCContext *s);
 int ff_hevc_sao_band_position_decode(HEVCContext *s);
