@@ -125,7 +125,7 @@ static int filter_units_filter(AVBSFContext *bsf, AVPacket *pkt)
         }
         if (ctx->mode == REMOVE ? j <  ctx->nb_types
                                 : j >= ctx->nb_types)
-            ff_cbs_delete_unit(ctx->cbc, frag, i);
+            ff_cbs_delete_unit(frag, i);
     }
 
     if (frag->nb_units == 0) {
@@ -143,7 +143,7 @@ static int filter_units_filter(AVBSFContext *bsf, AVPacket *pkt)
 fail:
     if (err < 0)
         av_packet_unref(pkt);
-    ff_cbs_fragment_reset(ctx->cbc, frag);
+    ff_cbs_fragment_reset(frag);
 
     return err;
 }
@@ -199,7 +199,7 @@ static int filter_units_init(AVBSFContext *bsf)
                 av_log(bsf, AV_LOG_ERROR, "Failed to write extradata.\n");
         }
 
-        ff_cbs_fragment_reset(ctx->cbc, frag);
+        ff_cbs_fragment_reset(frag);
     }
 
     return err;
@@ -211,7 +211,7 @@ static void filter_units_close(AVBSFContext *bsf)
 
     av_freep(&ctx->type_list);
 
-    ff_cbs_fragment_free(ctx->cbc, &ctx->fragment);
+    ff_cbs_fragment_free(&ctx->fragment);
     ff_cbs_close(&ctx->cbc);
 }
 
@@ -235,12 +235,12 @@ static const AVClass filter_units_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVBitStreamFilter ff_filter_units_bsf = {
-    .name           = "filter_units",
+const FFBitStreamFilter ff_filter_units_bsf = {
+    .p.name         = "filter_units",
+    .p.codec_ids    = ff_cbs_all_codec_ids,
+    .p.priv_class   = &filter_units_class,
     .priv_data_size = sizeof(FilterUnitsContext),
-    .priv_class     = &filter_units_class,
     .init           = &filter_units_init,
     .close          = &filter_units_close,
     .filter         = &filter_units_filter,
-    .codec_ids      = ff_cbs_all_codec_ids,
 };
