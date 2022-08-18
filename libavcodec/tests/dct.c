@@ -26,7 +26,6 @@
  */
 
 #include "config.h"
-#include "config_components.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -39,7 +38,6 @@
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/lfg.h"
-#include "libavutil/mem_internal.h"
 #include "libavutil/time.h"
 
 #include "libavcodec/dct.h"

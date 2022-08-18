@@ -24,8 +24,7 @@
 #include <stdint.h>
 
 #include "libavutil/frame.h"
-#include "libavutil/mem_internal.h"
-
+#include "libavutil/mem.h"
 #include "get_bits.h"
 #include "hqxdsp.h"
 
@@ -70,7 +69,7 @@ typedef struct HQXContext {
     int format, dcb, width, height;
     int interlaced;
 
-    const uint8_t *src;
+    uint8_t *src;
     unsigned int data_size;
     uint32_t slice_off[17];
 
@@ -78,7 +77,6 @@ typedef struct HQXContext {
     VLC dc_vlc[3];
 } HQXContext;
 
-#define HQX_CBP_VLC_BITS 5
 #define HQX_DC_VLC_BITS 9
 
 extern const HQXAC ff_hqx_ac[NUM_HQX_AC];
