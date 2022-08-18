@@ -32,6 +32,7 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/tree.h"
+#include "libavutil/time.h"
 #include "avformat.h"
 #include <fcntl.h>
 #if HAVE_IO_H
@@ -44,6 +45,8 @@
 #include <stdlib.h>
 #include "os_support.h"
 #include "url.h"
+
+#define CACHE_BUFSIZE   2048
 
 typedef struct CacheEntry {
     int64_t logical_pos;
@@ -64,39 +67,124 @@ typedef struct Context {
     URLContext *inner;
     int64_t cache_hit, cache_miss;
     int read_ahead_limit;
+
+    pthread_t thread;
+    pthread_mutex_t mutex;
+
+    int exit_request;
+    AVIOInterruptCB interrupt_callback;
 } Context;
+
+static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset, bool complete);
 
 static int cmp(const void *key, const void *node)
 {
     return FFDIFFSIGN(*(const int64_t *)key, ((const CacheEntry *) node)->logical_pos);
 }
 
+static int cache_interrupt(void *arg)
+{
+    URLContext *h = arg;
+    Context    *c = h->priv_data;
+
+    if (c->exit_request)
+        return 1;
+
+    if (ff_check_interrupt(&c->interrupt_callback))
+        c->exit_request = 1;
+
+    return c->exit_request;
+}
+
+static void *cache_thread(void *arg)
+{
+    URLContext *h = arg;
+    Context *c = h->priv_data;
+    uint8_t buf[CACHE_BUFSIZE];
+    int64_t time, bps, diff;
+    int64_t offset = 0;
+    int ret;
+
+    time = av_gettime_relative();
+
+    while (1) {
+        pthread_mutex_lock(&c->mutex);
+        if (cache_interrupt(h)) {
+            ret = AVERROR_EXIT;
+            pthread_mutex_unlock(&c->mutex);
+
+            break;
+        }
+
+        ret = cache_pread(h, buf, sizeof(buf), offset, true);
+        pthread_mutex_unlock(&c->mutex);
+
+        if (ret > 0)
+            offset += ret;
+        else if (ret != AVERROR(EINTR))
+            break;
+    }
+
+    diff = (av_gettime_relative() - time) / AV_TIME_BASE;
+    bps = diff ? offset * 8 / diff : 0;
+    av_log(h, AV_LOG_INFO, "%s end ret %d bytes %lld %lldbps\n", __func__, ret, offset, bps);
+
+    return NULL;
+}
+
 static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **options)
 {
-    int ret;
+    Context *c = h->priv_data;
+    pthread_attr_t attr;
+    ssize_t ssize;
     char *buffername;
-    Context *c= h->priv_data;
+    int ret;
+    AVIOInterruptCB interrupt_callback ={
+        .callback = cache_interrupt,
+        .opaque = h
+    };
 
     av_strstart(arg, "cache:", &arg);
 
     c->fd = avpriv_tempfile("ffcache", &buffername, 0, h);
     if (c->fd < 0){
-        av_log(h, AV_LOG_ERROR, "Failed to create tempfile\n");
+        av_log(h, AV_LOG_ERROR, "Failed to create tempfile %d\n", c->fd);
         return c->fd;
     }
 
-    ret = unlink(buffername);
+    c->filename = buffername;
 
-    if (ret >= 0)
-        av_freep(&buffername);
-    else
-        c->filename = buffername;
-
-    return ffurl_open_whitelist(&c->inner, arg, flags, &h->interrupt_callback,
+    c->interrupt_callback = h->interrupt_callback;
+    ret = ffurl_open_whitelist(&c->inner, arg, flags, &interrupt_callback,
                                 options, h->protocol_whitelist, h->protocol_blacklist, h);
+    if (ret != 0) {
+        av_log(h, AV_LOG_ERROR, "Failed to open: %s, %s\n", av_err2str(ret), arg);
+        goto out;
+    }
+
+    pthread_mutex_init(&c->mutex, NULL);
+    pthread_attr_init(&attr);
+
+    ssize = pthread_get_stacksize_np(pthread_self());
+    if (ssize > 0)
+        pthread_attr_setstacksize(&attr, ssize);
+
+    pthread_create(&c->thread, &attr, cache_thread, h);
+    pthread_attr_destroy(&attr);
+
+    return 0;
+
+out:
+    close(c->fd);
+    if (c->filename) {
+        unlink(c->filename);
+        av_freep(&c->filename);
+    }
+
+    return ret;
 }
 
-static int add_entry(URLContext *h, const unsigned char *buf, int size)
+static int add_entry(URLContext *h, const unsigned char *buf, int size, int64_t offset)
 {
     Context *c= h->priv_data;
     int64_t pos = -1;
@@ -109,26 +197,26 @@ static int add_entry(URLContext *h, const unsigned char *buf, int size)
     pos = lseek(c->fd, 0, SEEK_END);
     if (pos < 0) {
         ret = AVERROR(errno);
-        av_log(h, AV_LOG_ERROR, "seek in cache failed\n");
+        av_log(h, AV_LOG_ERROR, "Failed to seek in cache, ret %lld errno %d\n", pos, errno);
         goto fail;
     }
     c->cache_pos = pos;
 
     ret = write(c->fd, buf, size);
     if (ret < 0) {
+        av_log(h, AV_LOG_ERROR, "Failed to write %dB in cache, ret %d errno %d\n", size, ret, errno);
         ret = AVERROR(errno);
-        av_log(h, AV_LOG_ERROR, "write in cache failed\n");
         goto fail;
     }
     c->cache_pos += ret;
 
-    entry = av_tree_find(c->root, &c->logical_pos, cmp, (void**)next);
+    entry = av_tree_find(c->root, &offset, cmp, (void**)next);
 
     if (!entry)
         entry = next[0];
 
     if (!entry ||
-        entry->logical_pos  + entry->size != c->logical_pos ||
+        entry->logical_pos  + entry->size != offset ||
         entry->physical_pos + entry->size != pos
     ) {
         entry = av_malloc(sizeof(*entry));
@@ -137,7 +225,7 @@ static int add_entry(URLContext *h, const unsigned char *buf, int size)
             ret = AVERROR(ENOMEM);
             goto fail;
         }
-        entry->logical_pos = c->logical_pos;
+        entry->logical_pos = offset;
         entry->physical_pos = pos;
         entry->size = ret;
 
@@ -159,26 +247,25 @@ fail:
     return ret;
 }
 
-static int cache_read(URLContext *h, unsigned char *buf, int size)
+static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset, bool complete)
 {
     Context *c= h->priv_data;
     CacheEntry *entry, *next[2] = {NULL, NULL};
     int64_t r;
 
-    entry = av_tree_find(c->root, &c->logical_pos, cmp, (void**)next);
-
+    entry = av_tree_find(c->root, &offset, cmp, (void**)next);
     if (!entry)
         entry = next[0];
 
     if (entry) {
-        int64_t in_block_pos = c->logical_pos - entry->logical_pos;
-        av_assert0(entry->logical_pos <= c->logical_pos);
+        int64_t in_block_pos = offset - entry->logical_pos;
+        av_assert0(entry->logical_pos <= offset);
         if (in_block_pos < entry->size) {
             int64_t physical_target = entry->physical_pos + in_block_pos;
 
-            if (c->cache_pos != physical_target) {
+            if (c->cache_pos != physical_target)
                 r = lseek(c->fd, physical_target, SEEK_SET);
-            } else
+            else
                 r = c->cache_pos;
 
             if (r >= 0) {
@@ -188,7 +275,6 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
             if (r > 0) {
                 c->cache_pos += r;
-                c->logical_pos += r;
                 c->cache_hit ++;
                 return r;
             }
@@ -197,8 +283,8 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
     // Cache miss or some kind of fault with the cache
 
-    if (c->logical_pos != c->inner_pos) {
-        r = ffurl_seek(c->inner, c->logical_pos, SEEK_SET);
+    if (offset != c->inner_pos) {
+        r = ffurl_seek(c->inner, offset, SEEK_SET);
         if (r<0) {
             av_log(h, AV_LOG_ERROR, "Failed to perform internal seek\n");
             return r;
@@ -206,10 +292,14 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
         c->inner_pos = r;
     }
 
-    r = ffurl_read(c->inner, buf, size);
+    if (complete)
+        r = ffurl_read_complete(c->inner, buf, size);
+    else
+        r = ffurl_read(c->inner, buf, size);
+
     if (r == AVERROR_EOF && size>0) {
         c->is_true_eof = 1;
-        av_assert0(c->end >= c->logical_pos);
+        av_assert0(c->end >= offset);
     }
     if (r<=0)
         return r;
@@ -217,11 +307,34 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
     c->cache_miss ++;
 
-    add_entry(h, buf, r);
-    c->logical_pos += r;
-    c->end = FFMAX(c->end, c->logical_pos);
+    add_entry(h, buf, r, offset);
+    c->end = FFMAX(c->end, offset + r);
 
     return r;
+}
+
+static int cache_read(URLContext *h, unsigned char *buf, int size)
+{
+    Context *c= h->priv_data;
+    int r;
+
+    r = cache_pread(h, buf, size, c->logical_pos, false);
+    if (r > 0)
+        c->logical_pos += r;
+
+    return r;
+}
+
+static int cache_read_locked(URLContext *h, unsigned char *buf, int size)
+{
+    Context *c = h->priv_data;
+    int ret;
+
+    pthread_mutex_lock(&c->mutex);
+    ret = cache_read(h, buf, size);
+    pthread_mutex_unlock(&c->mutex);
+
+    return ret;
 }
 
 static int64_t cache_seek(URLContext *h, int64_t pos, int whence)
@@ -263,7 +376,7 @@ resolve_eof:
          whence == SEEK_END && pos <= 0) && ret < 0) {
         if (   (whence == SEEK_SET && c->read_ahead_limit >= pos - c->logical_pos)
             || c->read_ahead_limit < 0) {
-            uint8_t tmp[32768];
+            uint8_t tmp[CACHE_BUFSIZE];
             while (c->logical_pos < pos || whence == SEEK_END) {
                 int size = sizeof(tmp);
                 if (whence == SEEK_SET)
@@ -289,6 +402,18 @@ resolve_eof:
     return ret;
 }
 
+static int64_t cache_seek_locked(URLContext *h, int64_t pos, int whence)
+{
+    Context *c = h->priv_data;
+    int64_t ret;
+
+    pthread_mutex_lock(&c->mutex);
+    ret = cache_seek(h, pos, whence);
+    pthread_mutex_unlock(&c->mutex);
+
+    return ret;
+}
+
 static int enu_free(void *opaque, void *elem)
 {
     av_free(elem);
@@ -303,6 +428,16 @@ static int cache_close(URLContext *h)
     av_log(h, AV_LOG_INFO, "Statistics, cache hits:%"PRId64" cache misses:%"PRId64"\n",
            c->cache_hit, c->cache_miss);
 
+    pthread_mutex_lock(&c->mutex);
+    c->exit_request = 1;
+    pthread_mutex_unlock(&c->mutex);
+
+    ret = pthread_join(c->thread, NULL);
+    c->exit_request = 0;
+    if (ret != 0)
+        av_log(h, AV_LOG_ERROR, "Could not join thread %s.\n", av_err2str(ret));
+
+    pthread_mutex_destroy(&c->mutex);
     close(c->fd);
     if (c->filename) {
         ret = unlink(c->filename);
@@ -335,8 +470,8 @@ static const AVClass cache_context_class = {
 const URLProtocol ff_cache_protocol = {
     .name                = "cache",
     .url_open2           = cache_open,
-    .url_read            = cache_read,
-    .url_seek            = cache_seek,
+    .url_read            = cache_read_locked,
+    .url_seek            = cache_seek_locked,
     .url_close           = cache_close,
     .priv_data_size      = sizeof(Context),
     .priv_data_class     = &cache_context_class,

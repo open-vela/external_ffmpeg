@@ -18,7 +18,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "audio.h"
 #include "avfilter.h"
@@ -84,21 +83,35 @@ AVFILTER_DEFINE_CLASS(anoisesrc);
 static av_cold int query_formats(AVFilterContext *ctx)
 {
     ANoiseSrcContext *s = ctx->priv;
-    static const AVChannelLayout chlayouts[] = { AV_CHANNEL_LAYOUT_MONO, { 0 } };
+    static const int64_t chlayouts[] = { AV_CH_LAYOUT_MONO, -1 };
     int sample_rates[] = { s->sample_rate, -1 };
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBL,
         AV_SAMPLE_FMT_NONE
     };
-    int ret = ff_set_common_formats_from_list(ctx, sample_fmts);
+
+    AVFilterFormats *formats;
+    AVFilterChannelLayouts *layouts;
+    int ret;
+
+    formats = ff_make_format_list(sample_fmts);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_formats (ctx, formats);
     if (ret < 0)
         return ret;
 
-    ret = ff_set_common_channel_layouts_from_list(ctx, chlayouts);
+    layouts = avfilter_make_format64_list(chlayouts);
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
     if (ret < 0)
         return ret;
 
-    return ff_set_common_samplerates_from_list(ctx, sample_rates);
+    formats = ff_make_format_list(sample_rates);
+    if (!formats)
+        return AVERROR(ENOMEM);
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static double white_filter(double white, double *buf, double ha)
@@ -230,15 +243,16 @@ static const AVFilterPad anoisesrc_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = config_props,
     },
+    { NULL }
 };
 
-const AVFilter ff_asrc_anoisesrc = {
+AVFilter ff_asrc_anoisesrc = {
     .name          = "anoisesrc",
     .description   = NULL_IF_CONFIG_SMALL("Generate a noise audio signal."),
+    .query_formats = query_formats,
     .priv_size     = sizeof(ANoiseSrcContext),
     .inputs        = NULL,
     .activate      = activate,
-    FILTER_OUTPUTS(anoisesrc_outputs),
-    FILTER_QUERY_FUNC(query_formats),
+    .outputs       = anoisesrc_outputs,
     .priv_class    = &anoisesrc_class,
 };
