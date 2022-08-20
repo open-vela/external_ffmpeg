@@ -98,8 +98,9 @@ static int ff_nuttx_flush_buffer(NuttxPriv *priv)
     memset(buffer->samp + buffer->curbyte, 0,
            buffer->nmaxbytes - buffer->curbyte);
 
-    buffer->nbytes = buffer->nmaxbytes;
-    desc.u.buffer  = buffer;
+    buffer->nbytes  = buffer->curbyte;
+    buffer->curbyte = 0;
+    desc.u.buffer   = buffer;
     return ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
 }
 
