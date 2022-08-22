@@ -24,13 +24,13 @@
  * JPEG 2000 encoder using libopenjpeg
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
-#include "codec_internal.h"
-#include "encode.h"
+#include "internal.h"
 #include <openjpeg.h>
 
 typedef struct LibOpenJPEGContext {
@@ -345,8 +345,7 @@ static av_cold int libopenjpeg_encode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int libopenjpeg_copy_packed8(AVCodecContext *avctx, const uint8_t *src[4],
-                                    const int linesize[4], opj_image_t *image)
+static int libopenjpeg_copy_packed8(AVCodecContext *avctx, const AVFrame *frame, opj_image_t *image)
 {
     int compno;
     int x;
@@ -356,7 +355,7 @@ static int libopenjpeg_copy_packed8(AVCodecContext *avctx, const uint8_t *src[4]
     const int numcomps = image->numcomps;
 
     for (compno = 0; compno < numcomps; ++compno) {
-        if (image->comps[compno].w > linesize[0] / numcomps) {
+        if (image->comps[compno].w > frame->linesize[0] / numcomps) {
             av_log(avctx, AV_LOG_ERROR, "Error: frame's linesize is too small for the image\n");
             return 0;
         }
@@ -365,9 +364,9 @@ static int libopenjpeg_copy_packed8(AVCodecContext *avctx, const uint8_t *src[4]
     for (compno = 0; compno < numcomps; ++compno) {
         for (y = 0; y < avctx->height; ++y) {
             image_line = image->comps[compno].data + y * image->comps[compno].w;
-            frame_index = y * linesize[0] + compno;
+            frame_index = y * frame->linesize[0] + compno;
             for (x = 0; x < avctx->width; ++x) {
-                image_line[x] = src[0][frame_index];
+                image_line[x] = frame->data[0][frame_index];
                 frame_index += numcomps;
             }
             for (; x < image->comps[compno].w; ++x) {
@@ -386,18 +385,17 @@ static int libopenjpeg_copy_packed8(AVCodecContext *avctx, const uint8_t *src[4]
 }
 
 // for XYZ 12 bit
-static int libopenjpeg_copy_packed12(AVCodecContext *avctx, const uint8_t *src[4],
-                                    const int linesize[4], opj_image_t *image)
+static int libopenjpeg_copy_packed12(AVCodecContext *avctx, const AVFrame *frame, opj_image_t *image)
 {
     int compno;
     int x, y;
     int *image_line;
     int frame_index;
     const int numcomps  = image->numcomps;
-    const uint16_t *frame_ptr = (const uint16_t *)src[0];
+    uint16_t *frame_ptr = (uint16_t *)frame->data[0];
 
     for (compno = 0; compno < numcomps; ++compno) {
-        if (image->comps[compno].w > linesize[0] / numcomps) {
+        if (image->comps[compno].w > frame->linesize[0] / numcomps) {
             av_log(avctx, AV_LOG_ERROR, "Error: frame's linesize is too small for the image\n");
             return 0;
         }
@@ -406,7 +404,7 @@ static int libopenjpeg_copy_packed12(AVCodecContext *avctx, const uint8_t *src[4
     for (compno = 0; compno < numcomps; ++compno) {
         for (y = 0; y < avctx->height; ++y) {
             image_line = image->comps[compno].data + y * image->comps[compno].w;
-            frame_index = y * (linesize[0] / 2) + compno;
+            frame_index = y * (frame->linesize[0] / 2) + compno;
             for (x = 0; x < avctx->width; ++x) {
                 image_line[x] = frame_ptr[frame_index] >> 4;
                 frame_index += numcomps;
@@ -426,8 +424,7 @@ static int libopenjpeg_copy_packed12(AVCodecContext *avctx, const uint8_t *src[4
     return 1;
 }
 
-static int libopenjpeg_copy_packed16(AVCodecContext *avctx, const uint8_t *src[4],
-                                    const int linesize[4], opj_image_t *image)
+static int libopenjpeg_copy_packed16(AVCodecContext *avctx, const AVFrame *frame, opj_image_t *image)
 {
     int compno;
     int x;
@@ -435,10 +432,10 @@ static int libopenjpeg_copy_packed16(AVCodecContext *avctx, const uint8_t *src[4
     int *image_line;
     int frame_index;
     const int numcomps = image->numcomps;
-    const uint16_t *frame_ptr = (const uint16_t*)src[0];
+    uint16_t *frame_ptr = (uint16_t*)frame->data[0];
 
     for (compno = 0; compno < numcomps; ++compno) {
-        if (image->comps[compno].w > linesize[0] / numcomps) {
+        if (image->comps[compno].w > frame->linesize[0] / numcomps) {
             av_log(avctx, AV_LOG_ERROR, "Error: frame's linesize is too small for the image\n");
             return 0;
         }
@@ -447,7 +444,7 @@ static int libopenjpeg_copy_packed16(AVCodecContext *avctx, const uint8_t *src[4
     for (compno = 0; compno < numcomps; ++compno) {
         for (y = 0; y < avctx->height; ++y) {
             image_line = image->comps[compno].data + y * image->comps[compno].w;
-            frame_index = y * (linesize[0] / 2) + compno;
+            frame_index = y * (frame->linesize[0] / 2) + compno;
             for (x = 0; x < avctx->width; ++x) {
                 image_line[x] = frame_ptr[frame_index];
                 frame_index += numcomps;
@@ -467,8 +464,7 @@ static int libopenjpeg_copy_packed16(AVCodecContext *avctx, const uint8_t *src[4
     return 1;
 }
 
-static int libopenjpeg_copy_unpacked8(AVCodecContext *avctx, const uint8_t *src[4],
-                                    const int linesize[4], opj_image_t *image)
+static int libopenjpeg_copy_unpacked8(AVCodecContext *avctx, const AVFrame *frame, opj_image_t *image)
 {
     int compno;
     int x;
@@ -480,7 +476,7 @@ static int libopenjpeg_copy_unpacked8(AVCodecContext *avctx, const uint8_t *src[
     const int numcomps = image->numcomps;
 
     for (compno = 0; compno < numcomps; ++compno) {
-        if (image->comps[compno].w > linesize[compno]) {
+        if (image->comps[compno].w > frame->linesize[compno]) {
             av_log(avctx, AV_LOG_ERROR, "Error: frame's linesize is too small for the image\n");
             return 0;
         }
@@ -491,9 +487,9 @@ static int libopenjpeg_copy_unpacked8(AVCodecContext *avctx, const uint8_t *src[
         height = (avctx->height + image->comps[compno].dy - 1) / image->comps[compno].dy;
         for (y = 0; y < height; ++y) {
             image_line = image->comps[compno].data + y * image->comps[compno].w;
-            frame_index = y * linesize[compno];
+            frame_index = y * frame->linesize[compno];
             for (x = 0; x < width; ++x)
-                image_line[x] = src[compno][frame_index++];
+                image_line[x] = frame->data[compno][frame_index++];
             for (; x < image->comps[compno].w; ++x) {
                 image_line[x] = image_line[x - 1];
             }
@@ -509,8 +505,7 @@ static int libopenjpeg_copy_unpacked8(AVCodecContext *avctx, const uint8_t *src[
     return 1;
 }
 
-static int libopenjpeg_copy_unpacked16(AVCodecContext *avctx, const uint8_t *src[4],
-                                    const int linesize[4], opj_image_t *image)
+static int libopenjpeg_copy_unpacked16(AVCodecContext *avctx, const AVFrame *frame, opj_image_t *image)
 {
     int compno;
     int x;
@@ -520,21 +515,22 @@ static int libopenjpeg_copy_unpacked16(AVCodecContext *avctx, const uint8_t *src
     int *image_line;
     int frame_index;
     const int numcomps = image->numcomps;
+    uint16_t *frame_ptr;
 
     for (compno = 0; compno < numcomps; ++compno) {
-        if (image->comps[compno].w > linesize[compno]) {
+        if (image->comps[compno].w > frame->linesize[compno]) {
             av_log(avctx, AV_LOG_ERROR, "Error: frame's linesize is too small for the image\n");
             return 0;
         }
     }
 
     for (compno = 0; compno < numcomps; ++compno) {
-        const uint16_t *frame_ptr = (const uint16_t *)src[compno];
         width     = (avctx->width + image->comps[compno].dx - 1) / image->comps[compno].dx;
         height    = (avctx->height + image->comps[compno].dy - 1) / image->comps[compno].dy;
+        frame_ptr = (uint16_t *)frame->data[compno];
         for (y = 0; y < height; ++y) {
             image_line = image->comps[compno].data + y * image->comps[compno].w;
-            frame_index = y * (linesize[compno] / 2);
+            frame_index = y * (frame->linesize[compno] / 2);
             for (x = 0; x < width; ++x)
                 image_line[x] = frame_ptr[frame_index++];
             for (; x < image->comps[compno].w; ++x) {
@@ -557,15 +553,12 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 {
     LibOpenJPEGContext *ctx = avctx->priv_data;
     int ret;
+    AVFrame *gbrframe;
     int cpyresult = 0;
     PacketWriter writer     = { 0 };
     opj_codec_t *compress   = NULL;
     opj_stream_t *stream    = NULL;
     opj_image_t *image      = mj2_create_image(avctx, &ctx->enc_params);
-    const uint8_t *data[4] = { frame->data[0], frame->data[1],
-                               frame->data[2], frame->data[3] };
-    int linesize[4]        = { frame->linesize[0], frame->linesize[1],
-                               frame->linesize[2], frame->linesize[3] };
     if (!image) {
         av_log(avctx, AV_LOG_ERROR, "Error creating the mj2 image\n");
         ret = AVERROR(EINVAL);
@@ -576,15 +569,15 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_RGB24:
     case AV_PIX_FMT_RGBA:
     case AV_PIX_FMT_YA8:
-        cpyresult = libopenjpeg_copy_packed8(avctx, data, linesize, image);
+        cpyresult = libopenjpeg_copy_packed8(avctx, frame, image);
         break;
     case AV_PIX_FMT_XYZ12:
-        cpyresult = libopenjpeg_copy_packed12(avctx, data, linesize, image);
+        cpyresult = libopenjpeg_copy_packed12(avctx, frame, image);
         break;
     case AV_PIX_FMT_RGB48:
     case AV_PIX_FMT_RGBA64:
     case AV_PIX_FMT_YA16:
-        cpyresult = libopenjpeg_copy_packed16(avctx, data, linesize, image);
+        cpyresult = libopenjpeg_copy_packed16(avctx, frame, image);
         break;
     case AV_PIX_FMT_GBR24P:
     case AV_PIX_FMT_GBRP9:
@@ -592,17 +585,23 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_GBRP12:
     case AV_PIX_FMT_GBRP14:
     case AV_PIX_FMT_GBRP16:
-        data[0] = frame->data[2]; // swap to be rgb
-        data[1] = frame->data[0];
-        data[2] = frame->data[1];
-        linesize[0] = frame->linesize[2];
-        linesize[1] = frame->linesize[0];
-        linesize[2] = frame->linesize[1];
-        if (avctx->pix_fmt == AV_PIX_FMT_GBR24P) {
-            cpyresult = libopenjpeg_copy_unpacked8(avctx, data, linesize, image);
-        } else {
-            cpyresult = libopenjpeg_copy_unpacked16(avctx, data, linesize, image);
+        gbrframe = av_frame_clone(frame);
+        if (!gbrframe) {
+            ret = AVERROR(ENOMEM);
+            goto done;
         }
+        gbrframe->data[0] = frame->data[2]; // swap to be rgb
+        gbrframe->data[1] = frame->data[0];
+        gbrframe->data[2] = frame->data[1];
+        gbrframe->linesize[0] = frame->linesize[2];
+        gbrframe->linesize[1] = frame->linesize[0];
+        gbrframe->linesize[2] = frame->linesize[1];
+        if (avctx->pix_fmt == AV_PIX_FMT_GBR24P) {
+            cpyresult = libopenjpeg_copy_unpacked8(avctx, gbrframe, image);
+        } else {
+            cpyresult = libopenjpeg_copy_unpacked16(avctx, gbrframe, image);
+        }
+        av_frame_free(&gbrframe);
         break;
     case AV_PIX_FMT_GRAY8:
     case AV_PIX_FMT_YUV410P:
@@ -614,7 +613,7 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_YUVA420P:
     case AV_PIX_FMT_YUVA422P:
     case AV_PIX_FMT_YUVA444P:
-        cpyresult = libopenjpeg_copy_unpacked8(avctx, data, linesize, image);
+        cpyresult = libopenjpeg_copy_unpacked8(avctx, frame, image);
         break;
     case AV_PIX_FMT_GRAY10:
     case AV_PIX_FMT_GRAY12:
@@ -644,7 +643,7 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_YUVA444P16:
     case AV_PIX_FMT_YUVA422P16:
     case AV_PIX_FMT_YUVA420P16:
-        cpyresult = libopenjpeg_copy_unpacked16(avctx, data, linesize, image);
+        cpyresult = libopenjpeg_copy_unpacked16(avctx, frame, image);
         break;
     default:
         av_log(avctx, AV_LOG_ERROR,
@@ -662,8 +661,9 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         goto done;
     }
 
-    if ((ret = ff_alloc_packet(avctx, pkt, 1024)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, 1024, 0)) < 0) {
         goto done;
+    }
 
     compress = opj_create_compress(ctx->format);
     if (!compress) {
@@ -709,6 +709,7 @@ static int libopenjpeg_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     av_shrink_packet(pkt, writer.pos);
 
+    pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
     ret = 0;
 
@@ -754,16 +755,16 @@ static const AVClass openjpeg_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_libopenjpeg_encoder = {
-    .p.name         = "libopenjpeg",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("OpenJPEG JPEG 2000"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_JPEG2000,
+AVCodec ff_libopenjpeg_encoder = {
+    .name           = "libopenjpeg",
+    .long_name      = NULL_IF_CONFIG_SMALL("OpenJPEG JPEG 2000"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_JPEG2000,
     .priv_data_size = sizeof(LibOpenJPEGContext),
     .init           = libopenjpeg_encode_init,
-    FF_CODEC_ENCODE_CB(libopenjpeg_encode_frame),
-    .p.capabilities = AV_CODEC_CAP_FRAME_THREADS,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) {
+    .encode2        = libopenjpeg_encode_frame,
+    .capabilities   = AV_CODEC_CAP_FRAME_THREADS,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_RGB24, AV_PIX_FMT_RGBA, AV_PIX_FMT_RGB48,
         AV_PIX_FMT_RGBA64, AV_PIX_FMT_GBR24P,
         AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10, AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
@@ -783,6 +784,6 @@ const FFCodec ff_libopenjpeg_encoder = {
         AV_PIX_FMT_XYZ12,
         AV_PIX_FMT_NONE
     },
-    .p.priv_class   = &openjpeg_class,
-    .p.wrapper_name = "libopenjpeg",
+    .priv_class     = &openjpeg_class,
+    .wrapper_name   = "libopenjpeg",
 };
