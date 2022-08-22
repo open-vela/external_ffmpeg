@@ -28,7 +28,6 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "cga_data.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 typedef struct PicContext {
@@ -90,7 +89,8 @@ static void picmemset(PicContext *s, AVFrame *frame, unsigned value, int run,
                 d = frame->data[0] + yl * frame->linesize[0];
                 if (s->nb_planes == 1 &&
                     run*pixels_per_value >= s->width &&
-                    pixels_per_value < (s->width / pixels_per_value * pixels_per_value)
+                    pixels_per_value < s->width &&
+                    s->width % pixels_per_value == 0
                     ) {
                     for (; xl < pixels_per_value; xl ++) {
                         j = (j < bits_per_plane ? 8 : j) - bits_per_plane;
@@ -98,7 +98,7 @@ static void picmemset(PicContext *s, AVFrame *frame, unsigned value, int run,
                     }
                     av_memcpy_backptr(d+xl, pixels_per_value, s->width - xl);
                     run -= s->width / pixels_per_value;
-                    xl = s->width / pixels_per_value * pixels_per_value;
+                    xl = s->width;
                 }
             }
         }
@@ -119,10 +119,12 @@ static const uint8_t cga_mode45_index[6][4] = {
     [5] = { 0, 11, 12, 15 }, // mode5, high intensity
 };
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx,
+                        void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     PicContext *s = avctx->priv_data;
+    AVFrame *frame = data;
     uint32_t *palette;
     int bits_per_plane, bpp, etype, esize, npal, pos_after_pal;
     int i, x, y, plane, tmp, ret, val;
@@ -279,12 +281,12 @@ finish:
     return avpkt->size;
 }
 
-const FFCodec ff_pictor_decoder = {
-    .p.name         = "pictor",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Pictor/PC Paint"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_PICTOR,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+AVCodec ff_pictor_decoder = {
+    .name           = "pictor",
+    .long_name      = NULL_IF_CONFIG_SMALL("Pictor/PC Paint"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_PICTOR,
     .priv_data_size = sizeof(PicContext),
-    FF_CODEC_DECODE_CB(decode_frame),
+    .decode         = decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
