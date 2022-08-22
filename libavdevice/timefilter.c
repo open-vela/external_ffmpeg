@@ -22,11 +22,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <math.h>
-#include <stddef.h>
-
-#include "libavutil/macros.h"
-#include "libavutil/mathematics.h"
+#include "libavutil/common.h"
 #include "libavutil/mem.h"
 
 #include "timefilter.h"
