@@ -29,7 +29,6 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 
 enum VBFlags {
@@ -189,10 +188,11 @@ static int vb_decode_framedata(VBDecContext *c, int offset)
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     VBDecContext * const c = avctx->priv_data;
+    AVFrame *frame         = data;
     uint8_t *outptr, *srcptr;
     int i, j, ret;
     int flags;
@@ -262,8 +262,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->frame      = av_mallocz(avctx->width * avctx->height);
     c->prev_frame = av_mallocz(avctx->width * avctx->height);
 
-    if (!c->frame || !c->prev_frame)
+    if (!c->frame || !c->prev_frame) {
+        av_freep(&c->frame);
+        av_freep(&c->prev_frame);
         return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -278,15 +281,14 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_vb_decoder = {
-    .p.name         = "vb",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Beam Software VB"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_VB,
+AVCodec ff_vb_decoder = {
+    .name           = "vb",
+    .long_name      = NULL_IF_CONFIG_SMALL("Beam Software VB"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_VB,
     .priv_data_size = sizeof(VBDecContext),
     .init           = decode_init,
     .close          = decode_end,
-    FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .decode         = decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

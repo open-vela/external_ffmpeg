@@ -22,7 +22,6 @@
 #ifndef AVFILTER_SPP_H
 #define AVFILTER_SPP_H
 
-#include "libavutil/video_enc_params.h"
 #include "libavcodec/avdct.h"
 #include "avfilter.h"
 
@@ -34,13 +33,13 @@ typedef struct SPPContext {
     int log2_count;
     int qp;
     int mode;
-    enum AVVideoEncParamsType qscale_type;
+    int qscale_type;
     int temp_linesize;
     uint8_t *src;
     uint16_t *temp;
     AVDCT *dct;
     int8_t *non_b_qp_table;
-    int non_b_qp_stride;
+    int non_b_qp_alloc_size;
     int use_bframe_qp;
     int hsub, vsub;
 

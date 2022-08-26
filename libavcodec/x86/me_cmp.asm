@@ -261,10 +261,11 @@ hadamard8_16_wrapper 0, 14
 %endif
 %endmacro
 
-%if HAVE_ALIGNED_STACK == 0
+INIT_MMX mmx
+HADAMARD8_DIFF
+
 INIT_MMX mmxext
 HADAMARD8_DIFF
-%endif
 
 INIT_XMM sse2
 %if ARCH_X86_64
@@ -384,6 +385,10 @@ cglobal sum_abs_dctelem, 1, 1, %1, block
     RET
 %endmacro
 
+INIT_MMX mmx
+SUM_ABS_DCTELEM 0, 4
+INIT_MMX mmxext
+SUM_ABS_DCTELEM 0, 4
 INIT_XMM sse2
 SUM_ABS_DCTELEM 7, 2
 INIT_XMM ssse3
