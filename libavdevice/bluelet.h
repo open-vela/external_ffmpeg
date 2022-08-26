@@ -63,6 +63,7 @@ typedef struct BlueletPriv {
     uint32_t        channels;
     uint32_t        bit_per_sample;
     uint32_t        bit_rate;
+    uint32_t        play;
     bool            playback;
     int             ctrl_fd;
     bool            ctrl_connected;
