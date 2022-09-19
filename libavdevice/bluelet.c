@@ -359,7 +359,7 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
             goto error;
 
         snprintf(priv->sbc.param, sizeof(priv->sbc.param),
-                "channel_mode=%u:blocks=%u:subbands=%u:alloc_method=%u:bitpool=%u",
+                "channel_mode=%" PRIu32 ":blocks=%" PRIu32 ":subbands=%" PRIu32 ":alloc_method=%" PRIu32 ":bitpool=%" PRIu32,
                 param.channel_mode, param.blocks, param.subbands, param.alloc_method, param.bitpool);
     } else if (config.codec_type == BLUELET_CODEC_TYPE_MPEG2_4_AAC) {
         bluelet_aac_param_t param;
