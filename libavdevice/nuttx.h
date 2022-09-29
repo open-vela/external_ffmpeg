@@ -35,36 +35,35 @@
 #include "avdevice.h"
 
 typedef struct NuttxPriv {
-    AVClass    *class;
+    AVClass        *class;
 
-    bool       running;
-    bool       flushing;
-    bool       underflow;
+    bool            running;
+    bool            flushing;
+    bool            underflow;
 
-    char       devname[32];  ///< device name
-    char       mqname[16];   ///< message queue name
-    mqd_t      mq;           ///< message queue
-    int        fd;           ///< nuttx device fd
+    char            devname[32];  ///< device name
+    char            mqname[16];   ///< message queue name
+    mqd_t           mq;           ///< message queue
+    int             fd;           ///< nuttx device fd
 
-    int        periods;      ///< buffer pereids
-    int        period_bytes; ///< preferred size for reads and writes, in bytes
-    int        period_time;  ///< preferred time for reads and writes, in ms
+    int             periods;      ///< buffer pereids
+    int             period_bytes; ///< preferred size for reads and writes, in bytes
+    int             period_time;  ///< preferred time for reads and writes, in ms
 
-    int        codec;
-    int        frame_size;   ///< bytes per sample * channels
-    uint32_t   sample_rate;
-    uint32_t   channels;
-    uint64_t   channel_layout;
-    bool       nonblock;
+    int             codec;
+    int             frame_size;   ///< bytes per sample * channels
+    uint32_t        sample_rate;
+    AVChannelLayout ch_layout;
+    bool            nonblock;
 
-    bool       pause;
-    bool       mute;
-    double     volume;
+    bool            pause;
+    bool            mute;
+    double          volume;
 
-    dq_queue_t bufferq;
+    dq_queue_t      bufferq;
 
-    AVPacket   *lastpkt;
-    int64_t    captured;
+    AVPacket       *lastpkt;
+    int64_t         captured;
 } NuttxPriv;
 
 int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,

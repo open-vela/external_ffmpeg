@@ -94,7 +94,7 @@ static int rpmsg_open(URLContext *h, const char *filename, int flags)
 
     av_strlcpy(s->addr.rp_name, filename, FFMIN(name_size, RPMSG_SOCKET_NAME_SIZE));
 
-    if ((fd = ff_socket(AF_RPMSG, s->type, 0)) < 0)
+    if ((fd = ff_socket(AF_RPMSG, s->type, 0, NULL)) < 0)
         return ff_neterrno();
 
     if (s->timeout < 0 && h->rw_timeout)

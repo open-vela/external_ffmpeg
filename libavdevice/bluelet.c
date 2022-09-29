@@ -42,6 +42,7 @@
 
 #include "bluelet.h"
 #include "libavutil/time.h"
+#include "libavcodec/avcodec.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -354,7 +355,7 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
             goto error;
 
         snprintf(priv->sbc.param, sizeof(priv->sbc.param),
-                "channel_mode=%lu:blocks=%lu:subbands=%lu:alloc_method=%lu:bitpool=%lu",
+                "channel_mode=%u:blocks=%u:subbands=%u:alloc_method=%u:bitpool=%u",
                 param.channel_mode, param.blocks, param.subbands, param.alloc_method, param.bitpool);
     } else if (config.codec_type == BLUELET_CODEC_TYPE_MPEG2_4_AAC) {
         bluelet_aac_param_t param;

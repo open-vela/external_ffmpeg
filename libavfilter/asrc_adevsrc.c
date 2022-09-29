@@ -25,6 +25,7 @@
 #include <libavutil/samplefmt.h>
 #include <libavdevice/avdevice.h>
 #include <libavformat/internal.h>
+#include <libavformat/demux.h>
 #include <libavcodec/avcodec.h>
 
 #include "avfilter.h"
@@ -42,33 +43,33 @@ typedef struct ADevSrcPriv {
 
     int             sample_fmt;
     uint32_t        sample_rate;
-    uint32_t        channels;
-    uint64_t        channel_layout;
+    AVChannelLayout ch_layout;
 } ADevSrcPriv;
 
 static void adevsrc_stop(AVFilterContext *ctx)
 {
     ADevSrcPriv *priv = ctx->priv;
-    int ret;
 
     if (!priv->dec_ctx)
         return;
 
-    av_demuxer_close(priv->fmt_ctx);
+    //av_demuxer_close(priv->fmt_ctx);
+    avformat_read_close(priv->fmt_ctx);
     avcodec_free_context(&priv->dec_ctx);
 }
 
 static int adevsrc_start(AVFilterContext *ctx)
 {
     ADevSrcPriv *priv = ctx->priv;
+    const AVCodec *dec;
     AVStream *st;
-    AVCodec *dec;
     int ret;
 
     if (priv->dec_ctx)
         return 0;
 
-    ret = av_demuxer_open(priv->fmt_ctx);
+    //ret = av_demuxer_open(priv->fmt_ctx);
+    ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
 
@@ -77,7 +78,6 @@ static int adevsrc_start(AVFilterContext *ctx)
         goto out;
 
     st->time_base = (AVRational){ 1, st->codecpar->sample_rate };
-    st->cur_dts = AV_NOPTS_VALUE;
 
     /* Find decoder for the stream */
     dec = avcodec_find_decoder(st->codecpar->codec_id);
@@ -116,7 +116,7 @@ static inline void avdevsrc_force_request(AVFilterContext *ctx)
 static int adevsrc_control_message(struct AVFormatContext *s, int type,
                                     void *data, size_t data_size)
 {
-    AVFilterContext *ctx = av_format_get_opaque(s);
+    AVFilterContext *ctx = s->opaque;
     ADevSrcPriv *priv = ctx->priv;
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED)
@@ -133,10 +133,11 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
     return 0;
 }
 
+
 static int adevsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     ADevSrcPriv *priv = ctx->priv;
-    AVInputFormat *fmt = NULL;
+    const AVInputFormat *fmt = NULL;
     int ret;
 
     fmt = av_find_input_format(priv->format);
@@ -147,10 +148,10 @@ static int adevsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
     if (!priv->fmt_ctx)
         return AVERROR(ENOMEM);
 
-    av_format_set_opaque(priv->fmt_ctx, ctx);
-    av_format_set_control_message_cb(priv->fmt_ctx, adevsrc_control_message);
+    priv->fmt_ctx->opaque             = ctx;
+    priv->fmt_ctx->control_message_cb = adevsrc_control_message;
+    priv->fmt_ctx->flags             |= AVFMT_FLAG_NONBLOCK | AVFMT_FLAG_PRIV_OPT;
 
-    priv->fmt_ctx->flags |= AVFMT_FLAG_NONBLOCK | AVFMT_FLAG_PRIV_OPT;
     ret = avformat_open_input(&priv->fmt_ctx, priv->devname, fmt, options);
     if (ret < 0) {
         avformat_free_context(priv->fmt_ctx);
@@ -212,8 +213,7 @@ static int adevsrc_activate(AVFilterContext *ctx)
             goto out;
     }
 
-    frame->channel_layout = link->channel_layout;
-
+    av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
     return ff_filter_frame(link, frame);
 
 out:
@@ -270,15 +270,17 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
 static int adevsrc_query_formats(AVFilterContext *ctx)
 {
-    AVDeviceCapabilitiesQuery *caps = NULL;
+    AVDeviceCapabilitiesQuery caps;
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
     ADevSrcPriv *priv = ctx->priv;
     AVOptionRanges *ranges = NULL;
+    AVChannelLayout layout;
     bool codec = false;
     int ret, i;
 
-    ret = avdevice_capabilities_create(&caps, priv->fmt_ctx, NULL);
+    ret = avdevice_app_to_dev_control_message(priv->fmt_ctx, AV_APP_TO_DEV_GET_CAPS_REQUEST,
+                                              &caps, sizeof(caps));
     if (ret < 0)
         return ret == AVERROR(ENOSYS) ? 0 : ret;
 
@@ -287,9 +289,9 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
     } else {
-        ret = av_opt_query_ranges(&ranges, caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
+        ret = av_opt_query_ranges(&ranges, &caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret < 0) {
-            ret = av_opt_query_ranges(&ranges, caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE);
+            ret = av_opt_query_ranges(&ranges, &caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE);
             codec = true;
         }
 
@@ -298,7 +300,7 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
                 int64_t fmt = ranges->range[i]->value_min;
 
                 if (codec) {
-                    AVCodec *codec = avcodec_find_decoder(fmt);
+                    const AVCodec *codec = avcodec_find_decoder(fmt);
                     int n = 0;
 
                     if (!codec)
@@ -331,7 +333,7 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
     } else {
-        ret = av_opt_query_ranges(&ranges, caps, "sample_rates", AV_OPT_MULTI_COMPONENT_RANGE);
+        ret = av_opt_query_ranges(&ranges, &caps, "sample_rates", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
             for (i = 0; i < ranges->nb_ranges; i++) {
                 ret = ff_add_format(&formats, ranges->range[i]->value_min);
@@ -347,29 +349,27 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    if (priv->channels) {
-        ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(priv->channels));
-        if (ret < 0)
-            goto out;
-    } else if (priv->channel_layout) {
-        ret = ff_add_channel_layout(&layouts, priv->channel_layout);
+    if (priv->ch_layout.nb_channels) {
+        ret = ff_add_channel_layout(&layouts, &priv->ch_layout);
         if (ret < 0)
             goto out;
     } else {
-        ret = av_opt_query_ranges(&ranges, caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
+        ret = av_opt_query_ranges(&ranges, &caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
             int n;
 
             for (n = 0; n < ranges->nb_ranges; n++) {
                 if (ranges->range[n]->is_range) {
                     for (i = ranges->range[n]->value_min; i <= ranges->range[n]->value_max; i++) {
-                        ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(i));
+                        layout = FF_COUNT2LAYOUT(i);
+                        ret = ff_add_channel_layout(&layouts, &layout);
                         if (ret < 0)
                             goto out;
                     }
                 } else {
                     i = ranges->range[n]->value_min;
-                    ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(i));
+                    layout = FF_COUNT2LAYOUT(i);
+                    ret = ff_add_channel_layout(&layouts, &layout);
                     if (ret < 0)
                         goto out;
                 }
@@ -387,7 +387,6 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
 
 out:
     av_opt_freep_ranges(&ranges);
-    avdevice_capabilities_free(&caps, priv->fmt_ctx);
     return ret;
 }
 
@@ -396,13 +395,11 @@ static int adevsrc_config_props(AVFilterLink *link)
     AVFilterContext *ctx = link->src;
     ADevSrcPriv *priv = ctx->priv;
     AVDictionary *fmt_opt = NULL;
-
-    if (!link->channel_layout)
-        link->channel_layout = av_get_default_channel_layout(link->channels);
+    char tmp[64];
 
     av_dict_set_int(&fmt_opt, "sample_rate", link->sample_rate, 0);
-    av_dict_set_int(&fmt_opt, "channels", link->channels, 0);
-    av_dict_set_int(&fmt_opt, "channel_layout", link->channel_layout, 0);
+    av_channel_layout_describe(&link->ch_layout, tmp, sizeof(tmp));
+    av_dict_set(&fmt_opt, "ch_layout", tmp, 0);
 
     av_opt_set_dict(priv->fmt_ctx->priv_data, &fmt_opt);
     av_dict_free(&fmt_opt);
@@ -422,37 +419,41 @@ static void *adevsrc_child_next(void *obj, void *prev)
         return NULL;
 }
 
-static const struct AVClass *adevsrc_child_class_next(const struct AVClass *prev)
+static const struct AVClass *adevsrc_child_class_iterate(void **iter)
 {
-    if (!prev)
-        return avformat_get_class();
-    else if (prev == avformat_get_class())
-        return avcodec_get_class();
+    const AVClass *c = *iter;
+
+    if (!c)
+        c = avformat_get_class();
+    else if (c == avformat_get_class())
+        c = avcodec_get_class();
     else
-        return NULL;
+        c = NULL;
+
+    *iter = (void*)(uintptr_t)c;
+    return *iter;
 }
 
 #define OFFSET(x) offsetof(ADevSrcPriv, x)
 #define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption adevsrc_options[] = {
-    { "format",         "", OFFSET(format),         AV_OPT_TYPE_STRING,         .flags = A },
-    { "devname",        "", OFFSET(devname),        AV_OPT_TYPE_STRING,         .flags = A },
-    { "sample_fmt",     "", OFFSET(sample_fmt),     AV_OPT_TYPE_SAMPLE_FMT,     {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
-    { "sample_rate",    "", OFFSET(sample_rate),    AV_OPT_TYPE_INT,            {.i64 = 0},                 0, INT_MAX, R },
-    { "channels",       "", OFFSET(channels),       AV_OPT_TYPE_INT,            {.i64 = 0},                 0, INT_MAX, R },
-    { "channel_layout", "", OFFSET(channel_layout), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64 = 0},                 0, INT_MAX, R },
+    { "format",      "", OFFSET(format),      AV_OPT_TYPE_STRING,     .flags = A },
+    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,     .flags = A },
+    { "sample_fmt",  "", OFFSET(sample_fmt),  AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
+    { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                 0, INT_MAX, R },
+    { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},              0, 0,       R },
     { NULL },
 };
 
 static const AVClass adevsrc_class = {
-    .class_name = "adevsrc_class",
-    .item_name  = av_default_item_name,
-    .option     = adevsrc_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_FILTER,
-    .child_next = adevsrc_child_next,
-    .child_class_next = adevsrc_child_class_next,
+    .class_name          = "adevsrc_class",
+    .item_name           = av_default_item_name,
+    .option              = adevsrc_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = adevsrc_child_next,
+    .child_class_iterate = adevsrc_child_class_iterate,
 };
 
 static const AVFilterPad adevsrc_outputs[] = {
@@ -461,18 +462,17 @@ static const AVFilterPad adevsrc_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = adevsrc_config_props,
     },
-    { NULL }
 };
 
-AVFilter ff_asrc_adevsrc = {
+const AVFilter ff_asrc_adevsrc = {
     .name            = "adevsrc",
     .description     = NULL_IF_CONFIG_SMALL("audio device source"),
     .priv_size       = sizeof(ADevSrcPriv),
     .priv_class      = &adevsrc_class,
-    .query_formats   = adevsrc_query_formats,
     .init_dict       = adevsrc_init_dict,
     .uninit          = adevsrc_uninit,
-    .outputs         = adevsrc_outputs,
+    FILTER_OUTPUTS(adevsrc_outputs),
+    FILTER_QUERY_FUNC(adevsrc_query_formats),
     .activate        = adevsrc_activate,
     .process_command = adevsrc_process_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
