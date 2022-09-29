@@ -24,7 +24,8 @@
  */
 
 #include "avcodec.h"
-#include "internal.h"
+#include "codec_internal.h"
+#include "decode.h"
 #include "libavutil/intreadwrite.h"
 
 #include <oi_codec_sbc.h>
@@ -47,7 +48,7 @@ static int sbc_decode_init(AVCodecContext *avctx)
     OI_STATUS status;
 
     status = OI_CODEC_SBC_DecoderReset(&sbc->context, (uint32_t *)sbc->data,
-                                       sizeof(sbc->data), 2, avctx->channels, false);
+                                       sizeof(sbc->data), 2, avctx->ch_layout.nb_channels, false);
     if (!OI_SUCCESS(status))
         return AVERROR(status);
 
@@ -55,13 +56,11 @@ static int sbc_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int sbc_packed_decode_frame(AVCodecContext *avctx,
-                                   void *data, int *got_frame_ptr,
-                                   AVPacket *avpkt)
+static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                                   int *got_frame_ptr, AVPacket *avpkt)
 {
     SBCDecContext *sbc = avctx->priv_data;
     const OI_BYTE* in_data;
-    AVFrame *frame = data;
     uint32_t in_size, out_avail;
     uint8_t *out_ptr;
     int nframes;
@@ -76,7 +75,7 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx,
         return AVERROR(EINVAL);
 
     frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
         return ret;
 
     in_data = avpkt->data + 1;
@@ -99,14 +98,12 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx,
     return avpkt->size - in_size;
 }
 
-static int sbc_decode_frame(AVCodecContext *avctx,
-                            void *data, int *got_frame_ptr,
-                            AVPacket *avpkt)
+static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                            int *got_frame_ptr, AVPacket *avpkt)
 {
     SBCDecContext *sbc = avctx->priv_data;
     const OI_BYTE* in_data;
     uint32_t in_size, out_size;
-    AVFrame *frame = data;
     OI_STATUS status;
     int ret;
 
@@ -114,7 +111,7 @@ static int sbc_decode_frame(AVCodecContext *avctx,
         return AVERROR(EIO);
 
     frame->nb_samples = SBC_WBS_SAMPLES_PER_FRAME;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
         return ret;
 
     in_data = avpkt->data;
@@ -132,37 +129,37 @@ static int sbc_decode_frame(AVCodecContext *avctx,
     return avpkt->size - in_size;
 }
 
-AVCodec ff_libfluoride_sbc_decoder = {
-    .name                  = "libfluoride_sbc",
-    .long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC (low-complexity subband codec)"),
-    .type                  = AVMEDIA_TYPE_AUDIO,
-    .id                    = AV_CODEC_ID_SBC,
-    .priv_data_size        = sizeof(SBCDecContext),
-    .init                  = sbc_decode_init,
-    .decode                = sbc_decode_frame,
-    .capabilities          = AV_CODEC_CAP_DR1,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                                  AV_CH_LAYOUT_STEREO, 0},
-    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
-    .supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
-    .bsfs                  = "a2dp_rechunk",
+const FFCodec ff_libfluoride_sbc_decoder = {
+    .p.name                  = "libfluoride_sbc",
+    .p.long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC (low-complexity subband codec)"),
+    .p.type                  = AVMEDIA_TYPE_AUDIO,
+    .p.id                    = AV_CODEC_ID_SBC,
+    .priv_data_size          = sizeof(SBCDecContext),
+    .init                    = sbc_decode_init,
+    FF_CODEC_DECODE_CB(sbc_decode_frame),
+    .p.capabilities          = AV_CODEC_CAP_DR1,
+    .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
+    .bsfs                    = "a2dp_rechunk",
+    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                               AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                           AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };
 
-AVCodec ff_libfluoride_sbc_packed_decoder = {
-    .name                  = "libfluoride_sbc-packed",
-    .long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC packed (low-complexity subband codec)"),
-    .type                  = AVMEDIA_TYPE_AUDIO,
-    .id                    = AV_CODEC_ID_SBC_PACKED,
-    .priv_data_size        = sizeof(SBCDecContext),
-    .init                  = sbc_decode_init,
-    .decode                = sbc_packed_decode_frame,
-    .capabilities          = AV_CODEC_CAP_DR1,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                                  AV_CH_LAYOUT_STEREO, 0},
-    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
-    .supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+const FFCodec ff_libfluoride_sbc_packed_decoder = {
+    .p.name                  = "libfluoride_sbc-packed",
+    .p.long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC packed (low-complexity subband codec)"),
+    .p.type                  = AVMEDIA_TYPE_AUDIO,
+    .p.id                    = AV_CODEC_ID_SBC_PACKED,
+    .priv_data_size          = sizeof(SBCDecContext),
+    .init                    = sbc_decode_init,
+    FF_CODEC_DECODE_CB(sbc_packed_decode_frame),
+    .p.capabilities          = AV_CODEC_CAP_DR1,
+    .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                               AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                           AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };

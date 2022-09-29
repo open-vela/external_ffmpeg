@@ -39,6 +39,8 @@
 #include <fcntl.h>
 #include <errno.h>
 
+static const AVClass fluoride_enc_cap_class;
+
 static int fluoride_write_header(AVFormatContext *ctx)
 {
     FluPriv *priv = ctx->priv_data;
@@ -182,6 +184,17 @@ static int fluoride_enc_control_message(struct AVFormatContext *ctx, int type,
     int ret = 0;
 
     switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &fluoride_enc_cap_class;
+            caps->device_context = ctx;
+            av_opt_set_defaults(caps);
+            return 0;
+        }
         case AV_APP_TO_DEV_GET_POLLFD:
             {
                 if (!data || data_size < sizeof(struct pollfd) * 2)
@@ -292,17 +305,6 @@ static const AVClass fluoride_enc_cap_class = {
     .query_ranges = fluoride_capbility_query_ranges,
 };
 
-static int fluoride_create_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
-{
-    caps->av_class = &fluoride_enc_cap_class;
-    return 0;
-}
-
-static int fluoride_free_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
-{
-    return 0;
-}
-
 #define OFFSET(x) offsetof(FluPriv, x)
 #define FLAGS AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
@@ -334,8 +336,6 @@ AVOutputFormat ff_fluoride_muxer = {
     .write_trailer  = fluoride_write_trailer,
     .control_message     = fluoride_enc_control_message,
     .write_uncoded_frame = fluoride_write_frame,
-    .create_device_capabilities = fluoride_create_device_capabilities,
-    .free_device_capabilities   = fluoride_free_device_capabilities,
     .flags          = AVFMT_NOFILE|AVFMT_TS_NONSTRICT,
     .priv_class     = &fluoride_muxer_class,
 };

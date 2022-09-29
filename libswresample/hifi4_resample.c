@@ -39,7 +39,6 @@ static struct ResampleContext *create(struct ResampleContext *c, int out_rate, i
         double cutoff, enum AVSampleFormat format, enum SwrFilterType filter_type, double kaiser_beta, double precision, int cheby, int exact_rational)
 {
     HIFI4ResampleContext *context;
-    int i;
 
     context = (HIFI4ResampleContext *)av_mallocz(sizeof(HIFI4ResampleContext));
     if (!context)

@@ -24,7 +24,8 @@
  */
 
 #include "avcodec.h"
-#include "internal.h"
+#include "codec_internal.h"
+#include "decode.h"
 
 #include <SKP_Silk_SDK_API.h>
 
@@ -63,19 +64,17 @@ out:
     return ret;
 }
 
-static int silk_decode_frame(AVCodecContext *avctx,
-                            void *data, int *got_frame_ptr,
-                            AVPacket *avpkt)
+static int silk_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                             int *got_frame_ptr, AVPacket *avpkt)
 {
     SilkDecContext *silk = avctx->priv_data;
     SKP_SILK_SDK_DecControlStruct control;
     short total = 0, once = 0, *out;
-    AVFrame *frame = data;
     int ret, frames = 0;
 
     frame->nb_samples = ((FRAME_LENGTH_MS * MAX_API_FS_KHZ) << 1) * MAX_INPUT_FRAMES /
-                         (avctx->channels * av_get_bytes_per_sample(avctx->sample_fmt));
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+                         (avctx->ch_layout.nb_channels * av_get_bytes_per_sample(avctx->sample_fmt));
+    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
         return ret;
 
     control.API_sampleRate  = avctx->sample_rate;
@@ -112,19 +111,18 @@ static av_cold int silk_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_silk_decoder = {
-    .name                  = "silk",
-    .long_name             = NULL_IF_CONFIG_SMALL("Silk V3 Audio Decoder"),
-    .type                  = AVMEDIA_TYPE_AUDIO,
-    .id                    = AV_CODEC_ID_SILK,
-    .priv_data_size        = sizeof(SilkDecContext),
-    .init                  = silk_decode_init,
-    .decode                = silk_decode_frame,
-    .close                 = silk_decode_close,
-    .capabilities          = AV_CODEC_CAP_DR1,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                                  0},
-    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
+const FFCodec ff_silk_decoder = {
+    .p.name                  = "silk",
+    .p.long_name             = NULL_IF_CONFIG_SMALL("Silk V3 Audio Decoder"),
+    .p.type                  = AVMEDIA_TYPE_AUDIO,
+    .p.id                    = AV_CODEC_ID_SILK,
+    .priv_data_size          = sizeof(SilkDecContext),
+    .init                    = silk_decode_init,
+    FF_CODEC_DECODE_CB(silk_decode_frame),
+    .close                   = silk_decode_close,
+    .p.capabilities          = AV_CODEC_CAP_DR1,
+    .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                               AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO, { 0 } },
 };

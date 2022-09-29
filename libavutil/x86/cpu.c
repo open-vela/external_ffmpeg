@@ -97,7 +97,6 @@ int ff_get_cpu_flags_x86(void)
     int max_std_level, max_ext_level, std_caps = 0, ext_caps = 0;
     int family = 0, model = 0;
     union { int i[3]; char c[12]; } vendor;
-    int xcr0_lo = 0, xcr0_hi = 0;
 
     if (!cpuid_test())
         return 0; /* CPUID not supported */
@@ -132,6 +131,7 @@ int ff_get_cpu_flags_x86(void)
 #if HAVE_AVX
         /* Check OXSAVE and AVX bits */
         if ((ecx & 0x18000000) == 0x18000000) {
+            int xcr0_lo = 0, xcr0_hi = 0;
             /* Check for OS support */
             xgetbv(0, xcr0_lo, xcr0_hi);
             if ((xcr0_lo & 0x6) == 0x6) {
@@ -150,9 +150,13 @@ int ff_get_cpu_flags_x86(void)
             rval |= AV_CPU_FLAG_AVX2;
 #if HAVE_AVX512 /* F, CD, BW, DQ, VL */
         if ((xcr0_lo & 0xe0) == 0xe0) { /* OPMASK/ZMM state */
-            if ((rval & AV_CPU_FLAG_AVX2) && (ebx & 0xd0030000) == 0xd0030000)
+            if ((rval & AV_CPU_FLAG_AVX2) && (ebx & 0xd0030000) == 0xd0030000) {
                 rval |= AV_CPU_FLAG_AVX512;
-
+#if HAVE_AVX512ICL
+                if ((ebx & 0xd0200000) == 0xd0200000 && (ecx & 0x5f42) == 0x5f42)
+                    rval |= AV_CPU_FLAG_AVX512ICL;
+#endif /* HAVE_AVX512ICL */
+            }
         }
 #endif /* HAVE_AVX512 */
 #endif /* HAVE_AVX2 */
@@ -196,6 +200,10 @@ int ff_get_cpu_flags_x86(void)
            used unless explicitly disabled by checking AV_CPU_FLAG_AVXSLOW. */
             if ((family == 0x15 || family == 0x16) && (rval & AV_CPU_FLAG_AVX))
                 rval |= AV_CPU_FLAG_AVXSLOW;
+
+        /* Zen 3 and earlier have slow gather */
+            if ((family <= 0x19) && (rval & AV_CPU_FLAG_AVX2))
+                rval |= AV_CPU_FLAG_SLOW_GATHER;
         }
 
         /* XOP and FMA4 use the AVX instruction coding scheme, so they can't be
@@ -235,6 +243,10 @@ int ff_get_cpu_flags_x86(void)
         if ((rval & AV_CPU_FLAG_SSSE3) && !(rval & AV_CPU_FLAG_SSE4) &&
             family == 6 && model < 23)
             rval |= AV_CPU_FLAG_SSSE3SLOW;
+
+        /* Haswell has slow gather */
+        if ((rval & AV_CPU_FLAG_AVX2) && family == 6 && model < 70)
+            rval |= AV_CPU_FLAG_SLOW_GATHER;
     }
 
 #endif /* cpuid */

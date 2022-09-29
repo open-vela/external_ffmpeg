@@ -272,7 +272,7 @@ static int config_output(AVFilterLink *outlink)
     memset(s->scale_norm,  0, s->nb_inputs * sizeof(*s->scale_norm));
 
     s->active_inputs = s->nb_inputs;
-    s->nb_channels = outlink->channels;
+    s->nb_channels = outlink->ch_layout.nb_channels;
     for (i = 0; i < s->nb_inputs; i++) {
         if (s->fifos[i])
             av_audio_fifo_free(s->fifos[i]);
@@ -286,7 +286,7 @@ static int config_output(AVFilterLink *outlink)
         s->scale_norm[i] = s->weight_sum / FFABS(s->weights[i]);
     calculate_scales(s, 0);
 
-    av_get_channel_layout_string(buf, sizeof(buf), -1, outlink->channel_layout);
+    av_channel_layout_describe(&outlink->ch_layout, buf, sizeof(buf));
 
     av_freep(&s->fixed_dsp);
     av_freep(&s->float_dsp);
@@ -322,7 +322,6 @@ static bool is_timeout(AVFilterContext *ctx)
 static void timer_notify(union sigval value)
 {
     AVFilterContext *ctx = value.sival_ptr;
-    MixContext *s = ctx->priv;
 
     ff_filter_set_ready(ctx, 10);
 }
@@ -409,6 +408,8 @@ static int output_frame(AVFilterLink *outlink)
                 }
             }
         }
+
+        s->next_pts = frame_list_next_pts(s->frame_list);
     } else {
         /* first input closed: use the available samples */
         nb_samples = INT_MAX;
@@ -428,6 +429,8 @@ static int output_frame(AVFilterLink *outlink)
 
     if (nb_samples == 0 || nb_samples == INT_MAX)
         return 0;
+
+    frame_list_remove_samples(s->frame_list, nb_samples);
 
     if (s->first_input >= 0 && s->first_input < s->nb_inputs) {
         s->next_pts = frame_list_next_pts(s->frame_list);
@@ -521,7 +524,6 @@ static int request_samples(AVFilterContext *ctx, int min_samples)
 
 static void amix_fifo_reset(AVFilterContext *ctx)
 {
-    AVFilterLink *link = ctx->outputs[0];
     MixContext *s = ctx->priv;
     int i;
 
@@ -671,13 +673,11 @@ static av_cold int init(AVFilterContext *ctx)
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0) {
-            av_freep(&pad.name);
+        if ((ret = ff_append_inpad_free_name(ctx, &pad)) < 0)
             return ret;
-        }
     }
 
-    s->weights = av_mallocz_array(s->nb_inputs, sizeof(*s->weights));
+    s->weights = av_calloc(s->nb_inputs, sizeof(*s->weights));
     if (!s->weights)
         return AVERROR(ENOMEM);
 
@@ -687,7 +687,7 @@ static av_cold int init(AVFilterContext *ctx)
     if (!s->frame_list)
         return AVERROR(ENOMEM);
 
-    s->fifos = av_mallocz_array(s->nb_inputs, sizeof(*s->fifos));
+    s->fifos = av_calloc(s->nb_inputs, sizeof(*s->fifos));
     if (!s->fifos)
         return AVERROR(ENOMEM);
 
@@ -695,8 +695,8 @@ static av_cold int init(AVFilterContext *ctx)
     if (!s->input_state)
         return AVERROR(ENOMEM);
 
-    s->input_scale = av_mallocz_array(s->nb_inputs, sizeof(*s->input_scale));
-    s->scale_norm  = av_mallocz_array(s->nb_inputs, sizeof(*s->scale_norm));
+    s->input_scale = av_calloc(s->nb_inputs, sizeof(*s->input_scale));
+    s->scale_norm  = av_calloc(s->nb_inputs, sizeof(*s->scale_norm));
     if (!s->input_scale || !s->scale_norm)
         return AVERROR(ENOMEM);
 
@@ -754,8 +754,6 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         int ret, i;
 
         for (i = 0; i < s->nb_inputs; i++) {
-            AVFilterLink *link = ctx->inputs[i];
-
             ret = snprintf(res + pos, res_len - pos, "%d(%u,%d) ",
                            i, s->input_state ? s->input_state[i] : 0,
                            s->fifos[i] ? av_audio_fifo_size(s->fifos[i]) : 0);
@@ -788,10 +786,9 @@ static const AVFilterPad avfilter_af_amix_outputs[] = {
         .type          = AVMEDIA_TYPE_AUDIO,
         .config_props  = config_output,
     },
-    { NULL }
 };
 
-AVFilter ff_af_amix = {
+const AVFilter ff_af_amix = {
     .name           = "amix",
     .description    = NULL_IF_CONFIG_SMALL("Audio mixing."),
     .priv_size      = sizeof(MixContext),
@@ -799,9 +796,9 @@ AVFilter ff_af_amix = {
     .init           = init,
     .uninit         = uninit,
     .activate       = activate,
-    .query_formats  = query_formats,
     .inputs         = NULL,
-    .outputs        = avfilter_af_amix_outputs,
+    FILTER_OUTPUTS(avfilter_af_amix_outputs),
+    FILTER_QUERY_FUNC(query_formats),
     .process_command = process_command,
     .flags          = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

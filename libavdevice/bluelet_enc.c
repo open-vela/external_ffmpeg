@@ -32,6 +32,7 @@
 #include "libavfilter/filters.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
+#include "libavformat/mux.h"
 #include "libavcodec/get_bits.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
@@ -188,7 +189,7 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
                 if (action == BLUELET_ACTION_AVAILABLE) {
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
                 } else if (action == BLUELET_ACTION_CONFIG) {
-                    ctx->oformat->audio_codec = priv->codec_id;
+                    ctx->audio_codec_id = priv->codec_id;
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
                 }
             } else if (priv->data_fd == poll->fd) {
@@ -222,6 +223,9 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             snprintf(data, data_size, "%s|%d|%p",
                      priv->server_name, priv->state, priv->lastpkt);
             break;
+        default:
+            ret = AVERROR(ENOSYS);
+            break;
         }
     }
 
@@ -242,27 +246,10 @@ static const AVClass bluelet_enc_cap_class = {
     .query_ranges = bluelet_enc_capbility_query_ranges,
 };
 
-static int bluelet_enc_create_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
-{
-    BlueletPriv *priv = ctx->priv_data;
-
-    if (priv->codec_id == AV_CODEC_ID_NONE)
-        return FFERROR_NOT_READY;
-
-    caps->av_class = &bluelet_enc_cap_class;
-
-    return 0;
-}
-
-static int bluelet_enc_free_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
-{
-    return 0;
-}
-
-static int bluelet_enc_check_bitstream(struct AVFormatContext *ctx, const AVPacket *pkt)
+static int bluelet_enc_check_bitstream(struct AVFormatContext *ctx, struct AVStream *st,
+                                       const AVPacket *pkt)
 {
     int ret = 1;
-    AVStream *st = ctx->streams[0];
 
     if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
         /* check aac header, if loas header is present, skip add bitstream filter */
@@ -303,8 +290,6 @@ AVOutputFormat ff_bluelet_muxer = {
     .write_trailer              = bluelet_write_trailer,
     .control_message            = bluelet_enc_control_message,
     .write_uncoded_frame        = bluelet_write_frame,
-    .create_device_capabilities = bluelet_enc_create_device_capabilities,
-    .free_device_capabilities   = bluelet_enc_free_device_capabilities,
     .check_bitstream            = bluelet_enc_check_bitstream,
     .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT,
     .priv_class                 = &bluelet_muxer_class,

@@ -81,7 +81,7 @@ static int unix_open(URLContext *h, const char *filename, int flags)
         av_strlcpy(s->addr.sun_path, filename, sizeof(s->addr.sun_path));
     }
 
-    if ((fd = ff_socket(AF_UNIX, s->type, 0)) < 0)
+    if ((fd = ff_socket(AF_UNIX, s->type, 0, h)) < 0)
         return ff_neterrno();
 
     if (s->timeout < 0 && h->rw_timeout)
