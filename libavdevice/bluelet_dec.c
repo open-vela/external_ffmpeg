@@ -37,6 +37,8 @@
 
 #define A2DP_PERIOD_BYTES 1024
 
+static const AVClass bluelet_dec_cap_class;
+
 static int bluelet_read_close(AVFormatContext *ctx)
 {
     BlueletPriv *priv = ctx->priv_data;
@@ -131,6 +133,21 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
     int ret = 0;
 
     switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+            BlueletPriv *priv = ctx->priv_data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            if (priv->codec_id == AV_CODEC_ID_NONE)
+                return FFERROR_NOT_READY;
+
+            caps->av_class = &bluelet_dec_cap_class;
+            caps->device_context = ctx;
+            av_opt_set_defaults(caps);
+            return 0;
+        }
         case AV_APP_TO_DEV_GET_POLLFD:
             if (!data || data_size < sizeof(struct pollfd) * 2)
                 return AVERROR(EINVAL);
@@ -220,23 +237,6 @@ static const AVClass bluelet_dec_cap_class = {
     .query_ranges = bluelet_dec_capbility_query_ranges,
 };
 
-static int bluelet_dec_create_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
-{
-    BlueletPriv *priv = ctx->priv_data;
-
-    if (priv->codec_id == AV_CODEC_ID_NONE)
-        return FFERROR_NOT_READY;
-
-    caps->av_class = &bluelet_dec_cap_class;
-
-    return 0;
-}
-
-static int bluelet_dec_free_device_capabilities(struct AVFormatContext *ctx, struct AVDeviceCapabilitiesQuery *caps)
-{
-    return 0;
-}
-
 #define OFFSET(x) offsetof(BlueletPriv, x)
 #define FLAGS AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
@@ -266,8 +266,6 @@ AVInputFormat ff_bluelet_demuxer = {
     .deinit                     = bluelet_dec_deinit,
     .control_message            = bluelet_dec_control_message,
     .read_close                 = bluelet_read_close,
-    .create_device_capabilities = bluelet_dec_create_device_capabilities,
-    .free_device_capabilities   = bluelet_dec_free_device_capabilities,
     .flags                      = AVFMT_NOFILE,
     .priv_class                 = &bluelet_demuxer_class,
 };

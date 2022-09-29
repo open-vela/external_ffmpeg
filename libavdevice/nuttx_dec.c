@@ -37,6 +37,8 @@
 
 #include "nuttx.h"
 
+static const AVClass nuttx_cap_class;
+
 static int nuttx_init(struct AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
@@ -55,6 +57,17 @@ static int nuttx_control_message(struct AVFormatContext *s1,
     NuttxPriv *priv = s1->priv_data;
 
     switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &nuttx_cap_class;
+            caps->device_context = s1;
+            av_opt_set_defaults(caps);
+            return 0;
+        }
         case AV_APP_TO_DEV_GET_POLLFD: {
             struct pollfd *poll = data;
 
@@ -121,17 +134,16 @@ static int nuttx_read_header(AVFormatContext *s1)
 
     ret = ff_nuttx_open(s1->priv_data, false);
     if (ret < 0) {
-        ff_free_stream(s1, st);
+        ff_remove_stream(s1, st);
         return ret;
     }
 
     /* take real parameters */
-    st->codecpar->codec_type     = AVMEDIA_TYPE_AUDIO;
-    st->codecpar->codec_id       = priv->codec;
-    st->codecpar->sample_rate    = priv->sample_rate;
-    st->codecpar->channels       = priv->channels;
-    st->codecpar->frame_size     = priv->frame_size;
-    st->codecpar->channel_layout = priv->channel_layout;
+    st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id    = priv->codec;
+    st->codecpar->sample_rate = priv->sample_rate;
+    st->codecpar->frame_size  = priv->frame_size;
+    av_channel_layout_copy(&st->codecpar->ch_layout, &priv->ch_layout);
 
     return 0;
 }
@@ -142,7 +154,7 @@ static int nuttx_read_close(AVFormatContext *s1)
     AVStream *st = s1->streams[0];
 
     ff_nuttx_close(priv, priv->nonblock);
-    ff_free_stream(s1, st);
+    ff_remove_stream(s1, st);
 
     return 0;
 }
@@ -186,20 +198,6 @@ static const AVClass nuttx_cap_class = {
     .query_ranges = nuttx_capbility_query_ranges,
 };
 
-static int nuttx_create_device_capabilities(struct AVFormatContext *s1, struct AVDeviceCapabilitiesQuery *caps)
-{
-    if (!caps)
-        return AVERROR(EINVAL);
-
-    caps->av_class = &nuttx_cap_class;
-    return 0;
-}
-
-static int nuttx_free_device_capabilities(struct AVFormatContext *s, struct AVDeviceCapabilitiesQuery *caps)
-{
-    return 0;
-}
-
 static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoList *device_list)
 {
     if (!device_list)
@@ -211,13 +209,12 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
 #define OFFSET(x) offsetof(NuttxPriv, x)
 #define FLAGS AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
-    { "periods",        "", OFFSET(periods),        AV_OPT_TYPE_INT,            {.i64 = 4},                0,                INT_MAX, FLAGS },
-    { "period_bytes",   "", OFFSET(period_bytes),   AV_OPT_TYPE_INT,            {.i64 = 0},                0,                INT_MAX, FLAGS },
-    { "period_time",    "", OFFSET(period_time),    AV_OPT_TYPE_INT,            {.i64 = 20},               0,                INT_MAX, FLAGS },
-    { "codec",          "", OFFSET(codec),          AV_OPT_TYPE_INT,            {.i64 = AV_CODEC_ID_NONE}, AV_CODEC_ID_NONE, INT_MAX, FLAGS },
-    { "sample_rate",    "", OFFSET(sample_rate),    AV_OPT_TYPE_INT,            {.i64 = 48000},            1,                INT_MAX, FLAGS },
-    { "channels",       "", OFFSET(channels),       AV_OPT_TYPE_INT,            {.i64 = 2},                1,                INT_MAX, FLAGS },
-    { "channel_layout", "", OFFSET(channel_layout), AV_OPT_TYPE_CHANNEL_LAYOUT, {.i64 = 0},                0,                INT_MAX, FLAGS },
+    { "periods",      "", OFFSET(periods),      AV_OPT_TYPE_INT,      {.i64 = 4},                0,                INT_MAX, FLAGS },
+    { "period_bytes", "", OFFSET(period_bytes), AV_OPT_TYPE_INT,      {.i64 = 0},                0,                INT_MAX, FLAGS },
+    { "period_time",  "", OFFSET(period_time),  AV_OPT_TYPE_INT,      {.i64 = 20},               0,                INT_MAX, FLAGS },
+    { "codec",        "", OFFSET(codec),        AV_OPT_TYPE_INT,      {.i64 = AV_CODEC_ID_NONE}, AV_CODEC_ID_NONE, INT_MAX, FLAGS },
+    { "sample_rate",  "", OFFSET(sample_rate),  AV_OPT_TYPE_INT,      {.i64 = 48000},            1,                INT_MAX, FLAGS },
+    { "ch_layout",    "", OFFSET(ch_layout),    AV_OPT_TYPE_CHLAYOUT, {.str = "stereo" },        0,                0,       FLAGS },
     { NULL },
 };
 
@@ -239,8 +236,6 @@ AVInputFormat ff_nuttx_demuxer = {
     .read_header                = nuttx_read_header,
     .read_packet                = nuttx_read_packet,
     .read_close                 = nuttx_read_close,
-    .create_device_capabilities = nuttx_create_device_capabilities,
-    .free_device_capabilities   = nuttx_free_device_capabilities,
     .get_device_list            = nuttx_get_device_list,
     .flags                      = AVFMT_NOFILE,
     .priv_class                 = &nuttx_demuxer_class,

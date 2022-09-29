@@ -345,15 +345,14 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
         return AVERROR(EAGAIN);
 
     bps = av_get_bits_per_sample(priv->codec);
-    priv->frame_size = bps * priv->channels / 8;
-
+    priv->frame_size = bps * priv->ch_layout.nb_channels / 8;
     caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
     caps_desc.caps.ac_type           = playback ?
                                        AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
-    caps_desc.caps.ac_channels       = priv->channels;
-    caps_desc.caps.ac_chmap          = priv->channel_layout ?
-                                       priv->channel_layout :
-                                       ~(~0ul << priv->channels);
+    caps_desc.caps.ac_channels       = priv->ch_layout.nb_channels;
+    caps_desc.caps.ac_chmap          = priv->ch_layout.u.mask ?
+                                       priv->ch_layout.u.mask :
+                                       ~(~0ul << priv->ch_layout.nb_channels);
     caps_desc.caps.ac_controls.hw[0] = priv->sample_rate;
     caps_desc.caps.ac_controls.b[3]  = priv->sample_rate >> 16;
     caps_desc.caps.ac_controls.b[2]  = bps;
