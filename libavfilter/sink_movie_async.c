@@ -21,8 +21,10 @@
  * sink movie asynchronously
  */
 
+#include "config_components.h"
+
 #include <unistd.h>
-#include <queue.h>
+#include <nuttx/queue.h>
 
 #include <libavutil/opt.h>
 #include <libavutil/avassert.h>
@@ -53,9 +55,9 @@ typedef struct MovieSinkPriv {
     int                       stack_size;
     int                       priority;
 
+    const AVOutputFormat      *format;
     AVFormatContext           *format_ctx;
     AVDictionary              *format_opt;
-    AVOutputFormat            *format;
     MovieStream               *streams;
     AVDictionary              *global_opts;
 
@@ -172,7 +174,6 @@ static int amoviesink_clear_dat(AVFilterContext *ctx)
 
 static int amoviesink_send_empty_frame(AVFilterContext *ctx)
 {
-    MovieSinkPriv *priv = ctx->priv;
     AVFrame *frame;
     int i, ret;
 
@@ -212,7 +213,7 @@ static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVDictionary *dict = NULL;
-    int ret, i;
+    int ret;
 
     ret = avformat_alloc_output_context2(&priv->format_ctx, priv->format,
                                          NULL, filename);
@@ -220,7 +221,6 @@ static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
         return ret;
 
     priv->format_ctx->flags |= AVFMT_FLAG_NONBLOCK;
-    priv->format_ctx->oformat->flags |= AVFMT_NOTIMESTAMPS;
 
     if (priv->global_opts)
         av_dict_copy(&dict, priv->global_opts, 0);
@@ -239,13 +239,12 @@ out:
 
 static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char *params)
 {
-    MovieSinkPriv *priv = ctx->priv;
     int format, sample_rate, channels, w, h;
+    MovieSinkPriv *priv = ctx->priv;
     int vbr = -1, level = -1;
-    uint64_t channel_layout;
     int64_t bitrate = -1;
+    const AVCodec *enc;
     AVStream *stream;
-    AVCodec *enc;
     int ret;
 
     if (priv->streams[pad_id].type == AVMEDIA_TYPE_AUDIO)
@@ -253,21 +252,22 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
     else
         enc = avcodec_find_encoder(priv->format_ctx->oformat->video_codec);
 
-    if (!enc)
+    if (!enc) {
+        av_log(NULL, AV_LOG_INFO, "not find enc\n");
         return AVERROR(EINVAL);
+    }
 
     priv->streams[pad_id].enc_ctx = avcodec_alloc_context3(enc);
     if (!priv->streams[pad_id].enc_ctx)
         return AVERROR(ENOMEM);
 
     if (priv->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
-        sscanf(params, "a:%d,%d,%d,%llu,%lld,%d,%d",
-               &format, &sample_rate, &channels, &channel_layout, &bitrate, &vbr, &level);
+        sscanf(params, "a:%d,%d,%d,%lld,%d,%d",
+               &format, &sample_rate, &channels, &bitrate, &vbr, &level);
 
-        priv->streams[pad_id].enc_ctx->sample_fmt     = format;
-        priv->streams[pad_id].enc_ctx->sample_rate    = sample_rate;
-        priv->streams[pad_id].enc_ctx->channels       = channels;
-        priv->streams[pad_id].enc_ctx->channel_layout = channel_layout;
+        priv->streams[pad_id].enc_ctx->sample_fmt  = format;
+        priv->streams[pad_id].enc_ctx->sample_rate = sample_rate;
+        av_channel_layout_default(&priv->streams[pad_id].enc_ctx->ch_layout, channels);
     } else {
         sscanf(params, "v:%d,%d,%d", &format, &w, &h);
         priv->streams[pad_id].enc_ctx->pix_fmt = format;
@@ -312,8 +312,7 @@ static int amoviesink_open_encoders(AVFilterContext *ctx, const char *params)
     int i, ret = AVERROR(EINVAL);
     const char *param;
 
-    for (i = 0; i < ctx->nb_inputs; i++)
-    {
+    for (i = 0; i < ctx->nb_inputs; i++) {
         if (priv->streams[i].type == AVMEDIA_TYPE_AUDIO)
             param = strchr(params, 'a');
         else
@@ -343,10 +342,12 @@ out:
 static int amoviesink_encode_frame(AVFilterContext *ctx, int pad_id, AVFrame *frame)
 {
     MovieSinkPriv *priv = ctx->priv;
-    AVPacket pkt1, *pkt = &pkt1;
+    AVPacket *pkt;
     int ret = 0;
 
-    av_init_packet(pkt);
+    pkt = av_packet_alloc();
+    if (!pkt)
+        return AVERROR(ENOMEM);
 
     ret = avcodec_send_frame(priv->streams[pad_id].enc_ctx, frame);
     if (ret < 0)
@@ -375,6 +376,7 @@ out:
     if (ret == AVERROR(EAGAIN))
         ret = 0;
 
+    av_packet_free(&pkt);
     return ret;
 }
 
@@ -407,6 +409,7 @@ static void amoviesink_start(AVFilterContext *ctx, const char *params)
 
     if (priv->state == AVMOVIE_ASYNC_STATE_PREPARED) {
         ret = amoviesink_open_encoders(ctx, params);
+        av_log(NULL, AV_LOG_INFO, "start %d\n", ret);
         if (ret < 0)
             goto out;
     }
@@ -477,7 +480,7 @@ out:
 static void amoviesink_stop(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
-    int i, ret = 0;
+    int ret = 0;
 
     if (priv->state == AVMOVIE_ASYNC_STATE_STOPPED)
         return;
@@ -601,7 +604,6 @@ static void amoviesink_set_eof(AVFilterContext *ctx)
 
 static int amoviesink_activate(AVFilterContext *ctx)
 {
-    MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link;
     AVFrame *frame;
     int i, ret = 0;
@@ -685,7 +687,7 @@ static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
             goto out;
         }
 
-        if ((ret = ff_insert_inpad(ctx, i, &pad)) < 0) {
+        if ((ret = ff_append_inpad(ctx, &pad)) < 0) {
             av_freep(&pad.name);
             goto out;
         }
@@ -710,9 +712,9 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
     AVFilterChannelLayouts *layouts;
     AVFilterFormats *formats;
     AVDictionaryEntry *tag;
-    AVCodec *enc;
+    const AVCodec *enc;
 
-    int64_t value64 = 0, list64[] = { 0, -1 }, *list_i64;
+    AVChannelLayout list64[] = { { 0 }, { 0 } };
     int value = 0, list[] = { 0, -1 }, *list_i32;
     bool supported;
     int n, ret;
@@ -743,7 +745,7 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
                   ff_make_format_list(enc->sample_fmts) : ff_all_formats(AVMEDIA_TYPE_AUDIO);
     }
 
-    if (ret = ff_formats_ref(formats, &link->out_formats) < 0)
+    if (ret = ff_formats_ref(formats, &link->outcfg.formats) < 0)
         return ret;
 
     /* sample rate */
@@ -756,7 +758,7 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
 
     if (value) {
         if (enc->supported_samplerates)
-            supported = ff_fmt_is_in(value, enc->supported_samplerates);
+            supported = ff_rate_is_in(value, enc->supported_samplerates);
         else
             supported = true;
     }
@@ -770,7 +772,7 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
             while (enc->supported_samplerates[n] != 0)
                 n++;
 
-            list_i32 = av_mallocz_array(n + 1, sizeof(enc->supported_samplerates[0]));
+            list_i32 = av_calloc(n + 1, sizeof(enc->supported_samplerates[0]));
             if (!list_i32)
                 return AVERROR(ENOMEM);
 
@@ -784,22 +786,21 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
         }
     }
 
-    if (ret = ff_formats_ref(formats, &link->out_samplerates) < 0)
+    if (ret = ff_formats_ref(formats, &link->outcfg.samplerates) < 0)
         return ret;
 
     /* channel layout */
     supported = false;
     if ((tag = av_dict_get(priv->format_opt, "channel_layout", NULL, 0))) {
-        if ((ret = ff_parse_channel_layout(&value64, NULL,
-                                            tag->value, ctx)) < 0)
+        if ((ret = ff_parse_channel_layout(&list64[0], NULL, tag->value, ctx)) < 0)
             return ret;
     }
 
-    if (value64) {
-        if (enc->channel_layouts) {
+    if (av_channel_layout_check(&list64[0])) {
+        if (enc->ch_layouts) {
             n = 0;
-            while (enc->channel_layouts[n] != 0) {
-                if (value64 == enc->channel_layouts[n++]) {
+            while (av_channel_layout_check(&enc->ch_layouts[n])) {
+                if (!av_channel_layout_compare(&list64[0], &enc->ch_layouts[n++])) {
                     supported = true;
                     break;
                 }
@@ -810,37 +811,27 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
     }
 
     if (supported) {
-        list64[0] = value64;
-        layouts = avfilter_make_format64_list(list64);
+        layouts = ff_make_channel_layout_list(list64);
+    } else if (enc->ch_layouts) {
+        layouts = ff_make_channel_layout_list(enc->ch_layouts);
+        if (!layouts)
+            return AVERROR(ENOMEM);
+
+        ret = ff_add_channel_layout(&layouts, &list64[0]);
+        if (ret < 0)
+            return ret;
     } else {
-        if (enc->channel_layouts) {
-            n = 0;
-            while (enc->channel_layouts[n])
-                n++;
-
-            list_i64 = av_mallocz_array(n + 1, sizeof(enc->channel_layouts[0]));
-            if (!list_i64)
-                return AVERROR(ENOMEM);
-
-            memcpy(list_i64, enc->channel_layouts, n * sizeof(enc->channel_layouts[0]));
-            list_i64[n] = -1;
-            layouts = avfilter_make_format64_list(list_i64);
-            av_freep(&list_i64);
-        } else {
-            layouts = ff_all_channel_counts();
-        }
+        layouts = ff_all_channel_counts();
     }
 
-    return ff_channel_layouts_ref(layouts, &link->out_channel_layouts);
+    return ff_channel_layouts_ref(layouts, &link->outcfg.channel_layouts);
 }
 
 static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
 {
-    MovieSinkPriv *priv = ctx->priv;
     AVFilterFormats *formats;
     AVFilterLink *link;
-    AVCodec *enc;
-    int ret;
+    const AVCodec *enc;
 
     link = ctx->inputs[pad_id];
     enc  = avcodec_find_encoder(codec_id);
@@ -853,7 +844,7 @@ static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AV
         formats = ff_all_formats(AVMEDIA_TYPE_VIDEO);
     }
 
-    return ff_formats_ref(formats, &link->out_formats);
+    return ff_formats_ref(formats, &link->outcfg.formats);
 }
 
 static int amoviesink_query_formats(AVFilterContext *ctx)
@@ -965,9 +956,8 @@ static int amoviesink_process_start(AVFilterContext *ctx)
     for (i = 0; i < ctx->nb_inputs; i++) {
         link = ctx->inputs[i];
         if (link->type == AVMEDIA_TYPE_AUDIO)
-            ret = snprintf(ptr, len, "a:%d,%d,%d,%llu,%lld,%d,%d",
-                           link->format, link->sample_rate, link->channels, link->channel_layout, bitrate, vbr, level);
-
+            ret = snprintf(ptr, len, "a:%d,%d,%d,%lld,%d,%d",
+                           link->format, link->sample_rate, link->ch_layout.nb_channels, bitrate, vbr, level);
         else
             ret = snprintf(ptr, len, ";v:%d,%d,%d", link->format, link->w, link->h);
 
@@ -1014,7 +1004,6 @@ static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd)
 
 static int amoviesink_process_process_command(AVFilterContext *ctx, const char *cmd, const char *args)
 {
-    MovieSinkPriv *priv = ctx->priv;
     int len, ret;
     char *ptr;
 
@@ -1060,7 +1049,7 @@ static int amoviesink_process_dump(AVFilterContext *ctx, char *res, int res_len)
             ret = snprintf(res + pos, res_len - pos, ", A: %s %d %d %d",
                                     avcodec_get_name(priv->streams[i].enc_ctx->codec_id),
                                     priv->streams[i].enc_ctx->sample_rate,
-                                    priv->streams[i].enc_ctx->channels,
+                                    priv->streams[i].enc_ctx->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&priv->streams[i].dat_queue));
         } else {
             ret = snprintf(res + pos, res_len - pos, ", V: %s %d %d %d",
@@ -1085,7 +1074,6 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
                                       char *res, int res_len, int flags)
 {
     MovieSinkPriv *priv = ctx->priv;
-    int ret;
 
     if (!strcmp(cmd, "open")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s open.\n", __func__, ctx->name);
@@ -1130,14 +1118,19 @@ static const AVOption amoviesink_async_options[] = {
     { NULL },
 };
 
-static const struct AVClass *amoviesink_child_class_next(const struct AVClass *prev)
+static const struct AVClass *amoviesink_child_class_iterate(void **iter)
 {
-    if (!prev)
-        return avformat_get_class();
-    else if (prev == avformat_get_class())
-        return avcodec_get_class();
+    const AVClass *c = *iter;
+
+    if (!c)
+        c = avformat_get_class();
+    else if (c == avformat_get_class())
+        c = avcodec_get_class();
     else
-        return NULL;
+        c = NULL;
+
+    *iter = (void*)(uintptr_t)c;
+    return *iter;
 }
 
 static void *amoviesink_child_next(void *obj, void *prev)
@@ -1156,23 +1149,23 @@ static void *amoviesink_child_next(void *obj, void *prev)
 #if CONFIG_AMOVIESINK_ASYNC_FILTER
 
 static const AVClass amoviesink_async_class = {
-    .class_name       = "amoviesink_async_class",
-    .item_name        = av_default_item_name,
-    .option           = amoviesink_async_options,
-    .version          = LIBAVUTIL_VERSION_INT,
-    .category         = AV_CLASS_CATEGORY_FILTER,
-    .child_next       = amoviesink_child_next,
-    .child_class_next = amoviesink_child_class_next
+    .class_name          = "amoviesink_async_class",
+    .item_name           = av_default_item_name,
+    .option              = amoviesink_async_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = amoviesink_child_next,
+    .child_class_iterate = amoviesink_child_class_iterate,
 };
 
-AVFilter ff_sink_amoviesink_async = {
+const AVFilter ff_sink_amoviesink_async = {
     .name            = "amoviesink_async",
     .description     = NULL_IF_CONFIG_SMALL("amovie sink asyncchronously, end of the filter graph."),
     .priv_class      = &amoviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
     .init_dict       = amoviesink_init_dict,
     .uninit          = amoviesink_uninit,
-    .query_formats   = amoviesink_query_formats,
+    FILTER_QUERY_FUNC(amoviesink_query_formats),
     .activate        = amoviesink_activate,
     .inputs          = NULL,
     .outputs         = NULL,
@@ -1184,23 +1177,23 @@ AVFilter ff_sink_amoviesink_async = {
 #if CONFIG_MOVIESINK_ASYNC_FILTER
 
 static const AVClass moviesink_async_class = {
-    .class_name       = "moviesink_async_class",
-    .item_name        = av_default_item_name,
-    .option           = amoviesink_async_options,
-    .version          = LIBAVUTIL_VERSION_INT,
-    .category         = AV_CLASS_CATEGORY_FILTER,
-    .child_next       = amoviesink_child_next,
-    .child_class_next = amoviesink_child_class_next
+    .class_name          = "moviesink_async_class",
+    .item_name           = av_default_item_name,
+    .option              = amoviesink_async_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = amoviesink_child_next,
+    .child_class_iterate = amoviesink_child_class_iterate,
 };
 
-AVFilter ff_sink_moviesink_async = {
+const AVFilter ff_sink_moviesink_async = {
     .name            = "moviesink_async",
     .description     = NULL_IF_CONFIG_SMALL("movie sink asyncchronously, end of the filter graph."),
     .priv_class      = &moviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
     .init_dict       = amoviesink_init_dict,
     .uninit          = amoviesink_uninit,
-    .query_formats   = amoviesink_query_formats,
+    FILTER_QUERY_FUNC(amoviesink_query_formats),
     .activate        = amoviesink_activate,
     .inputs          = NULL,
     .outputs         = NULL,

@@ -31,10 +31,13 @@
 #include <poll.h>
 
 #include "libavformat/internal.h"
+#include "libavformat/mux.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
 #include "nuttx.h"
+
+static const AVClass nuttx_cap_class;
 
 static int nuttx_init(struct AVFormatContext *s1)
 {
@@ -68,10 +71,9 @@ static int nuttx_write_header(AVFormatContext *s1)
     if (s1->flags & AVFMT_FLAG_NONBLOCK)
         priv->nonblock = true;
 
-    priv->sample_rate    = st->codecpar->sample_rate;
-    priv->channels       = st->codecpar->channels;
-    priv->channel_layout = st->codecpar->channel_layout;
-    priv->codec          = st->codecpar->codec_id;
+    priv->codec       = st->codecpar->codec_id;
+    priv->sample_rate = st->codecpar->sample_rate;
+    av_channel_layout_copy(&priv->ch_layout, &st->codecpar->ch_layout);
 
     ret = ff_nuttx_open(s1->priv_data, true);
     if (ret >= 0)
@@ -143,6 +145,17 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
     NuttxPriv *priv = s1->priv_data;
 
     switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &nuttx_cap_class;
+            caps->device_context = s1;
+            av_opt_set_defaults(caps);
+            return 0;
+        }
         case AV_APP_TO_DEV_SET_VOLUME:
             if (!data)
                 return AVERROR(EINVAL);
@@ -234,20 +247,6 @@ static const AVClass nuttx_cap_class = {
     .query_ranges = nuttx_capbility_query_ranges,
 };
 
-static int nuttx_create_device_capabilities(struct AVFormatContext *s1, struct AVDeviceCapabilitiesQuery *caps)
-{
-    if (!caps)
-        return AVERROR(EINVAL);
-
-    caps->av_class = &nuttx_cap_class;
-    return 0;
-}
-
-static int nuttx_free_device_capabilities(struct AVFormatContext *s, struct AVDeviceCapabilitiesQuery *caps)
-{
-    return 0;
-}
-
 static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoList *device_list)
 {
     if (!device_list)
@@ -273,7 +272,7 @@ static const AVClass nuttx_muxer_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
 };
 
-AVOutputFormat ff_nuttx_muxer = {
+const AVOutputFormat ff_nuttx_muxer = {
     .name                       = "nuttx",
     .long_name                  = NULL_IF_CONFIG_SMALL("NUTTX audio output"),
     .priv_data_size             = sizeof(NuttxPriv),
@@ -286,9 +285,7 @@ AVOutputFormat ff_nuttx_muxer = {
     .write_trailer              = nuttx_write_trailer,
     .control_message            = nuttx_control_message,
     .write_uncoded_frame        = nuttx_write_frame,
-    .create_device_capabilities = nuttx_create_device_capabilities,
-    .free_device_capabilities   = nuttx_free_device_capabilities,
     .get_device_list            = nuttx_get_device_list,
-    .flags                      = AVFMT_NOFILE|AVFMT_TS_NONSTRICT,
+    .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
     .priv_class                 = &nuttx_muxer_class,
 };

@@ -26,6 +26,8 @@
 #include "adts_header.h"
 #include "mpeg4audio.h"
 #include "avcodec.h"
+#include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
 #include "internal.h"
 #include "mpegaudiodecheader.h"
@@ -80,7 +82,6 @@ static int hifi_smf_open(AVCodecContext *avctx)
 
 static int hifi_decode_pre_parse(AVCodecContext *avctx, AVPacket *avpkt)
 {
-    HIFIDecContext *hifi = avctx->priv_data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     int ret;
@@ -90,14 +91,14 @@ static int hifi_decode_pre_parse(AVCodecContext *avctx, AVPacket *avpkt)
             AACADTSHeaderInfo adts;
             GetBitContext gb;
 
-            if (!avctx->channels) {
+            if (!avctx->ch_layout.nb_channels) {
                 if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
                     return ret;
 
                 if ((ret = ff_adts_header_parse(&gb, &adts)) < 0)
                     return ret;
 
-                avctx->channels = ff_mpeg4audio_channels[adts.chan_config];
+                av_channel_layout_default(&avctx->ch_layout, ff_mpeg4audio_channels[adts.chan_config]);
             }
             break;
         }
@@ -112,7 +113,7 @@ static int hifi_decode_pre_parse(AVCodecContext *avctx, AVPacket *avpkt)
                 return ret;
             }
 
-            avctx->channels   = c;
+            av_channel_layout_default(&avctx->ch_layout, c);
             avctx->frame_size = s;
             break;
         }
@@ -154,14 +155,12 @@ static int hifi_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int hifi_decode_frame(AVCodecContext *avctx,
-                            void *data, int *got_frame_ptr,
-                            AVPacket *avpkt)
+static int hifi_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                             int *got_frame_ptr, AVPacket *avpkt)
 {
     HIFIDecContext *hifi = avctx->priv_data;
     smf_media_info_t info = { 0 };
     smf_frame_t input, output;
-    AVFrame *frame = data;
     smf_error_t *error;
     int ret;
 
@@ -172,10 +171,10 @@ static int hifi_decode_frame(AVCodecContext *avctx,
     if (ret < 0)
         return ret;
 
-    if (!avctx->channels || avctx->sample_fmt == AV_SAMPLE_FMT_NONE)
+    if (!avctx->ch_layout.nb_channels || avctx->sample_fmt == AV_SAMPLE_FMT_NONE)
         return AVERROR_INVALIDDATA;
 
-    frame->nb_samples = hifi->out_size / (avctx->channels * av_get_bytes_per_sample(avctx->sample_fmt));
+    frame->nb_samples = hifi->out_size / (avctx->ch_layout.nb_channels * av_get_bytes_per_sample(avctx->sample_fmt));
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
@@ -192,7 +191,7 @@ static int hifi_decode_frame(AVCodecContext *avctx,
     input.max  = avpkt->size;
 
     output.buff = frame->extended_data[0];
-    output.max  = frame->nb_samples * avctx->channels *
+    output.max  = frame->nb_samples * avctx->ch_layout.nb_channels *
                   av_get_bytes_per_sample(avctx->sample_fmt);
 
     if (!smf_decode(hifi->context, &input, &output)) {
@@ -213,11 +212,8 @@ static int hifi_decode_frame(AVCodecContext *avctx,
     if (!avctx->sample_rate)
         avctx->sample_rate = info.sample_rate;
 
-    if (!avctx->channels)
-        avctx->channels = info.channels;
-
-    if (!avctx->channel_layout)
-        avctx->channel_layout = av_get_default_channel_layout(avctx->channels);
+    if (!avctx->ch_layout.nb_channels)
+        av_channel_layout_default(&avctx->ch_layout, info.channels);
 
     if (!avctx->frame_size)
         avctx->frame_size = output.size / (info.channels * av_get_bytes_per_sample(avctx->sample_fmt));
@@ -240,36 +236,36 @@ static av_cold int hifi_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_hifi4_aac_decoder = {
-    .name            = "hifi4_aac",
-    .long_name       = NULL_IF_CONFIG_SMALL("HIFI4 AAC DECODER"),
-    .type            = AVMEDIA_TYPE_AUDIO,
-    .id              = AV_CODEC_ID_AAC,
-    .priv_data_size  = sizeof(HIFIDecContext),
-    .init            = hifi_decode_init,
-    .decode          = hifi_decode_frame,
-    .close           = hifi_decode_close,
-    .capabilities    = AV_CODEC_CAP_DR1,
-    .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE,
-    .sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                       AV_SAMPLE_FMT_NONE },
-    .channel_layouts = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                            AV_CH_LAYOUT_STEREO, 0},
+const FFCodec ff_hifi4_aac_decoder = {
+    .p.name            = "hifi4_aac",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("HIFI4 AAC DECODER"),
+    .p.type            = AVMEDIA_TYPE_AUDIO,
+    .p.id              = AV_CODEC_ID_AAC,
+    .priv_data_size    = sizeof(HIFIDecContext),
+    .init              = hifi_decode_init,
+    FF_CODEC_DECODE_CB(hifi_decode_frame),
+    .close             = hifi_decode_close,
+    .p.capabilities    = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
+    .caps_internal     = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                         AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts      = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                     AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };
 
-AVCodec ff_hifi4_mp3_decoder = {
-    .name            = "hifi4_mp3",
-    .long_name       = NULL_IF_CONFIG_SMALL("HIFI4 MP3 DECODER"),
-    .type            = AVMEDIA_TYPE_AUDIO,
-    .id              = AV_CODEC_ID_MP3,
-    .priv_data_size  = sizeof(HIFIDecContext),
-    .init            = hifi_decode_init,
-    .decode          = hifi_decode_frame,
-    .close           = hifi_decode_close,
-    .capabilities    = AV_CODEC_CAP_DR1,
-    .caps_internal   = FF_CODEC_CAP_INIT_THREADSAFE,
-    .sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                       AV_SAMPLE_FMT_NONE },
-    .channel_layouts = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                            AV_CH_LAYOUT_STEREO, 0},
+const FFCodec ff_hifi4_mp3_decoder = {
+    .p.name            = "hifi4_mp3",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("HIFI4 MP3 DECODER"),
+    .p.type            = AVMEDIA_TYPE_AUDIO,
+    .p.id              = AV_CODEC_ID_MP3,
+    .priv_data_size    = sizeof(HIFIDecContext),
+    .init              = hifi_decode_init,
+    FF_CODEC_DECODE_CB(hifi_decode_frame),
+    .close             = hifi_decode_close,
+    .p.capabilities    = AV_CODEC_CAP_DR1,
+    .caps_internal     = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                         AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts      = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                     AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };

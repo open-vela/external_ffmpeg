@@ -23,9 +23,10 @@
  * SBC encoder implementation
  */
 
-#include "libavutil/opt.h"
 #include "avcodec.h"
-#include "internal.h"
+#include "codec_internal.h"
+#include "encode.h"
+#include "libavutil/opt.h"
 #include "libavutil/intreadwrite.h"
 
 #include <sbc_encoder.h>
@@ -101,7 +102,7 @@ static int sbc_encode_init(AVCodecContext *avctx)
     }
 
     if (sbc_encoder_parse_param(sbc->sbc_param, param) != 0) {
-        if (avctx->channels == 1) {
+        if (avctx->ch_layout.nb_channels == 1) {
             param->s16ChannelMode = SBC_MONO;
             if (sbc->max_delay <= 3000 || avctx->bit_rate > 270000)
                 param->s16NumOfSubBands = 4;
@@ -142,7 +143,7 @@ static int sbc_encode_init(AVCodecContext *avctx)
             break;
     }
 
-    param->s16NumOfChannels = avctx->channels;
+    param->s16NumOfChannels = avctx->ch_layout.nb_channels;
     param->u16BitRate = avctx->bit_rate / 1000;
 
     avctx->frame_size = 4*((param->s16NumOfSubBands >> 3) + 1) * 4*(param->s16NumOfBlocks >> 2);
@@ -171,7 +172,7 @@ static int sbc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     if (av_frame->nb_samples < avctx->frame_size)
         return 0;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, sbc->frame_length, 0)) < 0)
+    if ((ret = ff_alloc_packet(avctx, avpkt, sbc->frame_length)) < 0)
         return ret;
 
     encret = SBC_Encode(&sbc->context, (int16_t *)av_frame->extended_data[0], avpkt->data);
@@ -201,20 +202,20 @@ static const AVClass sbc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_libfluoride_sbc_encoder = {
-    .name                  = "libfluoride_sbc",
-    .long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC (low-complexity subband codec)"),
-    .type                  = AVMEDIA_TYPE_AUDIO,
-    .id                    = AV_CODEC_ID_SBC,
-    .priv_data_size        = sizeof(SBCEncContext),
-    .init                  = sbc_encode_init,
-    .encode2               = sbc_encode_frame,
-    .capabilities          = AV_CODEC_CAP_SMALL_LAST_FRAME,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                                  AV_CH_LAYOUT_STEREO, 0},
-    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
-    .supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
-    .priv_class            = &sbc_class,
+const FFCodec ff_libfluoride_sbc_encoder = {
+    .p.name                  = "libfluoride_sbc",
+    .p.long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC (low-complexity subband codec)"),
+    .p.type                  = AVMEDIA_TYPE_AUDIO,
+    .p.id                    = AV_CODEC_ID_SBC,
+    .p.priv_class            = &sbc_class,
+    .priv_data_size          = sizeof(SBCEncContext),
+    .init                    = sbc_encode_init,
+    FF_CODEC_ENCODE_CB(sbc_encode_frame),
+    .p.capabilities          = AV_CODEC_CAP_SMALL_LAST_FRAME,
+    .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                               AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                           AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };

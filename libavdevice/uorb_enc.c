@@ -36,6 +36,8 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
+static const AVClass uorb_cap_class;
+
 typedef struct UorbPriv {
     AVClass             *class;
 
@@ -140,6 +142,17 @@ static int uorb_control_message(struct AVFormatContext *s1, int type,
     UorbPriv *priv = s1->priv_data;
 
     switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &uorb_cap_class;
+            caps->device_context = s1;
+            av_opt_set_defaults(caps);
+            return 0;
+        }
         case AV_APP_TO_DEV_GET_POLLFD: {
             struct pollfd *poll = data;
 
@@ -273,20 +286,6 @@ static const AVClass uorb_cap_class = {
     .query_ranges = uorb_capbility_query_ranges,
 };
 
-static int uorb_create_device_capabilities(struct AVFormatContext *s1, struct AVDeviceCapabilitiesQuery *caps)
-{
-    if (!caps)
-        return AVERROR(EINVAL);
-
-    caps->av_class = &uorb_cap_class;
-    return 0;
-}
-
-static int uorb_free_device_capabilities(struct AVFormatContext *s, struct AVDeviceCapabilitiesQuery *caps)
-{
-    return 0;
-}
-
 static int uorb_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoList *device_list)
 {
     return 0;
@@ -325,8 +324,6 @@ AVOutputFormat ff_uorb_muxer = {
     .write_trailer              = uorb_write_trailer,
     .control_message            = uorb_control_message,
     .write_uncoded_frame        = uorb_write_frame,
-    .create_device_capabilities = uorb_create_device_capabilities,
-    .free_device_capabilities   = uorb_free_device_capabilities,
     .get_device_list            = uorb_get_device_list,
     .flags                      = AVFMT_NOFILE|AVFMT_TS_NONSTRICT,
     .priv_class                 = &uorb_muxer_class,

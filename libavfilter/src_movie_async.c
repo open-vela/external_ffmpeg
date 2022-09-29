@@ -22,6 +22,8 @@
  *
  */
 
+#include "config_components.h"
+
 #include <float.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -179,10 +181,9 @@ static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
         return NULL;
 
     if (movie->streams[pad_id].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
-        out->format         = movie->streams[pad_id].codec_ctx->sample_fmt;
-        out->sample_rate    = movie->streams[pad_id].codec_ctx->sample_rate;
-        out->channels       = movie->streams[pad_id].codec_ctx->channels;
-        out->channel_layout = movie->streams[pad_id].codec_ctx->channel_layout;
+        out->format      = movie->streams[pad_id].codec_ctx->sample_fmt;
+        out->sample_rate = movie->streams[pad_id].codec_ctx->sample_rate;
+        av_channel_layout_copy(&out->ch_layout, &movie->streams[pad_id].codec_ctx->ch_layout);
     } else {
         out->format = movie->streams[pad_id].codec_ctx->pix_fmt;
         out->width  = movie->streams[pad_id].codec_ctx->width;
@@ -212,8 +213,8 @@ static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParam
 
     param->format = src->format;
     if (audio) {
-        param->sample_rate    = src->sample_rate;
-        param->channel_layout = src->channel_layout;
+        param->sample_rate = src->sample_rate;
+        av_channel_layout_copy(&param->ch_layout, &src->ch_layout);
     } else {
         param->width  = src->width;
         param->height = src->height;
@@ -329,7 +330,7 @@ static bool movie_async_dat_allfree(AVFilterContext *ctx)
 
 static int movie_async_open_decoder(AVFilterContext *ctx, MovieStream *stream, AVCodecParameters *codecpar)
 {
-    AVCodec *codec;
+    const AVCodec *codec;
     int ret;
 
     codec = avcodec_find_decoder(codecpar->codec_id);
@@ -346,7 +347,6 @@ static int movie_async_open_decoder(AVFilterContext *ctx, MovieStream *stream, A
     if (ret < 0)
         return ret;
 
-    stream->codec_ctx->refcounted_frames = 1;
     stream->codec_ctx->thread_count = ff_filter_get_nb_threads(ctx);
 
     if ((ret = avcodec_open2(stream->codec_ctx, codec, NULL)) < 0) {
@@ -401,7 +401,8 @@ static AVFrame *movie_async_alloc_silent_frame(AVFilterContext *ctx, int pad_id)
         return NULL;
     }
 
-    av_samples_set_silence(out->extended_data, 0, out->nb_samples, out->channels, out->format);
+    av_samples_set_silence(out->extended_data, 0, out->nb_samples,
+                           out->ch_layout.nb_channels, out->format);
     return out;
 }
 
@@ -496,7 +497,7 @@ static void movie_async_map_protocol(AVFilterContext *ctx, const char *url, char
 static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 {
     MovieAsyncContext *movie = ctx->priv;
-    AVInputFormat *iformat = NULL;
+    const AVInputFormat *iformat = NULL;
     char name[MAX_URL_SIZE];
     unsigned seek_point = 0;
     AVDictionaryEntry *tag;
@@ -557,9 +558,11 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         movie->format_ctx->streams[i]->discard = AVDISCARD_DEFAULT;
 
         if (movie->streams[i].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO &&
-            !movie->streams[i].codec_ctx->channel_layout) {
-            movie->streams[i].codec_ctx->channel_layout =
-                av_get_default_channel_layout(stream->codecpar->channels);
+            !av_channel_layout_check(&movie->streams[i].codec_ctx->ch_layout)) {
+            ret = av_channel_layout_copy(&movie->streams[i].codec_ctx->ch_layout,
+                                         &stream->codecpar->ch_layout);
+            if (ret < 0)
+                goto out;
         }
         movie->streams[i].index     = stream->index;
         movie->streams[i].time_base = stream->time_base;
@@ -774,7 +777,6 @@ static int movie_async_loop(AVFilterContext *ctx)
 static bool movie_async_proc_dat(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    AVFrame *frame;
     int ret;
 
     ret = movie_async_dec_frames(ctx);
@@ -1021,7 +1023,7 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
         if (!pad.name)
             goto error;
 
-        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
+        if ((ret = ff_append_outpad(ctx, &pad)) < 0) {
             av_freep(&pad.name);
             goto error;
         }
@@ -1042,8 +1044,8 @@ error:
 static int movie_async_query_formats(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int64_t list64[] = { 0, -1 };
     int list[] = { 0, -1 };
+    AVChannelLayout list64[] = { { 0 }, { 0 } };
     AVFilterLink *outlink;
     AVCodecParameters p;
     int flags = false;
@@ -1061,17 +1063,19 @@ static int movie_async_query_formats(AVFilterContext *ctx)
         switch (outlink->type) {
             case AVMEDIA_TYPE_AUDIO:
                 list[0] = p.sample_rate;
-                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->in_samplerates)) < 0)
+                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.samplerates)) < 0)
                     return ret;
 
-                list64[0] = p.channel_layout;
-                if ((ret = ff_channel_layouts_ref(avfilter_make_format64_list(list64),
-                                                  &outlink->in_channel_layouts)) < 0)
+                if ((ret = av_channel_layout_copy(&list64[0], &p.ch_layout) < 0))
+                    return ret;
+
+                if ((ret = ff_channel_layouts_ref(ff_make_channel_layout_list(list64),
+                                                  &outlink->incfg.channel_layouts)) < 0)
                     return ret;
 
             default:
                 list[0] = p.format;
-                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->in_formats)) < 0)
+                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.formats)) < 0)
                     return ret;
 
                 break;
@@ -1154,7 +1158,7 @@ static int movie_async_activate(AVFilterContext *ctx)
         link = ctx->outputs[i];
         status = ff_outlink_get_status(link);
 
-        if (status < 0 || !link->in_formats) {
+        if (status < 0 || !link->incfg.formats) {
             /* link eof and stopped clear data queue */
             if (movie_async_has_eof(ctx, i))
                 movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
@@ -1218,7 +1222,7 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
                                     avcodec_get_name(movie->streams[i].codec_ctx->codec_id),
                                     movie->format_ctx->bit_rate,
                                     movie->streams[i].codec_ctx->sample_rate,
-                                    movie->streams[i].codec_ctx->channels,
+                                    movie->streams[i].codec_ctx->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&movie->streams[i].dat_queue));
         } else {
             ret = snprintf(res + pos, res_len - pos, ", V: %d %s %d %d %d",
@@ -1242,9 +1246,8 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
 
 static int movie_async_process_proc_cmd(AVFilterContext *ctx, const char *cmd, const char *args)
 {
-    MovieAsyncContext *movie = ctx->priv;
-    int ret;
     char *ptr;
+    int ret;
 
     if (!cmd || !args)
         return AVERROR(EINVAL);
@@ -1324,14 +1327,19 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
     }
 }
 
-static const struct AVClass *movie_child_class_next(const struct AVClass *prev)
+static const struct AVClass *movie_child_class_iterate(void **iter)
 {
-    if (!prev)
-        return avformat_get_class();
-    else if (prev == avformat_get_class())
-        return avcodec_get_class();
+    const AVClass *c = *iter;
+
+    if (!c)
+        c = avformat_get_class();
+    else if (c == avformat_get_class())
+        c = avcodec_get_class();
     else
-        return NULL;
+        c = NULL;
+
+    *iter = (void*)(uintptr_t)c;
+    return *iter;
 }
 
 static void *movie_async_child_next(void *obj, void *prev)
@@ -1350,23 +1358,23 @@ static void *movie_async_child_next(void *obj, void *prev)
 #if CONFIG_MOVIE_ASYNC_FILTER
 
 static const AVClass movie_async_class = {
-    .class_name       = "movie_async_class",
-    .item_name        = av_default_item_name,
-    .option           = movie_async_options,
-    .version          = LIBAVUTIL_VERSION_INT,
-    .category         = AV_CLASS_CATEGORY_FILTER,
-    .child_next       = movie_async_child_next,
-    .child_class_next = movie_child_class_next,
+    .class_name          = "movie_async_class",
+    .item_name           = av_default_item_name,
+    .option              = movie_async_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = movie_async_child_next,
+    .child_class_iterate = movie_child_class_iterate,
 };
 
-AVFilter ff_avsrc_movie_async = {
+const AVFilter ff_avsrc_movie_async = {
     .name            = "movie_async",
     .description     = NULL_IF_CONFIG_SMALL("Read from a movie source asynchronously."),
     .priv_size       = sizeof(MovieAsyncContext),
     .priv_class      = &movie_async_class,
     .init_dict       = movie_async_init_dict,
     .uninit          = movie_async_uninit,
-    .query_formats   = movie_async_query_formats,
+    FILTER_QUERY_FUNC(movie_async_query_formats),
     .activate        = movie_async_activate,
     .inputs          = NULL,
     .outputs         = NULL,
@@ -1378,26 +1386,26 @@ AVFilter ff_avsrc_movie_async = {
 #if CONFIG_AMOVIE_ASYNC_FILTER
 
 static const AVClass amovie_async_class = {
-    .class_name       = "amovie_async_class",
-    .item_name        = av_default_item_name,
-    .option           = movie_async_options,
-    .version          = LIBAVUTIL_VERSION_INT,
-    .category         = AV_CLASS_CATEGORY_FILTER,
-    .child_next       = movie_async_child_next,
-    .child_class_next = movie_child_class_next,
+    .class_name          = "amovie_async_class",
+    .item_name           = av_default_item_name,
+    .option              = movie_async_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = movie_async_child_next,
+    .child_class_iterate = movie_child_class_iterate,
 };
 
-AVFilter ff_avsrc_amovie_async = {
+const AVFilter ff_avsrc_amovie_async = {
     .name            = "amovie_async",
     .description     = NULL_IF_CONFIG_SMALL("Read audio from a movie source asynchronously."),
     .priv_size       = sizeof(MovieAsyncContext),
     .init_dict       = movie_async_init_dict,
     .uninit          = movie_async_uninit,
-    .query_formats   = movie_async_query_formats,
+    FILTER_QUERY_FUNC(movie_async_query_formats),
     .activate        = movie_async_activate,
+    .priv_class      = &amovie_async_class,
     .inputs          = NULL,
     .outputs         = NULL,
-    .priv_class      = &amovie_async_class,
     .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
     .process_command = movie_async_process_command,
 };
