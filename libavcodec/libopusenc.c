@@ -418,7 +418,7 @@ static av_cold int libopus_encode_init(AVCodecContext *avctx)
         goto fail;
     }
 
-    ret = opus_multistream_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&avctx->initial_padding));
+    ret = opus_multistream_encoder_ctl(enc, OPUS_GET_LOOKAHEAD((opus_int32*)&avctx->initial_padding));
     if (ret != OPUS_OK)
         av_log(avctx, AV_LOG_WARNING,
                "Unable to get number of lookahead samples: %s\n",
