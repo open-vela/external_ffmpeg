@@ -140,7 +140,7 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
             if (!caps)
                 return AVERROR(EINVAL);
 
-            if (priv->codec_id == AV_CODEC_ID_NONE)
+            if (priv->codec_id == AV_CODEC_ID_NONE || !priv->play)
                 return FFERROR_NOT_READY;
 
             caps->av_class = &bluelet_dec_cap_class;
