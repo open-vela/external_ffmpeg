@@ -706,7 +706,7 @@ static int movie_async_read_frame(AVFilterContext *ctx)
     }
 
     av_packet_unref(&pkt);
-    return ret;
+    return ret == AVERROR_INVALIDDATA ? 0 : ret;
 }
 
 static int movie_async_dec_frame(AVFilterContext *ctx, int pad_id, AVFrame **oframe)
