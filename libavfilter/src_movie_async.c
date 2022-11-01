@@ -1152,6 +1152,7 @@ static int movie_async_activate(AVFilterContext *ctx)
 
         if (movie->streams[i].reconfig) {
             avfilter_graph_reconfig(ctx->graph, NULL);
+            movie_async_do_fade(ctx, 0);
             active = true;
         }
 
@@ -1280,8 +1281,6 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "start")) {
-        movie_async_do_fade(ctx, 0);
-
         av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
     } else if (!strcmp(cmd, "pause")) {
