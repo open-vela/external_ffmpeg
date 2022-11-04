@@ -70,12 +70,15 @@ static int adevsink_start(AVFilterContext *ctx)
     AVStream *st = priv->fmt_ctx->streams[0];
     AVDictionary *fmt_opt = NULL;
     const AVCodec *enc;
+    enum AVCodecID codec_id;
     int ret;
 
     if (priv->enc_ctx)
         return 0;
 
-    enc = avcodec_find_encoder(priv->fmt_ctx->oformat->audio_codec);
+    codec_id = priv->fmt_ctx->oformat->audio_codec != AV_CODEC_ID_NONE ?
+               priv->fmt_ctx->oformat->audio_codec : priv->fmt_ctx->audio_codec_id;
+    enc = avcodec_find_encoder(codec_id);
     if (!enc)
         return AVERROR(EINVAL);
 
@@ -89,7 +92,7 @@ static int adevsink_start(AVFilterContext *ctx)
     av_channel_layout_copy(&priv->enc_ctx->ch_layout, &inlink->ch_layout);
     av_dict_set_int(&fmt_opt, "ar", inlink->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "ac", inlink->ch_layout.nb_channels, 0);
-
+    /* channel_layout  device->avctx->codec */
     avdevice_app_to_dev_control_message(priv->fmt_ctx,
             AV_APP_TO_DEV_GET_FORMAT_REQUEST,
             &fmt_opt, sizeof(AVDictionary *));

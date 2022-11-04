@@ -336,12 +336,16 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
 
     // Check the codec config channel mode
     switch (config.channels) {
-    case BLUELET_CODEC_CHANNEL_MODE_MONO:
+    case BLUELET_CODEC_CHANNEL_MODE_MONO: {
+        priv->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
         priv->channels = 1;
         break;
-    case BLUELET_CODEC_CHANNEL_MODE_STEREO:
+    }
+    case BLUELET_CODEC_CHANNEL_MODE_STEREO: {
+        priv->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
         priv->channels = 2;
         break;
+    }
     default:
         goto error;
     }
