@@ -44,7 +44,7 @@ static int bluelet_read_close(AVFormatContext *ctx)
     BlueletPriv *priv = ctx->priv_data;
 
     if (priv->st) {
-        ff_free_stream(ctx, priv->st);
+        ff_remove_stream(ctx, priv->st);
         priv->st = NULL;
     }
 
@@ -65,7 +65,7 @@ static av_cold int bluelet_read_header(AVFormatContext *ctx)
 
     ret = ff_bluelet_start(priv);
     if (ret < 0) {
-        ff_free_stream(ctx, priv->st);
+        ff_remove_stream(ctx, priv->st);
         priv->st = NULL;
         return ret;
     }
@@ -73,8 +73,8 @@ static av_cold int bluelet_read_header(AVFormatContext *ctx)
     priv->st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
     priv->st->codecpar->codec_id    = priv->codec_id;
     priv->st->codecpar->sample_rate = priv->sample_rate;
-    priv->st->codecpar->channels    = priv->channels;
     priv->st->codecpar->frame_size  = priv->frame_size;
+    av_channel_layout_copy(&priv->st->codecpar->ch_layout, &priv->ch_layout);
     avpriv_set_pts_info(priv->st, 64, 1, 1000000);  /* 64 bits pts in us */
 
     return 0;
@@ -256,7 +256,7 @@ static const AVClass bluelet_demuxer_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
 };
 
-AVInputFormat ff_bluelet_demuxer = {
+const AVInputFormat ff_bluelet_demuxer = {
     .name                       = "bluelet",
     .long_name                  = NULL_IF_CONFIG_SMALL("BLUELET audio input"),
     .priv_data_size             = sizeof(BlueletPriv),

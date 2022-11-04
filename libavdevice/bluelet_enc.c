@@ -42,6 +42,8 @@
 #include <poll.h>
 #include <stdint.h>
 
+static const AVClass bluelet_enc_cap_class;
+
 static int bluelet_enc_init(struct AVFormatContext *ctx)
 {
     BlueletPriv *priv = ctx->priv_data;
@@ -157,6 +159,16 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
     int ret = 0;
 
     switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (priv->codec_id == AV_CODEC_ID_NONE)
+                return FFERROR_NOT_READY;
+
+            caps->av_class = &bluelet_enc_cap_class;
+            caps->device_context = ctx;
+            return 0;
+        }
         case AV_APP_TO_DEV_GET_POLLFD: {
             if (!data || data_size < sizeof(struct pollfd) * 2)
                 return AVERROR(EINVAL);
@@ -204,8 +216,11 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
         }
         case AV_APP_TO_DEV_GET_FORMAT_REQUEST: {
             AVDictionary **dict = (AVDictionary**)data;
+            char ch_layout[128];
 
             if (dict != NULL) {
+                av_channel_layout_describe(&priv->ch_layout, ch_layout, sizeof(ch_layout));
+                av_dict_set(dict, "ch_layout", ch_layout, 0);
                 av_dict_set_int(dict, "ab", priv->bit_rate, 0);
                 if (priv->codec_id == AV_CODEC_ID_SBC)
                     av_dict_set(dict, "sbc_param", priv->sbc.param, 0);
@@ -277,7 +292,7 @@ static const AVClass bluelet_muxer_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
 };
 
-AVOutputFormat ff_bluelet_muxer = {
+const AVOutputFormat ff_bluelet_muxer = {
     .name                       = "bluelet",
     .long_name                  = NULL_IF_CONFIG_SMALL("BLUELET audio output"),
     .priv_data_size             = sizeof(BlueletPriv),
@@ -291,6 +306,6 @@ AVOutputFormat ff_bluelet_muxer = {
     .control_message            = bluelet_enc_control_message,
     .write_uncoded_frame        = bluelet_write_frame,
     .check_bitstream            = bluelet_enc_check_bitstream,
-    .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT,
+    .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
     .priv_class                 = &bluelet_muxer_class,
 };
