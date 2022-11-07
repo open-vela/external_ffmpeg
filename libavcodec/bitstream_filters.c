@@ -24,8 +24,8 @@
 #include "bsf.h"
 #include "bsf_internal.h"
 
-extern const AVBitStreamFilter ff_a2dp_rechunk_bsf;
-extern const AVBitStreamFilter ff_aac_rawtolatm_bsf;
+extern const FFBitStreamFilter ff_a2dp_rechunk_bsf;
+extern const FFBitStreamFilter ff_aac_rawtolatm_bsf;
 extern const FFBitStreamFilter ff_aac_adtstoasc_bsf;
 extern const FFBitStreamFilter ff_av1_frame_merge_bsf;
 extern const FFBitStreamFilter ff_av1_frame_split_bsf;

@@ -64,6 +64,17 @@ static int latm_decode_extradata(AVBSFContext *s, uint8_t *buf, int size)
     return 0;
 }
 
+static void copy_bits(PutBitContext *pb, const uint8_t *src, int length)
+{
+    int words = length >> 4;
+    int bits  = length & 15;
+    int i;
+    for (i = 0; i < words; i++)
+        put_bits(pb, 16, AV_RB16(src + 2 * i));
+    if (bits)
+        put_bits(pb, bits, AV_RB16(src + 2 * words) >> (16 - bits));
+}
+
 static void latm_write_frame_header(AVBSFContext *s, PutBitContext *bs)
 {
     LATMContext *ctx = s->priv_data;
@@ -83,11 +94,11 @@ static void latm_write_frame_header(AVBSFContext *s, PutBitContext *bs)
     /* AudioSpecificConfig */
     if (ctx->object_type == AOT_ALS) {
         header_size = par->extradata_size - (ctx->off >> 3);
-        avpriv_copy_bits(bs, &par->extradata[ctx->off >> 3], header_size);
+        copy_bits(bs, &par->extradata[ctx->off >> 3], header_size);
     } else {
         // + 3 assumes not scalable and dependsOnCoreCoder == 0,
         // see decode_ga_specific_config in libavcodec/aacdec.c
-        avpriv_copy_bits(bs, par->extradata, ctx->off + 3);
+        copy_bits(bs, par->extradata, ctx->off + 3);
 
         if (!ctx->channel_conf) {
             GetBitContext gb;
@@ -171,14 +182,13 @@ static int aac_rawtolatm_filter(AVBSFContext *bsfc, AVPacket *out_pkt)
         // This allows us to remux our FATE AAC samples into latm
         // files that are still playable with minimal effort.
         put_bits(&bs, 8, pkt->data[0] & 0xfe);
-        avpriv_copy_bits(&bs, pkt->data + 1, 8*pkt->size - 8);
+        copy_bits(&bs, pkt->data + 1, 8*pkt->size - 8);
     } else
-        avpriv_copy_bits(&bs, pkt->data, 8*pkt->size);
+        copy_bits(&bs, pkt->data, 8*pkt->size);
 
-    avpriv_align_put_bits(&bs);
     flush_put_bits(&bs);
 
-    len = put_bits_count(&bs) >> 3;
+    len = put_bytes_output(&bs);
     out_pkt->data[0] = 0x56;
     out_pkt->data[1] = 0xe0 | ((len >> 8) & 0x1f);
     out_pkt->data[2] = len & 0xff;
@@ -196,10 +206,10 @@ static const enum AVCodecID codec_ids[] = {
     AV_CODEC_ID_AAC, AV_CODEC_ID_AAC_LATM, AV_CODEC_ID_NONE,
 };
 
-const AVBitStreamFilter ff_aac_rawtolatm_bsf = {
-    .name           = "aac_rawtolatm",
+const FFBitStreamFilter ff_aac_rawtolatm_bsf = {
+    .p.name           = "aac_rawtolatm",
     .priv_data_size = sizeof(LATMContext),
     .init           = aac_rawtolatm_init,
     .filter         = aac_rawtolatm_filter,
-    .codec_ids      = codec_ids,
+    .p.codec_ids      = codec_ids,
 };
