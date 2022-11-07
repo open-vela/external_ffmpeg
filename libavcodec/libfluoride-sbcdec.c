@@ -26,6 +26,7 @@
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "internal.h"
 #include "libavutil/intreadwrite.h"
 
 #include <oi_codec_sbc.h>
@@ -111,7 +112,7 @@ static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EIO);
 
     frame->nb_samples = SBC_WBS_SAMPLES_PER_FRAME;
-    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
     in_data = avpkt->data;
