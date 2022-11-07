@@ -142,12 +142,12 @@ static const enum AVCodecID codec_ids[] = {
     AV_CODEC_ID_NONE,
 };
 
-const AVBitStreamFilter ff_a2dp_rechunk_bsf = {
-    .name           = "a2dp_rechunk",
+const FFBitStreamFilter ff_a2dp_rechunk_bsf = {
+    .p.name           = "a2dp_rechunk",
     .priv_data_size = sizeof(A2DPContext),
     .filter         = a2dp_rechunk_filter,
     .init           = a2dp_rechunk_init,
     .flush          = a2dp_rechunk_flush,
     .close          = a2dp_rechunk_uninit,
-    .codec_ids      = codec_ids,
+    .p.codec_ids      = codec_ids,
 };
