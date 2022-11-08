@@ -37,6 +37,7 @@
 typedef struct AResampleContext {
     const AVClass *class;
     int sample_rate_arg;
+    int converter;
     double ratio;
     struct SwrContext *swr;
     int64_t next_pts;
@@ -96,16 +97,20 @@ static int query_formats(AVFilterContext *ctx)
     if(out_rate > 0) {
         int ratelist[] = { out_rate, -1 };
         out_samplerates = ff_make_format_list(ratelist);
-    } else
+    } else if (aresample->converter & 0x2)
         out_samplerates = ff_all_samplerates();
+    else
+        out_samplerates = in_samplerates;
     if ((ret = ff_formats_ref(out_samplerates, &outlink->incfg.samplerates)) < 0)
         return ret;
 
     if(out_format != AV_SAMPLE_FMT_NONE) {
         int formatlist[] = { out_format, -1 };
         out_formats = ff_make_format_list(formatlist);
-    } else
+    } else if (aresample->converter & 0x4)
         out_formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+    else
+        out_formats = in_formats;
     if ((ret = ff_formats_ref(out_formats, &outlink->incfg.formats)) < 0)
         return ret;
 
@@ -113,8 +118,10 @@ static int query_formats(AVFilterContext *ctx)
     if (av_channel_layout_check(&out_layout)) {
         const AVChannelLayout layout_list[] = { out_layout, { 0 } };
         out_layouts = ff_make_channel_layout_list(layout_list);
-    } else
+    } else if (aresample->converter & 0x1)
         out_layouts = ff_all_channel_counts();
+    else
+        out_layouts = in_layouts;
     av_channel_layout_uninit(&out_layout);
 
     return ff_channel_layouts_ref(out_layouts, &outlink->incfg.channel_layouts);
@@ -319,7 +326,8 @@ static void *resample_child_next(void *obj, void *prev)
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 
 static const AVOption options[] = {
-    {"sample_rate", NULL, OFFSET(sample_rate_arg), AV_OPT_TYPE_INT, {.i64=0},  0,        INT_MAX, FLAGS },
+    {"sample_rate", NULL, OFFSET(sample_rate_arg), AV_OPT_TYPE_INT, {.i64=0}, 0, INT_MAX, FLAGS },
+    {"converter",   NULL, OFFSET(converter),       AV_OPT_TYPE_INT, {.i64=7}, 0, 7,       FLAGS },
     {NULL}
 };
 

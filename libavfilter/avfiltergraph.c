@@ -576,7 +576,7 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
             AVFilterLink *link = filter->inputs[j];
             const AVFilterNegotiation *neg;
             unsigned neg_step;
-            int convert_needed = 0;
+            int convert_needed = 0; /* bitmask for audio resample */
 
             if (!link || !link->incfg.formats)
                 continue;
@@ -588,12 +588,10 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                 void *a = FF_FIELD_AT(void *, m->offset, link->incfg);
                 void *b = FF_FIELD_AT(void *, m->offset, link->outcfg);
                 if (a && b && a != b && !m->can_merge(a, b)) {
-                    convert_needed = 1;
+                    convert_needed |= 1 << neg_step;
                     break;
                 }
             }
-            // TODO: query formats debug log
-            //av_log(NULL, AV_LOG_INFO, "%s: %s -> %s\n", __func__, link->src->name, filter->name);
             for (neg_step = 0; neg_step < neg->nb_mergers; neg_step++) {
                 const AVFilterFormatsMerger *m = &neg->mergers[neg_step];
                 void *a = FF_FIELD_AT(void *, m->offset, link->incfg);
@@ -602,13 +600,13 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                     count_delayed++;
                 } else if (a == b) {
                     count_already_merged++;
-                } else if (!convert_needed) {
+                } else if (!(convert_needed & (1 << neg_step))) {
                     count_merged++;
                     ret = m->merge(a, b);
                     if (ret < 0)
                         return ret;
                     if (!ret)
-                        convert_needed = 1;
+                        convert_needed |= 1 << neg_step;
                 }
             }
 
@@ -617,6 +615,7 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                 const AVFilter *filter;
                 AVFilterLink *inlink, *outlink;
                 char inst_name[30];
+                char inst_opts[64];
                 const char *opts;
 
                 if (graph->disable_auto_convert) {
@@ -634,9 +633,10 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                            neg->conversion_filter);
                     return AVERROR(EINVAL);
                 }
-                snprintf(inst_name, sizeof(inst_name), "auto_%s", neg->conversion_filter);
                 opts = FF_FIELD_AT(char *, neg->conversion_opts_offset, *graph);
-                ret = avfilter_graph_create_filter(&convert, filter, inst_name, opts, NULL, graph);
+                snprintf(inst_opts, sizeof(inst_opts), "converter=%d:%s", convert_needed, opts ? opts : "");
+                snprintf(inst_name, sizeof(inst_name), "auto_%s", neg->conversion_filter);
+                ret = avfilter_graph_create_filter(&convert, filter, inst_name, inst_opts, NULL, graph);
                 if (ret < 0)
                     return ret;
                 if ((ret = avfilter_insert_filter(link, convert, 0, 0)) < 0)
@@ -664,9 +664,6 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
 #define MERGE(merger, link)                                                  \
     ((merger)->merge(FF_FIELD_AT(void *, (merger)->offset, (link)->incfg),   \
                      FF_FIELD_AT(void *, (merger)->offset, (link)->outcfg)))
-                // TODO: query formats debug log
-                //av_log(NULL, AV_LOG_INFO, "%s: %s -> %s -> %s\n", __func__,
-                //       inlink->src->name, inlink->dst->name, outlink->dst->name);
                 for (neg_step = 0; neg_step < neg->nb_mergers; neg_step++) {
                     const AVFilterFormatsMerger *m = &neg->mergers[neg_step];
                     if ((ret = MERGE(m,  inlink)) <= 0 ||
