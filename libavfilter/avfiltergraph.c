@@ -1198,7 +1198,7 @@ static int pick_formats(AVFilterGraph *graph)
             AVFilterContext *filter = graph->filters[i];
             if (filter->nb_inputs){
                 for (j = 0; j < filter->nb_inputs; j++){
-                    if (filter->inputs[j]->sample_rate <= 0 &&
+                    if (filter->inputs[j]->format < 0 &&
                         filter->inputs[j]->incfg.formats && filter->inputs[j]->incfg.formats->nb_formats == 1) {
                         if ((ret = pick_format(filter->inputs[j], NULL)) < 0)
                             return ret;
@@ -1208,7 +1208,7 @@ static int pick_formats(AVFilterGraph *graph)
             }
             if (filter->nb_outputs){
                 for (j = 0; j < filter->nb_outputs; j++){
-                    if (filter->outputs[j]->sample_rate <= 0 &&
+                    if (filter->outputs[j]->format < 0 &&
                         filter->outputs[j]->incfg.formats && filter->outputs[j]->incfg.formats->nb_formats == 1) {
                         if ((ret = pick_format(filter->outputs[j], NULL)) < 0)
                             return ret;
