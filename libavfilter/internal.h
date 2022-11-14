@@ -398,6 +398,11 @@ void ff_filter_graph_remove_filter(AVFilterGraph *graph, AVFilterContext *filter
 int ff_filter_graph_run_once(AVFilterGraph *graph);
 
 /**
+ * Run all of the ready filters on a filter graph.
+ */
+int ff_filter_graph_run_all(AVFilterGraph *graph);
+
+/**
  * Indicate whether pending status exist on graph.
  * (in_status and out_status not equal)
  */

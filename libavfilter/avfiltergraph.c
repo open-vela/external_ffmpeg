@@ -1575,6 +1575,31 @@ int ff_filter_graph_run_once(AVFilterGraph *graph)
     return ff_filter_activate(filter);
 }
 
+int ff_filter_graph_run_all(AVFilterGraph *graph)
+{
+    AVFilterContext *filter;
+    unsigned i;
+    int ret;
+
+    av_assert0(graph->nb_filters);
+
+    while (1) {
+        filter = graph->filters[0];
+        for (i = 1; i < graph->nb_filters; i++)
+            if (graph->filters[i]->ready > filter->ready)
+                filter = graph->filters[i];
+        if (!filter->ready) {
+            ret = 0;
+            break;
+        }
+        ret = ff_filter_activate(filter);
+        if (ret < 0 && ret != AVERROR_EOF && ret != AVERROR(EAGAIN))
+            break;
+    }
+
+    return ret;
+}
+
 bool ff_filter_graph_has_pending_status(AVFilterGraph *graph)
 {
     int i, j;
