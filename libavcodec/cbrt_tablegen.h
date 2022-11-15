@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <math.h>
 #include "libavutil/log.h"
+#include "libavutil/mem.h"
 #include "libavutil/attributes.h"
 #include "libavutil/intfloat.h"
 #include "libavcodec/aac_defines.h"
