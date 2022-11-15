@@ -43,16 +43,21 @@ static av_cold int pcm_encode_init(AVCodecContext *avctx)
     avctx->frame_size = 0;
 #if !CONFIG_HARDCODED_TABLES
     switch (avctx->codec->id) {
-#define INIT_ONCE(id, name)                                                 \
-    case AV_CODEC_ID_PCM_ ## id:                                            \
-        if (CONFIG_PCM_ ## id ## _ENCODER) {                                \
-            static AVOnce init_static_once = AV_ONCE_INIT;                  \
-            ff_thread_once(&init_static_once, pcm_ ## name ## _tableinit);  \
-        }                                                                   \
-        break
-        INIT_ONCE(ALAW,  alaw);
-        INIT_ONCE(MULAW, ulaw);
-        INIT_ONCE(VIDC,  vidc);
+#if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER
+    case AV_CODEC_ID_PCM_ALAW:
+        pcm_alaw_tableinit();
+        break;
+#endif
+#if CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER
+    case AV_CODEC_ID_PCM_MULAW:
+        pcm_ulaw_tableinit();
+        break;
+#endif
+#if CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
+    case AV_CODEC_ID_PCM_VIDC:
+        pcm_vidc_tableinit();
+        break;
+#endif
     default:
         break;
     }
