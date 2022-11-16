@@ -634,9 +634,12 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                     return AVERROR(EINVAL);
                 }
                 opts = FF_FIELD_AT(char *, neg->conversion_opts_offset, *graph);
-                snprintf(inst_opts, sizeof(inst_opts), "converter=%d:%s", convert_needed, opts ? opts : "");
+                if (link->type == AVMEDIA_TYPE_AUDIO) {
+                    snprintf(inst_opts, sizeof(inst_opts), "converter=%d:%s", convert_needed, opts ? opts : "");
+                    opts = inst_opts;
+                }
                 snprintf(inst_name, sizeof(inst_name), "auto_%s", neg->conversion_filter);
-                ret = avfilter_graph_create_filter(&convert, filter, inst_name, inst_opts, NULL, graph);
+                ret = avfilter_graph_create_filter(&convert, filter, inst_name, opts, NULL, graph);
                 if (ret < 0)
                     return ret;
                 if ((ret = avfilter_insert_filter(link, convert, 0, 0)) < 0)
