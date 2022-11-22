@@ -153,6 +153,7 @@ static int ff_bluelet_socket_connect(const char *server_name, const char *path, 
 
         ret = connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr));
     } else {
+#ifdef CONFIG_NET_RPMSG
         struct sockaddr_rpmsg addr;
         socket_fd = socket(AF_RPMSG, flags, 0);
         if (socket_fd < 0)
@@ -162,6 +163,9 @@ static int ff_bluelet_socket_connect(const char *server_name, const char *path, 
         strcpy(addr.rp_cpu, server_name);
         addr.rp_family = AF_RPMSG;
         ret = connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr));
+#else
+        return -1;
+#endif
     }
 
     if (ret < 0 && errno != EINPROGRESS) {
