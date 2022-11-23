@@ -164,6 +164,7 @@ fail:
     return -1;
 }
 
+#if CONFIG_IMAGE2_DEMUXER
 static int img_read_probe(const AVProbeData *p)
 {
     if (p->filename && ff_guess_image2_codec(p->filename)) {
@@ -182,6 +183,7 @@ static int img_read_probe(const AVProbeData *p)
     }
     return 0;
 }
+#endif
 
 int ff_img_read_header(AVFormatContext *s1)
 {
@@ -574,6 +576,7 @@ fail:
     return res;
 }
 
+#if CONFIG_IMAGE2_DEMUXER
 static int img_read_close(struct AVFormatContext* s1)
 {
 #if HAVE_GLOB
@@ -584,7 +587,9 @@ static int img_read_close(struct AVFormatContext* s1)
 #endif
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE2_DEMUXER
 static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp, int flags)
 {
     VideoDemuxData *s1 = s->priv_data;
@@ -604,6 +609,7 @@ static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
     s1->pts = timestamp;
     return 0;
 }
+#endif
 
 #define OFFSET(x) offsetof(VideoDemuxData, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
@@ -673,6 +679,7 @@ const AVInputFormat ff_image2pipe_demuxer = {
 };
 #endif
 
+#if CONFIG_IMAGE_BMP_PIPE_DEMUXER
 static int bmp_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -690,7 +697,9 @@ static int bmp_probe(const AVProbeData *p)
     }
     return AVPROBE_SCORE_EXTENSION / 4;
 }
+#endif
 
+#if CONFIG_IMAGE_CRI_PIPE_DEMUXER
 static int cri_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -701,7 +710,9 @@ static int cri_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_DDS_PIPE_DEMUXER
 static int dds_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -712,7 +723,9 @@ static int dds_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_DPX_PIPE_DEMUXER
 static int dpx_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -730,7 +743,9 @@ static int dpx_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_EXR_PIPE_DEMUXER
 static int exr_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -739,7 +754,9 @@ static int exr_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_J2K_PIPE_DEMUXER
 static int j2k_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -749,7 +766,9 @@ static int j2k_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_JPEG_PIPE_DEMUXER
 static int jpeg_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -828,7 +847,9 @@ static int jpeg_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION / 2 + got_header;
     return AVPROBE_SCORE_EXTENSION / 8 + 1;
 }
+#endif
 
+#if CONFIG_IMAGE_JPEGLS_PIPE_DEMUXER
 static int jpegls_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -837,7 +858,9 @@ static int jpegls_probe(const AVProbeData *p)
          return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_JPEGXL_PIPE_DEMUXER
 static int jpegxl_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -855,7 +878,9 @@ static int jpegxl_probe(const AVProbeData *p)
 #endif
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PCX_PIPE_DEMUXER
 static int pcx_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -876,7 +901,9 @@ static int pcx_probe(const AVProbeData *p)
 
     return AVPROBE_SCORE_EXTENSION + 1;
 }
+#endif
 
+#if CONFIG_IMAGE_QDRAW_PIPE_DEMUXER
 static int qdraw_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -892,7 +919,9 @@ static int qdraw_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION / 4;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PICTOR_PIPE_DEMUXER
 static int pictor_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -901,7 +930,9 @@ static int pictor_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION / 4;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PNG_PIPE_DEMUXER
 static int png_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -910,7 +941,9 @@ static int png_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PSD_PIPE_DEMUXER
 static int psd_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -938,7 +971,9 @@ static int psd_probe(const AVProbeData *p)
 
     return AVPROBE_SCORE_EXTENSION + ret;
 }
+#endif
 
+#if CONFIG_IMAGE_SGI_PIPE_DEMUXER
 static int sgi_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -950,7 +985,9 @@ static int sgi_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_SUNRAST_PIPE_DEMUXER
 static int sunrast_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -959,7 +996,9 @@ static int sunrast_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_SVG_PIPE_DEMUXER
 static int svg_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -979,7 +1018,9 @@ static int svg_probe(const AVProbeData *p)
     }
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_TIFF_PIPE_DEMUXER
 static int tiff_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -989,7 +1030,9 @@ static int tiff_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_WEBP_PIPE_DEMUXER
 static int webp_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -999,6 +1042,7 @@ static int webp_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
 static int pnm_magic_check(const AVProbeData *p, int magic)
 {
@@ -1018,40 +1062,51 @@ static inline int pnm_probe(const AVProbeData *p)
     return 0;
 }
 
+#if CONFIG_IMAGE_PBM_PIPE_DEMUXER
 static int pbm_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 1) || pnm_magic_check(p, 4) ? pnm_probe(p) : 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PFM_PIPE_DEMUXER
 static int pfm_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 'F' - '0') ||
            pnm_magic_check(p, 'f' - '0') ? pnm_probe(p) : 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PHM_PIPE_DEMUXER
 static int phm_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 'H' - '0') ||
            pnm_magic_check(p, 'h' - '0') ? pnm_probe(p) : 0;
 }
+#endif
 
 static inline int pgmx_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 2) || pnm_magic_check(p, 5) ? pnm_probe(p) : 0;
 }
 
+#if CONFIG_IMAGE_PGM_PIPE_DEMUXER
 static int pgm_probe(const AVProbeData *p)
 {
     int ret = pgmx_probe(p);
     return ret && !av_match_ext(p->filename, "pgmyuv") ? ret : 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PGMYUV_PIPE_DEMUXER
 static int pgmyuv_probe(const AVProbeData *p) // custom FFmpeg format recognized by file extension
 {
     int ret = pgmx_probe(p);
     return ret && av_match_ext(p->filename, "pgmyuv") ? ret : 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PGX_PIPE_DEMUXER
 static int pgx_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -1059,17 +1114,23 @@ static int pgx_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PPM_PIPE_DEMUXER
 static int ppm_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 3) || pnm_magic_check(p, 6) ? pnm_probe(p) : 0;
 }
+#endif
 
+#if CONFIG_IMAGE_PAM_PIPE_DEMUXER
 static int pam_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 7) ? pnm_probe(p) : 0;
 }
+#endif
 
+#if CONFIG_IMAGE_XBM_PIPE_DEMUXER
 static int xbm_probe(const AVProbeData *p)
 {
     if (!memcmp(p->buf, "/* XBM X10 format */", 20))
@@ -1079,7 +1140,9 @@ static int xbm_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_XPM_PIPE_DEMUXER
 static int xpm_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -1088,7 +1151,9 @@ static int xpm_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_XWD_PIPE_DEMUXER
 static int xwd_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -1118,6 +1183,7 @@ static int xwd_probe(const AVProbeData *p)
 
     return AVPROBE_SCORE_MAX / 2 + 1;
 }
+#endif
 
 static int gif_probe(const AVProbeData *p)
 {
@@ -1132,6 +1198,7 @@ static int gif_probe(const AVProbeData *p)
     return AVPROBE_SCORE_MAX - 1;
 }
 
+#if CONFIG_IMAGE_PHOTOCD_PIPE_DEMUXER
 static int photocd_probe(const AVProbeData *p)
 {
     if (!memcmp(p->buf, "PCD_OPA", 7))
@@ -1142,7 +1209,9 @@ static int photocd_probe(const AVProbeData *p)
 
     return AVPROBE_SCORE_MAX - 1;
 }
+#endif
 
+#if CONFIG_IMAGE_QOI_PIPE_DEMUXER
 static int qoi_probe(const AVProbeData *p)
 {
     if (memcmp(p->buf, "qoif", 4))
@@ -1159,7 +1228,9 @@ static int qoi_probe(const AVProbeData *p)
 
     return AVPROBE_SCORE_MAX - 1;
 }
+#endif
 
+#if CONFIG_IMAGE_GEM_PIPE_DEMUXER
 static int gem_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -1179,7 +1250,9 @@ static int gem_probe(const AVProbeData *p)
     }
     return 0;
 }
+#endif
 
+#if CONFIG_IMAGE_VBN_PIPE_DEMUXER
 static int vbn_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -1189,6 +1262,7 @@ static int vbn_probe(const AVProbeData *p)
         return AVPROBE_SCORE_MAX - 1;
     return 0;
 }
+#endif
 
 #define IMAGEAUTO_DEMUXER_0(imgname, codecid)
 #define IMAGEAUTO_DEMUXER_1(imgname, codecid)\
