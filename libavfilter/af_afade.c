@@ -303,9 +303,9 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         s->start_time   = AFADE_DOING;
     }
 
-    if ((!s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample)) ||
-        (s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)) ||
-        !s->nb_samples)
+    if (!s->nb_samples ||
+       (!s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample)) ||
+        (s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)))
         return ff_filter_frame(outlink, buf);
 
     if (av_frame_is_writable(buf)) {
@@ -335,8 +335,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
                         s->nb_samples, s->curve);
 
         if (s->start_time == AFADE_DOING &&
-            (cur_sample + nb_samples >= s->start_sample + s->nb_samples))
+            (cur_sample + nb_samples >= s->start_sample + s->nb_samples)) {
             s->start_time = AFADE_DONE;
+            s->nb_samples = 0;
+        }
     }
 
     if (buf != out_buf)
