@@ -19,6 +19,7 @@ OBJS = allfilters.o                                                     \
        formats.o                                                        \
        framepool.o                                                      \
        framequeue.o                                                     \
+       packetqueue.o                                                    \
        graphdump.o                                                      \
        graphparser.o                                                    \
        version.o                                                        \
