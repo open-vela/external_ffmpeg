@@ -185,17 +185,16 @@ static void graph_link_dump(AVBPrint *buf, AVFilterContext *cur, AVFilterLink *l
     switch (link->type) {
         case AVMEDIA_TYPE_VIDEO:
             format = av_x_if_null(av_get_pix_fmt_name(link->format), "?");
-            av_bprintf(buf, "wh:%-10d|%-10d ra:%-4d|%-4d %-8s ",
-                       link->w, link->h,
+            av_bprintf(buf, "fmt:%-4s wh:%6d|%-6d ra:%4d|%-4d ",
+                       format, link->w, link->h,
                        link->sample_aspect_ratio.num,
-                       link->sample_aspect_ratio.den,
-                       format);
+                       link->sample_aspect_ratio.den);
             break;
 
         case AVMEDIA_TYPE_AUDIO:
             av_channel_layout_describe(&link->ch_layout, tmp, sizeof(tmp));
             format = av_x_if_null(av_get_sample_fmt_name(link->format), "?");
-            av_bprintf(buf, "fmt:%-4s sr:%-6d cl:%-12s ",
+            av_bprintf(buf, "fmt:%-4s sr:%-6d cl:%-16s ",
                        format, link->sample_rate, tmp);
             break;
 
