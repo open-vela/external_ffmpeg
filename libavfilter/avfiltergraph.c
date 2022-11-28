@@ -272,6 +272,10 @@ static int graph_check_links(AVFilterGraph *graph, void *log_ctx)
         for (j = 0; j < f->nb_outputs; j++) {
             l = f->outputs[j];
             if (l->type == AVMEDIA_TYPE_VIDEO) {
+                /* note: no video format on movie src/dst when init the graph. */
+                if (!l->w && !l->h)
+                    return 0;
+
                 ret = av_image_check_size2(l->w, l->h, INT64_MAX, l->format, 0, f);
                 if (ret < 0)
                     return ret;
