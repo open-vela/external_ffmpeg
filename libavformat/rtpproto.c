@@ -392,7 +392,8 @@ static int rtp_read(URLContext *h, uint8_t *buf, int size)
 {
     RTPContext *s = h->priv_data;
     int len, n, i;
-    struct pollfd p[2] = {{s->rtp_fd, POLLIN, 0}, {s->rtcp_fd, POLLIN, 0}};
+    struct pollfd p[2] = {{.fd = s->rtp_fd,  .events = POLLIN, .revents = 0},
+                          {.fd = s->rtcp_fd, .events = POLLIN, .revents = 0}};
     int poll_delay = h->flags & AVIO_FLAG_NONBLOCK ? 0 : POLLING_TIME;
     struct sockaddr_storage *addrs[2] = { &s->last_rtp_source, &s->last_rtcp_source };
     socklen_t *addr_lens[2] = { &s->last_rtp_source_len, &s->last_rtcp_source_len };
