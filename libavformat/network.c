@@ -228,7 +228,7 @@ int ff_listen(int fd, const struct sockaddr *addr,
 int ff_accept(int fd, int timeout, URLContext *h)
 {
     int ret;
-    struct pollfd lp = { fd, POLLIN, 0 };
+    struct pollfd lp = { .fd = fd, .events = POLLIN, .revents = 0 };
 
     ret = ff_poll_interrupt(&lp, 1, timeout, &h->interrupt_callback);
     if (ret < 0)
@@ -259,7 +259,7 @@ int ff_listen_connect(int fd, const struct sockaddr *addr,
                       socklen_t addrlen, int timeout, URLContext *h,
                       int will_try_next)
 {
-    struct pollfd p = {fd, POLLOUT, 0};
+    struct pollfd p = { .fd = fd, .events = POLLOUT, .revents = 0 };
     int ret;
     socklen_t optlen;
 
