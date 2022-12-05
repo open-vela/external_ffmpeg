@@ -31,6 +31,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <limits.h>
+#include <sys/queue.h>
 
 #include "libavutil/avstring.h"
 #include "libavutil/avassert.h"
@@ -46,10 +47,12 @@
 #define AVMOVIE_ASYNC_DATA_QUEUE_IDX          (1 << 1)
 
 typedef struct MovieCmd {
-    struct dq_entry_s  dq_entry;
+    SIMPLEQ_ENTRY(MovieCmd) entry;
     int                cmd;
     char               data[0];
 } MovieCmd;
+
+SIMPLEQ_HEAD(MovieCmdQueue, MovieCmd);
 
 typedef struct MovieStream {
     enum AVMediaType type;
@@ -79,7 +82,8 @@ typedef struct MovieAsyncContext {
 
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
-    dq_queue_t                cmd_queue;
+
+    struct MovieCmdQueue      cmd_queue;
 
     int                       state;
     bool                      first;
@@ -122,7 +126,8 @@ static inline void movie_async_notify_event(MovieAsyncContext *movie, int event,
 static int movie_async_send_cmd(AVFilterContext *ctx, const int cmd, const void *data, size_t size)
 {
     MovieAsyncContext *movie = ctx->priv;
-    MovieCmd *msg;
+    MovieCmd *msg, *tmp;
+    int cnt = 0;
 
     msg = av_malloc(sizeof(MovieCmd) + size);
     if (!msg)
@@ -134,16 +139,16 @@ static int movie_async_send_cmd(AVFilterContext *ctx, const int cmd, const void 
         memcpy(msg->data, data, size);
 
     pthread_mutex_lock(&movie->mutex);
-    if (dq_count(&movie->cmd_queue) >= movie->cmd_max &&
-        msg->cmd < AVMOVIE_ASYNC_STOP) {
 
+    SIMPLEQ_FOREACH(tmp, &movie->cmd_queue, entry) cnt++;
+    if (cnt >= movie->cmd_max && msg->cmd < AVMOVIE_ASYNC_STOP) {
         pthread_mutex_unlock(&movie->mutex);
         av_freep(&msg);
 
         return AVERROR(ENOMEM);
     }
 
-    dq_addlast(&msg->dq_entry, &movie->cmd_queue);
+    SIMPLEQ_INSERT_TAIL(&movie->cmd_queue, msg, entry);
     pthread_cond_signal(&movie->cond);
     pthread_mutex_unlock(&movie->mutex);
 
@@ -255,14 +260,11 @@ static int movie_async_interrupt(void *opaque)
 {
     AVFilterContext *ctx = opaque;
     MovieAsyncContext *movie = ctx->priv;
-    dq_entry_t *entry;
     MovieCmd *msg;
     int interrupt = 0;
 
     pthread_mutex_lock(&movie->mutex);
-    for (entry = dq_peek(&movie->cmd_queue); entry; entry = dq_next(entry)) {
-
-        msg = (MovieCmd *)entry;
+    SIMPLEQ_FOREACH(msg, &movie->cmd_queue, entry) {
         if (msg->cmd >= AVMOVIE_ASYNC_STOP) {
             interrupt = 1;
             break;
@@ -299,7 +301,8 @@ static void movie_async_clear_queue(AVFilterContext *ctx, int what)
 
     pthread_mutex_lock(&movie->mutex);
     if (what & AVMOVIE_ASYNC_CMD_QUEUE_IDX) {
-        while ((msg = (MovieCmd *)dq_remfirst(&movie->cmd_queue)) != NULL) {
+        while ((msg = SIMPLEQ_FIRST(&movie->cmd_queue)) != NULL) {
+            SIMPLEQ_REMOVE_HEAD(&movie->cmd_queue, entry);
             av_freep(&msg);
         }
     }
@@ -888,8 +891,8 @@ static void *movie_async_thread(void *arg)
 
     while (1) {
         pthread_mutex_lock(&movie->mutex);
-        if (dq_count(&movie->cmd_queue) > 0) {
-            msg = (MovieCmd *)dq_remfirst(&movie->cmd_queue);
+        if ((msg = SIMPLEQ_FIRST(&movie->cmd_queue)) != NULL) {
+            SIMPLEQ_REMOVE_HEAD(&movie->cmd_queue, entry);
             pthread_mutex_unlock(&movie->mutex);
 
             exit = movie_async_proc_cmd(ctx, msg);
@@ -1008,7 +1011,7 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
     if (!movie->streams)
         return AVERROR(ENOMEM);
 
-    dq_init(&movie->cmd_queue);
+    SIMPLEQ_INIT(&movie->cmd_queue);
     pthread_mutex_init(&movie->mutex, NULL);
     pthread_cond_init(&movie->cond, NULL);
 

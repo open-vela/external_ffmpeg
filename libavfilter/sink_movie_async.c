@@ -24,7 +24,7 @@
 #include "config_components.h"
 
 #include <unistd.h>
-#include <nuttx/queue.h>
+#include <sys/queue.h>
 
 #include <libavutil/opt.h>
 #include <libavutil/avassert.h>
@@ -36,10 +36,12 @@
 #include "filters.h"
 
 typedef struct MovieSinkCmd {
-    struct dq_entry_s dq_entry;
-    int               cmd;
-    char              data[0];
+    SIMPLEQ_ENTRY(MovieSinkCmd) entry;
+    int                         cmd;
+    char                        data[0];
 } MovieSinkCmd;
+
+SIMPLEQ_HEAD(MovieSinkCmdQueue, MovieSinkCmd);
 
 typedef struct MovieStream {
     enum AVMediaType type;
@@ -61,7 +63,7 @@ typedef struct MovieSinkPriv {
     MovieStream               *streams;
     AVDictionary              *global_opts;
 
-    dq_queue_t                cmd_queue;         /**< graph thread send cmd to work thread */
+    struct MovieSinkCmdQueue  cmd_queue;    /**< graph thread send cmd to work thread */
 
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
@@ -93,7 +95,7 @@ static int amoviesink_send_cmd(AVFilterContext *ctx, int cmd, const void *data, 
         memcpy(msg->data, data, size);
 
     pthread_mutex_lock(&priv->mutex);
-    dq_addlast(&msg->dq_entry, &priv->cmd_queue);
+    SIMPLEQ_INSERT_TAIL(&priv->cmd_queue, msg, entry);
     pthread_cond_signal(&priv->cond);
     pthread_mutex_unlock(&priv->mutex);
 
@@ -560,8 +562,8 @@ static void *amoviesink_thread(void *arg)
     while (1) {
         pthread_mutex_lock(&priv->mutex);
 
-        if (dq_count(&priv->cmd_queue) > 0) {
-            msg = (MovieSinkCmd *)dq_remfirst(&priv->cmd_queue);
+        if ((msg = SIMPLEQ_FIRST(&priv->cmd_queue)) != NULL) {
+            SIMPLEQ_REMOVE_HEAD(&priv->cmd_queue, entry);
             pthread_mutex_unlock(&priv->mutex);
 
             exit = amoviesink_proc_cmd(ctx, msg);
@@ -672,7 +674,7 @@ static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
     if (!priv->streams)
         return AVERROR(ENOMEM);
 
-    dq_init(&priv->cmd_queue);
+    SIMPLEQ_INIT(&priv->cmd_queue);
     pthread_mutex_init(&priv->mutex, NULL);
     pthread_cond_init(&priv->cond, NULL);
 
@@ -985,8 +987,10 @@ static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd)
 
     if (reset || close) {
         pthread_mutex_lock(&priv->mutex);
-        while ((msg = (MovieSinkCmd *)dq_remfirst(&priv->cmd_queue)) != NULL)
+        while ((msg = SIMPLEQ_FIRST(&priv->cmd_queue)) != NULL) {
+            SIMPLEQ_REMOVE_HEAD(&priv->cmd_queue, entry);
             av_freep(&msg);
+        }
         pthread_mutex_unlock(&priv->mutex);
     }
 
