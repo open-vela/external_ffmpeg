@@ -186,7 +186,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
 
     // load trusted CA
     if (shr->ca_file) {
-        if ((ret = mbedtls_x509_crt_parse_file(&tls_ctx->ca_cert, shr->ca_file)) != 0) {
+        if ((ret = mbedtls_x509_crt_parse_file(&tls_ctx->ca_cert, shr->ca_file)) < 0) {
             av_log(h, AV_LOG_ERROR, "mbedtls_x509_crt_parse_file for CA cert returned %d\n", ret);
             goto fail;
         }
@@ -194,7 +194,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
 
     // load own certificate
     if (shr->cert_file) {
-        if ((ret = mbedtls_x509_crt_parse_file(&tls_ctx->own_cert, shr->cert_file)) != 0) {
+        if ((ret = mbedtls_x509_crt_parse_file(&tls_ctx->own_cert, shr->cert_file)) < 0) {
             av_log(h, AV_LOG_ERROR, "mbedtls_x509_crt_parse_file for own cert returned %d\n", ret);
             goto fail;
         }
