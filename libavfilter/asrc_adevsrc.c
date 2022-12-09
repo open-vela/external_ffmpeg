@@ -155,6 +155,7 @@ static int adevsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
     ret = avformat_open_input(&priv->fmt_ctx, priv->devname, fmt, options);
     if (ret < 0) {
         avformat_free_context(priv->fmt_ctx);
+        priv->fmt_ctx = NULL;
         return ret;
     }
 

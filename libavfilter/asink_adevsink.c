@@ -148,12 +148,14 @@ static int adevsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
     st = avformat_new_stream(priv->fmt_ctx, NULL);
     if (!st) {
         avformat_free_context(priv->fmt_ctx);
+        priv->fmt_ctx = NULL;
         return AVERROR(ENOMEM);
     }
 
     ret = avformat_init_output(priv->fmt_ctx, options);
     if (ret < 0) {
         avformat_free_context(priv->fmt_ctx);
+        priv->fmt_ctx = NULL;
         return ret;
     }
 
