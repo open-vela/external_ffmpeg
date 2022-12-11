@@ -169,7 +169,6 @@ typedef struct FFTXCodelet {
     const char    *name;          /* Codelet name, for debugging */
     av_tx_fn       function;      /* Codelet function, != NULL */
     enum AVTXType  type;          /* Type of codelet transform */
-#define TX_TYPE_ANY INT32_MAX     /* Special type to allow all types */
 
     uint64_t flags;               /* A combination of AVTXFlags and codelet
                                    * flags that describe its properties. */
