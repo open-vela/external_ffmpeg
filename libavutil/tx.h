@@ -91,6 +91,9 @@ enum AVTXType {
 
     /* Not part of the API, do not use */
     AV_TX_NB,
+
+    /* Special type to allow all types */
+    TX_TYPE_ANY = INT32_MAX,
 };
 
 /**
