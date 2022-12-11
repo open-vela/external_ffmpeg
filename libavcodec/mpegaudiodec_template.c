@@ -380,7 +380,7 @@ static int handle_crc(MPADecodeContext *s, int sec_len)
         crc_val = av_crc(crc_tab, crc_val, tmp_buf, 3);
 
         if (crc_val) {
-            av_log(s->avctx, AV_LOG_ERROR, "CRC mismatch %X!\n", crc_val);
+            av_log(s->avctx, AV_LOG_ERROR, "CRC mismatch %"PRIX32"\n", crc_val);
             if (s->err_recognition & AV_EF_EXPLODE)
                 return AVERROR_INVALIDDATA;
         }
@@ -946,7 +946,7 @@ static void compute_stereo(MPADecodeContext *s, GranuleDef *g0, GranuleDef *g1)
     /* intensity stereo */
     if (s->mode_ext & MODE_EXT_I_STEREO) {
         if (!s->lsf) {
-            is_tab = is_table;
+            is_tab = (const INTFLOAT (*)[16])is_table;
             sf_max = 7;
         } else {
             is_tab = is_table_lsf[g1->scalefac_compress & 1];
