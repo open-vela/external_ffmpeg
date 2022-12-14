@@ -24,6 +24,7 @@
  */
 
 #include "avcodec.h"
+#include "codec_internal.h"
 #include "internal.h"
 #include "libavutil/intreadwrite.h"
 
@@ -48,11 +49,10 @@ static int mp3_decode_init(AVCodecContext *avctx)
 }
 
 static int mp3_decode_frame(AVCodecContext *avctx,
-                            void *data, int *got_frame_ptr,
+                            AVFrame *frame, int *got_frame_ptr,
                             AVPacket *avpkt)
 {
     HMP3DecContext *mp3 = avctx->priv_data;
-    AVFrame *frame = data;
     MP3FrameInfo info;
     uint8_t *in_data;
     int ret, in_size;
@@ -92,19 +92,19 @@ static av_cold int mp3_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_libhelix_mp3_decoder = {
-    .name                  = "libhelix_mp3",
-    .long_name             = NULL_IF_CONFIG_SMALL("libHelix MPEG Decoder"),
-    .type                  = AVMEDIA_TYPE_AUDIO,
-    .id                    = AV_CODEC_ID_MP3,
-    .priv_data_size        = sizeof(HMP3DecContext),
-    .init                  = mp3_decode_init,
-    .decode                = mp3_decode_frame,
-    .close                 = mp3_decode_close,
-    .capabilities          = AV_CODEC_CAP_DR1,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
-    .channel_layouts       = (const uint64_t[]) { AV_CH_LAYOUT_MONO,
-                                                  AV_CH_LAYOUT_STEREO, 0},
-    .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
+const FFCodec ff_libhelix_mp3_decoder = {
+    .p.name           = "libhelix_mp3",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("libHelix MPEG Decoder"),
+    .p.type           = AVMEDIA_TYPE_AUDIO,
+    .p.id             = AV_CODEC_ID_MP3,
+    .priv_data_size   = sizeof(HMP3DecContext),
+    .init             = mp3_decode_init,
+    FF_CODEC_DECODE_CB(mp3_decode_frame),
+    .close            = mp3_decode_close,
+    .p.capabilities   = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
+    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.ch_layouts     = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                    AV_CHANNEL_LAYOUT_STEREO, 0},
+    .p.sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                        AV_SAMPLE_FMT_NONE },
 };
