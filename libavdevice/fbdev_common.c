@@ -39,7 +39,7 @@ static const struct rgb_pixfmt_map_entry rgb_pixfmt_map[] = {
     {  32,       0,           8,          16,           24,   AV_PIX_FMT_RGBA  },
     {  32,      16,           8,           0,           24,   AV_PIX_FMT_BGRA  },
     {  32,       8,          16,          24,            0,   AV_PIX_FMT_ARGB  },
-    {  32,       3,           2,           8,            0,   AV_PIX_FMT_ABGR  },
+    {  32,      24,          16,           8,            0,   AV_PIX_FMT_ABGR  },
     {  24,       0,           8,          16,            0,   AV_PIX_FMT_RGB24 },
     {  24,      16,           8,           0,            0,   AV_PIX_FMT_BGR24 },
     {  16,      11,           5,           0,            0,   AV_PIX_FMT_RGB565 },
