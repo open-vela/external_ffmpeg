@@ -2199,6 +2199,7 @@ HEADERS_LIST="
     machine_ioctl_bt848_h
     machine_ioctl_meteor_h
     malloc_h
+    nuttx_video_fb_h
     opencv2_core_core_c_h
     OpenGL_gl3_h
     poll_h
@@ -3524,8 +3525,8 @@ decklink_outdev_suggest="libklvanc"
 decklink_outdev_extralibs="-lstdc++"
 dshow_indev_deps="IBaseFilter"
 dshow_indev_extralibs="-lpsapi -lole32 -lstrmiids -luuid -loleaut32 -lshlwapi"
-fbdev_indev_deps="linux_fb_h"
-fbdev_outdev_deps="linux_fb_h"
+fbdev_indev_deps_any="nuttx_video_fb_h linux_fb_h"
+fbdev_outdev_deps_any="nuttx_video_fb_h linux_fb_h"
 gdigrab_indev_deps="CreateDIBSection"
 gdigrab_indev_extralibs="-lgdi32"
 gdigrab_indev_select="bmp_decoder"
@@ -6830,6 +6831,9 @@ if enabled v4l2_m2m; then
     check_cc vp8_v4l2_m2m linux/videodev2.h "int i = V4L2_PIX_FMT_VP8;"
     check_cc vp9_v4l2_m2m linux/videodev2.h "int i = V4L2_PIX_FMT_VP9;"
 fi
+
+# check nuttx headers
+check_headers nuttx/video/fb.h
 
 check_headers sys/videoio.h
 test_code cc sys/videoio.h "struct v4l2_frmsizeenum vfse; vfse.discrete.width = 0;" && enable_sanitized struct_v4l2_frmivalenum_discrete
