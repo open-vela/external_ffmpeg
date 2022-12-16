@@ -32,7 +32,6 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <time.h>
-#include <linux/fb.h>
 
 #include "libavutil/internal.h"
 #include "libavutil/log.h"

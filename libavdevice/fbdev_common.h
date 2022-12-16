@@ -23,8 +23,15 @@
 #ifndef AVDEVICE_FBDEV_COMMON_H
 #define AVDEVICE_FBDEV_COMMON_H
 
+#include "config.h"
+
 #include <features.h>
+#ifdef HAVE_NUTTX_VIDEO_FB_H
+#include <nuttx/video/fb.h>
+#else
 #include <linux/fb.h>
+#endif
+
 #include "libavutil/pixfmt.h"
 
 struct AVDeviceInfoList;
