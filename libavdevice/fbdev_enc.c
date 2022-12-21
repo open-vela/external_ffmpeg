@@ -188,6 +188,98 @@ static int fbdev_get_device_list(AVFormatContext *s, AVDeviceInfoList *device_li
     return ff_fbdev_get_device_list(device_list);
 }
 
+
+static int fbdev_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                        const char *key, int flags)
+{
+    struct AVDeviceCapabilitiesQuery *devcap = obj;
+    struct AVFormatContext *h = devcap->device_context;
+    struct fb_var_screeninfo varinfo;
+    struct AVOptionRanges *ranges;
+    enum AVPixelFormat pix_fmt;
+    int ret = AVERROR(ENOMEM);
+    int fd;
+
+    fd = avpriv_open(h->url, O_RDWR | O_CLOEXEC);
+    if (fd < 0)
+        return AVERROR(errno);
+
+    if (ioctl(fd, FBIOGET_VSCREENINFO, &varinfo) < 0) {
+        close(fd);
+        return AVERROR(errno);
+    }
+
+    close(fd);
+
+    ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    if (!ranges)
+        goto err;
+
+    if (!strcmp(key, "pixel_fmts")) {
+        pix_fmt = ff_get_pixfmt_from_fb_varinfo(&varinfo);
+        if (pix_fmt == AV_PIX_FMT_NONE) {
+            ret = AVERROR(EINVAL);
+            goto err;
+        }
+
+        ranges->nb_components = 1;
+        ranges->nb_ranges = 1;
+        ranges->range = av_mallocz(sizeof(AVOptionRange *));
+        if (!ranges->range)
+            goto err;
+
+        ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[0])
+            goto err;
+
+        ranges->range[0]->is_range  = 0;
+        ranges->range[0]->value_min = pix_fmt;
+        ranges->range[0]->value_max = pix_fmt;
+    } else
+        goto err;
+
+    *ranges_ = ranges;
+    return ranges->nb_components;
+
+err:
+    av_opt_freep_ranges(&ranges);
+    return ret;
+}
+
+static const AVClass fbdev_cap_class = {
+    .class_name   = "fbdev outdev capbility",
+    .item_name    = av_default_item_name,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = fbdev_capbility_query_ranges,
+};
+
+static int fbdev_control_message(AVFormatContext *h, int type,
+                                 void *data, size_t data_size)
+{
+    FBDevContext *fbdev = h->priv_data;
+    struct fb_var_screeninfo varinfo;
+    enum AVPixelFormat pix_fmt;
+    int fd;
+
+    switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &fbdev_cap_class;
+            caps->device_context = h;
+            av_opt_set_defaults(caps);
+
+            return 0;
+        }
+    }
+
+    return AVERROR(ENOSYS);
+}
+
 #define OFFSET(x) offsetof(FBDevContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
@@ -205,15 +297,16 @@ static const AVClass fbdev_class = {
 };
 
 const AVOutputFormat ff_fbdev_muxer = {
-    .name           = "fbdev",
-    .long_name      = NULL_IF_CONFIG_SMALL("Linux framebuffer"),
-    .priv_data_size = sizeof(FBDevContext),
-    .audio_codec    = AV_CODEC_ID_NONE,
-    .video_codec    = AV_CODEC_ID_RAWVIDEO,
-    .write_header   = fbdev_write_header,
-    .write_packet   = fbdev_write_packet,
-    .write_trailer  = fbdev_write_trailer,
+    .name            = "fbdev",
+    .long_name       = NULL_IF_CONFIG_SMALL("Linux framebuffer"),
+    .priv_data_size  = sizeof(FBDevContext),
+    .audio_codec     = AV_CODEC_ID_NONE,
+    .video_codec     = AV_CODEC_ID_RAWVIDEO,
+    .write_header    = fbdev_write_header,
+    .write_packet    = fbdev_write_packet,
+    .write_trailer   = fbdev_write_trailer,
+    .control_message = fbdev_control_message,
     .get_device_list = fbdev_get_device_list,
-    .flags          = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
-    .priv_class     = &fbdev_class,
+    .flags           = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
+    .priv_class      = &fbdev_class,
 };
