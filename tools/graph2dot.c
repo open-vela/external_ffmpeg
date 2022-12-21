@@ -105,6 +105,7 @@ static void print_digraph(FILE *outfile, AVFilterGraph *graph)
     fprintf(outfile, "}\n");
 }
 
+int main(int argc, char **argv);
 int main(int argc, char **argv)
 {
     const char *outfilename = NULL;
