@@ -7613,6 +7613,7 @@ static int mov_check_bitstream(AVFormatContext *s, AVStream *st,
     return ret;
 }
 
+#if CONFIG_AVIF_MUXER
 static int avif_write_trailer(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
@@ -7668,6 +7669,7 @@ static int avif_write_trailer(AVFormatContext *s)
 
     return 0;
 }
+#endif
 
 #if CONFIG_TGP_MUXER || CONFIG_TG2_MUXER
 static const AVCodecTag codec_3gp_tags[] = {
