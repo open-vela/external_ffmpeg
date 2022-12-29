@@ -161,6 +161,7 @@ static int get_workload(int minv, int maxv)
     return maxv == minv ? maxv : rand() % (maxv - minv) + minv;
 }
 
+int main(int ac, char **av);
 int main(int ac, char **av)
 {
     int i, ret = 0;

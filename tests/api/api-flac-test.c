@@ -243,6 +243,7 @@ static int run_test(const AVCodec *enc, const AVCodec *dec,
     return 0;
 }
 
+int main(void);
 int main(void)
 {
     const AVCodec *enc = NULL, *dec = NULL;

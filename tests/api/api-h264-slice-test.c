@@ -106,6 +106,7 @@ static int decode(AVCodecContext *dec_ctx, AVFrame *frame,
     return 0;
 }
 
+int main(int argc, char **argv);
 int main(int argc, char **argv)
 {
     const AVCodec *codec = NULL;
