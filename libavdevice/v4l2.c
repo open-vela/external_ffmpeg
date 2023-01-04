@@ -1096,6 +1096,148 @@ static int v4l2_get_device_list(AVFormatContext *ctx, AVDeviceInfoList *device_l
     return ret;
 }
 
+static int v4l2_get_capabilities(AVFormatContext *ctx)
+{
+    struct video_data *s = ctx->priv_data;
+    enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
+    enum AVCodecID codec_id = AV_CODEC_ID_NONE;
+    uint32_t desired_format;
+    int ret;
+
+    s->fd = device_open(ctx, ctx->url);
+    if (s->fd < 0)
+        return AVERROR(errno);
+
+    if (s->pixel_format) {
+        const AVCodecDescriptor *desc = avcodec_descriptor_get_by_name(s->pixel_format);
+
+        if (desc)
+            ctx->video_codec_id = desc->id;
+
+        pix_fmt = av_get_pix_fmt(s->pixel_format);
+
+        if (pix_fmt == AV_PIX_FMT_NONE && !desc) {
+            av_log(ctx, AV_LOG_ERROR, "No such input format: %s.\n",
+                   s->pixel_format);
+
+            ret = AVERROR(EINVAL);
+            goto out;
+        }
+    }
+
+    if (!s->width && !s->height) {
+        struct v4l2_format fmt = { .type = V4L2_BUF_TYPE_VIDEO_CAPTURE };
+
+        av_log(ctx, AV_LOG_VERBOSE,
+               "Querying the device for the current frame size\n");
+        if (v4l2_ioctl(s->fd, VIDIOC_G_FMT, &fmt) < 0) {
+            ret = AVERROR(errno);
+            av_log(ctx, AV_LOG_ERROR, "ioctl(VIDIOC_G_FMT): %s\n",
+                   av_err2str(ret));
+            goto out;
+        }
+
+        s->width  = fmt.fmt.pix.width;
+        s->height = fmt.fmt.pix.height;
+        av_log(ctx, AV_LOG_VERBOSE,
+               "Setting frame size to %dx%d\n", s->width, s->height);
+    }
+
+    ret = device_try_init(ctx, pix_fmt, &s->width, &s->height, &desired_format, &codec_id);
+    if (ret < 0)
+        goto out;
+
+    /* If no pixel_format was specified, the codec_id was not known up
+     * until now. Set video_codec_id in the context, as codec_id will
+     * not be available outside this function
+     */
+    if (codec_id != AV_CODEC_ID_NONE && ctx->video_codec_id == AV_CODEC_ID_NONE)
+        ctx->video_codec_id = codec_id;
+
+    if ((ret = av_image_check_size(s->width, s->height, 0, ctx)) < 0)
+        goto out;
+
+    s->pixelformat = desired_format;
+
+out:
+    v4l2_close(s->fd);
+    s->fd = 0;
+    return ret;
+}
+
+static int v4l2_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                       const char *key, int flags)
+{
+    struct AVDeviceCapabilitiesQuery *devcap = obj;
+    struct AVFormatContext *ctx = devcap->device_context;
+    struct video_data *s = ctx->priv_data;
+    struct AVOptionRanges *ranges;
+    enum AVPixelFormat pix_fmt;
+    int fd, ret;
+
+    if (strcmp(key, "pixel_fmts") != 0)
+        goto fail;
+
+    ret = v4l2_get_capabilities(ctx);
+    if (ret < 0)
+        return ret;
+
+    ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    if (!ranges)
+        goto fail;
+
+    pix_fmt = ff_fmt_v4l2ff(s->pixelformat, ctx->video_codec_id);
+
+    ranges->nb_components = 1;
+    ranges->nb_ranges = 1;
+    ranges->range = av_mallocz(sizeof(AVOptionRange *));
+    if (!ranges->range)
+        goto fail;
+
+    ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
+    if (!ranges->range[0])
+        goto fail;
+
+    ranges->range[0]->is_range  = 0;
+    ranges->range[0]->value_min = pix_fmt;
+    ranges->range[0]->value_max = pix_fmt;
+
+    *ranges_ = ranges;
+    return ranges->nb_components;
+
+fail:
+    av_opt_freep_ranges(&ranges);
+    return AVERROR(ENOMEM);
+}
+
+static const AVClass v4l2_cap_class = {
+    .class_name   = "v4l2 indev capbility",
+    .item_name    = av_default_item_name,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = v4l2_capbility_query_ranges,
+};
+
+static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size_t data_size)
+{
+    switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &v4l2_cap_class;
+            caps->device_context = ctx;
+            av_opt_set_defaults(caps);
+
+            return 0;
+        }
+    }
+
+    return AVERROR(ENOSYS);
+}
+
 #define OFFSET(x) offsetof(struct video_data, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 
@@ -1133,14 +1275,15 @@ static const AVClass v4l2_class = {
 };
 
 const AVInputFormat ff_v4l2_demuxer = {
-    .name           = "video4linux2,v4l2",
-    .long_name      = NULL_IF_CONFIG_SMALL("Video4Linux2 device grab"),
-    .priv_data_size = sizeof(struct video_data),
-    .read_probe     = v4l2_read_probe,
-    .read_header    = v4l2_read_header,
-    .read_packet    = v4l2_read_packet,
-    .read_close     = v4l2_read_close,
+    .name            = "video4linux2,v4l2",
+    .long_name       = NULL_IF_CONFIG_SMALL("Video4Linux2 device grab"),
+    .priv_data_size  = sizeof(struct video_data),
+    .read_probe      = v4l2_read_probe,
+    .read_header     = v4l2_read_header,
+    .read_packet     = v4l2_read_packet,
+    .read_close      = v4l2_read_close,
+    .control_message = v4l2_control_message,
     .get_device_list = v4l2_get_device_list,
-    .flags          = AVFMT_NOFILE,
-    .priv_class     = &v4l2_class,
+    .flags           = AVFMT_NOFILE,
+    .priv_class      = &v4l2_class,
 };
