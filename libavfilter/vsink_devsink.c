@@ -21,6 +21,9 @@
  * video device sink
  */
 
+#include <poll.h>
+#include <sys/timerfd.h>
+
 #include <libavutil/opt.h>
 #include <libavutil/eval.h>
 #include <libavdevice/avdevice.h>
@@ -30,7 +33,6 @@
 #include "filters.h"
 #include "avfilter.h"
 #include "internal.h"
-
 
 typedef struct DevSinkPriv {
     const AVClass   *class;
@@ -43,6 +45,8 @@ typedef struct DevSinkPriv {
 
     int             pixel_fmt;
 
+    int             timer_fd;
+    int64_t         frame_needed;
     AVPacket        packet;
 } DevSinkPriv;
 
@@ -65,10 +69,12 @@ static int devsink_start(AVFilterContext *ctx)
 {
     AVFilterLink *inlink = ctx->inputs[0];
     DevSinkPriv *priv = ctx->priv;
+    AVRational *frame_rate = &inlink->frame_rate;
     AVStream *st = priv->fmt_ctx->streams[0];
     AVDictionary *fmt_opt = NULL;
-    const AVCodec *enc;
+    struct itimerspec interval;
     enum AVCodecID codec_id;
+    const AVCodec *enc;
     int ret;
 
     if (priv->enc_ctx)
@@ -111,12 +117,17 @@ static int devsink_start(AVFilterContext *ctx)
         return ret;
     }
 
-    return 0;
+    interval.it_interval.tv_sec  = 0;
+    interval.it_interval.tv_nsec = 1000000000l * frame_rate->den / frame_rate->num;
+    interval.it_value            = interval.it_interval;
+
+    return timerfd_settime(priv->timer_fd, 0, &interval, NULL);
 }
 
 static void devsink_stop(AVFilterContext *ctx)
 {
     DevSinkPriv *priv = ctx->priv;
+    struct itimerspec interval;
 
     if (!priv->enc_ctx)
         return;
@@ -126,6 +137,10 @@ static void devsink_stop(AVFilterContext *ctx)
 
     avformat_write_trailer(priv->fmt_ctx);
     avcodec_free_context(&priv->enc_ctx);
+
+    priv->frame_needed = 0;
+    memset(&interval, 0, sizeof(struct itimerspec));
+    timerfd_settime(priv->timer_fd, 0, &interval, NULL);
 }
 
 static int devsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
@@ -155,6 +170,12 @@ static int devsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
         return ret;
     }
 
+    priv->timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
+    if (priv->timer_fd < 0) {
+        avformat_free_context(priv->fmt_ctx);
+        return AVERROR(errno);
+    }
+
     return 0;
 }
 
@@ -166,6 +187,7 @@ static void devsink_uninit(AVFilterContext *ctx)
 
     avformat_free_context(priv->fmt_ctx);
     priv->fmt_ctx = NULL;
+    close(priv->timer_fd);
 }
 
 static int devsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
@@ -210,6 +232,9 @@ static int devsink_activate(AVFilterContext *ctx)
     int64_t pts;
     int ret;
 
+    if (priv->frame_needed < 0)
+        return AVERROR(EAGAIN);
+
     if (ff_inlink_check_available_frame(inlink)) {
         ret = devsink_start(ctx);
         if (ret < 0) {
@@ -218,17 +243,13 @@ static int devsink_activate(AVFilterContext *ctx)
             return ret;
         }
 
-        if (priv->enc_ctx->frame_size)
-            ret = ff_inlink_consume_samples(inlink, priv->enc_ctx->frame_size, priv->enc_ctx->frame_size, &frame);
-        else
-            ret = ff_inlink_consume_frame(inlink, &frame);
+        ret = ff_inlink_consume_frame(inlink, &frame);
         if (ret < 0)
             return ret;
         else if (ret > 0) {
+            priv->frame_needed--;
             ret = devsink_send_frame(ctx, frame);
             av_frame_free(&frame);
-            if (ret >= 0)
-                ff_filter_set_ready(ctx, 100);
             return ret;
         }
     }
@@ -292,24 +313,35 @@ static int devsink_process_command(AVFilterContext *ctx,
 {
     DevSinkPriv *priv = ctx->priv;
 
-    if (!strcmp(cmd, "play")) {
+    if (!strcmp(cmd, "get_pollfd")) {
+        struct pollfd *poll = (struct pollfd *)res;
+        int ret;
+
+        if (!res || res_len < sizeof(struct pollfd))
+            return AVERROR(EINVAL);
+
+        poll[0].fd     = priv->timer_fd;
+        poll[0].events = POLLIN;
+
+        return 1;
+    } else if (!strcmp(cmd, "poll_available")) {
+        uint64_t tmp;
+
+        if (read(priv->timer_fd, &tmp, sizeof(uint64_t)) < 0)
+            return AVERROR(errno);
+
+        priv->frame_needed += tmp;
+        if (priv->frame_needed > 0)
+            ff_filter_set_ready(ctx, 100);
+
+        return 0;
+    } else if (!strcmp(cmd, "play")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_PLAY,
                                     res, res_len);
     } else if (!strcmp(cmd, "pause")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_PAUSE,
-                                    res, res_len);
-    } else if (!strcmp(cmd, "get_pollfd")) {
-        return avdevice_app_to_dev_control_message(
-                                    priv->fmt_ctx,
-                                    AV_APP_TO_DEV_GET_POLLFD,
-                                    res, res_len);
-
-    } else if (!strcmp(cmd, "poll_available")) {
-        return avdevice_app_to_dev_control_message(
-                                    priv->fmt_ctx,
-                                    AV_APP_TO_DEV_POLL_AVAILABLE,
                                     res, res_len);
     } else if (!strcmp(cmd, "set_parameter")) {
         return avdevice_app_to_dev_control_message(
