@@ -61,6 +61,7 @@ typedef struct MovieStream {
     FFFrameQueue     dat_queue;
     int              reconfig;                  /**< whether need to do reconfig */
     AVRational       time_base;
+    AVRational       frame_rate;
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -567,8 +568,9 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
             if (ret < 0)
                 goto out;
         }
-        movie->streams[i].index     = stream->index;
-        movie->streams[i].time_base = stream->time_base;
+        movie->streams[i].index      = stream->index;
+        movie->streams[i].time_base  = stream->time_base;
+        movie->streams[i].frame_rate = stream->r_frame_rate;
         movie->streams[i].codec_ctx->pkt_timebase = stream->time_base;
     }
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", name);
@@ -962,6 +964,7 @@ static int movie_async_output_props(AVFilterLink *outlink)
             if (movie_async_peek_info(ctx, out_id, &p)) {
                 outlink->w = p.width;
                 outlink->h = p.height;
+                outlink->frame_rate = movie->streams[out_id].frame_rate;
             }
             break;
         case AVMEDIA_TYPE_AUDIO:
