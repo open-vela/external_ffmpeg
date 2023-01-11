@@ -79,7 +79,8 @@
 
 #define RIGHT_SHIFT(x, n) ((x) >> (n))
 
-typedef int16_t DCTBLOCK[DCTSIZE2];
+/* DCTBLOCK: int16_t[DCTSIZE2] */
+typedef int16_t* DCTBLOCK;
 
 #define CONST_BITS 13
 
