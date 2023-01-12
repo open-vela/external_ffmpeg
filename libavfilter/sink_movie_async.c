@@ -244,6 +244,7 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
     int format, sample_rate, channels, w, h;
     MovieSinkPriv *priv = ctx->priv;
     int vbr = -1, level = -1;
+    AVRational frame_rate;
     int64_t bitrate = -1;
     const AVCodec *enc;
     AVStream *stream;
@@ -270,11 +271,13 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         priv->streams[pad_id].enc_ctx->sample_fmt  = format;
         priv->streams[pad_id].enc_ctx->sample_rate = sample_rate;
         av_channel_layout_default(&priv->streams[pad_id].enc_ctx->ch_layout, channels);
+        priv->streams[pad_id].enc_ctx->time_base   = (AVRational){ 1, sample_rate };
     } else {
-        sscanf(params, "v:%d,%d,%d", &format, &w, &h);
-        priv->streams[pad_id].enc_ctx->pix_fmt = format;
-        priv->streams[pad_id].enc_ctx->width   = w;
-        priv->streams[pad_id].enc_ctx->height  = h;
+        sscanf(params, "v:%d,%d,%d,%d/%d", &format, &w, &h, &frame_rate.num, &frame_rate.den);
+        priv->streams[pad_id].enc_ctx->pix_fmt   = format;
+        priv->streams[pad_id].enc_ctx->width     = w;
+        priv->streams[pad_id].enc_ctx->height    = h;
+        priv->streams[pad_id].enc_ctx->time_base = av_inv_q(frame_rate);
     }
 
     if (bitrate != -1)
@@ -300,7 +303,7 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
     if (ret < 0)
         goto out;
 
-    stream->time_base = (AVRational){ 1, priv->streams[pad_id].enc_ctx->sample_rate };
+    stream->time_base = priv->streams[pad_id].enc_ctx->time_base;
     return 0;
 
 out:
@@ -963,7 +966,8 @@ static int amoviesink_process_start(AVFilterContext *ctx)
             ret = snprintf(ptr, len, "a:%d,%d,%d,%lld,%d,%d",
                            link->format, link->sample_rate, link->ch_layout.nb_channels, bitrate, vbr, level);
         else
-            ret = snprintf(ptr, len, ";v:%d,%d,%d", link->format, link->w, link->h);
+            ret = snprintf(ptr, len, ";v:%d,%d,%d,%d/%d",
+                           link->format, link->w, link->h, link->frame_rate.num, link->frame_rate.den);
 
         ptr += ret;
         len -= ret;
