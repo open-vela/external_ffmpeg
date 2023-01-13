@@ -123,12 +123,19 @@ static int aac_encode_close(AVCodecContext *avctx)
 static av_cold int aac_encode_init(AVCodecContext *avctx)
 {
     AACContext *s = avctx->priv_data;
+    LIB_INFO infos[FDK_MODULE_LAST];
     int ret = AVERROR(EINVAL);
     AACENC_InfoStruct info = { 0 };
     CHANNEL_MODE mode;
     AACENC_ERROR err;
+    UINT caps;
     int aot = FF_PROFILE_AAC_LOW + 1;
     int sce = 0, cpe = 0;
+
+    FDKinitLibInfo(infos);
+    aacEncGetLibInfo(infos);
+    caps = FDKlibInfo_getCapabilities(infos, FDK_AACENC);
+    av_log(avctx, AV_LOG_WARNING, "Capability %d index %d\n", caps, FDKlibInfo_lookup(infos, FDK_AACENC));
 
     if ((err = aacEncOpen(&s->handle, 0, avctx->ch_layout.nb_channels)) != AACENC_OK) {
         av_log(avctx, AV_LOG_ERROR, "Unable to open the encoder: %s\n",
