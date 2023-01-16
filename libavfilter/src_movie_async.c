@@ -1146,13 +1146,11 @@ static int movie_async_activate(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
     int status, i, ret = AVERROR(EAGAIN);
+    bool active = false;
     AVFilterLink *link;
     AVFrame *frame;
-    bool active;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        active = false;
-
         if (movie_async_dat_empty(ctx, i))
             continue;
 
