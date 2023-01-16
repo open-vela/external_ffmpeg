@@ -81,6 +81,59 @@ static int ff_nuttx_samplerate_convert(int samplerate, int *sample_rates, int nu
     return i;
 }
 
+static int ff_nuttx_av2fmt(int codec_id)
+{
+    switch (codec_id)
+    {
+        case AV_CODEC_ID_MP3:
+            return AUDIO_FMT_MP3;
+        case AV_CODEC_ID_AC3:
+            return AUDIO_FMT_AC3;
+        case AV_CODEC_ID_WMAV2:
+            return AUDIO_FMT_WMA;
+        case AV_CODEC_ID_DTS:
+            return AUDIO_FMT_DTS;
+        case AV_CODEC_ID_VORBIS:
+            return AUDIO_FMT_OGG_VORBIS;
+        case AV_CODEC_ID_FLAC:
+            return AUDIO_FMT_FLAC;
+    }
+
+    return AUDIO_FMT_PCM;
+}
+
+static int ff_nuttx_fmt2av(int format, int *codecs, int num)
+{
+    int i;
+
+    for (i = 0; i < num && format; i++) {
+        if (format & (1 << (AUDIO_FMT_PCM - 1))) {
+            format &= ~(1 << (AUDIO_FMT_PCM - 1));
+            codecs[i] = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
+        } if (format & (1 << (AUDIO_FMT_MP3 - 1))) {
+            format &= ~(1 << (AUDIO_FMT_MP3 - 1));
+            codecs[i] = AV_CODEC_ID_MP3;
+        } else if (format & (1 << (AUDIO_FMT_AC3 - 1))) {
+            format &= ~(1 << (AUDIO_FMT_AC3 - 1));
+            codecs[i] = AV_CODEC_ID_AC3;
+        } else if (format & (1 << (AUDIO_FMT_WMA - 1))) {
+            format &= ~(1 << (AUDIO_FMT_WMA - 1));
+            codecs[i] = AV_CODEC_ID_WMAV2;
+        } else if (format & (1 << (AUDIO_FMT_DTS - 1))) {
+            format &= ~(1 << (AUDIO_FMT_DTS - 1));
+            codecs[i] = AV_CODEC_ID_DTS;
+        } else if (format & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
+            format &= ~(1 << (AUDIO_FMT_OGG_VORBIS - 1));
+            codecs[i] = AV_CODEC_ID_VORBIS;
+        } else if (format & (1 << (AUDIO_FMT_FLAC - 1))) {
+            format &= ~(1 << (AUDIO_FMT_FLAC - 1));
+            codecs[i] = AV_CODEC_ID_FLAC;
+        }
+    }
+
+    return i;
+}
+
 static int ff_nuttx_flush_buffer(NuttxPriv *priv)
 {
     struct audio_buf_desc_s desc;
@@ -131,13 +184,17 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
 {
     struct AVDeviceCapabilitiesQuery *devcap = obj;
     struct AVFormatContext *s1 = devcap->device_context;
+    struct audio_caps_s formats, others;
     struct AVOptionRanges *ranges;
-    struct audio_caps_s caps;
+    int ac_type;
     int ret, i;
 
-    ret = ff_nuttx_get_capabilities(s1->url,
-                                    playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT,
-                                    &caps);
+    ret = ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, &formats);
+    if (ret < 0)
+        return ret;
+
+    ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
+    ret = ff_nuttx_get_capabilities(s1->url, ac_type, &others);
     if (ret < 0)
         return ret;
 
@@ -172,11 +229,11 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
 
         ranges->range[0]->is_range  = 1;
         ranges->range[0]->value_min = 1;
-        ranges->range[0]->value_max = caps.ac_channels;
+        ranges->range[0]->value_max = others.ac_channels;
     } else if (!strcmp(key, "sample_rates")) {
         int sample_rates[16];
 
-        ret = ff_nuttx_samplerate_convert(caps.ac_controls.b[0], sample_rates, 16);
+        ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], sample_rates, 16);
         if (ret < 0)
             goto err;
 
@@ -194,6 +251,28 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
             ranges->range[i]->is_range  = 0;
             ranges->range[i]->value_min = sample_rates[i];
             ranges->range[i]->value_max = sample_rates[i];
+        }
+    } else if (!strcmp(key, "codecs")) {
+        int codecs[16];
+
+        ret = ff_nuttx_fmt2av(formats.ac_format.hw, codecs, 16);
+        if (ret <= 0)
+            goto err;
+
+        ranges->nb_components = 1;
+        ranges->nb_ranges = ret;
+        ranges->range = av_mallocz(sizeof(AVOptionRange *) * ret);
+        if (!ranges->range)
+            goto err;
+
+        for (i = 0; i < ret; i++) {
+            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+            if (!ranges->range[i])
+                goto err;
+
+            ranges->range[i]->is_range  = 0;
+            ranges->range[i]->value_min = codecs[i];
+            ranges->range[i]->value_max = codecs[i];
         }
     } else {
         goto err;
@@ -345,6 +424,9 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
         return AVERROR(EAGAIN);
 
     bps = av_get_bits_per_sample(priv->codec);
+    if (bps == 0)
+        bps = av_get_bytes_per_sample(priv->format) * 8;
+
     priv->frame_size = bps * priv->ch_layout.nb_channels / 8;
     caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
     caps_desc.caps.ac_type           = playback ?
@@ -354,6 +436,8 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
     caps_desc.caps.ac_controls.hw[0] = priv->sample_rate;
     caps_desc.caps.ac_controls.b[3]  = priv->sample_rate >> 16;
     caps_desc.caps.ac_controls.b[2]  = bps;
+    caps_desc.caps.ac_subtype        = ff_nuttx_av2fmt(priv->codec);
+
     ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
     if (ret < 0)
         return AVERROR(errno);
