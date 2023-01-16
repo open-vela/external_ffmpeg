@@ -50,7 +50,8 @@ typedef struct NuttxPriv {
     int             period_bytes; ///< preferred size for reads and writes, in bytes
     int             period_time;  ///< preferred time for reads and writes, in ms
 
-    int             codec;
+    int             codec;        ///< codec id
+    int             format;       ///< sample format
     int             frame_size;   ///< bytes per sample * channels
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;

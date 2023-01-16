@@ -73,6 +73,7 @@ static int nuttx_write_header(AVFormatContext *s1)
 
     priv->codec       = st->codecpar->codec_id;
     priv->sample_rate = st->codecpar->sample_rate;
+    priv->format      = st->codecpar->format;
     av_channel_layout_copy(&priv->ch_layout, &st->codecpar->ch_layout);
 
     ret = ff_nuttx_open(s1->priv_data, true);
