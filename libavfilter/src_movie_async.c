@@ -88,6 +88,7 @@ typedef struct MovieAsyncContext {
 
     int                       state;
     bool                      first;
+    int                       offload;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
     unsigned                  duration_ms;    /** < duration of whole stream */
@@ -109,6 +110,7 @@ static const AVOption movie_async_options[]= {
     { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT,    {.i64 = 244 },   0, INT16_MAX, FLAGS },
     { "fadein",          "duration of fadein",          OFFSET(fadein),         AV_OPT_TYPE_INT,    {.i64 = 0},      0, INT32_MAX, FLAGS },
     { "protocol_map",    "mapping of protocol",         OFFSET(protocol_map),   AV_OPT_TYPE_STRING, {.str = NULL},   0, 0,         FLAGS },
+    { "offload",         "offload playback",            OFFSET(offload),        AV_OPT_TYPE_BOOL,   { .i64 = 0 },    0, 1,         FLAGS },
     { NULL },
 };
 
@@ -202,6 +204,7 @@ static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
 static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters *param)
 {
     MovieAsyncContext *movie = ctx->priv;
+    AVDictionaryEntry *tag;
     AVFrame *src = NULL;
     bool audio = true;
 
@@ -221,6 +224,8 @@ static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParam
     if (audio) {
         param->sample_rate = src->sample_rate;
         av_channel_layout_copy(&param->ch_layout, &src->ch_layout);
+        if ((tag = av_dict_get(src->metadata, "codec", NULL, 0)))
+            param->codec_id = strtoul(tag->value, NULL, 0);
     } else {
         param->width  = src->width;
         param->height = src->height;
@@ -684,6 +689,54 @@ out:
     movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_STOPPED, ret, NULL);
 }
 
+static void movie_async_free_frame(void *unused, uint8_t *data)
+{
+    av_packet_free((AVPacket **)&data);
+    av_free(data);
+}
+
+static int movie_async_wrap_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_id)
+{
+   MovieAsyncContext *movie = ctx->priv;
+   int ret = AVERROR(ENOMEM);
+   AVFrame *frame = NULL;
+   AVPacket *pkt1 = NULL;
+   size_t bufsize;
+
+   frame = av_frame_alloc();
+   if (!frame)
+       goto failed;
+
+   pkt1 = av_packet_clone(pkt);
+   if (!pkt1)
+       goto failed;
+
+   frame->format = movie->streams[pad_id].codec_ctx->sample_fmt;
+   frame->sample_rate = movie->streams[pad_id].codec_ctx->sample_rate;
+   av_channel_layout_copy(&frame->ch_layout, &movie->streams[pad_id].codec_ctx->ch_layout);
+
+   frame->buf[0]      = av_buffer_create((void *)pkt1, bufsize, movie_async_free_frame, NULL, 0);
+   frame->data[0]     = frame->buf[0]->data;
+   frame->linesize[0] = frame->buf[0]->size;
+
+   av_dict_set_int(&frame->metadata, "codec", movie->streams[pad_id].codec_ctx->codec_id, 0);
+
+   ret = movie_async_send_dat(ctx, pad_id, frame);
+   if (ret < 0)
+       goto failed;
+
+   return 0;
+
+failed:
+   if (frame)
+       av_frame_free(&frame);
+
+   if (pkt1)
+       av_packet_free(&pkt1);
+
+   return ret;
+}
+
 static int movie_async_read_frame(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -698,9 +751,11 @@ static int movie_async_read_frame(AVFilterContext *ctx)
             if (movie_async_output_inactive(movie, i))
                 continue;
 
-            ret = avcodec_send_packet(movie->streams[i].codec_ctx, NULL);
-            if (ret < 0 && ret != AVERROR_EOF)
-                return ret;
+            if (!movie->offload) {
+                ret = avcodec_send_packet(movie->streams[i].codec_ctx, NULL);
+                if (ret < 0 && ret != AVERROR_EOF)
+                    return ret;
+            }
         }
     }
 
@@ -709,10 +764,14 @@ static int movie_async_read_frame(AVFilterContext *ctx)
 
     /* send the packet to its decoder, if any */
     for (i = 0; i < ctx->nb_outputs; i++) {
-
         if (!movie_async_output_inactive(movie, i) &&
             pkt.stream_index == movie->streams[i].index) {
-            ret = avcodec_send_packet(movie->streams[i].codec_ctx, &pkt);
+
+            if (!movie->offload)
+                ret = avcodec_send_packet(movie->streams[i].codec_ctx, &pkt);
+            else
+                ret = movie_async_wrap_frame(ctx, &pkt, i);
+
             break;
         }
     }
@@ -754,6 +813,11 @@ static int movie_async_dec_frames(AVFilterContext *ctx)
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (movie_async_output_inactive(movie, i))
             continue;
+
+        if (movie->offload) {
+            ret = AVERROR(EAGAIN);
+            continue;
+        }
 
         /* read frame from decoder, add frame queue */
         ret = movie_async_dec_frame(ctx, i, &frame);
@@ -1059,8 +1123,9 @@ error:
 static int movie_async_query_formats(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int list[] = { 0, -1 };
     AVChannelLayout list64[] = { { 0 }, { 0 } };
+    AVFilterFormats *formats;
+    int list[] = { 0, -1 };
     AVFilterLink *outlink;
     AVCodecParameters p;
     int flags = false;
@@ -1090,16 +1155,25 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 
 
             default:
-                if (outlink->type == AVMEDIA_TYPE_AUDIO)
-                    list[0] = av_get_pcm_codec(p.format, 0);
-                else
+                if (outlink->type == AVMEDIA_TYPE_AUDIO) {
+                    if (movie->offload)
+                        list[0] = p.codec_id;
+                    else
+                        list[0] = av_get_pcm_codec(p.format, 0);
+                } else {
                     list[0] = AV_CODEC_ID_RAWVIDEO;
+                }
 
+                /* codec id */
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.codecs)) < 0)
                     return ret;
 
                 list[0] = p.format;
-                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.formats)) < 0)
+
+                formats = movie->offload ?
+                          ff_all_formats(outlink->type) : ff_make_format_list(list);
+
+                if ((ret = ff_formats_ref(formats, &outlink->incfg.formats)) < 0)
                     return ret;
 
                 break;
@@ -1198,6 +1272,9 @@ static int movie_async_activate(AVFilterContext *ctx)
             movie->streams[i].reconfig = 1;
             av_frame_free(&frame);
         } else {
+            if (link->type == AVMEDIA_TYPE_AUDIO && movie->offload)
+                frame->format = link->format;
+
             ret = ff_filter_frame(link, frame);
         }
     }
