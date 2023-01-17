@@ -611,9 +611,10 @@ static void amoviesink_set_eof(AVFilterContext *ctx)
 
 static int amoviesink_activate(AVFilterContext *ctx)
 {
+    MovieSinkPriv *priv = ctx->priv;
+    int frame_size, i, ret = 0;
     AVFilterLink *link;
     AVFrame *frame;
-    int i, ret = 0;
     int64_t pts;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
@@ -625,7 +626,11 @@ static int amoviesink_activate(AVFilterContext *ctx)
         if (ret < 0)
             continue;
 
-        ret = ff_inlink_consume_frame(link, &frame);
+        frame_size = priv->streams[i].enc_ctx->frame_size;
+        if (frame_size)
+            ret = ff_inlink_consume_samples(link, frame_size, frame_size, &frame);
+        else
+            ret = ff_inlink_consume_frame(link, &frame);
         if (ret > 0) {
             ret = amoviesink_send_dat(ctx, i, frame);
             if (ret < 0)
