@@ -120,6 +120,9 @@ AVFilterChannelLayouts *ff_all_channel_layouts(void);
 av_warn_unused_result
 AVFilterFormats *ff_all_samplerates(void);
 
+av_warn_unused_result
+AVFilterFormats *ff_all_raw_codecs(enum AVMediaType type);
+
 /**
  * Construct an AVFilterChannelLayouts coding for any channel layout, with
  * known or unknown disposition.
@@ -167,11 +170,26 @@ int ff_set_common_all_samplerates(AVFilterContext *ctx);
 
 /**
  * A helper for query_formats() which sets all links to the same list of
+ * codecs. If there are no links hooked to this filter, the list of formats is
+ * freed.
+ */
+av_warn_unused_result
+int ff_set_common_codecs(AVFilterContext *ctx,
+                         AVFilterFormats *codecs);
+
+/**
+ * A helper for query_formats() which sets all links to the same list of
  * formats. If there are no links hooked to this filter, the list of formats is
  * freed.
  */
 av_warn_unused_result
 int ff_set_common_formats(AVFilterContext *ctx, AVFilterFormats *formats);
+
+/**
+ * Equivalent to ff_set_common_codecs(ctx, ff_make_format_list(fmts))
+ */
+av_warn_unused_result
+int ff_set_common_codecs_from_list(AVFilterContext *ctx, const int *fmts);
 
 /**
  * Equivalent to ff_set_common_formats(ctx, ff_make_format_list(fmts))
