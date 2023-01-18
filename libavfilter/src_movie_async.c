@@ -1088,7 +1088,16 @@ static int movie_async_query_formats(AVFilterContext *ctx)
                                                   &outlink->incfg.channel_layouts)) < 0)
                     return ret;
 
+
             default:
+                if (outlink->type == AVMEDIA_TYPE_AUDIO)
+                    list[0] = av_get_pcm_codec(p.format, 0);
+                else
+                    list[0] = AV_CODEC_ID_RAWVIDEO;
+
+                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.codecs)) < 0)
+                    return ret;
+
                 list[0] = p.format;
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.formats)) < 0)
                     return ret;

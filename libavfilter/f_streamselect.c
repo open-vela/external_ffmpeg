@@ -311,11 +311,18 @@ static av_cold void uninit(AVFilterContext *ctx)
 }
 
 static int query_formats_ref(AVFilterLink *link, bool out,
+                             AVFilterFormats *codecs,
                              AVFilterFormats *formats,
                              AVFilterFormats *rates,
                              AVFilterChannelLayouts *layouts)
 {
     int ret;
+
+    if (out ? !link->outcfg.codecs : !link->incfg.codecs) {
+        ret = ff_formats_ref(codecs, out ? &link->outcfg.codecs: &link->incfg.codecs);
+        if (ret < 0)
+            return ret;
+    }
 
     if (out ? !link->outcfg.formats : !link->incfg.formats) {
         ret = ff_formats_ref(formats, out ? &link->outcfg.formats : &link->incfg.formats);
@@ -343,10 +350,12 @@ static int query_formats_ref(AVFilterLink *link, bool out,
 static void query_formats_unref(AVFilterLink *link, bool out)
 {
     if (out) {
+        ff_formats_unref(&link->outcfg.codecs);
         ff_formats_unref(&link->outcfg.formats);
         ff_formats_unref(&link->outcfg.samplerates);
         ff_channel_layouts_unref(&link->outcfg.channel_layouts);
     } else {
+        ff_formats_unref(&link->incfg.codecs);
         ff_formats_unref(&link->incfg.formats);
         ff_formats_unref(&link->incfg.samplerates);
         ff_channel_layouts_unref(&link->incfg.channel_layouts);
@@ -356,8 +365,9 @@ static void query_formats_unref(AVFilterLink *link, bool out)
 static int query_formats(AVFilterContext *ctx)
 {
     StreamSelectContext *s = ctx->priv;
+    AVFilterFormats *codecs  = NULL;
     AVFilterFormats *formats = NULL;
-    AVFilterFormats *rates = NULL;
+    AVFilterFormats *rates   = NULL;
     AVFilterChannelLayouts *layouts = NULL;
     int ret = 0;
     int i, j;
@@ -370,6 +380,7 @@ static int query_formats(AVFilterContext *ctx)
                 query_formats_unref(ctx->outputs[j], false);
             else if (s->map[j] == i) {
                 if (ctx->outputs[j]->incfg.formats) {
+                    codecs  = ctx->outputs[j]->incfg.codecs;
                     formats = ctx->outputs[j]->incfg.formats;
                     rates   = ctx->outputs[j]->incfg.samplerates;
                     layouts = ctx->outputs[j]->incfg.channel_layouts;
@@ -385,10 +396,12 @@ static int query_formats(AVFilterContext *ctx)
 
         if (!formats) {
             if (ctx->inputs[i]->outcfg.formats) {
+                codecs  = ctx->inputs[i]->outcfg.codecs;
                 formats = ctx->inputs[i]->outcfg.formats;
                 rates   = ctx->inputs[i]->outcfg.samplerates;
                 layouts = ctx->inputs[i]->outcfg.channel_layouts;
             } else {
+                codecs  = ff_all_raw_codecs(ctx->inputs[0]->type);
                 formats = ff_all_formats(ctx->inputs[0]->type);
                 rates   = ff_all_samplerates();
                 layouts = ff_all_channel_counts();
@@ -397,13 +410,13 @@ static int query_formats(AVFilterContext *ctx)
 
         for (j = 0; j < s->nb_map; j++) {
             if (s->map[j] == i) {
-                ret = query_formats_ref(ctx->outputs[j], false, formats, rates, layouts);
+                ret = query_formats_ref(ctx->outputs[j], false, codecs, formats, rates, layouts);
                 if (ret < 0)
                     return ret;
             }
         }
 
-        ret = query_formats_ref(ctx->inputs[i], true, formats, rates, layouts);
+        ret = query_formats_ref(ctx->inputs[i], true, codecs, formats, rates, layouts);
         if (ret < 0)
             return ret;
     }
