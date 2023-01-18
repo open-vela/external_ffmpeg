@@ -267,6 +267,7 @@ static int adevsink_query_formats(AVFilterContext *ctx)
 {
     AVDeviceCapabilitiesQuery caps;
     AVFilterChannelLayouts *layouts = NULL;
+    AVFilterFormats *codecs  = NULL;
     AVFilterFormats *formats = NULL;
     ADevSinkPriv *priv = ctx->priv;
     AVOptionRanges *ranges = NULL;
@@ -316,6 +317,11 @@ static int adevsink_query_formats(AVFilterContext *ctx)
             av_opt_freep_ranges(&ranges);
         }
     }
+
+    codecs = ff_all_raw_codecs(ctx->inputs[0]->type);
+    ret = ff_set_common_codecs(ctx, codecs);
+    if (ret < 0)
+        goto out;
 
     ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
