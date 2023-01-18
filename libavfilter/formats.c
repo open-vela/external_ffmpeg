@@ -341,6 +341,11 @@ static int merge_channel_layouts(void *va, void *vb)
 
 static const AVFilterFormatsMerger mergers_video[] = {
     {
+        .offset     = offsetof(AVFilterFormatsConfig, codecs),
+        .merge      = merge_codecs,
+        .can_merge  = can_merge_codecs,
+    },
+    {
         .offset     = offsetof(AVFilterFormatsConfig, formats),
         .merge      = merge_pix_fmts,
         .can_merge  = can_merge_pix_fmts,
@@ -362,6 +367,11 @@ static const AVFilterFormatsMerger mergers_audio[] = {
         .offset     = offsetof(AVFilterFormatsConfig, formats),
         .merge      = merge_sample_fmts,
         .can_merge  = can_merge_sample_fmts,
+    },
+    {
+        .offset     = offsetof(AVFilterFormatsConfig, codecs),
+        .merge      = merge_codecs,
+        .can_merge  = can_merge_codecs,
     },
 };
 
@@ -848,6 +858,7 @@ int ff_set_common_formats_from_list(AVFilterContext *ctx, const int *fmts)
 int ff_default_query_formats(AVFilterContext *ctx)
 {
     const AVFilter *const f = ctx->filter;
+    AVFilterFormats *codecs;
     AVFilterFormats *formats;
     enum AVMediaType type;
     int ret;
@@ -855,18 +866,22 @@ int ff_default_query_formats(AVFilterContext *ctx)
     switch (f->formats_state) {
     case FF_FILTER_FORMATS_PIXFMT_LIST:
         type    = AVMEDIA_TYPE_VIDEO;
+        codecs  = ff_all_raw_codecs(type);
         formats = ff_make_format_list(f->formats.pixels_list);
         break;
     case FF_FILTER_FORMATS_SAMPLEFMTS_LIST:
         type    = AVMEDIA_TYPE_AUDIO;
+        codecs  = ff_all_raw_codecs(type);
         formats = ff_make_format_list(f->formats.samples_list);
         break;
     case FF_FILTER_FORMATS_SINGLE_PIXFMT:
         type    = AVMEDIA_TYPE_VIDEO;
+        codecs  = ff_all_raw_codecs(type);
         formats = ff_make_formats_list_singleton(f->formats.pix_fmt);
         break;
     case FF_FILTER_FORMATS_SINGLE_SAMPLEFMT:
         type    = AVMEDIA_TYPE_AUDIO;
+        codecs  = ff_all_raw_codecs(type);
         formats = ff_make_formats_list_singleton(f->formats.sample_fmt);
         break;
     default:
@@ -876,10 +891,14 @@ int ff_default_query_formats(AVFilterContext *ctx)
     case FF_FILTER_FORMATS_QUERY_FUNC:
         type    = ctx->nb_inputs  ? ctx->inputs [0]->type :
                   ctx->nb_outputs ? ctx->outputs[0]->type : AVMEDIA_TYPE_VIDEO;
+        codecs  = ff_all_raw_codecs(type);
         formats = ff_all_formats(type);
         break;
     }
 
+    ret = ff_set_common_codecs(ctx, codecs);
+    if (ret < 0)
+        return ret;
     ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
