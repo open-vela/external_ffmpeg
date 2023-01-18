@@ -535,6 +535,11 @@ struct AVFilterContext {
 typedef struct AVFilterFormatsConfig {
 
     /**
+     * List of supported codecs (codecid).
+     */
+    AVFilterFormats *codecs;
+
+    /**
      * List of supported formats (pixel or sample).
      */
     AVFilterFormats *formats;
@@ -586,6 +591,8 @@ struct AVFilterLink {
     uint64_t channel_layout;
 #endif
     int sample_rate;            ///< samples per second
+
+    int codec;                  ///< codec id
 
     int format;                 ///< agreed upon media format
 

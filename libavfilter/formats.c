@@ -24,6 +24,7 @@
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
 #include "libavutil/pixdesc.h"
+#include "libavcodec/avcodec.h"
 #include "avfilter.h"
 #include "internal.h"
 #include "formats.h"
@@ -91,6 +92,44 @@ do {                                                                       \
     MERGE_REF(a, b, fmts, type, return AVERROR(ENOMEM););                  \
 } while (0)
 
+static int merge_codecs_internal(AVFilterFormats *a,
+                                 AVFilterFormats *b, int check)
+{
+    av_assert2(check || (a->refcount && b->refcount));
+    if (a == b) return 1;
+
+    MERGE_FORMATS(a, b, formats, nb_formats, AVFilterFormats, check, 0);
+    return 1;
+}
+
+/**
+ * Check the codecs lists for compatibility for merging without actually
+ * merging.
+ *
+ * @return 1 if they are compatible, 0 if not.
+ */
+static int can_merge_codecs(const void *a, const void *b)
+{
+    return merge_codecs_internal((AVFilterFormats *)a, (AVFilterFormats *)b, 1);
+}
+
+/**
+ * Merge the codecs lists if they are compatible and update all the
+ * references of a and b to point to the combined list and free the old
+ * lists as needed. The combined list usually contains the intersection of
+ * the lists of a and b.
+ *
+ * Both a and b must have owners (i.e. refcount > 0) for these functions.
+ *
+ * @return 1 if merging succeeded, 0 if a and b are incompatible
+ *         and negative AVERROR code on failure.
+ *         a and b are unmodified if 0 is returned.
+ */
+static int merge_codecs(void *a, void *b)
+{
+    return merge_codecs_internal(a, b, 0);
+}
+
 static int merge_formats_internal(AVFilterFormats *a, AVFilterFormats *b,
                                   enum AVMediaType type, int check)
 {
@@ -128,28 +167,8 @@ static int merge_formats_internal(AVFilterFormats *a, AVFilterFormats *b,
     if (alpha2 > alpha1 || chroma2 > chroma1)
         return 0;
 
-/* TODO: debug log for fmt merge
-    if (a) {
-        for (int k = 0; k < a->nb_formats; k++) {
-            av_log(NULL, AV_LOG_INFO, "%s:a   %s\n", __func__, av_get_sample_fmt_name(a->formats[k]));
-        }
-    }
-    if (b) {
-        for (int k = 0; k < b->nb_formats; k++) {
-            av_log(NULL, AV_LOG_INFO, "%s: b  %s\n", __func__, av_get_sample_fmt_name(b->formats[k]));
-        }
-    }
-*/
-
     MERGE_FORMATS(a, b, formats, nb_formats, AVFilterFormats, check, 0);
 
-/* TODO: debug log for fmt merge
-    if (a) {
-        for (int k = 0; k < a->nb_formats; k++) {
-            av_log(NULL, AV_LOG_INFO, "%s:  c %s\n", __func__, av_get_sample_fmt_name(a->formats[k]));
-        }
-    }
-*/
     return 1;
 }
 
@@ -206,27 +225,7 @@ static int merge_samplerates_internal(AVFilterFormats *a,
     av_assert2(check || (a->refcount && b->refcount));
     if (a == b) return 1;
 
-/* TODO: debug log for sample rates merge
-    if (a) {
-        for (int k = 0; k < a->nb_formats; k++) {
-            av_log(NULL, AV_LOG_INFO, "%s:a   %d\n", __func__, a->formats[k]);
-        }
-    }
-    if (b) {
-        for (int k = 0; k < b->nb_formats; k++) {
-            av_log(NULL, AV_LOG_INFO, "%s: b  %d\n", __func__, b->formats[k]);
-        }
-    }
-*/
-
     MERGE_FORMATS(a, b, formats, nb_formats, AVFilterFormats, check, 1);
-/* TODO: debug log for sample rates merge
-    if (a) {
-        for (int k = 0; k < a->nb_formats; k++) {
-            av_log(NULL, AV_LOG_INFO, "%s:  c %d\n", __func__, a->formats[k]);
-        }
-    }
-*/
     return 1;
 }
 
@@ -605,6 +604,33 @@ AVFilterFormats *ff_all_samplerates(void)
     return ret;
 }
 
+AVFilterFormats *ff_all_raw_codecs(enum AVMediaType type)
+{
+    AVFilterFormats *ret = NULL;
+    static const enum AVSampleFormat codecs[] = {
+        AV_NE(AV_CODEC_ID_PCM_U8,    AV_CODEC_ID_PCM_U8),
+        AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),
+        AV_NE(AV_CODEC_ID_PCM_S24BE, AV_CODEC_ID_PCM_S24LE),
+        AV_NE(AV_CODEC_ID_PCM_U24BE, AV_CODEC_ID_PCM_U24LE),
+        AV_NE(AV_CODEC_ID_PCM_S32BE, AV_CODEC_ID_PCM_S32LE),
+        AV_NE(AV_CODEC_ID_PCM_F32BE, AV_CODEC_ID_PCM_F32LE),
+        AV_NE(AV_CODEC_ID_PCM_S64BE, AV_CODEC_ID_PCM_S64LE),
+        AV_NE(AV_CODEC_ID_PCM_F64BE, AV_CODEC_ID_PCM_F64LE),
+    };
+    int i;
+
+    if (type == AVMEDIA_TYPE_VIDEO) {
+        if (ff_add_format(&ret, AV_CODEC_ID_RAWVIDEO) < 0)
+            return NULL;
+    } else if (type == AVMEDIA_TYPE_AUDIO) {
+        for (i = 0; i < FF_ARRAY_ELEMS(codecs); i++)
+            if (ff_add_format(&ret, codecs[i]) < 0)
+                return NULL;
+    }
+
+    return ret;
+}
+
 AVFilterChannelLayouts *ff_all_channel_layouts(void)
 {
     AVFilterChannelLayouts *ret = av_mallocz(sizeof(*ret));
@@ -792,6 +818,12 @@ int ff_set_common_all_samplerates(AVFilterContext *ctx)
     return ff_set_common_samplerates(ctx, ff_all_samplerates());
 }
 
+int ff_set_common_codecs(AVFilterContext *ctx, AVFilterFormats *codecs)
+{
+    SET_COMMON_FORMATS(ctx, codecs, AVMEDIA_TYPE_UNKNOWN,
+                       ff_formats_ref, ff_formats_unref);
+}
+
 /**
  * A helper for query_formats() which sets all links to the same list of
  * formats. If there are no links hooked to this filter, the list of formats is
@@ -801,6 +833,11 @@ int ff_set_common_formats(AVFilterContext *ctx, AVFilterFormats *formats)
 {
     SET_COMMON_FORMATS(ctx, formats, AVMEDIA_TYPE_UNKNOWN,
                        ff_formats_ref, ff_formats_unref);
+}
+
+int ff_set_common_codecs_from_list(AVFilterContext *ctx, const int *fmts)
+{
+    return ff_set_common_codecs(ctx, ff_make_format_list(fmts));
 }
 
 int ff_set_common_formats_from_list(AVFilterContext *ctx, const int *fmts)
