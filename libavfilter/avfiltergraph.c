@@ -345,6 +345,7 @@ static int filter_check_formats(AVFilterContext *ctx)
 
 static int filter_ref_agreed_formats(AVFilterContext *ctx)
 {
+    AVFilterFormats *codecs = NULL;
     AVFilterFormats *formats = NULL;
     AVFilterFormats *rates = NULL;
     AVFilterChannelLayouts *layouts = NULL;
@@ -355,6 +356,7 @@ static int filter_ref_agreed_formats(AVFilterContext *ctx)
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (ctx->inputs[i]->outcfg.formats) {
+            codecs  = ctx->inputs[i]->outcfg.codecs;
             formats = ctx->inputs[i]->outcfg.formats;
             rates   = ctx->inputs[i]->outcfg.samplerates;
             layouts = ctx->inputs[i]->outcfg.channel_layouts;
@@ -365,6 +367,7 @@ static int filter_ref_agreed_formats(AVFilterContext *ctx)
     if (!formats) {
         for (i = 0; i < ctx->nb_outputs; i++) {
             if (ctx->outputs[i]->incfg.formats) {
+                codecs  = ctx->outputs[i]->incfg.codecs;
                 formats = ctx->outputs[i]->incfg.formats;
                 rates   = ctx->outputs[i]->incfg.samplerates;
                 layouts = ctx->outputs[i]->incfg.channel_layouts;
@@ -378,6 +381,10 @@ static int filter_ref_agreed_formats(AVFilterContext *ctx)
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (!ctx->inputs[i]->outcfg.formats) {
+            ret = ff_formats_ref(codecs, &ctx->inputs[i]->outcfg.codecs);
+            if (ret < 0)
+                return ret;
+
             ret = ff_formats_ref(formats, &ctx->inputs[i]->outcfg.formats);
             if (ret < 0)
                 return ret;
@@ -394,6 +401,10 @@ static int filter_ref_agreed_formats(AVFilterContext *ctx)
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (!ctx->outputs[i]->incfg.formats) {
+            ret = ff_formats_ref(codecs, &ctx->outputs[i]->incfg.codecs);
+            if (ret < 0)
+                return ret;
+
             ret = ff_formats_ref(formats, &ctx->outputs[i]->incfg.formats);
             if (ret < 0)
                 return ret;
@@ -414,6 +425,7 @@ static int filter_ref_agreed_formats(AVFilterContext *ctx)
 static int filter_query_formats(AVFilterContext *ctx)
 {
     int ret;
+    AVFilterFormats *codecs;
     AVFilterFormats *formats;
     AVFilterChannelLayouts *chlayouts;
     enum AVMediaType type = ctx->inputs  && ctx->inputs [0] ? ctx->inputs [0]->type :
@@ -437,6 +449,9 @@ static int filter_query_formats(AVFilterContext *ctx)
     if (ctx->filter->sanitize_formats)
         return 0;
 
+    codecs = ff_all_raw_codecs(type);
+    if ((ret = ff_set_common_codecs(ctx, codecs)) < 0)
+        return ret;
     formats = ff_all_formats(type);
     if ((ret = ff_set_common_formats(ctx, formats)) < 0)
         return ret;
@@ -582,7 +597,7 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
             unsigned neg_step;
             int convert_needed = 0; /* bitmask for audio resample */
 
-            if (!link || !link->incfg.formats)
+            if (!link || !link->incfg.codecs || !link->incfg.formats)
                 continue;
 
             neg = ff_filter_get_negotiation(link);
@@ -654,6 +669,10 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
 
                 inlink  = convert->inputs[0];
                 outlink = convert->outputs[0];
+                av_assert0( inlink-> incfg.codecs->refcount > 0);
+                av_assert0( inlink->outcfg.codecs->refcount > 0);
+                av_assert0(outlink-> incfg.codecs->refcount > 0);
+                av_assert0(outlink->outcfg.codecs->refcount > 0);
                 av_assert0( inlink-> incfg.formats->refcount > 0);
                 av_assert0( inlink->outcfg.formats->refcount > 0);
                 av_assert0(outlink-> incfg.formats->refcount > 0);
@@ -755,8 +774,11 @@ static enum AVSampleFormat find_best_sample_fmt_of_2(enum AVSampleFormat dst_fmt
 
 static int pick_format(AVFilterLink *link, AVFilterLink *ref)
 {
-    if (!link || !link->incfg.formats)
+    if (!link || !link->incfg.codecs || !link->incfg.formats)
         return 0;
+
+    link->incfg.codecs->nb_formats = 1;
+    link->codec = link->incfg.codecs->formats[0];
 
     if (link->type == AVMEDIA_TYPE_VIDEO) {
         if(ref && ref->type == AVMEDIA_TYPE_VIDEO){
@@ -870,6 +892,8 @@ static int reduce_formats_on_filter(AVFilterContext *filter)
 {
     int i, j, k, ret = 0;
 
+    REDUCE_FORMATS(int,      AVFilterFormats,        codecs,          formats,
+                   nb_formats, ff_add_format);
     REDUCE_FORMATS(int,      AVFilterFormats,        formats,         formats,
                    nb_formats, ff_add_format);
     REDUCE_FORMATS(int,      AVFilterFormats,        samplerates,     formats,

@@ -339,6 +339,9 @@ int avfilter_insert_filter(AVFilterLink *link, AVFilterContext *filt,
 
     /* if any information on supported media formats already exists on the
      * link, we need to preserve that */
+    if (link->outcfg.codecs)
+        ff_formats_changeref(&link->outcfg.codecs,
+                             &filt->outputs[filt_dstpad_idx]->outcfg.codecs);
     if (link->outcfg.formats)
         ff_formats_changeref(&link->outcfg.formats,
                              &filt->outputs[filt_dstpad_idx]->outcfg.formats);
