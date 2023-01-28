@@ -94,7 +94,7 @@ static int devsink_start(AVFilterContext *ctx)
     priv->enc_ctx->pix_fmt    = inlink->format;
     priv->enc_ctx->width      = inlink->w;
     priv->enc_ctx->height     = inlink->h;
-    priv->enc_ctx->time_base  = inlink->frame_rate;
+    priv->enc_ctx->time_base  = av_inv_q(inlink->frame_rate);
     av_dict_set_int(&fmt_opt, "w", inlink->w, 0);
     av_dict_set_int(&fmt_opt, "h", inlink->h, 0);
     /* channel_layout  device->avctx->codec */
