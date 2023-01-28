@@ -44,8 +44,9 @@ typedef struct ADevSinkPriv {
     int             sample_fmt;
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
+    bool            started;
 
-    AVPacket        last_pkt;
+    AVPacket        *last_pkt;
 } ADevSinkPriv;
 
 static int adevsink_control_message(struct AVFormatContext *s, int type,
@@ -63,21 +64,38 @@ static int adevsink_control_message(struct AVFormatContext *s, int type,
     return 0;
 }
 
-static int adevsink_start(AVFilterContext *ctx)
+static bool adevsink_is_pcm(AVFilterContext *ctx)
+{
+    AVFilterLink *link = ctx->inputs[0];
+
+    return link->codec >= AV_CODEC_ID_PCM_S16LE &&
+           link->codec < AV_CODEC_ID_PCM_S24DAUD;
+}
+
+static int adevsink_open_encoder(AVFilterContext *ctx)
 {
     AVFilterLink *inlink = ctx->inputs[0];
     ADevSinkPriv *priv = ctx->priv;
     AVStream *st = priv->fmt_ctx->streams[0];
     AVDictionary *fmt_opt = NULL;
-    const AVCodec *enc;
     enum AVCodecID codec_id;
+    const AVCodec *enc;
     int ret;
 
-    if (priv->enc_ctx)
+    if (!adevsink_is_pcm(ctx)) {
+        st->codecpar->codec_type  = inlink->type;
+        st->codecpar->format      = inlink->format;
+        st->codecpar->sample_rate = inlink->sample_rate;
+        st->codecpar->codec_id    = inlink->codec;
+        av_channel_layout_copy(&st->codecpar->ch_layout, &inlink->ch_layout);
+        st->time_base = (AVRational){ 1, inlink->sample_rate };
+
         return 0;
+    }
 
     codec_id = priv->fmt_ctx->oformat->audio_codec != AV_CODEC_ID_NONE ?
                priv->fmt_ctx->oformat->audio_codec : priv->fmt_ctx->audio_codec_id;
+
     enc = avcodec_find_encoder(codec_id);
     if (!enc)
         return AVERROR(EINVAL);
@@ -90,12 +108,13 @@ static int adevsink_start(AVFilterContext *ctx)
     priv->enc_ctx->sample_fmt  = inlink->format;
     priv->enc_ctx->sample_rate = inlink->sample_rate;
     av_channel_layout_copy(&priv->enc_ctx->ch_layout, &inlink->ch_layout);
+
     av_dict_set_int(&fmt_opt, "ar", inlink->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "ac", inlink->ch_layout.nb_channels, 0);
-    /* channel_layout  device->avctx->codec */
+    /* channel_layout device->avctx->codec */
     avdevice_app_to_dev_control_message(priv->fmt_ctx,
-            AV_APP_TO_DEV_GET_FORMAT_REQUEST,
-            &fmt_opt, sizeof(AVDictionary *));
+                                        AV_APP_TO_DEV_GET_FORMAT_REQUEST,
+                                        &fmt_opt, sizeof(AVDictionary *));
 
     ret = avcodec_open2(priv->enc_ctx, enc, &fmt_opt);
     av_dict_free(&fmt_opt);
@@ -107,12 +126,45 @@ static int adevsink_start(AVFilterContext *ctx)
     st->time_base = (AVRational){ 1, inlink->sample_rate };
     avcodec_parameters_from_context(st->codecpar, priv->enc_ctx);
 
-    ret = avformat_write_header(priv->fmt_ctx, NULL);
+    return 0;
+}
+
+static void adevsink_close_encoder(AVFilterContext *ctx)
+{
+    ADevSinkPriv *priv = ctx->priv;
+
+    if (!priv->enc_ctx)
+        return;
+
+    avcodec_free_context(&priv->enc_ctx);
+}
+
+static int adevsink_start(AVFilterContext *ctx)
+{
+    ADevSinkPriv *priv = ctx->priv;
+    int ret;
+
+    if (priv->started)
+        return 0;
+
+    priv->last_pkt = av_packet_alloc();
+    if (!priv->last_pkt)
+        return -ENOMEM;
+
+    ret = adevsink_open_encoder(ctx);
     if (ret < 0) {
-        avcodec_free_context(&priv->enc_ctx);
+        av_packet_free(&priv->last_pkt);
         return ret;
     }
 
+    ret = avformat_write_header(priv->fmt_ctx, NULL);
+    if (ret < 0) {
+        avcodec_free_context(&priv->enc_ctx);
+        av_packet_free(&priv->last_pkt);
+        return ret;
+    }
+
+    priv->started = true;
     return 0;
 }
 
@@ -120,14 +172,16 @@ static void adevsink_stop(AVFilterContext *ctx)
 {
     ADevSinkPriv *priv = ctx->priv;
 
-    if (!priv->enc_ctx)
+    if (!priv->started)
         return;
 
-    if (priv->last_pkt.data)
-        av_packet_unref(&priv->last_pkt);
+    if (priv->last_pkt)
+        av_packet_free(&priv->last_pkt);
 
     avformat_write_trailer(priv->fmt_ctx);
-    avcodec_free_context(&priv->enc_ctx);
+    adevsink_close_encoder(ctx);
+
+    priv->started = false;
 }
 
 static int adevsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
@@ -172,32 +226,37 @@ static void adevsink_uninit(AVFilterContext *ctx)
     priv->fmt_ctx = NULL;
 }
 
-static int adevsink_output_packet(AVFilterContext *ctx)
+static int adevsink_output_packet(AVFilterContext *ctx, int status)
 {
     ADevSinkPriv *priv = ctx->priv;
-    AVPacket *pkt = &priv->last_pkt;
+    AVPacket *pkt = priv->last_pkt;
+    int ret = 0;
 
-    int ret;
-
-    if (!priv->enc_ctx)
+    if (!priv->started)
         return 0;
 
     while (1) {
-        if (pkt->data) {
+        if (pkt && pkt->data) {
             ret = av_write_frame(priv->fmt_ctx, pkt);
-            if (ret < 0)
+            if (ret == 0)
+                av_packet_unref(pkt);
+            else
                 break;
         }
 
-        ret = avcodec_receive_packet(priv->enc_ctx, pkt);
-        if (ret < 0) {
-            if (ret == AVERROR(EAGAIN))
-                ret = 0;
+        if (priv->enc_ctx) {
+            ret = avcodec_receive_packet(priv->enc_ctx, pkt);
+            if (ret < 0) {
+                if (ret == AVERROR(EAGAIN))
+                    ret = 0;
+                break;
+            }
+        } else {
             break;
         }
     }
 
-    if (ret == AVERROR_EOF) {
+    if (ret == AVERROR_EOF || status) {
         ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
         adevsink_stop(ctx);
     }
@@ -208,15 +267,24 @@ static int adevsink_output_packet(AVFilterContext *ctx)
 static int adevsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     ADevSinkPriv *priv = ctx->priv;
+    AVPacket *pkt = NULL;
+    int status = 0;
     int ret;
 
     if (priv->enc_ctx) {
         ret = avcodec_send_frame(priv->enc_ctx, frame);
         if (ret < 0)
             return ret;
+    } else {
+        pkt = frame ? (AVPacket *)frame->data[0] : NULL;
+        ret = av_write_frame(priv->fmt_ctx, pkt);
+        if (ret < 0)
+            priv->last_pkt = av_packet_clone(pkt);
+
+        status = !frame ? AVERROR_EOF : 0;
     }
 
-    return adevsink_output_packet(ctx);
+    return adevsink_output_packet(ctx, status);
 }
 
 static int adevsink_activate(AVFilterContext *ctx)
@@ -227,7 +295,7 @@ static int adevsink_activate(AVFilterContext *ctx)
     int64_t pts;
     int ret;
 
-    ret = adevsink_output_packet(ctx);
+    ret = adevsink_output_packet(ctx, 0);
     if (ret < 0)
         return ret;
 
@@ -239,7 +307,7 @@ static int adevsink_activate(AVFilterContext *ctx)
             return ret;
         }
 
-        if (priv->enc_ctx->frame_size)
+        if (priv->enc_ctx && priv->enc_ctx->frame_size)
             ret = ff_inlink_consume_samples(inlink, priv->enc_ctx->frame_size, priv->enc_ctx->frame_size, &frame);
         else
             ret = ff_inlink_consume_frame(inlink, &frame);
@@ -267,7 +335,7 @@ static int adevsink_query_formats(AVFilterContext *ctx)
 {
     AVDeviceCapabilitiesQuery caps;
     AVFilterChannelLayouts *layouts = NULL;
-    AVFilterFormats *codecs  = NULL;
+    AVFilterLink *link = ctx->inputs[0];
     AVFilterFormats *formats = NULL;
     ADevSinkPriv *priv = ctx->priv;
     AVOptionRanges *ranges = NULL;
@@ -318,17 +386,11 @@ static int adevsink_query_formats(AVFilterContext *ctx)
         }
     }
 
-    codecs = ff_all_raw_codecs(ctx->inputs[0]->type);
-    ret = ff_set_common_codecs(ctx, codecs);
-    if (ret < 0)
-        goto out;
-
     ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         goto out;
 
     formats = NULL;
-
     if (priv->sample_rate) {
         ret = ff_add_format(&formats, priv->sample_rate);
         if (ret < 0)
@@ -380,6 +442,26 @@ static int adevsink_query_formats(AVFilterContext *ctx)
     }
 
     ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        goto out;
+
+    formats = NULL;
+    ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
+    if (ret >= 0) {
+        int n;
+
+        for (i = 0; i < ranges->nb_ranges; i++) {
+            ret = ff_add_format(&formats, ranges->range[i]->value_min);
+            if (ret < 0)
+                goto out;
+        }
+
+        av_opt_freep_ranges(&ranges);
+    } else {
+        formats = ff_all_raw_codecs(ctx->inputs[0]->type);
+    }
+
+    ret = ff_set_common_codecs(ctx, formats);
     if (ret < 0)
         goto out;
 
