@@ -360,6 +360,8 @@ static int amoviesink_encode_frame(AVFilterContext *ctx, int pad_id, AVFrame *fr
         if (ret < 0)
             break;
 
+        pkt->stream_index = pad_id;
+
         /* convert pts to time base of AVStream */
         av_packet_rescale_ts(pkt, priv->streams[pad_id].enc_ctx->time_base,
                                   priv->format_ctx->streams[pkt->stream_index]->time_base);
