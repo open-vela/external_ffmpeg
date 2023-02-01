@@ -236,6 +236,8 @@ extern const AVInputFormat  ff_kux_demuxer;
 extern const AVInputFormat  ff_kvag_demuxer;
 extern const AVOutputFormat ff_kvag_muxer;
 extern const AVOutputFormat ff_latm_muxer;
+extern const AVInputFormat  ff_lc3_demuxer;
+extern const AVOutputFormat ff_lc3_muxer;
 extern const AVInputFormat  ff_lmlm4_demuxer;
 extern const AVInputFormat  ff_loas_demuxer;
 extern const AVInputFormat  ff_luodat_demuxer;
