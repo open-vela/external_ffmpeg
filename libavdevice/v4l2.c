@@ -30,6 +30,7 @@
  * V4L2_PIX_FMT_* and AV_PIX_FMT_*
  */
 
+#include <poll.h>
 #include <stdatomic.h>
 
 #include "libavutil/avassert.h"
@@ -1004,6 +1005,8 @@ static int v4l2_read_packet(AVFormatContext *ctx, AVPacket *pkt)
 static int v4l2_read_close(AVFormatContext *ctx)
 {
     struct video_data *s = ctx->priv_data;
+    AVStream *st = ctx->streams[0];
+    ff_remove_stream(ctx, st);
 
     if (atomic_load(&s->buffers_queued) != s->buffers)
         av_log(ctx, AV_LOG_WARNING, "Some buffers are still owned by the caller on "
@@ -1012,6 +1015,9 @@ static int v4l2_read_close(AVFormatContext *ctx)
     mmap_close(s);
 
     v4l2_close(s->fd);
+    s->fd      = 0;
+    s->channel = -1;
+
     return 0;
 }
 
@@ -1230,6 +1236,26 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
             caps->av_class = &v4l2_cap_class;
             caps->device_context = ctx;
             av_opt_set_defaults(caps);
+
+            return 0;
+        }
+        case AV_APP_TO_DEV_GET_POLLFD: {
+            struct video_data *s = ctx->priv_data;
+            struct pollfd *poll = data;
+
+            if (!s->fd)
+                return 0;
+
+            if (!data || data_size < sizeof(struct pollfd))
+                return AVERROR(EINVAL);
+
+            poll[0].fd     = s->fd;
+            poll[0].events = POLLIN;
+
+            return 1;
+        }
+        case AV_APP_TO_DEV_POLL_AVAILABLE: {
+            avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
 
             return 0;
         }
