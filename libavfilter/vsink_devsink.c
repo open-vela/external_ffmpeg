@@ -327,26 +327,43 @@ static int devsink_process_command(AVFilterContext *ctx,
 
     if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll = (struct pollfd *)res;
-        int ret;
+        int ret = 0, dev_ret;
 
         if (!res || res_len < sizeof(struct pollfd))
             return AVERROR(EINVAL);
 
-        poll[0].fd     = priv->timer_fd;
-        poll[0].events = POLLIN;
+        poll[ret].fd     = priv->timer_fd;
+        poll[ret].events = POLLIN;
+        poll++;
+        ret++;
 
-        return 1;
+        dev_ret = avdevice_app_to_dev_control_message(
+                priv->fmt_ctx,
+                AV_APP_TO_DEV_GET_POLLFD,
+                poll, res_len - sizeof(struct pollfd));
+
+        if (dev_ret > 0)
+            ret += dev_ret;
+
+        return ret;
     } else if (!strcmp(cmd, "poll_available")) {
-        uint64_t tmp;
+        struct pollfd *poll = (struct pollfd *)res;
 
-        if (read(priv->timer_fd, &tmp, sizeof(uint64_t)) < 0)
-            return AVERROR(errno);
+        if (poll->fd == priv->timer_fd) {
+            uint64_t tmp;
+            if (read(priv->timer_fd, &tmp, sizeof(uint64_t)) < 0)
+                return AVERROR(errno);
 
-        priv->frame_needed += tmp;
-        if (priv->frame_needed > 0)
-            ff_filter_set_ready(ctx, 100);
-
-        return 0;
+            priv->frame_needed += tmp;
+            if (priv->frame_needed > 0)
+                ff_filter_set_ready(ctx, 100);
+            return 0;
+        } else {
+            return avdevice_app_to_dev_control_message(
+                priv->fmt_ctx,
+                AV_APP_TO_DEV_POLL_AVAILABLE,
+                res, res_len);
+        }
     } else if (!strcmp(cmd, "play")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_PLAY,

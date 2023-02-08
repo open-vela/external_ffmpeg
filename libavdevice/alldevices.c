@@ -58,6 +58,7 @@ extern const AVOutputFormat ff_uorb_muxer;
 extern const AVInputFormat  ff_v4l2_demuxer;
 extern const AVOutputFormat ff_v4l2_muxer;
 extern const AVInputFormat  ff_vfwcap_demuxer;
+extern const AVOutputFormat ff_vtun_muxer;
 extern const AVInputFormat  ff_xcbgrab_demuxer;
 extern const AVOutputFormat ff_xv_muxer;
 
