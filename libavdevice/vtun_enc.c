@@ -1,0 +1,420 @@
+/*
+ * Copyright (c) 2023 xiaomi corp
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+#include "avdevice.h"
+#include "libavfilter/framequeue.h"
+#include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
+#include "libavutil/thread.h"
+#include "libavformat/mux.h"
+#include "libavformat/network.h"
+#include "libavdevice/vtun.h"
+
+#ifdef CONFIG_NET_RPMSG
+#include <netpacket/rpmsg.h>
+#endif // CONFIG_NET_RPMSG
+
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#define RPMSG_HEADER "rpmsg>"
+
+typedef struct {
+    AVVtunFrameFormat tunfmt;
+    enum AVPixelFormat pixfmt;
+} VtunPixFmt;
+
+typedef struct {
+    AVVtunFrame tunframe;
+    AVFrame *avframe;
+} VtunShareFrame;
+
+typedef struct {
+    AVClass *class; ///< class for private options
+    VtunShareFrame frame;
+    FFFrameQueue queue;
+    char *server_path;
+    int frame_count;
+    int listen_fd;
+    int ctrl_fd;
+} VtunCtx;
+
+static const VtunPixFmt ff_vtun_pixfmt_map[] = {
+    { VTUN_FRAME_FORMAT_BGRA8888, AV_PIX_FMT_BGRA },
+    { VTUN_FRAME_FORMAT_YUV420SP, AV_PIX_FMT_NV12 },
+};
+
+static AVVtunFrameFormat vtun_format_convert(enum AVPixelFormat format)
+{
+    int nb_pixfmts = FF_ARRAY_ELEMS(ff_vtun_pixfmt_map);
+    int i;
+
+    for (i = 0; i < nb_pixfmts; i++) {
+        if (format == ff_vtun_pixfmt_map[i].pixfmt)
+            return ff_vtun_pixfmt_map[i].tunfmt;
+    }
+
+    return VTUN_FRAME_FORMAT_INVALID;
+}
+
+static int vtun_server_open(VtunCtx *priv)
+{
+    int flags = SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK;
+    const char *url = priv->server_path;
+    int fd, ret;
+
+    if (!priv->server_path) {
+        av_log(priv, AV_LOG_ERROR, "NO server path found.\n");
+        return AVERROR(EINVAL);
+    }
+
+#ifdef CONFIG_NET_RPMSG
+    if (av_strstart(priv->server_path, RPMSG_HEADER, &url)) {
+        struct sockaddr_rpmsg addr;
+        fd = socket(AF_RPMSG, flags, 0);
+        if (fd < 0)
+            return ff_neterrno();
+
+        memset(&addr, 0, sizeof(addr));
+        av_strlcpy(addr.rp_name, url, sizeof(addr.rp_name));
+        addr.rp_family = AF_RPMSG;
+
+        if ((ret = bind(fd, (struct sockaddr *)&addr, sizeof(addr))) < 0)
+            goto fail;
+    }
+    else
+#endif
+    {
+        struct sockaddr_un addr;
+        fd = socket(AF_LOCAL, flags, 0);
+        if (fd < 0)
+            return ff_neterrno();
+
+        memset(&addr, 0, sizeof(addr));
+        av_strlcpy(addr.sun_path, url, sizeof(addr.sun_path));
+        addr.sun_family = AF_UNIX;
+
+        if ((ret = bind(fd, (struct sockaddr *)&addr, sizeof(addr))) < 0)
+            goto fail;
+    }
+
+    if ((ret = listen(fd, 1)) < 0)
+        goto fail;
+
+    priv->listen_fd = fd;
+    return 0;
+fail:
+    closesocket(fd);
+    return ret;
+}
+
+static int vtun_recv_ctrl(VtunCtx *priv, void *buffer, size_t length)
+{
+    while(length > 0) {
+        ssize_t ret = recv(priv->ctrl_fd, buffer, length, MSG_NOSIGNAL);
+        if (ret < 0)
+            return AVERROR(errno);
+
+        buffer = (char*)buffer + ret;
+        length -= ret;
+    }
+
+    return 0;
+}
+
+static int vtun_send_ctrl(VtunCtx *priv, const void *buffer, size_t length)
+{
+    while (length > 0) {
+        ssize_t ret = send(priv->ctrl_fd, buffer, length, MSG_NOSIGNAL);
+        if (ret < 0)
+            return AVERROR(errno);
+
+        buffer = (const char*)buffer + ret;
+        length -= ret;
+    }
+
+    return 0;
+}
+
+static AVVtunFrame *vtun_get_frame(VtunCtx *priv)
+{
+    VtunShareFrame *frame = &priv->frame;
+    AVFrame *avframe;
+
+    if (ff_framequeue_queued_frames(&priv->queue) > 0) {
+        if (frame->avframe)
+            av_frame_free(&frame->avframe);
+
+        avframe = ff_framequeue_take(&priv->queue);
+
+        frame->tunframe.format = vtun_format_convert(avframe->format);
+        frame->tunframe.current_ms = avframe->pts * av_q2d(avframe->time_base) * 1000;
+        frame->tunframe.addr = avframe->data[0];
+        frame->tunframe.size = avframe->linesize[0] * avframe->height;
+        frame->tunframe.w = avframe->width;
+        frame->tunframe.h = avframe->height;
+        frame->avframe = avframe;
+    }
+
+    return &frame->tunframe;
+}
+
+static int vtun_handle_event(VtunCtx *priv)
+{
+    AVVtunFrame *frame;
+    uint8_t event;
+    int ret;
+
+    if ((ret = vtun_recv_ctrl(priv, &event, sizeof(event))) < 0)
+        return ret;
+
+    if (event == VTUN_CTRL_EVT_FRAME_REQ) {
+        frame = vtun_get_frame(priv);
+        ret = vtun_send_ctrl(priv, &frame, sizeof(frame));
+    }
+
+    return ret;
+}
+
+static int vtun_init(AVFormatContext *h)
+{
+    VtunCtx *priv = h->priv_data;
+    int ret;
+
+    if ((ret = vtun_server_open(priv)) < 0)
+        return ret;
+    ff_framequeue_init(&priv->queue, NULL);
+
+    return ret;
+}
+
+static void vtun_deinit(AVFormatContext *h)
+{
+    VtunCtx *priv = h->priv_data;
+
+    ff_framequeue_free(&priv->queue);
+    closesocket(priv->listen_fd);
+}
+
+static int vtun_write_header(AVFormatContext *h)
+{
+    VtunCtx *priv = (VtunCtx *)h->priv_data;
+
+    if (h->nb_streams != 1 || h->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
+        av_log(priv, AV_LOG_ERROR, "Only a single video stream is supported.\n");
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
+static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
+                                    AVFrame **frame, unsigned flags)
+{
+    VtunCtx *priv = (VtunCtx *)h->priv_data;
+    int ret = AVERROR(EINVAL);
+    AVFrame *dequeue_frame;
+    AVFrame *new_frame;
+
+    if (flags & AV_WRITE_UNCODED_FRAME_QUERY)
+        return 0;
+
+    if (ff_framequeue_queued_frames(&priv->queue) >= priv->frame_count) {
+        dequeue_frame = ff_framequeue_take(&priv->queue);
+        av_frame_free(&dequeue_frame);
+    }
+
+    if ((new_frame = av_frame_clone(*frame)) == NULL) {
+        av_log(priv, AV_LOG_WARNING, "%s: unable to reference the frame, drop it\n", __func__);
+        return ret;
+    }
+
+    if ((ret = ff_framequeue_add(&priv->queue, new_frame)) < 0) {
+        av_log(priv, AV_LOG_WARNING, "%s: frame enqueue failed\n", __func__);
+        av_frame_free(&new_frame);
+    }
+
+    return ret;
+}
+
+static int vtun_write_trailer(AVFormatContext *h)
+{
+    VtunCtx *priv = h->priv_data;
+
+    if (priv->frame.avframe)
+        av_frame_free(&priv->frame.avframe);
+
+    while (ff_framequeue_queued_frames(&priv->queue)) {
+        AVFrame *avframe = ff_framequeue_take(&priv->queue);
+        av_frame_free(&avframe);
+    }
+
+    if (priv->ctrl_fd > 0) {
+        closesocket(priv->ctrl_fd);
+        priv->ctrl_fd = 0;
+    }
+
+    return 0;
+}
+
+static int vtun_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                       const char *key, int flags)
+{
+    struct AVDeviceCapabilitiesQuery *devcap = obj;
+    struct AVFormatContext *h = devcap->device_context;
+    struct AVOptionRanges *ranges;
+    enum AVPixelFormat pix_fmt;
+    int ret = AVERROR(ENOMEM);
+    int i;
+
+    ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    if (!ranges)
+        goto err;
+
+    if (strcmp(key, "pixel_fmts"))
+        goto err;
+
+    ranges->nb_components = 1;
+    ranges->nb_ranges = FF_ARRAY_ELEMS(ff_vtun_pixfmt_map);
+    ranges->range = av_mallocz(sizeof(AVOptionRange *) * ranges->nb_ranges);
+
+    if (!ranges->range)
+        goto err;
+
+    for (i = 0; i < ranges->nb_ranges; i++) {
+        ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[i])
+            goto err;
+
+        ranges->range[i]->is_range = 0;
+        ranges->range[i]->value_min = ff_vtun_pixfmt_map[i].pixfmt;
+        ranges->range[i]->value_max = ff_vtun_pixfmt_map[i].pixfmt;
+    }
+
+    *ranges_ = ranges;
+    return ranges->nb_components;
+
+err:
+    av_opt_freep_ranges(&ranges);
+    return ret;
+}
+
+static const AVClass vtun_cap_class = {
+    .class_name   = "vtun outdev capbility",
+    .item_name    = av_default_item_name,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = vtun_capbility_query_ranges,
+};
+
+static int vtun_control_message(struct AVFormatContext *h, int type,
+                                void *data, size_t data_size)
+{
+    VtunCtx *priv = h->priv_data;
+    struct pollfd *poll = data;
+    int ret = 0;
+
+    switch (type) {
+        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
+            struct AVDeviceCapabilitiesQuery *caps = data;
+
+            if (!caps)
+                return AVERROR(EINVAL);
+
+            caps->av_class = &vtun_cap_class;
+            caps->device_context = h;
+            av_opt_set_defaults(caps);
+            break;
+        }
+        case AV_APP_TO_DEV_GET_POLLFD: {
+            if (!data || data_size < sizeof(struct pollfd))
+                return AVERROR(EINVAL);
+
+            if (priv->ctrl_fd > 0) {
+                poll[ret].fd = priv->ctrl_fd;
+                poll[ret].events = POLLIN | POLLHUP;
+                ret++;
+            } else if (priv->listen_fd > 0) {
+                poll[ret].fd = priv->listen_fd;
+                poll[ret].events = POLLIN;
+                ret++;
+            }
+            break;
+        }
+        case AV_APP_TO_DEV_POLL_AVAILABLE: {
+            if (!data || data_size != sizeof(struct pollfd))
+                return AVERROR(EINVAL);
+
+            if (priv->ctrl_fd == poll->fd) {
+                if (poll->revents & POLLHUP) {
+                    closesocket(priv->ctrl_fd);
+                    priv->ctrl_fd = 0;
+                } else
+                    ret = vtun_handle_event(priv);
+            } else if (priv->listen_fd == poll->fd) {
+                priv->ctrl_fd = accept(priv->listen_fd, NULL, NULL);
+                if (priv->ctrl_fd < 0)
+                    ret = ff_neterrno();
+            }
+            break;
+        }
+        default:
+            ret = AVERROR(ENOSYS);
+            break;
+    }
+
+    return ret;
+}
+
+#define OFFSET(x) offsetof(VtunCtx, x)
+#define ENC AV_OPT_FLAG_ENCODING_PARAM
+static const AVOption options[] = {
+    { "frame_count", "Set frame count", OFFSET(frame_count), AV_OPT_TYPE_INT, {.i64 = 2}, 2, 4, ENC },
+    { "server_path", "Set server path", OFFSET(server_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, ENC },
+    { NULL }
+};
+
+static const AVClass vtun_class = {
+    .class_name = "vtun outdev",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT,
+};
+
+const AVOutputFormat ff_vtun_muxer = {
+    .name                = "vtun",
+    .long_name           = NULL_IF_CONFIG_SMALL("video tunnel"),
+    .priv_data_size      = sizeof(VtunCtx),
+    .audio_codec         = AV_CODEC_ID_NONE,
+    .video_codec         = AV_CODEC_ID_RAWVIDEO,
+    .init                = vtun_init,
+    .deinit              = vtun_deinit,
+    .write_header        = vtun_write_header,
+    .write_uncoded_frame = vtun_write_uncoded_frame,
+    .write_trailer       = vtun_write_trailer,
+    .control_message     = vtun_control_message,
+    .flags               = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
+    .priv_class          = &vtun_class
+};
