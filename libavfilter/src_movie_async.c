@@ -325,11 +325,11 @@ static bool movie_async_dat_allfree(AVFilterContext *ctx)
     int i;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (ff_framequeue_queued_frames(&movie->streams[i].dat_queue) >= movie->dat_max)
-            return false;
+        if (ff_framequeue_queued_frames(&movie->streams[i].dat_queue) < movie->dat_max)
+            return true;
     }
 
-    return true;
+    return false;
 }
 
 static int movie_async_open_decoder(AVFilterContext *ctx, MovieStream *stream, AVCodecParameters *codecpar)
