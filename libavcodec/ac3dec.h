@@ -242,7 +242,7 @@ typedef struct AC3DecodeContext {
     INTFLOAT *dlyptr[AC3_MAX_CHANNELS];
 
 ///@name Aligned arrays
-    DECLARE_ALIGNED(16, int,   fixed_coeffs)[AC3_MAX_CHANNELS][AC3_MAX_COEFS];       ///< fixed-point transform coefficients
+    DECLARE_ALIGNED(16, int32_t,   fixed_coeffs)[AC3_MAX_CHANNELS][AC3_MAX_COEFS];       ///< fixed-point transform coefficients
     DECLARE_ALIGNED(32, INTFLOAT, transform_coeffs)[AC3_MAX_CHANNELS][AC3_MAX_COEFS];   ///< transform coefficients
     DECLARE_ALIGNED(32, INTFLOAT, delay)[EAC3_MAX_CHANNELS][AC3_BLOCK_SIZE];         ///< delay - added to the next block
     DECLARE_ALIGNED(32, INTFLOAT, window)[AC3_BLOCK_SIZE];                              ///< window coefficients
