@@ -512,7 +512,7 @@ retry:
             // UTF8 and 4 means "UTF8 sort". For any other type (UTF16 or e.g.
             // a picture), don't return it blindly in a string that is supposed
             // to be UTF8 text.
-            av_log(c->fc, AV_LOG_WARNING, "Skipping unhandled metadata %s of type %d\n", key, data_type);
+            av_log(c->fc, AV_LOG_WARNING, "Skipping unhandled metadata %s of type %u\n", key, data_type);
             av_free(str);
             return 0;
         } else {
