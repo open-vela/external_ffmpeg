@@ -42,6 +42,7 @@ typedef struct DevSrcPriv {
     char            *devname;
     int             w, h;
     AVRational      frame_rate;
+    int64_t         pts;
 } DevSrcPriv;
 
 static void devsrc_stop(AVFilterContext *ctx)
@@ -51,6 +52,7 @@ static void devsrc_stop(AVFilterContext *ctx)
     if (!priv->dec_ctx)
         return;
 
+    priv->pts = 0;
     avformat_read_close(priv->fmt_ctx);
     avcodec_free_context(&priv->dec_ctx);
 }
@@ -218,6 +220,7 @@ static int devsrc_activate(AVFilterContext *ctx)
             goto out;
     }
 
+    frame->pts = priv->pts++;
     return ff_filter_frame(link, frame);
 
 out:
