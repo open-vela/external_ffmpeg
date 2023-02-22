@@ -26,6 +26,7 @@
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 #include "libavformat/avformat.h"
+#include "libavformat/mux.h"
 #include "fbdev_common.h"
 #include "avdevice.h"
 
@@ -45,6 +46,8 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     enum AVPixelFormat pix_fmt;
     int ret, flags = O_RDWR;
     const char* device;
+    AVCodecParameters *par = h->streams[0]->codecpar;
+    enum AVPixelFormat video_pix_fmt = par->format;
 
     if (h->nb_streams != 1 || h->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
         av_log(fbdev, AV_LOG_ERROR, "Only a single video stream is supported.\n");
@@ -81,6 +84,11 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
         ret = AVERROR(EINVAL);
         av_log(h, AV_LOG_ERROR, "Framebuffer pixel format not supported.\n");
         goto fail;
+    } else if (pix_fmt != video_pix_fmt) {
+        ret = AVERROR(EINVAL);
+        av_log(h, AV_LOG_ERROR, "Pixel format %s is not supported, use %s\n",
+               av_get_pix_fmt_name(video_pix_fmt), av_get_pix_fmt_name(pix_fmt));
+        goto fail;
     }
 
     fbdev->data = mmap(NULL, fbdev->fixinfo.smem_len, PROT_WRITE, MAP_SHARED, fbdev->fd, 0);
@@ -96,38 +104,23 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     return ret;
 }
 
-static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
+static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_size)
 {
     FBDevContext *fbdev = h->priv_data;
     const uint8_t *pin;
     uint8_t *pout;
-    enum AVPixelFormat fb_pix_fmt;
     int disp_height;
     int bytes_to_copy;
     AVCodecParameters *par = h->streams[0]->codecpar;
-    enum AVPixelFormat video_pix_fmt = par->format;
     int video_width = par->width;
     int video_height = par->height;
     int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
-    int src_line_size = video_width * bytes_per_pixel;
     int i;
-
-    if (ioctl(fbdev->fd, FBIOGET_VSCREENINFO, &fbdev->varinfo) < 0)
-        av_log(h, AV_LOG_WARNING,
-               "Error refreshing variable info: %s\n", av_err2str(AVERROR(errno)));
-
-    fb_pix_fmt = ff_get_pixfmt_from_fb_varinfo(&fbdev->varinfo);
-
-    if (fb_pix_fmt != video_pix_fmt) {
-        av_log(h, AV_LOG_ERROR, "Pixel format %s is not supported, use %s\n",
-               av_get_pix_fmt_name(video_pix_fmt), av_get_pix_fmt_name(fb_pix_fmt));
-        return AVERROR(EINVAL);
-    }
 
     disp_height = FFMIN(fbdev->varinfo.yres, video_height);
     bytes_to_copy = FFMIN(fbdev->varinfo.xres, video_width) * bytes_per_pixel;
 
-    pin  = pkt->data;
+    pin  = data;
     pout = fbdev->data +
            bytes_per_pixel * fbdev->varinfo.xoffset +
            fbdev->varinfo.yoffset * fbdev->fixinfo.line_length;
@@ -173,6 +166,15 @@ static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
     }
 
     return 0;
+}
+
+static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
+{
+    AVCodecParameters *par = h->streams[0]->codecpar;
+    int video_width = par->width;
+    int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
+
+    return fbdev_write_frame(h, pkt->data, video_width * bytes_per_pixel);
 }
 
 static av_cold int fbdev_write_trailer(AVFormatContext *h)
@@ -280,6 +282,15 @@ static int fbdev_control_message(AVFormatContext *h, int type,
     return AVERROR(ENOSYS);
 }
 
+static int fbdev_write_uncoded_frame(AVFormatContext *h, int stream_index,
+                             AVFrame **frame, unsigned flags)
+{
+    if (flags & AV_WRITE_UNCODED_FRAME_QUERY)
+        return 0;
+
+    return fbdev_write_frame(h, (*frame)->data[0], (*frame)->linesize[0]);
+}
+
 #define OFFSET(x) offsetof(FBDevContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
@@ -297,16 +308,17 @@ static const AVClass fbdev_class = {
 };
 
 const AVOutputFormat ff_fbdev_muxer = {
-    .name            = "fbdev",
-    .long_name       = NULL_IF_CONFIG_SMALL("Linux framebuffer"),
-    .priv_data_size  = sizeof(FBDevContext),
-    .audio_codec     = AV_CODEC_ID_NONE,
-    .video_codec     = AV_CODEC_ID_RAWVIDEO,
-    .write_header    = fbdev_write_header,
-    .write_packet    = fbdev_write_packet,
-    .write_trailer   = fbdev_write_trailer,
-    .control_message = fbdev_control_message,
-    .get_device_list = fbdev_get_device_list,
-    .flags           = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
-    .priv_class      = &fbdev_class,
+    .name                = "fbdev",
+    .long_name           = NULL_IF_CONFIG_SMALL("Linux framebuffer"),
+    .priv_data_size      = sizeof(FBDevContext),
+    .audio_codec         = AV_CODEC_ID_NONE,
+    .video_codec         = AV_CODEC_ID_RAWVIDEO,
+    .write_header        = fbdev_write_header,
+    .write_packet        = fbdev_write_packet,
+    .write_trailer       = fbdev_write_trailer,
+    .control_message     = fbdev_control_message,
+    .write_uncoded_frame = fbdev_write_uncoded_frame,
+    .get_device_list     = fbdev_get_device_list,
+    .flags               = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
+    .priv_class          = &fbdev_class,
 };
