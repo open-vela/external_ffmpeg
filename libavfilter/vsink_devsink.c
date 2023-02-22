@@ -48,6 +48,7 @@ typedef struct DevSinkPriv {
     int             timer_fd;
     int64_t         frame_needed;
     AVPacket        packet;
+    bool            frame_uncoded;
 } DevSinkPriv;
 
 static int devsink_control_message(struct AVFormatContext *s, int type,
@@ -82,6 +83,9 @@ static int devsink_start(AVFilterContext *ctx)
 
     codec_id = priv->fmt_ctx->oformat->video_codec != AV_CODEC_ID_NONE ?
                priv->fmt_ctx->oformat->video_codec : priv->fmt_ctx->video_codec_id;
+
+    priv->frame_uncoded = codec_id == AV_CODEC_ID_RAWVIDEO && av_write_uncoded_frame_query(priv->fmt_ctx, 0) == 0;
+
     enc = avcodec_find_encoder(codec_id);
     if (!enc)
         return AVERROR(EINVAL);
@@ -199,24 +203,28 @@ static int devsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
     AVPacket *pkt = &priv->packet;
     int ret;
 
-    if (!priv->enc_ctx)
-        return 0;
+    if (priv->frame_uncoded)
+        ret = frame ? av_write_uncoded_frame(priv->fmt_ctx, 0, frame) : AVERROR_EOF;
+    else {
+        if (!priv->enc_ctx)
+            return 0;
 
-    ret = avcodec_send_frame(priv->enc_ctx, frame);
-    if (ret < 0)
-        return ret;
-
-    while (1) {
-        ret = avcodec_receive_packet(priv->enc_ctx, pkt);
-        if (ret < 0) {
-            if (ret == AVERROR(EAGAIN))
-                ret = 0;
-            break;
-        }
-
-        ret = av_write_frame(priv->fmt_ctx, pkt);
+        ret = avcodec_send_frame(priv->enc_ctx, frame);
         if (ret < 0)
-            break;
+            return ret;
+
+        while (1) {
+            ret = avcodec_receive_packet(priv->enc_ctx, pkt);
+            if (ret < 0) {
+                if (ret == AVERROR(EAGAIN))
+                    ret = 0;
+                break;
+            }
+
+            ret = av_write_frame(priv->fmt_ctx, pkt);
+            if (ret < 0)
+                break;
+        }
     }
 
     if (ret == AVERROR_EOF) {
@@ -252,7 +260,8 @@ static int devsink_activate(AVFilterContext *ctx)
         else if (ret > 0) {
             priv->frame_needed--;
             ret = devsink_send_frame(ctx, frame);
-            av_frame_free(&frame);
+            if (!priv->frame_uncoded)
+                av_frame_free(&frame);
             return ret;
         }
     }
