@@ -561,8 +561,11 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
         movie->format_ctx->streams[i]->discard = AVDISCARD_DEFAULT;
 
+        /* codec_ctx prefer old channel fields if old/new are different,
+         * here we use new fields if old fields are invalid.
+         */
         if (movie->streams[i].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO &&
-            !av_channel_layout_check(&movie->streams[i].codec_ctx->ch_layout)) {
+            av_channel_layout_check(&movie->streams[i].codec_ctx->ch_layout)) {
             ret = av_channel_layout_copy(&movie->streams[i].codec_ctx->ch_layout,
                                          &stream->codecpar->ch_layout);
             if (ret < 0)
