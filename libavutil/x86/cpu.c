@@ -144,11 +144,15 @@ int ff_get_cpu_flags_x86(void)
 #endif /* HAVE_SSE */
     }
     if (max_std_level >= 7) {
+#if HAVE_AVX512 /* F, CD, BW, DQ, VL */
+        int xcr0_lo = 0, xcr0_hi = 0;
+#endif /* HAVE_AVX512 */
         cpuid(7, eax, ebx, ecx, edx);
 #if HAVE_AVX2
         if ((rval & AV_CPU_FLAG_AVX) && (ebx & 0x00000020))
             rval |= AV_CPU_FLAG_AVX2;
 #if HAVE_AVX512 /* F, CD, BW, DQ, VL */
+        xgetbv(0, xcr0_lo, xcr0_hi);
         if ((xcr0_lo & 0xe0) == 0xe0) { /* OPMASK/ZMM state */
             if ((rval & AV_CPU_FLAG_AVX2) && (ebx & 0xd0030000) == 0xd0030000) {
                 rval |= AV_CPU_FLAG_AVX512;
