@@ -160,23 +160,26 @@ static int devsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
 
     st = avformat_new_stream(priv->fmt_ctx, NULL);
     if (!st) {
-        avformat_free_context(priv->fmt_ctx);
-        return AVERROR(ENOMEM);
+        ret = AVERROR(ENOMEM);
+        goto exit;
     }
 
-    ret = avformat_init_output(priv->fmt_ctx, options);
-    if (ret < 0) {
-        avformat_free_context(priv->fmt_ctx);
-        return ret;
-    }
+    if ((ret = avformat_init_output(priv->fmt_ctx, options)) < 0)
+        goto exit;
 
     priv->timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
     if (priv->timer_fd < 0) {
-        avformat_free_context(priv->fmt_ctx);
-        return AVERROR(errno);
+        ret = AVERROR(errno);
+        goto exit;
     }
 
     return 0;
+
+exit:
+    avformat_free_context(priv->fmt_ctx);
+    priv->fmt_ctx = NULL;
+
+    return ret;
 }
 
 static void devsink_uninit(AVFilterContext *ctx)
