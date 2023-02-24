@@ -43,6 +43,7 @@
 //as that would make optimization work hard)
 #if HAVE_7REGS && !BROKEN_COMPILER
 #define decode_significance decode_significance_x86
+__attribute__((no_sanitize_address))
 static int decode_significance_x86(CABACContext *c, int max_coeff,
                                    uint8_t *significant_coeff_ctx_base,
                                    int *index, x86_reg last_off){
@@ -119,6 +120,7 @@ static int decode_significance_x86(CABACContext *c, int max_coeff,
 }
 
 #define decode_significance_8x8 decode_significance_8x8_x86
+__attribute__((no_sanitize_address))
 static int decode_significance_8x8_x86(CABACContext *c,
                                        uint8_t *significant_coeff_ctx_base,
                                        int *index, uint8_t *last_coeff_ctx_base, const uint8_t *sig_off){
