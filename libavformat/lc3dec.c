@@ -40,8 +40,9 @@ static int lc3_probe(const AVProbeData *p)
 static int lc3_read_header(AVFormatContext *s)
 {
     int ret, frame_us;
-    AVStream *st;
+    int pcm_sbits;
     LC3_header hdr;
+    AVStream *st;
 
     st = avformat_new_stream(s, NULL);
     if (!st) {
@@ -54,12 +55,24 @@ static int lc3_read_header(AVFormatContext *s)
         return AVERROR_INVALIDDATA;
     }
 
+    switch (hdr.rfu) {
+        case 32:
+            st->codecpar->format = AV_SAMPLE_FMT_FLT;
+            pcm_sbits = 32;
+            break;
+        default:
+            st->codecpar->format = AV_SAMPLE_FMT_S16;
+            pcm_sbits = 16;
+            break;
+    }
+
     frame_us = hdr.frame_10us * 10;
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id    = AV_CODEC_ID_LC3;
     st->codecpar->sample_rate = hdr.srate_100hz * 100;
-    st->codecpar->format      = AV_SAMPLE_FMT_S16;
+    st->codecpar->bit_rate    = hdr.bitrate_100bps * 100;
     st->codecpar->frame_size  = st->codecpar->sample_rate * frame_us / AV_TIME_BASE;
+    st->codecpar->bits_per_raw_sample   = pcm_sbits;
     st->codecpar->ch_layout.nb_channels = hdr.channels;
     st->nb_frames = hdr.nsamples_low | (hdr.nsamples_high << 16);
 

@@ -33,9 +33,10 @@ static int lc3_write_header(AVFormatContext *s)
 {
     AVStream *st = s->streams[0];
     AVCodecParameters *par = st->codecpar;
+    int nchannels = par->ch_layout.nb_channels;
+    int pcm_sbits = par->bits_per_raw_sample;
     int srate_hz  = par->sample_rate;
     int bitrate   = par->bit_rate;
-    int nchannels = par->ch_layout.nb_channels;
     LC3_header hdr;
     int frame_us;
     int nsamples;
@@ -49,6 +50,7 @@ static int lc3_write_header(AVFormatContext *s)
     hdr.bitrate_100bps = bitrate / 100,
     hdr.channels       = nchannels,
     hdr.frame_10us     = frame_us / 10,
+    hdr.rfu            = pcm_sbits;
     hdr.nsamples_low   = nsamples & 0xffff,
     hdr.nsamples_high  = nsamples >> 16,
 
