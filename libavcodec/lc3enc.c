@@ -57,9 +57,14 @@ static int lc3_encode_init(AVCodecContext *avctx)
     lc3ctx->pcm_sbytes  = av_get_bytes_per_sample(avctx->sample_fmt);
 
     switch (avctx->sample_fmt) {
-        case AV_SAMPLE_FMT_S16:  lc3ctx->pcm_fmt = LC3_PCM_FORMAT_S16;   break;
-        case AV_SAMPLE_FMT_FLT:  lc3ctx->pcm_fmt = LC3_PCM_FORMAT_FLOAT; break;
-        default:                 lc3ctx->pcm_fmt = LC3_PCM_FORMAT_S16;   break;
+        case AV_SAMPLE_FMT_FLT:
+            lc3ctx->pcm_fmt = LC3_PCM_FORMAT_FLOAT;
+            avctx->bits_per_raw_sample = 32;
+            break;
+        default:
+            lc3ctx->pcm_fmt = LC3_PCM_FORMAT_S16;
+            avctx->bits_per_raw_sample = 16;
+            break;
     }
 
     lc3ctx->enc = av_mallocz(nch * sizeof(lc3_encoder_t));
