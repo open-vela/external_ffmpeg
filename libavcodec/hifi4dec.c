@@ -262,7 +262,7 @@ const FFCodec ff_hifi4_mp3_decoder = {
     .init              = hifi_decode_init,
     FF_CODEC_DECODE_CB(hifi_decode_frame),
     .close             = hifi_decode_close,
-    .p.capabilities    = AV_CODEC_CAP_DR1,
+    .p.capabilities    = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
     .caps_internal     = FF_CODEC_CAP_INIT_THREADSAFE,
     .p.sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
                                                          AV_SAMPLE_FMT_NONE },
