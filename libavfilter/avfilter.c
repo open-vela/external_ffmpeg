@@ -296,7 +296,11 @@ void ff_avfilter_link_set_in_status(AVFilterLink *link, int status, int64_t pts)
     link->frame_blocked_in = 0;
     ff_frame_pool_uninit((FFFramePool**)&link->frame_pool);
     filter_unblock(link->dst);
-    ff_filter_set_ready(link->dst, 200);
+    /* Fast forward EOF and other error status, with priority 300;
+     * otherwise, reconfig may occur ahead of time, resulting in link format not being cleared,
+     * then getting error reconfig result.
+     */
+    ff_filter_set_ready(link->dst, status ? 300 : 200);
 }
 
 void ff_avfilter_link_set_out_status(AVFilterLink *link, int status, int64_t pts)
