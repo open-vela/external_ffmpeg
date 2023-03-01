@@ -136,6 +136,8 @@ static int a2dp_rechunk_filter(AVBSFContext *ctx, AVPacket *pkt)
 
 static const enum AVCodecID codec_ids[] = {
     AV_CODEC_ID_SBC,
+    AV_CODEC_ID_SBC_PACKED,
+    AV_CODEC_ID_SBC_PACKED_A2DP,
     AV_CODEC_ID_AAC,
     AV_CODEC_ID_AAC_LATM,
     AV_CODEC_ID_AAC_LATM_A2DP,
