@@ -555,6 +555,13 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         }
 
         stream = movie->format_ctx->streams[ret];
+
+        /* Use specify ch_layout if possible, follow guess_input_channel_layout() in ffmpeg.c */
+        if (movie->streams[i].type == AVMEDIA_TYPE_AUDIO &&
+            stream->codecpar->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC)
+            av_channel_layout_default(&stream->codecpar->ch_layout,
+                                      stream->codecpar->ch_layout.nb_channels);
+
         ret = movie_async_open_decoder(ctx, &movie->streams[i], stream->codecpar);
         if (ret < 0)
             goto out;
