@@ -355,7 +355,11 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
 
     // Check the codec type
     if (config.codec_type == BLUELET_CODEC_TYPE_SBC)
+#ifdef CONFIG_SBC_CODEC_LATM_PACKED
+        priv->codec_id = priv->playback ? AV_CODEC_ID_SBC : AV_CODEC_ID_SBC_PACKED_A2DP;
+#else
         priv->codec_id = AV_CODEC_ID_SBC;
+#endif
     else if (config.codec_type == BLUELET_CODEC_TYPE_MPEG2_4_AAC)
         priv->codec_id = priv->playback ? AV_CODEC_ID_AAC : AV_CODEC_ID_AAC_LATM_A2DP;
     else if (config.codec_type == BLUELET_CODEC_TYPE_LC3)
