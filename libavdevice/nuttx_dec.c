@@ -94,6 +94,12 @@ static int nuttx_control_message(struct AVFormatContext *s1,
             return 0;
         }
         case AV_APP_TO_DEV_PAUSE: {
+            /* Negative captured means that value would be recovered in next read_header. */
+            if (!strcmp((const char *)data, "temp"))
+                priv->captured = -FFABS(priv->captured);
+            else
+                priv->captured = FFABS(priv->captured);
+
             priv->pause = true;
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
@@ -117,7 +123,7 @@ static int nuttx_read_header(AVFormatContext *s1)
     AVStream *st;
     int ret;
 
-    priv->captured = 1;
+    priv->captured = priv->captured >= 0 ? 1 : -priv->captured;
 
     st = avformat_new_stream(s1, NULL);
     if (!st)
