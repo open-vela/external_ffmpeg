@@ -3281,6 +3281,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("LC3 (Low Complexity Communication Codec)"),
         .props     = AV_CODEC_PROP_LOSSY,
     },
+    {
+        .id        = AV_CODEC_ID_LDAC,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "ldac",
+        .long_name = NULL_IF_CONFIG_SMALL("LDAC (Sony codec that supports high-resolution audio)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
 
     /* subtitle codecs */
     {

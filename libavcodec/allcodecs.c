@@ -748,6 +748,7 @@ extern const FFCodec ff_qdmc_at_decoder;
 extern const FFCodec ff_qdm2_at_decoder;
 extern const FFCodec ff_lc3_decoder;
 extern const FFCodec ff_lc3_encoder;
+extern const FFCodec ff_ldac_decoder;
 extern FFCodec ff_libaom_av1_encoder;
 extern const FFCodec ff_libaribb24_decoder;
 extern const FFCodec ff_libcelt_decoder;

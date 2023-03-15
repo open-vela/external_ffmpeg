@@ -1058,6 +1058,7 @@ OBJS-$(CONFIG_HIFI4_AAC_DECODER)          += hifi4dec.o
 OBJS-$(CONFIG_HIFI4_MP3_DECODER)          += hifi4dec.o
 OBJS-$(CONFIG_LC3_DECODER)                += lc3dec.o
 OBJS-$(CONFIG_LC3_ENCODER)                += lc3enc.o
+OBJS-$(CONFIG_LDAC_DECODER)               += ldacdec.o
 OBJS-$(CONFIG_LIBAOM_AV1_DECODER)         += libaomdec.o
 OBJS-$(CONFIG_LIBAOM_AV1_ENCODER)         += libaomenc.o
 OBJS-$(CONFIG_LIBARIBB24_DECODER)         += libaribb24.o ass.o
