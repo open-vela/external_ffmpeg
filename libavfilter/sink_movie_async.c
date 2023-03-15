@@ -580,6 +580,7 @@ static void *amoviesink_thread(void *arg)
             amoviesink_proc_dat(ctx);
         } else if (exit) {
             priv->state  = AVMOVIE_ASYNC_STATE_NOP;
+            amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_NOP, 0, NULL);
             priv->event  = NULL;
             priv->cookie = NULL;
             pthread_mutex_unlock(&priv->mutex);
