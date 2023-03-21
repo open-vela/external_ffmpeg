@@ -737,6 +737,7 @@ static int movie_async_dec_frame(AVFilterContext *ctx, int pad_id, AVFrame **ofr
         return ret;
     }
 
+    frame->time_base = movie->streams[pad_id].time_base;
     movie->current_ms = frame->pts * av_q2d(movie->streams[pad_id].time_base) * 1000;
 
     *oframe = frame;
