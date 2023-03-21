@@ -95,7 +95,7 @@ static int nuttx_control_message(struct AVFormatContext *s1,
         }
         case AV_APP_TO_DEV_PAUSE: {
             /* Negative captured means that value would be recovered in next read_header. */
-            if (!strcmp((const char *)data, "temp"))
+            if (data && !strcmp((const char *)data, "temp"))
                 priv->captured = -FFABS(priv->captured);
             else
                 priv->captured = FFABS(priv->captured);
