@@ -102,7 +102,7 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT,    {.i64 = 4 },     2, INT16_MAX, FLAGS },
+    { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT,    {.i64 = 4 },     1, INT16_MAX, FLAGS },
     { "cmdqmax",         "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT,    {.i64 = 16 },    8, 32,        FLAGS },
     { "silent_samples",  "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT,    {.i64 = 1024 },  0, 2048,      FLAGS },
     { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT,    {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
