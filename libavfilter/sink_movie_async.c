@@ -846,7 +846,12 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
         layouts = ff_all_channel_counts();
     }
 
-    return ff_channel_layouts_ref(layouts, &link->outcfg.channel_layouts);
+    if ((ret = ff_channel_layouts_ref(layouts, &link->outcfg.channel_layouts)) < 0)
+        return ret;
+
+    formats = NULL;
+    formats = ff_all_raw_codecs(link->type);
+    return ff_formats_ref(formats, &link->outcfg.codecs);
 }
 
 static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
@@ -854,6 +859,7 @@ static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AV
     AVFilterFormats *formats;
     AVFilterLink *link;
     const AVCodec *enc;
+    int ret;
 
     link = ctx->inputs[pad_id];
     enc  = avcodec_find_encoder(codec_id);
@@ -866,7 +872,12 @@ static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AV
         formats = ff_all_formats(AVMEDIA_TYPE_VIDEO);
     }
 
-    return ff_formats_ref(formats, &link->outcfg.formats);
+    if ((ret = ff_formats_ref(formats, &link->outcfg.formats)) < 0)
+        return ret;
+
+    formats = NULL;
+    formats = ff_all_raw_codecs(link->type);
+    return ff_formats_ref(formats, &link->outcfg.codecs);
 }
 
 static int amoviesink_query_formats(AVFilterContext *ctx)
