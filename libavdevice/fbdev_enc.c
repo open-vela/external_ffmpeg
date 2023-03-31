@@ -34,6 +34,7 @@ typedef struct {
     AVClass *class;                   ///< class for private options
     int xoffset;                      ///< x coordinate of top left corner
     int yoffset;                      ///< y coordinate of top left corner
+    bool stop;                        ///< frame play status
     struct fb_var_screeninfo varinfo; ///< framebuffer variable info
     struct fb_fix_screeninfo fixinfo; ///< framebuffer fixed info
     int fd;                           ///< framebuffer device file descriptor
@@ -48,6 +49,9 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     const char* device;
     AVCodecParameters *par = h->streams[0]->codecpar;
     enum AVPixelFormat video_pix_fmt = par->format;
+
+    if (fbdev->stop)
+        return AVERROR_EOF;
 
     if (h->nb_streams != 1 || h->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
         av_log(fbdev, AV_LOG_ERROR, "Only a single video stream is supported.\n");
@@ -116,6 +120,9 @@ static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_siz
     int video_height = par->height;
     int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
     int i;
+
+    if (fbdev->stop)
+        return AVERROR_EOF;
 
     disp_height = FFMIN(fbdev->varinfo.yres, video_height);
     bytes_to_copy = FFMIN(fbdev->varinfo.xres, video_width) * bytes_per_pixel;
@@ -275,6 +282,16 @@ static int fbdev_control_message(AVFormatContext *h, int type,
             caps->device_context = h;
             av_opt_set_defaults(caps);
 
+            return 0;
+        }
+        case AV_APP_TO_DEV_PLAY: {
+            fbdev->stop = false;
+            avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+            return 0;
+        }
+        case AV_APP_TO_DEV_PAUSE: {
+            fbdev->stop = true;
+            avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
             return 0;
         }
     }
