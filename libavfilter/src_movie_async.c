@@ -1157,16 +1157,18 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 
             default:
                 if (outlink->type == AVMEDIA_TYPE_AUDIO) {
-                    if (movie->offload)
+                    if (movie->offload) {
                         list[0] = p.codec_id;
-                    else
-                        list[0] = av_get_pcm_codec(p.format, 0);
+                        formats = ff_make_format_list(list);
+                    } else {
+                        formats = ff_all_raw_codecs(outlink->type);
+                    }
                 } else {
                     list[0] = AV_CODEC_ID_RAWVIDEO;
                 }
 
                 /* codec id */
-                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.codecs)) < 0)
+                if ((ret = ff_formats_ref(formats, &outlink->incfg.codecs)) < 0)
                     return ret;
 
                 list[0] = p.format;
