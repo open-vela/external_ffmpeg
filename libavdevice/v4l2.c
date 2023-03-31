@@ -1005,7 +1005,12 @@ static int v4l2_read_packet(AVFormatContext *ctx, AVPacket *pkt)
 static int v4l2_read_close(AVFormatContext *ctx)
 {
     struct video_data *s = ctx->priv_data;
-    AVStream *st = ctx->streams[0];
+    AVStream *st = NULL;
+
+    if (!ctx->streams)
+        return AVERROR(EINVAL);
+
+    st = ctx->streams[0];
     ff_remove_stream(ctx, st);
 
     if (atomic_load(&s->buffers_queued) != s->buffers)
