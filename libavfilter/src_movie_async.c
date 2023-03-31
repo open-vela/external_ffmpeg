@@ -425,7 +425,7 @@ static int movie_async_send_silent_frame(AVFilterContext *ctx)
         if (movie_async_output_inactive(movie, i))
             continue;
 
-        if (ctx->outputs[i]->type != AVMEDIA_TYPE_AUDIO)
+        if (ctx->outputs[i]->type != AVMEDIA_TYPE_AUDIO || movie->offload)
             continue;
 
         out = movie_async_alloc_silent_frame(ctx, i);
@@ -701,7 +701,6 @@ static int movie_async_wrap_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
    int ret = AVERROR(ENOMEM);
    AVFrame *frame = NULL;
    AVPacket *pkt1 = NULL;
-   size_t bufsize;
 
    frame = av_frame_alloc();
    if (!frame)
@@ -713,9 +712,11 @@ static int movie_async_wrap_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
 
    frame->format = movie->streams[pad_id].codec_ctx->sample_fmt;
    frame->sample_rate = movie->streams[pad_id].codec_ctx->sample_rate;
+   frame->nb_samples  = movie->streams[pad_id].codec_ctx->frame_size;
    av_channel_layout_copy(&frame->ch_layout, &movie->streams[pad_id].codec_ctx->ch_layout);
 
-   frame->buf[0]      = av_buffer_create((void *)pkt1, bufsize, movie_async_free_frame, NULL, 0);
+   frame->buf[0]      = av_buffer_create((void *)pkt1, sizeof(AVPacket) + AV_INPUT_BUFFER_PADDING_SIZE,
+                                         movie_async_free_frame, NULL, 0);
    frame->data[0]     = frame->buf[0]->data;
    frame->linesize[0] = frame->buf[0]->size;
 
@@ -859,7 +860,7 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
     ret = movie_async_dec_frames(ctx);
     if (ret == AVERROR(EAGAIN)) {
         ret = movie_async_read_frame(ctx);
-        if (ret == AVERROR_EOF) {
+        if (ret == AVERROR_EOF && !movie->offload) {
             do {
                 ret = movie_async_dec_frames(ctx);
             } while (ret == 0);
