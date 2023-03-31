@@ -157,7 +157,12 @@ static int nuttx_read_header(AVFormatContext *s1)
 static int nuttx_read_close(AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
-    AVStream *st = s1->streams[0];
+    AVStream *st = NULL;
+
+    if (!s1->streams)
+        return AVERROR(EINVAL);
+
+    st = s1->streams[0];
 
     ff_nuttx_close(priv, priv->nonblock);
     ff_remove_stream(s1, st);
