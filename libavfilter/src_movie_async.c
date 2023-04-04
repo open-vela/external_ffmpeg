@@ -1165,6 +1165,7 @@ static int movie_async_query_formats(AVFilterContext *ctx)
                     }
                 } else {
                     list[0] = AV_CODEC_ID_RAWVIDEO;
+                    formats = ff_make_format_list(list);
                 }
 
                 /* codec id */
