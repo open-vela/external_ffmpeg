@@ -122,7 +122,7 @@ static int devsink_start(AVFilterContext *ctx)
     }
 
     interval.it_interval.tv_sec  = 0;
-    interval.it_interval.tv_nsec = 1000000000l * frame_rate->den / frame_rate->num;
+    interval.it_interval.tv_nsec = 1000000000ll * frame_rate->den / frame_rate->num;
     interval.it_value            = interval.it_interval;
 
     return timerfd_settime(priv->timer_fd, 0, &interval, NULL);
