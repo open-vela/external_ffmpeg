@@ -226,8 +226,17 @@ static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
 
     priv->format_ctx->flags |= AVFMT_FLAG_NONBLOCK;
 
-    if (priv->global_opts)
-        av_dict_copy(&dict, priv->global_opts, 0);
+    pthread_mutex_lock(&priv->mutex);
+    if (priv->format_opt) {
+        av_dict_copy(&dict, priv->format_opt, 0);
+        ret = av_opt_set_dict2(priv->format_ctx, &dict, AV_OPT_SEARCH_CHILDREN);
+        if (ret < 0) {
+            pthread_mutex_unlock(&priv->mutex);
+            av_dict_free(&dict);
+            goto out;
+        }
+    }
+    pthread_mutex_unlock(&priv->mutex);
 
     ret = avio_open2(&priv->format_ctx->pb, filename, AVIO_FLAG_WRITE, NULL, &dict);
     av_dict_free(&dict);
@@ -1126,6 +1135,7 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
                                       char *res, int res_len, int flags)
 {
     MovieSinkPriv *priv = ctx->priv;
+    int ret;
 
     if (!strcmp(cmd, "open")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s open.\n", __func__, ctx->name);
@@ -1136,7 +1146,13 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
 
         return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_SET_EVENT, args, sizeof(struct AVMovieAsyncEventCookie));
     } else if (!strcmp(cmd, "set_options")) {
-        return av_dict_parse_string(&priv->format_opt, args, "=", ":", 0);
+        if (!args)
+            return AVERROR(EINVAL);
+
+        pthread_mutex_lock(&priv->mutex);
+        ret = av_dict_parse_string(&priv->format_opt, args, "=", ":", 0);
+        pthread_mutex_unlock(&priv->mutex);
+        return ret;
     } else if (!strcmp(cmd, "prepare")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
         return amoviesink_process_prepare(ctx, args);
