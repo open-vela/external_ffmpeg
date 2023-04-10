@@ -1389,6 +1389,7 @@ static void graph_clear_formats(AVFilterGraph *graph, void *log_ctx)
 
         for (j = 0; j < f->nb_inputs; j++) {
             if (f->inputs[j]->status_out) {
+                ff_formats_unref(&f->inputs[j]->outcfg.codecs);
                 ff_formats_unref(&f->inputs[j]->outcfg.formats);
                 ff_formats_unref(&f->inputs[j]->outcfg.samplerates);
                 ff_channel_layouts_unref(&f->inputs[j]->outcfg.channel_layouts);
@@ -1404,6 +1405,7 @@ static void graph_clear_formats(AVFilterGraph *graph, void *log_ctx)
 
         for (j = 0; j < f->nb_outputs; j++) {
             if (f->outputs[j]->status_in) {
+                ff_formats_unref(&f->outputs[j]->incfg.codecs);
                 ff_formats_unref(&f->outputs[j]->incfg.formats);
                 ff_formats_unref(&f->outputs[j]->incfg.samplerates);
                 ff_channel_layouts_unref(&f->outputs[j]->incfg.channel_layouts);
