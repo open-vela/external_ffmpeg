@@ -37,6 +37,7 @@
 typedef struct VideoMuxData {
     const AVClass *class;  /**< Class for private options. */
     int start_img_number;
+    int total_img_number;
     int img_number;
     int split_planes;       /**< use independent file for each Y, U, V plane */
     char tmp[4][1024];
@@ -144,6 +145,10 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
     int ret, i;
     int nb_renames = 0;
     AVDictionary *options = NULL;
+
+    if (img->total_img_number > -1
+        && (img->img_number - img->start_img_number) >= img->total_img_number)
+        return AVERROR_EXIT;
 
     if (img->update) {
         av_strlcpy(filename, s->url, sizeof(filename));
@@ -257,6 +262,7 @@ static const AVOption muxoptions[] = {
     { "frame_pts",    "use current frame pts for filename", OFFSET(frame_pts),  AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, ENC },
     { "atomic_writing", "write files atomically (using temporary files and renames)", OFFSET(use_rename), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, ENC },
     { "protocol_opts", "specify protocol options for the opened files", OFFSET(protocol_opts), AV_OPT_TYPE_DICT, {0}, 0, 0, ENC },
+    { "total_number",  "total number of picture to take", OFFSET(total_img_number), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, ENC },
     { NULL },
 };
 
