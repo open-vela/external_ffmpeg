@@ -465,6 +465,16 @@ out:
     amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
 }
 
+static void amoviesink_clean(AVFilterContext *ctx)
+{
+    MovieSinkPriv *priv = ctx->priv;
+    if (priv->state < AVMOVIE_ASYNC_STATE_STOPPED) {
+        amoviesink_close_muxer(ctx);
+        priv->state = AVMOVIE_ASYNC_STATE_STOPPED;
+        amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
+    }
+}
+
 static int amoviesink_proc_dat(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -502,6 +512,9 @@ out:
     amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_COMPLETED,
                             ret == AVERROR_EOF ? 0 : ret , NULL);
 
+    if (ret == AVERROR_EOF)
+        amoviesink_clean(ctx);
+
     return ret;
 }
 
@@ -523,9 +536,7 @@ static void amoviesink_stop(AVFilterContext *ctx)
     }
 
 close_muxer:
-    amoviesink_close_muxer(ctx);
-    priv->state = AVMOVIE_ASYNC_STATE_STOPPED;
-    amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
+    amoviesink_clean(ctx);
 }
 
 static bool amoviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
@@ -596,7 +607,8 @@ static void *amoviesink_thread(void *arg)
         } else if (amoviesink_dat_valid(ctx)) {
             pthread_mutex_unlock(&priv->mutex);
 
-            amoviesink_proc_dat(ctx);
+            if (amoviesink_proc_dat(ctx) == AVERROR_EOF)
+                exit = true;
         } else if (exit) {
             priv->state  = AVMOVIE_ASYNC_STATE_NOP;
             amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
@@ -1032,12 +1044,12 @@ static int amoviesink_process_pause(AVFilterContext *ctx)
     return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
 }
 
-static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd)
+static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd, const char *args)
 {
     MovieSinkPriv *priv = ctx->priv;
     bool reset, close;
     MovieSinkCmd *msg;
-    int ret;
+    int ret = 0, pending_stop;
 
     reset = !strcmp(cmd, "reset");
     close = !strcmp(cmd, "close");
@@ -1050,6 +1062,15 @@ static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd)
         }
         pthread_mutex_unlock(&priv->mutex);
     }
+
+    pending_stop = (args && 1 == strtoul(args, NULL, 0)) ? 1 : 0;
+
+    /*
+     * If pending_stop is required, do not send close to worker thread,
+     * cause itself will close and quit.
+     */
+    if (pending_stop)
+        return ret;
 
     if (close)
         ret = amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
@@ -1163,7 +1184,7 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
         return amoviesink_process_pause(ctx);
     } else if (!strcmp(cmd, "stop") || !strcmp(cmd, "reset") || !strcmp(cmd, "close")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s %s. pos %d\n", __func__, ctx->name, cmd, priv->current_ms);
-        return amoviesink_process_quit(ctx, cmd);
+        return amoviesink_process_quit(ctx, cmd, args);
     } else if (!strcmp(cmd, "get_position")) {
         return amoviesink_get_position(ctx, res, res_len);
     } else if (!strcmp(cmd, "dump")) {
