@@ -175,7 +175,7 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
 
             if (priv->ctrl_fd > 0) {
                 poll[ret].fd = priv->ctrl_fd;
-                poll[ret].events = POLLIN;
+                poll[ret].events = priv->ctrl_connected ? POLLIN : POLLOUT;;
                 ret++;
             }
             if (priv->data_fd > 0 && priv->lastpkt != NULL) {
@@ -197,12 +197,17 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
                 return AVERROR(EINVAL);
 
             if (priv->ctrl_fd == poll->fd) {
-                int action = ff_bluelet_handle_event(priv);
-                if (action == BLUELET_ACTION_AVAILABLE) {
-                    avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
-                } else if (action == BLUELET_ACTION_CONFIG) {
-                    ctx->audio_codec_id = priv->codec_id;
-                    avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+                if (poll->revents & POLLOUT)
+                    priv->ctrl_connected = true;
+
+                if (poll->revents & POLLIN) {
+                    int action = ff_bluelet_handle_event(priv);
+                    if (action == BLUELET_ACTION_AVAILABLE) {
+                        avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+                    } else if (action == BLUELET_ACTION_CONFIG) {
+                        ctx->audio_codec_id = priv->codec_id;
+                        avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+                    }
                 }
             } else if (priv->data_fd == poll->fd) {
                 if (priv->lastpkt)
