@@ -282,6 +282,16 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         priv->streams[pad_id].enc_ctx->time_base = av_inv_q(frame_rate);
     }
 
+    /*
+     * Set strict_std_compliance to FF_COMPLIANCE_UNOFFICIAL to allow some non-standard
+     * behavior, e.g. allow mjpeg encoder to process images with limited color range.
+     *
+     * Note: set strict_std_compliance to FF_COMPLIANCE_UNOFFICIAL does not mean the
+     * generated *.mp4 or *.jpg file is non-standard, but indicates that the encoder is allowed
+     * to process non-standard input data.
+     */
+    priv->streams[pad_id].enc_ctx->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
+
     if (bitrate != -1)
         av_opt_set_int(priv->streams[pad_id].enc_ctx, "b", bitrate, 0);
 
@@ -684,11 +694,12 @@ static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
         AVMEDIA_TYPE_VIDEO,
     };
     AVFilterPad pad = { 0 };
-    int i, inputs, ret;
+    int i, ret, base = 0, inputs = 1;
 
-    inputs = 1;
-    if (ctx->filter->name[0] != 'a')
-        inputs++;
+    if (ctx->filter->name[0] == 'v')
+        base = 1;
+    else if (ctx->filter->name[0] != 'a')
+        inputs = 2;
 
     priv->streams = av_calloc(inputs, sizeof(MovieStream));
     if (!priv->streams)
@@ -699,10 +710,10 @@ static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
     pthread_cond_init(&priv->cond, NULL);
 
     for (i = 0; i < inputs; i++) {
-        priv->streams[i].type = types[i];
+        priv->streams[i].type = types[base + i];
         ff_framequeue_init(&priv->streams[i].dat_queue, NULL);
 
-        pad.type = types[i];
+        pad.type = types[base + i];
         pad.name = av_asprintf("input%d", i);
         if (!pad.name) {
             ret = AVERROR(ENOMEM);
@@ -1231,6 +1242,34 @@ const AVFilter ff_sink_moviesink_async = {
     .name            = "moviesink_async",
     .description     = NULL_IF_CONFIG_SMALL("movie sink asyncchronously, end of the filter graph."),
     .priv_class      = &moviesink_async_class,
+    .priv_size       = sizeof(MovieSinkPriv),
+    .init_dict       = amoviesink_init_dict,
+    .uninit          = amoviesink_uninit,
+    FILTER_QUERY_FUNC(amoviesink_query_formats),
+    .activate        = amoviesink_activate,
+    .inputs          = NULL,
+    .outputs         = NULL,
+    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
+    .process_command = amoviesink_process_command,
+};
+#endif
+
+#if CONFIG_VMOVIESINK_ASYNC_FILTER
+
+static const AVClass vmoviesink_async_class = {
+    .class_name          = "vmoviesink_async_class",
+    .item_name           = av_default_item_name,
+    .option              = amoviesink_async_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = amoviesink_child_next,
+    .child_class_iterate = amoviesink_child_class_iterate,
+};
+
+const AVFilter ff_sink_vmoviesink_async = {
+    .name            = "vmoviesink_async",
+    .description     = NULL_IF_CONFIG_SMALL("video sink asynchronously, end of the filter graph."),
+    .priv_class      = &vmoviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
     .init_dict       = amoviesink_init_dict,
     .uninit          = amoviesink_uninit,
