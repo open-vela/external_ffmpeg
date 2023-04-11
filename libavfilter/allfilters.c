@@ -578,6 +578,7 @@ extern const AVFilter ff_avsrc_movie_async;
 /* multimedia sink asynchronously */
 extern const AVFilter ff_sink_amoviesink_async;
 extern const AVFilter ff_sink_moviesink_async;
+extern const AVFilter ff_sink_vmoviesink_async;
 
 /* those filters are part of public or internal API,
  * they are formatted to not be found by the grep

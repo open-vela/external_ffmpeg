@@ -612,6 +612,7 @@ OBJS-$(CONFIG_MOVIE_ASYNC_FILTER)            += src_movie_async.o
 # multimedia sink asynchronously
 OBJS-$(CONFIG_AMOVIESINK_ASYNC_FILTER)       += sink_movie_async.o
 OBJS-$(CONFIG_MOVIESINK_ASYNC_FILTER)        += sink_movie_async.o
+OBJS-$(CONFIG_VMOVIESINK_ASYNC_FILTER)       += sink_movie_async.o
 
 # Objects duplicated from other libraries for shared builds
 SHLIBOBJS                                    += log2_tab.o
