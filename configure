@@ -1943,6 +1943,7 @@ FEATURE_LIST="
     ftrapv
     gray
     hardcoded_tables
+    id3
     omx_rpi
     runtime_cpudetect
     safe_bitstream_reader
@@ -3908,6 +3909,7 @@ enable asm
 enable debug
 enable doc
 enable faan faandct faanidct
+enable id3
 enable large_tests
 enable optimizations
 enable ptx_compression
