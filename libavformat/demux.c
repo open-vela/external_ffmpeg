@@ -42,7 +42,9 @@
 #include "avformat.h"
 #include "avio_internal.h"
 #include "demux.h"
+#if CONFIG_ID3
 #include "id3v2.h"
+#endif
 #include "internal.h"
 #include "url.h"
 
@@ -263,7 +265,9 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
     AVFormatContext *s = *ps;
     FFFormatContext *si;
     AVDictionary *tmp = NULL;
+#if CONFIG_ID3
     ID3v2ExtraMeta *id3v2_extra_meta = NULL;
+#endif
     int ret = 0;
 
     if (!s && !(s = avformat_alloc_context()))
@@ -343,8 +347,10 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
     }
 
     /* e.g. AVFMT_NOFILE formats will not have an AVIOContext */
+#if CONFIG_ID3
     if (s->pb)
         ff_id3v2_read_dict(s->pb, &si->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
+#endif
 
     if (s->iformat->init) {
         ret = s->iformat->init(s);
@@ -359,6 +365,7 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
             goto deinit;
         }
 
+#if CONFIG_ID3
     if (!s->metadata) {
         s->metadata    = si->id3v2_meta;
         si->id3v2_meta = NULL;
@@ -380,6 +387,7 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
             av_log(s, AV_LOG_DEBUG, "demuxer does not support additional id3 data, skipping\n");
         ff_id3v2_free_extra_meta(&id3v2_extra_meta);
     }
+#endif
 
     if ((ret = avformat_queue_attached_pictures(s)) < 0)
         goto close;
@@ -405,7 +413,9 @@ deinit:
     if (s->iformat && s->iformat->deinit)
         s->iformat->deinit(s);
 fail:
+#if CONFIG_ID3
     ff_id3v2_free_extra_meta(&id3v2_extra_meta);
+#endif
     av_dict_free(&tmp);
     if (s->pb && !(s->flags & AVFMT_FLAG_CUSTOM_IO))
         avio_closep(&s->pb);
