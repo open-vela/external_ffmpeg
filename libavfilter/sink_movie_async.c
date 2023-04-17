@@ -70,6 +70,8 @@ typedef struct MovieSinkPriv {
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
 
+    int                       eof_flag;
+
     int                       state;
     void                      *cookie;
     unsigned                  current_ms;
@@ -498,6 +500,8 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 
     if (ret == AVERROR_EOF) {
         av_write_trailer(priv->format_ctx);
+        priv->eof_flag = 1;
+        ff_filter_set_ready(ctx, 100);
         goto out;
     }
 
@@ -650,6 +654,11 @@ static int amoviesink_activate(AVFilterContext *ctx)
     AVFilterLink *link;
     AVFrame *frame;
     int64_t pts;
+
+    if (priv->eof_flag) {
+        amoviesink_set_eof(ctx);
+        amoviesink_clear_dat(ctx);
+    }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (amoviesink_dat_full(ctx, i))
@@ -981,6 +990,8 @@ static int amoviesink_process_prepare(AVFilterContext *ctx, const char *args)
     if (!priv->format)
         return AVERROR(EINVAL);
 
+    priv->eof_flag = 0;
+
     return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
 }
 
@@ -1077,10 +1088,6 @@ static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd, const 
     else
         ret = amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
 
-    if (ret < 0)
-        return ret;
-
-    amoviesink_set_eof(ctx);
     return ret;
 }
 
