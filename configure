@@ -4247,6 +4247,13 @@ if disabled autodetect; then
     disable_weak $EXTERNAL_AUTODETECT_LIBRARY_LIST
     disable_weak $HWACCEL_AUTODETECT_LIBRARY_LIST
 fi
+
+for c in ffmpeg ffplay; do
+    if enabled $c; then
+        enable asink_abuffer_filter asrc_abuffer_filter vsink_buffer_filter vsrc_buffer_filter
+    fi
+done
+
 # Mark specifically enabled, but normally autodetected libraries as requested.
 for lib in $AUTODETECT_LIBS; do
     enabled $lib && request $lib
@@ -7914,11 +7921,6 @@ print_enabled_components(){
             printf "    &ff_%s,\n" $c >> $TMPH
         fi
     done
-    if [ "$name" = "filter_list" ]; then
-        for c in asrc_abuffer vsrc_buffer asink_abuffer vsink_buffer; do
-            printf "    &ff_%s,\n" $c >> $TMPH
-        done
-    fi
     echo "    NULL };" >> $TMPH
     cp_if_changed $TMPH $file
 }
