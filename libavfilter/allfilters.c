@@ -584,10 +584,10 @@ extern const AVFilter ff_sink_vmoviesink_async;
  * they are formatted to not be found by the grep
  * as they are manually added again (due to their 'names'
  * being the same while having different 'types'). */
-extern const AVFilter ff_asrc_abuffer;
-extern const AVFilter ff_vsrc_buffer;
-extern const AVFilter ff_asink_abuffer;
-extern const AVFilter ff_vsink_buffer;
+extern const AVFilter ff_af_asrc_abuffer;
+extern const AVFilter ff_vf_vsrc_buffer;
+extern const AVFilter ff_af_asink_abuffer;
+extern const AVFilter ff_vf_vsink_buffer;
 extern const AVFilter ff_af_afifo;
 extern const AVFilter ff_vf_fifo;
 
