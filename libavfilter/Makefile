@@ -2,8 +2,6 @@ NAME = avfilter
 DESC = FFmpeg audio/video filtering library
 
 HEADERS = avfilter.h                                                    \
-          buffersink.h                                                  \
-          buffersrc.h                                                   \
           version.h                                                     \
           version_major.h                                               \
 
@@ -11,8 +9,6 @@ OBJS = allfilters.o                                                     \
        audio.o                                                          \
        avfilter.o                                                       \
        avfiltergraph.o                                                  \
-       buffersink.o                                                     \
-       buffersrc.o                                                      \
        colorspace.o                                                     \
        drawutils.o                                                      \
        fifo.o                                                           \
@@ -24,6 +20,11 @@ OBJS = allfilters.o                                                     \
        graphparser.o                                                    \
        version.o                                                        \
        video.o                                                          \
+
+HEADERS-$(CONFIG_ASINK_ABUFFER_FILTER)       += buffersink.h
+HEADERS-$(CONFIG_ASRC_ABUFFER_FILTER)        += buffersrc.h
+HEADERS-$(CONFIG_VSINK_BUFFER_FILTER)        += buffersink.h
+HEADERS-$(CONFIG_VSRC_BUFFER_FILTER)         += buffersrc.h
 
 OBJS-$(HAVE_LIBC_MSVCRT)                     += file_open.o
 OBJS-$(HAVE_THREADS)                         += pthread.o
@@ -99,10 +100,12 @@ OBJS-$(CONFIG_ASETRATE_FILTER)               += af_asetrate.o
 OBJS-$(CONFIG_ASETTB_FILTER)                 += settb.o
 OBJS-$(CONFIG_ASHOWINFO_FILTER)              += af_ashowinfo.o
 OBJS-$(CONFIG_ASIDEDATA_FILTER)              += f_sidedata.o
+OBJS-$(CONFIG_ASINK_ABUFFER_FILTER)          += buffersink.o
 OBJS-$(CONFIG_ASOFTCLIP_FILTER)              += af_asoftclip.o
 OBJS-$(CONFIG_ASPECTRALSTATS_FILTER)         += af_aspectralstats.o
 OBJS-$(CONFIG_ASPLIT_FILTER)                 += split.o
 OBJS-$(CONFIG_ASR_FILTER)                    += af_asr.o
+OBJS-$(CONFIG_ASRC_ABUFFER_FILTER)           += buffersrc.o
 OBJS-$(CONFIG_ASTATS_FILTER)                 += af_astats.o
 OBJS-$(CONFIG_ASTREAMSELECT_FILTER)          += f_streamselect.o framesync.o
 OBJS-$(CONFIG_ASUBBOOST_FILTER)              += af_asubboost.o
@@ -531,7 +534,9 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
 OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
 OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
 OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
+OBJS-$(CONFIG_VSINK_BUFFER_FILTER)           += buffersink.o
 OBJS-$(CONFIG_VSTACK_FILTER)                 += vf_stack.o framesync.o
+OBJS-$(CONFIG_VSRC_BUFFER_FILTER)            += buffersrc.o
 OBJS-$(CONFIG_W3FDIF_FILTER)                 += vf_w3fdif.o
 OBJS-$(CONFIG_WAVEFORM_FILTER)               += vf_waveform.o
 OBJS-$(CONFIG_WEAVE_FILTER)                  += vf_weave.o
