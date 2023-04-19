@@ -1410,6 +1410,12 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         av_log(ctx, AV_LOG_INFO, "%s filter %s close.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
+    } else if (!strcmp(cmd, "get_state")) {
+        if (!res || !res_len)
+            return AVERROR(EINVAL);
+
+        snprintf(res, res_len, "%d", movie->state);
+        return 0;
     } else if (!strcmp(cmd, "get_playing")) {
         if (!res || !res_len)
             return AVERROR(EINVAL);
