@@ -1027,7 +1027,7 @@ static int movie_async_output_props(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     MovieAsyncContext *movie = ctx->priv;
     unsigned out_id = FF_OUTLINK_IDX(outlink);
-    AVCodecParameters p;
+    AVCodecParameters p = {0};
 
     outlink->time_base = movie->streams[out_id].time_base;
     if (!outlink->time_base.num || !outlink->time_base.den)
@@ -1128,7 +1128,7 @@ static int movie_async_query_formats(AVFilterContext *ctx)
     AVFilterFormats *formats;
     int list[] = { 0, -1 };
     AVFilterLink *outlink;
-    AVCodecParameters p;
+    AVCodecParameters p = {0};
     int flags = false;
     int i, ret;
 
