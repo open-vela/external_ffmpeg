@@ -29,6 +29,7 @@
 #define AVMOVIE_ASYNC_EVENT_STOPPED            4
 #define AVMOVIE_ASYNC_EVENT_SEEKED             5
 #define AVMOVIE_ASYNC_EVENT_COMPLETED          6
+#define AVMOVIE_ASYNC_EVENT_CLOSED             7
 
 typedef void (*av_movie_async_event_func)(void* cookie, int event, int ret, const char *extra);
 
@@ -41,12 +42,12 @@ typedef struct AVMovieAsyncEventCookie {
 *
 *  Internal Definitions, src & sink movie async
 */
-#define AVMOVIE_ASYNC_STATE_NOP               0
-#define AVMOVIE_ASYNC_STATE_PREPARED          1
-#define AVMOVIE_ASYNC_STATE_STARTED           2
-#define AVMOVIE_ASYNC_STATE_PAUSED            3
-#define AVMOVIE_ASYNC_STATE_STOPPED           4
-#define AVMOVIE_ASYNC_STATE_COMPLETED         5
+#define AVMOVIE_ASYNC_STATE_NOP               AVMOVIE_ASYNC_EVENT_NOP
+#define AVMOVIE_ASYNC_STATE_PREPARED          AVMOVIE_ASYNC_EVENT_PREPARED
+#define AVMOVIE_ASYNC_STATE_STARTED           AVMOVIE_ASYNC_EVENT_STARTED
+#define AVMOVIE_ASYNC_STATE_PAUSED            AVMOVIE_ASYNC_EVENT_PAUSED
+#define AVMOVIE_ASYNC_STATE_STOPPED           AVMOVIE_ASYNC_EVENT_STOPPED
+#define AVMOVIE_ASYNC_STATE_COMPLETED         AVMOVIE_ASYNC_EVENT_COMPLETED
 
 #define AVMOVIE_ASYNC_OPEN                    1
 #define AVMOVIE_ASYNC_SET_EVENT               2
