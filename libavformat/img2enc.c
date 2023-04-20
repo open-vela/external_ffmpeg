@@ -40,8 +40,8 @@ typedef struct VideoMuxData {
     int total_img_number;
     int img_number;
     int split_planes;       /**< use independent file for each Y, U, V plane */
-    char tmp[4][1024];
-    char target[4][1024];
+    char tmp[4][1028];
+    char target[4][1028];
     int update;
     int use_strftime;
     int frame_pts;
@@ -114,7 +114,7 @@ out:
     return ret;
 }
 
-static int write_packet_pipe(AVFormatContext *s, AVPacket *pkt)
+av_unused static int write_packet_pipe(AVFormatContext *s, AVPacket *pkt)
 {
     VideoMuxData *img = s->priv_data;
     if (img->muxer) {
