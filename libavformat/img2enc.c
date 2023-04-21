@@ -148,7 +148,7 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (img->total_img_number > -1
         && (img->img_number - img->start_img_number) >= img->total_img_number)
-        return AVERROR_EXIT;
+        return AVERROR_EOF;
 
     if (img->update) {
         av_strlcpy(filename, s->url, sizeof(filename));
