@@ -256,6 +256,7 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
 {
     int format, sample_rate, channels, w, h;
     MovieSinkPriv *priv = ctx->priv;
+    AVDictionary *dict = NULL;
     int vbr = -1, level = -1;
     AVRational frame_rate;
     int64_t bitrate = -1;
@@ -312,7 +313,10 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
     if (level != -1)
         av_opt_set_int(priv->streams[pad_id].enc_ctx, "compression_level", level, 0);
 
-    ret = avcodec_open2(priv->streams[pad_id].enc_ctx, enc, NULL);
+    if (priv->format_opt)
+        av_dict_copy(&dict, priv->format_opt, 0);
+
+    ret = avcodec_open2(priv->streams[pad_id].enc_ctx, enc, &dict);
     if (ret < 0)
         goto out;
 
