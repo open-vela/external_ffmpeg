@@ -1275,6 +1275,7 @@ static int movie_async_activate(AVFilterContext *ctx)
             ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
             movie->streams[i].reconfig = 1;
             av_frame_free(&frame);
+            av_log(ctx, AV_LOG_DEBUG, "[%s][out%d] forward EOF\n", ctx->name, i);
         } else {
             if (link->type == AVMEDIA_TYPE_AUDIO && movie->offload)
                 frame->format = link->format;

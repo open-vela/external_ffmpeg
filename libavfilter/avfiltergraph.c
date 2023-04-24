@@ -553,6 +553,71 @@ static bool sanitize_formats(AVFilterGraph *graph)
     return changed;
 }
 
+static void display_channel_layouts(AVBPrint *buf, const char* name,
+    AVFilterChannelLayouts* chs)
+{
+    int i;
+
+    av_bprintf(buf, "%32s   chs:", name);
+    if (chs->all_layouts)
+        av_bprintf(buf, " all-layouts");
+    if (chs->all_counts)
+        av_bprintf(buf, " all-counts");
+    for (i = 0; i < chs->nb_channel_layouts; i++) {
+        av_bprintf(buf, " order:%d,ch:%d,0x%llx",
+            chs->channel_layouts[i].order,
+            chs->channel_layouts[i].nb_channels,
+            chs->channel_layouts[i].u.mask);
+    }
+    av_bprintf(buf, "\n");
+}
+
+static void display_samplerates(AVBPrint *buf, const char* name,
+    AVFilterFormats* rates)
+{
+    int i;
+
+    av_bprintf(buf, "%32s rates:", name);
+    for (i = 0; i < rates->nb_formats; i++)
+        av_bprintf(buf, " %d", rates->formats[i]);
+    av_bprintf(buf, "\n");
+}
+
+static void display_formats(AVBPrint *buf, const char* name,
+    AVFilterFormats* fmts)
+{
+    int i;
+
+    av_bprintf(buf, "%32s  fmts:", name);
+    for (i = 0; i < fmts->nb_formats; i++)
+        av_bprintf(buf, " %s", av_get_sample_fmt_name(fmts->formats[i]));
+    av_bprintf(buf, "\n");
+}
+
+static void display_link_formats(AVFilterLink *link)
+{
+    AVBPrint buf;
+
+    if (av_log_get_level() < AV_LOG_DEBUG)
+        return;
+
+    av_bprint_init(&buf, 0, AV_BPRINT_SIZE_AUTOMATIC);
+
+    switch (link->type) {
+    case AVMEDIA_TYPE_AUDIO:
+        display_channel_layouts(&buf, link->src->name, link->incfg.channel_layouts);
+        display_channel_layouts(&buf, link->dst->name, link->outcfg.channel_layouts);
+        display_samplerates(&buf, link->src->name, link->incfg.samplerates);
+        display_samplerates(&buf, link->dst->name, link->outcfg.samplerates);
+        display_formats(&buf, link->src->name, link->incfg.formats);
+        display_formats(&buf, link->dst->name, link->outcfg.formats);
+        break;
+    }
+
+    av_log(NULL, AV_LOG_DEBUG, "\n%s", buf.str);
+    av_bprint_finalize(&buf, NULL);
+}
+
 /**
  * Perform one round of query_formats() and merging formats lists on the
  * filter graph.
@@ -611,6 +676,9 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                     break;
                 }
             }
+
+            display_link_formats(link);
+
             for (neg_step = 0; neg_step < neg->nb_mergers; neg_step++) {
                 const AVFilterFormatsMerger *m = &neg->mergers[neg_step];
                 void *a = FF_FIELD_AT(void *, m->offset, link->incfg);
@@ -628,6 +696,9 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                         convert_needed |= 1 << neg_step;
                 }
             }
+
+            if (convert_needed)
+                display_link_formats(link);
 
             if (convert_needed) {
                 AVFilterContext *convert;
