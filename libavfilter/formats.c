@@ -617,7 +617,7 @@ AVFilterFormats *ff_all_samplerates(void)
 AVFilterFormats *ff_all_raw_codecs(enum AVMediaType type)
 {
     AVFilterFormats *ret = NULL;
-    static const enum AVSampleFormat codecs[] = {
+    static const enum AVCodecID codecs[] = {
         AV_NE(AV_CODEC_ID_PCM_U8,    AV_CODEC_ID_PCM_U8),
         AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),
         AV_NE(AV_CODEC_ID_PCM_S24BE, AV_CODEC_ID_PCM_S24LE),
