@@ -42,6 +42,8 @@ typedef struct TCPContext {
     int recv_buffer_size;
     int send_buffer_size;
     int tcp_nodelay;
+    int64_t debug_bytes;
+    int64_t debug_ts;
 #if !HAVE_WINSOCK2_H
     int tcp_mss;
 #endif /* !HAVE_WINSOCK2_H */
@@ -204,7 +206,9 @@ static int tcp_open(URLContext *h, const char *uri, int flags)
     }
 
     h->is_streamed = 1;
-    s->fd = fd;
+    s->fd          = fd;
+    s->debug_bytes = 0;
+    s->debug_ts    = av_gettime_relative();
 
     freeaddrinfo(ai);
     return 0;
@@ -237,6 +241,7 @@ static int tcp_accept(URLContext *s, URLContext **c)
 static int tcp_read(URLContext *h, uint8_t *buf, int size)
 {
     TCPContext *s = h->priv_data;
+    int64_t debug_ts;
     int ret;
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
@@ -248,7 +253,19 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
     if (ret == 0) {
         av_log(h, AV_LOG_INFO, "%s receive eof.\n", __func__);
         return AVERROR_EOF;
+    } else if (ret > 0)
+        s->debug_bytes += ret;
+
+    debug_ts = av_gettime_relative();
+    if (debug_ts - s->debug_ts > AV_TIME_BASE) {
+        av_log(h, AV_LOG_DEBUG, "[%s] recv %lld bytes in %lldus, bps %lldkbps\n",
+            __func__, s->debug_bytes, debug_ts - s->debug_ts,
+            (s->debug_bytes * 8 * 1000) / (debug_ts - s->debug_ts));
+
+        s->debug_bytes = 0;
+        s->debug_ts = debug_ts;
     }
+
     return ret < 0 ? ff_neterrno() : ret;
 }
 
