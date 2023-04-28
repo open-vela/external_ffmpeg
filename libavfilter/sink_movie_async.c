@@ -511,13 +511,13 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 out:
     amoviesink_clear_dat(ctx);
 
+    if (ret == AVERROR_EOF)
+        amoviesink_clean(ctx);
+
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
     priv->current_ms = 0;
     amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_COMPLETED,
                             ret == AVERROR_EOF ? 0 : ret , NULL);
-
-    if (ret == AVERROR_EOF)
-        amoviesink_clean(ctx);
 
     return ret;
 }
