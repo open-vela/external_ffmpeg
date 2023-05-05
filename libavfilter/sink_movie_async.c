@@ -494,15 +494,12 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 
         ret = amoviesink_encode_frame(ctx, i, frame);
         av_frame_free(&frame);
-        if (ret < 0 && ret != AVERROR_EOF)
+        if (ret < 0) {
+            av_write_trailer(priv->format_ctx);
+            priv->eof_flag = 1;
+            ff_filter_set_ready(ctx, 100);
             goto out;
-    }
-
-    if (ret == AVERROR_EOF) {
-        av_write_trailer(priv->format_ctx);
-        priv->eof_flag = 1;
-        ff_filter_set_ready(ctx, 100);
-        goto out;
+        }
     }
 
     ff_filter_set_ready(ctx, 100);
@@ -511,8 +508,7 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 out:
     amoviesink_clear_dat(ctx);
 
-    if (ret == AVERROR_EOF)
-        amoviesink_clean(ctx);
+    amoviesink_clean(ctx);
 
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
     priv->current_ms = 0;
