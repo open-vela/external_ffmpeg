@@ -277,6 +277,8 @@ static void filter_unblock(AVFilterContext *filter)
 
 void ff_avfilter_link_unref_formats(AVFilterLink *link)
 {
+    ff_formats_unref(&link->incfg.codecs);
+    ff_formats_unref(&link->outcfg.codecs);
     ff_formats_unref(&link->incfg.formats);
     ff_formats_unref(&link->outcfg.formats);
     ff_formats_unref(&link->incfg.samplerates);
