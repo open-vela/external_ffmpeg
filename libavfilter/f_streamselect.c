@@ -412,11 +412,21 @@ static int query_formats(AVFilterContext *ctx)
             if (s->map[j] == i) {
                 ret = query_formats_ref(ctx->outputs[j], false, codecs, formats, rates, layouts);
                 if (ret < 0)
-                    return ret;
+                    goto out;
             }
         }
 
         ret = query_formats_ref(ctx->inputs[i], true, codecs, formats, rates, layouts);
+
+out:
+        if (!codecs->refcount)
+            ff_formats_unref(&codecs);
+        if (!formats->refcount)
+            ff_formats_unref(&formats);
+        if (!rates->refcount)
+            ff_formats_unref(&rates);
+        if (!layouts->refcount)
+            ff_channel_layouts_unref(&layouts);
         if (ret < 0)
             return ret;
     }
