@@ -287,11 +287,42 @@ void ff_avfilter_link_unref_formats(AVFilterLink *link)
     ff_channel_layouts_unref(&link->outcfg.channel_layouts);
 }
 
+void ff_avfilter_trace_status(AVFilterLink *link, int status_in, int status_out)
+{
+    AVFilterContext *src = link->src;
+    AVFilterContext *dst = link->dst;
+    char dump1[128] = " src:";
+    char dump2[128] = " dst:";
+    int len1 = strlen(dump1);
+    int len2 = strlen(dump2);
+
+    if (av_log_get_level() < AV_LOG_TRACE ||
+        (link->status_in == status_in && link->status_out == status_out))
+        return;
+
+    if (src->nb_inputs == 0)
+        len1 = avfilter_process_command(src, "dump", NULL, dump1 + len1, sizeof(dump1) - len1, 0);
+    else
+        len1 = AVERROR(EINVAL);
+
+    if (dst->nb_outputs == 0)
+        len2 = avfilter_process_command(dst, "dump", NULL, dump2 + len2, sizeof(dump2) - len2, 0);
+    else
+        len2 = AVERROR(EINVAL);
+
+    av_log(link, AV_LOG_TRACE, "[%24s:%-24s] w:%d f:%lld p:%lld st:%d/%d=>%d/%d%s%s\n",
+        src->name, dst->name,
+        link->frame_wanted_out, link->frame_count_in, link->sample_count_in,
+        link->status_in, link->status_out, status_in, status_out,
+        len1 >= 0 ? dump1 : "", len2 >= 0 ? dump2 : "");
+}
+
 void ff_avfilter_link_set_in_status(AVFilterLink *link, int status, int64_t pts)
 {
     if (link->status_in == status)
         return;
     av_assert0(!link->status_in);
+    ff_avfilter_trace_status(link, status, link->status_out);
     link->status_in = status;
     link->status_in_pts = pts;
     link->frame_wanted_out = 0;
@@ -309,6 +340,7 @@ void ff_avfilter_link_set_out_status(AVFilterLink *link, int status, int64_t pts
 {
     av_assert0(!link->frame_wanted_out);
     av_assert0(!link->status_out);
+    ff_avfilter_trace_status(link, link->status_in, status);
     link->status_out = status;
     if (pts != AV_NOPTS_VALUE)
         ff_update_link_current_pts(link, pts);
@@ -1533,6 +1565,7 @@ int ff_inlink_acknowledge_status(AVFilterLink *link, int *rstatus, int64_t *rpts
         return *rstatus = link->status_out;
     if (!link->status_in)
         return *rstatus = 0;
+    ff_avfilter_trace_status(link, link->status_in, link->status_in);
     *rstatus = link->status_out = link->status_in;
     ff_update_link_current_pts(link, link->status_in_pts);
     *rpts = link->current_pts;
@@ -1708,8 +1741,10 @@ void ff_inlink_set_status(AVFilterLink *link, int status)
            AVFrame *frame = ff_framequeue_take(&link->fifo);
            av_frame_free(&frame);
     }
-    if (!link->status_in)
+    if (!link->status_in) {
+        ff_avfilter_trace_status(link, status, link->status_out);
         link->status_in = status;
+    }
 }
 
 int ff_outlink_get_status(AVFilterLink *link)
