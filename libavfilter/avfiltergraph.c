@@ -774,10 +774,13 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                     }
                 }
 
+                ff_avfilter_trace_status(inlink, 0, 0);
+                ff_avfilter_trace_status(outlink, 0, 0);
                 inlink-> status_in = inlink ->status_out = 0;
                 outlink->status_in = outlink->status_out = 0;
             }
 
+            ff_avfilter_trace_status(link, 0, 0);
             link->status_in = link->status_out = 0;
         }
     }
