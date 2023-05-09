@@ -30,6 +30,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
+#include "libavcodec/codec_id.h"
 
 #define FF_INTERNAL_FIELDS 1
 #include "framequeue.h"
@@ -594,6 +595,17 @@ static void display_formats(AVBPrint *buf, const char* name,
     av_bprintf(buf, "\n");
 }
 
+static void display_codecs(AVBPrint *buf, const char* name,
+    AVFilterFormats* codecs)
+{
+    int i;
+
+    av_bprintf(buf, "%32s  codecs:", name);
+    for (i = 0; i < codecs->nb_formats; i++)
+        av_bprintf(buf, " %s", avcodec_get_name(codecs->formats[i]));
+    av_bprintf(buf, "\n");
+}
+
 static void display_link_formats(AVFilterLink *link)
 {
     AVBPrint buf;
@@ -611,6 +623,8 @@ static void display_link_formats(AVFilterLink *link)
         display_samplerates(&buf, link->dst->name, link->outcfg.samplerates);
         display_formats(&buf, link->src->name, link->incfg.formats);
         display_formats(&buf, link->dst->name, link->outcfg.formats);
+        display_codecs(&buf, link->src->name, link->incfg.codecs);
+        display_codecs(&buf, link->dst->name, link->outcfg.codecs);
         break;
     }
 
