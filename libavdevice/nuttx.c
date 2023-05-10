@@ -228,8 +228,17 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
             goto err;
 
         ranges->range[0]->is_range  = 1;
-        ranges->range[0]->value_min = 1;
-        ranges->range[0]->value_max = others.ac_channels;
+        if ((others.ac_channels & 0xf0) == 0) {
+            ranges->range[0]->value_min = 1;
+            ranges->range[0]->value_max = others.ac_channels;
+        } else {
+            ranges->range[0]->value_min = others.ac_channels >> 4;
+            ranges->range[0]->value_max = others.ac_channels & 0x0f;
+
+            if (ranges->range[0]->value_min == ranges->range[0]->value_max)
+                ranges->range[0]->is_range = 0;
+        }
+
     } else if (!strcmp(key, "sample_rates")) {
         int sample_rates[16];
 
