@@ -474,7 +474,7 @@ out:
 static void amoviesink_clean(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
-    if (priv->state < AVMOVIE_ASYNC_STATE_STOPPED) {
+    if (priv->state != AVMOVIE_ASYNC_STATE_STOPPED) {
         amoviesink_close_muxer(ctx);
         priv->state = AVMOVIE_ASYNC_STATE_STOPPED;
         amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
@@ -512,13 +512,12 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 out:
     amoviesink_clear_dat(ctx);
 
-    amoviesink_clean(ctx);
-
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
     priv->current_ms = 0;
     amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_COMPLETED,
                             ret == AVERROR_EOF ? 0 : ret , NULL);
 
+    amoviesink_clean(ctx);
     return ret;
 }
 
