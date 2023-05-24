@@ -680,6 +680,7 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
             const AVFilterNegotiation *neg;
             unsigned neg_step;
             int convert_needed = 0; /* bitmask for audio resample */
+            const char *codec_filter = NULL;
 
             if (!link || !link->incfg.codecs || !link->incfg.formats)
                 continue;
@@ -725,7 +726,7 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                 AVFilterLink *inlink, *outlink;
                 char inst_name[30];
                 char inst_opts[64];
-                const char *opts;
+                const char *opts = NULL;
 
                 if (graph->disable_auto_convert) {
                     av_log(log_ctx, AV_LOG_ERROR,
@@ -735,19 +736,34 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                     return AVERROR(EINVAL);
                 }
 
-                /* couldn't merge format lists. auto-insert conversion filter */
-                if (!(filter = avfilter_get_by_name(neg->conversion_filter))) {
-                    av_log(log_ctx, AV_LOG_ERROR,
-                           "'%s' filter not present, cannot convert formats.\n",
-                           neg->conversion_filter);
-                    return AVERROR(EINVAL);
+                codec_filter = ff_filter_get_codec_filter(link);
+                if (codec_filter) {
+                    /* couldn't merge codec lists. auto-insert codec filter */
+                    if (!(filter = avfilter_get_by_name(codec_filter))) {
+                        av_log(log_ctx, AV_LOG_ERROR,
+                               "cannot convert between '%s' and '%s' with '%s'\n",
+                                link->src->name, link->dst->name, codec_filter);
+                        return AVERROR(EINVAL);
+                    }
+
+                    snprintf(inst_name, sizeof(inst_name), "auto_%s", codec_filter);
+                } else {
+                    /* couldn't merge format lists. auto-insert conversion filter */
+                    if (!(filter = avfilter_get_by_name(neg->conversion_filter))) {
+                        av_log(log_ctx, AV_LOG_ERROR,
+                               "'%s' filter not present, cannot convert formats.\n",
+                               neg->conversion_filter);
+                        return AVERROR(EINVAL);
+                    }
+                    opts = FF_FIELD_AT(char *, neg->conversion_opts_offset, *graph);
+                    if (link->type == AVMEDIA_TYPE_AUDIO) {
+                        snprintf(inst_opts, sizeof(inst_opts), "converter=%d:%s", convert_needed, opts ? opts : "");
+                        opts = inst_opts;
+                    }
+
+                    snprintf(inst_name, sizeof(inst_name), "auto_%s", neg->conversion_filter);
                 }
-                opts = FF_FIELD_AT(char *, neg->conversion_opts_offset, *graph);
-                if (link->type == AVMEDIA_TYPE_AUDIO) {
-                    snprintf(inst_opts, sizeof(inst_opts), "converter=%d:%s", convert_needed, opts ? opts : "");
-                    opts = inst_opts;
-                }
-                snprintf(inst_name, sizeof(inst_name), "auto_%s", neg->conversion_filter);
+
                 ret = avfilter_graph_create_filter(&convert, filter, inst_name, opts, NULL, graph);
                 if (ret < 0)
                     return ret;
@@ -784,6 +800,11 @@ static int query_formats(AVFilterGraph *graph, void *log_ctx)
                     const AVFilterFormatsMerger *m = &neg->mergers[neg_step];
                     if ((ret = MERGE(m,  inlink)) <= 0 ||
                         (ret = MERGE(m, outlink)) <= 0) {
+                        if (codec_filter) {
+                            count_delayed++;
+                            break;
+                        }
+
                         if (ret < 0)
                             return ret;
                         av_log(log_ctx, AV_LOG_ERROR,

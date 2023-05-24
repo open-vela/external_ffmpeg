@@ -398,6 +398,37 @@ const AVFilterNegotiation *ff_filter_get_negotiation(AVFilterLink *link)
     }
 }
 
+const char* ff_filter_get_codec_filter(AVFilterLink *link)
+{
+    AVFilterFormats *raw = ff_all_raw_codecs(link->type);
+    AVFilterFormats *a = link-> incfg.codecs;
+    AVFilterFormats *b = link->outcfg.codecs;
+    bool need_decoder, need_encoder;
+    const char *codec_filter = NULL;
+
+    if (can_merge_codecs(a, b) > 0)
+        goto out;
+
+    need_decoder = can_merge_codecs(a, raw) == 0;
+    need_encoder = can_merge_codecs(b, raw) == 0;
+
+    if (need_decoder && !need_encoder) {
+        if (link->type == AVMEDIA_TYPE_VIDEO)
+            codec_filter = "decoder";
+        else if (link->type == AVMEDIA_TYPE_AUDIO)
+            codec_filter = "adecoder";
+    } else if (!need_decoder && need_encoder) {
+        if (link->type == AVMEDIA_TYPE_VIDEO)
+            codec_filter = "encoder";
+        else if (link->type == AVMEDIA_TYPE_AUDIO)
+            codec_filter = "aencoder";
+    }
+
+out:
+    ff_formats_unref(&raw);
+    return codec_filter;
+}
+
 static inline int ff_is_in(int a, const int *A, int end)
 {
     const int *p;

@@ -442,4 +442,10 @@ typedef struct AVFilterNegotiation {
 
 const AVFilterNegotiation *ff_filter_get_negotiation(AVFilterLink *link);
 
+/**
+ * Get codec filter name for link.
+ * @return NULL if the link doesn't need.
+ */
+const char* ff_filter_get_codec_filter(AVFilterLink *link);
+
 #endif /* AVFILTER_FORMATS_H */
