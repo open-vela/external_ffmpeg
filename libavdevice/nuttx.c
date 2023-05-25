@@ -448,7 +448,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
     caps_desc.caps.ac_subtype        = ff_nuttx_av2fmt(priv->codec);
 
     ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
-    av_log(NULL, AV_LOG_DEBUG, "[%s][%s] configure, sr:%d ch:%d ret:%d\n",
+    av_log(NULL, AV_LOG_DEBUG, "[%s][%s] configure, sr:%"PRIu32" ch:%d ret:%d\n",
         __func__, priv->devname, priv->sample_rate, priv->ch_layout.nb_channels, ret);
     if (ret < 0)
         return AVERROR(errno);
