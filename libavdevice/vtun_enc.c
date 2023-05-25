@@ -58,6 +58,7 @@ typedef struct {
     int frame_count;
     int listen_fd;
     int ctrl_fd;
+    bool stop;
 } VtunCtx;
 
 static const VtunPixFmt ff_vtun_pixfmt_map[] = {
@@ -180,20 +181,35 @@ static AVVtunFrame *vtun_get_frame(VtunCtx *priv)
     return &frame->tunframe;
 }
 
-static int vtun_handle_event(VtunCtx *priv)
+static int vtun_handle_event(struct AVFormatContext *h)
 {
     AVVtunFrame *frame;
     uint8_t event;
     int ret;
+    VtunCtx *priv = h->priv_data;
 
     if ((ret = vtun_recv_ctrl(priv, &event, sizeof(event))) < 0)
         return ret;
 
-    if (event == VTUN_CTRL_EVT_FRAME_REQ) {
-        frame = vtun_get_frame(priv);
-        ret = vtun_send_ctrl(priv, &frame, sizeof(frame));
+    switch (event) {
+        case VTUN_CTRL_EVT_FRAME_REQ: {
+            frame = vtun_get_frame(priv);
+            ret = vtun_send_ctrl(priv, &frame, sizeof(frame));
+            break;
+        }
+        case VTUN_CTRL_EVT_PLAY: {
+            priv->stop = false;
+            ret = avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+            break;
+        }
+        case VTUN_CTRL_EVT_PAUSE: {
+            priv->stop = true;
+            ret = avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+            break;
+        }
+        default:
+            break;
     }
-
     return ret;
 }
 
@@ -221,6 +237,9 @@ static int vtun_write_header(AVFormatContext *h)
 {
     VtunCtx *priv = (VtunCtx *)h->priv_data;
 
+    if (priv->stop)
+        return AVERROR(EOF);
+
     if (h->nb_streams != 1 || h->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
         av_log(priv, AV_LOG_ERROR, "Only a single video stream is supported.\n");
         return AVERROR(EINVAL);
@@ -236,6 +255,9 @@ static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
     int ret = AVERROR(EINVAL);
     AVFrame *dequeue_frame;
     AVFrame *new_frame;
+
+    if (priv->stop)
+        return AVERROR(EOF);
 
     if (flags & AV_WRITE_UNCODED_FRAME_QUERY)
         return 0;
@@ -370,8 +392,9 @@ static int vtun_control_message(struct AVFormatContext *h, int type,
                 if (poll->revents & POLLHUP) {
                     closesocket(priv->ctrl_fd);
                     priv->ctrl_fd = 0;
-                } else
-                    ret = vtun_handle_event(priv);
+                } else {
+                    ret = vtun_handle_event(h);
+                }
             } else if (priv->listen_fd == poll->fd) {
                 priv->ctrl_fd = accept(priv->listen_fd, NULL, NULL);
                 if (priv->ctrl_fd < 0)

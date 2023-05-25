@@ -30,6 +30,8 @@ typedef enum {
 typedef enum {
     VTUN_CTRL_EVT_NONE,
     VTUN_CTRL_EVT_FRAME_REQ,
+    VTUN_CTRL_EVT_PLAY,
+    VTUN_CTRL_EVT_PAUSE,
 } AVVtunCtrlEvtType;
 
 typedef struct {
