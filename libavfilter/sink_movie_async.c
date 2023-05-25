@@ -317,6 +317,7 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         av_dict_copy(&dict, priv->format_opt, 0);
 
     ret = avcodec_open2(priv->streams[pad_id].enc_ctx, enc, &dict);
+    av_dict_free(&dict);
     if (ret < 0)
         goto out;
 
