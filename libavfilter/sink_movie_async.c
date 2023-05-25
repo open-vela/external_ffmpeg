@@ -149,7 +149,8 @@ static bool amoviesink_dat_valid(AVFilterContext *ctx)
     MovieSinkPriv *priv = ctx->priv;
     int i;
 
-    if (priv->state != AVMOVIE_ASYNC_STATE_STARTED)
+    if (priv->state != AVMOVIE_ASYNC_STATE_STARTED &&
+        priv->state != AVMOVIE_ASYNC_STATE_PAUSED)
         return false;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
@@ -496,6 +497,15 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
         /* user request stop, send frame which linesize = 0 */
         if (!frame->linesize[0])
             av_frame_free(&frame);
+        else if (priv->state == AVMOVIE_ASYNC_STATE_PAUSED) {
+            if (priv->streams[i].type == AVMEDIA_TYPE_AUDIO)
+                priv->streams[i].sync_pts += frame->nb_samples;
+            else
+                priv->streams[i].sync_pts++;
+
+            av_frame_free(&frame);
+            continue;
+        }
 
         ret = amoviesink_encode_frame(ctx, i, frame);
         av_frame_free(&frame);
