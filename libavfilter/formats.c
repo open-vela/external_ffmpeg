@@ -897,8 +897,10 @@ int ff_default_query_formats(AVFilterContext *ctx)
     }
 
     ret = ff_set_common_codecs(ctx, codecs);
-    if (ret < 0)
+    if (ret < 0) {
+        ff_formats_unref(&formats);
         return ret;
+    }
     ret = ff_set_common_formats(ctx, formats);
     if (ret < 0)
         return ret;
