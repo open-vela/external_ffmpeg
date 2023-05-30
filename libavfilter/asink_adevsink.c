@@ -235,8 +235,8 @@ static int adevsink_output_packet(AVFilterContext *ctx, int status)
     if (!priv->started)
         return 0;
 
-    while (1) {
-        if (pkt && pkt->data) {
+    while (pkt) {
+        if (pkt->data) {
             ret = av_write_frame(priv->fmt_ctx, pkt);
             if (ret == 0)
                 av_packet_unref(pkt);
