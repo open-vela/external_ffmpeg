@@ -105,6 +105,34 @@ const AVOutputFormat ff_adx_muxer = {
 };
 #endif
 
+#if CONFIG_AMRNB_MUXER
+const AVOutputFormat ff_amrnb_muxer = {
+    .name              = "amrnb",
+    .long_name         = NULL_IF_CONFIG_SMALL("raw AMR-NB"),
+    .mime_type         = "audio/amrnb",
+    .extensions        = "amr",
+    .audio_codec       = AV_CODEC_ID_AMR_NB,
+    .video_codec       = AV_CODEC_ID_NONE,
+    .init              = force_one_stream,
+    .write_packet      = ff_raw_write_packet,
+    .flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+#if CONFIG_AMRWB_MUXER
+const AVOutputFormat ff_amrwb_muxer = {
+    .name              = "amrwb",
+    .long_name         = NULL_IF_CONFIG_SMALL("raw AMR-WB"),
+    .mime_type         = "audio/amrwb",
+    .extensions        = "amr",
+    .audio_codec       = AV_CODEC_ID_AMR_WB,
+    .video_codec       = AV_CODEC_ID_NONE,
+    .init              = force_one_stream,
+    .write_packet      = ff_raw_write_packet,
+    .flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
 #if CONFIG_APTX_MUXER
 const AVOutputFormat ff_aptx_muxer = {
     .name              = "aptx",
