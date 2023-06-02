@@ -45,6 +45,7 @@ OBJS-$(CONFIG_ACRUSHER_FILTER)               += af_acrusher.o
 OBJS-$(CONFIG_ACUE_FILTER)                   += f_cue.o
 OBJS-$(CONFIG_ADECLICK_FILTER)               += af_adeclick.o
 OBJS-$(CONFIG_ADECLIP_FILTER)                += af_adeclick.o
+OBJS-$(CONFIG_ADECODER_FILTER)               += f_decoder.o packet_wrapper.o
 OBJS-$(CONFIG_ADECORRELATE_FILTER)           += af_adecorrelate.o
 OBJS-$(CONFIG_ADELAY_FILTER)                 += af_adelay.o
 OBJS-$(CONFIG_ADENORM_FILTER)                += af_adenorm.o
@@ -189,6 +190,7 @@ OBJS-$(CONFIG_RPMSGSINK_FILTER)              += asink_rpmsgsink.o
 
 # video filters
 OBJS-$(CONFIG_ADDROI_FILTER)                 += vf_addroi.o
+OBJS-$(CONFIG_DECODER_FILTER)                += f_decoder.o packet_wrapper.o
 OBJS-$(CONFIG_ALPHAEXTRACT_FILTER)           += vf_extractplanes.o
 OBJS-$(CONFIG_ALPHAMERGE_FILTER)             += vf_alphamerge.o framesync.o
 OBJS-$(CONFIG_AMPLIFY_FILTER)                += vf_amplify.o
