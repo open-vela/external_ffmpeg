@@ -617,9 +617,9 @@ OBJS-$(CONFIG_AMOVIE_FILTER)                 += src_movie.o
 OBJS-$(CONFIG_MOVIE_FILTER)                  += src_movie.o
 
 # multimedia sources asynchronously
-OBJS-$(CONFIG_AMOVIE_ASYNC_FILTER)           += src_movie_async.o
-OBJS-$(CONFIG_VMOVIE_ASYNC_FILTER)           += src_movie_async.o
-OBJS-$(CONFIG_MOVIE_ASYNC_FILTER)            += src_movie_async.o
+OBJS-$(CONFIG_AMOVIE_ASYNC_FILTER)           += src_movie_async.o packet_wrapper.o
+OBJS-$(CONFIG_VMOVIE_ASYNC_FILTER)           += src_movie_async.o packet_wrapper.o
+OBJS-$(CONFIG_MOVIE_ASYNC_FILTER)            += src_movie_async.o packet_wrapper.o
 
 # multimedia sink asynchronously
 OBJS-$(CONFIG_AMOVIESINK_ASYNC_FILTER)       += sink_movie_async.o packet_wrapper.o
