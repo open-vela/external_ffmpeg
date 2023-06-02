@@ -36,10 +36,11 @@
 #include "libavutil/avstring.h"
 #include "libavutil/avassert.h"
 #include "libavutil/opt.h"
-#include "libavcodec/avcodec.h"
+#include "libavcodec/codec_par.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
 
+#include "packet_wrapper.h"
 #include "movie_async.h"
 #include "filters.h"
 
@@ -56,13 +57,11 @@ SIMPLEQ_HEAD(MovieCmdQueue, MovieCmd);
 
 typedef struct MovieStream {
     enum AVMediaType type;
-    int              index;
-    AVCodecContext   *codec_ctx;
+    int              index;                     /**< AVStream index of AVFormatContext */
     FFFrameQueue     dat_queue;
-    int              reconfig;                  /**< whether need to do reconfig */
+    bool             reconfig;                  /**< whether need to do reconfig */
     AVRational       time_base;
     AVRational       frame_rate;
-    int64_t          next_pts;
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -87,7 +86,6 @@ typedef struct MovieAsyncContext {
 
     int                       state;
     bool                      first;
-    int                       offload;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
     unsigned                  duration_ms;    /** < duration of whole stream */
@@ -107,14 +105,12 @@ static const AVOption movie_async_options[]= {
     { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT,    {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
     { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT,    {.i64 = 244 },   0, INT16_MAX, FLAGS },
     { "protocol_map",    "mapping of protocol",         OFFSET(protocol_map),   AV_OPT_TYPE_STRING, {.str = NULL},   0, 0,         FLAGS },
-    { "offload",         "offload playback",            OFFSET(offload),        AV_OPT_TYPE_BOOL,   { .i64 = 0 },    0, 1,         FLAGS },
     { NULL },
 };
 
 static inline bool movie_async_output_inactive(MovieAsyncContext *movie, int pad_id)
 {
-    return movie->streams[pad_id].index == -1 ||
-           movie->streams[pad_id].codec_ctx == NULL;
+    return movie->streams[pad_id].index == -1;
 }
 
 static inline void movie_async_notify_event(MovieAsyncContext *movie, int event, int ret, const char *extra)
@@ -179,57 +175,65 @@ static int movie_async_send_dat(AVFilterContext *ctx, int pad_id, AVFrame *frame
 static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
 {
     MovieAsyncContext *movie = ctx->priv;
+    AVCodecParameters *param;
     AVFrame *out;
+    int index;
 
     out = av_frame_alloc();
     if (!out)
         return NULL;
 
-    if (movie->streams[pad_id].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
-        out->format      = movie->streams[pad_id].codec_ctx->sample_fmt;
-        out->sample_rate = movie->streams[pad_id].codec_ctx->sample_rate;
-        av_channel_layout_copy(&out->ch_layout, &movie->streams[pad_id].codec_ctx->ch_layout);
+    index = movie->streams[pad_id].index;
+    param = movie->format_ctx->streams[index]->codecpar;
+    out->format = param->format;
+
+    if (movie->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
+        out->sample_rate = param->sample_rate;
+        av_channel_layout_copy(&out->ch_layout, &param->ch_layout);
     } else {
-        out->format = movie->streams[pad_id].codec_ctx->pix_fmt;
-        out->width  = movie->streams[pad_id].codec_ctx->width;
-        out->height = movie->streams[pad_id].codec_ctx->height;
+        out->width  = param->width;
+        out->height = param->height;
     }
 
     return out;
 }
 
-static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters *param)
+static int movie_async_send_empty_frame(AVFilterContext *ctx, int pad_id)
 {
     MovieAsyncContext *movie = ctx->priv;
-    AVDictionaryEntry *tag;
-    AVFrame *src = NULL;
-    bool audio = true;
+    AVFrame *out;
+    int ret;
 
-    if (ctx->outputs[pad_id]->type == AVMEDIA_TYPE_VIDEO)
-        audio = false;
+    out = movie_async_alloc_empty_frame(ctx, pad_id);
+    if (!out)
+        return AVERROR(ENOMEM);
+
+    ret = movie_async_send_dat(ctx, pad_id, out);
+    if (ret < 0) {
+        av_frame_free(&out);
+        return ret;
+    }
+
+    return 0;
+}
+
+static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters **dst)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    AVCodecParameters *src = NULL;
+    AVFrame *frame = NULL;
 
     pthread_mutex_lock(&movie->mutex);
     if (ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue))
-        src = ff_framequeue_peek(&movie->streams[pad_id].dat_queue, 0);
-
-    if (!src) {
-        pthread_mutex_unlock(&movie->mutex);
-        return false;
-    }
-
-    param->format = src->format;
-    if (audio) {
-        param->sample_rate = src->sample_rate;
-        av_channel_layout_copy(&param->ch_layout, &src->ch_layout);
-        if ((tag = av_dict_get(src->metadata, "codec", NULL, 0)))
-            param->codec_id = strtoul(tag->value, NULL, 0);
-    } else {
-        param->width  = src->width;
-        param->height = src->height;
-    }
-
+        frame = ff_framequeue_peek(&movie->streams[pad_id].dat_queue, 0);
     pthread_mutex_unlock(&movie->mutex);
-    return true;
+
+    if (frame && frame->opaque_ref) {
+        *dst = (AVCodecParameters *)frame->opaque_ref->data;
+        return true;
+    }
+
+    return false;
 }
 
 static AVFrame *movie_async_recv_dat(AVFilterContext *ctx, int pad_id)
@@ -334,35 +338,6 @@ static bool movie_async_dat_allfree(AVFilterContext *ctx)
     return false;
 }
 
-static int movie_async_open_decoder(AVFilterContext *ctx, MovieStream *stream, AVCodecParameters *codecpar)
-{
-    const AVCodec *codec;
-    int ret;
-
-    codec = avcodec_find_decoder(codecpar->codec_id);
-    if (!codec) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to find any codec\n");
-        return AVERROR(EINVAL);
-    }
-
-    stream->codec_ctx = avcodec_alloc_context3(codec);
-    if (!stream->codec_ctx)
-        return AVERROR(ENOMEM);
-
-    ret = avcodec_parameters_to_context(stream->codec_ctx, codecpar);
-    if (ret < 0)
-        return ret;
-
-    stream->codec_ctx->thread_count = ff_filter_get_nb_threads(ctx);
-
-    if ((ret = avcodec_open2(stream->codec_ctx, codec, NULL)) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to open codec ret %d %s.\n", ret, av_err2str(ret));
-        return ret;
-    }
-
-    return 0;
-}
-
 static void movie_async_close_demuxer(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -374,11 +349,8 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
             continue;
 
         stream = &movie->streams[i];
-        if (stream) {
+        if (stream)
             stream->index = -1;
-            avcodec_close(stream->codec_ctx);
-            avcodec_free_context(&stream->codec_ctx);
-        }
     }
 
     if (movie->format_ctx)
@@ -406,14 +378,6 @@ static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
     if (ret < 0)
         goto end;
 
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie_async_output_inactive(movie, i))
-            continue;
-
-        avcodec_flush_buffers(movie->streams[i].codec_ctx);
-    }
-
-    /* flush data of dat queue, decode, send silence frame to next */
     if (flush)
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
 
@@ -511,24 +475,10 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
             av_channel_layout_default(&stream->codecpar->ch_layout,
                                       stream->codecpar->ch_layout.nb_channels);
 
-        ret = movie_async_open_decoder(ctx, &movie->streams[i], stream->codecpar);
-        if (ret < 0)
-            goto out;
-
         movie->format_ctx->streams[i]->discard = AVDISCARD_DEFAULT;
-
-        if (movie->streams[i].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO &&
-            !av_channel_layout_check(&movie->streams[i].codec_ctx->ch_layout)) {
-            ret = av_channel_layout_copy(&movie->streams[i].codec_ctx->ch_layout,
-                                         &stream->codecpar->ch_layout);
-            if (ret < 0)
-                goto out;
-        }
         movie->streams[i].index      = stream->index;
         movie->streams[i].time_base  = stream->time_base;
         movie->streams[i].frame_rate = stream->r_frame_rate;
-        movie->streams[i].next_pts   = AV_NOPTS_VALUE;
-        movie->streams[i].codec_ctx->pkt_timebase = stream->time_base;
     }
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", name);
 
@@ -601,8 +551,8 @@ static void movie_async_pause(AVFilterContext *ctx)
 static void movie_async_stop(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int i, ret = 0;
     AVFrame *out;
+    int i, ret;
 
     if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
         return;
@@ -614,15 +564,9 @@ static void movie_async_stop(AVFilterContext *ctx)
             if (movie_async_output_inactive(movie, i))
                 continue;
 
-            out = movie_async_alloc_empty_frame(ctx, i);
-            if (!out)
+            ret = movie_async_send_empty_frame(ctx, i);
+            if (ret < 0)
                 goto out;
-
-            ret = movie_async_send_dat(ctx, i, out);
-            if (ret < 0) {
-                av_frame_free(&out);
-                goto out;
-            }
         }
     }
 
@@ -635,160 +579,76 @@ out:
     movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_STOPPED, ret, NULL);
 }
 
-static void movie_async_free_frame(void *unused, uint8_t *data)
-{
-    av_packet_free((AVPacket **)&data);
-    av_free(data);
-}
-
-static int movie_async_wrap_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_id)
+static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_id)
 {
    MovieAsyncContext *movie = ctx->priv;
-   int ret = AVERROR(ENOMEM);
+   AVCodecParameters *src, *dst = NULL;
    AVFrame *frame = NULL;
-   AVPacket *pkt1 = NULL;
+   int ret;
 
-   frame = av_frame_alloc();
+   src = movie->format_ctx->streams[pkt->stream_index]->codecpar;
+   if (movie->streams[pad_id].reconfig) {
+       dst = avcodec_parameters_alloc();
+        if (!dst)
+            return AVERROR(ENOMEM);
+
+       ret = avcodec_parameters_copy(dst, src);
+       if (ret < 0)
+           goto out;
+   }
+
+   frame = wrap_frame(pkt, dst);
    if (!frame)
-       goto failed;
+       goto out;
 
-   pkt1 = av_packet_clone(pkt);
-   if (!pkt1)
-       goto failed;
-
-   frame->format = movie->streams[pad_id].codec_ctx->sample_fmt;
-   frame->sample_rate = movie->streams[pad_id].codec_ctx->sample_rate;
-   frame->nb_samples  = movie->streams[pad_id].codec_ctx->frame_size;
-   av_channel_layout_copy(&frame->ch_layout, &movie->streams[pad_id].codec_ctx->ch_layout);
-
-   frame->buf[0]      = av_buffer_create((void *)pkt1, sizeof(AVPacket) + AV_INPUT_BUFFER_PADDING_SIZE,
-                                         movie_async_free_frame, NULL, 0);
-   frame->data[0]     = frame->buf[0]->data;
-   frame->linesize[0] = frame->buf[0]->size;
-
-   av_dict_set_int(&frame->metadata, "codec", movie->streams[pad_id].codec_ctx->codec_id, 0);
+   frame->format = src->format;
+   frame->sample_rate = src->sample_rate;
+   frame->nb_samples  = src->frame_size;
+   av_channel_layout_copy(&frame->ch_layout, &src->ch_layout);
 
    ret = movie_async_send_dat(ctx, pad_id, frame);
    if (ret < 0)
-       goto failed;
+       goto out;
 
-   return 0;
+   return ret;
 
-failed:
-   if (frame)
-       av_frame_free(&frame);
-
-   if (pkt1)
-       av_packet_free(&pkt1);
-
+out:
+   avcodec_parameters_free(&dst);
+   av_frame_free(&frame);
    return ret;
 }
 
 static int movie_async_read_frame(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    AVPacket pkt = { 0 };
+    AVPacket *pkt;
     int i, ret;
 
+    pkt = av_packet_alloc();
+    if (!pkt)
+        return AVERROR(ENOMEM);
+
     /* read a new packet from input stream */
-    ret = av_read_frame(movie->format_ctx, &pkt);
-    if (ret == AVERROR_EOF) {
-        /* EOF -> set all decoders for flushing */
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            if (movie_async_output_inactive(movie, i))
-                continue;
-
-            if (!movie->offload) {
-                ret = avcodec_send_packet(movie->streams[i].codec_ctx, NULL);
-                if (ret < 0 && ret != AVERROR_EOF)
-                    return ret;
-            }
-        }
-    }
-
+    ret = av_read_frame(movie->format_ctx, pkt);
     if (ret < 0)
-        return ret;
+        goto out;
 
     /* send the packet to its decoder, if any */
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (!movie_async_output_inactive(movie, i) &&
-            pkt.stream_index == movie->streams[i].index) {
-
-            if (!movie->offload)
-                ret = avcodec_send_packet(movie->streams[i].codec_ctx, &pkt);
-            else
-                ret = movie_async_wrap_frame(ctx, &pkt, i);
+        if (pkt->stream_index == movie->streams[i].index) {
+            movie->current_ms = pkt->pts * av_q2d(movie->streams[i].time_base) * 1000;
+            ret = movie_async_send_frame(ctx, pkt, i);
+            if (ret < 0)
+                goto out;
 
             break;
         }
     }
 
-    av_packet_unref(&pkt);
-    return ret == AVERROR_INVALIDDATA ? 0 : ret;
-}
-
-static int movie_async_dec_frame(AVFilterContext *ctx, int pad_id, AVFrame **oframe)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVFrame *frame;
-    int ret;
-
-    frame = av_frame_alloc();
-    if (!frame)
-        return AVERROR(ENOMEM);
-
-    ret = avcodec_receive_frame(movie->streams[pad_id].codec_ctx, frame);
-    if (ret < 0) {
-        av_frame_free(&frame);
-        return ret;
-    }
-
-    if (frame->pts == AV_NOPTS_VALUE && movie->streams[pad_id].next_pts != AV_NOPTS_VALUE)
-        frame->pts = movie->streams[pad_id].next_pts;
-
-    if (frame->pts != AV_NOPTS_VALUE)
-        movie->streams[pad_id].next_pts = frame->pts + frame->nb_samples;
-
-    frame->time_base = movie->streams[pad_id].time_base;
-    movie->current_ms = frame->pts * av_q2d(movie->streams[pad_id].time_base) * 1000;
-
-    *oframe = frame;
     return 0;
-}
-
-static int movie_async_dec_frames(AVFilterContext *ctx)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    int got_frame = 0;
-    AVFrame *frame;
-    int ret, i;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie_async_output_inactive(movie, i))
-            continue;
-
-        if (movie->offload) {
-            ret = AVERROR(EAGAIN);
-            continue;
-        }
-
-        /* read frame from decoder, add frame queue */
-        ret = movie_async_dec_frame(ctx, i, &frame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-            continue;
-        else if (ret < 0)
-            return ret;
-
-        ret = movie_async_send_dat(ctx, i, frame);
-        if (ret < 0) {
-            av_frame_free(&frame);
-            return ret;
-        }
-
-        got_frame = 1;
-    }
-
-    return got_frame ? 0 : ret;
+out:
+    av_packet_free(&pkt);
+    return ret;
 }
 
 static int movie_async_loop(AVFilterContext *ctx)
@@ -807,20 +667,11 @@ static int movie_async_loop(AVFilterContext *ctx)
 static bool movie_async_proc_dat(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int ret;
+    int ret, i;
 
-    ret = movie_async_dec_frames(ctx);
-    if (ret == AVERROR(EAGAIN)) {
-        ret = movie_async_read_frame(ctx);
-        if (ret == AVERROR_EOF && !movie->offload) {
-            do {
-                ret = movie_async_dec_frames(ctx);
-            } while (ret == 0);
-        }
-
-        if (ret == AVERROR_EOF)
-            ret = movie_async_loop(ctx);
-    }
+    ret = movie_async_read_frame(ctx);
+    if (ret == AVERROR_EOF)
+        ret = movie_async_loop(ctx);
 
     if (ret >= 0 || ret == AVERROR_EXIT)
         return false;
@@ -977,7 +828,7 @@ static int movie_async_output_props(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     MovieAsyncContext *movie = ctx->priv;
     unsigned out_id = FF_OUTLINK_IDX(outlink);
-    AVCodecParameters p = {0};
+    AVCodecParameters *p = NULL;
 
     outlink->time_base = movie->streams[out_id].time_base;
     if (!outlink->time_base.num || !outlink->time_base.den)
@@ -986,8 +837,8 @@ static int movie_async_output_props(AVFilterLink *outlink)
     switch (outlink->type) {
         case AVMEDIA_TYPE_VIDEO:
             if (movie_async_peek_info(ctx, out_id, &p)) {
-                outlink->w = p.width;
-                outlink->h = p.height;
+                outlink->w = p->width;
+                outlink->h = p->height;
                 outlink->frame_rate = movie->streams[out_id].frame_rate;
             }
             break;
@@ -1049,6 +900,7 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
     for (i = 0; i < outputs; i++) {
         movie->streams[i].type  = types[i];
         movie->streams[i].index = -1;
+
         ff_framequeue_init(&movie->streams[i].dat_queue, NULL);
 
         pad.type         = types[i];
@@ -1079,16 +931,15 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
     AVChannelLayout list64[] = { { 0 }, { 0 } };
-    AVFilterFormats *formats;
+    AVCodecParameters *p = NULL;
     int list[] = { 0, -1 };
     AVFilterLink *outlink;
-    AVCodecParameters p = {0};
     int flags = false;
     int i, ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (!movie_async_peek_info(ctx, i, &p)) {
-            movie->streams[i].reconfig = 1;
+            movie->streams[i].reconfig = true;
             continue;
         }
 
@@ -1097,47 +948,36 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 
         switch (outlink->type) {
             case AVMEDIA_TYPE_AUDIO:
-                list[0] = p.sample_rate;
+                list[0] = p->sample_rate;
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.samplerates)) < 0)
                     return ret;
 
-                if ((ret = av_channel_layout_copy(&list64[0], &p.ch_layout) < 0))
+                if ((ret = av_channel_layout_copy(&list64[0], &p->ch_layout) < 0))
                     return ret;
 
                 if ((ret = ff_channel_layouts_ref(ff_make_channel_layout_list(list64),
                                                   &outlink->incfg.channel_layouts)) < 0)
                     return ret;
 
-
             default:
-                if (outlink->type == AVMEDIA_TYPE_AUDIO) {
-                    if (movie->offload) {
-                        list[0] = p.codec_id;
-                        formats = ff_make_format_list(list);
-                    } else {
-                        formats = ff_all_raw_codecs(outlink->type);
-                    }
-                } else {
-                    list[0] = AV_CODEC_ID_RAWVIDEO;
-                    formats = ff_make_format_list(list);
-                }
+                list[0] = p->codec_id;
+                if (avcodec_is_audio_lossless(list[0]))
+                    list[0] = AV_CODEC_ID_RAWAUDIO;
 
                 /* codec id */
-                if ((ret = ff_formats_ref(formats, &outlink->incfg.codecs)) < 0)
+                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.codecs)) < 0)
                     return ret;
 
-                list[0] = p.format;
+                list[0] = p->format;
 
-                formats = movie->offload ?
-                          ff_all_formats(outlink->type) : ff_make_format_list(list);
-
-                if ((ret = ff_formats_ref(formats, &outlink->incfg.formats)) < 0)
+                /* format */
+                if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.formats)) < 0)
                     return ret;
 
                 break;
         }
 
-        movie->streams[i].reconfig = 0;
+        movie->streams[i].reconfig = false;
     }
 
     return flags ? 0 : FFERROR_NOT_READY;
@@ -1177,12 +1017,9 @@ static int movie_async_activate(AVFilterContext *ctx)
 
         if (!frame->linesize[0]) {
             ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
-            movie->streams[i].reconfig = 1;
+            movie->streams[i].reconfig = true;
             av_frame_free(&frame);
         } else {
-            if (link->type == AVMEDIA_TYPE_AUDIO && movie->offload)
-                frame->format = link->format;
-
             ret = ff_filter_frame(link, frame);
         }
     }
@@ -1215,7 +1052,8 @@ static int movie_async_get_duration(AVFilterContext *ctx, char *res, int res_len
 static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int pos = 0, ret, i;
+    AVCodecParameters *param;
+    int pos = 0, ret, i, idx;
 
     ret = snprintf(res, res_len, "st: %d", movie->state);
     pos += ret;
@@ -1224,20 +1062,23 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
         if (movie_async_output_inactive(movie, i))
             continue;
 
-        if (movie->streams[i].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
-            ret = snprintf(res + pos, res_len - pos, ", A: %d %s %"PRId64" %d %d %zu",
+        idx = movie->streams[i].index;
+        param = movie->format_ctx->streams[idx]->codecpar;
+
+        if (movie->streams[i].type == AVMEDIA_TYPE_AUDIO) {
+            ret = snprintf(res + pos, res_len - pos, ", A: %d %s %"PRIu64" %d %d %zu",
                                     movie->streams[i].index,
-                                    avcodec_get_name(movie->streams[i].codec_ctx->codec_id),
+                                    avcodec_get_name(param->codec_id),
                                     movie->format_ctx->bit_rate,
-                                    movie->streams[i].codec_ctx->sample_rate,
-                                    movie->streams[i].codec_ctx->ch_layout.nb_channels,
+                                    param->sample_rate,
+                                    param->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&movie->streams[i].dat_queue));
         } else {
             ret = snprintf(res + pos, res_len - pos, ", V: %d %s %d %d %zu",
                                     movie->streams[i].index,
-                                    avcodec_get_name(movie->streams[i].codec_ctx->codec_id),
-                                    movie->streams[i].codec_ctx->width,
-                                    movie->streams[i].codec_ctx->height,
+                                    avcodec_get_name(param->codec_id),
+                                    param->width,
+                                    param->height,
                                     ff_framequeue_queued_frames(&movie->streams[i].dat_queue));
         }
 
@@ -1336,8 +1177,6 @@ static const struct AVClass *movie_child_class_iterate(void **iter)
 
     if (!c)
         c = avformat_get_class();
-    else if (c == avformat_get_class())
-        c = avcodec_get_class();
     else
         c = NULL;
 
@@ -1349,13 +1188,10 @@ static void *movie_async_child_next(void *obj, void *prev)
 {
     MovieAsyncContext *movie = obj;
 
-    if (!prev) {
+    if (!prev)
         return movie->format_ctx;
-    } else if (prev == movie->format_ctx) {
-        return movie->streams[0].codec_ctx;
-    } else {
+    else
         return NULL;
-    }
 }
 
 #if CONFIG_MOVIE_ASYNC_FILTER
