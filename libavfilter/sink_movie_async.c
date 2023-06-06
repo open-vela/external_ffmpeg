@@ -439,6 +439,8 @@ static void amoviesink_start(AVFilterContext *ctx, const char *params)
     MovieSinkPriv *priv = ctx->priv;
     int ret = AVERROR(EPERM);
 
+    priv->eof_flag = 1;
+
     if (priv->state != AVMOVIE_ASYNC_STATE_PREPARED &&
         priv->state != AVMOVIE_ASYNC_STATE_PAUSED)
         goto out;
@@ -451,10 +453,11 @@ static void amoviesink_start(AVFilterContext *ctx, const char *params)
     }
 
     priv->state = AVMOVIE_ASYNC_STATE_STARTED;
-    ff_filter_set_ready(ctx, 100);
+    priv->eof_flag = 0;
     ret = 0;
 
 out:
+    ff_filter_set_ready(ctx, 100);
     amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
 }
 
@@ -1093,7 +1096,7 @@ static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd, const 
      * If pending_stop is required, do not send close to worker thread,
      * cause itself will close and quit.
      */
-    if (pending_stop)
+    if (pending_stop && priv->state == AVMOVIE_ASYNC_STATE_STARTED)
         return ret;
 
     if (close)
