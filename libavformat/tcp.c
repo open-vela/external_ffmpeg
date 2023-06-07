@@ -101,6 +101,29 @@ static void customize_fd(void *ctx, int fd)
 #endif /* !HAVE_WINSOCK2_H */
 }
 
+static void tcp_statistics(TCPContext *s, int size)
+{
+    int64_t debug_ts;
+
+    if (size <= 0)
+        av_log(s, AV_LOG_ERROR, "%s receive ret %d.\n", __func__, size);
+    else
+        s->debug_bytes += size;
+
+    if (av_log_get_level() < AV_LOG_DEBUG)
+        return;
+
+    debug_ts = av_gettime_relative();
+    if (debug_ts - s->debug_ts > AV_TIME_BASE) {
+        av_log(s, AV_LOG_DEBUG, "[%s] recv %lld bytes in %lldus, bps %lldkbps\n",
+            __func__, s->debug_bytes, debug_ts - s->debug_ts,
+            (s->debug_bytes * 8 * 1000) / (debug_ts - s->debug_ts));
+
+        s->debug_bytes = 0;
+        s->debug_ts = debug_ts;
+    }
+}
+
 /* return non zero if error */
 static int tcp_open(URLContext *h, const char *uri, int flags)
 {
@@ -241,31 +264,19 @@ static int tcp_accept(URLContext *s, URLContext **c)
 static int tcp_read(URLContext *h, uint8_t *buf, int size)
 {
     TCPContext *s = h->priv_data;
-    int64_t debug_ts;
     int ret;
 
     if (!(h->flags & AVIO_FLAG_NONBLOCK)) {
         ret = ff_network_wait_fd_timeout(s->fd, 0, h->rw_timeout, &h->interrupt_callback);
-        if (ret)
+        if (ret) {
+            av_log(h, AV_LOG_ERROR, "%s ret: %d\n", __func__, ret);
             return ret;
+        }
     }
     ret = recv(s->fd, buf, size, 0);
-    if (ret == 0) {
-        av_log(h, AV_LOG_INFO, "%s receive eof.\n", __func__);
+    tcp_statistics(s, ret);
+    if (ret == 0)
         return AVERROR_EOF;
-    } else if (ret > 0)
-        s->debug_bytes += ret;
-
-    debug_ts = av_gettime_relative();
-    if (debug_ts - s->debug_ts > AV_TIME_BASE) {
-        av_log(h, AV_LOG_DEBUG, "[%s] recv %lld bytes in %lldus, bps %lldkbps\n",
-            __func__, s->debug_bytes, debug_ts - s->debug_ts,
-            (s->debug_bytes * 8 * 1000) / (debug_ts - s->debug_ts));
-
-        s->debug_bytes = 0;
-        s->debug_ts = debug_ts;
-    }
-
     return ret < 0 ? ff_neterrno() : ret;
 }
 
