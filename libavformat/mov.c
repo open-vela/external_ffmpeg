@@ -189,6 +189,7 @@ static int mov_read_mac_string(MOVContext *c, AVIOContext *pb, int len,
     return p - dst;
 }
 
+#if !CONFIG_AUDIO_ONLY
 /**
  * Get the current item in the parsing process.
  */
@@ -228,6 +229,7 @@ static AVStream *get_curr_st(MOVContext *c)
 
     return st;
 }
+#endif
 
 static int mov_read_covr(MOVContext *c, AVIOContext *pb, int type, int len)
 {
@@ -590,6 +592,7 @@ retry:
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_chpl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int64_t start;
@@ -627,6 +630,7 @@ static int mov_read_chpl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
     return 0;
 }
+#endif
 
 #define MIN_DATA_ENTRY_BOX_SIZE 12
 static int mov_read_dref(MOVContext *c, AVIOContext *pb, MOVAtom atom)
@@ -882,6 +886,7 @@ static int mov_read_dac3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 #if CONFIG_IAMFDEC
 static int mov_read_iacb(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -1068,6 +1073,7 @@ fail:
     return ret;
 }
 #endif
+#endif
 
 static int mov_read_dec3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -1184,6 +1190,7 @@ static int mov_read_chan(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_chnl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int64_t end = av_sat_add64(avio_tell(pb), atom.size);
@@ -1215,6 +1222,7 @@ static int mov_read_chnl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
     return ret;
 }
+#endif
 
 static int mov_read_wfex(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -1231,6 +1239,7 @@ static int mov_read_wfex(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return ret;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_clap(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -1333,6 +1342,7 @@ fail:
 
     return err;
 }
+#endif
 
 /* This atom overrides any previously set aspect ratio */
 static int mov_read_pasp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
@@ -1825,6 +1835,7 @@ static int mov_read_moof(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return mov_read_default(c, pb, atom);
 }
 
+#if !CONFIG_AUDIO_ONLY
 static void mov_metadata_creation_time(MOVContext *c, AVIOContext *pb, AVDictionary **metadata, int version)
 {
     int64_t time;
@@ -1939,6 +1950,7 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     return 0;
 }
+#endif
 
 static void set_last_stream_little_endian(AVFormatContext *fc)
 {
@@ -2055,6 +2067,7 @@ static int mov_read_pcmc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_colr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -2170,6 +2183,7 @@ static int mov_read_fiel(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     return 0;
 }
+#endif
 
 static int mov_realloc_extradata(AVCodecParameters *par, MOVAtom atom)
 {
@@ -2239,6 +2253,7 @@ static int mov_read_alac(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return mov_read_extradata(c, pb, atom, AV_CODEC_ID_ALAC);
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_avss(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     return mov_read_extradata(c, pb, atom, AV_CODEC_ID_CAVS);
@@ -2366,6 +2381,7 @@ static int mov_read_svq3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     return mov_read_extradata(c, pb, atom, AV_CODEC_ID_SVQ3);
 }
+#endif
 
 static int mov_read_wave(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -2420,6 +2436,7 @@ static int mov_read_wave(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 /**
  * This function reads atom content and puts data in extradata without tag
  * nor size unlike mov_read_extradata.
@@ -2518,6 +2535,7 @@ static int mov_read_sbas(MOVContext* c, AVIOContext* pb, MOVAtom atom)
 
     return 0;
 }
+#endif
 
 /**
  * An strf atom is a BITMAPINFOHEADER struct. This struct is 40 bytes itself,
@@ -2826,6 +2844,7 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
     }
 }
 
+#if !CONFIG_AUDIO_ONLY
 static void mov_parse_stsd_subtitle(MOVContext *c, AVIOContext *pb,
                                     AVStream *st, MOVStreamContext *sc,
                                     int64_t size)
@@ -2841,6 +2860,7 @@ static void mov_parse_stsd_subtitle(MOVContext *c, AVIOContext *pb,
     st->codecpar->width  = sc->width;
     st->codecpar->height = sc->height;
 }
+#endif
 
 static uint32_t yuv_to_rgba(uint32_t ycbcr)
 {
@@ -3123,8 +3143,10 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
                 return AVERROR_INVALIDDATA;
             }
         } else if (st->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE){
+#if !CONFIG_AUDIO_ONLY
             mov_parse_stsd_subtitle(c, pb, st, sc,
                                     size - (avio_tell(pb) - start_pos));
+#endif
         } else {
             ret = mov_parse_stsd_data(c, pb, st, sc,
                                       size - (avio_tell(pb) - start_pos));
@@ -5355,6 +5377,7 @@ static int mov_read_custom(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return ret;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int heif_add_stream(MOVContext *c, HEIFItem *item)
 {
     MOVStreamContext *sc;
@@ -5411,6 +5434,7 @@ static int heif_add_stream(MOVContext *c, HEIFItem *item)
 
     return 0;
 }
+#endif
 
 static int mov_read_meta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -6274,6 +6298,7 @@ static int mov_read_tmcd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_vpcc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -7002,6 +7027,7 @@ static int mov_read_hfov(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     return 0;
 }
+#endif
 
 static int mov_parse_uuid_spherical(MOVStreamContext *sc, AVIOContext *pb, size_t len)
 {
@@ -8260,6 +8286,7 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_dops(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     const int OPUS_SEEK_PREROLL_MS = 80;
@@ -8412,6 +8439,7 @@ static int mov_read_lhvc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_free(buf);
     return 0;
 }
+#endif
 
 static int mov_read_kind(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -8502,6 +8530,7 @@ cleanup:
     return ret;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_SA3D(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -8617,6 +8646,7 @@ static int mov_read_SAND(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     return 0;
 }
+#endif
 
 static int rb_size(AVIOContext *pb, int64_t *value, int size)
 {
@@ -8645,11 +8675,13 @@ static int mov_read_pitm(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return atom.size;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_idat(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     c->idat_offset = avio_tell(pb);
     return 0;
 }
+#endif
 
 static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -8729,6 +8761,7 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return atom.size;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int mov_read_infe(MOVContext *c, AVIOContext *pb, MOVAtom atom, int idx)
 {
     AVBPrint item_name;
@@ -9134,7 +9167,9 @@ fail:
 
     return ret;
 }
+#endif
 
+#if !CONFIG_AUDIO_ONLY
 static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('A','C','L','R'), mov_read_aclr },
 { MKTAG('A','P','R','G'), mov_read_avid },
@@ -9262,6 +9297,82 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 #endif
 { 0, NULL }
 };
+#else
+static const MOVParseTableEntry mov_default_parse_table[] = {
+{ MKTAG('c','o','6','4'), mov_read_stco },
+{ MKTAG('c','t','t','s'), mov_read_ctts }, /* composition time to sample */
+{ MKTAG('d','i','n','f'), mov_read_default },
+{ MKTAG('d','r','e','f'), mov_read_dref },
+{ MKTAG('e','d','t','s'), mov_read_default },
+{ MKTAG('e','l','s','t'), mov_read_elst },
+{ MKTAG('e','n','d','a'), mov_read_enda },
+{ MKTAG('a','d','r','m'), mov_read_adrm },
+{ MKTAG('f','t','y','p'), mov_read_ftyp },
+{ MKTAG('h','d','l','r'), mov_read_hdlr },
+{ MKTAG('i','l','s','t'), mov_read_ilst },
+{ MKTAG('m','d','a','t'), mov_read_mdat },
+{ MKTAG('m','d','i','a'), mov_read_default },
+{ MKTAG('m','e','t','a'), mov_read_meta },
+{ MKTAG('m','i','n','f'), mov_read_default },
+{ MKTAG('m','o','o','f'), mov_read_moof },
+{ MKTAG('m','o','o','v'), mov_read_moov },
+{ MKTAG('m','v','e','x'), mov_read_default },
+{ MKTAG('a','l','a','c'), mov_read_alac }, /* alac specific atom */
+{ MKTAG('p','a','s','p'), mov_read_pasp },
+{ MKTAG('s','i','d','x'), mov_read_sidx },
+{ MKTAG('s','t','b','l'), mov_read_default },
+{ MKTAG('s','t','c','o'), mov_read_stco },
+{ MKTAG('s','t','p','s'), mov_read_stps },
+{ MKTAG('s','t','r','f'), mov_read_strf },
+{ MKTAG('s','t','s','c'), mov_read_stsc },
+{ MKTAG('s','t','s','d'), mov_read_stsd }, /* sample description */
+{ MKTAG('s','t','s','s'), mov_read_stss }, /* sync sample */
+{ MKTAG('s','t','s','z'), mov_read_stsz }, /* sample size */
+{ MKTAG('s','t','t','s'), mov_read_stts },
+{ MKTAG('s','t','z','2'), mov_read_stsz }, /* compact sample size */
+{ MKTAG('s','d','t','p'), mov_read_sdtp }, /* independent and disposable samples */
+{ MKTAG('t','k','h','d'), mov_read_tkhd }, /* track header */
+{ MKTAG('t','f','d','t'), mov_read_tfdt },
+{ MKTAG('t','f','h','d'), mov_read_tfhd }, /* track fragment header */
+{ MKTAG('t','r','a','k'), mov_read_trak },
+{ MKTAG('t','r','a','f'), mov_read_default },
+{ MKTAG('t','r','e','f'), mov_read_default },
+{ MKTAG('t','m','c','d'), mov_read_tmcd },
+{ MKTAG('c','h','a','p'), mov_read_chap },
+{ MKTAG('t','r','e','x'), mov_read_trex },
+{ MKTAG('t','r','u','n'), mov_read_trun },
+{ MKTAG('u','d','t','a'), mov_read_default },
+{ MKTAG('w','a','v','e'), mov_read_wave },
+{ MKTAG('e','s','d','s'), mov_read_esds },
+{ MKTAG('d','a','c','3'), mov_read_dac3 }, /* AC-3 info */
+{ MKTAG('d','e','c','3'), mov_read_dec3 }, /* EAC-3 info */
+{ MKTAG('d','d','t','s'), mov_read_ddts }, /* DTS audio descriptor */
+{ MKTAG('w','i','d','e'), mov_read_wide }, /* place holder */
+{ MKTAG('w','f','e','x'), mov_read_wfex },
+{ MKTAG('c','m','o','v'), mov_read_cmov },
+{ MKTAG('c','h','a','n'), mov_read_chan }, /* channel layout from quicktime */
+{ MKTAG('s','g','p','d'), mov_read_sgpd },
+{ MKTAG('s','b','g','p'), mov_read_sbgp },
+{ MKTAG('u','u','i','d'), mov_read_uuid },
+{ MKTAG('f','r','e','e'), mov_read_free },
+{ MKTAG('-','-','-','-'), mov_read_custom },
+{ MKTAG('s','i','n','f'), mov_read_default },
+{ MKTAG('f','r','m','a'), mov_read_frma },
+{ MKTAG('s','e','n','c'), mov_read_senc },
+{ MKTAG('s','a','i','z'), mov_read_saiz },
+{ MKTAG('s','a','i','o'), mov_read_saio },
+{ MKTAG('p','s','s','h'), mov_read_pssh },
+{ MKTAG('s','c','h','m'), mov_read_schm },
+{ MKTAG('s','c','h','i'), mov_read_default },
+{ MKTAG('t','e','n','c'), mov_read_tenc },
+{ MKTAG('d','f','L','a'), mov_read_dfla },
+{ MKTAG('k','i','n','d'), mov_read_kind },
+{ MKTAG('i','l','o','c'), mov_read_iloc },
+{ MKTAG('p','c','m','C'), mov_read_pcmc }, /* PCM configuration box */
+{ MKTAG('p','i','t','m'), mov_read_pitm },
+{ 0, NULL }
+};
+#endif
 
 static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {

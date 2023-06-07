@@ -1507,6 +1507,7 @@ static int insert_filter(AVFilterContext **last_filter, int *pad_idx,
     return 0;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *graph,
                                          OutputFilter *ofilter, AVFilterInOut *out)
 {
@@ -1585,6 +1586,12 @@ static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *gr
 
     return 0;
 }
+#else
+static inline int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *graph,
+                                         OutputFilter *ofilter, AVFilterInOut *out) {
+    return 0;
+}
+#endif
 
 static int configure_output_audio_filter(FilterGraphPriv *fgp, AVFilterGraph *graph,
                                          OutputFilter *ofilter, AVFilterInOut *out)
@@ -1689,6 +1696,7 @@ static void sub2video_prepare(InputFilterPriv *ifp)
     ifp->sub2video.initialize = 1;
 }
 
+#if !CONFIG_AUDIO_ONLY
 static int configure_input_video_filter(FilterGraph *fg, AVFilterGraph *graph,
                                         InputFilter *ifilter, AVFilterInOut *in)
 {
@@ -1803,6 +1811,12 @@ fail:
 
     return ret;
 }
+#else
+static inline int configure_input_video_filter(FilterGraph *fg, AVFilterGraph *graph,
+                                        InputFilter *ifilter, AVFilterInOut *in) {
+    return 0;
+}
+#endif
 
 static int configure_input_audio_filter(FilterGraph *fg, AVFilterGraph *graph,
                                         InputFilter *ifilter, AVFilterInOut *in)

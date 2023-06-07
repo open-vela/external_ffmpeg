@@ -2039,6 +2039,7 @@ DOCUMENT_LIST="
 "
 
 FEATURE_LIST="
+    audio_only
     ftrapv
     gray
     hardcoded_tables
@@ -4485,6 +4486,10 @@ for e in $env; do
     eval "export $e"
 done
 
+if enabled audio_only; then
+    disable format_filter hflip_filter transpose_filter vflip_filter
+fi
+
 if disabled autodetect; then
 
     # Unless iconv is explicitely disabled by the user, we still want to probe
@@ -4494,6 +4499,17 @@ if disabled autodetect; then
     disable_weak $EXTERNAL_AUTODETECT_LIBRARY_LIST
     disable_weak $HWACCEL_AUTODETECT_LIBRARY_LIST
 fi
+
+for c in ffmpeg ffplay; do
+    if enabled $c; then
+        if enabled audio_only; then
+            enable asink_abuffer_filter asrc_abuffer_filter
+        else
+            enable asink_abuffer_filter asrc_abuffer_filter vsink_buffer_filter vsrc_buffer_filter
+        fi
+    fi
+done
+
 # Mark specifically enabled, but normally autodetected libraries as requested.
 for lib in $AUTODETECT_LIBS; do
     enabled $lib && request $lib

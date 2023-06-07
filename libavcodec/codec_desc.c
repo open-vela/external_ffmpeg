@@ -32,6 +32,7 @@
 #define MT(...) (const char *const[]){ __VA_ARGS__, NULL }
 
 static const AVCodecDescriptor codec_descriptors[] = {
+#if !CONFIG_AUDIO_ONLY
     /* video codecs */
     {
         .id        = AV_CODEC_ID_MPEG1VIDEO,
@@ -1970,6 +1971,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("DNxUncompressed / SMPTE RDD 50"),
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSLESS,
     },
+#endif
 
     /* various PCM "codecs" */
     {
@@ -3481,6 +3483,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
 
+#if !CONFIG_AUDIO_ONLY
     /* subtitle codecs */
     {
         .id        = AV_CODEC_ID_DVD_SUBTITLE,
@@ -3775,6 +3778,7 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .name      = "anull",
         .long_name = NULL_IF_CONFIG_SMALL("Null audio codec"),
     },
+#endif
 };
 
 static int descriptor_compare(const void *key, const void *member)

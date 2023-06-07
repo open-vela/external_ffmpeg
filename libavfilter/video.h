@@ -24,6 +24,7 @@
 #include "avfilter.h"
 #include "filters.h"
 
+#if !CONFIG_AUDIO_ONLY
 /**
  * An AVFilterPad array whose only entry has name "default"
  * and is of type AVMEDIA_TYPE_VIDEO.
@@ -44,6 +45,23 @@ AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h);
  * @return      on success, an AVFrame owned by the caller, NULL on error
  */
 AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h);
+#else
+static const AVFilterPad ff_video_default_filterpad[1] = { { .name = NULL, .type = -1 } };
+
+static inline AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h) {
+    return NULL;
+}
+static inline AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int align) {
+    return NULL;
+}
+static inline AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h) {
+    return NULL;
+}
+
+static inline AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h) {
+    return NULL;
+}
+#endif
 
 /**
  * Returns true if a pixel format is "regular YUV", which includes all pixel
