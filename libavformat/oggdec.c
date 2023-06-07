@@ -40,6 +40,7 @@
 #define MAX_PAGE_SIZE 65307
 #define DECODER_BUFFER_SIZE MAX_PAGE_SIZE
 
+#if !CONFIG_AUDIO_ONLY
 static const struct ogg_codec * const ogg_codecs[] = {
     &ff_skeleton_codec,
     &ff_dirac_codec,
@@ -58,6 +59,20 @@ static const struct ogg_codec * const ogg_codecs[] = {
     &ff_ogm_old_codec,
     NULL
 };
+#else
+static const struct ogg_codec * const ogg_codecs[] = {
+    &ff_speex_codec,
+    &ff_vorbis_codec,
+    &ff_flac_codec,
+    &ff_celt_codec,
+    &ff_opus_codec,
+    &ff_old_flac_codec,
+    &ff_ogm_audio_codec,
+    &ff_ogm_text_codec,
+    &ff_ogm_old_codec,
+    NULL
+};
+#endif
 
 static int64_t ogg_calc_pts(AVFormatContext *s, int idx, int64_t *dts);
 static int ogg_new_stream(AVFormatContext *s, uint32_t serial);

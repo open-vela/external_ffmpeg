@@ -196,6 +196,7 @@ int opt_cpuflags(void *optctx, const char *opt, const char *arg);
  */
 int opt_cpucount(void *optctx, const char *opt, const char *arg);
 
+#if !CONFIG_AUDIO_ONLY
 #define CMDUTILS_COMMON_OPTIONS                                                                                         \
     { "L",           OPT_EXIT,             { .func_arg = show_license },     "show license" },                          \
     { "h",           OPT_EXIT,             { .func_arg = show_help },        "show help", "topic" },                    \
@@ -228,4 +229,30 @@ int opt_cpucount(void *optctx, const char *opt, const char *arg);
     { "hide_banner", OPT_BOOL | OPT_EXPERT, {&hide_banner},     "do not show program banner", "hide_banner" },          \
     CMDUTILS_COMMON_OPTIONS_AVDEVICE                                                                                    \
 
+#else
+#define CMDUTILS_COMMON_OPTIONS                                                                                         \
+    { "version",     OPT_EXIT,             { .func_arg = show_version },     "show version" },                          \
+    { "buildconf",   OPT_EXIT,             { .func_arg = show_buildconf },   "show build configuration" },              \
+    { "formats",     OPT_EXIT,             { .func_arg = show_formats },     "show available formats" },                \
+    { "muxers",      OPT_EXIT,             { .func_arg = show_muxers },      "show available muxers" },                 \
+    { "demuxers",    OPT_EXIT,             { .func_arg = show_demuxers },    "show available demuxers" },               \
+    { "devices",     OPT_EXIT,             { .func_arg = show_devices },     "show available devices" },                \
+    { "codecs",      OPT_EXIT,             { .func_arg = show_codecs },      "show available codecs" },                 \
+    { "decoders",    OPT_EXIT,             { .func_arg = show_decoders },    "show available decoders" },               \
+    { "encoders",    OPT_EXIT,             { .func_arg = show_encoders },    "show available encoders" },               \
+    { "bsfs",        OPT_EXIT,             { .func_arg = show_bsfs },        "show available bit stream filters" },     \
+    { "protocols",   OPT_EXIT,             { .func_arg = show_protocols },   "show available protocols" },              \
+    { "filters",     OPT_EXIT,             { .func_arg = show_filters },     "show available filters" },                \
+    { "layouts",     OPT_EXIT,             { .func_arg = show_layouts },     "show standard channel layouts" },         \
+    { "sample_fmts", OPT_EXIT,             { .func_arg = show_sample_fmts }, "show available audio sample formats" },   \
+    { "dispositions", OPT_EXIT,            { .func_arg = show_dispositions}, "show available stream dispositions" },    \
+    { "loglevel",    HAS_ARG,              { .func_arg = opt_loglevel },     "set logging level", "loglevel" },         \
+    { "report",      0,                    { .func_arg = opt_report },       "generate a report" },                     \
+    { "max_alloc",   HAS_ARG,              { .func_arg = opt_max_alloc },    "set maximum size of a single allocated block", "bytes" }, \
+    { "cpuflags",    HAS_ARG | OPT_EXPERT, { .func_arg = opt_cpuflags },     "force specific cpu flags", "flags" },     \
+    { "cpucount",    HAS_ARG | OPT_EXPERT, { .func_arg = opt_cpucount },     "force specific cpu count", "count" },     \
+    { "hide_banner", OPT_BOOL | OPT_EXPERT, {&hide_banner},     "do not show program banner", "hide_banner" },          \
+    CMDUTILS_COMMON_OPTIONS_AVDEVICE                                                                                    \
+
+#endif
 #endif /* FFTOOLS_OPT_COMMON_H */

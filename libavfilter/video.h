@@ -23,6 +23,7 @@
 
 #include "avfilter.h"
 
+#if !CONFIG_AUDIO_ONLY
 AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h);
 AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int align);
 AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h);
@@ -37,5 +38,23 @@ AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h);
  * @return      on success, an AVFrame owned by the caller, NULL on error
  */
 AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h);
+
+#else
+static inline AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h) {
+    return NULL;
+}
+
+static inline AVFrame *ff_default_get_video_buffer2(AVFilterLink *link, int w, int h, int align) {
+    return NULL;
+}
+
+static inline AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h) {
+    return NULL;
+}
+
+static inline AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h) {
+    return NULL;
+}
+#endif
 
 #endif /* AVFILTER_VIDEO_H */

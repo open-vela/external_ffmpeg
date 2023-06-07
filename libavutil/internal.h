@@ -277,7 +277,18 @@ FILE *avpriv_fopen_utf8(const char *path, const char *mode);
  */
 int avpriv_tempfile(const char *prefix, char **filename, int log_offset, void *log_ctx);
 
+#if !CONFIG_AUDIO_ONLY
 int avpriv_set_systematic_pal2(uint32_t pal[256], enum AVPixelFormat pix_fmt);
+
+void ff_check_pixfmt_descriptors(void);
+#else
+static inline int avpriv_set_systematic_pal2(uint32_t pal[256], enum AVPixelFormat pix_fmt) {
+    return 0;
+}
+
+static inline void ff_check_pixfmt_descriptors(void) {
+}
+#endif
 
 static av_always_inline av_const int avpriv_mirror(int x, int w)
 {
@@ -291,8 +302,6 @@ static av_always_inline av_const int avpriv_mirror(int x, int w)
     }
     return x;
 }
-
-void ff_check_pixfmt_descriptors(void);
 
 /**
  * Set a dictionary value to an ISO-8601 compliant timestamp string.

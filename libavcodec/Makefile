@@ -44,7 +44,6 @@ OBJS = ac3_parser.o                                                     \
        dv_profile.o                                                     \
        encode.o                                                         \
        get_buffer.o                                                     \
-       imgconvert.o                                                     \
        jni.o                                                            \
        mathtables.o                                                     \
        mediacodec.o                                                     \
@@ -54,7 +53,6 @@ OBJS = ac3_parser.o                                                     \
        parsers.o                                                        \
        profiles.o                                                       \
        qsv_api.o                                                        \
-       raw.o                                                            \
        utils.o                                                          \
        version.o                                                        \
        vlc.o                                                            \
@@ -237,6 +235,8 @@ OBJS-$(CONFIG_ATRAC3P_DECODER)         += atrac3plusdec.o atrac3plus.o \
 OBJS-$(CONFIG_ATRAC3PAL_DECODER)       += atrac3plusdec.o atrac3plus.o \
                                           atrac3plusdsp.o atrac.o
 OBJS-$(CONFIG_ATRAC9_DECODER)          += atrac9dec.o
+OBJS-$(!CONFIG_AUDIO_ONLY)             += imgconvert.o
+OBJS-$(!CONFIG_AUDIO_ONLY)             += raw.o
 OBJS-$(CONFIG_AURA_DECODER)            += cyuv.o
 OBJS-$(CONFIG_AURA2_DECODER)           += aura.o
 OBJS-$(CONFIG_AV1_DECODER)             += av1dec.o

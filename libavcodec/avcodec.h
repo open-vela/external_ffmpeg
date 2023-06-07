@@ -41,6 +41,7 @@
 #include "codec_desc.h"
 #include "codec_par.h"
 #include "codec_id.h"
+#include "config.h"
 #include "defs.h"
 #include "packet.h"
 #include "version_major.h"
@@ -3051,6 +3052,7 @@ int avcodec_encode_subtitle(AVCodecContext *avctx, uint8_t *buf, int buf_size,
  * pixel format pix_fmt, or 0 if no associated fourCC code can be
  * found.
  */
+#if !CONFIG_AUDIO_ONLY
 unsigned int avcodec_pix_fmt_to_codec_tag(enum AVPixelFormat pix_fmt);
 
 /**
@@ -3073,6 +3075,18 @@ unsigned int avcodec_pix_fmt_to_codec_tag(enum AVPixelFormat pix_fmt);
 enum AVPixelFormat avcodec_find_best_pix_fmt_of_list(const enum AVPixelFormat *pix_fmt_list,
                                             enum AVPixelFormat src_pix_fmt,
                                             int has_alpha, int *loss_ptr);
+
+#else
+static inline enum AVPixelFormat avcodec_find_best_pix_fmt_of_list(const enum AVPixelFormat *pix_fmt_list,
+                                                                   enum AVPixelFormat src_pix_fmt,
+                                                                   int has_alpha, int *loss_ptr) {
+    return AV_PIX_FMT_NONE;
+}
+
+static inline unsigned int avcodec_pix_fmt_to_codec_tag(enum AVPixelFormat pix_fmt) {
+    return 0;
+}
+#endif
 
 enum AVPixelFormat avcodec_default_get_format(struct AVCodecContext *s, const enum AVPixelFormat * fmt);
 

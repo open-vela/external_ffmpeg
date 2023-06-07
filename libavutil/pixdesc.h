@@ -24,6 +24,7 @@
 
 #include <inttypes.h>
 
+#include "config.h"
 #include "attributes.h"
 #include "pixfmt.h"
 
@@ -157,6 +158,14 @@ typedef struct AVPixFmtDescriptor {
  */
 #define AV_PIX_FMT_FLAG_FLOAT        (1 << 9)
 
+#define FF_LOSS_RESOLUTION  0x0001 /**< loss due to resolution change */
+#define FF_LOSS_DEPTH       0x0002 /**< loss due to color depth change */
+#define FF_LOSS_COLORSPACE  0x0004 /**< loss due to color space conversion */
+#define FF_LOSS_ALPHA       0x0008 /**< loss of alpha bits */
+#define FF_LOSS_COLORQUANT  0x0010 /**< loss due to color quantization */
+#define FF_LOSS_CHROMA      0x0020 /**< loss of chroma (e.g. RGB to gray conversion) */
+
+#if !CONFIG_AUDIO_ONLY
 /**
  * Return the number of bits per pixel used by the pixel format
  * described by pixdesc. Note that this is not the same as the number
@@ -357,13 +366,6 @@ void av_write_image_line(const uint16_t *src, uint8_t *data[4],
  */
 enum AVPixelFormat av_pix_fmt_swap_endianness(enum AVPixelFormat pix_fmt);
 
-#define FF_LOSS_RESOLUTION  0x0001 /**< loss due to resolution change */
-#define FF_LOSS_DEPTH       0x0002 /**< loss due to color depth change */
-#define FF_LOSS_COLORSPACE  0x0004 /**< loss due to color space conversion */
-#define FF_LOSS_ALPHA       0x0008 /**< loss of alpha bits */
-#define FF_LOSS_COLORQUANT  0x0010 /**< loss due to color quantization */
-#define FF_LOSS_CHROMA      0x0020 /**< loss of chroma (e.g. RGB to gray conversion) */
-
 /**
  * Compute what kind of losses will occur when converting from one specific
  * pixel format to another.
@@ -406,5 +408,128 @@ int av_get_pix_fmt_loss(enum AVPixelFormat dst_pix_fmt,
  */
 enum AVPixelFormat av_find_best_pix_fmt_of_2(enum AVPixelFormat dst_pix_fmt1, enum AVPixelFormat dst_pix_fmt2,
                                              enum AVPixelFormat src_pix_fmt, int has_alpha, int *loss_ptr);
+
+#else
+static inline enum AVPixelFormat av_get_pix_fmt(x) {
+    return AV_PIX_FMT_NONE;
+}
+
+static inline const AVPixFmtDescriptor *av_pix_fmt_desc_get(enum AVPixelFormat pix_fmt) {
+    static const AVPixFmtDescriptor av_pix_fmt_descriptors[1] = {
+        NULL, 0, 0, 0, 0, {  { 0, 0, 0, 0, 0 },  { 0, 0, 0, 0, 0 },  { 0, 0, 0, 0, 0 },  },  0
+    };
+    return &av_pix_fmt_descriptors[0];
+}
+
+static inline const char *av_chroma_location_name(enum AVChromaLocation location) {
+    return NULL;
+}
+
+static inline int av_chroma_location_from_name(const char *name) {
+    return 0;
+}
+
+static inline int av_color_primaries_from_name(const char *name) {
+    return 0;
+}
+
+static inline const char *av_color_primaries_name(enum AVColorPrimaries primaries) {
+    return NULL;
+}
+
+static inline const char *av_color_range_name(enum AVColorRange range) {
+    return NULL;
+}
+
+static inline int av_color_range_from_name(const char *name) {
+    return 0;
+}
+
+static inline const char *av_color_space_name(enum AVColorSpace space) {
+    return NULL;
+}
+
+static inline int av_color_space_from_name(const char *name) {
+    return 0;
+}
+
+static inline const char *av_color_transfer_name(enum AVColorTransferCharacteristic transfer) {
+    return NULL;
+}
+
+static inline int av_color_transfer_from_name(const char *name) {
+    return 0;
+}
+
+static inline enum AVPixelFormat av_find_best_pix_fmt_of_2(enum AVPixelFormat dst_pix_fmt1, enum AVPixelFormat dst_pix_fmt2,
+                                                           enum AVPixelFormat src_pix_fmt, int has_alpha, int *loss_ptr) {
+    return AV_PIX_FMT_NONE;
+}
+
+static inline int av_get_bits_per_pixel(const AVPixFmtDescriptor *pixdesc) {
+    return 0;
+}
+
+static inline int av_get_padded_bits_per_pixel(const AVPixFmtDescriptor *pixdesc) {
+    return 0;
+}
+
+static inline int av_get_pix_fmt_loss(enum AVPixelFormat dst_pix_fmt,
+                                      enum AVPixelFormat src_pix_fmt,
+                                      int has_alpha) {
+    return 0;
+}
+
+static inline const char *av_get_pix_fmt_name(enum AVPixelFormat pix_fmt) {
+    return NULL;
+}
+
+static inline char *av_get_pix_fmt_string(char *buf, int buf_size,
+                                          enum AVPixelFormat pix_fmt) {
+    return buf;
+}
+
+static inline int av_pix_fmt_count_planes(enum AVPixelFormat pix_fmt) {
+    return 0;
+}
+
+static inline const AVPixFmtDescriptor *av_pix_fmt_desc_next(const AVPixFmtDescriptor *prev) {
+    return NULL;
+}
+
+static inline enum AVPixelFormat av_pix_fmt_desc_get_id(const AVPixFmtDescriptor *desc) {
+    return AV_PIX_FMT_NONE;
+}
+
+static inline int av_pix_fmt_get_chroma_sub_sample(enum AVPixelFormat pix_fmt,
+                                                   int *h_shift, int *v_shift) {
+    return 0;
+}
+
+static inline enum AVPixelFormat av_pix_fmt_swap_endianness(enum AVPixelFormat pix_fmt) {
+    return AV_PIX_FMT_NONE;
+}
+
+static inline void av_read_image_line(uint16_t *dst, const uint8_t *data[4],
+                                      const int linesize[4], const AVPixFmtDescriptor *desc,
+                                      int x, int y, int c, int w, int read_pal_component) {
+}
+
+static inline void av_read_image_line2(void *dst, const uint8_t *data[4],
+                                       const int linesize[4], const AVPixFmtDescriptor *desc,
+                                       int x, int y, int c, int w, int read_pal_component,
+                                       int dst_element_size) {
+}
+
+static inline void av_write_image_line2(const void *src, uint8_t *data[4],
+                                        const int linesize[4], const AVPixFmtDescriptor *desc,
+                                        int x, int y, int c, int w, int src_element_size) {
+}
+
+static inline void av_write_image_line(const uint16_t *src, uint8_t *data[4],
+                                       const int linesize[4], const AVPixFmtDescriptor *desc,
+                                       int x, int y, int c, int w) {
+}
+#endif
 
 #endif /* AVUTIL_PIXDESC_H */

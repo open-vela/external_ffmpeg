@@ -147,6 +147,7 @@ av_video_enc_params_block(AVVideoEncParams *par, unsigned int idx)
                                   idx * par->block_size);
 }
 
+#if !CONFIG_AUDIO_ONLY
 /**
  * Allocates memory for AVVideoEncParams of the given type, plus an array of
  * {@code nb_blocks} AVVideoBlockParams and initializes the variables. Can be
@@ -157,6 +158,12 @@ av_video_enc_params_block(AVVideoEncParams *par, unsigned int idx)
  */
 AVVideoEncParams *av_video_enc_params_alloc(enum AVVideoEncParamsType type,
                                             unsigned int nb_blocks, size_t *out_size);
+#else
+static inline AVVideoEncParams *av_video_enc_params_alloc(enum AVVideoEncParamsType type,
+                                                          unsigned int nb_blocks, size_t *out_size) {
+    return NULL;
+}
+#endif
 
 /**
  * Allocates memory for AVEncodeInfoFrame plus an array of

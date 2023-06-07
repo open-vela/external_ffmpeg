@@ -1940,6 +1940,7 @@ DOCUMENT_LIST="
 "
 
 FEATURE_LIST="
+    audio_only
     ftrapv
     gray
     hardcoded_tables
@@ -4238,6 +4239,10 @@ for e in $env; do
     eval "export $e"
 done
 
+if enabled audio_only; then
+    disable format_filter hflip_filter transpose_filter vflip_filter dirac_parse
+fi
+
 if disabled autodetect; then
 
     # Unless iconv is explicitely disabled by the user, we still want to probe
@@ -4250,7 +4255,11 @@ fi
 
 for c in ffmpeg ffplay; do
     if enabled $c; then
-        enable asink_abuffer_filter asrc_abuffer_filter vsink_buffer_filter vsrc_buffer_filter
+        if enabled audio_only; then
+            enable asink_abuffer_filter asrc_abuffer_filter
+        else
+            enable asink_abuffer_filter asrc_abuffer_filter vsink_buffer_filter vsrc_buffer_filter
+        fi
     fi
 done
 

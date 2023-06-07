@@ -24,6 +24,7 @@
 #include "mem.h"
 #include "video_enc_params.h"
 
+#if !CONFIG_AUDIO_ONLY
 AVVideoEncParams *av_video_enc_params_alloc(enum AVVideoEncParamsType type,
                                             unsigned int nb_blocks, size_t *out_size)
 {
@@ -53,6 +54,7 @@ AVVideoEncParams *av_video_enc_params_alloc(enum AVVideoEncParamsType type,
 
     return par;
 }
+#endif
 
 AVVideoEncParams*
 av_video_enc_params_create_side_data(AVFrame *frame, enum AVVideoEncParamsType type,
