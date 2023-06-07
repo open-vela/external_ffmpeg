@@ -179,11 +179,13 @@ OBJS-$(CONFIG_ANOISESRC_FILTER)              += asrc_anoisesrc.o
 OBJS-$(CONFIG_ANULLSRC_FILTER)               += asrc_anullsrc.o
 OBJS-$(CONFIG_FLITE_FILTER)                  += asrc_flite.o
 OBJS-$(CONFIG_HILBERT_FILTER)                += asrc_hilbert.o
+OBJS-$(CONFIG_RPMSGSRC_FILTER)               += asrc_rpmsgsrc.o
 OBJS-$(CONFIG_SINC_FILTER)                   += asrc_sinc.o
 OBJS-$(CONFIG_SINE_FILTER)                   += asrc_sine.o
 
 OBJS-$(CONFIG_ADEVSINK_FILTER)               += asink_adevsink.o
 OBJS-$(CONFIG_ANULLSINK_FILTER)              += asink_anullsink.o
+OBJS-$(CONFIG_RPMSGSINK_FILTER)              += asink_rpmsgsink.o
 
 # video filters
 OBJS-$(CONFIG_ADDROI_FILTER)                 += vf_addroi.o
