@@ -34,15 +34,29 @@ typedef struct PixelFormatTag {
     unsigned int fourcc;
 } PixelFormatTag;
 
-const struct PixelFormatTag *avpriv_get_raw_pix_fmt_tags(void);
-
 enum PixelFormatTagLists {
     PIX_FMT_LIST_RAW,
     PIX_FMT_LIST_AVI,
     PIX_FMT_LIST_MOV,
 };
 
+#if !CONFIG_AUDIO_ONLY
+const struct PixelFormatTag *avpriv_get_raw_pix_fmt_tags(void);
+
 enum AVPixelFormat avpriv_pix_fmt_find(enum PixelFormatTagLists list,
                                        unsigned fourcc);
+#else
+static inline enum AVPixelFormat avpriv_pix_fmt_find(enum PixelFormatTagLists list,
+                                                     unsigned fourcc) {
+    return AV_PIX_FMT_NONE;
+}
+
+static inline const struct PixelFormatTag *avpriv_get_raw_pix_fmt_tags(void) {
+    static const PixelFormatTag raw_pix_fmt_tags[1] = {
+        { AV_PIX_FMT_NONE, 0 }
+    };
+    return raw_pix_fmt_tags;
+}
+#endif
 
 #endif /* AVCODEC_RAW_H */

@@ -19,7 +19,6 @@ OBJS = allfilters.o                                                     \
        graphdump.o                                                      \
        graphparser.o                                                    \
        version.o                                                        \
-       video.o                                                          \
 
 HEADERS-$(CONFIG_ASINK_ABUFFER_FILTER)       += buffersink.h
 HEADERS-$(CONFIG_ASRC_ABUFFER_FILTER)        += buffersrc.h
@@ -193,6 +192,7 @@ OBJS-$(CONFIG_ALPHAMERGE_FILTER)             += vf_alphamerge.o framesync.o
 OBJS-$(CONFIG_AMPLIFY_FILTER)                += vf_amplify.o
 OBJS-$(CONFIG_ASS_FILTER)                    += vf_subtitles.o
 OBJS-$(CONFIG_ATADENOISE_FILTER)             += vf_atadenoise.o
+OBJS-$(!CONFIG_AUDIO_ONLY)                   += video.o
 OBJS-$(CONFIG_AVGBLUR_FILTER)                += vf_avgblur.o
 OBJS-$(CONFIG_AVGBLUR_OPENCL_FILTER)         += vf_avgblur_opencl.o opencl.o \
                                                 opencl/avgblur.o boxblur.o

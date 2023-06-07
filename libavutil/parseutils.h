@@ -21,6 +21,7 @@
 
 #include <time.h>
 
+#include "config.h"
 #include "rational.h"
 
 /**
@@ -52,6 +53,7 @@ int av_parse_ratio(AVRational *q, const char *str, int max,
 #define av_parse_ratio_quiet(rate, str, max) \
     av_parse_ratio(rate, str, max, AV_LOG_MAX_OFFSET, NULL)
 
+#if !CONFIG_AUDIO_ONLY
 /**
  * Parse str and put in width_ptr and height_ptr the detected values.
  *
@@ -110,6 +112,25 @@ int av_parse_color(uint8_t *rgba_color, const char *color_string, int slen,
  * @return the color name string or NULL if color_idx is not in the array
  */
 const char *av_get_known_color_name(int color_idx, const uint8_t **rgb);
+
+#else
+static inline const char *av_get_known_color_name(int color_idx, const uint8_t **rgb){
+    return NULL;
+}
+
+static inline int av_parse_color(uint8_t *rgba_color, const char *color_string, int slen,
+                                 void *log_ctx) {
+    return 0;
+}
+
+static inline int av_parse_video_rate(AVRational *rate, const char *str) {
+    return 0;
+}
+
+static inline int av_parse_video_size(int *width_ptr, int *height_ptr, const char *str) {
+    return 0;
+}
+#endif
 
 /**
  * Parse timestr and return in *time a corresponding number of

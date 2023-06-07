@@ -27,6 +27,7 @@
 #include "isom.h"
 
 const AVCodecTag ff_codec_movvideo_tags[] = {
+#if !CONFIG_AUDIO_ONLY
 /*  { AV_CODEC_ID_, MKTAG('I', 'V', '5', '0') }, *//* Indeo 5.0 */
 
     { AV_CODEC_ID_RAWVIDEO, MKTAG('r', 'a', 'w', ' ') }, /* uncompressed RGB */
@@ -273,11 +274,13 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_NOTCHLC, MKTAG('n', 'c', 'l', 'c') },
 
     { AV_CODEC_ID_RAWVIDEO, MKTAG('B', 'G', 'G', 'R') }, /* ASC Bayer BGGR */
+#endif
 
     { AV_CODEC_ID_NONE, 0 },
 };
 
 const AVCodecTag ff_codec_movaudio_tags[] = {
+#if !CONFIG_AUDIO_ONLY
     { AV_CODEC_ID_AAC,             MKTAG('m', 'p', '4', 'a') },
     { AV_CODEC_ID_AC3,             MKTAG('a', 'c', '-', '3') }, /* ETSI TS 102 366 Annex F */
     { AV_CODEC_ID_AC3,             MKTAG('s', 'a', 'c', '3') }, /* Nero Recode */
@@ -336,6 +339,7 @@ const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_TRUEHD,          MKTAG('m', 'l', 'p', 'a') }, /* mp4ra.org */
     { AV_CODEC_ID_OPUS,            MKTAG('O', 'p', 'u', 's') }, /* mp4ra.org */
     { AV_CODEC_ID_MPEGH_3D_AUDIO,  MKTAG('m', 'h', 'm', '1') }, /* MPEG-H 3D Audio bitstream */
+#endif
     { AV_CODEC_ID_NONE, 0 },
 };
 

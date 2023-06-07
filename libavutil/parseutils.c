@@ -147,6 +147,7 @@ static const char *months[12] = {
     "september", "october", "november", "december"
 };
 
+#if !CONFIG_AUDIO_ONLY
 int av_parse_video_size(int *width_ptr, int *height_ptr, const char *str)
 {
     int i;
@@ -446,6 +447,7 @@ const char *av_get_known_color_name(int color_idx, const uint8_t **rgbp)
 
     return color->name;
 }
+#endif
 
 /* get a positive number between n_min and n_max, for a maximum length
    of len_max. Return -1 if error. */
