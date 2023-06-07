@@ -164,11 +164,13 @@ extern const AVFilter ff_asrc_anoisesrc;
 extern const AVFilter ff_asrc_anullsrc;
 extern const AVFilter ff_asrc_flite;
 extern const AVFilter ff_asrc_hilbert;
+extern const AVFilter ff_asrc_rpmsgsrc;
 extern const AVFilter ff_asrc_sinc;
 extern const AVFilter ff_asrc_sine;
 
 extern const AVFilter ff_asink_adevsink;
 extern const AVFilter ff_asink_anullsink;
+extern const AVFilter ff_asink_rpmsgsink;
 
 extern const AVFilter ff_vf_addroi;
 extern const AVFilter ff_vf_alphaextract;
