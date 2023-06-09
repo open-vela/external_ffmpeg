@@ -27,6 +27,7 @@
 #ifndef AVUTIL_AVASSERT_H
 #define AVUTIL_AVASSERT_H
 
+#include <assert.h>
 #include <stdlib.h>
 #include "log.h"
 #include "macros.h"
@@ -38,7 +39,7 @@
     if (!(cond)) {                                                      \
         av_log(NULL, AV_LOG_PANIC, "Assertion %s failed at %s:%d\n",    \
                AV_STRINGIFY(cond), __FILE__, __LINE__);                 \
-        abort();                                                        \
+        PANIC();                                                        \
     }                                                                   \
 } while (0)
 
