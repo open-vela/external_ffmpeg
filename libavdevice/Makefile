@@ -31,6 +31,8 @@ OBJS-$(CONFIG_FBDEV_INDEV)               += fbdev_dec.o \
                                             fbdev_common.o
 OBJS-$(CONFIG_FBDEV_OUTDEV)              += fbdev_enc.o \
                                             fbdev_common.o
+OBJS-$(CONFIG_FBDEV_OVERLAY_OUTDEV)      += fbdev_overlay_enc.o \
+                                            fbdev_common.o
 OBJS-$(CONFIG_FLUORIDE_INDEV)            += fluoride_dec.o fluoride.o
 OBJS-$(CONFIG_FLUORIDE_OUTDEV)           += fluoride_enc.o fluoride.o
 OBJS-$(CONFIG_GDIGRAB_INDEV)             += gdigrab.o
