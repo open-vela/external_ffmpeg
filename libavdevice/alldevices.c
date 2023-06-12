@@ -36,6 +36,7 @@ extern const AVOutputFormat ff_decklink_muxer;
 extern const AVInputFormat  ff_dshow_demuxer;
 extern const AVInputFormat  ff_fbdev_demuxer;
 extern const AVOutputFormat ff_fbdev_muxer;
+extern const AVOutputFormat ff_fbdev_overlay_muxer;
 extern const AVInputFormat  ff_fluoride_demuxer;
 extern const AVOutputFormat ff_fluoride_muxer;
 extern const AVInputFormat  ff_gdigrab_demuxer;
