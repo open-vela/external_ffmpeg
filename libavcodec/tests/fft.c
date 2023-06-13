@@ -370,6 +370,7 @@ enum tf_transform {
 #include "compat/getopt.c"
 #endif
 
+int main(int argc, char **argv);
 int main(int argc, char **argv)
 {
     FFTComplex *tab, *tab1, *tab_ref;
