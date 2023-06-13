@@ -202,7 +202,7 @@ static int vtun_handle_event(struct AVFormatContext *h)
             ret = avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
             break;
         }
-        case VTUN_CTRL_EVT_PAUSE: {
+        case VTUN_CTRL_EVT_STOP: {
             priv->stop = true;
             ret = avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
             break;
