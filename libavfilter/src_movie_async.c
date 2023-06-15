@@ -71,10 +71,8 @@ typedef struct MovieAsyncContext {
 
     int                       dat_max;
     int                       cmd_max;
-    int                       silent_samples;
     int                       stack_size;
     int                       priority;
-    int                       fadein;         /** fadein duration, ms */
     char                      *protocol_map;
 
     MovieStream               *streams;       /**< array of all streams, one per output */
@@ -106,10 +104,8 @@ typedef struct MovieAsyncContext {
 static const AVOption movie_async_options[]= {
     { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT,    {.i64 = 4 },     1, INT16_MAX, FLAGS },
     { "cmdqmax",         "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT,    {.i64 = 16 },    8, 32,        FLAGS },
-    { "silent_samples",  "samples of silent frame",     OFFSET(silent_samples), AV_OPT_TYPE_INT,    {.i64 = 1024 },  0, 2048,      FLAGS },
     { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT,    {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
     { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT,    {.i64 = 244 },   0, INT16_MAX, FLAGS },
-    { "fadein",          "duration of fadein",          OFFSET(fadein),         AV_OPT_TYPE_INT,    {.i64 = 0},      0, INT32_MAX, FLAGS },
     { "protocol_map",    "mapping of protocol",         OFFSET(protocol_map),   AV_OPT_TYPE_STRING, {.str = NULL},   0, 0,         FLAGS },
     { "offload",         "offload playback",            OFFSET(offload),        AV_OPT_TYPE_BOOL,   { .i64 = 0 },    0, 1,         FLAGS },
     { NULL },
@@ -394,55 +390,6 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
     movie->current_ms = 0;
 }
 
-static AVFrame *movie_async_alloc_silent_frame(AVFilterContext *ctx, int pad_id)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVFrame *out;
-    int ret;
-
-    out = movie_async_alloc_empty_frame(ctx, pad_id);
-    if (!out)
-        return NULL;
-
-    out->nb_samples = movie->silent_samples;
-    ret = av_frame_get_buffer(out, 0);
-    if (ret < 0) {
-        av_frame_free(&out);
-        return NULL;
-    }
-
-    av_samples_set_silence(out->extended_data, 0, out->nb_samples,
-                           out->ch_layout.nb_channels, out->format);
-    return out;
-}
-
-static int movie_async_send_silent_frame(AVFilterContext *ctx)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVFrame *out;
-    int ret, i;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie_async_output_inactive(movie, i))
-            continue;
-
-        if (ctx->outputs[i]->type != AVMEDIA_TYPE_AUDIO || movie->offload)
-            continue;
-
-        out = movie_async_alloc_silent_frame(ctx, i);
-        if (!out)
-            return AVERROR(ENOMEM);
-
-        ret = movie_async_send_dat(ctx, i, out);
-        if (ret < 0) {
-            av_frame_free(&out);
-            return ret;
-        }
-    }
-
-    return 0;
-}
-
 static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -467,12 +414,8 @@ static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
     }
 
     /* flush data of dat queue, decode, send silence frame to next */
-    if (flush) {
+    if (flush)
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
-        ret = movie_async_send_silent_frame(ctx);
-        if (ret < 0)
-            goto end;
-    }
 
     movie->current_ms = ms;
 
@@ -647,11 +590,8 @@ static void movie_async_pause(AVFilterContext *ctx)
     MovieAsyncContext *movie = ctx->priv;
     int ret = AVERROR(EPERM);
 
-    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED) {
-        ret = movie_async_send_silent_frame(ctx);
-        if (ret >= 0)
-            movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
-    }
+    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+        movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
 
     movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
 }
@@ -882,9 +822,6 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
         return false;
     else if (ret == AVERROR_EOF)
         ret = 0;
-
-    if (movie_async_send_silent_frame(ctx) < 0)
-        ret = AVERROR(ENOMEM);
 
     movie->state = AVMOVIE_ASYNC_STATE_COMPLETED;
     movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
@@ -1198,55 +1135,6 @@ static int movie_async_query_formats(AVFilterContext *ctx)
     return flags ? 0 : FFERROR_NOT_READY;
 }
 
-static int movie_async_set_fade(AVFilterContext *fade, int type, uint64_t duration)
-{
-    char tmp[32];
-    int ret;
-
-    /* unit 1: samples, 0: duration */
-    if (type) {
-        snprintf(tmp, sizeof(tmp), "%lld", duration);
-        ret = avfilter_process_command(fade, "ns", tmp, NULL, 0, AV_OPT_SEARCH_CHILDREN);
-    } else {
-        snprintf(tmp, sizeof(tmp), "%lldms", duration);
-        ret = avfilter_process_command(fade, "duration", tmp, NULL, 0, AV_OPT_SEARCH_CHILDREN);
-    }
-
-    if (ret < 0)
-        return ret;
-
-    snprintf(tmp, sizeof(tmp), "%d", type);
-    ret = avfilter_process_command(fade, "type", tmp, NULL, 0, AV_OPT_SEARCH_CHILDREN);
-    if (ret < 0)
-        return ret;
-
-    return avfilter_process_command(fade, "st", "-1", NULL, 0, AV_OPT_SEARCH_CHILDREN);
-}
-
-static int movie_async_do_fade(AVFilterContext *ctx, int type)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    uint64_t duration = movie->fadein;
-    AVFilterContext *fade = NULL;
-    int i;
-
-    fade = avfilter_find_on_link(ctx, "afade", NULL, true, NULL);
-    if (!fade)
-        return 0;
-
-    if (type) {
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            if (ctx->outputs[i]->type == AVMEDIA_TYPE_AUDIO) {
-                pthread_mutex_lock(&movie->mutex);
-                duration = ff_framequeue_queued_samples(&movie->streams[i].dat_queue);
-                pthread_mutex_unlock(&movie->mutex);
-            }
-        }
-    }
-
-    return movie_async_set_fade(fade, type, duration);
-}
-
 static int movie_async_activate(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -1261,7 +1149,6 @@ static int movie_async_activate(AVFilterContext *ctx)
 
         if (movie->streams[i].reconfig) {
             avfilter_graph_reconfig(ctx->graph, NULL);
-            movie_async_do_fade(ctx, 0);
             active = true;
         }
 
@@ -1396,26 +1283,17 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
     } else if (!strcmp(cmd, "pause")) {
-        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
-            movie_async_do_fade(ctx, 1);
-
         av_log(ctx, AV_LOG_INFO, "%s filter %s pause.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
     } else if (!strcmp(cmd, "seek")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SEEK, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "stop")) {
-        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
-            movie_async_do_fade(ctx, 1);
-
         av_log(ctx, AV_LOG_INFO, "%s filter %s stop.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
     } else if (!strcmp(cmd, "reset")) {
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_RESET, NULL, 0);
     } else if (!strcmp(cmd, "close")) {
-        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
-            movie_async_do_fade(ctx, 1);
-
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         av_log(ctx, AV_LOG_INFO, "%s filter %s close.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
