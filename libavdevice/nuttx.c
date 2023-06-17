@@ -622,6 +622,28 @@ static void ff_nuttx_drop_buffer(NuttxPriv *priv)
     dq_remfirst(&priv->bufferq);
 }
 
+long ff_nuttx_get_latency(NuttxPriv *priv)
+{
+    struct ap_buffer_s *buffer;
+    struct dq_entry_s *cur;
+    int count = 0;
+    int ret;
+    long latency;
+
+    ret = ioctl(priv->fd, AUDIOIOC_GETLATENCY, &latency);
+    if (ret < 0)
+        return ret;
+
+    for (cur = dq_peek(&priv->bufferq); cur; cur = dq_next(cur)) {
+        buffer = (struct ap_buffer_s *)cur;
+        count += buffer->curbyte;
+    }
+
+    latency += count / priv->frame_size;
+
+    return latency;
+}
+
 int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
 {
     struct audio_buf_desc_s desc;

@@ -34,6 +34,7 @@
 #include "libavformat/mux.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
+#include "libavutil/time.h"
 
 #include "nuttx.h"
 
@@ -100,6 +101,8 @@ static int nuttx_write_lastpacket(AVFormatContext *s1)
     if (ret < 0)
         return ret;
 
+    priv->timestamp += ret / priv->frame_size;
+
     priv->lastpkt->data += ret;
     priv->lastpkt->size -= ret;
     if (priv->lastpkt->size)
@@ -129,6 +132,8 @@ static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
     ret = ff_nuttx_write_data(priv, pkt->data, pkt->size);
     if (ret < 0)
         return ret;
+
+    priv->timestamp = pkt->pts + ret / priv->frame_size;
 
     if (ret != pkt->size) {
         priv->lastpkt = av_packet_clone(pkt);
@@ -234,6 +239,21 @@ static int nuttx_write_frame(AVFormatContext *s1, int stream_index,
     return nuttx_write_packet(s1, &pkt);
 }
 
+static void nuttx_get_output_timestamp(struct AVFormatContext *s1, int stream,
+                             int64_t *dts, int64_t *wall)
+{
+    NuttxPriv *priv = s1->priv_data;
+    long latency;
+
+    *wall   = av_gettime_relative();
+    latency = ff_nuttx_get_latency(priv);
+
+    if (latency < 0)
+        *dts = 0;
+    else
+        *dts = priv->timestamp - latency;
+}
+
 static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
                                         const char *key, int flags)
 {
@@ -286,6 +306,7 @@ const AVOutputFormat ff_nuttx_muxer = {
     .write_trailer              = nuttx_write_trailer,
     .control_message            = nuttx_control_message,
     .write_uncoded_frame        = nuttx_write_frame,
+    .get_output_timestamp       = nuttx_get_output_timestamp,
     .get_device_list            = nuttx_get_device_list,
     .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
     .priv_class                 = &nuttx_muxer_class,
