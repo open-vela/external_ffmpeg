@@ -398,6 +398,7 @@ extern const AVInputFormat  ff_s337m_demuxer;
 extern const AVInputFormat  ff_sami_demuxer;
 extern const AVInputFormat  ff_sap_demuxer;
 extern const AVOutputFormat ff_sap_muxer;
+extern const AVInputFormat  ff_sasp_demuxer;
 extern const AVInputFormat  ff_sbc_demuxer;
 extern const AVOutputFormat ff_sbc_muxer;
 extern const AVInputFormat  ff_sbg_demuxer;
