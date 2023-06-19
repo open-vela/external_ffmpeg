@@ -62,6 +62,7 @@ typedef struct MovieStream {
     int              reconfig;                  /**< whether need to do reconfig */
     AVRational       time_base;
     AVRational       frame_rate;
+    int64_t          next_pts;
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -583,6 +584,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         movie->streams[i].index      = stream->index;
         movie->streams[i].time_base  = stream->time_base;
         movie->streams[i].frame_rate = stream->r_frame_rate;
+        movie->streams[i].next_pts   = AV_NOPTS_VALUE;
         movie->streams[i].codec_ctx->pkt_timebase = stream->time_base;
     }
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", name);
@@ -796,6 +798,12 @@ static int movie_async_dec_frame(AVFilterContext *ctx, int pad_id, AVFrame **ofr
         av_frame_free(&frame);
         return ret;
     }
+
+    if (frame->pts == AV_NOPTS_VALUE && movie->streams[pad_id].next_pts != AV_NOPTS_VALUE)
+        frame->pts = movie->streams[pad_id].next_pts;
+
+    if (frame->pts != AV_NOPTS_VALUE)
+        movie->streams[pad_id].next_pts = frame->pts + frame->nb_samples;
 
     frame->time_base = movie->streams[pad_id].time_base;
     movie->current_ms = frame->pts * av_q2d(movie->streams[pad_id].time_base) * 1000;
