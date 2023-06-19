@@ -417,6 +417,7 @@ extern const FFInputFormat  ff_s337m_demuxer;
 extern const FFInputFormat  ff_sami_demuxer;
 extern const FFInputFormat  ff_sap_demuxer;
 extern const FFOutputFormat ff_sap_muxer;
+extern const FFInputFormat  ff_sasp_demuxer;
 extern const FFInputFormat  ff_sbc_demuxer;
 extern const FFOutputFormat ff_sbc_muxer;
 extern const FFInputFormat  ff_sbg_demuxer;
