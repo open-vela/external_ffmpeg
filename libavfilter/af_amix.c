@@ -776,6 +776,28 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     return 0;
 }
 
+static int forward_command(AVFilterContext *ctx, int pad_idx, const char* target, const char *cmd,
+                           const char *arg, char *res, int res_len, int flags)
+{
+    MixContext *s = ctx->priv;
+    int i, r, ret = AVERROR(ENOSYS);
+
+    if (flags & AVFILTER_CMD_FLAG_REVERSE) {
+        /* Forward to the active inputs. */
+        for (i = 0; i < ctx->nb_inputs; i++) {
+            if (s->input_state[i] & INPUT_ON) {
+                ret = avfilter_forward_command(ctx, i, target, cmd, arg, res, res_len, flags);
+                if (ret != AVERROR(ENOSYS)) {
+                    if ((flags & AVFILTER_CMD_FLAG_ONE) || ret < 0)
+                        return ret;
+                }
+            }
+        }
+    }
+
+    return ret;
+}
+
 static const AVFilterPad avfilter_af_amix_outputs[] = {
     {
         .name          = "default",
@@ -785,16 +807,17 @@ static const AVFilterPad avfilter_af_amix_outputs[] = {
 };
 
 const AVFilter ff_af_amix = {
-    .name           = "amix",
-    .description    = NULL_IF_CONFIG_SMALL("Audio mixing."),
-    .priv_size      = sizeof(MixContext),
-    .priv_class     = &amix_class,
-    .init           = init,
-    .uninit         = uninit,
-    .activate       = activate,
-    .inputs         = NULL,
+    .name            = "amix",
+    .description     = NULL_IF_CONFIG_SMALL("Audio mixing."),
+    .priv_size       = sizeof(MixContext),
+    .priv_class      = &amix_class,
+    .init            = init,
+    .uninit          = uninit,
+    .activate        = activate,
+    .inputs          = NULL,
     FILTER_OUTPUTS(avfilter_af_amix_outputs),
     FILTER_QUERY_FUNC(query_formats),
     .process_command = process_command,
-    .flags          = AVFILTER_FLAG_DYNAMIC_INPUTS,
+    .forward_command = forward_command,
+    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

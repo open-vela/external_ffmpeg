@@ -750,6 +750,59 @@ int avfilter_process_command(AVFilterContext *filter, const char *cmd, const cha
     return AVERROR(ENOSYS);
 }
 
+int avfilter_forward_command(AVFilterContext *filter, int pad_idx, const char *target, const char *cmd,
+                             const char *arg, char *res, int res_len, int flags)
+{
+    AVFilterLink* link;
+    AVFilterLink** prev_links;
+    unsigned    nb_prev_links;
+    unsigned    nb_next_links;
+    int i, ret = AVERROR(ENOSYS);
+
+    if (flags & AVFILTER_CMD_FLAG_REVERSE) {
+        link          = filter->inputs[pad_idx];
+        filter        = link->src;
+        prev_links    = filter->outputs;
+        nb_prev_links = filter->nb_outputs;
+        nb_next_links = filter->nb_inputs;
+    } else {
+        link          = filter->outputs[pad_idx];
+        filter        = link->dst;
+        prev_links    = filter->inputs;
+        nb_prev_links = filter->nb_inputs;
+        nb_next_links = filter->nb_outputs;
+    }
+
+    if (!strcmp(target, "all") || (filter->name && !strcmp(target, filter->name)) || !strcmp(target, filter->filter->name)) {
+        ret = avfilter_process_command(filter, cmd, arg, res, res_len, flags);
+        if (ret != AVERROR(ENOSYS)) {
+            if (ret == AVERROR_OPTION_NOT_FOUND)
+                ret = AVERROR(ENOSYS);
+            else if ((flags & AVFILTER_CMD_FLAG_ONE) || ret < 0)
+                return ret;
+        }
+    }
+
+    for (i = 0; i < nb_prev_links; i++) {
+        if (prev_links[i] == link) {
+            pad_idx = i;
+            break;
+        }
+    }
+
+    if (filter->filter->forward_command) {
+        return filter->filter->forward_command(filter, pad_idx, target, cmd, arg, res, res_len, flags);
+    }
+
+    for (i = 0; i < nb_next_links; i++) {
+        ret = avfilter_forward_command(filter, i, target, cmd, arg, res, res_len, flags);
+        if (ret < 0 && ret != AVERROR(ENOSYS))
+            return ret;
+    }
+
+    return ret;
+}
+
 #if FF_API_PAD_COUNT
 int avfilter_pad_count(const AVFilterPad *pads)
 {

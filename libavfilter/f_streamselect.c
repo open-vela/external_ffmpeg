@@ -269,6 +269,33 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     return AVERROR(ENOSYS);
 }
 
+static int forward_command(AVFilterContext *ctx, int pad_idx, const char* target, const char *cmd,
+                           const char *arg, char *res, int res_len, int flags)
+{
+    StreamSelectContext *s = ctx->priv;
+    int i, ret = AVERROR(ENOSYS);
+
+    if (flags & AVFILTER_CMD_FLAG_REVERSE) {
+        /* Forward to the inlink that the outlink picks. */
+        if (s->map[pad_idx] >= 0) {
+            return avfilter_forward_command(ctx, s->map[pad_idx], target, cmd, arg, res, res_len, flags);
+        }
+    } else {
+        /* Forward to all outlinks that pick the inlink. */
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (s->map[i] == pad_idx) {
+                ret = avfilter_forward_command(ctx, i, target, cmd, arg, res, res_len, flags);
+                if (ret != AVERROR(ENOSYS)) {
+                    if ((flags & AVFILTER_CMD_FLAG_ONE) || ret < 0)
+                        return ret;
+                }
+            }
+        }
+    }
+
+    return ret;
+}
+
 static av_cold int init(AVFilterContext *ctx)
 {
     StreamSelectContext *s = ctx->priv;
@@ -461,29 +488,31 @@ static int sanitize_formats(AVFilterContext *ctx)
 }
 
 const AVFilter ff_vf_streamselect = {
-    .name            = "streamselect",
-    .description     = NULL_IF_CONFIG_SMALL("Select video streams"),
-    .init            = init,
+    .name             = "streamselect",
+    .description      = NULL_IF_CONFIG_SMALL("Select video streams"),
+    .init             = init,
     FILTER_QUERY_FUNC(query_formats),
     .sanitize_formats = sanitize_formats,
-    .process_command = process_command,
-    .uninit          = uninit,
-    .activate        = activate,
-    .priv_size       = sizeof(StreamSelectContext),
-    .priv_class      = &streamselect_class,
-    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+    .process_command  = process_command,
+    .forward_command  = forward_command,
+    .uninit           = uninit,
+    .activate         = activate,
+    .priv_size        = sizeof(StreamSelectContext),
+    .priv_class       = &streamselect_class,
+    .flags            = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
 
 const AVFilter ff_af_astreamselect = {
-    .name            = "astreamselect",
-    .description     = NULL_IF_CONFIG_SMALL("Select audio streams"),
-    .priv_class      = &streamselect_class,
-    .init            = init,
+    .name             = "astreamselect",
+    .description      = NULL_IF_CONFIG_SMALL("Select audio streams"),
+    .priv_class       = &streamselect_class,
+    .init             = init,
     FILTER_QUERY_FUNC(query_formats),
     .sanitize_formats = sanitize_formats,
-    .process_command = process_command,
-    .uninit          = uninit,
-    .activate        = activate,
-    .priv_size       = sizeof(StreamSelectContext),
-    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+    .process_command  = process_command,
+    .forward_command  = forward_command,
+    .uninit           = uninit,
+    .activate         = activate,
+    .priv_size        = sizeof(StreamSelectContext),
+    .flags            = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
