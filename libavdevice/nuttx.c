@@ -179,6 +179,29 @@ static int ff_nuttx_get_capabilities(const char *device, int ac_type,
     return ret;
 }
 
+static int ff_nuttx_set_ranges(struct AVOptionRanges *ranges, int nb_ranges, int is_range,
+                               int min_v[], int max_v[])
+{
+    ranges->nb_components = 1;
+    ranges->nb_ranges = nb_ranges;
+
+    ranges->range = av_mallocz(nb_ranges * sizeof(AVOptionRange *));
+    if (!ranges->range)
+        return AVERROR(ENOMEM);
+
+    for (int i = 0; i < nb_ranges; i++) {
+        ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[i])
+            return AVERROR(ENOMEM);
+
+        ranges->range[i]->is_range  = is_range;
+        ranges->range[i]->value_min = min_v[i];
+        ranges->range[i]->value_max = is_range ? max_v[i] : min_v[i];
+    }
+
+    return 0;
+}
+
 int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
                                     const char *key, int flags, bool playback)
 {
@@ -186,8 +209,10 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
     struct AVFormatContext *s1 = devcap->device_context;
     struct audio_caps_s formats, others;
     struct AVOptionRanges *ranges;
+    int values0[16], values1[16];
+    int nb_ranges, is_range = 0;
     int ac_type;
-    int ret, i;
+    int ret;
 
     ret = ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, &formats);
     if (ret < 0)
@@ -203,89 +228,38 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
         goto err;
 
     if (!strcmp(key, "sample_fmts")) {
-        ranges->nb_components = 1;
-        ranges->nb_ranges = 1;
-        ranges->range = av_mallocz(sizeof(AVOptionRange *));
-        if (!ranges->range)
-            goto err;
-
-        ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
-        if (!ranges->range[0])
-            goto err;
-
-        ranges->range[0]->is_range  = 0;
-        ranges->range[0]->value_min = AV_SAMPLE_FMT_S16;
-        ranges->range[0]->value_max = AV_SAMPLE_FMT_S16;
+        nb_ranges = 1;
+        values0[0] = AV_SAMPLE_FMT_S16;
     } else if (!strcmp(key, "channels")) {
-        ranges->nb_components = 1;
-        ranges->nb_ranges = 1;
-        ranges->range = av_mallocz(sizeof(AVOptionRange *));
-        if (!ranges->range)
-            goto err;
-
-        ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
-        if (!ranges->range[0])
-            goto err;
-
-        ranges->range[0]->is_range  = 1;
         if ((others.ac_channels & 0xf0) == 0) {
-            ranges->range[0]->value_min = 1;
-            ranges->range[0]->value_max = others.ac_channels;
+            values0[0] = 1;
+            values1[0] = others.ac_channels;
         } else {
-            ranges->range[0]->value_min = others.ac_channels >> 4;
-            ranges->range[0]->value_max = others.ac_channels & 0x0f;
-
-            if (ranges->range[0]->value_min == ranges->range[0]->value_max)
-                ranges->range[0]->is_range = 0;
+            values0[0] = others.ac_channels >> 4;
+            values1[0] = others.ac_channels & 0x0f;
         }
 
+        nb_ranges = 1;
+        is_range  = (values0[0] != values1[0]);
     } else if (!strcmp(key, "sample_rates")) {
-        int sample_rates[16];
-
-        ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], sample_rates, 16);
-        if (ret < 0)
-            goto err;
-
-        ranges->nb_components = 1;
-        ranges->nb_ranges = ret;
-        ranges->range = av_mallocz(sizeof(AVOptionRange *) * ret);
-        if (!ranges->range)
-            goto err;
-
-        for (i = 0; i < ret; i++) {
-            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
-            if (!ranges->range[i])
-                goto err;
-
-            ranges->range[i]->is_range  = 0;
-            ranges->range[i]->value_min = sample_rates[i];
-            ranges->range[i]->value_max = sample_rates[i];
-        }
-    } else if (!strcmp(key, "codecs")) {
-        int codecs[16];
-
-        ret = ff_nuttx_fmt2av(formats.ac_format.hw, codecs, 16);
+        ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], values0, 16);
         if (ret <= 0)
             goto err;
 
-        ranges->nb_components = 1;
-        ranges->nb_ranges = ret;
-        ranges->range = av_mallocz(sizeof(AVOptionRange *) * ret);
-        if (!ranges->range)
+        nb_ranges = ret;
+    } else if (!strcmp(key, "codecs")) {
+        ret = ff_nuttx_fmt2av(formats.ac_format.hw, values0, 16);
+        if (ret <= 0)
             goto err;
 
-        for (i = 0; i < ret; i++) {
-            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
-            if (!ranges->range[i])
-                goto err;
-
-            ranges->range[i]->is_range  = 0;
-            ranges->range[i]->value_min = codecs[i];
-            ranges->range[i]->value_max = codecs[i];
-        }
+        nb_ranges = ret;
     } else {
         goto err;
     }
+
+    ret = ff_nuttx_set_ranges(ranges, nb_ranges, is_range, values0, values1);
+    if (ret < 0)
+        goto err;
 
     *ranges_ = ranges;
     return ranges->nb_components;
@@ -802,4 +776,3 @@ int ff_nuttx_notify_changed(struct AVFormatContext *s1, NuttxPriv *priv, bool vo
         return avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_MUTE_STATE_CHANGED,
                                                    &priv->mute, sizeof(priv->mute));
 }
-
