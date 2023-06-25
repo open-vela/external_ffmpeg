@@ -318,6 +318,8 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
             }
 
             av_opt_freep_ranges(&ranges);
+        } else {
+            formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
         }
     }
 
