@@ -3475,7 +3475,9 @@ nuv_demuxer_select="riffdec"
 obu_demuxer_select="av1_frame_merge_bsf av1_parser"
 obu_muxer_select="av1_metadata_bsf"
 oga_muxer_select="ogg_muxer"
-ogg_demuxer_select="dirac_parse"
+if disabled audio_only; then
+    ogg_demuxer_select="dirac_parse"
+fi
 ogv_muxer_select="ogg_muxer"
 opus_muxer_select="ogg_muxer"
 psp_muxer_select="mov_muxer"
