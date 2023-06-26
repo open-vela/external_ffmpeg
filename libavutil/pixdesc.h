@@ -410,7 +410,7 @@ enum AVPixelFormat av_find_best_pix_fmt_of_2(enum AVPixelFormat dst_pix_fmt1, en
                                              enum AVPixelFormat src_pix_fmt, int has_alpha, int *loss_ptr);
 
 #else
-static inline enum AVPixelFormat av_get_pix_fmt(x) {
+static inline enum AVPixelFormat av_get_pix_fmt(const char *name) {
     return AV_PIX_FMT_NONE;
 }
 
