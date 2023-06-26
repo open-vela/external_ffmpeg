@@ -979,6 +979,7 @@ static void *movie_async_thread(void *arg)
             movie->state = AVMOVIE_ASYNC_STATE_NOP;
             movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
             pthread_mutex_unlock(&movie->mutex);
+            movie->loop_count = 0;
             movie->event  = NULL;
             movie->cookie = NULL;
             break;
