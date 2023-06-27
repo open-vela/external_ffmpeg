@@ -139,7 +139,7 @@ static int ff_nuttx_flush_buffer(NuttxPriv *priv)
     struct audio_buf_desc_s desc;
     struct ap_buffer_s *buffer;
 
-    if (priv->captured)
+    if (priv->capture)
         return 0;
 
     buffer = (struct ap_buffer_s *)dq_peek(&priv->bufferq);
@@ -582,9 +582,9 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
     new = dq_count(&priv->bufferq);
     if (new == priv->periods && new > old) {
         av_log(priv, AV_LOG_WARNING, "audio %s, %s !\n", priv->devname,
-               priv->captured ? "capture overflow" : "playback underflow");
+               priv->capture ? "capture overflow" : "playback underflow");
 
-        if (priv->captured) {
+        if (priv->capture) {
             while (!dq_empty(&priv->bufferq)) {
                 buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
                 ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);

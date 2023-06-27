@@ -43,6 +43,8 @@ static int nuttx_init(struct AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
 
+    priv->capture = true;
+
     return ff_nuttx_init(priv, s1->url);
 }
 
@@ -94,11 +96,11 @@ static int nuttx_control_message(struct AVFormatContext *s1,
             return 0;
         }
         case AV_APP_TO_DEV_PAUSE: {
-            /* Negative captured means that value would be recovered in next read_header. */
+            /* Negative timestamp means that value would be recovered in next read_header. */
             if (data && !strcmp((const char *)data, "temp"))
-                priv->captured = -FFABS(priv->captured);
+                priv->timestamp = -FFABS(priv->timestamp);
             else
-                priv->captured = FFABS(priv->captured);
+                priv->timestamp = FFABS(priv->timestamp);
 
             priv->pause = true;
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
@@ -123,7 +125,7 @@ static int nuttx_read_header(AVFormatContext *s1)
     AVStream *st;
     int ret;
 
-    priv->captured = priv->captured >= 0 ? 1 : -priv->captured;
+    priv->timestamp = priv->timestamp >= 0 ? 0 : -priv->timestamp;
 
     st = avformat_new_stream(s1, NULL);
     if (!st)
@@ -189,8 +191,8 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
     }
 
     pkt->size = ret;
-    pkt->pts = priv->captured / priv->frame_size;
-    priv->captured += ret;
+    pkt->pts = priv->timestamp;
+    priv->timestamp += ret / priv->frame_size;
 
     return 0;
 }
