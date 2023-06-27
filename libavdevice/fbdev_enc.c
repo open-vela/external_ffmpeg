@@ -103,7 +103,8 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     }
 
     return 0;
-  fail:
+
+fail:
     close(fbdev->fd);
     return ret;
 }
@@ -187,8 +188,10 @@ static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
 static av_cold int fbdev_write_trailer(AVFormatContext *h)
 {
     FBDevContext *fbdev = h->priv_data;
+
     munmap(fbdev->data, fbdev->fixinfo.smem_len);
     close(fbdev->fd);
+
     return 0;
 }
 
