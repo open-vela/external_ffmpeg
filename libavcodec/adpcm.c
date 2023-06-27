@@ -669,6 +669,7 @@ static inline int16_t adpcm_zork_expand_nibble(ADPCMChannelStatus *c, uint8_t ni
     return sample;
 }
 
+#if CONFIG_ADPCM_XA_DECODER
 static int xa_decode(AVCodecContext *avctx, int16_t *out0, int16_t *out1,
                      const uint8_t *in, ADPCMChannelStatus *left,
                      ADPCMChannelStatus *right, int channels, int sample_offset)
@@ -756,7 +757,9 @@ static int xa_decode(AVCodecContext *avctx, int16_t *out0, int16_t *out1,
 
     return 0;
 }
+#endif /* CONFIG_ADPCM_XA_DECODER */
 
+#if CONFIG_ADPCM_SWF_DECODER
 static void adpcm_swf_decode(AVCodecContext *avctx, const uint8_t *buf, int buf_size, int16_t *samples)
 {
     ADPCMDecodeContext *c = avctx->priv_data;
@@ -814,6 +817,7 @@ static void adpcm_swf_decode(AVCodecContext *avctx, const uint8_t *buf, int buf_
         }
     }
 }
+#endif /* CONFIG_ADPCM_SWF_DECODER */
 
 int16_t ff_adpcm_argo_expand_nibble(ADPCMChannelStatus *cs, int nibble, int shift, int flag)
 {
@@ -1071,7 +1075,7 @@ static int adpcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     int channels = avctx->ch_layout.nb_channels;
     int16_t *samples;
     int16_t **samples_p;
-    int st; /* stereo */
+    int av_unused st; /* stereo */
     int nb_samples, coded_samples, approx_nb_samples, ret;
     GetByteContext gb;
 
