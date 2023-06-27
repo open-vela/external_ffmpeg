@@ -64,7 +64,8 @@ typedef struct NuttxPriv {
     dq_queue_t      bufferq;
 
     AVPacket       *lastpkt;
-    int64_t         captured;
+    bool            capture;
+    int64_t         timestamp;
 } NuttxPriv;
 
 int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
