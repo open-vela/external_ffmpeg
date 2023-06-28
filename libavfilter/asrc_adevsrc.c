@@ -53,7 +53,6 @@ static void adevsrc_stop(AVFilterContext *ctx)
     if (!priv->dec_ctx)
         return;
 
-    //av_demuxer_close(priv->fmt_ctx);
     avformat_read_close(priv->fmt_ctx);
     avcodec_free_context(&priv->dec_ctx);
 }
@@ -68,7 +67,6 @@ static int adevsrc_start(AVFilterContext *ctx)
     if (priv->dec_ctx)
         return 0;
 
-    //ret = av_demuxer_open(priv->fmt_ctx);
     ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
