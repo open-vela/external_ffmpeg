@@ -204,8 +204,12 @@ static void amoviesink_close_muxer(AVFilterContext *ctx)
     MovieSinkPriv *priv = ctx->priv;
     int i;
 
-    for (i = 0; i < ctx->nb_inputs; i++)
+    priv->streams_ready = 0;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
         avcodec_free_context(&priv->streams[i].enc_ctx);
+        priv->streams[i].sync_pts = 0;
+    }
 
     if (priv->format_ctx) {
         if (priv->format_ctx->pb)
@@ -497,6 +501,16 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
         if (!frame)
             continue;
 
+        /* @deprecated naive avsync. */
+        priv->streams_ready |= 1 << i;
+        if (priv->streams_ready != (1 << ctx->nb_inputs) - 1) {
+            priv->streams[i].sync_pts = frame->pts;
+            av_frame_free(&frame);
+            continue;
+        }
+
+        frame->pts -= priv->streams[i].sync_pts;
+
         /* user request stop, send frame which linesize = 0 */
         if (!frame->linesize[0])
             av_frame_free(&frame);
@@ -691,16 +705,9 @@ static int amoviesink_activate(AVFilterContext *ctx)
         else
             ret = ff_inlink_consume_frame(link, &frame);
         if (ret > 0) {
-            priv->streams_ready |= 1 << i;
-            if (priv->streams_ready != (1 << ctx->nb_inputs) - 1) {
-                priv->streams[i].sync_pts = frame->pts;
+            ret = amoviesink_send_dat(ctx, i, frame);
+            if (ret < 0)
                 av_frame_free(&frame);
-            } else {
-                frame->pts -= priv->streams[i].sync_pts;
-                ret = amoviesink_send_dat(ctx, i, frame);
-                if (ret < 0)
-                    av_frame_free(&frame);
-            }
         }
 
         if (ret < 0)
@@ -1032,10 +1039,6 @@ static int amoviesink_process_start(AVFilterContext *ctx)
     }
 
     if (reconfig) {
-        priv->streams_ready = 0;
-        for (i = 0; i < ctx->nb_inputs; i++)
-            priv->streams[i].sync_pts = 0;
-
         avfilter_graph_reconfig(ctx->graph, NULL);
     }
 
