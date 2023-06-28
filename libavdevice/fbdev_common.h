@@ -25,7 +25,6 @@
 
 #include "config.h"
 
-#include <features.h>
 #ifdef HAVE_NUTTX_VIDEO_FB_H
 #include <nuttx/video/fb.h>
 #else
