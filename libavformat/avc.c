@@ -367,12 +367,13 @@ static inline int get_se_golomb(GetBitContext *gb) {
 
 int ff_avc_decode_sps(H264SPS *sps, const uint8_t *buf, int buf_size)
 {
-    int i, j, ret, rbsp_size, aspect_ratio_idc, pic_order_cnt_type;
+    int i, j, ret, aspect_ratio_idc, pic_order_cnt_type;
     int num_ref_frames_in_pic_order_cnt_cycle;
     int delta_scale, lastScale = 8, nextScale = 8;
     int sizeOfScalingList;
     GetBitContext gb;
     uint8_t *rbsp_buf;
+    uint32_t rbsp_size;
 
     rbsp_buf = ff_nal_unit_extract_rbsp(buf, buf_size, &rbsp_size, 0);
     if (!rbsp_buf)
