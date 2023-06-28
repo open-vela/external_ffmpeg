@@ -397,7 +397,7 @@ static inline void yuvPlanartoyuy2_c(const uint8_t *ysrc, const uint8_t *usrc,
         }
 
 #else
-        int *idst = (int32_t *)dst;
+        int32_t *idst = (int32_t *)dst;
         const uint8_t *yc = ysrc, *uc = usrc, *vc = vsrc;
 
         for (i = 0; i < chromWidth; i++) {
@@ -461,7 +461,7 @@ static inline void yuvPlanartouyvy_c(const uint8_t *ysrc, const uint8_t *usrc,
         }
 
 #else
-        int *idst = (int32_t *)dst;
+        int32_t *idst = (int32_t *)dst;
         const uint8_t *yc = ysrc, *uc = usrc, *vc = vsrc;
 
         for (i = 0; i < chromWidth; i++) {
