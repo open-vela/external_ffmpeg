@@ -1986,8 +1986,10 @@ static OutputStream *new_video_stream(OptionsContext *o, AVFormatContext *oc, in
 
         ost->vsync_method = video_sync_method;
         MATCH_PER_STREAM_OPT(fps_mode, str, ost->fps_mode, oc, st);
-        if (ost->fps_mode)
-            parse_and_set_vsync(ost->fps_mode, &ost->vsync_method, ost->file_index, ost->index, 0);
+        if (ost->fps_mode) {
+            int vsync = ost->vsync_method;
+            parse_and_set_vsync(ost->fps_mode, &vsync, ost->file_index, ost->index, 0);
+        }
 
         if (ost->vsync_method == VSYNC_AUTO) {
             if (!strcmp(oc->oformat->name, "avi")) {
@@ -3369,8 +3371,9 @@ static int opt_audio_filters(void *optctx, const char *opt, const char *arg)
 
 static int opt_vsync(void *optctx, const char *opt, const char *arg)
 {
+    int vsync = video_sync_method;
     av_log(NULL, AV_LOG_WARNING, "-vsync is deprecated. Use -fps_mode\n");
-    parse_and_set_vsync(arg, &video_sync_method, -1, -1, 1);
+    parse_and_set_vsync(arg, &vsync, -1, -1, 1);
     return 0;
 }
 
