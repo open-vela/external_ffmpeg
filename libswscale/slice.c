@@ -221,8 +221,8 @@ static void get_min_buffer_size(SwsContext *c, int *out_lum_size, int *out_chr_s
     int lumY;
     int dstH = c->dstH;
     int chrDstH = c->chrDstH;
-    int *lumFilterPos = c->vLumFilterPos;
-    int *chrFilterPos = c->vChrFilterPos;
+    int *lumFilterPos = (int *)c->vLumFilterPos;
+    int *chrFilterPos = (int *)c->vChrFilterPos;
     int lumFilterSize = c->vLumFilterSize;
     int chrFilterSize = c->vChrFilterSize;
     int chrSubSample = c->chrSrcVSubSample;
@@ -334,7 +334,7 @@ int ff_init_filters(SwsContext * c)
 
 
     dstIdx = FFMAX(num_ydesc, num_cdesc);
-    res = ff_init_desc_hscale(&c->desc[index], &c->slice[srcIdx], &c->slice[dstIdx], c->hLumFilter, c->hLumFilterPos, c->hLumFilterSize, c->lumXInc);
+    res = ff_init_desc_hscale(&c->desc[index], &c->slice[srcIdx], &c->slice[dstIdx], c->hLumFilter, (int *)c->hLumFilterPos, c->hLumFilterSize, c->lumXInc);
     if (res < 0) goto cleanup;
     c->desc[index].alpha = c->needAlpha;
 
@@ -352,7 +352,7 @@ int ff_init_filters(SwsContext * c)
 
         dstIdx = FFMAX(num_ydesc, num_cdesc);
         if (c->needs_hcscale)
-            res = ff_init_desc_chscale(&c->desc[index], &c->slice[srcIdx], &c->slice[dstIdx], c->hChrFilter, c->hChrFilterPos, c->hChrFilterSize, c->chrXInc);
+            res = ff_init_desc_chscale(&c->desc[index], &c->slice[srcIdx], &c->slice[dstIdx], c->hChrFilter, (int *)c->hChrFilterPos, c->hChrFilterSize, c->chrXInc);
         else
             res = ff_init_desc_no_chr(&c->desc[index], &c->slice[srcIdx], &c->slice[dstIdx]);
         if (res < 0) goto cleanup;
