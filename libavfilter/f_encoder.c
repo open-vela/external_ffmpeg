@@ -75,7 +75,7 @@ static int encoder_open(AVFilterContext *ctx)
 
     priv->codec_ctx->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
 
-    /* Some codec context options cannot pass through link. */
+    /* Some codec context configurations cannot be passed through link. */
 
     ret = avfilter_process_command(outlink->dst, "get_options", NULL,
                                    (char*)&dict, sizeof(AVDictionary **), 0);
@@ -203,8 +203,12 @@ static int encoder_activate(AVFilterContext *ctx)
         if (ret < 0)
             return ret;
 
-        if (ret > 0)
+        if (ret > 0) {
+            /* Support gop config for video encoding */
+            in->pict_type = AV_PICTURE_TYPE_NONE;
+
             ret = encoder_encode(ctx, in, &out);
+        }
     }
 
     if (ret == 0 || ret == AVERROR(EAGAIN))
