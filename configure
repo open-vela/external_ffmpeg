@@ -5125,9 +5125,10 @@ elif enabled arm; then
         fi
     }
 
-    [ "$cpu" = generic ] && cpu=$(probe_arm_arch)
-
     case $cpu in
+        generic)
+            subarch=$(probe_arm_arch | sed 's/[^a-z0-9]//g')
+        ;;
         armv*)
             cpuflags="-march=$cpu"
             subarch=$(echo $cpu | sed 's/[^a-z0-9]//g')
@@ -6027,7 +6028,7 @@ EOF
     enabled vfpv3   && check_insn vfpv3   'vmov.f32 s0, #1.0'
     enabled setend  && check_insn setend  'setend be'
 
-    if [ $cpu = armv8-m.main+dsp ]; then
+    if [ $subarch = armv8mmaindsp ]; then
         enable armv8m_main_inline
     fi
 
