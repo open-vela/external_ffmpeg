@@ -151,10 +151,10 @@ static int devsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
     priv->fmt_ctx->control_message_cb = devsrc_control_message;
     priv->fmt_ctx->flags             |= AVFMT_FLAG_NONBLOCK | AVFMT_FLAG_PRIV_OPT;
 
-    snprintf(tmp, sizeof(tmp), "%"PRId32"x%"PRId32, priv->w, priv->h);
+    snprintf(tmp, sizeof(tmp), "%dx%d", priv->w, priv->h);
     av_dict_set(options, "video_size", tmp, 0);
     if (priv->frame_rate.den && priv->frame_rate.num) {
-        snprintf(tmp, sizeof(tmp), "%"PRId32"/%"PRId32, priv->frame_rate.num, priv->frame_rate.den);
+        snprintf(tmp, sizeof(tmp), "%d/%d", priv->frame_rate.num, priv->frame_rate.den);
         av_dict_set(options, "framerate", tmp, 0);
     }
 
