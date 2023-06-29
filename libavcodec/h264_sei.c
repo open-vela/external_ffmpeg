@@ -232,7 +232,7 @@ static int decode_registered_user_data(H264SEIContext *h, GetBitContext *gb,
                                                               logctx, size);
         default:
             av_log(logctx, AV_LOG_VERBOSE,
-                   "Unsupported User Data Registered ITU-T T35 SEI message (atsc user_identifier = 0x%04x)\n",
+                   "Unsupported User Data Registered ITU-T T35 SEI message (atsc user_identifier = 0x%04" PRIx32 ")\n",
                    user_identifier);
             break;
         }
