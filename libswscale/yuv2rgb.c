@@ -63,7 +63,7 @@ const int *sws_getCoefficients(int colorspace)
 {
     if (colorspace > 10 || colorspace < 0 || colorspace == 8)
         colorspace = SWS_CS_DEFAULT;
-    return ff_yuv2rgb_coeffs[colorspace];
+    return (const int*)ff_yuv2rgb_coeffs[colorspace];
 }
 
 #define LOADCHROMA(i)                               \
