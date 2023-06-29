@@ -1333,8 +1333,8 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
         av_log(c, AV_LOG_WARNING, "deprecated pixel format used, make sure you did set range correctly\n");
 
     if (!c->contrast && !c->saturation && !c->dstFormatBpp)
-        sws_setColorspaceDetails(c, ff_yuv2rgb_coeffs[SWS_CS_DEFAULT], c->srcRange,
-                                 ff_yuv2rgb_coeffs[SWS_CS_DEFAULT],
+        sws_setColorspaceDetails(c, (const int *)ff_yuv2rgb_coeffs[SWS_CS_DEFAULT], c->srcRange,
+                                 (const int *)ff_yuv2rgb_coeffs[SWS_CS_DEFAULT],
                                  c->dstRange, 0, 1 << 16, 1 << 16);
 
     handle_formats(c);
@@ -1832,7 +1832,7 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
                            get_local_pos(c, 0, 0, 0),
                            get_local_pos(c, 0, 0, 0))) < 0)
                 goto fail;
-            if (ff_shuffle_filter_coefficients(c, c->hLumFilterPos, c->hLumFilterSize, c->hLumFilter, dstW) < 0)
+            if (ff_shuffle_filter_coefficients(c, (int *)c->hLumFilterPos, c->hLumFilterSize, c->hLumFilter, dstW) < 0)
                 goto nomem;
             if ((ret = initFilter(&c->hChrFilter, &c->hChrFilterPos,
                            &c->hChrFilterSize, c->chrXInc,
@@ -1843,7 +1843,7 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
                            get_local_pos(c, c->chrSrcHSubSample, c->src_h_chr_pos, 0),
                            get_local_pos(c, c->chrDstHSubSample, c->dst_h_chr_pos, 0))) < 0)
                 goto fail;
-            if (ff_shuffle_filter_coefficients(c, c->hChrFilterPos, c->hChrFilterSize, c->hChrFilter, c->chrDstW) < 0)
+            if (ff_shuffle_filter_coefficients(c, (int *)c->hChrFilterPos, c->hChrFilterSize, c->hChrFilter, c->chrDstW) < 0)
                 goto nomem;
         }
     } // initialize horizontal stuff
