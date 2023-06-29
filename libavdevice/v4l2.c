@@ -113,7 +113,11 @@ struct video_data {
     int (*ioctl_f)(int fd, int request, ...);
 #endif
     ssize_t (*read_f)(int fd, void *buffer, size_t n);
-    void *(*mmap_f)(void *start, size_t length, int prot, int flags, int fd, int64_t offset);
+#ifdef __USE_FILE_OFFSET64
+    void *(*mmap_f)(void *start, size_t length, int prot, int flags, int fd, off64_t offset);
+#else
+    void *(*mmap_f)(void *start, size_t length, int prot, int flags, int fd, off_t offset);
+#endif
     int (*munmap_f)(void *_start, size_t length);
 };
 
@@ -178,7 +182,7 @@ static int device_open(AVFormatContext *ctx, const char* device_path)
         goto fail;
     }
 
-    av_log(ctx, AV_LOG_VERBOSE, "fd:%d capabilities:%x\n",
+    av_log(ctx, AV_LOG_VERBOSE, "fd:%d capabilities:%lx\n",
            fd, cap.capabilities);
 
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
@@ -229,7 +233,7 @@ static int device_init(AVFormatContext *ctx, int *width, int *height,
     if (pixelformat != fmt.fmt.pix.pixelformat) {
         av_log(ctx, AV_LOG_DEBUG,
                "The V4L2 driver changed the pixel format "
-               "from 0x%08X to 0x%08X\n",
+               "from 0x%08lX to 0x%08lX\n",
                pixelformat, fmt.fmt.pix.pixelformat);
         res = AVERROR(EINVAL);
     }
@@ -341,7 +345,7 @@ static void list_standards(AVFormatContext *ctx)
                 return;
             }
         }
-        av_log(ctx, AV_LOG_INFO, "%2d, %16"PRIx64", %s\n",
+        av_log(ctx, AV_LOG_INFO, "%2ld, %16"PRIx64", %s\n",
                standard.index, (uint64_t)standard.id, standard.name);
     }
 }
@@ -538,7 +542,7 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
 #ifdef V4L2_BUF_FLAG_ERROR
     if (buf.flags & V4L2_BUF_FLAG_ERROR) {
         av_log(ctx, AV_LOG_WARNING,
-               "Dequeued v4l2 buffer contains corrupted data (%d bytes).\n",
+               "Dequeued v4l2 buffer contains corrupted data (%ld bytes).\n",
                buf.bytesused);
         buf.bytesused = 0;
     } else
@@ -551,7 +555,7 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
 
         if (s->frame_size > 0 && buf.bytesused != s->frame_size) {
             av_log(ctx, AV_LOG_WARNING,
-                   "Dequeued v4l2 buffer contains %d bytes, but %d were expected. Flags: 0x%08X.\n",
+                   "Dequeued v4l2 buffer contains %ld bytes, but %d were expected. Flags: 0x%08X.\n",
                    buf.bytesused, s->frame_size, buf.flags);
             buf.bytesused = 0;
         }
@@ -723,7 +727,7 @@ static int v4l2_set_parameters(AVFormatContext *ctx)
             }
             if (standard.id == s->std_id) {
                 av_log(ctx, AV_LOG_DEBUG,
-                       "Current standard: %s, id: %"PRIx64", frameperiod: %d/%d\n",
+                       "Current standard: %s, id: %"PRIx64", frameperiod: %"PRIu32"/%"PRIu32"\n",
                        standard.name, (uint64_t)standard.id, tpf->numerator, tpf->denominator);
                 break;
             }
@@ -756,7 +760,7 @@ static int v4l2_set_parameters(AVFormatContext *ctx)
                 framerate_q.den != tpf->numerator) {
                 av_log(ctx, AV_LOG_INFO,
                        "The driver changed the time per frame from "
-                       "%d/%d to %d/%d\n",
+                       "%d/%d to %"PRIu32"/%"PRIu32"\n",
                        framerate_q.den, framerate_q.num,
                        tpf->numerator, tpf->denominator);
             }
