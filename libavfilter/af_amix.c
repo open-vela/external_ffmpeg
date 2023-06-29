@@ -133,9 +133,12 @@ static void frame_list_remove_samples(FrameList *frame_list, int nb_samples)
 
 static int frame_list_add_frame(FrameList *frame_list, int nb_samples, int64_t pts)
 {
-    FrameInfo *info = av_malloc(sizeof(*info));
+    FrameInfo *info;
+
+    info = av_malloc(sizeof(*info));
     if (!info)
         return AVERROR(ENOMEM);
+
     info->nb_samples = nb_samples;
     info->pts        = pts;
     info->next       = NULL;
@@ -257,7 +260,7 @@ static void calculate_scales(MixContext *s, int nb_samples)
 static int config_output(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
-    MixContext *s      = ctx->priv;
+    MixContext *s = ctx->priv;
     int i;
     char buf[64];
 
@@ -272,7 +275,7 @@ static int config_output(AVFilterLink *outlink)
     memset(s->scale_norm,  0, s->nb_inputs * sizeof(*s->scale_norm));
 
     s->active_inputs = s->nb_inputs;
-    s->nb_channels = outlink->ch_layout.nb_channels;
+    s->nb_channels   = outlink->ch_layout.nb_channels;
     for (i = 0; i < s->nb_inputs; i++) {
         if (s->fifos[i])
             av_audio_fifo_free(s->fifos[i]);
@@ -342,9 +345,9 @@ static int update_timer(AVFilterContext *ctx, bool start)
     }
 
     if (!s->timer_id) {
-        se.sigev_notify = SIGEV_THREAD;
-        se.sigev_value.sival_ptr = ctx;
-        se.sigev_notify_function = timer_notify;
+        se.sigev_notify            = SIGEV_THREAD;
+        se.sigev_value.sival_ptr   = ctx;
+        se.sigev_notify_function   = timer_notify;
         se.sigev_notify_attributes = NULL;
 
         if (timer_create(CLOCK_MONOTONIC, &se, &s->timer_id) < 0)
@@ -352,7 +355,7 @@ static int update_timer(AVFilterContext *ctx, bool start)
     }
 
     memset(&its, 0, sizeof(its));
-    its.it_value.tv_sec = s->timeout / 1000;
+    its.it_value.tv_sec  = s->timeout / 1000;
     its.it_value.tv_nsec = s->timeout % 1000 * 1000000;
 
     if (timer_settime(s->timer_id, 0, &its, NULL) < 0)
@@ -371,6 +374,7 @@ static int calc_active_inputs(MixContext *s)
 {
     int i;
     int active_inputs = 0;
+
     for (i = 0; i < s->nb_inputs; i++)
         active_inputs += !!(s->input_state[i] & INPUT_ON);
     s->active_inputs = active_inputs;
@@ -388,7 +392,7 @@ static int calc_active_inputs(MixContext *s)
 static int output_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
-    MixContext      *s = ctx->priv;
+    MixContext *s = ctx->priv;
     AVFrame *out_buf, *in_buf;
     int nb_samples, ns, i;
 
@@ -420,8 +424,7 @@ static int output_frame(AVFilterLink *outlink)
                 if (is_timeout(ctx) && ns == 0) {
                     s->input_state[i] |= INPUT_EOF;
                     calc_active_inputs(s);
-                }
-                else
+                } else
                     nb_samples = FFMIN(nb_samples, ns);
             }
         }
@@ -668,8 +671,8 @@ static av_cold int init(AVFilterContext *ctx)
     for (i = 0; i < s->nb_inputs; i++) {
         AVFilterPad pad = { 0 };
 
-        pad.type           = AVMEDIA_TYPE_AUDIO;
-        pad.name           = av_asprintf("input%d", i);
+        pad.type = AVMEDIA_TYPE_AUDIO;
+        pad.name = av_asprintf("input%d", i);
         if (!pad.name)
             return AVERROR(ENOMEM);
 
