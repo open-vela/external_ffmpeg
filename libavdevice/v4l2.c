@@ -182,7 +182,7 @@ static int device_open(AVFormatContext *ctx, const char* device_path)
         goto fail;
     }
 
-    av_log(ctx, AV_LOG_VERBOSE, "fd:%d capabilities:%lx\n",
+    av_log(ctx, AV_LOG_VERBOSE, "fd:%d capabilities:%"PRIx32"\n",
            fd, cap.capabilities);
 
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
@@ -233,7 +233,7 @@ static int device_init(AVFormatContext *ctx, int *width, int *height,
     if (pixelformat != fmt.fmt.pix.pixelformat) {
         av_log(ctx, AV_LOG_DEBUG,
                "The V4L2 driver changed the pixel format "
-               "from 0x%08lX to 0x%08lX\n",
+               "from 0x%08"PRIx32" to 0x%08"PRIx32"\n",
                pixelformat, fmt.fmt.pix.pixelformat);
         res = AVERROR(EINVAL);
     }
@@ -345,7 +345,7 @@ static void list_standards(AVFormatContext *ctx)
                 return;
             }
         }
-        av_log(ctx, AV_LOG_INFO, "%2ld, %16"PRIx64", %s\n",
+        av_log(ctx, AV_LOG_INFO, "%2"PRIu32", %16"PRIx64", %s\n",
                standard.index, (uint64_t)standard.id, standard.name);
     }
 }
@@ -542,7 +542,7 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
 #ifdef V4L2_BUF_FLAG_ERROR
     if (buf.flags & V4L2_BUF_FLAG_ERROR) {
         av_log(ctx, AV_LOG_WARNING,
-               "Dequeued v4l2 buffer contains corrupted data (%ld bytes).\n",
+               "Dequeued v4l2 buffer contains corrupted data (%"PRIu32" bytes).\n",
                buf.bytesused);
         buf.bytesused = 0;
     } else
@@ -555,7 +555,7 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
 
         if (s->frame_size > 0 && buf.bytesused != s->frame_size) {
             av_log(ctx, AV_LOG_WARNING,
-                   "Dequeued v4l2 buffer contains %ld bytes, but %d were expected. Flags: 0x%08X.\n",
+                   "Dequeued v4l2 buffer contains %"PRIu32" bytes, but %d were expected. Flags: 0x%08"PRIx32".\n",
                    buf.bytesused, s->frame_size, buf.flags);
             buf.bytesused = 0;
         }
