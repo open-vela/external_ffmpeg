@@ -239,6 +239,19 @@ enum AVAppToDevMessageType {
      * data: string of cmd and arg.
      */
     AV_APP_TO_DEV_SET_PARAMETER = MKBETAG('S', 'E', 'T', 'P'),
+
+    /**
+     * Request open/close.
+     *
+     * Application requests start/stop.
+     * trigger adevsrc, devsrc filter one frame to next.
+     * or trigger adevsink, devsink set status_in to EOF.
+     *
+     * data: NULL
+     */
+
+    AV_APP_TO_DEV_START = MKBETAG('S', 'T', 'R', 'T'),
+    AV_APP_TO_DEV_STOP  = MKBETAG('S', 'T', 'O', 'P'),
 };
 
 /**

@@ -57,7 +57,7 @@ typedef struct NuttxPriv {
     AVChannelLayout ch_layout;
     bool            nonblock;
 
-    bool            pause;
+    bool            stopped;      ///< stop required by apps
     bool            mute;
     double          volume;
 

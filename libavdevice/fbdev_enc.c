@@ -34,11 +34,11 @@ typedef struct {
     AVClass *class;                   ///< class for private options
     int xoffset;                      ///< x coordinate of top left corner
     int yoffset;                      ///< y coordinate of top left corner
-    bool stop;                        ///< frame play status
     struct fb_var_screeninfo varinfo; ///< framebuffer variable info
     struct fb_fix_screeninfo fixinfo; ///< framebuffer fixed info
     int fd;                           ///< framebuffer device file descriptor
     uint8_t *data;                    ///< framebuffer data
+    bool stopped;                     ///< stop required apps
 } FBDevContext;
 
 static av_cold int fbdev_write_header(AVFormatContext *h)
@@ -50,7 +50,7 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     AVCodecParameters *par = h->streams[0]->codecpar;
     enum AVPixelFormat video_pix_fmt = par->format;
 
-    if (fbdev->stop)
+    if (fbdev->stopped)
         return AVERROR_EOF;
 
     if (h->nb_streams != 1 || h->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
@@ -122,7 +122,7 @@ static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_siz
     int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
     int i;
 
-    if (fbdev->stop)
+    if (fbdev->stopped)
         return AVERROR_EOF;
 
     disp_height = FFMIN(fbdev->varinfo.yres, video_height);
@@ -287,13 +287,13 @@ static int fbdev_control_message(AVFormatContext *h, int type,
 
             return 0;
         }
-        case AV_APP_TO_DEV_PLAY: {
-            fbdev->stop = false;
+        case AV_APP_TO_DEV_START: {
+            fbdev->stopped = false;
             avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
             return 0;
         }
-        case AV_APP_TO_DEV_PAUSE: {
-            fbdev->stop = true;
+        case AV_APP_TO_DEV_STOP: {
+            fbdev->stopped = true;
             avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
             return 0;
         }

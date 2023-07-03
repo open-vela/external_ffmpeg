@@ -1268,7 +1268,7 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
 
             return 0;
         }
-        case AV_APP_TO_DEV_PLAY: {
+        case AV_APP_TO_DEV_START: {
             avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
