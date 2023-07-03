@@ -89,14 +89,14 @@ static int nuttx_control_message(struct AVFormatContext *s1,
 
             return ret;
         }
-        case AV_APP_TO_DEV_PLAY: {
-            priv->pause = false;
+        case AV_APP_TO_DEV_START: {
+            priv->stopped = false;
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
         }
-        case AV_APP_TO_DEV_PAUSE: {
-            priv->pause = true;
+        case AV_APP_TO_DEV_STOP: {
+            priv->stopped = true;
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
@@ -170,7 +170,7 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
     NuttxPriv *priv = s1->priv_data;
     int ret;
 
-    if (priv->pause)
+    if (priv->stopped)
         return AVERROR_EOF;
 
     ret = av_new_packet(pkt, priv->period_bytes);

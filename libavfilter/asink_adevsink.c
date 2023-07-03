@@ -478,13 +478,13 @@ static int adevsink_process_command(AVFilterContext *ctx,
 {
     ADevSinkPriv *priv = ctx->priv;
 
-    if (!strcmp(cmd, "play")) {
+    if (!strcmp(cmd, "start")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
-                                    AV_APP_TO_DEV_PLAY,
+                                    AV_APP_TO_DEV_START,
                                     res, res_len);
-    } else if (!strcmp(cmd, "pause")) {
+    } else if (!strcmp(cmd, "stop")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
-                                    AV_APP_TO_DEV_PAUSE,
+                                    AV_APP_TO_DEV_STOP,
                                     res, res_len);
     } else if (!strcmp(cmd, "volume")) {
         double volume;
