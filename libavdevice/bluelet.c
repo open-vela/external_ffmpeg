@@ -59,7 +59,8 @@ enum {
     BLUELET_CODEC_TYPE_H263_PROF3,
     BLUELET_CODEC_TYPE_H263_PROF8,
     BLUELET_CODEC_TYPE_LHDC,
-    BLUELET_CODEC_TYPE_NON_A2DP
+    BLUELET_CODEC_TYPE_NON_A2DP,
+    BLUELET_CODEC_TYPE_LC3,
 };
 
 enum {
@@ -96,6 +97,8 @@ typedef struct {
     uint32_t bit_per_sample;
     uint32_t channels;
     uint32_t bit_rate;
+    uint32_t frame_size;
+    uint32_t packet_size;
 } bluelet_config_t;
 
 typedef struct {
@@ -322,6 +325,8 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
         priv->codec_id = AV_CODEC_ID_SBC;
     else if (config.codec_type == BLUELET_CODEC_TYPE_MPEG2_4_AAC)
         priv->codec_id = priv->playback ? AV_CODEC_ID_AAC : AV_CODEC_ID_AAC_LATM_A2DP;
+    else if (config.codec_type == BLUELET_CODEC_TYPE_LC3)
+        priv->codec_id = AV_CODEC_ID_LC3;
     else
         goto error;
 
@@ -329,10 +334,10 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
     // Check the codec config bits per sample
     switch (config.bit_per_sample) {
     case BLUELET_CODEC_BITS_PER_SAMPLE_8:
-        priv->bit_per_sample = 8;
+        priv->sample_fmt = AV_SAMPLE_FMT_U8;
         break;
     case BLUELET_CODEC_BITS_PER_SAMPLE_16:
-        priv->bit_per_sample = 16;
+        priv->sample_fmt = AV_SAMPLE_FMT_S16;
         break;
     default:
         goto error;
@@ -355,6 +360,8 @@ static int ff_bluelet_update_config(BlueletPriv *priv)
     }
 
     priv->bit_rate = config.bit_rate;
+    priv->frame_size = config.frame_size;
+    priv->packet_size = config.packet_size;
     if (config.codec_type == BLUELET_CODEC_TYPE_SBC) {
         bluelet_sbc_param_t param;
 
