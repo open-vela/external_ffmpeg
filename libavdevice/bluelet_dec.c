@@ -35,8 +35,6 @@
 
 #include <poll.h>
 
-#define A2DP_PERIOD_BYTES 1024
-
 static const AVClass bluelet_dec_cap_class;
 
 static int bluelet_read_close(AVFormatContext *ctx)
@@ -74,6 +72,10 @@ static av_cold int bluelet_read_header(AVFormatContext *ctx)
     priv->st->codecpar->codec_id    = priv->codec_id;
     priv->st->codecpar->sample_rate = priv->sample_rate;
     priv->st->codecpar->frame_size  = priv->frame_size;
+    priv->st->codecpar->bit_rate    = priv->bit_rate;
+    priv->st->codecpar->ch_layout   = priv->ch_layout;
+    priv->st->codecpar->channels    = priv->channels;
+    priv->st->codecpar->format      = priv->sample_fmt;
     av_channel_layout_copy(&priv->st->codecpar->ch_layout, &priv->ch_layout);
     avpriv_set_pts_info(priv->st, 64, 1, 1000000);  /* 64 bits pts in us */
 
@@ -88,11 +90,11 @@ static int bluelet_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     if (!priv->play)
         return AVERROR_EOF;
 
-    ret = av_new_packet(pkt, A2DP_PERIOD_BYTES);
+    ret = av_new_packet(pkt, priv->packet_size);
     if (ret < 0)
         return AVERROR(EIO);
 
-    ret = ff_bluelet_read_buffer(priv, pkt->data, A2DP_PERIOD_BYTES);
+    ret = ff_bluelet_read_buffer(priv, pkt->data, priv->packet_size);
     if (ret < 0) {
         av_packet_unref(pkt);
         return ret;
@@ -240,7 +242,6 @@ static const AVClass bluelet_dec_cap_class = {
 #define OFFSET(x) offsetof(BlueletPriv, x)
 #define FLAGS AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
-    { "frame_size",  "Set frame size",  OFFSET(frame_size),  AV_OPT_TYPE_INT,    {.i64 = 2},         1, INT_MAX, FLAGS },
     { "sample_rate", "Set sample rate", OFFSET(sample_rate), AV_OPT_TYPE_INT,    {.i64 = 48000},     1, INT_MAX, FLAGS },
     { "channels",    "Set channels",    OFFSET(channels),    AV_OPT_TYPE_INT,    {.i64 = 2},         1, INT_MAX, FLAGS },
     { "server_name", "Set server name", OFFSET(server_name), AV_OPT_TYPE_STRING, { .str = "local" }, 0, 0,       FLAGS },
