@@ -96,12 +96,6 @@ static int nuttx_control_message(struct AVFormatContext *s1,
             return 0;
         }
         case AV_APP_TO_DEV_PAUSE: {
-            /* Negative timestamp means that value would be recovered in next read_header. */
-            if (data && !strcmp((const char *)data, "temp"))
-                priv->timestamp = -FFABS(priv->timestamp);
-            else
-                priv->timestamp = FFABS(priv->timestamp);
-
             priv->pause = true;
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
@@ -125,7 +119,7 @@ static int nuttx_read_header(AVFormatContext *s1)
     AVStream *st;
     int ret;
 
-    priv->timestamp = priv->timestamp >= 0 ? 0 : -priv->timestamp;
+    priv->timestamp = 0;
 
     st = avformat_new_stream(s1, NULL);
     if (!st)
