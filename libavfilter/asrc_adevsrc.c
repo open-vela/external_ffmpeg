@@ -360,14 +360,14 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
             for (n = 0; n < ranges->nb_ranges; n++) {
                 if (ranges->range[n]->is_range) {
                     for (i = ranges->range[n]->value_min; i <= ranges->range[n]->value_max; i++) {
-                        layout = FF_COUNT2LAYOUT(i);
+                        av_channel_layout_default(&layout, i);
                         ret = ff_add_channel_layout(&layouts, &layout);
                         if (ret < 0)
                             goto out;
                     }
                 } else {
                     i = ranges->range[n]->value_min;
-                    layout = FF_COUNT2LAYOUT(i);
+                    av_channel_layout_default(&layout, i);
                     ret = ff_add_channel_layout(&layouts, &layout);
                     if (ret < 0)
                         goto out;
