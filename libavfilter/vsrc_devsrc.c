@@ -338,6 +338,7 @@ static int devsrc_config_props(AVFilterLink *link)
     link->w = priv->w;
     link->h = priv->h;
     link->frame_rate = priv->frame_rate;
+    link->time_base = av_inv_q(priv->frame_rate);
 
     return 0;
 }
