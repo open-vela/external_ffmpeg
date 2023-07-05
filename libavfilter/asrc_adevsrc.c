@@ -241,7 +241,7 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
         return avdevice_app_to_dev_control_message(
                 priv->fmt_ctx,
                 AV_APP_TO_DEV_PAUSE,
-                (char *)args, 0);
+                res, res_len);
     } else if (!strcmp(cmd, "get_pollfd")) {
         return avdevice_app_to_dev_control_message(
                 priv->fmt_ctx,
