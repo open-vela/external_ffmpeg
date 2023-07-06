@@ -26,6 +26,7 @@
 
 #include <libavutil/opt.h>
 #include <libavutil/eval.h>
+#include <libavutil/time.h>
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -46,10 +47,77 @@ typedef struct DevSinkPriv {
     int             pixel_fmt;
 
     int             timer_fd;
-    int64_t         frame_needed;
     AVPacket        packet;
     bool            frame_uncoded;
+    int             frame_duration;
+    int64_t         last_time;
+    int             max_latency;
+    int             max_outsync;
+    int             ts_offset;
 } DevSinkPriv;
+
+static void devsink_timer_start(AVFilterContext *ctx, int us)
+{
+    DevSinkPriv *priv = ctx->priv;
+    struct itimerspec interval;
+
+    interval.it_interval.tv_sec  = 0;
+    interval.it_interval.tv_nsec = 1000ll * us;
+    interval.it_value            = interval.it_interval;
+    timerfd_settime(priv->timer_fd, 0, &interval, NULL);
+}
+
+static void devsink_timer_stop(AVFilterContext *ctx)
+{
+    DevSinkPriv *priv = ctx->priv;
+    struct itimerspec interval;
+
+    memset(&interval, 0, sizeof(struct itimerspec));
+    timerfd_settime(priv->timer_fd, 0, &interval, NULL);
+}
+
+static int64_t devsink_get_audio_timestamp(AVFilterContext *ctx)
+{
+    struct AVFilterGraph *graph = ctx->graph;
+    AVFilterContext *sink = NULL;
+    AVFilterLink *inlink;
+    int64_t pts = AV_NOPTS_VALUE;
+    int i;
+
+    for (i = 0; i < graph->sink_links_count; i++) {
+        sink = graph->sink_links[i]->dst;
+        inlink = sink->inputs[0];
+        if (sink->filter->name && !strcmp(sink->filter->name, "adevsink") &&
+            !ff_outlink_get_status(inlink))
+            break;
+    }
+
+    if (sink)
+        avfilter_process_command(sink, "get_timestamp", NULL, (char *)&pts, sizeof(int64_t), 0);
+
+    return pts;
+}
+
+static int devsink_sync_video(AVFilterContext *ctx, int64_t apts, int64_t vpts)
+{
+    DevSinkPriv *priv = ctx->priv;
+    int64_t now = av_gettime_relative();
+    int64_t diff = 0;
+
+    if (apts >= 0)
+        diff = (vpts + priv->ts_offset) - apts;
+    else if (priv->last_time)
+        diff = priv->frame_duration - (now - priv->last_time);
+
+    if (diff > 0)
+        return diff <= priv->max_outsync ? diff : priv->frame_duration;
+
+    priv->last_time = now;
+    if (diff >= -priv->max_latency)
+        return 0;
+
+    return -1;
+}
 
 static int devsink_control_message(struct AVFormatContext *s, int type,
                                     void *data, size_t data_size)
@@ -84,7 +152,8 @@ static int devsink_start(AVFilterContext *ctx)
     codec_id = priv->fmt_ctx->oformat->video_codec != AV_CODEC_ID_NONE ?
                priv->fmt_ctx->oformat->video_codec : priv->fmt_ctx->video_codec_id;
 
-    priv->frame_uncoded = codec_id == AV_CODEC_ID_RAWVIDEO && av_write_uncoded_frame_query(priv->fmt_ctx, 0) == 0;
+    priv->frame_uncoded  = codec_id == AV_CODEC_ID_RAWVIDEO && av_write_uncoded_frame_query(priv->fmt_ctx, 0) == 0;
+    priv->frame_duration = AV_TIME_BASE * av_q2d(av_inv_q(inlink->frame_rate)); 
 
     enc = avcodec_find_encoder(codec_id);
     if (!enc)
@@ -121,11 +190,9 @@ static int devsink_start(AVFilterContext *ctx)
         return ret;
     }
 
-    interval.it_interval.tv_sec  = 0;
-    interval.it_interval.tv_nsec = 1000000000ll * frame_rate->den / frame_rate->num;
-    interval.it_value            = interval.it_interval;
+    priv->last_time = 0;
 
-    return timerfd_settime(priv->timer_fd, 0, &interval, NULL);
+    return 0;
 }
 
 static void devsink_stop(AVFilterContext *ctx)
@@ -142,9 +209,7 @@ static void devsink_stop(AVFilterContext *ctx)
     avformat_write_trailer(priv->fmt_ctx);
     avcodec_free_context(&priv->enc_ctx);
 
-    priv->frame_needed = 0;
-    memset(&interval, 0, sizeof(struct itimerspec));
-    timerfd_settime(priv->timer_fd, 0, &interval, NULL);
+    devsink_timer_stop(ctx);
 }
 
 static int devsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
@@ -243,9 +308,6 @@ static int devsink_activate(AVFilterContext *ctx)
     int64_t pts;
     int ret;
 
-    if (priv->frame_needed < 0)
-        return AVERROR(EAGAIN);
-
     if (ff_inlink_check_available_frame(inlink)) {
         ret = devsink_start(ctx);
         if (ret < 0) {
@@ -254,16 +316,24 @@ static int devsink_activate(AVFilterContext *ctx)
             return ret;
         }
 
-        ret = ff_inlink_consume_frame(inlink, &frame);
-        if (ret < 0)
-            return ret;
-        else if (ret > 0) {
-            priv->frame_needed--;
-            ret = devsink_send_frame(ctx, frame);
-            if (!priv->frame_uncoded)
-                av_frame_free(&frame);
-            return ret;
+        frame = ff_inlink_peek_frame(inlink, 0);
+        ret = devsink_sync_video(ctx, devsink_get_audio_timestamp(ctx),
+                                  frame->pts * av_q2d(frame->time_base) * AV_TIME_BASE);
+        if (ret > 0) {
+            devsink_timer_start(ctx, ret);
+            return 0;
         }
+
+        devsink_timer_stop(ctx);
+        ff_inlink_consume_frame(inlink, &frame);
+        
+        if (ret == 0)
+            devsink_send_frame(ctx, frame);
+        if (ret < 0 || !priv->frame_uncoded)
+            av_frame_free(&frame);
+
+        ff_filter_set_ready(ctx, 100);
+        return 0;
     }
 
     ff_inlink_acknowledge_status(inlink, &ret, &pts);
@@ -354,9 +424,7 @@ static int devsink_process_command(AVFilterContext *ctx,
             if (read(priv->timer_fd, &tmp, sizeof(uint64_t)) < 0)
                 return AVERROR(errno);
 
-            priv->frame_needed += tmp;
-            if (priv->frame_needed > 0)
-                ff_filter_set_ready(ctx, 100);
+            ff_filter_set_ready(ctx, 100);
             return 0;
         } else {
             return avdevice_app_to_dev_control_message(
@@ -419,9 +487,12 @@ static void *devsink_child_next(void *obj, void *prev)
 #define FLAGSR FLAGS|AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption devsink_options[] = {
-    { "format",    "", OFFSET(format),    AV_OPT_TYPE_STRING, .flags = FLAGS },
-    { "devname",   "", OFFSET(devname),   AV_OPT_TYPE_STRING, .flags = FLAGS },
-    { "pixel_fmt", "", OFFSET(pixel_fmt), AV_OPT_TYPE_INT,    {.i64 = AV_PIX_FMT_NONE}, -1, INT_MAX, FLAGSR },
+    { "format",      "", OFFSET(format),      AV_OPT_TYPE_STRING, .flags = FLAGS },
+    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING, .flags = FLAGS },
+    { "pixel_fmt",   "", OFFSET(pixel_fmt),   AV_OPT_TYPE_INT,    {.i64 = AV_PIX_FMT_NONE}, -1,       INT_MAX, FLAGSR },
+    { "max_latency", "", OFFSET(max_latency), AV_OPT_TYPE_INT,    {.i64 = 10000},           0,        INT_MAX, FLAGS },
+    { "max_outsync", "", OFFSET(max_outsync), AV_OPT_TYPE_INT,    {.i64 = 200000},          0,        INT_MAX, FLAGS },
+    { "ts_offset",   "", OFFSET(ts_offset),   AV_OPT_TYPE_INT,    {.i64 = 0},               -INT_MAX, INT_MAX, FLAGS },
     { NULL },
 };
 
