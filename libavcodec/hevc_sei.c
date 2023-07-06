@@ -321,7 +321,7 @@ static int decode_nal_sei_user_data_registered_itu_t_t35(HEVCSEI *s, GetByteCont
             return decode_registered_user_data_closed_caption(&s->a53_caption, gb);
         default:
             av_log(logctx, AV_LOG_VERBOSE,
-                   "Unsupported User Data Registered ITU-T T35 SEI message (atsc user_identifier = 0x%04x)\n",
+                   "Unsupported User Data Registered ITU-T T35 SEI message (atsc user_identifier = 0x%04" PRIx32 ")\n",
                    user_identifier);
             break;
         }
