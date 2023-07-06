@@ -522,6 +522,15 @@ static int adevsink_process_command(AVFilterContext *ctx,
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_DUMP,
                                     res, res_len);
+    } else if (!strcmp(cmd, "get_timestamp")) {
+        int64_t *ts = (int64_t *)res;
+        int64_t pts, wall;
+
+        int ret = av_get_output_timestamp(priv->fmt_ctx, 0, &pts, &wall);
+        if (ret >= 0)
+            *ts = AV_TIME_BASE * pts * av_q2d(av_make_q(1, priv->enc_ctx->sample_rate));
+
+        return ret;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
