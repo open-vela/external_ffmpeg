@@ -143,7 +143,7 @@ static int fluoride_write_frame(AVFormatContext *s1, int stream_index,
 
     /* set only used fields */
     pkt.data     = (*frame)->data[0];
-    pkt.size     = (*frame)->nb_samples * priv->frame_size;
+    pkt.size     = (*frame)->nb_samples * av_get_bytes_per_sample(s1->streams[stream_index]->codecpar->format);
     pkt.dts      = (*frame)->pkt_dts;
     pkt.duration = (*frame)->pkt_duration;
     return fluoride_write_packet(s1, &pkt);

@@ -58,7 +58,7 @@ typedef struct BlueletPriv {
     AVClass*        class;
     AVStream*       st;
 
-    int             frame_size;
+    int             frame_size; ///< Number of samples per channel in an audio frame
     uint32_t        sample_rate;
     uint32_t        channels;
     uint32_t        bit_rate;

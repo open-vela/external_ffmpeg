@@ -46,7 +46,6 @@ typedef struct FluPriv {
 
     int              period_bytes; ///< preferred size for reads and writes, in bytes
     int              period_time;  ///< preferred time for reads and writes, in ms
-    int              frame_size;   ///< bytes per sample * channels
     uint32_t         sample_rate;
     uint8_t          channels;
     uint8_t          bit_per_sample;
