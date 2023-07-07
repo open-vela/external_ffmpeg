@@ -101,7 +101,7 @@ static int nuttx_write_lastpacket(AVFormatContext *s1)
     if (ret < 0)
         return ret;
 
-    priv->timestamp += ret / priv->frame_size;
+    priv->timestamp += ret / priv->sample_bytes;
 
     priv->lastpkt->data += ret;
     priv->lastpkt->size -= ret;
@@ -133,7 +133,7 @@ static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
     if (ret < 0)
         return ret;
 
-    priv->timestamp = pkt->pts + ret / priv->frame_size;
+    priv->timestamp = pkt->pts + ret / priv->sample_bytes;
 
     if (ret != pkt->size) {
         priv->lastpkt = av_packet_clone(pkt);
@@ -233,7 +233,7 @@ static int nuttx_write_frame(AVFormatContext *s1, int stream_index,
 
     /* set only used fields */
     pkt.data     = (*frame)->data[0];
-    pkt.size     = (*frame)->nb_samples * priv->frame_size;
+    pkt.size     = (*frame)->nb_samples * priv->sample_bytes;
     pkt.dts      = (*frame)->pkt_dts;
     pkt.duration = (*frame)->pkt_duration;
     return nuttx_write_packet(s1, &pkt);
