@@ -410,7 +410,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
     if (bps == 0)
         bps = av_get_bytes_per_sample(priv->format) * 8;
 
-    priv->frame_size = bps * priv->ch_layout.nb_channels / 8;
+    priv->sample_bytes = bps * priv->ch_layout.nb_channels / 8;
     caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
     caps_desc.caps.ac_type           = playback ?
                                        AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
@@ -431,7 +431,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
         /* try to set BUFINFO and don't care the returns */
         if (priv->period_time)
             priv->period_bytes = priv->period_time * priv->sample_rate *
-                                 priv->frame_size / 1000;
+                                 priv->sample_bytes / 1000;
         buf_info.nbuffers    = priv->periods;
         buf_info.buffer_size = priv->period_bytes;
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] set buffer info, n:%d size:%d\n",
@@ -639,7 +639,7 @@ long ff_nuttx_get_latency(NuttxPriv *priv)
         count += buffer->curbyte;
     }
 
-    latency += count / priv->frame_size;
+    latency += count / priv->sample_bytes;
 
     return latency;
 }

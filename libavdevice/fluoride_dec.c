@@ -70,7 +70,6 @@ static av_cold int fluoride_read_header(AVFormatContext *ctx)
     priv->st->codecpar->codec_id    = priv->codec_id;
     priv->st->codecpar->sample_rate = priv->sample_rate;
     priv->st->codecpar->channels    = priv->channels;
-    priv->st->codecpar->frame_size  = priv->frame_size;
 
     avpriv_set_pts_info(priv->st, 64, 1, 1000000);  /* 64 bits pts in us */
 
@@ -184,7 +183,6 @@ static int fluoride_dec_control_message(struct AVFormatContext *ctx, int type,
 #define FLAGS AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
     { "period_bytes",   "", OFFSET(period_bytes),   AV_OPT_TYPE_INT, {.i64 = 1024},  1, INT_MAX, FLAGS },
-    { "frame_size",     "", OFFSET(frame_size),     AV_OPT_TYPE_INT, {.i64 = 2},     1, INT_MAX, FLAGS },
     { "sample_rate",    "", OFFSET(sample_rate),    AV_OPT_TYPE_INT, {.i64 = 48000}, 1, INT_MAX, FLAGS },
     { "channels",       "", OFFSET(channels),       AV_OPT_TYPE_INT, {.i64 = 2},     1, INT_MAX, FLAGS },
     { NULL },

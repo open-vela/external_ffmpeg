@@ -52,7 +52,7 @@ typedef struct NuttxPriv {
 
     int             codec;        ///< codec id
     int             format;       ///< sample format
-    int             frame_size;   ///< bytes per sample * channels
+    int             sample_bytes; ///< bytes per sample * channels
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
     bool            nonblock;
