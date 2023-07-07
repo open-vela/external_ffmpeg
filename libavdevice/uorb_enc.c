@@ -46,7 +46,7 @@ typedef struct UorbPriv {
     int                 enable;
 
     enum AVSampleFormat sample_fmt;
-    int                 frame_size;   ///< bytes per sample * channels
+    int                 sample_bytes;   ///< bytes per sample * channels
     int                 buffer_time;
     uint32_t            sample_rate;
     uint32_t            channels;
@@ -112,7 +112,7 @@ static int uorb_write_header(AVFormatContext *s1)
     if (!priv->enable || !priv->play)
         return AVERROR_EOF;
 
-    priv->frame_size = av_get_bytes_per_sample(priv->sample_fmt) * priv->channels / 8;
+    priv->sample_bytes = av_get_bytes_per_sample(priv->sample_fmt) * priv->channels;
     avpriv_set_pts_info(st, 64, 1, priv->sample_rate);
 
     return 0;
@@ -206,7 +206,7 @@ static int uorb_write_frame(AVFormatContext *s1, int stream_index,
 
     /* set only used fields */
     pkt.data     = (*frame)->data[0];
-    pkt.size     = (*frame)->nb_samples * priv->frame_size;
+    pkt.size     = (*frame)->nb_samples * priv->sample_bytes;
     pkt.dts      = (*frame)->pkt_dts;
     pkt.duration = (*frame)->pkt_duration;
     return uorb_write_packet(s1, &pkt);

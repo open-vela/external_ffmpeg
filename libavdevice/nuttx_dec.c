@@ -144,7 +144,6 @@ static int nuttx_read_header(AVFormatContext *s1)
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id    = priv->codec;
     st->codecpar->sample_rate = priv->sample_rate;
-    st->codecpar->frame_size  = priv->frame_size;
     av_channel_layout_copy(&st->codecpar->ch_layout, &priv->ch_layout);
 
     return 0;
@@ -186,7 +185,7 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
 
     pkt->size = ret;
     pkt->pts = priv->timestamp;
-    priv->timestamp += ret / priv->frame_size;
+    priv->timestamp += ret / priv->sample_bytes;
 
     return 0;
 }
