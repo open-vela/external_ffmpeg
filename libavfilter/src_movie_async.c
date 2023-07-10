@@ -1020,7 +1020,7 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
 {
     MovieAsyncContext *movie = ctx->priv;
     int ret = AVERROR(ENOMEM);
-    int i, outputs;
+    int i, outputs = 2;
 
     AVFilterPad pad = { 0 };
     enum AVMediaType types[] = {
@@ -1028,9 +1028,13 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
         AVMEDIA_TYPE_VIDEO,
     };
 
-    outputs = 1;
-    if (ctx->filter->name[0] != 'a')
-        outputs++;
+    if (ctx->filter->name[0] == 'a') {
+        outputs = 1;
+        types[0] = AVMEDIA_TYPE_AUDIO;
+    } else if (ctx->filter->name[0] == 'v') {
+        outputs = 1;
+        types[0] = AVMEDIA_TYPE_VIDEO;
+    }
 
     movie->streams = av_calloc(outputs, sizeof(MovieStream));
     if (!movie->streams)
@@ -1408,3 +1412,32 @@ const AVFilter ff_avsrc_amovie_async = {
 };
 
 #endif /* CONFIG_AMOVIE_ASYNC_FILTER */
+
+#if CONFIG_VMOVIE_ASYNC_FILTER
+
+static const AVClass vmovie_async_class = {
+    .class_name          = "vmovie_async_class",
+    .item_name           = av_default_item_name,
+    .option              = movie_async_options,
+    .version             = LIBAVUTIL_VERSION_INT,
+    .category            = AV_CLASS_CATEGORY_FILTER,
+    .child_next          = movie_async_child_next,
+    .child_class_iterate = movie_child_class_iterate,
+};
+
+const AVFilter ff_avsrc_vmovie_async = {
+    .name            = "vmovie_async",
+    .description     = NULL_IF_CONFIG_SMALL("Read video from a movie source asynchronously."),
+    .priv_size       = sizeof(MovieAsyncContext),
+    .init_dict       = movie_async_init_dict,
+    .uninit          = movie_async_uninit,
+    FILTER_QUERY_FUNC(movie_async_query_formats),
+    .activate        = movie_async_activate,
+    .priv_class      = &vmovie_async_class,
+    .inputs          = NULL,
+    .outputs         = NULL,
+    .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+    .process_command = movie_async_process_command,
+};
+
+#endif /* CONFIG_VMOVIE_ASYNC_FILTER */

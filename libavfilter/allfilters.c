@@ -579,6 +579,7 @@ extern const AVFilter ff_avsrc_movie;
 
 /* multimedia sources asynchronously */
 extern const AVFilter ff_avsrc_amovie_async;
+extern const AVFilter ff_avsrc_vmovie_async;
 extern const AVFilter ff_avsrc_movie_async;
 
 /* multimedia sink asynchronously */
