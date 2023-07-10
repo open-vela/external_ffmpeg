@@ -1991,6 +1991,7 @@ SUBSYSTEM_LIST="
     pixelutils
     network
     rdft
+    swr_resampler
 "
 
 # COMPONENT_LIST needs to come last to ensure correct dependency checking
@@ -7439,6 +7440,9 @@ fi
 for lib in $AUTODETECT_LIBS; do
     requested $lib && ! enabled $lib && die "ERROR: $lib requested but not found";
 done
+
+# Enable the default swr resampler
+enable swr_resampler
 
 enabled zlib && add_cppflags -DZLIB_CONST
 
