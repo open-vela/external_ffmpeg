@@ -585,13 +585,16 @@ static void display_samplerates(AVBPrint *buf, const char* name,
 }
 
 static void display_formats(AVBPrint *buf, const char* name,
-    AVFilterFormats* fmts)
+    AVFilterFormats* fmts, int media_type)
 {
     int i;
 
     av_bprintf(buf, "%32s  fmts:", name);
     for (i = 0; i < fmts->nb_formats; i++)
-        av_bprintf(buf, " %s", av_get_sample_fmt_name(fmts->formats[i]));
+        av_bprintf(buf, " %s",
+                   media_type == AVMEDIA_TYPE_AUDIO ?
+                   av_get_sample_fmt_name(fmts->formats[i]) :
+                   av_get_pix_fmt_name(fmts->formats[i]));
     av_bprintf(buf, "\n");
 }
 
@@ -621,8 +624,9 @@ static void display_link_formats(AVFilterLink *link)
         display_channel_layouts(&buf, link->dst->name, link->outcfg.channel_layouts);
         display_samplerates(&buf, link->src->name, link->incfg.samplerates);
         display_samplerates(&buf, link->dst->name, link->outcfg.samplerates);
-        display_formats(&buf, link->src->name, link->incfg.formats);
-        display_formats(&buf, link->dst->name, link->outcfg.formats);
+    case AVMEDIA_TYPE_VIDEO: /* fallthrough */
+        display_formats(&buf, link->src->name, link->incfg.formats, link->type);
+        display_formats(&buf, link->dst->name, link->outcfg.formats, link->type);
         display_codecs(&buf, link->src->name, link->incfg.codecs);
         display_codecs(&buf, link->dst->name, link->outcfg.codecs);
         break;
