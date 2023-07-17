@@ -526,6 +526,7 @@ enum AVCodecID {
     AV_CODEC_ID_DFPWM,
     AV_CODEC_ID_LC3,
     AV_CODEC_ID_LDAC,
+    AV_CODEC_ID_RAWAUDIO = 0x16000,                ///< A dummy ID for lossless audio codecs.
 
     /* subtitle codecs */
     AV_CODEC_ID_FIRST_SUBTITLE = 0x17000,          ///< A dummy ID pointing at the start of subtitle codecs.
@@ -631,6 +632,11 @@ const char *avcodec_profile_name(enum AVCodecID codec_id, int profile);
  * @return  AV_CODEC_ID_PCM_* or AV_CODEC_ID_NONE
  */
 enum AVCodecID av_get_pcm_codec(enum AVSampleFormat fmt, int be);
+
+/**
+ * Return whether codec is lossless or not.
+ */
+bool avcodec_is_audio_lossless(enum AVCodecID codec_id);
 
 /**
  * @}
