@@ -3604,3 +3604,12 @@ enum AVMediaType avcodec_get_type(enum AVCodecID codec_id)
     const AVCodecDescriptor *desc = avcodec_descriptor_get(codec_id);
     return desc ? desc->type : AVMEDIA_TYPE_UNKNOWN;
 }
+
+bool avcodec_is_audio_lossless(enum AVCodecID codec_id)
+{
+    const AVCodecDescriptor *desc = avcodec_descriptor_get(codec_id);
+    if (desc && desc->type == AVMEDIA_TYPE_AUDIO)
+        return (desc->props & AV_CODEC_PROP_LOSSLESS) ? true : false;
+
+    return false;
+}
