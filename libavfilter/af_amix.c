@@ -333,7 +333,7 @@ static int update_timer(AVFilterContext *ctx, bool start)
 {
     MixContext *s = ctx->priv;
     struct itimerspec its;
-    struct sigevent se;
+    struct sigevent se = {0};
 
     if (s->timeout <= 0 || start == !!s->timer_id)
         return 0;
