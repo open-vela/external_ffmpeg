@@ -590,8 +590,10 @@ static void movie_async_pause(AVFilterContext *ctx)
     MovieAsyncContext *movie = ctx->priv;
     int ret = AVERROR(EPERM);
 
-    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED) {
         movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
+        ret = 0;
+    }
 
     movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
 }
