@@ -59,6 +59,7 @@ static void adevsrc_stop(AVFilterContext *ctx)
 
 static int adevsrc_start(AVFilterContext *ctx)
 {
+    AVFilterLink *link = ctx->outputs[0];
     ADevSrcPriv *priv = ctx->priv;
     const AVCodec *dec;
     AVStream *st;
@@ -67,6 +68,7 @@ static int adevsrc_start(AVFilterContext *ctx)
     if (priv->dec_ctx)
         return 0;
 
+    priv->fmt_ctx->audio_codec_id = link->codec;
     ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
@@ -381,6 +383,24 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     }
 
     ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        goto out;
+
+    formats = NULL;
+    ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
+    if (ret >= 0) {
+        for (i = 0; i < ranges->nb_ranges; i++) {
+            ret = ff_add_format(&formats, ranges->range[i]->value_min);
+            if (ret < 0)
+                goto out;
+        }
+
+        av_opt_freep_ranges(&ranges);
+    } else {
+        formats = ff_all_raw_codecs(ctx->inputs[0]->type);
+    }
+
+    ret = ff_set_common_codecs(ctx, formats);
     if (ret < 0)
         goto out;
 

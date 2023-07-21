@@ -81,10 +81,9 @@ static int ff_nuttx_samplerate_convert(int samplerate, int *sample_rates, int nu
     return i;
 }
 
-static int ff_nuttx_av2fmt(int codec_id)
+static int ff_nuttx_avcodec_to_fmt(int codec_id)
 {
-    switch (codec_id)
-    {
+    switch (codec_id) {
         case AV_CODEC_ID_MP3:
             return AUDIO_FMT_MP3;
         case AV_CODEC_ID_AC3:
@@ -102,42 +101,38 @@ static int ff_nuttx_av2fmt(int codec_id)
     return AUDIO_FMT_PCM;
 }
 
-static int ff_nuttx_fmt2av(int format, int *codecs, int num)
+static int ff_nuttx_subfmt_to_avcodec(int subfmt)
 {
-    int i;
-
-    for (i = 0; i < num && format; i++) {
-        if (format & (1 << (AUDIO_FMT_PCM - 1))) {
-            format &= ~(1 << (AUDIO_FMT_PCM - 1));
-            codecs[i] = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
-        } if (format & (1 << (AUDIO_FMT_MP3 - 1))) {
-            format &= ~(1 << (AUDIO_FMT_MP3 - 1));
-            codecs[i] = AV_CODEC_ID_MP3;
-        } else if (format & (1 << (AUDIO_FMT_AC3 - 1))) {
-            format &= ~(1 << (AUDIO_FMT_AC3 - 1));
-            codecs[i] = AV_CODEC_ID_AC3;
-        } else if (format & (1 << (AUDIO_FMT_WMA - 1))) {
-            format &= ~(1 << (AUDIO_FMT_WMA - 1));
-            codecs[i] = AV_CODEC_ID_WMAV2;
-        } else if (format & (1 << (AUDIO_FMT_DTS - 1))) {
-            format &= ~(1 << (AUDIO_FMT_DTS - 1));
-            codecs[i] = AV_CODEC_ID_DTS;
-        } else if (format & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
-            format &= ~(1 << (AUDIO_FMT_OGG_VORBIS - 1));
-            codecs[i] = AV_CODEC_ID_VORBIS;
-        } else if (format & (1 << (AUDIO_FMT_FLAC - 1))) {
-            format &= ~(1 << (AUDIO_FMT_FLAC - 1));
-            codecs[i] = AV_CODEC_ID_FLAC;
-        }
+    switch (subfmt) {
+        case AUDIO_SUBFMT_PCM_U8:     return AV_CODEC_ID_PCM_U8;
+        case AUDIO_SUBFMT_PCM_S8:     return AV_CODEC_ID_PCM_S8;
+        case AUDIO_SUBFMT_PCM_U16_LE: return AV_CODEC_ID_PCM_U16LE;
+        case AUDIO_SUBFMT_PCM_U16_BE: return AV_CODEC_ID_PCM_U16BE;
+        case AUDIO_SUBFMT_PCM_S16_LE: return AV_CODEC_ID_PCM_S16LE;
+        case AUDIO_SUBFMT_PCM_S16_BE: return AV_CODEC_ID_PCM_S16BE;
+        case AUDIO_SUBFMT_PCM_U32_LE: return AV_CODEC_ID_PCM_U32LE;
+        case AUDIO_SUBFMT_PCM_U32_BE: return AV_CODEC_ID_PCM_U32BE;
+        case AUDIO_SUBFMT_PCM_S32_LE: return AV_CODEC_ID_PCM_S32LE;
+        case AUDIO_SUBFMT_PCM_S32_BE: return AV_CODEC_ID_PCM_S32BE;
+        case AUDIO_SUBFMT_PCM_MU_LAW: return AV_CODEC_ID_PCM_MULAW;
+        case AUDIO_SUBFMT_PCM_A_LAW:  return AV_CODEC_ID_PCM_ALAW;
+        case AUDIO_SUBFMT_PCM_MP1:    return AV_CODEC_ID_MP1;
+        case AUDIO_SUBFMT_PCM_MP2:    return AV_CODEC_ID_MP2;
+        case AUDIO_SUBFMT_PCM_MP3:    return AV_CODEC_ID_MP3;
     }
 
-    return i;
+    return AV_CODEC_ID_FIRST_AUDIO;
 }
 
-static int ff_nuttx_subfmt2av(int subfmt)
+static int ff_nuttx_subfmt_to_smpfmt(int subfmt)
 {
-    if (subfmt == AUDIO_SUBFMT_PCM_S16_LE)
-        return AV_SAMPLE_FMT_S16;
+    switch (subfmt) {
+        case AUDIO_SUBFMT_PCM_U8:     return AV_SAMPLE_FMT_U8;
+        case AUDIO_SUBFMT_PCM_S16_LE:
+        case AUDIO_SUBFMT_PCM_S16_BE: return AV_SAMPLE_FMT_S16;
+        case AUDIO_SUBFMT_PCM_S32_LE:
+        case AUDIO_SUBFMT_PCM_S32_BE: return AV_SAMPLE_FMT_S32;
+    }
 
     return AV_SAMPLE_FMT_NONE;
 }
@@ -226,12 +221,70 @@ static int ff_nuttx_capbility_query_smpfmts(struct AVFormatContext *s1, int form
         if (smpfmts.ac_controls.b[x] == AUDIO_SUBFMT_END)
             break;
 
-        ret = ff_nuttx_subfmt2av(smpfmts.ac_controls.b[x]);
+        ret = ff_nuttx_subfmt_to_smpfmt(smpfmts.ac_controls.b[x]);
         if (ret >= 0)
             values[x] = ret;
     }
 
     return x == 0 ? AVERROR(EPERM) : x;
+}
+
+static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
+                                           int format, int codecs[], int num)
+{
+    struct audio_caps_s caps;
+    int nb_codecs = 0;
+    int ac_subtype;
+    int ret, i, x;
+    int codec;
+
+    for (i = 0; i < num && format; i++) {
+        if (format & (1 << (AUDIO_FMT_PCM - 1))) {
+            ac_subtype = AUDIO_FMT_PCM;
+            codec = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
+            format &= ~(1 << (AUDIO_FMT_PCM - 1));
+        } if (format & (1 << (AUDIO_FMT_MP3 - 1))) {
+            ac_subtype = AUDIO_FMT_MP3;
+            codec = AV_CODEC_ID_MP3;
+            format &= ~(1 << (AUDIO_FMT_MP3 - 1));
+        } else if (format & (1 << (AUDIO_FMT_AC3 - 1))) {
+            ac_subtype = AUDIO_FMT_AC3;
+            codec = AV_CODEC_ID_AC3;
+            format &= ~(1 << (AUDIO_FMT_AC3 - 1));
+        } else if (format & (1 << (AUDIO_FMT_WMA - 1))) {
+            ac_subtype = AUDIO_FMT_WMA;
+            codec = AV_CODEC_ID_WMAV2;
+            format &= ~(1 << (AUDIO_FMT_WMA - 1));
+        } else if (format & (1 << (AUDIO_FMT_DTS - 1))) {
+            ac_subtype = AUDIO_FMT_WMA;
+            codec = AV_CODEC_ID_DTS;
+            format &= ~(1 << (AUDIO_FMT_DTS - 1));
+        } else if (format & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
+            ac_subtype = AUDIO_FMT_OGG_VORBIS;
+            codec = AV_CODEC_ID_VORBIS;
+            format &= ~(1 << (AUDIO_FMT_OGG_VORBIS - 1));
+        } else if (format & (1 << (AUDIO_FMT_FLAC - 1))) {
+            ac_subtype = AUDIO_FMT_FLAC;
+            codec = AV_CODEC_ID_FLAC;
+            format &= ~(1 << (AUDIO_FMT_FLAC - 1));
+        }
+
+        ret = ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, ac_subtype, &caps);
+        if (ret < 0)
+            continue;
+
+        for (x = 0; x < sizeof(caps.ac_controls.b); x++) {
+            if (caps.ac_controls.b[x] == AUDIO_SUBFMT_END) {
+                if (x == 0)
+                    codecs[nb_codecs++] = codec;
+                break;
+            }
+
+            codecs[nb_codecs++] = ff_nuttx_subfmt_to_avcodec(caps.ac_controls.b[x]);
+        }
+    }
+
+    return nb_codecs;
 }
 
 int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
@@ -283,7 +336,7 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
 
         nb_ranges = ret;
     } else if (!strcmp(key, "codecs")) {
-        ret = ff_nuttx_fmt2av(formats.ac_format.hw, values0, 16);
+        ret = ff_nuttx_capbility_query_codecs(s1, formats.ac_format.hw, values0, 16);
         if (ret <= 0)
             goto err;
 
@@ -454,7 +507,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
     caps_desc.caps.ac_controls.hw[0] = priv->sample_rate;
     caps_desc.caps.ac_controls.b[3]  = priv->sample_rate >> 16;
     caps_desc.caps.ac_controls.b[2]  = bps;
-    caps_desc.caps.ac_subtype        = ff_nuttx_av2fmt(priv->codec);
+    caps_desc.caps.ac_subtype        = ff_nuttx_avcodec_to_fmt(priv->codec);
 
     ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
     av_log(NULL, AV_LOG_DEBUG, "[%s][%s] configure, sr:%"PRIu32" ch:%d ret:%d\n",
