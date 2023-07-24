@@ -112,6 +112,7 @@ static const AVOption options[]={
 {"resampler"            , "set resampling Engine"       , OFFSET(engine)         , AV_OPT_TYPE_INT  , {.i64=0                     }, 0      , SWR_ENGINE_NB-1, PARAM, "resampler"},
 {"swr"                  , "select SW Resampler"         , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_SWR        }, INT_MIN, INT_MAX   , PARAM, "resampler"},
 {"soxr"                 , "select SoX Resampler"        , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_SOXR       }, INT_MIN, INT_MAX   , PARAM, "resampler"},
+{"hifi4"                , "select hifi4 Resampler"      , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_HIFI4      }, INT_MIN, INT_MAX   , PARAM, "resampler"},
 {"precision"            , "set soxr resampling precision (in bits)"
                                                         , OFFSET(precision)      , AV_OPT_TYPE_DOUBLE,{.dbl=20.0                  }, 15.0   , 33.0      , PARAM },
 {"cheby"                , "enable soxr Chebyshev passband & higher-precision irrational ratio approximation"
