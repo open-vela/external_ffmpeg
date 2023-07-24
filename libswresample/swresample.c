@@ -278,10 +278,9 @@ av_cold int swr_init(struct SwrContext *s){
         case SWR_ENGINE_SOXR: s->resampler = &swri_soxr_resampler; break;
 #endif
 #if CONFIG_HIFI4SRC
-        case SWR_ENGINE_SWR: s->resampler = &swri_hifi4_resampler; break;
-#endif
-#if CONFIG_SWR_RESAMPLER
-        case SWR_ENGINE_SWR: s->resampler = &swri_resampler; break;
+        case SWR_ENGINE_SWR : s->resampler = &swri_hifi4_resampler; break;
+#else
+        case SWR_ENGINE_SWR : s->resampler = &swri_resampler; break;
 #endif
         default:
             av_log(s, AV_LOG_ERROR, "Requested resampling engine is unavailable\n");
