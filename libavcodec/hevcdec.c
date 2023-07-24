@@ -3540,7 +3540,7 @@ static int hevc_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     return avpkt->size;
 }
 
-static int hevc_ref_frame(HEVCContext *s, HEVCFrame *dst, HEVCFrame *src)
+av_unused static int hevc_ref_frame(HEVCContext *s, HEVCFrame *dst, HEVCFrame *src)
 {
     int ret;
 
