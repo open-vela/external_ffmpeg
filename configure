@@ -422,7 +422,9 @@ Advanced options (experts only):
                            disable buffer boundary checking in bitreaders
                            (faster, but may crash)
   --sws-max-filter-size=N  the max filter size swscale uses [$sws_max_filter_size_default]
-  --swr-ch-max=N           the max channel number swresamle uses [$swr_ch_max_default]
+  --swr-filter-size=N      the filter size swresample uses [$swr_filter_size_default]
+  --swr-phase-shift=N      the phase shift swresample uses [$swr_phase_shift_default]
+  --swr-ch-max=N           the max channel number swresample uses [$swr_ch_max_default]
 
 Optimization options (experts only):
   --disable-asm            disable all assembly optimizations
@@ -2606,6 +2608,8 @@ CMDLINE_SET="
     samples
     strip
     sws_max_filter_size
+    swr_filter_size
+    swr_phase_shift
     swr_ch_max
     sysinclude
     sysroot
@@ -3925,6 +3929,10 @@ enable valgrind_backtrace
 
 sws_max_filter_size_default=256
 set_default sws_max_filter_size
+swr_filter_size_default=32
+set_default swr_filter_size
+swr_phase_shift_default=10
+set_default swr_phase_shift
 swr_ch_max_default=64
 set_default swr_ch_max
 
@@ -7850,6 +7858,8 @@ cat > $TMPH <<EOF
 #define SLIBSUF "$SLIBSUF"
 #define HAVE_MMX2 HAVE_MMXEXT
 #define SWS_MAX_FILTER_SIZE $sws_max_filter_size
+#define SWR_FILTER_SIZE $swr_filter_size
+#define SWR_PHASE_SHIFT $swr_phase_shift
 #define SWR_CH_MAX $swr_ch_max
 EOF
 
