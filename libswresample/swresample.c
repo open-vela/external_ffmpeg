@@ -273,16 +273,41 @@ av_cold int swr_init(struct SwrContext *s){
         av_channel_layout_uninit(&s->out_ch_layout);
     }
 
+    /* If the option for engine is not specified, then set the engine
+     * according to the config switch */
+    if (!s->engine) {
+        #if CONFIG_SWR_RESAMPLER
+        s->engine = SWR_ENGINE_SWR;
+        #elif CONFIG_LIBSOXR
+        s->engine = SWR_ENGINE_SOXR;
+        #elif CONFIG_HIFI4SRC
+        s->engine = SWR_ENGINE_HIFI4;
+        #elif CONFIG_LIBSAMPLERATE
+        s->engine = SWR_ENGINE_SRC;
+        #endif
+    }
+
     switch(s->engine){
-#if CONFIG_SWR_RESAMPLER
-        case SWR_ENGINE_SWR : s->resampler = &swri_resampler; break;
-#endif
-#if CONFIG_LIBSOXR
-        case SWR_ENGINE_SOXR: s->resampler = &swri_soxr_resampler; break;
-#endif
-#if CONFIG_HIFI4SRC
-        case SWR_ENGINE_HIFI4: s->resampler = &swri_hifi4_resampler; break;
-#endif
+        #if CONFIG_SWR_RESAMPLER
+        case SWR_ENGINE_SWR:
+            s->resampler = &swri_resampler;
+            break;
+        #endif
+        #if CONFIG_LIBSOXR
+        case SWR_ENGINE_SOXR:
+            s->resampler = &swri_soxr_resampler;
+            break;
+        #endif
+        #if CONFIG_HIFI4SRC
+        case SWR_ENGINE_HIFI4:
+            s->resampler = &swri_hifi4_resampler;
+            break;
+        #endif
+        #if CONFIG_LIBSAMPLERATE
+        case SWR_ENGINE_SRC:
+            s->resampler = &swri_src_resampler;
+            break;
+        #endif
         default:
             av_log(s, AV_LOG_ERROR, "Requested resampling engine is unavailable\n");
             return AVERROR(EINVAL);
@@ -307,7 +332,8 @@ av_cold int swr_init(struct SwrContext *s){
 
     if(s->int_sample_fmt == AV_SAMPLE_FMT_NONE){
         if(   av_get_bytes_per_sample(s-> in_sample_fmt) <= 2
-           && av_get_bytes_per_sample(s->out_sample_fmt) <= 2){
+           && av_get_bytes_per_sample(s->out_sample_fmt) <= 2
+           && s->engine != SWR_ENGINE_SRC){
             s->int_sample_fmt= AV_SAMPLE_FMT_S16P;
         }else if(   av_get_bytes_per_sample(s-> in_sample_fmt) <= 2
            && !s->rematrix

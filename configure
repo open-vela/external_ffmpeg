@@ -263,6 +263,8 @@ External library support:
   --enable-librsvg         enable SVG rasterization via librsvg [no]
   --enable-librubberband   enable rubberband needed for rubberband filter [no]
   --enable-librtmp         enable RTMP[E] support via librtmp [no]
+  --enable-libsamplerate=TYPE enable Include libsamplerate resampling
+                           TYPE [sinc_best|sinc_medium|sinc_fast|zoh|linear|no]
   --enable-libshaderc      enable GLSL->SPIRV compilation via libshaderc [no]
   --enable-libshine        enable fixed-point MP3 encoding via libshine [no]
   --enable-libsmbclient    enable Samba protocol via libsmbclient [no]
@@ -635,6 +637,14 @@ set_weak(){
     for var; do
         eval : \${$var:=$value}
     done
+}
+
+set_src_converter(){
+    test "$optval" = sinc_best   && src_default_converter=0
+    test "$optval" = sinc_medium && src_default_converter=1
+    test "$optval" = sinc_fast   && src_default_converter=2
+    test "$optval" = zoh         && src_default_converter=3
+    test "$optval" = linear      && src_default_converter=4
 }
 
 sanitize_var_name(){
@@ -1860,6 +1870,7 @@ EXTERNAL_LIBRARY_LIST="
     librist
     librsvg
     librtmp
+    libsamplerate
     libshaderc
     libshine
     libsmbclient
@@ -3936,6 +3947,8 @@ set_default swr_phase_shift
 swr_ch_max_default=64
 set_default swr_ch_max
 
+src_default_converter=4
+
 # internal components are enabled by default
 enable $EXTRALIBS_LIST
 
@@ -4184,6 +4197,10 @@ for opt do
         ;;
         --enable-sdl)
             enable sdl2
+        ;;
+        --enable-libsamplerate=*)
+            enable libsamplerate
+            set_src_converter $optval
         ;;
         --enable-*=*|--disable-*=*)
             eval $(echo "${opt%%=*}" | sed 's/--/action=/;s/-/ thing=/')
@@ -7449,7 +7466,7 @@ for lib in $AUTODETECT_LIBS; do
     requested $lib && ! enabled $lib && die "ERROR: $lib requested but not found";
 done
 
-if enabled hifi4src || enabled libsoxr; then
+if enabled hifi4src || enabled libsoxr || enabled libsamplerate; then
     disable swr_resampler
     echo "Disable swr resampler"
 else
@@ -7861,6 +7878,7 @@ cat > $TMPH <<EOF
 #define SWR_FILTER_SIZE $swr_filter_size
 #define SWR_PHASE_SHIFT $swr_phase_shift
 #define SWR_CH_MAX $swr_ch_max
+#define SRC_DEFAULT_CONVERTER $src_default_converter
 EOF
 
 test -n "$assert_level" &&

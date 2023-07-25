@@ -113,6 +113,7 @@ static const AVOption options[]={
 {"swr"                  , "select SW Resampler"         , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_SWR        }, INT_MIN, INT_MAX   , PARAM, "resampler"},
 {"soxr"                 , "select SoX Resampler"        , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_SOXR       }, INT_MIN, INT_MAX   , PARAM, "resampler"},
 {"hifi4"                , "select hifi4 Resampler"      , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_HIFI4      }, INT_MIN, INT_MAX   , PARAM, "resampler"},
+{"src"                  , "select SRC Resampler"        , 0                      , AV_OPT_TYPE_CONST, {.i64=SWR_ENGINE_SRC        }, INT_MIN, INT_MAX   , PARAM, "resampler"},
 {"precision"            , "set soxr resampling precision (in bits)"
                                                         , OFFSET(precision)      , AV_OPT_TYPE_DOUBLE,{.dbl=20.0                  }, 15.0   , 33.0      , PARAM },
 {"cheby"                , "enable soxr Chebyshev passband & higher-precision irrational ratio approximation"
@@ -135,10 +136,15 @@ static const AVOption options[]={
     { "dolby", "select Dolby",              0, AV_OPT_TYPE_CONST, { .i64 = AV_MATRIX_ENCODING_DOLBY }, INT_MIN, INT_MAX, PARAM, "matrix_encoding" },
     { "dplii", "select Dolby Pro Logic II", 0, AV_OPT_TYPE_CONST, { .i64 = AV_MATRIX_ENCODING_DPLII }, INT_MIN, INT_MAX, PARAM, "matrix_encoding" },
 
-{ "filter_type"         , "select swr filter type"      , OFFSET(filter_type)    , AV_OPT_TYPE_INT  , { .i64 = SWR_FILTER_TYPE_KAISER }, SWR_FILTER_TYPE_CUBIC, SWR_FILTER_TYPE_KAISER, PARAM, "filter_type" },
+{ "filter_type"         , "select swr filter type"      , OFFSET(filter_type)    , AV_OPT_TYPE_INT  , { .i64 = SWR_FILTER_TYPE_KAISER }, SWR_FILTER_TYPE_CUBIC, SWR_FILTER_TYPE_ZOH, PARAM, "filter_type" },
     { "cubic"           , "select cubic"                , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_CUBIC            }, INT_MIN, INT_MAX, PARAM, "filter_type" },
     { "blackman_nuttall", "select Blackman Nuttall windowed sinc", 0             , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_BLACKMAN_NUTTALL }, INT_MIN, INT_MAX, PARAM, "filter_type" },
     { "kaiser"          , "select Kaiser windowed sinc" , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_KAISER           }, INT_MIN, INT_MAX, PARAM, "filter_type" },
+    { "sinc_best"       , "select sinc best quality"    , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_SINC_BEST        }, INT_MIN, INT_MAX, PARAM, "filter_type" },
+    { "sinc_medium"     , "select sinc medium quality"  , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_SINC_MEDIUM      }, INT_MIN, INT_MAX, PARAM, "filter_type" },
+    { "sinc_fast"       , "select sinc fast"            , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_SINC_FAST        }, INT_MIN, INT_MAX, PARAM, "filter_type" },
+    { "linear"          , "select linear"               , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_LINEAR           }, INT_MIN, INT_MAX, PARAM, "filter_type" },
+    { "zoh"             , "select zero order holder"    , 0                      , AV_OPT_TYPE_CONST, { .i64 = SWR_FILTER_TYPE_ZOH              }, INT_MIN, INT_MAX, PARAM, "filter_type" },
 
 { "kaiser_beta"         , "set swr Kaiser window beta"  , OFFSET(kaiser_beta)    , AV_OPT_TYPE_DOUBLE  , {.dbl=9                     }, 2      , 16        , PARAM },
 
