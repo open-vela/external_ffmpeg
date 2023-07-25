@@ -87,10 +87,14 @@ struct Resampler {
   get_out_samples_func          get_out_samples;
 };
 
+#if CONFIG_SWR_RESAMPLER
 extern struct Resampler const swri_resampler;
+#elif CONFIG_LIBSOXR
 extern struct Resampler const swri_soxr_resampler;
-#if CONFIG_HIFI4SRC
+#elif CONFIG_HIFI4SRC
 extern struct Resampler const swri_hifi4_resampler;
+#elif CONFIG_LIBSAMPLERATE
+extern struct Resampler const swri_src_resampler;
 #endif
 
 struct SwrContext {
