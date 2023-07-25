@@ -167,6 +167,7 @@ enum SwrEngine {
     SWR_ENGINE_SWR,             /**< SW Resampler */
     SWR_ENGINE_SOXR,            /**< SoX Resampler */
     SWR_ENGINE_HIFI4,           /**< HIFI4 Resampler */
+    SWR_ENGINE_SRC,             /**< SRC Resampler */
     SWR_ENGINE_NB,              ///< not part of API/ABI
 };
 
@@ -175,6 +176,11 @@ enum SwrFilterType {
     SWR_FILTER_TYPE_CUBIC,              /**< Cubic */
     SWR_FILTER_TYPE_BLACKMAN_NUTTALL,   /**< Blackman Nuttall windowed sinc */
     SWR_FILTER_TYPE_KAISER,             /**< Kaiser windowed sinc */
+    SWR_FILTER_TYPE_SINC_FAST,          /**< Sinc best quality */
+    SWR_FILTER_TYPE_SINC_MEDIUM,        /**< Sinc medium quality */
+    SWR_FILTER_TYPE_SINC_BEST,          /**< Sinc fastest */
+    SWR_FILTER_TYPE_LINEAR,             /**< Linear */
+    SWR_FILTER_TYPE_ZOH,                /**< Zero order holder */
 };
 
 /**

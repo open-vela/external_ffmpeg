@@ -17,6 +17,7 @@ OBJS = audioconvert.o                        \
 OBJS-$(CONFIG_SWR_RESAMPLER) += resample.o resample_dsp.o
 OBJS-$(CONFIG_HIFI4SRC)      += hifi4_resample.o
 OBJS-$(CONFIG_LIBSOXR)       += soxr_resample.o
+OBJS-$(CONFIG_LIBSAMPLERATE) += src_resample.o
 OBJS-$(CONFIG_SHARED)        += log2_tab.o
 
 # Objects duplicated from other libraries for shared builds
