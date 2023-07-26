@@ -143,6 +143,26 @@ int ff_sasp_read_frame_header(AVFormatContext *ic, SASPFrameHeader *header)
     header->timestamp_s = avio_rb64(ic->pb);
     length += sizeof(header->timestamp_s);
 
+    header->type = avio_rb32(ic->pb);
+    length += sizeof(header->type);
+
+    if (header->type == MKBETAG('v', 'i', 'd', 'e')) {
+        header->info.video.width = avio_rb32(ic->pb);
+        length += sizeof(header->info.video.width);
+
+        header->info.video.height = avio_rb32(ic->pb);
+        length += sizeof(header->info.video.height);
+
+        header->info.video.fps = avio_rb32(ic->pb);
+        length += sizeof(header->info.video.fps);
+    } else {
+        header->info.audio.sample_rate = avio_rb32(ic->pb);
+        length += sizeof(header->info.audio.sample_rate);
+
+        header->info.audio.channel = avio_rb32(ic->pb);
+        length += sizeof(header->info.audio.channel);
+    }
+
     if (avio_feof(ic->pb))
         return AVERROR_EOF;
 
@@ -151,6 +171,7 @@ int ff_sasp_read_frame_header(AVFormatContext *ic, SASPFrameHeader *header)
 
 int ff_sasp_write_frame_header(char *frame_buf, const SASPFrameHeader *header)
 {
+    char *header_length_ptr = NULL;
     int length = 0;
 
     if (header->magic != MKBETAG('s', 'a', 's', 'p'))
@@ -162,7 +183,7 @@ int ff_sasp_write_frame_header(char *frame_buf, const SASPFrameHeader *header)
     AV_WB16(frame_buf + length, header->version);
     length += sizeof(header->version);
 
-    AV_WB16(frame_buf + length, sizeof(*header));
+    header_length_ptr = frame_buf + length;
     length += sizeof(header->header_len);
 
     AV_WB32(frame_buf + length, header->body_len);
@@ -179,6 +200,28 @@ int ff_sasp_write_frame_header(char *frame_buf, const SASPFrameHeader *header)
 
     AV_WB64(frame_buf + length, header->timestamp_s);
     length += sizeof(header->timestamp_s);
+
+    AV_WB32(frame_buf + length, header->type);
+    length += sizeof(header->type);
+
+    if (header->type == MKBETAG('v', 'i', 'd', 'e')) {
+        AV_WB32(frame_buf + length, header->info.video.width);
+        length += sizeof(header->info.video.width);
+
+        AV_WB32(frame_buf + length, header->info.video.height);
+        length += sizeof(header->info.video.height);
+
+        AV_WB32(frame_buf + length, header->info.video.fps);
+        length += sizeof(header->info.video.fps);
+    } else {
+        AV_WB32(frame_buf + length, header->info.audio.sample_rate);
+        length += sizeof(header->info.audio.sample_rate);
+
+        AV_WB32(frame_buf + length, header->info.audio.channel);
+        length += sizeof(header->info.audio.channel);
+    }
+
+    AV_WB16(header_length_ptr, length);
 
     return length;
 }
