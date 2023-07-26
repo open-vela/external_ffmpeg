@@ -34,7 +34,6 @@ static void wrap_free_params(void *opaque, uint8_t *data)
 
 AVFrame* wrap_frame(AVPacket* packet, AVCodecParameters* params)
 {
-    AVCodecParameters *dup = NULL;
     AVFrame *frame = NULL;
     int ret;
 
@@ -54,15 +53,7 @@ AVFrame* wrap_frame(AVPacket* packet, AVCodecParameters* params)
 
     /* Paramters field. */
     if (params) {
-        dup = avcodec_parameters_alloc();
-        if (!dup)
-           goto failed;
-
-        ret = avcodec_parameters_copy(dup, params);
-        if (ret < 0)
-            goto failed;
-
-        frame->opaque_ref = av_buffer_create((void *)dup,
+        frame->opaque_ref = av_buffer_create((void *)params,
                                              sizeof(AVCodecParameters) + AV_INPUT_BUFFER_PADDING_SIZE,
                                              wrap_free_params, NULL, 0);
         if (!frame->opaque_ref)
@@ -74,10 +65,6 @@ AVFrame* wrap_frame(AVPacket* packet, AVCodecParameters* params)
 
 failed:
     av_frame_free(&frame);
-
-    if (dup)
-        avcodec_parameters_free(&dup);
-
     return NULL;
 }
 
