@@ -45,6 +45,17 @@ typedef struct SASPStreamHeader {
     uint32_t channel;
 } SASPStreamHeader;
 
+typedef struct SASPVideoInfo {
+    uint32_t width;
+    uint32_t height;
+    uint32_t fps;
+} SASPVideoInfo;
+
+typedef struct SASPAudioInfo {
+    uint32_t sample_rate;
+    uint32_t channel;
+} SASPAudioInfo;
+
 typedef struct SASPFrameHeader {
     uint16_t version;
     uint16_t header_len;
@@ -52,8 +63,13 @@ typedef struct SASPFrameHeader {
     uint32_t body_len;
     uint32_t codec_id;
     uint32_t sequence;
-    uint32_t timestamp_ms;    /* the 'ms' part of the total time */
-    uint64_t timestamp_s;     /* the 's' part of the total time */
+    uint32_t timestamp_ms;    ///< the 'ms' part of the total time
+    uint64_t timestamp_s;     ///< the 's' part of the total time
+    uint32_t type;            ///< frame type: video/audio
+    union {
+        SASPVideoInfo video;
+        SASPAudioInfo audio;
+    } info;
 } SASPFrameHeader;
 
 int ff_sasp_read_stream_header(AVFormatContext *ic, SASPStreamHeader *header);

@@ -40,6 +40,7 @@ typedef struct SASPDecContext {
     int video_stream_idx;
     uint64_t audio_pos;
     uint64_t video_pos;
+    int noheader;
 } SASPDecContext;
 
 static int sasp_probe(const AVProbeData *probe)
@@ -116,6 +117,13 @@ static int sasp_read_header(AVFormatContext *ic)
     // replace and delete sasp_init().
     /* disable any fps probe */
     ic->fps_probe_size = 0;
+    /* only allow 0.5s duration to analyze stream */
+    ic->max_analyze_duration = AV_TIME_BASE >> 1;
+
+    if (s->noheader) {
+        ic->ctx_flags |= AVFMTCTX_NOHEADER;
+        return 0;
+    }
 
     ret = ff_sasp_read_stream_header(ic, &stream_header);
     if (ret < 0)
@@ -134,6 +142,7 @@ static int sasp_read_header(AVFormatContext *ic)
 
 static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
 {
+    SASPStreamHeader stream_header = { 0 };
     SASPFrameHeader frame_header = { 0 };
     SASPDecContext *s = ic->priv_data;
     AVStream *st;
@@ -142,6 +151,29 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
     ret = ff_sasp_read_frame_header(ic, &frame_header);
     if (ret  < 0)
         return ret;
+
+    if (s->noheader) {
+        if (frame_header.type == MKBETAG('v', 'i', 'd', 'e')) {
+            stream_header.video_codec_id = frame_header.codec_id;
+            stream_header.width = frame_header.info.video.width;
+            stream_header.height = frame_header.info.video.height;
+            stream_header.fps = frame_header.info.video.fps;
+
+            if (s->video_codec_id == AV_CODEC_ID_NONE) {
+                sasp_add_video(ic, &stream_header);
+            } else if (s->video_codec_id != stream_header.video_codec_id)
+                return AVERROR_INVALIDDATA;
+        } else {
+            stream_header.audio_codec_id = frame_header.codec_id;
+            stream_header.sample_rate = frame_header.info.audio.sample_rate;
+            stream_header.channel = frame_header.info.audio.channel;
+
+            if (s->audio_codec_id == AV_CODEC_ID_NONE) {
+                sasp_add_audio(ic, &stream_header);
+            } else if (s->audio_codec_id != stream_header.audio_codec_id)
+                return AVERROR_INVALIDDATA;
+        }
+    }
 
     avio_skip(ic->pb, frame_header.header_len - ret);
 
@@ -176,6 +208,20 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
     return ret;
 }
 
+#define OFFSET(x) offsetof(SASPDecContext, x)
+#define DEC AV_OPT_FLAG_DECODING_PARAM
+static const AVOption sasp_options[] = {
+    { "noheader", "set no stream header mode for sasp_demuxer", OFFSET(noheader), AV_OPT_TYPE_INT, {.i64 = 1}, 0, 1, DEC},
+    { NULL },
+};
+
+static const AVClass sasp_class = {
+        .class_name = "Simplified Abstraction Stream Protocol Demuxer",
+        .item_name  = av_default_item_name,
+        .option     = sasp_options,
+        .version    = LIBAVUTIL_VERSION_INT,
+};
+
 FFInputFormat ff_sasp_demuxer = {
         .p.name         = "sasp",
         .p.long_name    = NULL_IF_CONFIG_SMALL("Simplified Abstraction Stream Protocol Demuxer"),
@@ -185,5 +231,6 @@ FFInputFormat ff_sasp_demuxer = {
         .read_probe     = sasp_probe,
         .read_header    = sasp_read_header,
         .read_packet    = sasp_read_packet,
+        .p.priv_class   = &sasp_class,
         .p.extensions   = "sasp",
 };
