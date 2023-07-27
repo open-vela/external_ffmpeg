@@ -54,7 +54,7 @@ static av_cold int bluelet_read_header(AVFormatContext *ctx)
     BlueletPriv *priv = ctx->priv_data;
     int ret;
 
-    if (!priv->play)
+    if (!priv->start)
         return AVERROR_EOF;
 
     priv->st = avformat_new_stream(ctx, NULL);
@@ -87,7 +87,7 @@ static int bluelet_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     BlueletPriv *priv = ctx->priv_data;
     int ret;
 
-    if (!priv->play)
+    if (!priv->start)
         return AVERROR_EOF;
 
     ret = av_new_packet(pkt, priv->packet_size);
@@ -142,7 +142,7 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
             if (!caps)
                 return AVERROR(EINVAL);
 
-            if (priv->codec_id == AV_CODEC_ID_NONE || !priv->play)
+            if (priv->codec_id == AV_CODEC_ID_NONE || !priv->start)
                 return FFERROR_NOT_READY;
 
             caps->av_class = &bluelet_dec_cap_class;
@@ -201,15 +201,15 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
             }
 
             break;
-        case AV_APP_TO_DEV_PLAY:
+        case AV_APP_TO_DEV_START:
             ff_bluelet_start(priv);
-            priv->play = 1;
+            priv->start = 1;
             avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
-        case AV_APP_TO_DEV_PAUSE:
+        case AV_APP_TO_DEV_STOP:
             ff_bluelet_stop(priv);
-            priv->play = 0;
+            priv->start = 0;
             avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
@@ -245,7 +245,7 @@ static const AVOption options[] = {
     { "sample_rate", "Set sample rate", OFFSET(sample_rate), AV_OPT_TYPE_INT,    {.i64 = 48000},     1, INT_MAX, FLAGS },
     { "channels",    "Set channels",    OFFSET(channels),    AV_OPT_TYPE_INT,    {.i64 = 2},         1, INT_MAX, FLAGS },
     { "server_name", "Set server name", OFFSET(server_name), AV_OPT_TYPE_STRING, { .str = "local" }, 0, 0,       FLAGS },
-    { "auto",        "Auto Play",       OFFSET(play),        AV_OPT_TYPE_INT,    {.i64 = 0},         0, INT_MAX, FLAGS },
+    { "auto",        "Auto Start",      OFFSET(start),       AV_OPT_TYPE_INT,    {.i64 = 0},         0, INT_MAX, FLAGS },
     { NULL },
 };
 
