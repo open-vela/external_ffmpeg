@@ -234,14 +234,14 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             }
             break;
         }
-        case AV_APP_TO_DEV_DUMP:{
+        case AV_APP_TO_DEV_DUMP: {
             snprintf(data, data_size, "%s|%d|%p",
                      priv->server_name, priv->state, priv->lastpkt);
             break;
+        }
         default:
             ret = AVERROR(ENOSYS);
             break;
-        }
     }
 
     return ret;
