@@ -291,32 +291,11 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
             goto out;
     } else {
         ret = av_opt_query_ranges(&ranges, &caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
-        if (ret < 0) {
-            ret = av_opt_query_ranges(&ranges, &caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE);
-            codec = true;
-        }
-
         if (ret >= 0) {
             for (i = 0; i < ranges->nb_ranges; i++) {
-                int64_t fmt = ranges->range[i]->value_min;
-
-                if (codec) {
-                    const AVCodec *codec = avcodec_find_decoder(fmt);
-                    int n = 0;
-
-                    if (!codec)
-                        return AVERROR(EINVAL);
-
-                    while (codec->sample_fmts[n] != AV_SAMPLE_FMT_NONE) {
-                        ret = ff_add_format(&formats, codec->sample_fmts[n++]);
-                        if (ret < 0)
-                            goto out;
-                    }
-                } else {
-                    ret = ff_add_format(&formats, fmt);
-                    if (ret < 0)
-                        goto out;
-                }
+                ret = ff_add_format(&formats, ranges->range[i]->value_min);
+                if (ret < 0)
+                    goto out;
             }
 
             av_opt_freep_ranges(&ranges);
