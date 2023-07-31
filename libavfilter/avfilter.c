@@ -36,6 +36,7 @@
 #include "libavutil/samplefmt.h"
 #include "libavutil/thread.h"
 #include "libavutil/time.h"
+#include "libavutil/imgutils.h"
 
 #define FF_INTERNAL_FIELDS 1
 #include "framequeue.h"
@@ -182,62 +183,99 @@ int avfilter_link(AVFilterContext *src, unsigned srcpad,
     return 0;
 }
 
-static void link_uninit_dump_pcm(AVFilterLink *link, bool stop)
+static void link_uninit_dump_raw(AVFilterLink *link, bool stop)
 {
-    if (link->dump_pcm_fds) {
-        int i;
-        for (i = 0; i < link->nb_dump_pcm_fds; i++) {
-            if (link->dump_pcm_fds[i])
-                close(link->dump_pcm_fds[i]);
+    if (link->dump_raw_fds) {
+        unsigned int i;
+        for (i = 0; i < link->nb_dump_raw_fds; i++) {
+            if (link->dump_raw_fds[i])
+                close(link->dump_raw_fds[i]);
         }
-        av_free(link->dump_pcm_fds);
-        link->dump_pcm_fds    = NULL;
-        link->nb_dump_pcm_fds = 0;
+        av_free(link->dump_raw_fds);
+        link->dump_raw_fds    = NULL;
+        link->nb_dump_raw_fds = 0;
+        link->nb_dump_frames  = 0;
     }
 
     if (stop)
-        link->dump_pcm = false;
+        link->dump_raw = false;
 }
 
-static int link_init_dump_pcm(AVFilterLink *link)
+static int link_init_dump_raw(AVFilterLink *link)
 {
     char path[PATH_MAX];
-    int fd, i;
+    int fd;
 
-    link->nb_dump_pcm_fds = av_sample_fmt_is_planar(link->format)? link->ch_layout.nb_channels : 1;
-    link->dump_pcm_fds = av_calloc(link->nb_dump_pcm_fds, sizeof(int));
-    if (!link->dump_pcm_fds)
-        return AVERROR(ENOMEM);
+    if (link->type == AVMEDIA_TYPE_AUDIO) {
+        unsigned int i;
 
-    for (i = 0; i < link->nb_dump_pcm_fds; i++) {
-        snprintf(path, sizeof(path), FFMPEG_TMPDIR"/%.16s-%.8s-%d.pcm", link->src->name, link->dst->name, i);
-        fd = open(path, O_WRONLY | O_CREAT);
+        link->nb_dump_raw_fds = av_sample_fmt_is_planar(link->format) ? link->ch_layout.nb_channels : 1;
+        link->dump_raw_fds = av_calloc(link->nb_dump_raw_fds, sizeof(int));
+        if (!link->dump_raw_fds)
+            return AVERROR(ENOMEM);
+
+        for (i = 0; i < link->nb_dump_raw_fds; i++) {
+            snprintf(path, sizeof(path), FFMPEG_TMPDIR"/%.16s-%.8s-%s-%d-%d.pcm", link->src->name, link->dst->name,
+                     av_get_sample_fmt_name(link->format), link->sample_rate,
+                     av_sample_fmt_is_planar(link->format) ? i : link->ch_layout.nb_channels);
+            fd = open(path, O_WRONLY | O_CREAT, 0666);
+            if (fd < 0) {
+                link_uninit_dump_raw(link, true);
+                return AVERROR(errno);
+            }
+            link->dump_raw_fds[i] = fd;
+        }
+    } else if (link->type == AVMEDIA_TYPE_VIDEO) {
+        link->nb_dump_raw_fds = 1;
+        link->dump_raw_fds = av_calloc(link->nb_dump_raw_fds, sizeof(int));
+        if (!link->dump_raw_fds)
+            return AVERROR(ENOMEM);
+
+        snprintf(path, sizeof(path), FFMPEG_TMPDIR"/%.16s-%.8s-%s-%dx%d.yuv", link->src->name, link->dst->name,
+                 av_get_pix_fmt_name(link->format), link->w, link->h);
+        fd = open(path, O_WRONLY | O_CREAT, 0666);
         if (fd < 0) {
-            link_uninit_dump_pcm(link, true);
+            link_uninit_dump_raw(link, true);
             return AVERROR(errno);
         }
-        link->dump_pcm_fds[i] = fd;
+        link->dump_raw_fds[0] = fd;
     }
 
     return 0;
 }
 
-static int filter_set_dump_pcm(AVFilterContext *filter, const char *target, bool set)
+static int filter_set_dump_raw(AVFilterContext *filter, const char *arg, bool set)
 {
+    AVDictionary *opt = NULL;
+    AVDictionaryEntry *tag;
+    unsigned int nb = UINT32_MAX;
+    char *target = NULL;
     int i;
+
+    av_dict_parse_string(&opt, arg, "=", ":", 0);
+    if ((tag = av_dict_get(opt, "target", NULL, 0)))
+        target = tag->value;
+    if ((tag = av_dict_get(opt, "nb", NULL, 0)))
+        nb = strtoul(tag->value, NULL, 0);
 
     for (i = 0; i < filter->nb_outputs; i++) {
         AVFilterLink *link = filter->outputs[i];
-        if (!target || !strcmp(link->dst->name, target)) {
-            if (set)
-                link->dump_pcm = true;
-            else
-                link_uninit_dump_pcm(link, true);
 
-            if (target)
+        if (!target || !strcmp(link->dst->name, target)) {
+            if (set) {
+                link->dump_raw       = true;
+                link->nb_dump_frames = nb;
+            } else
+                link_uninit_dump_raw(link, true);
+
+            if (target) {
+                av_dict_free(&opt);
                 return 0;
+            }
         }
     }
+
+    av_dict_free(&opt);
 
     return target ? AVERROR(EINVAL) : 0;
 }
@@ -250,7 +288,7 @@ void avfilter_link_free(AVFilterLink **link)
     ff_framequeue_free(&(*link)->fifo);
     ff_frame_pool_uninit((FFFramePool**)&(*link)->frame_pool);
     av_channel_layout_uninit(&(*link)->ch_layout);
-    link_uninit_dump_pcm(*link, true);
+    link_uninit_dump_raw(*link, true);
 
     av_freep(link);
 }
@@ -700,10 +738,10 @@ int avfilter_process_command(AVFilterContext *filter, const char *cmd, const cha
         if (res == local_res)
             av_log(filter, AV_LOG_INFO, "%s", res);
         return 0;
-    } else if(!strcmp(cmd, "dump_pcm_start")) {
-        return filter_set_dump_pcm(filter, arg, true);
-    } else if(!strcmp(cmd, "dump_pcm_stop")) {
-        return filter_set_dump_pcm(filter, arg, false);
+    } else if(!strcmp(cmd, "dump_raw_start")) {
+        return filter_set_dump_raw(filter, arg, true);
+    } else if(!strcmp(cmd, "dump_raw_stop")) {
+        return filter_set_dump_raw(filter, arg, false);
     } else if(!strcmp(cmd, "enable")) {
         return set_enable_expr(filter, arg);
     } else if(filter->filter->process_command) {
@@ -1150,35 +1188,61 @@ fail:
 
 static int link_dump_frame(AVFilterLink *link, AVFrame *frame)
 {
-    int samples_size, ret;
+    int ret;
 
-    if (!link->dump_pcm_fds) {
-        ret = link_init_dump_pcm(link);
+    if (!link->dump_raw_fds) {
+        ret = link_init_dump_raw(link);
         if (ret < 0)
             return ret;
     }
 
-    samples_size = av_get_bytes_per_sample(frame->format) * frame->nb_samples;
-    if (av_sample_fmt_is_planar(frame->format)) {
-        int i;
-        for (i = 0; i < link->nb_dump_pcm_fds && i < frame->ch_layout.nb_channels; i++) {
-            if (i < AV_NUM_DATA_POINTERS)
-                ret = write(link->dump_pcm_fds[i], frame->data[i], samples_size);
-            else
-                ret = write(link->dump_pcm_fds[i], frame->extended_data[i - AV_NUM_DATA_POINTERS], samples_size);
+    if (!link->nb_dump_frames)
+            return 0;
 
+    if (link->type == AVMEDIA_TYPE_AUDIO) {
+        int samples_size = av_get_bytes_per_sample(frame->format) * frame->nb_samples;
+        if (av_sample_fmt_is_planar(frame->format)) {
+            unsigned int i;
+            for (i = 0; i < link->nb_dump_raw_fds && i < frame->ch_layout.nb_channels; i++) {
+                if (i < AV_NUM_DATA_POINTERS)
+                    ret = write(link->dump_raw_fds[i], frame->data[i], samples_size);
+                else
+                    ret = write(link->dump_raw_fds[i], frame->extended_data[i - AV_NUM_DATA_POINTERS], samples_size);
+
+                if (ret < 0)
+                    goto err;
+            }
+        } else {
+            ret = write(link->dump_raw_fds[0], frame->data[0], samples_size * frame->ch_layout.nb_channels);
             if (ret < 0)
                 goto err;
         }
-    } else {
-        ret = write(link->dump_pcm_fds[0], frame->data[0], samples_size * frame->ch_layout.nb_channels);
-        if (ret < 0)
-            goto err;
+    } else if (link->type == AVMEDIA_TYPE_VIDEO) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
+        unsigned int plane;
+
+        for (plane = 0; ; plane++) {
+            unsigned int shift = (plane == 1 || plane == 2) ? desc->log2_chroma_h : 0;
+            unsigned int bwidth = av_image_get_linesize(frame->format, frame->width, plane);
+            unsigned int h = (frame->height + (1 << shift) - 1) >> shift;
+            unsigned int i;
+
+            if (!frame->buf[plane])
+                break;
+
+            for (i = 0; i < h; i++) {
+                ret = write(link->dump_raw_fds[0], frame->buf[plane]->data + frame->linesize[plane] * i, bwidth);
+                if (ret < 0)
+                    goto err;
+            }
+        }
     }
+
+    link->nb_dump_frames--;
 
     return 0;
 err:
-    link_uninit_dump_pcm(link, true);
+    link_uninit_dump_raw(link, true);
     return AVERROR(errno);
 }
 
@@ -1188,7 +1252,7 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
     FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); tlog_ref(NULL, frame, 1);
 
     if (!link->incfg.formats) {
-        link_uninit_dump_pcm(link, false);
+        link_uninit_dump_raw(link, false);
         return AVERROR_EOF;
     }
 
@@ -1218,7 +1282,7 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
         }
     }
 
-    if (link->dump_pcm && link->type == AVMEDIA_TYPE_AUDIO) {
+    if (link->dump_raw) {
         ret = link_dump_frame(link, frame);
         if (ret < 0)
             av_log(link->dst, AV_LOG_ERROR, "Dump pcm files failed with %d\n", ret);
