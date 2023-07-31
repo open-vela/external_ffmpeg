@@ -596,9 +596,10 @@ struct AVFilterLink {
 
     int format;                 ///< agreed upon media format
 
-    bool        dump_pcm;       ///< flag to dump pcm
-    int        *dump_pcm_fds;   ///< dump files
-    unsigned nb_dump_pcm_fds;   ///< number of dump file
+    bool        dump_raw;       ///< flag to dump raw audio&video data
+    int        *dump_raw_fds;   ///< dump files
+    unsigned nb_dump_raw_fds;   ///< number of dump file
+    unsigned nb_dump_frames;    ///< number of frames to dump
 
     /**
      * Define the time base used by the PTS of the frames/samples
