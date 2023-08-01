@@ -526,6 +526,10 @@ enum AVCodecID {
     AV_CODEC_ID_DFPWM,
     AV_CODEC_ID_LC3,
     AV_CODEC_ID_LDAC,
+    AV_CODEC_ID_LLAC,
+    AV_CODEC_ID_LHDC3,
+    AV_CODEC_ID_LHDC4,
+    AV_CODEC_ID_LHDC5,
     AV_CODEC_ID_RAWAUDIO = 0x16000,                ///< A dummy ID for lossless audio codecs.
 
     /* subtitle codecs */

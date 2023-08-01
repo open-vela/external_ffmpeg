@@ -3304,6 +3304,34 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("LDAC (Sony codec that supports high-resolution audio)"),
         .props     = AV_CODEC_PROP_LOSSY,
     },
+    {
+        .id        = AV_CODEC_ID_LLAC,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "llac",
+        .long_name = NULL_IF_CONFIG_SMALL("LLAC (Huawei codec that supports high-resolution audio)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
+    {
+        .id        = AV_CODEC_ID_LHDC3,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "lhdc3",
+        .long_name = NULL_IF_CONFIG_SMALL("LHDC3 (Huawei codec that supports high-resolution audio)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
+    {
+        .id        = AV_CODEC_ID_LHDC4,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "lhdc4",
+        .long_name = NULL_IF_CONFIG_SMALL("LHDC4 (Huawei codec that supports high-resolution audio)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
+    {
+        .id        = AV_CODEC_ID_LHDC5,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "lhdc5",
+        .long_name = NULL_IF_CONFIG_SMALL("LHDC5 (Huawei codec that supports high-resolution audio)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
 
 #if !CONFIG_AUDIO_ONLY
     /* subtitle codecs */
