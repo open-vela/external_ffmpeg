@@ -52,6 +52,7 @@ extern const AVCodecParser ff_h264_parser;
 extern const AVCodecParser ff_hevc_parser;
 extern const AVCodecParser ff_ipu_parser;
 extern const AVCodecParser ff_jpeg2000_parser;
+extern const AVCodecParser ff_lhdc_parser;
 extern const AVCodecParser ff_mjpeg_parser;
 extern const AVCodecParser ff_mlp_parser;
 extern const AVCodecParser ff_mpeg4video_parser;
