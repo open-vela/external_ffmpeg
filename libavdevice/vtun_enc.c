@@ -25,7 +25,8 @@
 #include "libavutil/thread.h"
 #include "libavformat/mux.h"
 #include "libavformat/network.h"
-#include "libavdevice/vtun.h"
+
+#include "lvx_vtun.h"
 
 #ifdef CONFIG_NET_RPMSG
 #include <netpacket/rpmsg.h>
@@ -41,12 +42,12 @@
 #define RPMSG_HEADER "rpmsg>"
 
 typedef struct {
-    AVVtunFrameFormat tunfmt;
+    lvx_vtun_frame_format tunfmt;
     enum AVPixelFormat pixfmt;
 } VtunPixFmt;
 
 typedef struct {
-    AVVtunFrame tunframe;
+    lvx_vtun_frame tunframe;
     AVFrame *avframe;
 } VtunShareFrame;
 
@@ -66,7 +67,7 @@ static const VtunPixFmt ff_vtun_pixfmt_map[] = {
     { VTUN_FRAME_FORMAT_YUV420SP, AV_PIX_FMT_NV12 },
 };
 
-static AVVtunFrameFormat vtun_format_convert(enum AVPixelFormat format)
+static lvx_vtun_frame_format vtun_format_convert(enum AVPixelFormat format)
 {
     int nb_pixfmts = FF_ARRAY_ELEMS(ff_vtun_pixfmt_map);
     int i;
@@ -158,7 +159,7 @@ static int vtun_send_ctrl(VtunCtx *priv, const void *buffer, size_t length)
     return 0;
 }
 
-static AVVtunFrame *vtun_get_frame(VtunCtx *priv)
+static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
 {
     VtunShareFrame *frame = &priv->frame;
     AVFrame *avframe;
@@ -183,7 +184,7 @@ static AVVtunFrame *vtun_get_frame(VtunCtx *priv)
 
 static int vtun_handle_event(struct AVFormatContext *h)
 {
-    AVVtunFrame *frame;
+    lvx_vtun_frame *frame;
     uint8_t event;
     int ret;
     VtunCtx *priv = h->priv_data;
