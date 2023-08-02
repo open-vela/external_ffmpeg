@@ -116,9 +116,12 @@ static int sasp_read_header(AVFormatContext *ic)
 
     // replace and delete sasp_init().
     /* disable any fps probe */
-    ic->fps_probe_size = 0;
-    /* only allow 0.5s duration to analyze stream */
-    ic->max_analyze_duration = AV_TIME_BASE >> 1;
+    if (ic->fps_probe_size < 0)
+        ic->fps_probe_size = 0;
+    /* set 500ms duration to analyze stream for displaying faster
+       on the first screen if user has not specified the parameters. */
+    if (ic->max_analyze_duration <= 0)
+        ic->max_analyze_duration = AV_TIME_BASE >> 1;
 
     if (s->noheader) {
         ic->ctx_flags |= AVFMTCTX_NOHEADER;
