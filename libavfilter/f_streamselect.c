@@ -78,10 +78,8 @@ static int activate(AVFilterContext *ctx)
                 } else if (frame) {
                     if (first) { // do not clone at fisrt sending.
                         ret = ff_filter_frame(ctx->outputs[j], frame);
-                        if (ret < 0) {
-                            av_frame_free(&frame);
+                        if (ret < 0)
                             return ret;
-                        }
                         first = false;
                     } else {
                         AVFrame *out = av_frame_clone(frame);
@@ -92,11 +90,8 @@ static int activate(AVFilterContext *ctx)
                         }
 
                         ret = ff_filter_frame(ctx->outputs[j], out);
-                        if (ret < 0) {
-                            av_frame_free(&out);
-                            av_frame_free(&frame);
+                        if (ret < 0)
                             return ret;
-                        }
                     }
                 } else if (!ff_outlink_frame_wanted(ctx->outputs[j])) {
                     request = false;
