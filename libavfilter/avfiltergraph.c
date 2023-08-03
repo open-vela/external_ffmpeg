@@ -557,6 +557,7 @@ static bool sanitize_formats(AVFilterGraph *graph)
 static void display_channel_layouts(AVBPrint *buf, const char* name,
     AVFilterChannelLayouts* chs)
 {
+    char layout[128];
     int i;
 
     av_bprintf(buf, "%32s   chs:", name);
@@ -565,10 +566,8 @@ static void display_channel_layouts(AVBPrint *buf, const char* name,
     if (chs->all_counts)
         av_bprintf(buf, " all-counts");
     for (i = 0; i < chs->nb_channel_layouts; i++) {
-        av_bprintf(buf, " order:%d,ch:%d,0x%llx",
-            chs->channel_layouts[i].order,
-            chs->channel_layouts[i].nb_channels,
-            chs->channel_layouts[i].u.mask);
+        av_channel_layout_describe(&chs->channel_layouts[i], layout, sizeof(layout));
+        av_bprintf(buf, " %s", layout);
     }
     av_bprintf(buf, "\n");
 }
