@@ -232,11 +232,11 @@ static int ff_nuttx_capbility_query_smpfmts(struct AVFormatContext *s1, int form
 static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
                                            int format, int codecs[], int num)
 {
+    int ac_subtype = AUDIO_FMT_UNDEF;
+    int codec = AV_CODEC_ID_NONE;
     struct audio_caps_s caps;
     int nb_codecs = 0;
-    int ac_subtype;
     int ret, i, x;
-    int codec;
 
     for (i = 0; i < num && format; i++) {
         if (format & (1 << (AUDIO_FMT_PCM - 1))) {
@@ -295,7 +295,7 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
     struct audio_caps_s formats, others;
     int ac_type = AUDIO_TYPE_QUERY;
     struct AVOptionRanges *ranges;
-    int values0[16], values1[16];
+    int values0[64], values1[64];
     int nb_ranges, is_range = 0;
     int ret;
 
@@ -330,13 +330,13 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
         nb_ranges = 1;
         is_range  = (values0[0] != values1[0]);
     } else if (!strcmp(key, "sample_rates")) {
-        ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], values0, 16);
+        ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], values0, 64);
         if (ret <= 0)
             goto err;
 
         nb_ranges = ret;
     } else if (!strcmp(key, "codecs")) {
-        ret = ff_nuttx_capbility_query_codecs(s1, formats.ac_format.hw, values0, 16);
+        ret = ff_nuttx_capbility_query_codecs(s1, formats.ac_format.hw, values0, 64);
         if (ret <= 0)
             goto err;
 
