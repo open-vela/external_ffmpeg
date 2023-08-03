@@ -3256,6 +3256,20 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
     {
+        .id        = AV_CODEC_ID_SBC_PACKED,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "sbc-packed",
+        .long_name = NULL_IF_CONFIG_SMALL("SBC packed (low-complexity subband codec)"),
+        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+    },
+    {
+        .id        = AV_CODEC_ID_SILK,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "silk",
+        .long_name = NULL_IF_CONFIG_SMALL("SILK V3 Audio codec"),
+        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+    },
+    {
         .id        = AV_CODEC_ID_FASTAUDIO,
         .type      = AVMEDIA_TYPE_AUDIO,
         .name      = "fastaudio",
