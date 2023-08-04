@@ -26,6 +26,7 @@
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "internal.h"
 
 #include <SKP_Silk_SDK_API.h>
 
@@ -74,7 +75,7 @@ static int silk_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     frame->nb_samples = ((FRAME_LENGTH_MS * MAX_API_FS_KHZ) << 1) * MAX_INPUT_FRAMES /
                          (avctx->ch_layout.nb_channels * av_get_bytes_per_sample(avctx->sample_fmt));
-    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
     control.API_sampleRate  = avctx->sample_rate;
