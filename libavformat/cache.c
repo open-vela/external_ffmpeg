@@ -127,7 +127,7 @@ static void *cache_thread(void *arg)
 
     diff = (av_gettime_relative() - time) / AV_TIME_BASE;
     bps = diff ? offset * 8 / diff : 0;
-    av_log(h, AV_LOG_INFO, "%s end ret %d bytes %lld %lldbps\n", __func__, ret, offset, bps);
+    av_log(h, AV_LOG_INFO, "%s end ret %d bytes %"PRId64" %"PRId64"bps\n", __func__, ret, offset, bps);
 
     return NULL;
 }
@@ -197,7 +197,7 @@ static int add_entry(URLContext *h, const unsigned char *buf, int size, int64_t 
     pos = lseek(c->fd, 0, SEEK_END);
     if (pos < 0) {
         ret = AVERROR(errno);
-        av_log(h, AV_LOG_ERROR, "Failed to seek in cache, ret %lld errno %d\n", pos, errno);
+        av_log(h, AV_LOG_ERROR, "Failed to seek in cache, ret %"PRId64" errno %d\n", pos, errno);
         goto fail;
     }
     c->cache_pos = pos;
