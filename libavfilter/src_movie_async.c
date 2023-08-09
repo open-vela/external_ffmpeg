@@ -1219,7 +1219,7 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
             continue;
 
         if (movie->streams[i].codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
-            ret = snprintf(res + pos, res_len - pos, ", A: %d %s %lld %d %d %d",
+            ret = snprintf(res + pos, res_len - pos, ", A: %d %s %"PRId64" %d %d %"PRIu64"",
                                     movie->streams[i].index,
                                     avcodec_get_name(movie->streams[i].codec_ctx->codec_id),
                                     movie->format_ctx->bit_rate,
@@ -1227,7 +1227,7 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
                                     movie->streams[i].codec_ctx->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&movie->streams[i].dat_queue));
         } else {
-            ret = snprintf(res + pos, res_len - pos, ", V: %d %s %d %d %d",
+            ret = snprintf(res + pos, res_len - pos, ", V: %d %s %d %d %"PRIu64"",
                                     movie->streams[i].index,
                                     avcodec_get_name(movie->streams[i].codec_ctx->codec_id),
                                     movie->streams[i].codec_ctx->width,
