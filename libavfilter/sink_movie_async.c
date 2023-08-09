@@ -284,7 +284,7 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         return AVERROR(ENOMEM);
 
     if (priv->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
-        sscanf(params, "a:%d,%d,%d,%lld,%d,%d",
+        sscanf(params, "a:%d,%d,%d,%"PRId64",%d,%d",
                &format, &sample_rate, &channels, &bitrate, &vbr, &level);
 
         priv->streams[pad_id].enc_ctx->sample_fmt  = format;
@@ -1056,7 +1056,7 @@ static int amoviesink_process_start(AVFilterContext *ctx)
     for (i = 0; i < ctx->nb_inputs; i++) {
         link = ctx->inputs[i];
         if (link->type == AVMEDIA_TYPE_AUDIO)
-            ret = snprintf(ptr, len, "a:%d,%d,%d,%lld,%d,%d",
+            ret = snprintf(ptr, len, "a:%d,%d,%d,%"PRId64",%d,%d",
                            link->format, link->sample_rate, link->ch_layout.nb_channels, bitrate, vbr, level);
         else
             ret = snprintf(ptr, len, ";v:%d,%d,%d,%d/%d",
@@ -1154,13 +1154,13 @@ static int amoviesink_process_dump(AVFilterContext *ctx, char *res, int res_len)
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (priv->streams[i].enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
-            ret = snprintf(res + pos, res_len - pos, ", A: %s %d %d %d",
+            ret = snprintf(res + pos, res_len - pos, ", A: %s %d %d %"PRIu64"",
                                     avcodec_get_name(priv->streams[i].enc_ctx->codec_id),
                                     priv->streams[i].enc_ctx->sample_rate,
                                     priv->streams[i].enc_ctx->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&priv->streams[i].dat_queue));
         } else {
-            ret = snprintf(res + pos, res_len - pos, ", V: %s %d %d %d",
+            ret = snprintf(res + pos, res_len - pos, ", V: %s %d %d %"PRIu64"",
                                     avcodec_get_name(priv->streams[i].enc_ctx->codec_id),
                                     priv->streams[i].enc_ctx->width,
                                     priv->streams[i].enc_ctx->height,
