@@ -203,7 +203,7 @@ static void graph_link_dump(AVBPrint *buf, AVFilterContext *cur, AVFilterLink *l
             break;
     }
 
-    av_bprintf(buf, "st:%d wn:%d cnt:%-8lld cur:%d|%-8d ", !ff_outlink_get_status(link),
+    av_bprintf(buf, "st:%d wn:%d cnt:%-8"PRId64" cur:%"PRIu64"|%-8d ", !ff_outlink_get_status(link),
                ff_outlink_frame_wanted(link), link->frame_count_in,
                ff_inlink_queued_frames(link), ff_inlink_queued_samples(link));
 }
