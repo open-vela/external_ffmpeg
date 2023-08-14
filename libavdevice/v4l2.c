@@ -104,6 +104,9 @@ struct video_data {
     char *framerate;    /**< Set by a private option. */
 
     int use_libv4l2;
+
+    bool poll_available;
+
     int (*open_f)(const char *file, int oflag, ...);
     int (*close_f)(int fd);
     int (*dup_f)(int fd);
@@ -988,6 +991,8 @@ static int v4l2_read_header(AVFormatContext *ctx)
     if (st->avg_frame_rate.den)
         st->codecpar->bit_rate = s->frame_size * av_q2d(st->avg_frame_rate) * 8;
 
+    s->poll_available = false;
+
     return 0;
 
 fail:
@@ -997,11 +1002,14 @@ fail:
 
 static int v4l2_read_packet(AVFormatContext *ctx, AVPacket *pkt)
 {
+    struct video_data *s = ctx->priv_data;
     int res;
 
     if ((res = mmap_read_frame(ctx, pkt)) < 0) {
         return res;
     }
+
+    s->poll_available = false;
 
     return pkt->size;
 }
@@ -1252,7 +1260,7 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
             struct video_data *s = ctx->priv_data;
             struct pollfd *poll = data;
 
-            if (!s->fd)
+            if (!s->fd || s->poll_available)
                 return 0;
 
             if (!data || data_size < sizeof(struct pollfd))
@@ -1264,6 +1272,9 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
             return 1;
         }
         case AV_APP_TO_DEV_POLL_AVAILABLE: {
+            struct video_data *s = ctx->priv_data;
+            s->poll_available = true;
+
             avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
 
             return 0;
