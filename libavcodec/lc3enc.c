@@ -47,8 +47,7 @@ static int lc3_encode_init(AVCodecContext *avctx)
     lc3_encoder_t enc_mem;
     int frame_us, ich;
 
-    if (avctx->frame_size)
-        frame_us = (double)avctx->frame_size / avctx->sample_rate * AV_TIME_BASE;
+    frame_us = (double)avctx->frame_size / avctx->sample_rate * AV_TIME_BASE;
     if (!LC3_CHECK_DT_US(frame_us))
         frame_us = 10000; /* 10ms */
 
