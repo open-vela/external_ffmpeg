@@ -1755,8 +1755,11 @@ bool ff_filter_graph_has_pending_status(AVFilterGraph *graph)
         AVFilterContext *filter = graph->filters[i];
         for (j = 0; j < filter->nb_outputs; j++) {
             AVFilterLink *outlink = filter->outputs[j];
-            if (outlink->status_in != outlink->status_out)
+            if (outlink->status_in != outlink->status_out) {
+                av_log(graph, AV_LOG_ERROR, "%s src %s dst %s in %d out %d\n", __func__,
+                       outlink->src->name, outlink->dst->name, outlink->status_in, outlink->status_out);
                 return true;
+            }
         }
     }
 
