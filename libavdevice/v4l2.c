@@ -1005,11 +1005,11 @@ static int v4l2_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     struct video_data *s = ctx->priv_data;
     int res;
 
+    s->poll_available = false;
+
     if ((res = mmap_read_frame(ctx, pkt)) < 0) {
         return res;
     }
-
-    s->poll_available = false;
 
     return pkt->size;
 }
