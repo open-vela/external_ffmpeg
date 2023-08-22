@@ -338,17 +338,9 @@ void ff_avfilter_trace_status(AVFilterLink *link, int status_in, int status_out)
         (link->status_in == status_in && link->status_out == status_out))
         return;
 
-    if (src->nb_inputs == 0)
-        len1 = avfilter_process_command(src, "dump", NULL, dump1 + len1, sizeof(dump1) - len1, 0);
-    else
-        len1 = AVERROR(EINVAL);
-
-    if (dst->nb_outputs == 0)
-        len2 = avfilter_process_command(dst, "dump", NULL, dump2 + len2, sizeof(dump2) - len2, 0);
-    else
-        len2 = AVERROR(EINVAL);
-
-    av_log(NULL, AV_LOG_TRACE, "[%24s:%-24s] w:%d f:%"PRId64" p:%"PRId64" st:%d/%d=>%d/%d%s%s\n",
+    len1 = avfilter_process_command(src, "dump", NULL, dump1 + len1, sizeof(dump1) - len1, 0);
+    len2 = avfilter_process_command(dst, "dump", NULL, dump2 + len2, sizeof(dump2) - len2, 0);
+    av_log(NULL, AV_LOG_TRACE, "[%24s:%-24s] w:%d f:%lld p:%lld st:%d/%d=>%d/%d%s%s\n",
         src->name, dst->name,
         link->frame_wanted_out, link->frame_count_in, link->sample_count_in,
         link->status_in, link->status_out, status_in, status_out,
