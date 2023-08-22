@@ -1154,13 +1154,13 @@ static int amoviesink_process_dump(AVFilterContext *ctx, char *res, int res_len)
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (priv->streams[i].enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
-            ret = snprintf(res + pos, res_len - pos, ", A: %s %d %d %"PRIu64"",
+            ret = snprintf(res + pos, res_len - pos, ", A: %s %d %d %zu",
                                     avcodec_get_name(priv->streams[i].enc_ctx->codec_id),
                                     priv->streams[i].enc_ctx->sample_rate,
                                     priv->streams[i].enc_ctx->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&priv->streams[i].dat_queue));
         } else {
-            ret = snprintf(res + pos, res_len - pos, ", V: %s %d %d %"PRIu64"",
+            ret = snprintf(res + pos, res_len - pos, ", V: %s %d %d %zu",
                                     avcodec_get_name(priv->streams[i].enc_ctx->codec_id),
                                     priv->streams[i].enc_ctx->width,
                                     priv->streams[i].enc_ctx->height,
