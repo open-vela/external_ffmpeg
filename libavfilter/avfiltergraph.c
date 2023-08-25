@@ -612,7 +612,9 @@ static void display_link_formats(AVFilterLink *link)
 {
     AVBPrint buf;
 
-    if (av_log_get_level() < AV_LOG_DEBUG)
+    if (av_log_get_level() < AV_LOG_DEBUG ||
+        (link->src->nb_inputs == 1 && link->src->nb_outputs == 1 &&
+         link->dst->nb_inputs == 1 && link->dst->nb_outputs == 1))
         return;
 
     av_bprint_init(&buf, 0, AV_BPRINT_SIZE_AUTOMATIC);
