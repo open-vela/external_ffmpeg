@@ -20,6 +20,7 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include "libavutil/pixdesc.h"
@@ -36,6 +37,7 @@ typedef struct {
     int yoffset;                      ///< y coordinate of top left corner
     struct fb_var_screeninfo varinfo; ///< framebuffer variable info
     struct fb_fix_screeninfo fixinfo; ///< framebuffer fixed info
+    struct fb_planeinfo_s planeinfo;  ///< framebuffer plane info
     int fd;                           ///< framebuffer device file descriptor
     uint8_t *data;                    ///< framebuffer data
     bool stopped;                     ///< stop required apps
@@ -80,6 +82,12 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     if (ioctl(fbdev->fd, FBIOGET_FSCREENINFO, &fbdev->fixinfo) < 0) {
         ret = AVERROR(errno);
         av_log(h, AV_LOG_ERROR, "FBIOGET_FSCREENINFO: %s\n", av_err2str(ret));
+        goto fail;
+    }
+
+    if (ioctl(fbdev->fd, FBIOGET_PLANEINFO, &fbdev->planeinfo) < 0) {
+        ret = AVERROR(errno);
+        av_log(h, AV_LOG_ERROR, "FBIOGET_PLANEINFO: %s\n", av_err2str(ret));
         goto fail;
     }
 
@@ -171,6 +179,19 @@ static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_siz
         memcpy(pout, pin, bytes_to_copy);
         pout += fbdev->fixinfo.line_length;
         pin  += src_line_size;
+    }
+
+    if (fbdev->planeinfo.yres_virtual > fbdev->varinfo.yres) {
+        struct pollfd pfd;
+        int ret;
+
+        pfd.fd = fbdev->fd;
+        pfd.events = POLLOUT;
+
+        ret = poll(&pfd, 1, 0);
+        if (ret > 0) {
+            ioctl(fbdev->fd, FBIOPAN_DISPLAY, fbdev->planeinfo);
+        }
     }
 
     return 0;
