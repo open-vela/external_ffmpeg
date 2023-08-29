@@ -506,7 +506,7 @@ static int adevsink_process_command(AVFilterContext *ctx,
 
         int ret = av_get_output_timestamp(priv->fmt_ctx, 0, &pts, &wall);
         if (ret >= 0)
-            *ts = AV_TIME_BASE * pts * av_q2d(av_make_q(1, priv->enc_ctx->sample_rate));
+            *ts = AV_TIME_BASE * pts * av_q2d(av_make_q(1, ctx->inputs[0]->sample_rate));
 
         return ret;
     } else {
