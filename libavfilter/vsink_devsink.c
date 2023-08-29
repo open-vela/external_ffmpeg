@@ -153,7 +153,7 @@ static int devsink_start(AVFilterContext *ctx)
                priv->fmt_ctx->oformat->video_codec : priv->fmt_ctx->video_codec_id;
 
     priv->frame_uncoded  = codec_id == AV_CODEC_ID_RAWVIDEO && av_write_uncoded_frame_query(priv->fmt_ctx, 0) == 0;
-    priv->frame_duration = AV_TIME_BASE * av_q2d(av_inv_q(inlink->frame_rate)); 
+    priv->frame_duration = AV_TIME_BASE * av_q2d(av_inv_q(inlink->frame_rate));
 
     enc = avcodec_find_encoder(codec_id);
     if (!enc)
@@ -326,7 +326,7 @@ static int devsink_activate(AVFilterContext *ctx)
 
         devsink_timer_stop(ctx);
         ff_inlink_consume_frame(inlink, &frame);
-        
+
         if (ret == 0)
             devsink_send_frame(ctx, frame);
         if (ret < 0 || !priv->frame_uncoded)
