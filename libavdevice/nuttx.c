@@ -51,6 +51,9 @@ static int ff_nuttx_samplerate_convert(int samplerate, int *sample_rates, int nu
         } else if (samplerate & AUDIO_SAMP_RATE_22K) {
             samplerate &= ~AUDIO_SAMP_RATE_22K;
             sample_rates[i] = 22050;
+        } else if (samplerate & AUDIO_SAMP_RATE_24K) {
+            samplerate &= ~AUDIO_SAMP_RATE_24K;
+            sample_rates[i] = 24000;
         } else if (samplerate & AUDIO_SAMP_RATE_32K) {
             samplerate &= ~AUDIO_SAMP_RATE_32K;
             sample_rates[i] = 32000;
