@@ -1222,10 +1222,15 @@ static int link_dump_frame(AVFilterLink *link, AVFrame *frame)
         unsigned int plane;
 
         for (plane = 0; ; plane++) {
+            int bwidth = av_image_get_linesize(frame->format, frame->width, plane);
             unsigned int shift = (plane == 1 || plane == 2) ? desc->log2_chroma_h : 0;
-            unsigned int bwidth = av_image_get_linesize(frame->format, frame->width, plane);
             unsigned int h = (frame->height + (1 << shift) - 1) >> shift;
             unsigned int i;
+
+            if (bwidth < 0) {
+                link_uninit_dump_raw(link, true);
+                return bwidth;
+            }
 
             if (!frame->buf[plane])
                 break;
