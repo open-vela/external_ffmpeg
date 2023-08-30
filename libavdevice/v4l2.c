@@ -106,6 +106,7 @@ struct video_data {
     int use_libv4l2;
 
     bool poll_available;
+    int buffer_copy;
 
     int (*open_f)(const char *file, int oflag, ...);
     int (*close_f)(int fd);
@@ -168,6 +169,11 @@ static int device_open(AVFormatContext *ctx, const char* device_path)
 
     if (ctx->flags & AVFMT_FLAG_NONBLOCK) {
         flags |= O_NONBLOCK;
+    }
+
+    if (!s->buffer_copy && !(flags & O_NONBLOCK)) {
+        av_log(ctx, AV_LOG_ERROR, "If disable buffer copy, the v4l2 dev must be nonblock.\n");
+        return AVERROR_INVALIDDATA;
     }
 
     fd = v4l2_open(device_path, flags, 0);
@@ -539,8 +545,10 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
         return AVERROR(EINVAL);
     }
     atomic_fetch_add(&s->buffers_queued, -1);
-    // always keep at least one buffer queued
-    av_assert0(atomic_load(&s->buffers_queued) >= 1);
+
+    /* if buffer_copy is false, the queued buffers may be 0
+     */
+    av_assert0(!s->buffer_copy || atomic_load(&s->buffers_queued) >= 1);
 
 #ifdef V4L2_BUF_FLAG_ERROR
     if (buf.flags & V4L2_BUF_FLAG_ERROR) {
@@ -564,8 +572,10 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
         }
     }
 
+    /* only if buffer_copy is true, we are allowed to copy it
+     */
     /* Image is at s->buff_start[buf.index] */
-    if (atomic_load(&s->buffers_queued) == FFMAX(s->buffers / 8, 1)) {
+    if (s->buffer_copy && atomic_load(&s->buffers_queued) == FFMAX(s->buffers / 8, 1)) {
         /* when we start getting low on queued buffers, fall back on copying data */
         res = av_new_packet(pkt, buf.bytesused);
         if (res < 0) {
@@ -1314,6 +1324,9 @@ static const AVOption options[] = {
     { "abs",          "use absolute timestamps (wall clock)",                     OFFSET(ts_mode),      AV_OPT_TYPE_CONST,  {.i64 = V4L_TS_ABS      }, 0, 2, DEC, "timestamps" },
     { "mono2abs",     "force conversion from monotonic to absolute timestamps",   OFFSET(ts_mode),      AV_OPT_TYPE_CONST,  {.i64 = V4L_TS_MONO2ABS }, 0, 2, DEC, "timestamps" },
     { "use_libv4l2",  "use libv4l2 (v4l-utils) conversion functions",             OFFSET(use_libv4l2),  AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, DEC },
+
+    { "buffer_copy", "whether buffer copy is allowed when available buffers are not enough", OFFSET(buffer_copy), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DEC },
+
     { NULL },
 };
 
