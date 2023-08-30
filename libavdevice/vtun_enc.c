@@ -54,6 +54,7 @@ typedef struct {
 typedef struct {
     AVClass *class; ///< class for private options
     VtunShareFrame frame;
+    int bytes_per_pixel;
     FFFrameQueue queue;
     char *server_path;
     int frame_count;
@@ -174,6 +175,7 @@ static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
         frame->tunframe.current_ms = avframe->pts * av_q2d(avframe->time_base) * 1000;
         frame->tunframe.addr = avframe->data[0];
         frame->tunframe.size = avframe->linesize[0] * avframe->height;
+        frame->tunframe.stride = avframe->linesize[0] / priv->bytes_per_pixel;
         frame->tunframe.w = avframe->width;
         frame->tunframe.h = avframe->height;
         frame->avframe = avframe;
@@ -245,6 +247,8 @@ static int vtun_write_header(AVFormatContext *h)
         av_log(priv, AV_LOG_ERROR, "Only a single video stream is supported.\n");
         return AVERROR(EINVAL);
     }
+
+    priv->bytes_per_pixel = ((h->streams[0]->codecpar->bits_per_coded_sample + 7) >> 3);
 
     return 0;
 }
