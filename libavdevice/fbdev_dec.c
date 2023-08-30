@@ -134,7 +134,7 @@ static av_cold int fbdev_read_header(AVFormatContext *avctx)
         fbdev->width * fbdev->height * fbdev->bytes_per_pixel * av_q2d(fbdev->framerate_q) * 8;
 
     av_log(avctx, AV_LOG_INFO,
-           "w:%d h:%d bpp:%d pixfmt:%s fps:%d/%d bit_rate:%"PRId64"\n",
+           "w:%d h:%d bpp:%"PRIu32" pixfmt:%s fps:%d/%d bit_rate:%"PRId64"\n",
            fbdev->width, fbdev->height, fbdev->varinfo.bits_per_pixel,
            av_get_pix_fmt_name(pix_fmt),
            fbdev->framerate_q.num, fbdev->framerate_q.den,
