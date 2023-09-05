@@ -705,15 +705,15 @@ static int amoviesink_activate(AVFilterContext *ctx)
     }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        if (priv->streams[i].enc_ctx == NULL)
-            continue;
-
         if (amoviesink_dat_full(ctx, i))
             continue;
 
         link = ctx->inputs[i];
         ff_inlink_acknowledge_status(link, &ret, &pts);
         if (ret < 0)
+            continue;
+
+        if (priv->streams[i].enc_ctx == NULL)
             continue;
 
         frame_size = priv->streams[i].enc_ctx->frame_size;
