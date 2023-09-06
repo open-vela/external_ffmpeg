@@ -235,8 +235,8 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             break;
         }
         case AV_APP_TO_DEV_DUMP: {
-            snprintf(data, data_size, "%s|%d|%p",
-                     priv->server_name, priv->state, priv->lastpkt);
+            snprintf(data, data_size, "%s|%s|%d|%p",
+                     priv->server_name, priv->mode, priv->state, priv->lastpkt);
             break;
         }
         default:
@@ -342,6 +342,7 @@ static int bluelet_enc_check_bitstream(struct AVFormatContext *ctx, struct AVStr
 #define FLAGS AV_OPT_FLAG_ENCODING_PARAM | AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
     { "server_name", "Set server name", OFFSET(server_name), AV_OPT_TYPE_STRING, { .str = "local" }, 0, 0, FLAGS },
+    { "mode", "Audio mode", OFFSET(mode), AV_OPT_TYPE_STRING, { .str = "a2dp" }, 0, 0,       FLAGS },
     { NULL },
 };
 

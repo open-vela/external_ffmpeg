@@ -81,6 +81,7 @@ typedef struct BlueletPriv {
         bool        available;
     };
     char*           server_name;
+    char*           mode;
     union {
         bluelet_aac_t aac;
         bluelet_sbc_t sbc;
