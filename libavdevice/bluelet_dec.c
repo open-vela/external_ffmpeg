@@ -214,8 +214,8 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
 
             return 0;
         case AV_APP_TO_DEV_DUMP:
-            snprintf(data, data_size, "%s|%d|%d",
-                     priv->server_name, priv->codec_id, priv->state);
+            snprintf(data, data_size, "%s|%s|%d|%d",
+                     priv->server_name, priv->mode ,priv->codec_id, priv->state);
             return 0;
         default:
             ret = AVERROR(ENOSYS);
@@ -246,6 +246,7 @@ static const AVOption options[] = {
     { "channels",    "Set channels",    OFFSET(channels),    AV_OPT_TYPE_INT,    {.i64 = 2},         1, INT_MAX, FLAGS },
     { "server_name", "Set server name", OFFSET(server_name), AV_OPT_TYPE_STRING, { .str = "local" }, 0, 0,       FLAGS },
     { "auto",        "Auto Start",      OFFSET(start),       AV_OPT_TYPE_INT,    {.i64 = 0},         0, INT_MAX, FLAGS },
+    { "mode", "Audio mode", OFFSET(mode), AV_OPT_TYPE_STRING, { .str = "a2dp" }, 0, 0,       FLAGS },
     { NULL },
 };
 
