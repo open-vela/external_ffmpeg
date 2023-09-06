@@ -86,6 +86,11 @@ enum {
     BLUELET_CTRL_EVT_UPDATE_CONFIG,
 };
 
+enum {
+    BLUELET_A2DP_IPC,
+    BLUELET_LEA_IPC,
+};
+
 #define BLUELET_AAC_OBJECT_TYPE_MPEG2_LC 0x80  /* MPEG-2 Low Complexity */
 #define BLUELET_AAC_OBJECT_TYPE_MPEG4_LC 0x40  /* MPEG-4 Low Complexity */
 #define BLUELET_AAC_OBJECT_TYPE_MPEG4_LTP 0x20 /* MPEG-4 Long Term Prediction */
@@ -119,9 +124,15 @@ struct bluelet_ipc_pair {
     const char *data;
 };
 
-static const struct bluelet_ipc_pair ipc_pair[2] = {
-    { "sink_ctrl", "sink_data" },
-    { "source_ctrl", "source_data" },
+static const struct bluelet_ipc_pair ipc_pair[2][2] = {
+    {
+        { "a2dp_sink_ctrl", "a2dp_sink_data" },
+        { "a2dp_source_ctrl", "a2dp_source_data" },
+    },
+    {
+        { "lea_sink_ctrl", "lea_sink_data" },
+        { "lea_source_ctrl", "lea_source_data" },
+    },
 };
 
 /*****************************************************************************
@@ -213,14 +224,24 @@ static int ff_bluelet_send_ctrl(BlueletPriv *priv, const void *buffer, size_t le
 
 static int ff_bluelet_connect(BlueletPriv *priv, bool nonblock)
 {
+    uint8_t type;
+
+    if (!strcmp(priv->mode, "a2dp")) {
+        type = BLUELET_A2DP_IPC;
+    } else if (!strcmp(priv->mode, "lea")) {
+        type = BLUELET_LEA_IPC;
+    } else {
+        return AVERROR_INVALIDDATA;
+    }
+
     if (priv->ctrl_fd <= 0) {
-        priv->ctrl_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].ctrl, nonblock);
+        priv->ctrl_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[type][priv->playback].ctrl, nonblock);
         if (priv->ctrl_fd < 0)
             return AVERROR(errno);
     }
 
     if (priv->data_fd <= 0) {
-        priv->data_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[priv->playback].data, nonblock);
+        priv->data_fd = ff_bluelet_socket_connect(priv->server_name, ipc_pair[type][priv->playback].data, nonblock);
         if (priv->data_fd < 0)
             return AVERROR(errno);
     }
