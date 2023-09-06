@@ -125,6 +125,7 @@ static int decoder_receive(AVFilterContext *ctx, AVFrame **out)
             priv->next_pts = frame->pts + frame->nb_samples;
     }
 
+    frame->time_base = ctx->inputs[0]->time_base;
     *out = frame;
     return 0;
 }
