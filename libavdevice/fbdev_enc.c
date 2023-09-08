@@ -190,7 +190,7 @@ static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_siz
 
         ret = poll(&pfd, 1, 0);
         if (ret > 0) {
-            ioctl(fbdev->fd, FBIOPAN_DISPLAY, fbdev->planeinfo);
+            ioctl(fbdev->fd, FBIOPAN_DISPLAY, &fbdev->planeinfo);
         }
     }
 
