@@ -267,12 +267,23 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
     int64_t bitrate = -1;
     const AVCodec *enc;
     AVStream *stream;
+    AVDictionaryEntry *codec_opt;
     int ret;
-
-    if (priv->streams[pad_id].type == AVMEDIA_TYPE_AUDIO)
-        enc = avcodec_find_encoder(priv->format_ctx->oformat->audio_codec);
-    else
-        enc = avcodec_find_encoder(priv->format_ctx->oformat->video_codec);
+    if (priv->streams[pad_id].type == AVMEDIA_TYPE_AUDIO){
+        codec_opt = av_dict_get(priv->format_opt,"audio_codec",NULL, 0);
+        if (codec_opt) {
+            enc = avcodec_find_encoder(atoi(codec_opt->value));
+        } else {
+            enc = avcodec_find_encoder(priv->format_ctx->oformat->audio_codec);
+        }
+    } else {
+        codec_opt = av_dict_get(priv->format_opt,"video_codec",NULL, 0);
+        if (codec_opt) {
+            enc = avcodec_find_encoder(atoi(codec_opt->value));
+        } else {
+            enc = avcodec_find_encoder(priv->format_ctx->oformat->video_codec);
+        }
+    }
 
     if (!enc) {
         av_log(NULL, AV_LOG_INFO, "not find enc\n");
