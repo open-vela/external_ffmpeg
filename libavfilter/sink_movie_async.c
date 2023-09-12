@@ -510,6 +510,7 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
         }
 
         frame->pts -= priv->streams[i].sync_pts;
+        frame->pict_type = AV_PICTURE_TYPE_NONE;
 
         /* user request stop, send frame which linesize = 0 */
         if (!frame->linesize[0])
