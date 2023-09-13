@@ -193,6 +193,11 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             break;
         }
         case AV_APP_TO_DEV_POLL_AVAILABLE: {
+            if (poll->revents & (POLLERR | POLLHUP)) {
+                ff_bluelet_disconnect(priv);
+                return 0;
+            }
+
             if (!data || data_size != sizeof(struct pollfd))
                 return AVERROR(EINVAL);
 

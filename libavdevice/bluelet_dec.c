@@ -175,6 +175,11 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
 
             break;
         case AV_APP_TO_DEV_POLL_AVAILABLE:
+            if (poll->revents & (POLLERR | POLLHUP)) {
+                ff_bluelet_disconnect(priv);
+                return 0;
+            }
+
             if (poll->revents & POLLOUT) {
                 if (priv->ctrl_fd == poll->fd)
                     priv->ctrl_connected = true;
