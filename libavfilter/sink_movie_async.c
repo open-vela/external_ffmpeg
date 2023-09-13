@@ -310,6 +310,9 @@ static int amoviesink_open_encoder(AVFilterContext *ctx, int pad_id, const char 
         priv->streams[pad_id].enc_ctx->time_base = av_inv_q(frame_rate);
     }
 
+    if (priv->format_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+        priv->streams[pad_id].enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
     /*
      * Set strict_std_compliance to FF_COMPLIANCE_UNOFFICIAL to allow some non-standard
      * behavior, e.g. allow mjpeg encoder to process images with limited color range.
