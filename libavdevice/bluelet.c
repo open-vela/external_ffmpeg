@@ -250,6 +250,20 @@ static int ff_bluelet_connect(BlueletPriv *priv, bool nonblock)
     return 0;
 }
 
+int ff_bluelet_disconnect(BlueletPriv *priv)
+{
+    ff_bluelet_socket_disconnect(priv->ctrl_fd);
+    ff_bluelet_socket_disconnect(priv->data_fd);
+
+    priv->ctrl_fd = 0;
+    priv->data_fd = 0;
+    priv->ctrl_connected = false;
+    priv->data_connected = false;
+    priv->state = BLUELET_STATE_IDLE;
+
+    return 0;
+}
+
 int ff_bluelet_init(BlueletPriv *priv, bool nonblock)
 {
     int ret;
@@ -278,12 +292,7 @@ void ff_bluelet_deinit(BlueletPriv *priv)
     if (priv->uorb_fd > 0)
         orb_unsubscribe(priv->uorb_fd);
 #endif
-    ff_bluelet_socket_disconnect(priv->ctrl_fd);
-    ff_bluelet_socket_disconnect(priv->data_fd);
-
-    priv->ctrl_fd = 0;
-    priv->data_fd = 0;
-    priv->state = BLUELET_STATE_IDLE;
+    ff_bluelet_disconnect(priv);
 }
 
 int ff_bluelet_read_buffer(BlueletPriv *priv, void *buffer, size_t bytes)
@@ -489,6 +498,8 @@ int ff_bluelet_handle_uorb_event(BlueletPriv *priv)
 
     if (state.state == BT_STACK_STATE_ON)
         ret = ff_bluelet_connect(priv, priv->nonblock);
+    else
+        ret = ff_bluelet_disconnect(priv);
 
     return ret < 0 ? ret : 0;
 }

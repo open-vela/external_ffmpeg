@@ -96,6 +96,7 @@ typedef struct BlueletPriv {
 int ff_bluelet_start(BlueletPriv* priv);
 int ff_bluelet_stop(BlueletPriv* priv);
 int ff_bluelet_init(BlueletPriv* priv, bool nonblock);
+int ff_bluelet_disconnect(BlueletPriv *priv);
 void ff_bluelet_deinit(BlueletPriv* priv);
 int ff_bluelet_read_buffer(BlueletPriv* priv, void* buffer, size_t bytes);
 int ff_bluelet_write_buffer(BlueletPriv* priv, void* buffer, size_t bytes);
