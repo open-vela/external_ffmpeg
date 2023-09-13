@@ -963,13 +963,13 @@ static int amoviesink_query_formats(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link;
-    int ret, i;
+    int ret = 0, i;
 
     if (!priv->format)
         return FFERROR_NOT_READY;
 
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        link  = ctx->inputs[i];
+    for (i = 0; ret >= 0 && i < ctx->nb_inputs; i++) {
+        link = ctx->inputs[i];
         switch (link->type) {
             case AVMEDIA_TYPE_AUDIO:
                 ret = amoviesink_query_audio_fmts(ctx, i, priv->format->audio_codec);
