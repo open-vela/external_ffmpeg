@@ -178,6 +178,10 @@ static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
         frame->tunframe.stride = avframe->linesize[0] / priv->bytes_per_pixel;
         frame->tunframe.w = avframe->width;
         frame->tunframe.h = avframe->height;
+        frame->tunframe.crop_info.y1 = avframe->crop_top;
+        frame->tunframe.crop_info.y2 = avframe->crop_bottom;
+        frame->tunframe.crop_info.x1 = avframe->crop_left;
+        frame->tunframe.crop_info.x2 = avframe->crop_right;
         frame->avframe = avframe;
     }
 
