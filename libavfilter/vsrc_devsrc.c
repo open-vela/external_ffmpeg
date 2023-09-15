@@ -105,7 +105,7 @@ out:
     return ret;
 }
 
-static inline void adevsrc_force_request(AVFilterContext *ctx)
+static inline void devsrc_force_request(AVFilterContext *ctx)
 {
     ctx->outputs[0]->frame_wanted_out = 1;
     ff_filter_set_ready(ctx, 300);
@@ -125,7 +125,7 @@ static int devsrc_control_message(struct AVFormatContext *s, int type,
         if (priv->dec_ctx)
             ff_filter_set_ready(ctx, 300);
         else
-            adevsrc_force_request(ctx);
+            devsrc_force_request(ctx);
     }
 
     return 0;
