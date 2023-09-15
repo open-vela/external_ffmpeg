@@ -302,49 +302,52 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
     int nb_ranges, is_range = 0;
     int ret;
 
-    ret = ff_nuttx_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &formats);
-    if (ret < 0)
-        return ret;
-
-    ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
-    ret = ff_nuttx_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &others);
-    if (ret < 0)
-        return ret;
-
     ranges = av_mallocz(sizeof(struct AVOptionRanges));
     if (!ranges)
-        goto err;
+        return AVERROR(ENOMEM);
 
-    if (!strcmp(key, "sample_fmts")) {
-        ret = ff_nuttx_capbility_query_smpfmts(s1, formats.ac_format.hw, values0);
-        if (ret <= 0)
+    if (!strcmp(key, "sample_fmts") || !strcmp(key, "codecs")) {
+        ret = ff_nuttx_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &formats);
+        if (ret < 0)
             goto err;
 
-        nb_ranges = ret;
-    } else if (!strcmp(key, "channels")) {
-        if ((others.ac_channels & 0xf0) == 0) {
-            values0[0] = 1;
-            values1[0] = others.ac_channels;
+        if (!strcmp(key, "sample_fmts")) {
+            ret = ff_nuttx_capbility_query_smpfmts(s1, formats.ac_format.hw, values0);
+            if (ret < 0)
+                goto err;
         } else {
-            values0[0] = others.ac_channels >> 4;
-            values1[0] = others.ac_channels & 0x0f;
+            ret = ff_nuttx_capbility_query_codecs(s1, formats.ac_format.hw, values0, 64);
+            if (ret < 0)
+                goto err;
         }
 
-        nb_ranges = 1;
-        is_range  = (values0[0] != values1[0]);
-    } else if (!strcmp(key, "sample_rates")) {
-        ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], values0, 64);
-        if (ret <= 0)
+        nb_ranges = ret;
+    } else if (!strcmp(key, "channels") || !strcmp(key, "sample_rates")) {
+        ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
+        ret = ff_nuttx_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &others);
+        if (ret < 0)
             goto err;
 
-        nb_ranges = ret;
-    } else if (!strcmp(key, "codecs")) {
-        ret = ff_nuttx_capbility_query_codecs(s1, formats.ac_format.hw, values0, 64);
-        if (ret <= 0)
-            goto err;
+        if (!strcmp(key, "channels")) {
+            if ((others.ac_channels & 0xf0) == 0) {
+                values0[0] = 1;
+                values1[0] = others.ac_channels;
+            } else {
+                values0[0] = others.ac_channels >> 4;
+                values1[0] = others.ac_channels & 0x0f;
+            }
 
-        nb_ranges = ret;
+            nb_ranges = 1;
+            is_range  = (values0[0] != values1[0]);
+        } else {
+            ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], values0, 64);
+            if (ret < 0)
+                goto err;
+
+            nb_ranges = ret;
+        }
     } else {
+        ret = -EINVAL;
         goto err;
     }
 
@@ -357,7 +360,7 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
 
 err:
     av_opt_freep_ranges(&ranges);
-    return AVERROR(ENOMEM);
+    return ret;
 }
 
 int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback)
