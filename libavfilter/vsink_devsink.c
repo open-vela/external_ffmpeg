@@ -236,7 +236,7 @@ static int devsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
     if ((ret = avformat_init_output(priv->fmt_ctx, options)) < 0)
         goto exit;
 
-    priv->timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
+    priv->timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
     if (priv->timer_fd < 0) {
         ret = AVERROR(errno);
         goto exit;
