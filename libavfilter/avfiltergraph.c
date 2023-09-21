@@ -1766,8 +1766,10 @@ int ff_filter_graph_run_all(AVFilterGraph *graph)
             break;
         }
         ret = ff_filter_activate(filter);
-        if (ret < 0 && ret != AVERROR_EOF && ret != AVERROR(EAGAIN))
+        if (ret < 0 && ret != AVERROR_EOF && ret != AVERROR(EAGAIN)) {
+            av_log(graph, AV_LOG_ERROR, "%s %s activate failed, ret %d.\n", __func__, filter->name, ret);
             break;
+        }
     }
 
     return ret;
