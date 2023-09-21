@@ -306,6 +306,7 @@ static int devsink_activate(AVFilterContext *ctx)
     DevSinkPriv *priv = ctx->priv;
     AVFrame *frame;
     int64_t pts;
+    int64_t apts;
     int ret;
 
     if (ff_inlink_check_available_frame(inlink)) {
@@ -316,15 +317,19 @@ static int devsink_activate(AVFilterContext *ctx)
             return ret;
         }
 
-        frame = ff_inlink_peek_frame(inlink, 0);
-        ret = devsink_sync_video(ctx, devsink_get_audio_timestamp(ctx),
-                                  frame->pts * av_q2d(frame->time_base) * AV_TIME_BASE);
-        if (ret > 0) {
-            devsink_timer_start(ctx, ret);
-            return 0;
+        apts = devsink_get_audio_timestamp(ctx);
+        if (apts != AV_NOPTS_VALUE) {
+            frame = ff_inlink_peek_frame(inlink, 0);
+            ret = devsink_sync_video(ctx, apts,
+                                     frame->pts * av_q2d(frame->time_base) * AV_TIME_BASE);
+            if (ret > 0) {
+                devsink_timer_start(ctx, ret);
+                return 0;
+            }
+
+            devsink_timer_stop(ctx);
         }
 
-        devsink_timer_stop(ctx);
         ff_inlink_consume_frame(inlink, &frame);
 
         if (ret == 0)
