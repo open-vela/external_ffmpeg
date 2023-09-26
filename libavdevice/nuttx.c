@@ -674,7 +674,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
     }
 
     new = dq_count(&priv->bufferq);
-    if (new == priv->periods && new > old) {
+    if (priv->periods > 1 && new == priv->periods && new > old) {
         av_log(priv, AV_LOG_WARNING, "audio %s, %s !\n", priv->devname,
                priv->capture ? "capture overflow" : "playback underflow");
 
