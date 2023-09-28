@@ -86,6 +86,9 @@ static int parse_header_v4(AVFormatContext *s, enum AVCodecID codec_id)
     st->codecpar->sample_rate         = sample_rate;
     st->codecpar->frame_size          = frame_size;
 
+    if (bits_per_sample == 16)
+        st->codecpar->format = AV_SAMPLE_FMT_S16;
+
     ffstream(st)->need_parsing = AVSTREAM_PARSE_FULL_RAW;
 
     av_channel_layout_default(&st->codecpar->ch_layout, 2);
@@ -132,6 +135,9 @@ static int parse_header_v5(AVFormatContext *s, enum AVCodecID codec_id)
     st->codecpar->codec_id            = codec_id;
     st->codecpar->sample_rate         = sample_rate;
     st->codecpar->frame_size          = frame_size;
+
+    if (bits_per_sample == 16)
+        st->codecpar->format = AV_SAMPLE_FMT_S16;
 
     ffstream(st)->need_parsing = AVSTREAM_PARSE_FULL_RAW;
 
