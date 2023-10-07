@@ -1807,7 +1807,7 @@ redirect:
         av_dict_set_int(&options, "timeout", rt->stimeout, 0);
 
         ff_url_join(httpname, sizeof(httpname), https_tunnel ? "https" : "http", auth, host, port, "%s", path);
-        snprintf(sessioncookie, sizeof(sessioncookie), "%08x%08x",
+        snprintf(sessioncookie, sizeof(sessioncookie), "%08"PRIx32"%08"PRIx32"",
                  av_get_random_seed(), av_get_random_seed());
 
         /* GET requests */
