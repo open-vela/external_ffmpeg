@@ -215,8 +215,16 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
                     }
                 }
             } else if (priv->data_fd == poll->fd) {
-                if (priv->lastpkt)
+                if (priv->lastpkt) {
+                    int64_t ts_now = av_gettime_relative();
+                    int64_t diff   = ts_now - priv->last_ts;
+
+                    if (diff > 500000 /* us */)
+                        av_log(NULL, AV_LOG_ERROR, "bluelet poll available time_us: %lld - diff %lld\n", ts_now, diff);
+                    priv->last_ts = ts_now;
+
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
+                }
             }
 #ifdef CONFIG_UORB
             else if (priv->uorb_fd == poll->fd)
