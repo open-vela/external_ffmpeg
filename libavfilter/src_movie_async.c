@@ -964,7 +964,7 @@ static int movie_async_open(AVFilterContext *ctx)
         return AVERROR(ret);
     }
 
-    pthread_setname_np(thread, "media_src_movie");
+    pthread_setname_np(thread, ctx->name);
     pthread_detach(thread);
 
     return 0;
