@@ -344,7 +344,7 @@ static int rtsp_read_setup(AVFormatContext *s, char* host, char *controlurl)
     /* Put this in a function? */
     /* RFC 2326: session id must be at least 8 digits */
     while (strlen(rt->session_id) < 8)
-        av_strlcatf(rt->session_id, 512, "%u", av_get_random_seed());
+        av_strlcatf(rt->session_id, 512, "%"PRIu32"", av_get_random_seed());
 
     av_strlcatf(responseheaders, sizeof(responseheaders), "Session: %s\r\n",
                 rt->session_id);
