@@ -1010,7 +1010,7 @@ static int amoviesink_process_open(AVFilterContext *ctx)
         return AVERROR(ret);
     }
 
-    pthread_setname_np(thread, "media_sink_movie");
+    pthread_setname_np(thread, ctx->name);
     pthread_detach(thread);
     return 0;
 }
