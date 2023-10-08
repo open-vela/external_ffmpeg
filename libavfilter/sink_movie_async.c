@@ -623,8 +623,10 @@ static bool amoviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
 
         case AVMOVIE_ASYNC_PROCESS_COMMAND:
             args = strrchr(msg->data, '=');
-            *args++ = '\0';
-            ff_filter_process_command(ctx, msg->data, args, NULL, 0, 0);
+            if (args) {
+                *args++ = '\0';
+                ff_filter_process_command(ctx, msg->data, args, NULL, 0, 0);
+            }
             break;
 
         default:
