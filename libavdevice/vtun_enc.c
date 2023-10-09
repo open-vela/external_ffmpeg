@@ -66,6 +66,7 @@ typedef struct {
 static const VtunPixFmt ff_vtun_pixfmt_map[] = {
     { VTUN_FRAME_FORMAT_BGRA8888, AV_PIX_FMT_BGRA },
     { VTUN_FRAME_FORMAT_YUV420SP, AV_PIX_FMT_NV12 },
+    { VTUN_FRAME_FORMAT_RGB565, AV_PIX_FMT_RGB565LE },
 };
 
 static lvx_vtun_frame_format vtun_format_convert(enum AVPixelFormat format)
