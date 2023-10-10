@@ -1479,7 +1479,7 @@ int ff_rtsp_make_setup_request(AVFormatContext *s, const char *host, int port,
     }
 
     for (j = rt->rtp_port_min + port_off, i = 0; i < rt->nb_rtsp_streams; ++i) {
-        char transport[MAX_URL_SIZE];
+        char transport[MAX_URL_SIZE - 32];
 
         /*
          * WMS serves all UDP data over a single connection, the RTX, which
