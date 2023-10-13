@@ -607,6 +607,8 @@ static void movie_async_stop(AVFilterContext *ctx)
     if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
         return;
 
+    movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
+
     if (movie->state != AVMOVIE_ASYNC_STATE_PREPARED) {
         for (i = 0; i < ctx->nb_outputs; i++) {
             if (movie_async_output_inactive(movie, i))
