@@ -836,6 +836,21 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
     return left != size ? size - left : ret;
 }
 
+void ff_nuttx_pause(NuttxPriv *priv)
+{
+    ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+}
+
+void ff_nuttx_resume(NuttxPriv *priv)
+{
+    ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+}
+
+void ff_nuttx_flush(NuttxPriv *priv)
+{
+    ioctl(priv->fd, AUDIOIOC_FLUSH, 0);
+}
+
 int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volume)
 {
     struct audio_caps_desc_s caps_desc = {0};

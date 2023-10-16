@@ -252,6 +252,16 @@ enum AVAppToDevMessageType {
 
     AV_APP_TO_DEV_START = MKBETAG('S', 'T', 'R', 'T'),
     AV_APP_TO_DEV_STOP  = MKBETAG('S', 'T', 'O', 'P'),
+
+    /**
+     * Request open/close.
+     *
+     * Application requests flush.
+     *
+     * data: NULL
+     */
+
+    AV_APP_TO_DEV_FLUSH = MKBETAG('F', 'L', 'S', 'H'),
 };
 
 /**
