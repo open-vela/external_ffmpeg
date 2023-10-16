@@ -587,41 +587,49 @@ out:
 
 static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_id)
 {
-   MovieAsyncContext *movie = ctx->priv;
-   AVCodecParameters *src, *dst = NULL;
-   AVFrame *frame = NULL;
-   int ret;
+    MovieAsyncContext *movie = ctx->priv;
+    AVCodecParameters *src, *dst = NULL;
+    AVFrame *frame = NULL;
+    AVDictionary *dict = NULL;
+    int ret;
 
-   src = movie->format_ctx->streams[pkt->stream_index]->codecpar;
-   if (movie->streams[pad_id].reconfig) {
-       dst = avcodec_parameters_alloc();
+    src = movie->format_ctx->streams[pkt->stream_index]->codecpar;
+    if (movie->streams[pad_id].reconfig) {
+        dst = avcodec_parameters_alloc();
         if (!dst)
             return AVERROR(ENOMEM);
 
-       ret = avcodec_parameters_copy(dst, src);
-       if (ret < 0)
-           goto out;
-   }
+        ret = avcodec_parameters_copy(dst, src);
+        if (ret < 0)
+            goto out;
 
-   frame = wrap_frame(pkt, dst);
-   if (!frame)
-       goto out;
+        ret = av_dict_copy(&dict, movie->format_opt, 0);
+        if (ret < 0)
+            goto out;
+    }
 
-   frame->format = src->format;
-   frame->sample_rate = src->sample_rate;
-   frame->nb_samples  = src->frame_size;
-   av_channel_layout_copy(&frame->ch_layout, &src->ch_layout);
+    frame = wrap_frame(pkt, dst);
+    if (!frame)
+        goto out;
+    frame->data[1] = (uint8_t*)dict;
 
-   ret = movie_async_send_dat(ctx, pad_id, frame);
-   if (ret < 0)
-       goto out;
+    frame->format = src->format;
+    frame->sample_rate = src->sample_rate;
+    frame->nb_samples  = src->frame_size;
+    av_channel_layout_copy(&frame->ch_layout, &src->ch_layout);
 
-   return ret;
+    ret = movie_async_send_dat(ctx, pad_id, frame);
+    if (ret < 0)
+        goto out;
+
+    return ret;
 
 out:
-   avcodec_parameters_free(&dst);
-   av_frame_free(&frame);
-   return ret;
+    if(dict)
+        av_dict_free(&dict);
+    avcodec_parameters_free(&dst);
+    av_frame_free(&frame);
+    return ret;
 }
 
 static int movie_async_read_frame(AVFilterContext *ctx)
