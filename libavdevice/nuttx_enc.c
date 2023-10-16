@@ -208,6 +208,19 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
 
             return 0;
         }
+        case AV_APP_TO_DEV_PAUSE:
+            ff_nuttx_pause(priv);
+            return 0;
+        case AV_APP_TO_DEV_PLAY:
+            ff_nuttx_resume(priv);
+            return 0;
+        case AV_APP_TO_DEV_FLUSH:
+            /* drop lastpkt */
+            if (priv->lastpkt)
+                av_packet_free(&priv->lastpkt);
+
+            ff_nuttx_flush(priv);
+            return 0;
         case AV_APP_TO_DEV_SET_PARAMETER:
             return ff_nuttx_set_parameter(priv, data);
         case AV_APP_TO_DEV_DUMP:
