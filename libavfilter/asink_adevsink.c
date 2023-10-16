@@ -466,7 +466,16 @@ static int adevsink_process_command(AVFilterContext *ctx,
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_STOP,
                                     res, res_len);
+    } else if (!strcmp(cmd, "play")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                AV_APP_TO_DEV_PLAY,
+                                res, res_len);
+    }  else if (!strcmp(cmd, "pause")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                AV_APP_TO_DEV_PAUSE,
+                                res, res_len);
     } else if (!strcmp(cmd, "volume")) {
+
         double volume;
         int ret;
 
@@ -495,6 +504,11 @@ static int adevsink_process_command(AVFilterContext *ctx,
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_SET_PARAMETER,
                                     (char *)args, 0);
+    } else if (!strcmp(cmd, "flush")) {
+        return avdevice_app_to_dev_control_message(
+                                    priv->fmt_ctx,
+                                    AV_APP_TO_DEV_FLUSH,
+                                    res, res_len);
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(
                                     priv->fmt_ctx,
@@ -512,6 +526,13 @@ static int adevsink_process_command(AVFilterContext *ctx,
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
+}
+
+
+static int adevsink_forward_command(AVFilterContext *ctx, int pad_idx, const char* target, const char *cmd,
+                                    const char *arg, char *res, int res_len, int flags)
+{
+    return adevsink_process_command(ctx, cmd, arg, res, res_len, flags);
 }
 
 static const struct AVClass *adevsink_child_class_iterate(void **iter)
@@ -581,5 +602,6 @@ const AVFilter ff_asink_adevsink = {
     FILTER_INPUTS(adevsink_inputs),
     FILTER_QUERY_FUNC(adevsink_query_formats),
     .process_command = adevsink_process_command,
+    .forward_command = adevsink_forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
 };

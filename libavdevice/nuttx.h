@@ -88,4 +88,7 @@ int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute);
 int ff_nuttx_notify_changed(struct AVFormatContext *s1, NuttxPriv *priv, bool volume);
 
 long ff_nuttx_get_latency(NuttxPriv *priv);
+void ff_nuttx_pause(NuttxPriv *priv);
+void ff_nuttx_resume(NuttxPriv *priv);
+void ff_nuttx_flush(NuttxPriv *priv);
 #endif /* AVDEVICE_NUTTX_H */
