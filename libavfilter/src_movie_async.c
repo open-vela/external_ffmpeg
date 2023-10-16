@@ -821,7 +821,7 @@ static void *movie_async_thread(void *arg)
     return NULL;
 }
 
-static int movie_async_open(AVFilterContext *ctx)
+static int movie_async_proc_open(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
     struct sched_param param;
@@ -872,13 +872,16 @@ out:
 static int movie_async_proc_start(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int ret = AVERROR(EPERM);
+    int i, ret = AVERROR(EPERM);
 
     av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
 
     if (movie->state == AVMOVIE_ASYNC_STATE_PREPARED ||
         movie->state == AVMOVIE_ASYNC_STATE_PAUSED ||
         movie->state == AVMOVIE_ASYNC_STATE_COMPLETED) {
+
+        for (i = 0; i < ctx->nb_outputs; i++)
+            avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
 
         movie->state = AVMOVIE_ASYNC_STATE_STARTED;
         ret = movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
@@ -891,11 +894,15 @@ static int movie_async_proc_start(AVFilterContext *ctx)
 static int movie_async_proc_pause(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int ret = AVERROR(EPERM);
+    int i, ret = AVERROR(EPERM);
 
     av_log(ctx, AV_LOG_INFO, "%s filter %s pause.\n", __func__, ctx->name);
 
     if (movie->state == AVMOVIE_ASYNC_STATE_STARTED) {
+
+        for (i = 0; i < ctx->nb_outputs; i++)
+            avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
+
         movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
         ret = 0;
     }
@@ -908,6 +915,7 @@ static int movie_async_proc_quit(AVFilterContext *ctx, const char *cmd, const ch
 {
     MovieAsyncContext *movie = ctx->priv;
     bool reset, close, stop;
+    int i;
 
     if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
         return 0;
@@ -920,6 +928,9 @@ static int movie_async_proc_quit(AVFilterContext *ctx, const char *cmd, const ch
 
     if (reset || close)
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
+
+    for (i = 0; i < ctx->nb_outputs; i++)
+        avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
 
     if (reset || stop)
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
@@ -1224,7 +1235,7 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
 
     if (!strcmp(cmd, "open")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s open.\n", __func__, ctx->name);
-        return movie_async_open(ctx);
+        return movie_async_proc_open(ctx);
     } else if (!strcmp(cmd, "set_event")) {
         event = (AVMovieAsyncEventCookie *)args;
 
