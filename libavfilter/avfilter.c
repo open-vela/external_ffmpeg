@@ -773,7 +773,8 @@ int avfilter_forward_command(AVFilterContext *filter, int pad_idx, const char *t
         nb_next_links = filter->nb_outputs;
     }
 
-    if (!strcmp(target, "all") || (filter->name && !strcmp(target, filter->name)) || !strcmp(target, filter->filter->name)) {
+    if (target &&
+        (!strcmp(target, "all") || (filter->name && !strcmp(target, filter->name)) || !strcmp(target, filter->filter->name))) {
         ret = avfilter_process_command(filter, cmd, arg, res, res_len, flags);
         if (ret != AVERROR(ENOSYS)) {
             if (ret == AVERROR_OPTION_NOT_FOUND)
