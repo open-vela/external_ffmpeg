@@ -461,7 +461,7 @@ int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj
         range->value_max = priv->sample_rate;
     } else if (!strcmp(key, "codecs")) {
         range->value_min = av_get_pcm_codec(priv->sample_fmt, -1);
-        range->value_max = range->value_max;
+        range->value_max = range->value_min;
     } else {
         ret = AVERROR(EINVAL);
         goto err;
@@ -472,6 +472,8 @@ int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj
 
 err:
     av_opt_freep_ranges(&ranges);
+    av_freep(&range_array);
+    av_freep(range);
     return ret;
 }
 
