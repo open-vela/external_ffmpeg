@@ -25,6 +25,7 @@
 #include <poll.h>
 
 #include "libavutil/opt.h"
+#include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
 #include "avfilter.h"
 #include "audio.h"
@@ -57,7 +58,7 @@ static av_cold int rpmsgsink_init(AVFilterContext *ctx)
         return AVERROR(errno);
 
     addr.rp_family = AF_RPMSG;
-    strlcpy(addr.rp_name, priv->rp_name, RPMSG_SOCKET_NAME_SIZE);
+    av_strlcpy(addr.rp_name, priv->rp_name, RPMSG_SOCKET_NAME_SIZE);
 
     ret = bind(priv->fd, (struct sockaddr *)&addr, sizeof(addr));
     if (ret < 0) {
