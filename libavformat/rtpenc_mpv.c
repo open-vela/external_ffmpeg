@@ -51,7 +51,7 @@ void ff_rtp_send_mpegvideo(AVFormatContext *s1, const uint8_t *buf1, int size)
             end_of_slice = 1;
         } else {
             const uint8_t *r, *r1;
-            int start_code;
+            uint32_t start_code;
 
             r1 = buf1;
             while (1) {
