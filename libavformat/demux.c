@@ -231,7 +231,6 @@ int avformat_read_header(AVFormatContext *s)
         if (ret < 0)
             return ret;
 
-        av_log(NULL, AV_LOG_INFO, "%s: name:%s\n", __func__, s->iformat->name);
         s->flags &= (~AVFMT_FLAG_PRIV_OPT);
     }
 
@@ -252,7 +251,6 @@ int avformat_read_close(AVFormatContext *s)
         if (ret < 0)
             return ret;
 
-        av_log(NULL, AV_LOG_INFO, "%s: name:%s\n", __func__, s->iformat->name);
         s->flags |= AVFMT_FLAG_PRIV_OPT;
     }
 
