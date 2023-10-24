@@ -85,11 +85,13 @@ static int64_t devsink_get_audio_timestamp(AVFilterContext *ctx)
     int i;
 
     for (i = 0; i < graph->sink_links_count; i++) {
-        sink = graph->sink_links[i]->dst;
-        inlink = sink->inputs[0];
-        if (sink->filter->name && !strcmp(sink->filter->name, "adevsink") &&
-            !ff_outlink_get_status(inlink))
+        AVFilterContext *tmp = graph->sink_links[i]->dst;
+        inlink = tmp->inputs[0];
+        if (tmp->filter->name && !strcmp(tmp->filter->name, "adevsink") &&
+            !ff_outlink_get_status(inlink)) {
+            sink = tmp;
             break;
+        }
     }
 
     if (sink)
