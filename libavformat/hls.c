@@ -540,8 +540,8 @@ static struct rendition *new_rendition(HLSContext *c, struct rendition_info *inf
         int langlen = strlen(rend->language);
         if (langlen < sizeof(rend->language) - 3) {
             rend->language[langlen] = ',';
-            strncpy(rend->language + langlen + 1, info->assoc_language,
-                    sizeof(rend->language) - langlen - 2);
+            av_strlcpy(rend->language + langlen + 1, info->assoc_language,
+                    sizeof(rend->language) - langlen - 1);
         }
     }
 
