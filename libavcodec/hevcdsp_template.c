@@ -1515,7 +1515,7 @@ static void FUNC(put_hevc_epel_bi_w_hv)(uint8_t *_dst, ptrdiff_t _dststride, uin
 
 static void FUNC(hevc_loop_filter_luma)(uint8_t *_pix,
                                         ptrdiff_t _xstride, ptrdiff_t _ystride,
-                                        int beta, int *_tc,
+                                        int beta, int32_t *_tc,
                                         uint8_t *_no_p, uint8_t *_no_q)
 {
     int d, j;
@@ -1610,7 +1610,7 @@ static void FUNC(hevc_loop_filter_luma)(uint8_t *_pix,
 }
 
 static void FUNC(hevc_loop_filter_chroma)(uint8_t *_pix, ptrdiff_t _xstride,
-                                          ptrdiff_t _ystride, int *_tc,
+                                          ptrdiff_t _ystride, int32_t *_tc,
                                           uint8_t *_no_p, uint8_t *_no_q)
 {
     int d, j, no_p, no_q;
