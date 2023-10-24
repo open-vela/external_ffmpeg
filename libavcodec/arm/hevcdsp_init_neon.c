@@ -31,10 +31,10 @@ void ff_hevc_sao_band_filter_neon_8_wrapper(uint8_t *_dst, uint8_t *_src,
 void ff_hevc_sao_edge_filter_neon_8_wrapper(uint8_t *_dst, uint8_t *_src, ptrdiff_t stride_dst, int16_t *sao_offset_val,
                                   int eo, int width, int height);
 
-void ff_hevc_v_loop_filter_luma_neon(uint8_t *_pix, ptrdiff_t _stride, int _beta, int *_tc, uint8_t *_no_p, uint8_t *_no_q);
-void ff_hevc_h_loop_filter_luma_neon(uint8_t *_pix, ptrdiff_t _stride, int _beta, int *_tc, uint8_t *_no_p, uint8_t *_no_q);
-void ff_hevc_v_loop_filter_chroma_neon(uint8_t *_pix, ptrdiff_t _stride, int *_tc, uint8_t *_no_p, uint8_t *_no_q);
-void ff_hevc_h_loop_filter_chroma_neon(uint8_t *_pix, ptrdiff_t _stride, int *_tc, uint8_t *_no_p, uint8_t *_no_q);
+void ff_hevc_v_loop_filter_luma_neon(uint8_t *_pix, ptrdiff_t _stride, int _beta, int32_t *_tc, uint8_t *_no_p, uint8_t *_no_q);
+void ff_hevc_h_loop_filter_luma_neon(uint8_t *_pix, ptrdiff_t _stride, int _beta, int32_t *_tc, uint8_t *_no_p, uint8_t *_no_q);
+void ff_hevc_v_loop_filter_chroma_neon(uint8_t *_pix, ptrdiff_t _stride, int32_t *_tc, uint8_t *_no_p, uint8_t *_no_q);
+void ff_hevc_h_loop_filter_chroma_neon(uint8_t *_pix, ptrdiff_t _stride, int32_t *_tc, uint8_t *_no_p, uint8_t *_no_q);
 void ff_hevc_add_residual_4x4_8_neon(uint8_t *_dst, int16_t *coeffs,
                                      ptrdiff_t stride);
 void ff_hevc_add_residual_4x4_10_neon(uint8_t *_dst, int16_t *coeffs,
