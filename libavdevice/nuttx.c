@@ -722,7 +722,7 @@ long ff_nuttx_get_latency(NuttxPriv *priv)
     struct dq_entry_s *cur;
     int count = 0;
     int ret;
-    long latency;
+    long latency = 0;
 
     ret = ioctl(priv->fd, AUDIOIOC_GETLATENCY, &latency);
     if (ret < 0)
