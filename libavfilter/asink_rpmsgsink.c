@@ -238,7 +238,8 @@ static int rpmsgsink_activate(AVFilterContext *ctx)
 
     ff_inlink_acknowledge_status(inlink, &ret, &pts);
     if (ret >= 0 && priv->frame_request) {
-        ff_inlink_request_frame(inlink);
+        if(!ff_inlink_check_available_frame(inlink))
+           ff_inlink_request_frame(inlink);
         priv->frame_request = false;
     } else if (ret == AVERROR_EOF) {
         info.flag = RPMSG_FRAME_EOF;
