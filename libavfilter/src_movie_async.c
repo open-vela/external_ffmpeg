@@ -68,7 +68,6 @@ typedef struct MovieStream {
     enum AVMediaType type;
     int              index;                     /**< AVStream index of AVFormatContext */
     FFFrameQueue     dat_queue;
-    bool             reconfig;                  /**< whether need to do reconfig */
     AVRational       time_base;
     AVRational       frame_rate;
 } MovieStream;
@@ -95,7 +94,6 @@ typedef struct MovieAsyncContext {
     struct MovieEvtQueue      evt_queue;     /**< event queue which worker thread to mediad */
 
     int                       state;
-    bool                      first;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
     unsigned                  duration_ms;    /** < duration of whole stream */
@@ -170,14 +168,7 @@ static int movie_async_send_dat(AVFilterContext *ctx, int pad_id, AVFrame *frame
     ret = ff_framequeue_add(&movie->streams[pad_id].dat_queue, frame);
     pthread_mutex_unlock(&movie->mutex);
 
-    if (movie->first &&
-        ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue) < movie->dat_max)
-        return ret;
-
     ff_filter_set_ready(ctx, 100);
-
-    if (movie->first)
-        movie->first = false;
 
     return ret;
 }
@@ -542,7 +533,6 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     if (seek_point > 0)
         movie_async_seek(ctx, seek_point, false);
 
-    movie->first = true;
     return 0;
 
 out:
@@ -579,7 +569,7 @@ static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
     int ret;
 
     src = movie->format_ctx->streams[pkt->stream_index]->codecpar;
-    if (movie->streams[pad_id].reconfig) {
+    if (ff_outlink_get_status(ctx->outputs[pad_id]) != 0) {
         dst = avcodec_parameters_alloc();
         if (!dst)
             return AVERROR(ENOMEM);
@@ -685,11 +675,13 @@ static void movie_async_proc_event(AVFilterContext *ctx)
             case AVMOVIE_ASYNC_EVENT_PREPARED:
                 movie->state = AVMOVIE_ASYNC_STATE_PREPARED;
                 break;
+            case AVMOVIE_ASYNC_EVENT_STARTED:
+                movie->state = AVMOVIE_ASYNC_STATE_STARTED;
+                break;
             case AVMOVIE_ASYNC_EVENT_STOPPED:
                 movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
                 for (i = 0; i < ctx->nb_outputs; i++) {
                     ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
-                    movie->streams[i].reconfig = true;
                 }
                 break;
             case AVMOVIE_ASYNC_EVENT_CLOSED:
@@ -750,7 +742,12 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
             break;
 
         case AVMOVIE_ASYNC_START:
-            ff_filter_set_ready(ctx, 100);
+             /* currently if state is started, it should reconfig immediately,
+              * or the reconfig action maybe be excuted by other filter which
+              * will cause filtering first frame failed.so the action setting
+              * state to AVMOVIE_ASYNC_EVENT_STARTED should be done in activate
+              * function, then excute reconfig */
+            movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STARTED, 0, NULL);
             break;
 
         case AVMOVIE_ASYNC_SEEK:
@@ -883,11 +880,9 @@ static int movie_async_proc_start(AVFilterContext *ctx)
         ret = movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
         if (ret < 0)
             return ret;
-
-        movie->state = AVMOVIE_ASYNC_STATE_STARTED;
+    } else {
+        movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
     }
-
-    movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
     return 0;
 }
 
@@ -1051,16 +1046,21 @@ static int movie_async_query_formats(AVFilterContext *ctx)
     AVCodecParameters *p = NULL;
     int list[] = { 0, -1 };
     AVFilterLink *outlink;
-    int flags = false;
+    bool ready = true;
     int i, ret;
+
+    /* to avoid reconfiging successfully in advanced before started,
+     * because once reconfiging successfully, src filter need sending frame to outlink asap,
+     * or amix pending mixing when amix has other active inputs */
+    if (movie->state != AVMOVIE_ASYNC_STATE_STARTED)
+        return FFERROR_NOT_READY;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (!movie_async_peek_info(ctx, i, &p)) {
-            movie->streams[i].reconfig = true;
+            ready = false;
             continue;
         }
 
-        flags = true;
         outlink = ctx->outputs[i];
 
         switch (outlink->type) {
@@ -1093,31 +1093,57 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 
                 break;
         }
-
-        movie->streams[i].reconfig = false;
     }
 
-    return flags ? 0 : FFERROR_NOT_READY;
+    return ready ? 0 : FFERROR_NOT_READY;
+}
+
+static int movie_async_reconfig(AVFilterContext *ctx)
+{
+    bool need_reconfig = false;
+    int i, ret = 0;
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        /* only before starting case need reconfig: link status is not 0 and data queues have frame.
+         * to avoid reconfig after stopping case: link status is is not 0 and data queues are empty.*/
+        if (ff_outlink_get_status(ctx->outputs[i]) != 0 && !movie_async_dat_empty(ctx, i)) {
+            need_reconfig = true;
+            break;
+        }
+    }
+
+    if (need_reconfig) {
+        ret = avfilter_graph_reconfig(ctx->graph, NULL);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "reconfig failed:%s \n", ctx->name);
+            return ret;
+        }
+
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (!ff_outlink_get_status(ctx->outputs[i]))
+                ctx->outputs[i]->frame_wanted_out = 1;
+        }
+    }
+
+    return 0;
 }
 
 static int movie_async_activate(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
     int status, i, ret = AVERROR(EAGAIN);
-    bool active = false;
     AVFilterLink *link;
     AVFrame *frame;
 
     movie_async_proc_event(ctx);
 
+    ret = movie_async_reconfig(ctx);
+    if (ret < 0)
+        return ret;
+
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (movie_async_dat_empty(ctx, i))
             continue;
-
-        if (movie->streams[i].reconfig) {
-            avfilter_graph_reconfig(ctx->graph, NULL);
-            active = true;
-        }
 
         link = ctx->outputs[i];
         status = ff_outlink_get_status(link);
@@ -1125,7 +1151,7 @@ static int movie_async_activate(AVFilterContext *ctx)
         if (status < 0 || !link->incfg.formats)
             continue;
 
-        if (!active && !ff_outlink_frame_wanted(link))
+        if (!ff_outlink_frame_wanted(link))
             continue;
 
         frame = movie_async_recv_dat(ctx, i);
