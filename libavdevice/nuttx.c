@@ -445,7 +445,8 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device)
 
     /* create message queue */
     snprintf(priv->mqname, sizeof(priv->mqname), "/tmp/%p", priv);
-    priv->mq = mq_open(priv->mqname, O_RDWR | O_CREAT, 0644, &attr);
+    priv->mq = mq_open(priv->mqname, O_RDWR | O_CREAT | O_CLOEXEC, 0644,
+                       &attr);
     if (priv->mq < 0) {
         ret = AVERROR(errno);
         goto out;
