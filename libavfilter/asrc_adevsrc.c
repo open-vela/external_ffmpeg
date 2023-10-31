@@ -31,6 +31,10 @@
 #include "avfilter.h"
 #include "filters.h"
 #include "internal.h"
+#include "packet_wrapper.h"
+
+#define ASRC_ADEVSRC_OPENED  1
+#define ASRC_ADEVSRC_STARTED 2
 
 typedef struct ADevSrcPriv {
     const AVClass   *class;
@@ -44,20 +48,31 @@ typedef struct ADevSrcPriv {
     int             sample_fmt;
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
+
+    int             state;
 } ADevSrcPriv;
 
-static void adevsrc_stop(AVFilterContext *ctx)
+static bool adevsrc_pcm_output(AVFilterContext *ctx)
+{
+    AVFilterLink *link = ctx->inputs[0];
+
+    return link->codec >= AV_CODEC_ID_PCM_S16LE &&
+           link->codec < AV_CODEC_ID_PCM_S24DAUD;
+}
+
+static void adevsrc_close(AVFilterContext *ctx)
 {
     ADevSrcPriv *priv = ctx->priv;
 
-    if (!priv->dec_ctx)
+    if (!priv->state)
         return;
 
     avformat_read_close(priv->fmt_ctx);
     avcodec_free_context(&priv->dec_ctx);
+    priv->state = 0;
 }
 
-static int adevsrc_start(AVFilterContext *ctx)
+static int adevsrc_open(AVFilterContext *ctx)
 {
     AVFilterLink *link = ctx->outputs[0];
     ADevSrcPriv *priv = ctx->priv;
@@ -65,13 +80,17 @@ static int adevsrc_start(AVFilterContext *ctx)
     AVStream *st;
     int ret;
 
-    if (priv->dec_ctx)
+    if (priv->state & ASRC_ADEVSRC_OPENED)
         return 0;
 
     priv->fmt_ctx->audio_codec_id = link->codec;
     ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
+
+    /* offload capture, skip create decoder */
+    if (!adevsrc_pcm_output(ctx))
+       goto reconfig;
 
     st = priv->fmt_ctx->streams[0];
     if (!st)
@@ -101,9 +120,11 @@ static int adevsrc_start(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+reconfig:
+    priv->state = ASRC_ADEVSRC_OPENED;
     return avfilter_graph_reconfig(ctx->graph, NULL);
 out:
-    adevsrc_stop(ctx);
+    adevsrc_close(ctx);
     return ret;
 }
 
@@ -166,62 +187,132 @@ static void adevsrc_uninit(AVFilterContext *ctx)
 {
     ADevSrcPriv *priv = ctx->priv;
 
-    adevsrc_stop(ctx);
+    adevsrc_close(ctx);
     avformat_close_input(&priv->fmt_ctx);
+}
+
+static int adevsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame)
+{
+    AVFilterLink *link = ctx->outputs[0];
+    ADevSrcPriv *priv = ctx->priv;
+    AVFrame *out;
+    int ret;
+
+    out = av_frame_alloc();
+    if (!out)
+        return AVERROR(ENOMEM);
+
+    while (1) {
+        AVPacket pkt1, *pkt = &pkt1;
+
+        ret = avcodec_receive_frame(priv->dec_ctx, out);
+        if (ret >= 0)
+            break;
+        else if (ret != AVERROR(EAGAIN))
+            goto error;
+
+        ret = ff_read_packet(priv->fmt_ctx, pkt);
+        if (ret < 0)
+            goto error;
+
+        ret = avcodec_send_packet(priv->dec_ctx, pkt);
+        av_packet_unref(pkt);
+        if (ret < 0)
+            goto error;
+    }
+
+    av_channel_layout_copy(&out->ch_layout, &link->ch_layout);
+    *frame = out;
+    return 0;
+
+error:
+    av_frame_free(&out);
+    return ret;
+}
+
+static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
+{
+    AVFilterLink *link = ctx->outputs[0];
+    ADevSrcPriv *priv = ctx->priv;
+    AVCodecParameters *dst = NULL;
+    AVFrame *out = NULL;
+    AVPacket *pkt;
+    int ret;
+
+    pkt = av_packet_alloc();
+    if (!pkt)
+        return AVERROR(ENOMEM);
+
+    ret = ff_read_packet(priv->fmt_ctx, pkt);
+    if (ret < 0)
+        goto error;
+
+    if (!(priv->state & ASRC_ADEVSRC_STARTED)) {
+        dst = avcodec_parameters_alloc();
+        if (!dst)
+            goto error;
+
+        dst->codec_type  = link->type;
+        dst->format      = link->format;
+        dst->sample_rate = link->sample_rate;
+        dst->codec_id    = link->codec;
+        av_channel_layout_copy(&dst->ch_layout, &link->ch_layout);
+
+        priv->state = ASRC_ADEVSRC_STARTED;
+    }
+
+    out = wrap_frame(pkt, dst);
+    if (!out) {
+        ret = AVERROR(ENOMEM);
+        goto error;
+    }
+
+    out->format = link->format;
+    out->sample_rate = link->sample_rate;
+    av_channel_layout_copy(&out->ch_layout, &link->ch_layout);
+    *frame = out;
+    return 0;
+
+error:
+    av_packet_free(&pkt);
+    av_frame_free(&out);
+    return ret;
 }
 
 static int adevsrc_activate(AVFilterContext *ctx)
 {
     AVFilterLink *link = ctx->outputs[0];
     ADevSrcPriv *priv = ctx->priv;
-    AVFrame *frame = NULL;
+    AVFrame *frame;
     int ret;
 
     ret = ff_outlink_get_status(link);
     if (ret < 0) {
         if (ret == AVERROR_EOF)
-            adevsrc_stop(ctx);
+            adevsrc_close(ctx);
         return ret;
     }
 
     if (!ff_outlink_frame_wanted(link))
         return FFERROR_NOT_READY;
 
-    frame = av_frame_alloc();
-    if (!frame)
-        return AVERROR(ENOMEM);
-
-    ret = adevsrc_start(ctx);
+    ret = adevsrc_open(ctx);
     if (ret < 0)
         goto out;
 
-    while (1) {
-        AVPacket pkt1, *pkt = &pkt1;
+    if (priv->dec_ctx)
+        ret = adevsrc_receive_frame(ctx, &frame);
+    else
+        ret = adevsrc_wrap_frame(ctx, &frame);
 
-        ret = avcodec_receive_frame(priv->dec_ctx, frame);
-        if (ret >= 0)
-            break;
-        else if (ret != AVERROR(EAGAIN))
-            goto out;
+    if (ret < 0)
+        goto out;
 
-        ret = ff_read_packet(priv->fmt_ctx, pkt);
-        if (ret < 0)
-            goto out;
-
-        ret = avcodec_send_packet(priv->dec_ctx, pkt);
-        av_packet_unref(pkt);
-        if (ret < 0)
-            goto out;
-    }
-
-    av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
     return ff_filter_frame(link, frame);
 
 out:
-    av_frame_free(&frame);
-
     if (ret == AVERROR_EOF) {
-        adevsrc_stop(ctx);
+        adevsrc_close(ctx);
         ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
     } else if (ret < 0 && ret != AVERROR(EAGAIN))
         ff_filter_set_ready(ctx, 300);
