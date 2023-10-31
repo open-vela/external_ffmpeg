@@ -256,9 +256,7 @@ out:
 static int moviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *frame)
 {
     MovieSinkPriv *priv = ctx->priv;
-    AVDictionaryEntry *codec_opt;
     AVCodecParameters *params;
-    const AVCodec *enc;
     AVStream *stream;
     int ret;
 
@@ -269,11 +267,7 @@ static int moviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fram
     if (!params)
         return AVERROR(EINVAL);
 
-    enc = avcodec_find_encoder(params->codec_id);
-    if (!enc)
-        return AVERROR(ENOENT);
-
-    stream = avformat_new_stream(priv->format_ctx, enc);
+    stream = avformat_new_stream(priv->format_ctx, NULL);
     if (!stream)
         return AVERROR(ENOMEM);
 
@@ -694,12 +688,12 @@ static bool moviesink_query_audio_opts(AVFilterContext *ctx, const AVCodec *enc,
         if ((ret = ff_parse_sample_format(value, tag->value, ctx)) < 0)
             return false;
 
-        supported = enc->sample_fmts ? ff_fmt_is_in(*value, enc->sample_fmts) : true;
+        supported = enc && enc->sample_fmts ? ff_fmt_is_in(*value, enc->sample_fmts) : true;
     } else if (mask & 0x02) {
         if ((ret = ff_parse_sample_rate(value, tag->value, ctx)) < 0)
             return false;
 
-         supported = enc->supported_samplerates ?
+         supported = enc && enc->supported_samplerates ?
                      ff_rate_is_in(*value, enc->supported_samplerates) : true;
     } else {
         if ((ret = ff_parse_channel_layout(layout, NULL, tag->value, ctx)) < 0)
@@ -708,7 +702,7 @@ static bool moviesink_query_audio_opts(AVFilterContext *ctx, const AVCodec *enc,
         if (av_channel_layout_check(layout) == 0)
             return false;
 
-        if (enc->ch_layouts) {
+        if (enc && enc->ch_layouts) {
             while (av_channel_layout_check(&enc->ch_layouts[n])) {
                 if (!av_channel_layout_compare(layout, &enc->ch_layouts[n++])) {
                     supported = true;
@@ -726,7 +720,7 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link = ctx->inputs[pad_id];
-    AVFilterChannelLayouts *layouts;
+    AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats;
     const AVCodec *enc;
 
@@ -736,15 +730,13 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
     int n = 0, ret;
 
     enc = avcodec_find_encoder(codec_id);
-    if (!enc)
-        return AVERROR(EINVAL);
 
     /* sample format */
     supported = moviesink_query_audio_opts(ctx, enc, "sample_fmt", &list[0], NULL);
     if (supported)
         formats = ff_make_format_list(list);
     else
-        formats = enc->sample_fmts ?
+        formats = enc && enc->sample_fmts ?
                   ff_make_format_list(enc->sample_fmts) : ff_all_formats(AVMEDIA_TYPE_AUDIO);
 
     if (ret = ff_formats_ref(formats, &link->outcfg.formats) < 0)
@@ -755,7 +747,7 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
     if (supported) {
         formats = ff_make_format_list(list);
     } else {
-        if (enc->supported_samplerates) {
+        if (enc && enc->supported_samplerates) {
             while (enc->supported_samplerates[n] != 0)
                 n++;
 
@@ -781,7 +773,7 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
     if (supported)
         layouts = ff_make_channel_layout_list(list64);
     else
-        layouts = enc->ch_layouts ?
+        layouts = enc && enc->ch_layouts ?
                   ff_make_channel_layout_list(enc->ch_layouts) : ff_all_channel_counts();
 
     if ((ret = ff_channel_layouts_ref(layouts, &link->outcfg.channel_layouts)) < 0)
