@@ -562,27 +562,12 @@ static void movie_async_prepare(AVFilterContext *ctx, const char *filename)
 static void movie_async_stop(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    AVFrame *out;
-    int i, ret;
 
     movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
-
-    if (movie->state != AVMOVIE_ASYNC_STATE_PREPARED) {
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            if (movie_async_output_inactive(movie, i))
-                continue;
-
-            ret = movie_async_send_empty_frame(ctx, i);
-            if (ret < 0)
-                goto out;
-        }
-    }
-
     movie_async_close_demuxer(ctx);
     movie->pending_stop = 0;
 
-out:
-    movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STOPPED, ret, NULL);
+    movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
 }
 
 static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_id)
@@ -683,6 +668,7 @@ static int movie_async_loop(AVFilterContext *ctx)
 static void movie_async_proc_event(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
+    int i;
 
     while (1) {
         MovieEvent *event;
@@ -699,11 +685,12 @@ static void movie_async_proc_event(AVFilterContext *ctx)
             case AVMOVIE_ASYNC_EVENT_PREPARED:
                 movie->state = AVMOVIE_ASYNC_STATE_PREPARED;
                 break;
-            case AVMOVIE_ASYNC_EVENT_STARTED:
-                movie->state = AVMOVIE_ASYNC_STATE_STARTED;
-                break;
-            case AVMOVIE_ASYNC_EVENT_PAUSED:
-                movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
+            case AVMOVIE_ASYNC_EVENT_STOPPED:
+                movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
+                for (i = 0; i < ctx->nb_outputs; i++) {
+                    ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                    movie->streams[i].reconfig = true;
+                }
                 break;
             case AVMOVIE_ASYNC_EVENT_CLOSED:
                 movie->state = AVMOVIE_ASYNC_STATE_NOP;
@@ -893,8 +880,11 @@ static int movie_async_proc_start(AVFilterContext *ctx)
         for (i = 0; i < ctx->nb_outputs; i++)
             avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
 
-        movie->state = AVMOVIE_ASYNC_STATE_STARTED;
         ret = movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
+        if (ret < 0)
+            return ret;
+
+        movie->state = AVMOVIE_ASYNC_STATE_STARTED;
     }
 
     movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
@@ -927,9 +917,6 @@ static int movie_async_proc_quit(AVFilterContext *ctx, const char *cmd, const ch
     bool reset, close, stop;
     int i;
 
-    if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
-        return 0;
-
     av_log(ctx, AV_LOG_INFO, "%s filter %s %s %s.\n", __func__, ctx->name, cmd, args);
 
     reset = !strcmp(cmd, "reset");
@@ -942,8 +929,12 @@ static int movie_async_proc_quit(AVFilterContext *ctx, const char *cmd, const ch
     for (i = 0; i < ctx->nb_outputs; i++)
         avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
 
-    if (reset || stop)
+    if (reset || stop) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
+            return 0;
+
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
+    }
 
     return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
 }
@@ -1131,26 +1122,15 @@ static int movie_async_activate(AVFilterContext *ctx)
         link = ctx->outputs[i];
         status = ff_outlink_get_status(link);
 
-        if (status < 0 || !link->incfg.formats) {
-            /* link eof and stopped clear data queue */
-            if (movie_async_has_eof(ctx, i))
-                movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
+        if (status < 0 || !link->incfg.formats)
             continue;
-        }
 
         if (!active && !ff_outlink_frame_wanted(link))
             continue;
 
         frame = movie_async_recv_dat(ctx, i);
 
-        if (!frame->linesize[0]) {
-            ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
-            movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
-            movie->streams[i].reconfig = true;
-            av_frame_free(&frame);
-        } else {
-            ret = ff_filter_frame(link, frame);
-        }
+        ret = ff_filter_frame(link, frame);
     }
 
     return ret;
