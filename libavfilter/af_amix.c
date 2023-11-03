@@ -793,6 +793,8 @@ static int forward_command(AVFilterContext *ctx, int pad_idx, const char* target
                 }
             }
         }
+    } else if (ctx->nb_inputs == 1) {
+        return avfilter_forward_command(ctx, 0, target, cmd, arg, res, res_len, flags);
     }
 
     return ret;
