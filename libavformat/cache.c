@@ -138,6 +138,7 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
     pthread_attr_t attr;
     ssize_t ssize;
     char *buffername;
+    char threadname[128];
     int ret;
     AVIOInterruptCB interrupt_callback ={
         .callback = cache_interrupt,
@@ -169,7 +170,10 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
     if (ssize > 0)
         pthread_attr_setstacksize(&attr, ssize);
 
+    pthread_getname_np(pthread_self(), threadname, sizeof(threadname));
+    strncat(threadname, "_cache", 7);
     pthread_create(&c->thread, &attr, cache_thread, h);
+    pthread_setname_np(c->thread, threadname);
     pthread_attr_destroy(&attr);
 
     return 0;
