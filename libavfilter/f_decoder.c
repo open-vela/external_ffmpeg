@@ -28,16 +28,19 @@ typedef struct DecoderContext {
     int64_t        next_pts;
 } DecoderContext;
 
-static int decoder_open(AVFilterContext *ctx, AVFrame *frame)
+static int decoder_open(AVFilterContext *ctx)
 {
+    AVFilterLink *inlink = ctx->inputs[0];
     DecoderContext *priv = ctx->priv;
     AVCodecParameters *param;
+    AVFrame *frame = NULL;
     const AVCodec *codec;
     int ret;
 
-    if (priv->codec_ctx)
-        return 0;
+    if (!ff_inlink_check_available_frame(inlink))
+        return AVERROR(EAGAIN);
 
+    frame = ff_inlink_peek_frame(inlink, 0);
     if (!frame || !frame->opaque_ref) {
         av_log(ctx, AV_LOG_INFO, "DEBUG: %s Lack negotiation parameter.\n", __func__);
         return AVERROR(EINVAL);
@@ -147,9 +150,8 @@ static int decoder_activate(AVFilterContext *ctx)
         return ret;
     }
 
-    if (ff_inlink_check_available_frame(inlink) && !priv->codec_ctx) {
-        in = ff_inlink_peek_frame(inlink, 0);
-        ret = decoder_open(ctx, in);
+    if (!priv->codec_ctx) {
+        ret = decoder_open(ctx);
         if (ret < 0)
             return ret;
     }
