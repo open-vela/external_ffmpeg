@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <poll.h>
 
 #include "libavutil/pixdesc.h"
 #include "libavutil/log.h"
@@ -138,12 +139,16 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     AVCodecParameters *par = h->streams[0]->codecpar;
     const uint8_t *in_y;
     const uint8_t *in_uv;
+    struct pollfd pfd;
     uint8_t *row;
     int ret;
     int i;
 
     if (dev_ctx->stopped)
         return AVERROR_EOF;
+
+    pfd.fd = dev_ctx->fd;
+    pfd.events = POLLOUT;
 
     in_y  = pkt->data;
     in_uv = pkt->data + (par->width * par->height);
@@ -164,6 +169,12 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
         memcpy(row, in_uv, par->width);
         in_uv += par->width;
         row += dev_ctx->oinfo.stride;
+    }
+
+    ret = poll(&pfd, 1, 0);
+    if (ret <= 0) {
+        av_log(h, AV_LOG_ERROR, "No event notification.\n");
+        return ret ? AVERROR(errno) : 0;
     }
 
     ret = ioctl(dev_ctx->fd, FBIOPAN_OVERLAY, &dev_ctx->oinfo);
