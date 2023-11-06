@@ -171,7 +171,7 @@ static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **
         pthread_attr_setstacksize(&attr, ssize);
 
     pthread_getname_np(pthread_self(), threadname, sizeof(threadname));
-    strncat(threadname, "_cache", 7);
+    av_strlcat(threadname, "_cache", sizeof(threadname));
     pthread_create(&c->thread, &attr, cache_thread, h);
     pthread_setname_np(c->thread, threadname);
     pthread_attr_destroy(&attr);
