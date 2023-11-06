@@ -647,11 +647,13 @@ static int movie_async_read_frame(AVFilterContext *ctx)
             if (ret < 0)
                 goto out;
 
+            /* assign to NULL when the type of AVPacket matched with outputs pad.
+             * otherwise free AVPacket */
+            pkt = NULL;
             break;
         }
     }
 
-    return 0;
 out:
     av_packet_free(&pkt);
     return ret;
