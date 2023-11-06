@@ -1202,6 +1202,30 @@ out:
     return ret;
 }
 
+static int v4l2_set_ranges(struct AVOptionRanges *ranges, int nb_ranges, int is_range,
+                           int min_v[], int max_v[])
+{
+    ranges->nb_components = 1;
+    ranges->nb_ranges = nb_ranges;
+
+    ranges->range = av_mallocz(nb_ranges * sizeof(AVOptionRange *));
+    if (!ranges->range)
+        return AVERROR(ENOMEM);
+
+    for (int i = 0; i < nb_ranges; i++) {
+        ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[i])
+            return AVERROR(ENOMEM);
+
+        ranges->range[i]->is_range  = is_range;
+        ranges->range[i]->value_min = min_v[i];
+        ranges->range[i]->value_max = is_range ? max_v[i] : min_v[i];
+    }
+
+    return 0;
+}
+
+
 static int v4l2_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
                                        const char *key, int flags)
 {
@@ -1210,10 +1234,9 @@ static int v4l2_capbility_query_ranges(struct AVOptionRanges **ranges_, void *ob
     struct video_data *s = ctx->priv_data;
     struct AVOptionRanges *ranges;
     enum AVPixelFormat pix_fmt;
+    int values0[64], values1[64];
+    int nb_ranges, is_range = 0;
     int fd, ret;
-
-    if (strcmp(key, "pixel_fmts") != 0)
-        goto fail;
 
     ret = v4l2_get_capabilities(ctx);
     if (ret < 0)
@@ -1223,21 +1246,22 @@ static int v4l2_capbility_query_ranges(struct AVOptionRanges **ranges_, void *ob
     if (!ranges)
         goto fail;
 
-    pix_fmt = ff_fmt_v4l2ff(s->pixelformat, ctx->video_codec_id);
-
-    ranges->nb_components = 1;
-    ranges->nb_ranges = 1;
-    ranges->range = av_mallocz(sizeof(AVOptionRange *));
-    if (!ranges->range)
+    if (!strcmp(key, "pixel_fmts")) {
+        pix_fmt = ff_fmt_v4l2ff(s->pixelformat, ctx->video_codec_id);
+        nb_ranges = 1;
+        is_range = 0;
+        values0[0] = pix_fmt;
+    } else if (!strcmp(key, "video_size")) {
+        nb_ranges = 1;
+        is_range = 1;
+        values0[0] = s->width;
+        values1[0] = s->height;
+    } else
         goto fail;
 
-    ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
-    if (!ranges->range[0])
+    ret = v4l2_set_ranges(ranges, nb_ranges, is_range, values0, values1);
+    if (ret < 0)
         goto fail;
-
-    ranges->range[0]->is_range  = 0;
-    ranges->range[0]->value_min = pix_fmt;
-    ranges->range[0]->value_max = pix_fmt;
 
     *ranges_ = ranges;
     return ranges->nb_components;

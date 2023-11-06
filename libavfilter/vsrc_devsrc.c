@@ -45,6 +45,29 @@ typedef struct DevSrcPriv {
     int64_t         pts;
 } DevSrcPriv;
 
+static int devsrc_get_frame_size(AVFilterContext *ctx)
+{
+    AVDeviceCapabilitiesQuery caps;
+    AVOptionRanges *ranges = NULL;
+    DevSrcPriv *priv = ctx->priv;
+    int ret;
+
+    ret = avdevice_app_to_dev_control_message(priv->fmt_ctx, AV_APP_TO_DEV_GET_CAPS_REQUEST,
+                                              &caps, sizeof(caps));
+    if (ret < 0)
+        return ret == AVERROR(ENOSYS) ? 0 : ret;
+
+    ret = av_opt_query_ranges(&ranges, &caps, "video_size", AV_OPT_MULTI_COMPONENT_RANGE);
+    if (ret >= 0) {
+        priv->w = (int)ranges->range[0]->value_min;
+        priv->h = (int)ranges->range[0]->value_max;
+        ret = 0;
+    }
+
+    av_opt_freep_ranges(&ranges);
+    return ret;
+}
+
 static void devsrc_stop(AVFilterContext *ctx)
 {
     DevSrcPriv *priv = ctx->priv;
@@ -131,7 +154,6 @@ static int devsrc_control_message(struct AVFormatContext *s, int type,
     return 0;
 }
 
-
 static int devsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     DevSrcPriv *priv = ctx->priv;
@@ -157,8 +179,11 @@ static int devsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
     priv->fmt_ctx->control_message_cb = devsrc_control_message;
     priv->fmt_ctx->flags             |= AVFMT_FLAG_NONBLOCK | AVFMT_FLAG_PRIV_OPT;
 
-    snprintf(tmp, sizeof(tmp), "%dx%d", priv->w, priv->h);
-    av_dict_set(options, "video_size", tmp, 0);
+    if (priv->w && priv->h) {
+        snprintf(tmp, sizeof(tmp), "%dx%d", priv->w, priv->h);
+        av_dict_set(options, "video_size", tmp, 0);
+    }
+
     if (priv->frame_rate.den && priv->frame_rate.num) {
         snprintf(tmp, sizeof(tmp), "%d/%d", priv->frame_rate.num, priv->frame_rate.den);
         av_dict_set(options, "framerate", tmp, 0);
@@ -171,7 +196,11 @@ static int devsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
         return ret;
     }
 
-    return 0;
+    if (!priv->w || !priv->h) {
+        ret = devsrc_get_frame_size(ctx);
+    }
+
+    return ret;
 }
 
 static void devsrc_uninit(AVFilterContext *ctx)
