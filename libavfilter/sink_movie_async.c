@@ -48,6 +48,7 @@ typedef struct MovieStream {
     enum AVMediaType type;
     FFFrameQueue     dat_queue;
     int64_t          sync_pts;
+    int              stream_idx;
 } MovieStream;
 
 typedef struct MovieSinkPriv {
@@ -63,7 +64,6 @@ typedef struct MovieSinkPriv {
     AVDictionary              *format_opt;
     MovieStream               *streams;
     AVDictionary              *global_opts;
-    int                       streams_ready;
 
     struct MovieSinkCmdQueue  cmd_queue;    /**< graph thread send cmd to work thread */
 
@@ -204,8 +204,6 @@ static void amoviesink_close_muxer(AVFilterContext *ctx)
     MovieSinkPriv *priv = ctx->priv;
     int i;
 
-    priv->streams_ready = 0;
-
     for (i = 0; i < ctx->nb_inputs; i++)
         priv->streams[i].sync_pts = 0;
 
@@ -264,7 +262,7 @@ static int amoviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fra
     AVStream *stream;
     int ret;
 
-    if (priv->streams_ready & (1 << pad_id))
+    if (priv->format_ctx->nb_streams >= ctx->nb_inputs)
         return 0;
 
     unwrap_frame(frame, NULL, &params);
@@ -279,11 +277,12 @@ static int amoviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fra
     if (!stream)
         return AVERROR(ENOMEM);
 
+    priv->streams[pad_id].stream_idx = priv->format_ctx->nb_streams - 1;
+
     ret = avcodec_parameters_copy(stream->codecpar, params);
     if (ret < 0)
         return ret;
 
-    priv->streams_ready |= 1 << pad_id;
     return 1;
 }
 
@@ -298,15 +297,16 @@ static int amoviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *fra
     pkt->pts -= priv->streams[pad_id].sync_pts;
     pkt->dts -= priv->streams[pad_id].sync_pts;
 
+    pkt->stream_index = priv->streams[pad_id].stream_idx;
+
     /* convert timebase from stream to container. */
     av_packet_rescale_ts(pkt, ctx->inputs[pad_id]->time_base,
-                              priv->format_ctx->streams[pad_id]->time_base);
+                              priv->format_ctx->streams[pkt->stream_index]->time_base);
 
     if (pkt->pts >= 0)
         priv->current_ms = pkt->pts * 1000 *
-                           av_q2d(priv->format_ctx->streams[pad_id]->time_base);
+                           av_q2d(priv->format_ctx->streams[pkt->stream_index]->time_base);
 
-    pkt->stream_index = pad_id;
     return av_write_frame(priv->format_ctx, pkt);
 }
 
@@ -387,7 +387,7 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 
         /* @deprecated naive avsync. */
         ret = amoviesink_init_stream(ctx, i, frame);
-        if (priv->streams_ready != (1 << ctx->nb_inputs) - 1) {
+        if (priv->format_ctx->nb_streams < ctx->nb_inputs) {
             priv->streams[i].sync_pts = frame->pts;
             av_frame_free(&frame);
             continue;
