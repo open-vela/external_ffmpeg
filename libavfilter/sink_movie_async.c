@@ -673,70 +673,89 @@ out:
     return ret;
 }
 
+static bool moviesink_query_audio_opts(AVFilterContext *ctx, const AVCodec *enc, const char *opt,
+                                        int *value, AVChannelLayout *layout)
+{
+    MovieSinkPriv *priv = ctx->priv;
+    int ret, n = 0, mask = 0;
+    AVDictionaryEntry *tag;
+    bool supported = false;
+
+    mask = !strcmp(opt, "sample_fmt")  ? 0x01 :
+           !strcmp(opt, "sample_rate") ? 0x02 :
+           !strcmp(opt, "ch_layout")   ? 0x04 : 0;
+    if (mask == 0)
+        return false;
+
+    if ((tag = av_dict_get(priv->format_opt, opt, NULL, 0)) == NULL)
+        return false;
+
+    if (mask & 0x01) {
+        if ((ret = ff_parse_sample_format(value, tag->value, ctx)) < 0)
+            return false;
+
+        supported = enc->sample_fmts ? ff_fmt_is_in(*value, enc->sample_fmts) : true;
+    } else if (mask & 0x02) {
+        if ((ret = ff_parse_sample_rate(value, tag->value, ctx)) < 0)
+            return false;
+
+         supported = enc->supported_samplerates ?
+                     ff_rate_is_in(*value, enc->supported_samplerates) : true;
+    } else {
+        if ((ret = ff_parse_channel_layout(layout, NULL, tag->value, ctx)) < 0)
+            return false;
+
+        if (av_channel_layout_check(layout) == 0)
+            return false;
+
+        if (enc->ch_layouts) {
+            while (av_channel_layout_check(&enc->ch_layouts[n])) {
+                if (!av_channel_layout_compare(layout, &enc->ch_layouts[n++])) {
+                    supported = true;
+                    break;
+                }
+            }
+        } else
+            supported = true;
+    }
+
+    return supported;
+}
+
 static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link = ctx->inputs[pad_id];
     AVFilterChannelLayouts *layouts;
     AVFilterFormats *formats;
-    AVDictionaryEntry *tag;
     const AVCodec *enc;
 
     AVChannelLayout list64[] = { { 0 }, { 0 } };
-    int value = 0, list[] = { 0, -1 }, *list_i32;
+    int list[] = { 0, -1 }, *list_i32;
     bool supported;
-    int n, ret;
+    int n = 0, ret;
 
     enc = avcodec_find_encoder(codec_id);
     if (!enc)
         return AVERROR(EINVAL);
 
     /* sample format */
-    supported = false;
-    if ((tag = av_dict_get(priv->format_opt, "sample_fmt", NULL, 0))) {
-        if ((ret = ff_parse_sample_format(&value, tag->value, ctx)) < 0)
-            return ret;
-    }
-
-    if (value) {
-        if (enc->sample_fmts)
-            supported = ff_fmt_is_in(value, enc->sample_fmts);
-        else
-            supported = true;
-    }
-
-    if (supported) {
-        list[0] = value;
+    supported = moviesink_query_audio_opts(ctx, enc, "sample_fmt", &list[0], NULL);
+    if (supported)
         formats = ff_make_format_list(list);
-    } else {
+    else
         formats = enc->sample_fmts ?
                   ff_make_format_list(enc->sample_fmts) : ff_all_formats(AVMEDIA_TYPE_AUDIO);
-    }
 
     if (ret = ff_formats_ref(formats, &link->outcfg.formats) < 0)
         return ret;
 
     /* sample rate */
-    supported = false;
-    value = 0;
-    if ((tag = av_dict_get(priv->format_opt, "sample_rate", NULL, 0))) {
-        if ((ret = ff_parse_sample_rate(&value, tag->value, ctx)) < 0)
-            return ret;
-    }
-
-    if (value) {
-        if (enc->supported_samplerates)
-            supported = ff_rate_is_in(value, enc->supported_samplerates);
-        else
-            supported = true;
-    }
-
+    supported = moviesink_query_audio_opts(ctx, enc, "sample_rate", &list[0], NULL);
     if (supported) {
-        list[0] = value;
         formats = ff_make_format_list(list);
     } else {
         if (enc->supported_samplerates) {
-            n = 0;
             while (enc->supported_samplerates[n] != 0)
                 n++;
 
@@ -757,40 +776,18 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
     if (ret = ff_formats_ref(formats, &link->outcfg.samplerates) < 0)
         return ret;
 
-    /* channel layout */
-    supported = false;
-    if ((tag = av_dict_get(priv->format_opt, "channel_layout", NULL, 0))) {
-        if ((ret = ff_parse_channel_layout(&list64[0], NULL, tag->value, ctx)) < 0)
-            return ret;
-    }
-
-    if (av_channel_layout_check(&list64[0])) {
-        if (enc->ch_layouts) {
-            n = 0;
-            while (av_channel_layout_check(&enc->ch_layouts[n])) {
-                if (!av_channel_layout_compare(&list64[0], &enc->ch_layouts[n++])) {
-                    supported = true;
-                    break;
-                }
-            }
-        } else {
-            supported = true;
-        }
-    }
-
-    if (supported) {
+    /* ch_layout */
+    supported = moviesink_query_audio_opts(ctx, enc, "ch_layout", NULL, &list64[0]);
+    if (supported)
         layouts = ff_make_channel_layout_list(list64);
-    } else if (enc->ch_layouts) {
-        layouts = ff_make_channel_layout_list(enc->ch_layouts);
-    } else {
-        layouts = ff_all_channel_counts();
-    }
-    if (!layouts)
-            return AVERROR(ENOMEM);
+    else
+        layouts = enc->ch_layouts ?
+                  ff_make_channel_layout_list(enc->ch_layouts) : ff_all_channel_counts();
 
     if ((ret = ff_channel_layouts_ref(layouts, &link->outcfg.channel_layouts)) < 0)
         return ret;
 
+    /* codec id */
     list[0] = codec_id;
     if (avcodec_is_audio_lossless(codec_id))
         list[0] = AV_CODEC_ID_RAWAUDIO;
