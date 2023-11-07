@@ -842,10 +842,12 @@ static int amoviesink_query_formats(AVFilterContext *ctx)
         switch (link->type) {
             case AVMEDIA_TYPE_AUDIO:
                 /* Codec id is configurable. */
+                codec_opt = av_dict_get(priv->format_opt, "audio_codec", NULL, 0);
                 ret = amoviesink_query_audio_fmts(ctx, i,
                     codec_opt ? atoi(codec_opt->value): priv->format->audio_codec);
                 break;
             case AVMEDIA_TYPE_VIDEO:
+                codec_opt = av_dict_get(priv->format_opt, "video_codec", NULL, 0);
                 ret = amoviesink_query_video_fmts(ctx, i,
                     codec_opt ? atoi(codec_opt->value): priv->format->video_codec);
                 break;
