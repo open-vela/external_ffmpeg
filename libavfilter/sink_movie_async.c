@@ -78,13 +78,13 @@ typedef struct MovieSinkPriv {
     av_movie_async_event_func event;
 } MovieSinkPriv;
 
-static inline void amoviesink_notify_event(MovieSinkPriv *priv, int event, int ret, const char *extra)
+static inline void moviesink_notify_event(MovieSinkPriv *priv, int event, int ret, const char *extra)
 {
     if (priv->event != NULL && priv->cookie != NULL)
         priv->event(priv->cookie, event, ret, extra);
 }
 
-static int amoviesink_send_cmd(AVFilterContext *ctx, int cmd, const void *data, size_t size)
+static int moviesink_send_cmd(AVFilterContext *ctx, int cmd, const void *data, size_t size)
 {
     MovieSinkPriv *priv = ctx->priv;
     MovieSinkCmd *msg;
@@ -106,7 +106,7 @@ static int amoviesink_send_cmd(AVFilterContext *ctx, int cmd, const void *data, 
     return 0;
 }
 
-static int amoviesink_send_dat(AVFilterContext *ctx, int pad_id, AVFrame *frame)
+static int moviesink_send_dat(AVFilterContext *ctx, int pad_id, AVFrame *frame)
 {
     MovieSinkPriv *priv = ctx->priv;
     int ret;
@@ -119,7 +119,7 @@ static int amoviesink_send_dat(AVFilterContext *ctx, int pad_id, AVFrame *frame)
     return ret;
 }
 
-static AVFrame *amoviesink_recv_dat(AVFilterContext *ctx, int pad_id)
+static AVFrame *moviesink_recv_dat(AVFilterContext *ctx, int pad_id)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFrame *frame = NULL;
@@ -132,7 +132,7 @@ static AVFrame *amoviesink_recv_dat(AVFilterContext *ctx, int pad_id)
     return frame;
 }
 
-static bool amoviesink_dat_full(AVFilterContext *ctx, int pad_id)
+static bool moviesink_dat_full(AVFilterContext *ctx, int pad_id)
 {
     MovieSinkPriv *priv = ctx->priv;
     bool full;
@@ -144,7 +144,7 @@ static bool amoviesink_dat_full(AVFilterContext *ctx, int pad_id)
     return full;
 }
 
-static bool amoviesink_dat_valid(AVFilterContext *ctx)
+static bool moviesink_dat_valid(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     int i;
@@ -161,7 +161,7 @@ static bool amoviesink_dat_valid(AVFilterContext *ctx)
     return false;
 }
 
-static int amoviesink_clear_dat(AVFilterContext *ctx)
+static int moviesink_clear_dat(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFrame *frame;
@@ -179,7 +179,7 @@ static int amoviesink_clear_dat(AVFilterContext *ctx)
     return 0;
 }
 
-static int amoviesink_send_empty_frame(AVFilterContext *ctx)
+static int moviesink_send_empty_frame(AVFilterContext *ctx)
 {
     AVFrame *frame;
     int i, ret;
@@ -189,7 +189,7 @@ static int amoviesink_send_empty_frame(AVFilterContext *ctx)
         if (!frame)
             return AVERROR(ENOMEM);
 
-        ret = amoviesink_send_dat(ctx, i, frame);
+        ret = moviesink_send_dat(ctx, i, frame);
         if (ret < 0) {
             av_frame_free(&frame);
             return ret;
@@ -199,7 +199,7 @@ static int amoviesink_send_empty_frame(AVFilterContext *ctx)
     return 0;
 }
 
-static void amoviesink_close_muxer(AVFilterContext *ctx)
+static void moviesink_close_muxer(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     int i;
@@ -216,7 +216,7 @@ static void amoviesink_close_muxer(AVFilterContext *ctx)
     }
 }
 
-static int amoviesink_open_muxer(AVFilterContext *ctx, const char *filename)
+static int moviesink_open_muxer(AVFilterContext *ctx, const char *filename)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVDictionary *dict = NULL;
@@ -253,7 +253,7 @@ out:
     return ret;
 }
 
-static int amoviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *frame)
+static int moviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *frame)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVDictionaryEntry *codec_opt;
@@ -286,7 +286,7 @@ static int amoviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fra
     return 1;
 }
 
-static int amoviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *frame)
+static int moviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *frame)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVCodecParameters* params;
@@ -310,7 +310,7 @@ static int amoviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *fra
     return av_write_frame(priv->format_ctx, pkt);
 }
 
-static void amoviesink_prepare(AVFilterContext *ctx, const char *filename)
+static void moviesink_prepare(AVFilterContext *ctx, const char *filename)
 {
     MovieSinkPriv *priv = ctx->priv;
     int ret = AVERROR(EPERM);
@@ -318,7 +318,7 @@ static void amoviesink_prepare(AVFilterContext *ctx, const char *filename)
     if (priv->state != AVMOVIE_ASYNC_STATE_STOPPED)
         goto out;
 
-    ret = amoviesink_open_muxer(ctx, filename);
+    ret = moviesink_open_muxer(ctx, filename);
     if (ret < 0)
         goto out;
 
@@ -328,10 +328,10 @@ out:
     if (ret < 0)
         priv->eof_flag = 1;
 
-    amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
+    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
 }
 
-static void amoviesink_start(AVFilterContext *ctx, const char *params)
+static void moviesink_start(AVFilterContext *ctx, const char *params)
 {
     MovieSinkPriv *priv = ctx->priv;
     int ret = AVERROR(EPERM);
@@ -346,10 +346,10 @@ static void amoviesink_start(AVFilterContext *ctx, const char *params)
 
 out:
     ff_filter_set_ready(ctx, 100);
-    amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
+    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
 }
 
-static void amoviesink_pause(AVFilterContext *ctx)
+static void moviesink_pause(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     int ret = AVERROR(EPERM);
@@ -361,32 +361,32 @@ static void amoviesink_pause(AVFilterContext *ctx)
     ret = 0;
 
 out:
-    amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
+    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
 }
 
-static void amoviesink_clean(AVFilterContext *ctx)
+static void moviesink_clean(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     if (priv->state != AVMOVIE_ASYNC_STATE_STOPPED) {
-        amoviesink_close_muxer(ctx);
+        moviesink_close_muxer(ctx);
         priv->state = AVMOVIE_ASYNC_STATE_STOPPED;
-        amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
+        moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
     }
 }
 
-static int amoviesink_proc_dat(AVFilterContext *ctx)
+static int moviesink_proc_dat(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFrame *frame = NULL;
     int i, ret = 0;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        frame = amoviesink_recv_dat(ctx, i);
+        frame = moviesink_recv_dat(ctx, i);
         if (!frame)
             continue;
 
         /* @deprecated naive avsync. */
-        ret = amoviesink_init_stream(ctx, i, frame);
+        ret = moviesink_init_stream(ctx, i, frame);
         if (priv->format_ctx->nb_streams < ctx->nb_inputs) {
             priv->streams[i].sync_pts = frame->pts;
             av_frame_free(&frame);
@@ -410,7 +410,7 @@ static int amoviesink_proc_dat(AVFilterContext *ctx)
 
             av_frame_free(&frame);
         } else {
-            ret = amoviesink_write_frame(ctx, i, frame);
+            ret = moviesink_write_frame(ctx, i, frame);
             av_frame_free(&frame);
             if (ret < 0)
                 goto out;
@@ -425,18 +425,18 @@ out:
     priv->eof_flag = 1;
     ff_filter_set_ready(ctx, 100);
 
-    amoviesink_clear_dat(ctx);
+    moviesink_clear_dat(ctx);
 
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
     priv->current_ms = 0;
-    amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_COMPLETED,
+    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_COMPLETED,
                             ret == AVERROR_EOF ? 0 : ret , NULL);
 
-    amoviesink_clean(ctx);
+    moviesink_clean(ctx);
     return ret;
 }
 
-static void amoviesink_stop(AVFilterContext *ctx)
+static void moviesink_stop(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     int ret = 0;
@@ -448,16 +448,16 @@ static void amoviesink_stop(AVFilterContext *ctx)
         priv->state == AVMOVIE_ASYNC_STATE_COMPLETED)
         goto close_muxer;
 
-    ret = amoviesink_send_empty_frame(ctx);
+    ret = moviesink_send_empty_frame(ctx);
     while (ret == 0) {
-        ret = amoviesink_proc_dat(ctx);
+        ret = moviesink_proc_dat(ctx);
     }
 
 close_muxer:
-    amoviesink_clean(ctx);
+    moviesink_clean(ctx);
 }
 
-static bool amoviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
+static bool moviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
 {
     MovieSinkPriv *priv = ctx->priv;
     struct AVMovieAsyncEventCookie *event;
@@ -476,21 +476,21 @@ static bool amoviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
             break;
 
         case AVMOVIE_ASYNC_PREPARE:
-            amoviesink_prepare(ctx, msg->data);
+            moviesink_prepare(ctx, msg->data);
             break;
 
         case AVMOVIE_ASYNC_START:
-            amoviesink_start(ctx, msg->data);
+            moviesink_start(ctx, msg->data);
             break;
 
         case AVMOVIE_ASYNC_PAUSE:
-            amoviesink_pause(ctx);
+            moviesink_pause(ctx);
             break;
 
         case AVMOVIE_ASYNC_CLOSE:
             exit = true;
         case AVMOVIE_ASYNC_STOP:
-            amoviesink_stop(ctx);
+            moviesink_stop(ctx);
             break;
 
         case AVMOVIE_ASYNC_PROCESS_COMMAND:
@@ -509,7 +509,7 @@ static bool amoviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
     return exit;
 }
 
-static void *amoviesink_thread(void *arg)
+static void *moviesink_thread(void *arg)
 {
     AVFilterContext *ctx = arg;
     MovieSinkPriv *priv = ctx->priv;
@@ -523,15 +523,15 @@ static void *amoviesink_thread(void *arg)
             SIMPLEQ_REMOVE_HEAD(&priv->cmd_queue, entry);
             pthread_mutex_unlock(&priv->mutex);
 
-            exit = amoviesink_proc_cmd(ctx, msg);
-        } else if (amoviesink_dat_valid(ctx)) {
+            exit = moviesink_proc_cmd(ctx, msg);
+        } else if (moviesink_dat_valid(ctx)) {
             pthread_mutex_unlock(&priv->mutex);
 
-            if (amoviesink_proc_dat(ctx) == AVERROR_EOF)
+            if (moviesink_proc_dat(ctx) == AVERROR_EOF)
                 exit = true;
         } else if (exit) {
             priv->state  = AVMOVIE_ASYNC_STATE_NOP;
-            amoviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
+            moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
             priv->event  = NULL;
             priv->cookie = NULL;
             pthread_mutex_unlock(&priv->mutex);
@@ -545,7 +545,7 @@ static void *amoviesink_thread(void *arg)
     return NULL;
 }
 
-static void amoviesink_set_eof(AVFilterContext *ctx)
+static void moviesink_set_eof(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link;
@@ -563,7 +563,7 @@ static void amoviesink_set_eof(AVFilterContext *ctx)
         av_dict_free(&priv->format_opt);
 }
 
-static int amoviesink_activate(AVFilterContext *ctx)
+static int moviesink_activate(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     int frame_size, i, ret = 0;
@@ -572,12 +572,12 @@ static int amoviesink_activate(AVFilterContext *ctx)
     int64_t pts;
 
     if (priv->eof_flag) {
-        amoviesink_set_eof(ctx);
-        amoviesink_clear_dat(ctx);
+        moviesink_set_eof(ctx);
+        moviesink_clear_dat(ctx);
     }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        if (amoviesink_dat_full(ctx, i))
+        if (moviesink_dat_full(ctx, i))
             continue;
 
         link = ctx->inputs[i];
@@ -587,7 +587,7 @@ static int amoviesink_activate(AVFilterContext *ctx)
 
         ret = ff_inlink_consume_frame(link, &frame);
         if (ret > 0) {
-            ret = amoviesink_send_dat(ctx, i, frame);
+            ret = moviesink_send_dat(ctx, i, frame);
             if (ret < 0)
                 av_frame_free(&frame);
         }
@@ -601,7 +601,7 @@ static int amoviesink_activate(AVFilterContext *ctx)
     return ret;
 }
 
-static void amoviesink_uninit(AVFilterContext *ctx)
+static void moviesink_uninit(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     int i;
@@ -621,7 +621,7 @@ static void amoviesink_uninit(AVFilterContext *ctx)
     pthread_cond_destroy(&priv->cond);
 }
 
-static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
+static int moviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     MovieSinkPriv *priv = ctx->priv;
     enum AVMediaType types[] = {
@@ -669,11 +669,11 @@ static int amoviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
     return 0;
 
 out:
-    amoviesink_uninit(ctx);
+    moviesink_uninit(ctx);
     return ret;
 }
 
-static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
+static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link = ctx->inputs[pad_id];
@@ -799,7 +799,7 @@ static int amoviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AV
     return ff_formats_ref(formats, &link->outcfg.codecs);
 }
 
-static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
+static int moviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
 {
     AVFilterFormats *formats;
     AVFilterLink *link;
@@ -826,7 +826,7 @@ static int amoviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AV
     return ff_formats_ref(formats, &link->outcfg.codecs);
 }
 
-static int amoviesink_query_formats(AVFilterContext *ctx)
+static int moviesink_query_formats(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVDictionaryEntry *codec_opt;
@@ -843,12 +843,12 @@ static int amoviesink_query_formats(AVFilterContext *ctx)
             case AVMEDIA_TYPE_AUDIO:
                 /* Codec id is configurable. */
                 codec_opt = av_dict_get(priv->format_opt, "audio_codec", NULL, 0);
-                ret = amoviesink_query_audio_fmts(ctx, i,
+                ret = moviesink_query_audio_fmts(ctx, i,
                     codec_opt ? atoi(codec_opt->value): priv->format->audio_codec);
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 codec_opt = av_dict_get(priv->format_opt, "video_codec", NULL, 0);
-                ret = amoviesink_query_video_fmts(ctx, i,
+                ret = moviesink_query_video_fmts(ctx, i,
                     codec_opt ? atoi(codec_opt->value): priv->format->video_codec);
                 break;
             default:
@@ -859,7 +859,7 @@ static int amoviesink_query_formats(AVFilterContext *ctx)
     return ret;
 }
 
-static int amoviesink_process_open(AVFilterContext *ctx)
+static int moviesink_process_open(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     struct sched_param param;
@@ -867,7 +867,7 @@ static int amoviesink_process_open(AVFilterContext *ctx)
     pthread_t thread;
     int ret;
 
-    ret = amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_OPEN, NULL, 0);
+    ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_OPEN, NULL, 0);
 
     if (priv->state != AVMOVIE_ASYNC_STATE_NOP)
         return ret;
@@ -878,7 +878,7 @@ static int amoviesink_process_open(AVFilterContext *ctx)
     pthread_attr_setstacksize(&attr, priv->stack_size);
     param.sched_priority = priv->priority;
     pthread_attr_setschedparam(&attr, &param);
-    ret = pthread_create(&thread, &attr, amoviesink_thread, ctx);
+    ret = pthread_create(&thread, &attr, moviesink_thread, ctx);
     if (ret != 0) {
         priv->state = AVMOVIE_ASYNC_STATE_NOP;
         return AVERROR(ret);
@@ -889,7 +889,7 @@ static int amoviesink_process_open(AVFilterContext *ctx)
     return 0;
 }
 
-static int amoviesink_process_prepare(AVFilterContext *ctx, const char *args)
+static int moviesink_process_prepare(AVFilterContext *ctx, const char *args)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVDictionaryEntry *tag;
@@ -904,10 +904,10 @@ static int amoviesink_process_prepare(AVFilterContext *ctx, const char *args)
 
     priv->eof_flag = 0;
 
-    return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
+    return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
 }
 
-static int amoviesink_process_start(AVFilterContext *ctx)
+static int moviesink_process_start(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     bool reconfig = false;
@@ -929,15 +929,15 @@ static int amoviesink_process_start(AVFilterContext *ctx)
     if (reconfig)
         avfilter_graph_reconfig(ctx->graph, NULL);
 
-    return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_START, params, strlen(params) + 1);
+    return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_START, params, strlen(params) + 1);
 }
 
-static int amoviesink_process_pause(AVFilterContext *ctx)
+static int moviesink_process_pause(AVFilterContext *ctx)
 {
-    return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
+    return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
 }
 
-static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd, const char *args)
+static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd, const char *args)
 {
     MovieSinkPriv *priv = ctx->priv;
     bool reset, close;
@@ -966,14 +966,14 @@ static int amoviesink_process_quit(AVFilterContext *ctx, const char *cmd, const 
         return ret;
 
     if (close)
-        ret = amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
+        ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
     else
-        ret = amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
+        ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
 
     return ret;
 }
 
-static int amoviesink_process_process_command(AVFilterContext *ctx, const char *cmd, const char *args)
+static int moviesink_process_process_command(AVFilterContext *ctx, const char *cmd, const char *args)
 {
     int len, ret;
     char *ptr;
@@ -987,13 +987,13 @@ static int amoviesink_process_process_command(AVFilterContext *ctx, const char *
         return AVERROR(ENOMEM);
 
     snprintf(ptr, len, "%s=%s", cmd, args);
-    ret = amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_PROCESS_COMMAND, ptr, len);
+    ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_PROCESS_COMMAND, ptr, len);
     free(ptr);
 
     return ret;
 }
 
-static int amoviesink_get_position(AVFilterContext *ctx, char *res, int res_len)
+static int moviesink_get_position(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieSinkPriv *priv = ctx->priv;
 
@@ -1004,7 +1004,7 @@ static int amoviesink_get_position(AVFilterContext *ctx, char *res, int res_len)
     return 0;
 }
 
-static int amoviesink_process_dump(AVFilterContext *ctx, char *res, int res_len)
+static int moviesink_process_dump(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieSinkPriv *priv = ctx->priv;
 
@@ -1013,7 +1013,7 @@ static int amoviesink_process_dump(AVFilterContext *ctx, char *res, int res_len)
     return 0;
 }
 
-static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+static int moviesink_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                                       char *res, int res_len, int flags)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -1021,12 +1021,12 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
 
     if (!strcmp(cmd, "open")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s open.\n", __func__, ctx->name);
-        return amoviesink_process_open(ctx);
+        return moviesink_process_open(ctx);
     } else if (!strcmp(cmd, "set_event")) {
         if (!args)
             return AVERROR(EINVAL);
 
-        return amoviesink_send_cmd(ctx, AVMOVIE_ASYNC_SET_EVENT, args, sizeof(struct AVMovieAsyncEventCookie));
+        return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_SET_EVENT, args, sizeof(struct AVMovieAsyncEventCookie));
     } else if (!strcmp(cmd, "set_options")) {
         if (!args)
             return AVERROR(EINVAL);
@@ -1046,21 +1046,21 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
         return ret;
     } else if (!strcmp(cmd, "prepare")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
-        return amoviesink_process_prepare(ctx, args);
+        return moviesink_process_prepare(ctx, args);
     } else if (!strcmp(cmd, "start")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
-        return amoviesink_process_start(ctx);
+        return moviesink_process_start(ctx);
     } else if (!strcmp(cmd, "pause")) {
-        return amoviesink_process_pause(ctx);
+        return moviesink_process_pause(ctx);
     } else if (!strcmp(cmd, "stop") || !strcmp(cmd, "reset") || !strcmp(cmd, "close")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s %s. pos %d\n", __func__, ctx->name, cmd, priv->current_ms);
-        return amoviesink_process_quit(ctx, cmd, args);
+        return moviesink_process_quit(ctx, cmd, args);
     } else if (!strcmp(cmd, "get_position")) {
-        return amoviesink_get_position(ctx, res, res_len);
+        return moviesink_get_position(ctx, res, res_len);
     } else if (!strcmp(cmd, "dump")) {
-        return amoviesink_process_dump(ctx, res, res_len);
+        return moviesink_process_dump(ctx, res, res_len);
     } else if (!res && !res_len) {
-        return amoviesink_process_process_command(ctx, cmd, args);
+        return moviesink_process_process_command(ctx, cmd, args);
     } else {
         return AVERROR(ENOSYS);
     }
@@ -1069,7 +1069,7 @@ static int amoviesink_process_command(AVFilterContext *ctx, const char *cmd, con
 #define OFFSET(x) offsetof(MovieSinkPriv, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
-static const AVOption amoviesink_async_options[] = {
+static const AVOption moviesink_async_options[] = {
     { "datqmax",    "maximum number of dat queue", OFFSET(dat_max),    AV_OPT_TYPE_INT,    {.i64 = 4 },      2, 8,         FLAGS },
     { "cmdqmax",    "maximum number of cmd queue", OFFSET(cmd_max),    AV_OPT_TYPE_INT,    {.i64 = 16 },     8, 32,        FLAGS },
     { "stack_size", "stack size of work thread",   OFFSET(stack_size), AV_OPT_TYPE_INT,    {.i64 = 61440 },  0, INT32_MAX, FLAGS },
@@ -1077,7 +1077,7 @@ static const AVOption amoviesink_async_options[] = {
     { NULL },
 };
 
-static const struct AVClass *amoviesink_child_class_iterate(void **iter)
+static const struct AVClass *moviesink_child_class_iterate(void **iter)
 {
     const AVClass *c = *iter;
 
@@ -1092,7 +1092,7 @@ static const struct AVClass *amoviesink_child_class_iterate(void **iter)
     return *iter;
 }
 
-static void *amoviesink_child_next(void *obj, void *prev)
+static void *moviesink_child_next(void *obj, void *prev)
 {
     MovieSinkPriv *priv = obj;
 
@@ -1107,26 +1107,26 @@ static void *amoviesink_child_next(void *obj, void *prev)
 static const AVClass amoviesink_async_class = {
     .class_name          = "amoviesink_async_class",
     .item_name           = av_default_item_name,
-    .option              = amoviesink_async_options,
+    .option              = moviesink_async_options,
     .version             = LIBAVUTIL_VERSION_INT,
     .category            = AV_CLASS_CATEGORY_FILTER,
-    .child_next          = amoviesink_child_next,
-    .child_class_iterate = amoviesink_child_class_iterate,
+    .child_next          = moviesink_child_next,
+    .child_class_iterate = moviesink_child_class_iterate,
 };
 
 const AVFilter ff_sink_amoviesink_async = {
     .name            = "amoviesink_async",
-    .description     = NULL_IF_CONFIG_SMALL("amovie sink asyncchronously, end of the filter graph."),
+    .description     = NULL_IF_CONFIG_SMALL("movie sink asyncchronously, end of the filter graph."),
     .priv_class      = &amoviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
-    .init_dict       = amoviesink_init_dict,
-    .uninit          = amoviesink_uninit,
-    FILTER_QUERY_FUNC(amoviesink_query_formats),
-    .activate        = amoviesink_activate,
+    .init_dict       = moviesink_init_dict,
+    .uninit          = moviesink_uninit,
+    FILTER_QUERY_FUNC(moviesink_query_formats),
+    .activate        = moviesink_activate,
     .inputs          = NULL,
     .outputs         = NULL,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
-    .process_command = amoviesink_process_command,
+    .process_command = moviesink_process_command,
 };
 #endif
 
@@ -1135,11 +1135,11 @@ const AVFilter ff_sink_amoviesink_async = {
 static const AVClass moviesink_async_class = {
     .class_name          = "moviesink_async_class",
     .item_name           = av_default_item_name,
-    .option              = amoviesink_async_options,
+    .option              = moviesink_async_options,
     .version             = LIBAVUTIL_VERSION_INT,
     .category            = AV_CLASS_CATEGORY_FILTER,
-    .child_next          = amoviesink_child_next,
-    .child_class_iterate = amoviesink_child_class_iterate,
+    .child_next          = moviesink_child_next,
+    .child_class_iterate = moviesink_child_class_iterate,
 };
 
 const AVFilter ff_sink_moviesink_async = {
@@ -1147,14 +1147,14 @@ const AVFilter ff_sink_moviesink_async = {
     .description     = NULL_IF_CONFIG_SMALL("movie sink asyncchronously, end of the filter graph."),
     .priv_class      = &moviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
-    .init_dict       = amoviesink_init_dict,
-    .uninit          = amoviesink_uninit,
-    FILTER_QUERY_FUNC(amoviesink_query_formats),
-    .activate        = amoviesink_activate,
+    .init_dict       = moviesink_init_dict,
+    .uninit          = moviesink_uninit,
+    FILTER_QUERY_FUNC(moviesink_query_formats),
+    .activate        = moviesink_activate,
     .inputs          = NULL,
     .outputs         = NULL,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
-    .process_command = amoviesink_process_command,
+    .process_command = moviesink_process_command,
 };
 #endif
 
@@ -1163,11 +1163,11 @@ const AVFilter ff_sink_moviesink_async = {
 static const AVClass vmoviesink_async_class = {
     .class_name          = "vmoviesink_async_class",
     .item_name           = av_default_item_name,
-    .option              = amoviesink_async_options,
+    .option              = moviesink_async_options,
     .version             = LIBAVUTIL_VERSION_INT,
     .category            = AV_CLASS_CATEGORY_FILTER,
-    .child_next          = amoviesink_child_next,
-    .child_class_iterate = amoviesink_child_class_iterate,
+    .child_next          = moviesink_child_next,
+    .child_class_iterate = moviesink_child_class_iterate,
 };
 
 const AVFilter ff_sink_vmoviesink_async = {
@@ -1175,13 +1175,13 @@ const AVFilter ff_sink_vmoviesink_async = {
     .description     = NULL_IF_CONFIG_SMALL("video sink asynchronously, end of the filter graph."),
     .priv_class      = &vmoviesink_async_class,
     .priv_size       = sizeof(MovieSinkPriv),
-    .init_dict       = amoviesink_init_dict,
-    .uninit          = amoviesink_uninit,
-    FILTER_QUERY_FUNC(amoviesink_query_formats),
-    .activate        = amoviesink_activate,
+    .init_dict       = moviesink_init_dict,
+    .uninit          = moviesink_uninit,
+    FILTER_QUERY_FUNC(moviesink_query_formats),
+    .activate        = moviesink_activate,
     .inputs          = NULL,
     .outputs         = NULL,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
-    .process_command = amoviesink_process_command,
+    .process_command = moviesink_process_command,
 };
 #endif
