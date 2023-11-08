@@ -77,6 +77,7 @@ typedef struct MovieAsyncContext {
     const                     AVClass *class;
 
     int                       dat_max;
+    int                       dat_cnt;
     int                       cmd_max;
     int                       stack_size;
     int                       priority;
@@ -108,11 +109,12 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",         "maximum number of dat queue", OFFSET(dat_max),        AV_OPT_TYPE_INT,    {.i64 = 4 },     1, INT16_MAX, FLAGS },
-    { "cmdqmax",         "maximum number of cmd queue", OFFSET(cmd_max),        AV_OPT_TYPE_INT,    {.i64 = 16 },    8, 32,        FLAGS },
-    { "stack_size",      "stack size of work thread",   OFFSET(stack_size),     AV_OPT_TYPE_INT,    {.i64 = 61440 }, 0, INT32_MAX, FLAGS },
-    { "priority",        "priority of work thread",     OFFSET(priority),       AV_OPT_TYPE_INT,    {.i64 = 244 },   0, INT16_MAX, FLAGS },
-    { "protocol_map",    "mapping of protocol",         OFFSET(protocol_map),   AV_OPT_TYPE_STRING, {.str = NULL},   0, 0,         FLAGS },
+    { "datqmax",      "maximum number of dat queue",        OFFSET(dat_max),      AV_OPT_TYPE_INT,    {.i64 = 4 },      1, INT_MAX, FLAGS },
+    { "datqcnt",      "prebuff frame count before playing", OFFSET(dat_cnt),      AV_OPT_TYPE_INT,    {.i64 = INT_MAX },0, INT_MAX, FLAGS },
+    { "cmdqmax",      "maximum number of cmd queue",        OFFSET(cmd_max),      AV_OPT_TYPE_INT,    {.i64 = 16 },     8, 32,      FLAGS },
+    { "stack_size",   "stack size of work thread",          OFFSET(stack_size),   AV_OPT_TYPE_INT,    {.i64 = 61440 },  0, INT_MAX, FLAGS },
+    { "priority",     "priority of work thread",            OFFSET(priority),     AV_OPT_TYPE_INT,    {.i64 = 244 },    0, INT_MAX, FLAGS },
+    { "protocol_map", "mapping of protocol",                OFFSET(protocol_map), AV_OPT_TYPE_STRING, {.str = NULL},    0, 0,       FLAGS },
     { NULL },
 };
 
@@ -236,19 +238,19 @@ static AVFrame *movie_async_recv_dat(AVFilterContext *ctx, int pad_id)
     return frame;
 }
 
-static bool movie_async_dat_empty(AVFilterContext *ctx, int pad_id)
+static int movie_async_dat_count(AVFilterContext *ctx, int pad_id)
 {
     MovieAsyncContext *movie = ctx->priv;
-    bool empty;
+    int count = 0;
 
     if (movie->state != AVMOVIE_ASYNC_STATE_STARTED)
-        return true;
+        return count;
 
     pthread_mutex_lock(&movie->mutex);
-    empty = ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue) == 0;
+    count = ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue);
     pthread_mutex_unlock(&movie->mutex);
 
-    return empty;
+    return count;
 }
 
 static int movie_async_interrupt(void *opaque)
@@ -965,6 +967,9 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
         av_dict_free(options);
     }
 
+    if (movie->dat_cnt > movie->dat_max)
+        movie->dat_cnt = movie->dat_max;
+
     return 0;
 
 error:
@@ -1033,13 +1038,15 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 
 static int movie_async_reconfig(AVFilterContext *ctx)
 {
+    MovieAsyncContext *movie = ctx->priv;
     bool need_reconfig = false;
     int i, ret = 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         /* only before starting case need reconfig: link status is not 0 and data queues have frame.
          * to avoid reconfig after stopping case: link status is is not 0 and data queues are empty.*/
-        if (ff_outlink_get_status(ctx->outputs[i]) != 0 && !movie_async_dat_empty(ctx, i)) {
+        if (ff_outlink_get_status(ctx->outputs[i]) != 0 &&
+            movie_async_dat_count(ctx, i) >= movie->dat_cnt) {
             need_reconfig = true;
             break;
         }
@@ -1075,7 +1082,7 @@ static int movie_async_activate(AVFilterContext *ctx)
         return ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie_async_dat_empty(ctx, i))
+        if (!movie_async_dat_count(ctx, i))
             continue;
 
         link = ctx->outputs[i];
