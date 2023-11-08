@@ -37,7 +37,6 @@ typedef struct FBDevOverlayContext{
     struct fb_overlayinfo_s oinfo;
 } FBDevOverlayContext;
 
-#define  FBOVERLAY_NUMBER 2
 
 static av_cold int fbdev_overlay_write_header(AVFormatContext *h)
 {
@@ -153,7 +152,7 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     in_y  = pkt->data;
     in_uv = pkt->data + (par->width * par->height);
 
-    dev_ctx->oinfo.yoffset += dev_ctx->oinfo.yres_virtual / FBOVERLAY_NUMBER;
+    dev_ctx->oinfo.yoffset += dev_ctx->oinfo.yres;
     dev_ctx->oinfo.yoffset %= dev_ctx->oinfo.yres_virtual;
 
     row = dev_ctx->data + dev_ctx->oinfo.stride * dev_ctx->oinfo.yoffset * 3 / 2;
@@ -164,7 +163,7 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     }
 
     row = dev_ctx->data + dev_ctx->oinfo.stride * dev_ctx->oinfo.yoffset * 3 / 2;
-    row += dev_ctx->oinfo.stride * dev_ctx->oinfo.yres_virtual / FBOVERLAY_NUMBER;
+    row += dev_ctx->oinfo.stride * dev_ctx->oinfo.yres;
     for (i = 0; i < par->height / 2; i++) {
         memcpy(row, in_uv, par->width);
         in_uv += par->width;
