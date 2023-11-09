@@ -315,23 +315,6 @@ static int movie_async_interrupt(void *opaque)
     return interrupt;
 }
 
-static bool movie_async_has_eof(AVFilterContext *ctx, int pad_id)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVFrame *src = NULL;
-    int queued;
-
-    pthread_mutex_lock(&movie->mutex);
-
-    queued = ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue);
-    if (queued > 0)
-        src = ff_framequeue_peek(&movie->streams[pad_id].dat_queue, queued - 1);
-
-    pthread_mutex_unlock(&movie->mutex);
-
-    return src && src->linesize[0] == 0;
-}
-
 static void movie_async_clear_queue(AVFilterContext *ctx, int what)
 {
     MovieAsyncContext *movie = ctx->priv;
