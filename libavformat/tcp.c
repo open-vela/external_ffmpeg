@@ -115,7 +115,7 @@ static void tcp_statistics(TCPContext *s, int size)
 
     debug_ts = av_gettime_relative();
     if (debug_ts - s->debug_ts > AV_TIME_BASE) {
-        av_log(s, AV_LOG_DEBUG, "[%s] recv %"PRId64" bytes in %"PRId64"us, bps %"PRId64"dkbps\n",
+        av_log(s, AV_LOG_DEBUG, "[%s] recv %"PRId64" bytes in %"PRId64"us, bps %"PRId64"kbps\n",
             __func__, s->debug_bytes, debug_ts - s->debug_ts,
             (s->debug_bytes * 8 * 1000) / (debug_ts - s->debug_ts));
 
