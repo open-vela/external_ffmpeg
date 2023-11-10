@@ -64,14 +64,6 @@ static int adevsink_control_message(struct AVFormatContext *s, int type,
     return 0;
 }
 
-static bool adevsink_is_pcm(AVFilterContext *ctx)
-{
-    AVFilterLink *link = ctx->inputs[0];
-
-    return link->codec >= AV_CODEC_ID_PCM_S16LE &&
-           link->codec < AV_CODEC_ID_PCM_S24DAUD;
-}
-
 static int adevsink_open_encoder(AVFilterContext *ctx)
 {
     AVFilterLink *inlink = ctx->inputs[0];
@@ -82,7 +74,7 @@ static int adevsink_open_encoder(AVFilterContext *ctx)
     const AVCodec *enc;
     int ret;
 
-    if (!adevsink_is_pcm(ctx)) {
+    if (!avcodec_is_pcm_lossless(inlink->codec)) {
         st->codecpar->codec_type  = inlink->type;
         st->codecpar->format      = inlink->format;
         st->codecpar->sample_rate = inlink->sample_rate;

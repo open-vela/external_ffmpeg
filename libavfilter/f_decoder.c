@@ -204,7 +204,7 @@ static int decoder_query_formats(AVFilterContext *ctx)
             continue;
 
         id = codec->id;
-        if (avcodec_is_audio_lossless(id)) {
+        if (avcodec_is_pcm_lossless(id)) {
             if (!dup) {
                 id = AV_CODEC_ID_RAWAUDIO;
                 dup = 1;

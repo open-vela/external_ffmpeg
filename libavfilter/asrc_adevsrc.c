@@ -52,14 +52,6 @@ typedef struct ADevSrcPriv {
     int             state;
 } ADevSrcPriv;
 
-static bool adevsrc_pcm_output(AVFilterContext *ctx)
-{
-    AVFilterLink *link = ctx->inputs[0];
-
-    return link->codec >= AV_CODEC_ID_PCM_S16LE &&
-           link->codec < AV_CODEC_ID_PCM_S24DAUD;
-}
-
 static void adevsrc_close(AVFilterContext *ctx)
 {
     ADevSrcPriv *priv = ctx->priv;
@@ -89,7 +81,7 @@ static int adevsrc_open(AVFilterContext *ctx)
         return ret;
 
     /* offload capture, skip create decoder */
-    if (!adevsrc_pcm_output(ctx))
+    if (!avcodec_is_pcm_lossless(link->codec))
        goto reconfig;
 
     st = priv->fmt_ctx->streams[0];
