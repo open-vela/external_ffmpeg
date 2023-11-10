@@ -139,6 +139,12 @@ static int devsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
     char tmp[16];
     int ret;
 
+    if (access(priv->devname, F_OK) < 0) {
+        av_log(priv, AV_LOG_WARNING, " %s path is no exist!\n", priv->devname);
+        av_dict_free(options);
+        return 0;
+    }
+
     fmt = av_find_input_format(priv->format);
     if (!fmt)
         return AVERROR(EINVAL);
@@ -240,6 +246,9 @@ static int devsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
 {
     DevSrcPriv *priv = ctx->priv;
 
+    if (!priv->fmt_ctx)
+        return 0;
+
     if (!strcmp(cmd, "start")) {
         return avdevice_app_to_dev_control_message(
                 priv->fmt_ctx,
@@ -284,6 +293,9 @@ static int devsrc_query_formats(AVFilterContext *ctx)
     DevSrcPriv *priv = ctx->priv;
     enum AVPixelFormat format;
     int ret, i, j;
+
+    if (!priv->fmt_ctx)
+        return FFERROR_NOT_READY;
 
     ret = avdevice_app_to_dev_control_message(priv->fmt_ctx, AV_APP_TO_DEV_GET_CAPS_REQUEST,
                                               &caps, sizeof(caps));
