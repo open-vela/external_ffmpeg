@@ -638,9 +638,9 @@ const char *avcodec_profile_name(enum AVCodecID codec_id, int profile);
 enum AVCodecID av_get_pcm_codec(enum AVSampleFormat fmt, int be);
 
 /**
- * Return whether codec is lossless or not.
+ * Return whether codec is pcm lossless or not.
  */
-bool avcodec_is_audio_lossless(enum AVCodecID codec_id);
+bool avcodec_is_pcm_lossless(enum AVCodecID codec_id);
 
 /**
  * @}

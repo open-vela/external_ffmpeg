@@ -781,7 +781,7 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
 
     /* codec id */
     list[0] = codec_id;
-    if (avcodec_is_audio_lossless(codec_id))
+    if (avcodec_is_pcm_lossless(codec_id))
         list[0] = AV_CODEC_ID_RAWAUDIO;
 
     formats = ff_make_format_list(list);
