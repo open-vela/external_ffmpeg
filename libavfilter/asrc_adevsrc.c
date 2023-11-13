@@ -342,6 +342,16 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
                 priv->fmt_ctx,
                 AV_APP_TO_DEV_SET_PARAMETER,
                 (char *)args, 0);
+    } else if (!strcmp(cmd, "mute")) {
+        return avdevice_app_to_dev_control_message(
+                priv->fmt_ctx,
+                AV_APP_TO_DEV_MUTE,
+                NULL, 0);
+    } else if (!strcmp(cmd, "unmute")) {
+        return avdevice_app_to_dev_control_message(
+                priv->fmt_ctx,
+                AV_APP_TO_DEV_UNMUTE,
+                NULL, 0);
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(
                 priv->fmt_ctx,
