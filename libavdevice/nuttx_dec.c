@@ -101,6 +101,14 @@ static int nuttx_control_message(struct AVFormatContext *s1,
 
             return 0;
         }
+        case AV_APP_TO_DEV_MUTE: {
+            priv->mute = true;
+            return 0;
+        }
+        case AV_APP_TO_DEV_UNMUTE: {
+            priv->mute = false;
+            return 0;
+        }
         case AV_APP_TO_DEV_SET_PARAMETER:
             return ff_nuttx_set_parameter(priv, data);
         case AV_APP_TO_DEV_DUMP:
