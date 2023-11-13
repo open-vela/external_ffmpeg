@@ -459,6 +459,7 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device)
     }
 
     priv->volume = NAN;
+    priv->mute = false;
 
     av_strlcpy(priv->devname, device, sizeof(priv->devname));
 
@@ -489,6 +490,7 @@ void ff_nuttx_deinit(NuttxPriv *priv)
 
     close(priv->fd);
     priv->fd = -1;
+    priv->mute = false;
 }
 
 int ff_nuttx_open(NuttxPriv *priv, bool playback)
@@ -814,6 +816,8 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
 
         len = FFMIN(buffer->nbytes - buffer->curbyte, left);
         memcpy(data, buffer->samp + buffer->curbyte, len);
+        if (priv->mute)
+            memset(data, 0x00, len);
         buffer->curbyte += len;
 
         if (buffer->curbyte == buffer->nbytes) {
