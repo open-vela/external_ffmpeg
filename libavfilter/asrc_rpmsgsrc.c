@@ -25,7 +25,9 @@
 #include <poll.h>
 
 #include "libavformat/network.h"
+#include "libavcodec/avcodec.h"
 #include "libavutil/avstring.h"
+#include "packet_wrapper.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
 #include "filters.h"
@@ -33,20 +35,26 @@
 #include "rpmsg.h"
 
 typedef struct RpmsgSrcContext {
-    const     AVClass *class;
-    int       fd;
-    RpmsgInfo format_info;
-    RpmsgInfo frame_info;
-    AVFrame   *frame;
-    char      *rp_cpu;
-    char      *rp_name;
-    bool      is_connected;
+    const             AVClass *class;
+
+    int               fd;
+    bool              is_connected;
+    RpmsgInfo         format_info;
+    RpmsgInfo         frame_info;
+
+    char              *rp_cpu;
+    char              *rp_name;
+    AVFrame           *frame;
+    AVCodecParameters *param;
+    AVPacket          *pkt;
 } RpmsgSrcContext;
 
 static av_cold void reinit_resource(AVFilterContext *ctx)
 {
     RpmsgSrcContext *priv = ctx->priv;
 
+    av_packet_free(&priv->pkt);
+    avcodec_parameters_free(&priv->param);
     av_frame_free(&priv->frame);
     memset(&priv->format_info, 0, sizeof(priv->format_info));
     memset(&priv->frame_info, 0, sizeof(priv->frame_info));
@@ -88,19 +96,109 @@ static int rpmsgsrc_handle_message_header(AVFilterContext *ctx)
     return 0;
 }
 
-static int rpmsgsrc_handle_message_data(AVFilterContext *ctx)
+static int rpmsgsrc_handle_compress_data(AVFilterContext *ctx)
+{
+    AVFilterLink *outlink = ctx->outputs[0];
+    RpmsgSrcContext *priv = ctx->priv;
+    uint8_t *tmp = NULL;
+    size_t length;
+    size_t offset;
+    ssize_t ret;
+
+    if (!priv->pkt) {
+        priv->pkt = av_packet_alloc();
+        if (!priv->pkt)
+            return AVERROR(ENOMEM);
+    }
+
+    if (priv->frame_info.u.frm.offset < sizeof(AVPacket)) {
+
+        /* deserialize packet fields */
+        ret = recv(priv->fd, (uint8_t *)priv->pkt + priv->frame_info.u.frm.offset,
+                   sizeof(AVPacket) - priv->frame_info.u.frm.offset, MSG_DONTWAIT);
+        if (ret < 0)
+            return ret;
+
+        priv->pkt->side_data_elems = 0;
+        priv->pkt->side_data = NULL;
+        priv->frame_info.u.frm.offset += ret;
+    } else if (priv->frame_info.u.frm.offset < sizeof(AVPacket) + priv->pkt->size) {
+
+        // Allocate and copy packet data
+        tmp = av_mallocz(priv->pkt->size);
+        offset = priv->frame_info.u.frm.offset - sizeof(AVPacket);
+        length = priv->pkt->size - offset;
+        ret = recv(priv->fd, tmp + offset, length, MSG_DONTWAIT);
+        if (ret < 0)
+            goto error;
+
+        priv->frame_info.u.frm.offset += ret;
+        if (priv->frame_info.u.frm.offset == sizeof(AVPacket) + priv->pkt->size) {
+            /* create pkt that can use citation technology */
+            priv->pkt->data = tmp;
+            priv->pkt->buf = NULL;
+            if (av_packet_make_refcounted(priv->pkt) < 0) {
+                ret = AVERROR(ENOMEM);
+                goto error;
+            }
+            av_freep(&tmp);
+        }
+    } else if (priv->frame_info.u.frm.offset <
+               sizeof(AVPacket) + priv->pkt->size + sizeof(AVCodecParameters)) {
+
+        /* deserialize codec parameters */
+        if (!priv->param) {
+            priv->param = avcodec_parameters_alloc();
+            if (!priv->param)
+                return AVERROR(ENOMEM);
+        }
+
+        /* deserialize codec parameters fields */
+        offset = priv->frame_info.u.frm.offset - sizeof(AVPacket) - priv->pkt->size;
+        length = sizeof(AVCodecParameters) - offset;
+        ret = recv(priv->fd, (uint8_t *)priv->param + offset, length, MSG_DONTWAIT);
+        if (ret < 0)
+            return ret;
+
+        priv->frame_info.u.frm.offset += ret;
+    } else if (priv->param->extradata_size && priv->frame_info.u.frm.offset ==
+               sizeof(AVPacket) + priv->pkt->size + sizeof(AVCodecParameters)) {
+
+            /* allocate and copy extradata */
+            priv->param->extradata = av_mallocz(priv->param->extradata_size);
+            offset = priv->frame_info.u.frm.offset - sizeof(AVPacket) -
+                     priv->pkt->size - sizeof(AVCodecParameters);
+            length = priv->param->extradata_size - offset;
+            ret = recv(priv->fd, priv->param->extradata + offset, length, MSG_DONTWAIT);
+            if (ret < 0)
+                return ret;
+
+            priv->frame_info.u.frm.offset += ret;
+    }
+
+    if (priv->frame_info.u.frm.offset == priv->frame_info.u.frm.length) {
+        priv->frame = wrap_frame(priv->pkt, priv->param, NULL);
+        priv->frame->format = outlink->format;
+        priv->frame->sample_rate = outlink->sample_rate;
+
+        av_channel_layout_copy(&priv->frame->ch_layout, &outlink->ch_layout);
+        ff_filter_set_ready(ctx, 100);
+    }
+
+    return 0;
+
+error:
+    av_freep(&tmp);
+    return ret;
+}
+
+static int rpmsgsrc_handle_raw_data(AVFilterContext *ctx)
 {
     RpmsgSrcContext *priv = ctx->priv;
     size_t length;
     size_t offset;
     ssize_t ret;
     int i;
-
-    if (!priv->frame) {
-        priv->frame = av_frame_alloc();
-        if (!priv->frame)
-            return AVERROR(ENOMEM);
-    }
 
     if (priv->frame_info.u.frm.offset < sizeof(AVFrame)) {
         ret = recv(priv->fd, (uint8_t *)priv->frame + priv->frame_info.u.frm.offset,
@@ -147,9 +245,10 @@ static int rpmsgsrc_handle_message_data(AVFilterContext *ctx)
 
 static int rpmsgsrc_query_formats(AVFilterContext *ctx)
 {
-    RpmsgSrcContext *priv = ctx->priv;
     AVFilterChannelLayouts *layout = NULL;
+    RpmsgSrcContext *priv = ctx->priv;
     AVFilterFormats *formats = NULL;
+    AVFilterFormats *codecs = NULL;
     AVChannelLayout ch_layout;
     int ret;
 
@@ -162,7 +261,9 @@ static int rpmsgsrc_query_formats(AVFilterContext *ctx)
     if ((ret = ff_add_format(&formats, priv->format_info.u.fmt.sample_fmt)) < 0 ||
         (ret = ff_set_common_formats(ctx, formats)) < 0 ||
         (ret = ff_add_channel_layout(&layout, &ch_layout)) < 0 ||
-        (ret = ff_set_common_channel_layouts(ctx, layout)) < 0)
+        (ret = ff_set_common_channel_layouts(ctx, layout)) < 0 ||
+        (ret = ff_add_format(&codecs, priv->format_info.u.fmt.codec_id)) < 0 ||
+        (ret = ff_set_common_codecs(ctx, codecs)) < 0)
         return ret;
 
     formats = NULL;
@@ -241,10 +342,16 @@ static int rpmsgsrc_process_command(AVFilterContext *ctx,const char *cmd, const 
             priv->is_connected = true;
 
         if (pollfd->revents & POLLIN) {
-            if (priv->frame_info.u.frm.offset == priv->frame_info.u.frm.length)
+            if (!priv->frame) {
+                priv->frame = av_frame_alloc();
+                if (!priv->frame)
+                    return AVERROR(ENOMEM);
+            } else if (priv->frame_info.u.frm.offset == priv->frame_info.u.frm.length)
                 ret = rpmsgsrc_handle_message_header(ctx);
+            else if (avcodec_is_pcm_lossless(priv->format_info.u.fmt.codec_id))
+                ret = rpmsgsrc_handle_raw_data(ctx);
             else
-                ret = rpmsgsrc_handle_message_data(ctx);
+                ret = rpmsgsrc_handle_compress_data(ctx);
         }
 
         if (ret < 0 || (pollfd->revents & POLLHUP)) {
@@ -279,11 +386,12 @@ static int rpmsgsrc_activate(AVFilterContext *ctx)
     }
 
     if (priv->frame && priv->frame_info.u.frm.offset == priv->frame_info.u.frm.length) {
+
         ret = ff_filter_frame(outlink, priv->frame);
-        if (ret < 0)
-            av_frame_free(&priv->frame);
-        else
-            priv->frame = NULL;
+
+        priv->pkt = NULL;
+        priv->param = NULL;
+        priv->frame = NULL;
 
         return ret;
     } else if (ff_outlink_frame_wanted(outlink)) {
