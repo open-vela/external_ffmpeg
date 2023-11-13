@@ -22,9 +22,9 @@
 /**
  * Wrap packet and its format paramters into a special frame.
  */
-AVFrame* wrap_frame(AVPacket* packet, AVCodecParameters* params);
+AVFrame *wrap_frame(AVPacket *packet, AVCodecParameters *params, AVDictionary *opt);
 
 /**
  * Unwrap a special frame into a packet and its format paramters.
  */
-void unwrap_frame(AVFrame* frame, AVPacket** packetptr, AVCodecParameters** paramsptr);
+void unwrap_frame(AVFrame *frame, AVPacket **packetptr, AVCodecParameters **paramsptr);

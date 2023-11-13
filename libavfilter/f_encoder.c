@@ -138,7 +138,7 @@ static int encoder_encode(AVFilterContext *ctx, AVFrame *in, AVFrame **out)
         priv->started = true;
     }
 
-    frame = wrap_frame(pkt, params);
+    frame = wrap_frame(pkt, params, NULL);
     if (!frame) {
         ret = AVERROR(ENOMEM);
         goto err;
