@@ -1491,14 +1491,14 @@ static void graph_clear_formats(AVFilterGraph *graph, void *log_ctx)
         if (!strncmp(f->name, "auto_", strlen("auto_"))) {
             if (f->inputs[0]->status_out || f->inputs[0]->status_in ||
                 f->outputs[0]->status_out || f->outputs[0]->status_in) {
-                status_in  = f->inputs[0]->status_in;
-                status_out = f->inputs[0]->status_out;
-                time_base  = f->inputs[0]->time_base;
-
                 AVFilterContext *src = f->inputs[0]->src;
                 AVFilterContext *dst = f->outputs[0]->dst;
                 unsigned srcpad = FF_OUTLINK_IDX(f->inputs[0]);
                 unsigned dstpad = FF_INLINK_IDX(f->outputs[0]);
+
+                status_in  = f->inputs[0]->status_in;
+                status_out = f->inputs[0]->status_out;
+                time_base  = f->inputs[0]->time_base;
 
                 avfilter_free(f);
                 avfilter_link(src, srcpad, dst, dstpad);
