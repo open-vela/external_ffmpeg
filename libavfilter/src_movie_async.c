@@ -561,15 +561,12 @@ static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
         if (ret < 0)
             goto out;
 
-        ret = av_dict_copy(&dict, movie->format_opt, 0);
-        if (ret < 0)
-            goto out;
+        dict = movie->format_opt;
     }
 
-    frame = wrap_frame(pkt, dst);
+    frame = wrap_frame(pkt, dst, dict);
     if (!frame)
         goto out;
-    frame->data[1] = (uint8_t*)dict;
 
     frame->format = src->format;
     frame->sample_rate = src->sample_rate;
@@ -583,8 +580,6 @@ static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
     return ret;
 
 out:
-    if(dict)
-        av_dict_free(&dict);
     avcodec_parameters_free(&dst);
     av_frame_free(&frame);
     return ret;

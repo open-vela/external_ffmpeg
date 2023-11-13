@@ -253,7 +253,7 @@ static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
         priv->state = ASRC_ADEVSRC_STARTED;
     }
 
-    out = wrap_frame(pkt, dst);
+    out = wrap_frame(pkt, dst, NULL);
     if (!out) {
         ret = AVERROR(ENOMEM);
         goto error;
