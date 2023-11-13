@@ -24,9 +24,10 @@
 #include <netpacket/rpmsg.h>
 #include <poll.h>
 
-#include "libavutil/opt.h"
+#include "libavcodec/avcodec.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
+#include "libavutil/opt.h"
 #include "avfilter.h"
 #include "audio.h"
 #include "filters.h"
@@ -98,6 +99,7 @@ static int rpmsgsink_config_props(AVFilterLink *inlink)
 
     if (priv->is_connected) {
         info.flag                 = RPMSG_FORMAT_NEG;
+        info.u.fmt.codec_id       = inlink->codec;
         info.u.fmt.sample_fmt     = inlink->format;
         info.u.fmt.sample_rate    = inlink->sample_rate;
         info.u.fmt.order_channels = inlink->ch_layout.order;
@@ -109,6 +111,59 @@ static int rpmsgsink_config_props(AVFilterLink *inlink)
     }
 
     return 0;
+}
+
+static int rpmsgsink_query_formats(AVFilterContext *ctx)
+{
+    AVFilterLink *inlink = ctx->inputs[0];
+    AVFilterFormats *codecs = NULL;
+    const AVCodec *codec = NULL;
+    void *iterate = NULL;
+    enum AVCodecID id;
+    int ret, dup = 0;
+
+    while (codec = av_codec_iterate(&iterate)) {
+        if (codec->type != inlink->type || av_codec_is_encoder(codec))
+            continue;
+
+        id = codec->id;
+        if (avcodec_is_pcm_lossless(id)) {
+            if (!dup) {
+                id = AV_CODEC_ID_RAWAUDIO;
+                dup = 1;
+            } else {
+                continue;
+            }
+        }
+
+        if (ret = ff_add_format(&codecs, id) < 0)
+            if (ret < 0)
+                goto error;
+    }
+
+    ret = ff_set_common_codecs(ctx, codecs);
+    if (ret < 0)
+        goto error;
+
+    ret = ff_set_common_formats(ctx, ff_all_formats(AVMEDIA_TYPE_AUDIO));
+    if (ret < 0)
+        goto error;
+
+    ret = ff_set_common_all_channel_counts(ctx);
+    if (ret < 0)
+        goto error;
+
+    ret = ff_set_common_all_samplerates(ctx);
+    if (ret < 0)
+        goto error;
+
+    return 0;
+
+error:
+    if (codecs && !codecs->refcount)
+        ff_formats_unref(&codecs);
+
+    return ret;
 }
 
 static bool rpmsgsink_handle_connected(AVFilterContext *ctx)
@@ -310,7 +365,7 @@ const AVFilter ff_asink_rpmsgsink = {
     FILTER_INPUTS(rpmsgsink_inputs),
     .outputs         = NULL,
     .activate        = rpmsgsink_activate,
-    FILTER_QUERY_FUNC(ff_default_query_formats),
+    FILTER_QUERY_FUNC(rpmsgsink_query_formats),
     .process_command = rpmsgsink_process_command,
     .priv_class      = &rpmsgsink_class,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
