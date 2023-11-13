@@ -1299,12 +1299,14 @@ err:
 
 int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
-    int ret;
+    char llayout[128], flayout[128];
+    int ret = AVERROR_PATCHWELCOME;
     FF_TPRINTF_START(NULL, filter_frame); ff_tlog_link(NULL, link, 1); ff_tlog(NULL, " "); tlog_ref(NULL, frame, 1);
 
     if (!link->incfg.formats) {
         link_uninit_dump_raw(link, false);
-        return AVERROR_EOF;
+        ret = AVERROR_EOF;
+        goto error;
     }
 
     /* Consistency checks */
@@ -1352,8 +1354,15 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
     return 0;
 
 error:
+    av_channel_layout_describe(&link->ch_layout, llayout, sizeof(llayout));
+    av_channel_layout_describe(&frame->ch_layout, flayout, sizeof(flayout));
+    av_log(link->dst, AV_LOG_ERROR,
+        "Invalid frame(nb:%d fmt:%s ch:%s sr:%d) on link(fmt:%s ch:%s sr:%d) between %s and %s\n",
+        frame->nb_samples, av_get_sample_fmt_name(frame->format), flayout, frame->sample_rate,
+        av_get_sample_fmt_name(link->format), llayout, link->sample_rate,
+        link->src->name, link->dst->name);
     av_frame_free(&frame);
-    return AVERROR_PATCHWELCOME;
+    return ret;
 }
 
 static int samples_ready(AVFilterLink *link, unsigned min)
