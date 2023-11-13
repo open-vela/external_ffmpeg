@@ -32,7 +32,7 @@ static void wrap_free_params(void *opaque, uint8_t *data)
     avcodec_parameters_free(&params);
 }
 
-AVFrame* wrap_frame(AVPacket* packet, AVCodecParameters* params)
+AVFrame *wrap_frame(AVPacket *packet, AVCodecParameters *params, AVDictionary *opt)
 {
     AVFrame *frame = NULL;
     int ret;
@@ -60,6 +60,12 @@ AVFrame* wrap_frame(AVPacket* packet, AVCodecParameters* params)
             goto failed;
     }
 
+    if (opt) {
+        ret = av_dict_copy(&frame->metadata, opt, 0);
+        if (ret < 0)
+            goto failed;
+    }
+
     frame->pts = packet->pts;
     return frame;
 
@@ -68,7 +74,7 @@ failed:
     return NULL;
 }
 
-void unwrap_frame(AVFrame* frame, AVPacket** packetptr, AVCodecParameters** paramsptr)
+void unwrap_frame(AVFrame *frame, AVPacket **packetptr, AVCodecParameters **paramsptr)
 {
     if (packetptr) {
         if (frame->linesize[0])

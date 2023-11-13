@@ -35,7 +35,6 @@ static int decoder_open(AVFilterContext *ctx)
     AVCodecParameters *param = NULL;
     AVFrame *frame = NULL;
     const AVCodec *codec = NULL;
-    AVDictionary *dict = NULL;
     int ret;
 
     if (!ff_inlink_check_available_frame(inlink))
@@ -63,9 +62,7 @@ static int decoder_open(AVFilterContext *ctx)
         goto out;
 
     priv->codec_ctx->thread_count = ff_filter_get_nb_threads(ctx);
-    dict = (AVDictionary *)frame->data[1];
-    ret = avcodec_open2(priv->codec_ctx, codec, dict ? &dict : NULL);
-    if(dict) av_dict_free(&dict);
+    ret = avcodec_open2(priv->codec_ctx, codec, &frame->metadata);
     if (ret < 0) {
         av_log(ctx, AV_LOG_INFO, "DEBUG: %s Failed open codec %d %s.\n", __func__, ret, av_err2str(ret));
         goto out;
