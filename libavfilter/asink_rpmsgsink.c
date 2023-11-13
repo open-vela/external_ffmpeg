@@ -27,6 +27,7 @@
 #include "libavcodec/avcodec.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
+#include "packet_wrapper.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
 #include "audio.h"
@@ -269,17 +270,32 @@ static int rpmsgsink_process_command(AVFilterContext *ctx, const char *cmd, cons
     return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
 }
 
-static void rpmsgsink_serialize_frame(AVBPrint *bprint, const AVFrame *src)
+static void rpmsgsink_serialize_frame(AVBPrint *bprint, AVFilterContext *ctx, AVFrame *src)
 {
+    AVCodecParameters *param = NULL;
+    AVPacket *packet = NULL;
+    int ret;
     int i;
 
-    av_bprint_append_data(bprint, (char *)src, sizeof(AVFrame));
+    if (avcodec_is_pcm_lossless(ctx->inputs[0]->codec)) {
+        av_bprint_append_data(bprint, (char *)src, sizeof(AVFrame));
 
-    if (av_sample_fmt_is_planar(src->format))
-        for (i = 0; i < src->ch_layout.nb_channels; i++)
-            av_bprint_append_data(bprint, src->extended_data[i], src->linesize[0]);
-    else
-        av_bprint_append_data(bprint, src->extended_data[0], src->linesize[0]);
+        if (av_sample_fmt_is_planar(src->format))
+            for (i = 0; i < src->ch_layout.nb_channels; i++)
+                av_bprint_append_data(bprint, src->extended_data[i], src->linesize[0]);
+        else
+            av_bprint_append_data(bprint, src->extended_data[0], src->linesize[0]);
+    } else {
+        unwrap_frame(src, &packet, &param);
+        av_bprint_append_data(bprint, (char *)packet, sizeof(AVPacket));
+        av_bprint_append_data(bprint, (char *)packet->data, packet->size);
+
+        if (param) {
+            av_bprint_append_data(bprint, (char *)param, sizeof(AVCodecParameters));
+            if (param->extradata)
+                av_bprint_append_data(bprint, param->extradata, param->extradata_size);
+        }
+    }
 }
 
 static int rpmsgsink_activate(AVFilterContext *ctx)
@@ -316,7 +332,7 @@ static int rpmsgsink_activate(AVFilterContext *ctx)
         return ret;
 
     av_bprint_init(&priv->bprint, 0, AV_BPRINT_SIZE_UNLIMITED);
-    rpmsgsink_serialize_frame(&priv->bprint, frame);
+    rpmsgsink_serialize_frame(&priv->bprint, ctx, frame);
     av_frame_free(&frame);
 
     info.flag         = RPMSG_FRAME_ACK;
