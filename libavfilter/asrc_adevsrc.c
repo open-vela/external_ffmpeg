@@ -433,22 +433,31 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     } else {
         ret = av_opt_query_ranges(&ranges, &caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
-            int n;
+            const AVChannelLayout *layout = NULL;
+            double n;
 
-            for (n = 0; n < ranges->nb_ranges; n++) {
-                if (ranges->range[n]->is_range) {
-                    for (i = ranges->range[n]->value_min; i <= ranges->range[n]->value_max; i++) {
-                        av_channel_layout_default(&layout, i);
-                        ret = ff_add_channel_layout(&layouts, &layout);
-                        if (ret < 0)
-                            goto out;
+            for (i = 0; i < ranges->nb_ranges; i++) {
+                if (ranges->range[i]->is_range) {
+                    for (n = ranges->range[i]->value_min; n <= ranges->range[i]->value_max; n++) {
+                        void *iter = NULL;
+                        while (layout = av_channel_layout_standard(&iter)) {
+                            if (layout->nb_channels == n) {
+                                ret = ff_add_channel_layout(&layouts, layout);
+                                if (ret < 0)
+                                    goto out;
+                            }
+                        }
                     }
                 } else {
-                    i = ranges->range[n]->value_min;
-                    av_channel_layout_default(&layout, i);
-                    ret = ff_add_channel_layout(&layouts, &layout);
-                    if (ret < 0)
-                        goto out;
+                    void *iter = NULL;
+                    n = ranges->range[i]->value_min;
+                    while (layout = av_channel_layout_standard(&iter)) {
+                        if (layout->nb_channels == n) {
+                            ret = ff_add_channel_layout(&layouts, layout);
+                            if (ret < 0)
+                                goto out;
+                        }
+                    }
                 }
             }
 
