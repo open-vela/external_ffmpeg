@@ -72,7 +72,7 @@ static int adevsrc_open(AVFilterContext *ctx)
     AVStream *st;
     int ret;
 
-    if (priv->state & ASRC_ADEVSRC_OPENED)
+    if (priv->state)
         return 0;
 
     priv->fmt_ctx->audio_codec_id = link->codec;
