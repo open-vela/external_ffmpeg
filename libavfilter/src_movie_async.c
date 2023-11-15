@@ -228,25 +228,6 @@ static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
     return out;
 }
 
-static int movie_async_send_empty_frame(AVFilterContext *ctx, int pad_id)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVFrame *out;
-    int ret;
-
-    out = movie_async_alloc_empty_frame(ctx, pad_id);
-    if (!out)
-        return AVERROR(ENOMEM);
-
-    ret = movie_async_send_dat(ctx, pad_id, out);
-    if (ret < 0) {
-        av_frame_free(&out);
-        return ret;
-    }
-
-    return 0;
-}
-
 static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters **dst)
 {
     MovieAsyncContext *movie = ctx->priv;
