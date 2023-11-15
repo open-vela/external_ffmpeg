@@ -25,6 +25,7 @@
 #define AVFILTER_VOLUME_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "libavutil/eval.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/log.h"
@@ -85,7 +86,35 @@ typedef struct VolumeContext {
 
     void (*scale_samples)(uint8_t *dst, const uint8_t *src, int nb_samples,
                           int volume);
+
+    /**
+     * @brief Function pointer for fading samples.
+     *
+     * @param dst Destination buffer for faded samples.
+     * @param src Source buffer for original samples.
+     * @param nb_samples Number of samples to fade.
+     * @param chs Number of channels in the audio samples.
+     * @param dst_volume Destination volume level for fading.
+     * @param src_volume Source volume level for fading.
+     */
+    void (*fade_samples)(uint8_t *dst, const uint8_t *src, int nb_samples, int chs,
+                         int dst_volume, int src_volume);
     int samples_align;
+
+    /**
+     * @brief Flag indicating whether fading is in progress.
+     *
+     * If this flag is set to true, it means that the audio samples are currently being faded.
+     */
+    bool voluming;
+
+    /**
+     * @brief Source volume level for fading.
+     *
+     * This variable stores the backup volume level for fading. It is used to calculate the
+     * step size when adjusting the volume.
+     */
+    int  volume_isrc;
 } VolumeContext;
 
 void ff_volume_init_x86(VolumeContext *vol);
