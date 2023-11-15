@@ -17,7 +17,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <fdk-aac/aacdecoder_lib.h>
+#include <aacdecoder_lib.h>
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
