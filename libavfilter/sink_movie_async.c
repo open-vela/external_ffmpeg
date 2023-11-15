@@ -386,9 +386,12 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
             av_frame_free(&frame);
             continue;
         } else if (ret > 0) {
+            priv->streams[i].sync_pts = frame->pts;
             ret = avformat_write_header(priv->format_ctx, NULL);
-            if (ret < 0)
+            if (ret < 0) {
+                av_frame_free(&frame);
                 goto out;
+            }
         }
 
         /* user request stop, send frame which linesize = 0 */
