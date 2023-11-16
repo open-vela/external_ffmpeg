@@ -525,6 +525,8 @@ int ff_bluelet_handle_event(BlueletPriv *priv)
         priv->state = BLUELET_STATE_CONFIGED;
         break;
     case BLUELET_CTRL_EVT_STOPPED:
+        action = BLUELET_ACTION_CONFIG;
+        priv->state = BLUELET_STATE_IDLE;
         break;
     case BLUELET_CTRL_EVT_UPDATE_CONFIG:
         action = ff_bluelet_update_config(priv);
