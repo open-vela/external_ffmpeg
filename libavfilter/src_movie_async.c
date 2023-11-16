@@ -202,32 +202,6 @@ static int movie_async_send_event(AVFilterContext *ctx, int event, int ret, cons
     return 0;
 }
 
-static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVCodecParameters *param;
-    AVFrame *out;
-    int index;
-
-    out = av_frame_alloc();
-    if (!out)
-        return NULL;
-
-    index = movie->streams[pad_id].index;
-    param = movie->format_ctx->streams[index]->codecpar;
-    out->format = param->format;
-
-    if (movie->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
-        out->sample_rate = param->sample_rate;
-        av_channel_layout_copy(&out->ch_layout, &param->ch_layout);
-    } else {
-        out->width  = param->width;
-        out->height = param->height;
-    }
-
-    return out;
-}
-
 static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters **dst)
 {
     MovieAsyncContext *movie = ctx->priv;
