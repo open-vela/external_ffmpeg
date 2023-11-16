@@ -132,8 +132,10 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
     AVFilterContext *ctx = s->opaque;
     ADevSrcPriv *priv = ctx->priv;
 
-    if (type == AV_DEV_TO_APP_STATE_CHANGED)
+    if (type == AV_DEV_TO_APP_STATE_CHANGED) {
+        avcodec_free_context(&priv->dec_ctx);
         avfilter_graph_reconfig(ctx->graph, NULL);
+    }
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED ||
         type == AV_DEV_TO_APP_BUFFER_READABLE) {
