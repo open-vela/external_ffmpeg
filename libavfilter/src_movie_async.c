@@ -483,18 +483,57 @@ out:
 static void movie_async_prepare(AVFilterContext *ctx, const char *filename)
 {
     MovieAsyncContext *movie = ctx->priv;
-    int ret;
+    int ret = AVERROR(EPERM);
+
+    if (movie->state != AVMOVIE_ASYNC_STATE_STOPPED)
+        goto out;
 
     ret = movie_async_open_demuxer(ctx, filename);
+    if (ret >= 0)
+        movie->state = AVMOVIE_ASYNC_STATE_PREPARED;
+
+out:
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
+}
+
+static void movie_async_start(AVFilterContext *ctx)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int ret = AVERROR(EPERM);
+
+    if (movie->state == AVMOVIE_ASYNC_STATE_PREPARED ||
+        movie->state == AVMOVIE_ASYNC_STATE_PAUSED ||
+        movie->state == AVMOVIE_ASYNC_STATE_COMPLETED) {
+        movie->state = AVMOVIE_ASYNC_STATE_STARTED;
+        ret = 0;
+    }
+
+    movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
+}
+
+static void movie_async_pause(AVFilterContext *ctx)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int ret = AVERROR(EPERM);
+
+    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED) {
+        movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
+        ret = 0;
+    }
+
+    movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
 }
 
 static void movie_async_stop(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
 
+    if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
+        return;
+
     movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
     movie_async_close_demuxer(ctx);
+    movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
     movie->pending_stop = 0;
 
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
@@ -607,23 +646,26 @@ static void movie_async_proc_event(AVFilterContext *ctx)
             break;
 
         switch (event->event) {
-            case AVMOVIE_ASYNC_EVENT_PREPARED:
-                movie->state = AVMOVIE_ASYNC_STATE_PREPARED;
-                break;
             case AVMOVIE_ASYNC_EVENT_STARTED:
-                movie->state = AVMOVIE_ASYNC_STATE_STARTED;
+                for (i = 0; i < ctx->nb_outputs; i++)
+                    avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
                 break;
+
+            case AVMOVIE_ASYNC_EVENT_PAUSED:
+                for (i = 0; i < ctx->nb_outputs; i++)
+                    avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
+                break;
+
             case AVMOVIE_ASYNC_EVENT_STOPPED:
-                movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
                 for (i = 0; i < ctx->nb_outputs; i++) {
+                    avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
                     ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
                 }
                 break;
+
             case AVMOVIE_ASYNC_EVENT_CLOSED:
-                movie->state = AVMOVIE_ASYNC_STATE_NOP;
-                break;
-            case AVMOVIE_ASYNC_EVENT_COMPLETED:
-                movie->state = AVMOVIE_ASYNC_STATE_COMPLETED;
+                movie->event  = NULL;
+                movie->cookie = NULL;
                 break;
         }
 
@@ -646,6 +688,7 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
     else if (ret == AVERROR_EOF)
         ret = 0;
 
+    movie->state = AVMOVIE_ASYNC_STATE_COMPLETED;
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
 
     if (!movie->pending_stop)
@@ -677,12 +720,11 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
             break;
 
         case AVMOVIE_ASYNC_START:
-             /* currently if state is started, it should reconfig immediately,
-              * or the reconfig action maybe be excuted by other filter which
-              * will cause filtering first frame failed.so the action setting
-              * state to AVMOVIE_ASYNC_EVENT_STARTED should be done in activate
-              * function, then excute reconfig */
-            movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STARTED, 0, NULL);
+            movie_async_start(ctx);
+            break;
+
+        case AVMOVIE_ASYNC_PAUSE:
+            movie_async_pause(ctx);
             break;
 
         case AVMOVIE_ASYNC_SEEK:
@@ -699,6 +741,7 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
 
             exit = true;
         case AVMOVIE_ASYNC_STOP:
+        case AVMOVIE_ASYNC_RESET:
             movie_async_stop(ctx);
             break;
 
@@ -737,7 +780,7 @@ static void *movie_async_thread(void *arg)
             exit = movie_async_proc_dat(ctx);
         } else if (exit) {
             pthread_mutex_unlock(&movie->mutex);
-
+            movie->state = AVMOVIE_ASYNC_STATE_NOP;
             movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
             movie->loop_count = 0;
             break;
@@ -779,94 +822,6 @@ static int movie_async_proc_open(AVFilterContext *ctx)
     pthread_detach(thread);
 
     return 0;
-}
-
-static int movie_async_proc_prepare(AVFilterContext *ctx, const char *args)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    int ret = AVERROR(EPERM);
-
-    av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
-
-    if (movie->state != AVMOVIE_ASYNC_STATE_STOPPED)
-        goto out;
-
-    return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
-
-out:
-    movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
-    return 0;
-}
-
-static int movie_async_proc_start(AVFilterContext *ctx)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    int i, ret = AVERROR(EPERM);
-
-    av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
-
-    if (movie->state == AVMOVIE_ASYNC_STATE_PREPARED ||
-        movie->state == AVMOVIE_ASYNC_STATE_PAUSED ||
-        movie->state == AVMOVIE_ASYNC_STATE_COMPLETED) {
-
-        for (i = 0; i < ctx->nb_outputs; i++)
-            avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
-
-        ret = movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
-        if (ret < 0)
-            return ret;
-    } else {
-        movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
-    }
-    return 0;
-}
-
-static int movie_async_proc_pause(AVFilterContext *ctx)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    int i, ret = AVERROR(EPERM);
-
-    av_log(ctx, AV_LOG_INFO, "%s filter %s pause.\n", __func__, ctx->name);
-
-    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED) {
-
-        for (i = 0; i < ctx->nb_outputs; i++)
-            avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
-
-        movie->state = AVMOVIE_ASYNC_STATE_PAUSED;
-        ret = 0;
-    }
-
-    movie_async_notify_event(movie, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
-    return 0;
-}
-
-static int movie_async_proc_quit(AVFilterContext *ctx, const char *cmd, const char *args)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    bool reset, close, stop;
-    int i;
-
-    av_log(ctx, AV_LOG_INFO, "%s filter %s %s %s.\n", __func__, ctx->name, cmd, args);
-
-    reset = !strcmp(cmd, "reset");
-    close = !strcmp(cmd, "close");
-    stop  = !strcmp(cmd, "stop");
-
-    if (reset || close)
-        movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
-
-    for (i = 0; i < ctx->nb_outputs; i++)
-        avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
-
-    if (reset || stop) {
-        if (movie->state == AVMOVIE_ASYNC_STATE_STOPPED)
-            return 0;
-
-        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
-    }
-
-    return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
 }
 
 static int movie_async_output_props(AVFilterLink *outlink)
@@ -1204,15 +1159,27 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
     } else if (!strcmp(cmd, "set_loop")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SET_LOOP, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "prepare")) {
-        return movie_async_proc_prepare(ctx, args);
+        av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
+        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "start")) {
-        return movie_async_proc_start(ctx);
+        av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
+        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
     } else if (!strcmp(cmd, "pause")) {
-        return movie_async_proc_pause(ctx);
+
+        av_log(ctx, AV_LOG_INFO, "%s filter %s pause.\n", __func__, ctx->name);
+        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
     } else if (!strcmp(cmd, "seek")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SEEK, args, strlen(args) + 1);
-    } else if (!strcmp(cmd, "stop") || !strcmp(cmd, "reset") || !strcmp(cmd, "close")) {
-        return movie_async_proc_quit(ctx, cmd, args);
+    } else if (!strcmp(cmd, "stop")) {
+        av_log(ctx, AV_LOG_INFO, "%s filter %s stop.\n", __func__, ctx->name);
+        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
+    } else if (!strcmp(cmd, "reset")) {
+        movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
+        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_RESET, NULL, 0);
+    } else if (!strcmp(cmd, "close")) {
+        movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
+        av_log(ctx, AV_LOG_INFO, "%s filter %s close.\n", __func__, ctx->name);
+        return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "get_state")) {
         if (!res || !res_len)
             return AVERROR(EINVAL);
