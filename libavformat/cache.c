@@ -115,6 +115,8 @@ static void *cache_thread(void *arg)
 
             break;
         }
+        if (offset < c->logical_pos)
+            offset = c->logical_pos;
 
         ret = cache_pread(h, buf, sizeof(buf), offset, true);
         pthread_mutex_unlock(&c->mutex);
