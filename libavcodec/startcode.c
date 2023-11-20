@@ -43,6 +43,10 @@ int ff_startcode_find_candidate_c(const uint8_t *buf, int size)
                     0x8080808080808080ULL))
         i += 8;
 #else
+    for (; ((intptr_t)(buf + i) & 3) && i < size; i++)
+        if (!buf[i])
+            return i;
+
     while (i < size &&
             !((~*(const uint32_t *)(buf + i) &
                     (*(const uint32_t *)(buf + i) - 0x01010101U)) &
