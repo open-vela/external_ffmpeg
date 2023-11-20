@@ -216,10 +216,30 @@ static void moviesink_close_muxer(AVFilterContext *ctx)
     }
 }
 
+static int moviesink_async_interrupt(void *opaque)
+{
+    AVFilterContext *ctx = opaque;
+    MovieSinkPriv *priv = ctx->priv;
+    MovieSinkCmd *msg;
+    int interrupt = 0;
+
+    pthread_mutex_lock(&priv->mutex);
+    SIMPLEQ_FOREACH(msg, &priv->cmd_queue, entry) {
+        if (msg->cmd >= AVMOVIE_ASYNC_STOP) {
+            interrupt = 1;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&priv->mutex);
+    return interrupt;
+}
+
 static int moviesink_open_muxer(AVFilterContext *ctx, const char *filename)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVDictionary *dict = NULL;
+    AVIOInterruptCB cb;
     int ret;
 
     ret = avformat_alloc_output_context2(&priv->format_ctx, priv->format,
@@ -228,6 +248,9 @@ static int moviesink_open_muxer(AVFilterContext *ctx, const char *filename)
         return ret;
 
     priv->format_ctx->flags |= AVFMT_FLAG_NONBLOCK;
+
+    cb.callback = moviesink_async_interrupt;
+    cb.opaque   = ctx;
 
     pthread_mutex_lock(&priv->mutex);
     if (priv->format_opt) {
@@ -241,7 +264,7 @@ static int moviesink_open_muxer(AVFilterContext *ctx, const char *filename)
     }
     pthread_mutex_unlock(&priv->mutex);
 
-    ret = avio_open2(&priv->format_ctx->pb, filename, AVIO_FLAG_WRITE, NULL, &dict);
+    ret = avio_open2(&priv->format_ctx->pb, filename, AVIO_FLAG_WRITE, &cb, &dict);
     av_dict_free(&dict);
     if (ret < 0)
         goto out;
