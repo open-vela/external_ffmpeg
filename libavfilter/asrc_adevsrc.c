@@ -491,15 +491,17 @@ static int adevsrc_config_props(AVFilterLink *link)
     ADevSrcPriv *priv = ctx->priv;
     AVDictionary *fmt_opt = NULL;
     char tmp[64];
+    int ret;
 
     av_dict_set_int(&fmt_opt, "sample_rate", link->sample_rate, 0);
     av_channel_layout_describe(&link->ch_layout, tmp, sizeof(tmp));
     av_dict_set(&fmt_opt, "ch_layout", tmp, 0);
 
-    av_opt_set_dict(priv->fmt_ctx->priv_data, &fmt_opt);
+    ret = av_opt_set_dict(priv->fmt_ctx->priv_data, &fmt_opt);
+
     av_dict_free(&fmt_opt);
 
-    return 0;
+    return ret;
 }
 
 static void *adevsrc_child_next(void *obj, void *prev)
