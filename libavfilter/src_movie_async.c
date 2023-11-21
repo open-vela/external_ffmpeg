@@ -1132,6 +1132,9 @@ static int movie_async_process_proc_cmd(AVFilterContext *ctx, const char *cmd, c
         return AVERROR(EINVAL);
 
     ptr = av_asprintf("%s=%s", cmd, args);
+    if (!ptr)
+        return AVERROR(ENOMEM);
+
     ret = movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PROCESS_COMMAND, ptr, strlen(ptr) + 1);
     av_freep(&ptr);
 
