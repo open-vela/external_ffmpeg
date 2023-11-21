@@ -223,6 +223,9 @@ static int moviesink_async_interrupt(void *opaque)
     MovieSinkCmd *msg;
     int interrupt = 0;
 
+    if (priv->state == AVMOVIE_ASYNC_STATE_STARTED)
+        goto out;
+
     pthread_mutex_lock(&priv->mutex);
     SIMPLEQ_FOREACH(msg, &priv->cmd_queue, entry) {
         if (msg->cmd >= AVMOVIE_ASYNC_STOP) {
@@ -232,6 +235,8 @@ static int moviesink_async_interrupt(void *opaque)
     }
 
     pthread_mutex_unlock(&priv->mutex);
+
+out:
     return interrupt;
 }
 
