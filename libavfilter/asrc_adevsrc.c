@@ -52,6 +52,28 @@ typedef struct ADevSrcPriv {
     int             state;
 } ADevSrcPriv;
 
+static AVFilterChannelLayouts *adevsrc_get_channel_layouts(double ch_min,
+                                                           double ch_max)
+{
+    AVFilterChannelLayouts *layouts = NULL;
+    const AVChannelLayout *layout = NULL;
+    double i;
+    int ret;
+
+    for (i = ch_min; i <= ch_max; i++) {
+        void *iter = NULL;
+        while (layout = av_channel_layout_standard(&iter)) {
+            if (layout->nb_channels == i) {
+                ret = ff_add_channel_layout(&layouts, layout);
+                if (ret < 0)
+                    return NULL;
+            }
+        }
+    }
+
+    return layouts;
+}
+
 static void adevsrc_close(AVFilterContext *ctx)
 {
     ADevSrcPriv *priv = ctx->priv;
@@ -371,7 +393,6 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     AVFilterFormats *formats = NULL;
     ADevSrcPriv *priv = ctx->priv;
     AVOptionRanges *ranges = NULL;
-    AVChannelLayout layout;
     bool codec = false;
     int ret, i;
 
@@ -433,32 +454,11 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     } else {
         ret = av_opt_query_ranges(&ranges, &caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
-            const AVChannelLayout *layout = NULL;
-            double n;
-
             for (i = 0; i < ranges->nb_ranges; i++) {
-                if (ranges->range[i]->is_range) {
-                    for (n = ranges->range[i]->value_min; n <= ranges->range[i]->value_max; n++) {
-                        void *iter = NULL;
-                        while (layout = av_channel_layout_standard(&iter)) {
-                            if (layout->nb_channels == n) {
-                                ret = ff_add_channel_layout(&layouts, layout);
-                                if (ret < 0)
-                                    goto out;
-                            }
-                        }
-                    }
-                } else {
-                    void *iter = NULL;
-                    n = ranges->range[i]->value_min;
-                    while (layout = av_channel_layout_standard(&iter)) {
-                        if (layout->nb_channels == n) {
-                            ret = ff_add_channel_layout(&layouts, layout);
-                            if (ret < 0)
-                                goto out;
-                        }
-                    }
-                }
+                layouts = adevsrc_get_channel_layouts(ranges->range[i]->value_min,
+                                                      ranges->range[i]->value_max);
+                if (!layouts)
+                    goto out;
             }
 
             av_opt_freep_ranges(&ranges);
