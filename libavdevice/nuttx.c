@@ -45,6 +45,9 @@ static int ff_nuttx_samplerate_convert(int samplerate, int *sample_rates, int nu
         } else if (samplerate & AUDIO_SAMP_RATE_11K) {
             samplerate &= ~AUDIO_SAMP_RATE_11K;
             sample_rates[i] = 11025;
+        } else if (samplerate & AUDIO_SAMP_RATE_12K) {
+            samplerate &= ~AUDIO_SAMP_RATE_12K;
+            sample_rates[i] = 12000;
         } else if (samplerate & AUDIO_SAMP_RATE_16K) {
             samplerate &= ~AUDIO_SAMP_RATE_16K;
             sample_rates[i] = 16000;
@@ -300,6 +303,7 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
     struct AVOptionRanges *ranges;
     int values0[64], values1[64];
     int nb_ranges, is_range = 0;
+    uint16_t samplerate;
     int ret;
 
     ranges = av_mallocz(sizeof(struct AVOptionRanges));
@@ -340,7 +344,8 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
             nb_ranges = 1;
             is_range  = (values0[0] != values1[0]);
         } else {
-            ret = ff_nuttx_samplerate_convert(others.ac_controls.b[0], values0, 64);
+            samplerate = *(uint16_t *)others.ac_controls.b;
+            ret = ff_nuttx_samplerate_convert(samplerate, values0, 64);
             if (ret < 0)
                 goto err;
 
