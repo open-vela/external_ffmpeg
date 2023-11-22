@@ -784,6 +784,7 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
 
             if (priv->underflow && dq_count(&priv->bufferq) == 0) {
                 ret = ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+                av_log(NULL, AV_LOG_INFO, "[%s][%s] resume ret:%d\n", __func__, priv->devname, ret);
                 if (ret < 0) {
                     ret = AVERROR(errno);
                     break;
