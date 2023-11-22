@@ -137,8 +137,7 @@ static int rpmsgsink_query_formats(AVFilterContext *ctx)
         }
 
         if (ret = ff_add_format(&codecs, id) < 0)
-            if (ret < 0)
-                goto error;
+            goto error;
     }
 
     ret = ff_set_common_codecs(ctx, codecs);
