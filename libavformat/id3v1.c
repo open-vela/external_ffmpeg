@@ -20,6 +20,8 @@
  */
 
 #include "id3v1.h"
+
+#if CONFIG_ID3
 #include "libavutil/dict.h"
 
 /* See Genre List at http://id3.org/id3v2.3.0 */
@@ -294,3 +296,11 @@ void ff_id3v1_read(AVFormatContext *s)
         }
     }
 }
+#else
+const char * const ff_id3v1_genre_str[1] = {
+};
+
+void ff_id3v1_read(AVFormatContext *s)
+{
+}
+#endif

@@ -26,7 +26,11 @@
 
 #define ID3v1_TAG_SIZE 128
 
+#if CONFIG_ID3
 #define ID3v1_GENRE_MAX 191
+#else
+#define ID3v1_GENRE_MAX 0
+#endif
 
 /**
  * ID3v1 genres

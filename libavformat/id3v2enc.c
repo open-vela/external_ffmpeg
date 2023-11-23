@@ -30,6 +30,7 @@
 #include "id3v2.h"
 #include "mux.h"
 
+#if CONFIG_ID3
 static void id3v2_put_size(AVIOContext *pb, int size)
 {
     avio_w8(pb, size >> 21 & 0x7f);
@@ -455,3 +456,28 @@ int ff_id3v2_write_simple(struct AVFormatContext *s, int id3v2_version,
 
     return 0;
 }
+#else
+void ff_id3v2_start(ID3v2EncContext *id3, AVIOContext *pb, int id3v2_version,
+                    const char *magic)
+{
+}
+
+int ff_id3v2_write_metadata(AVFormatContext *s, ID3v2EncContext *id3)
+{
+    return 0;
+}
+
+int ff_id3v2_write_apic(AVFormatContext *s, ID3v2EncContext *id3, AVPacket *pkt)
+{
+    return 0;
+}
+
+void ff_id3v2_finish(ID3v2EncContext *id3, AVIOContext *pb, int padding_bytes)
+{
+}
+
+int ff_id3v2_write_simple(struct AVFormatContext *s, int id3v2_version, const char *magic)
+{
+    return 0;
+}
+#endif

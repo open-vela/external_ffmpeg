@@ -28,6 +28,7 @@
 
 #include "config.h"
 
+#if CONFIG_ID3
 #if CONFIG_ZLIB
 #include <zlib.h>
 #endif
@@ -140,6 +141,10 @@ const CodecMime ff_id3v2_mime_tags[] = {
     { "PNG",        AV_CODEC_ID_PNG   }, /* ID3v2.2  */
     { "",           AV_CODEC_ID_NONE  },
 };
+#else
+#include "avio_internal.h"
+#include "id3v2.h"
+#endif
 
 int ff_id3v2_match(const uint8_t *buf, const char *magic)
 {
@@ -166,6 +171,7 @@ int ff_id3v2_tag_len(const uint8_t *buf)
     return len;
 }
 
+#if CONFIG_ID3
 static unsigned int get_size(AVIOContext *s, int len)
 {
     int v = 0;
@@ -1255,3 +1261,94 @@ int ff_id3v2_parse_priv(AVFormatContext *s, ID3v2ExtraMeta *extra_meta)
 {
     return ff_id3v2_parse_priv_dict(&s->metadata, extra_meta);
 }
+
+#else
+
+static void id3v2_read_internal(AVIOContext *pb, AVDictionary **metadata,
+                                AVFormatContext *s, const char *magic,
+                                ID3v2ExtraMeta **extra_metap, int64_t max_search_size)
+{
+    uint8_t buf[ID3v2_HEADER_SIZE];
+    int len, ret, found_header;
+    int64_t start, off, next;
+
+    if (extra_metap)
+        *extra_metap = NULL;
+
+    if (max_search_size && max_search_size < ID3v2_HEADER_SIZE)
+        return;
+
+    start = avio_tell(pb);
+    do {
+        /* save the current offset in case there's nothing to read/skip */
+        off = avio_tell(pb);
+        if (max_search_size && off - start >= max_search_size - ID3v2_HEADER_SIZE) {
+            avio_seek(pb, off, SEEK_SET);
+            break;
+        }
+
+        ret = ffio_ensure_seekback(pb, ID3v2_HEADER_SIZE);
+        if (ret >= 0)
+            ret = avio_read(pb, buf, ID3v2_HEADER_SIZE);
+
+        if (ret != ID3v2_HEADER_SIZE) {
+            avio_seek(pb, off, SEEK_SET);
+            break;
+        }
+        found_header = ff_id3v2_match(buf, magic);
+        if (found_header) {
+            /* parse ID3v2 header */
+            len = ((buf[6] & 0x7f) << 21) |
+                  ((buf[7] & 0x7f) << 14) |
+                  ((buf[8] & 0x7f) << 7) |
+                   (buf[9] & 0x7f);
+            avio_seek(pb, off + len, SEEK_SET);
+        } else
+            avio_seek(pb, off, SEEK_SET);
+    } while (found_header);
+}
+
+void ff_id3v2_read_dict(AVIOContext *pb, AVDictionary **metadata, const char *magic,
+                        ID3v2ExtraMeta **extra_meta)
+{
+    id3v2_read_internal(pb, metadata, NULL, magic, extra_meta, 0);
+}
+
+void ff_id3v2_read(AVFormatContext *s, const char *magic, ID3v2ExtraMeta **extra_meta,
+                   unsigned int max_search_size)
+{
+    id3v2_read_internal(s->pb, &s->metadata, s, magic, extra_meta, max_search_size);
+}
+
+void ff_id3v2_free_extra_meta(ID3v2ExtraMeta **extra_meta)
+{
+}
+
+int ff_id3v2_parse_apic(AVFormatContext *s, ID3v2ExtraMeta *extra_meta)
+{
+    return 0;
+}
+
+int ff_id3v2_parse_chapters(AVFormatContext *s, ID3v2ExtraMeta *extra_meta)
+{
+    return 0;
+}
+
+int ff_id3v2_parse_priv_dict(AVDictionary **d, ID3v2ExtraMeta *extra_meta)
+{
+    return 0;
+}
+
+int ff_id3v2_parse_priv(AVFormatContext *s, ID3v2ExtraMeta *extra_meta)
+{
+    return 0;
+}
+
+const CodecMime ff_id3v2_mime_tags[] = {
+    { "", AV_CODEC_ID_NONE },
+};
+
+const char * const ff_id3v2_picture_types[] = {
+    "Other",
+};
+#endif
