@@ -125,8 +125,14 @@ static inline bool movie_async_output_inactive(MovieAsyncContext *movie, int pad
 
 static inline void movie_async_notify_event(MovieAsyncContext *movie, int event, int ret, const char *extra)
 {
-    if (movie->event != NULL && movie->cookie != NULL)
+    if (movie->event != NULL && movie->cookie != NULL) {
         movie->event(movie->cookie, event, ret, extra);
+
+        if (event == AVMOVIE_ASYNC_EVENT_CLOSED) {
+            movie->event  = NULL;
+            movie->cookie = NULL;
+        }
+    }
 }
 
 static int movie_async_send_cmd(AVFilterContext *ctx, const int cmd, const void *data, size_t size)
@@ -661,11 +667,6 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                     avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
                     ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
                 }
-                break;
-
-            case AVMOVIE_ASYNC_EVENT_CLOSED:
-                movie->event  = NULL;
-                movie->cookie = NULL;
                 break;
         }
 
