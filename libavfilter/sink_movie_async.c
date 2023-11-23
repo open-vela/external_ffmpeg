@@ -967,6 +967,15 @@ static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd, const c
     reset = !strcmp(cmd, "reset");
     close = !strcmp(cmd, "close");
 
+    pending_stop = (close && args && 1 == strtoul(args, NULL, 0)) ? 1 : 0;
+
+    /*
+     * If pending_stop is required, do not send close to worker thread,
+     * cause itself will close and quit.
+     */
+    if (pending_stop && priv->state == AVMOVIE_ASYNC_STATE_STARTED)
+        return ret;
+
     if (reset || close) {
         pthread_mutex_lock(&priv->mutex);
         while ((msg = SIMPLEQ_FIRST(&priv->cmd_queue)) != NULL) {
@@ -976,21 +985,10 @@ static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd, const c
         pthread_mutex_unlock(&priv->mutex);
     }
 
-    pending_stop = (args && 1 == strtoul(args, NULL, 0)) ? 1 : 0;
-
-    /*
-     * If pending_stop is required, do not send close to worker thread,
-     * cause itself will close and quit.
-     */
-    if (pending_stop && priv->state == AVMOVIE_ASYNC_STATE_STARTED)
-        return ret;
-
     if (close)
-        ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
+        return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
     else
-        ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
-
-    return ret;
+        return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
 }
 
 static int moviesink_process_process_command(AVFilterContext *ctx, const char *cmd, const char *args)
