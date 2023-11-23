@@ -363,10 +363,11 @@ static void moviesink_start(AVFilterContext *ctx, const char *params)
         goto out;
 
     priv->state = AVMOVIE_ASYNC_STATE_STARTED;
-    priv->eof_flag = 0;
     ret = 0;
 
 out:
+    if (ret < 0)
+        priv->eof_flag = 1;
     ff_filter_set_ready(ctx, 100);
     moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
 }
