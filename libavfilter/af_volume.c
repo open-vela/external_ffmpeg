@@ -169,12 +169,12 @@ static inline void fade_samples_u8(uint8_t *dst, const uint8_t *src,
 {
     int i, j, k = 0;
     int64_t sample;
-    float step;
+    int64_t step;
 
-    step = (float)(dst_volume - src_volume) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume) << 8) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
-            sample = (int64_t)((float)src[k] - 128) * (src_volume + step * i) + 128;
+            sample = (int64_t)(src[k] - 128) * (src_volume + (step * i) >> 8) + 128;
             dst[k] = av_clip_uint8((sample >> 8) + 128);
         }
     }
@@ -192,13 +192,13 @@ static inline void fade_samples_u8_small(uint8_t *dst, const uint8_t *src,
                                          int nb_samples, int chs, int dst_volume, int src_volume)
 {
     int i, j, k = 0;
-    int64_t sample;
-    float step;
+    int sample;
+    int step;
 
-    step = (float)(dst_volume - src_volume) / nb_samples;
+    step = ((dst_volume - src_volume) << 8) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
-            sample = (int32_t)((float)src[k] - 128) * (src_volume + step * i) + 128;
+            sample = (src[k] - 128) * (src_volume + (step * i >> 8)) + 128;
             dst[k] = av_clip_uint8((sample >> 8) + 128);
         }
     }
@@ -218,12 +218,12 @@ static inline void fade_samples_s16(uint8_t *dst, const uint8_t *src,
     const int16_t *smp_src = (const int16_t *)src;
     int16_t *smp_dst = (int16_t *)dst;
     int i, j, k = 0;
-    float step;
+    int64_t step;
 
-    step = (float)(dst_volume - src_volume) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume) << 8) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
-            smp_dst[k] = av_clip_int16((int64_t)((float)smp_src[k] * (src_volume + step * i) + 128) >> 8);
+            smp_dst[k] = av_clip_int16((int64_t)(smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
         }
     }
 }
@@ -244,11 +244,12 @@ static inline void fade_samples_s16_small(uint8_t *dst, const uint8_t *src,
     const int16_t *smp_src = (const int16_t *)src;
     int16_t *smp_dst = (int16_t *)dst;
     int i, j, k = 0;
-    float step;
-    step = (float)(dst_volume - src_volume) / nb_samples;
+    int step;
+
+    step = ((dst_volume - src_volume) << 8) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
-            smp_dst[k] = av_clip_int16((int32_t)((float)smp_src[k] * (src_volume + step * i) + 128) >> 8);
+            smp_dst[k] = av_clip_int16((smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
         }
     }
 }
@@ -269,12 +270,12 @@ static inline void fade_samples_s32(uint8_t *dst, const uint8_t *src,
     const int32_t *smp_src = (const int32_t *)src;
     int32_t *smp_dst = (int32_t *)dst;
     int i, j, k = 0;
-    float step;
+    int64_t step;
 
-    step = (float)(dst_volume - src_volume) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume) << 8) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
-            smp_dst[k] = av_clipl_int32((int64_t)((float)smp_src[k] * (src_volume + step * i) + 128) >> 8);
+            smp_dst[k] = av_clipl_int32((int64_t)(smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
         }
     }
 }
