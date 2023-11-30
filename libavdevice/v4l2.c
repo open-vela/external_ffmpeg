@@ -107,6 +107,7 @@ struct video_data {
 
     bool poll_available;
     int buffer_copy;
+    bool stopped;       /**< stop required by apps. */
 
     int (*open_f)(const char *file, int oflag, ...);
     int (*close_f)(int fd);
@@ -1015,6 +1016,9 @@ static int v4l2_read_packet(AVFormatContext *ctx, AVPacket *pkt)
     struct video_data *s = ctx->priv_data;
     int res;
 
+    if (s->stopped)
+        return AVERROR_EOF;
+
     s->poll_available = false;
 
     if ((res = mmap_read_frame(ctx, pkt)) < 0) {
@@ -1253,6 +1257,7 @@ static const AVClass v4l2_cap_class = {
 
 static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size_t data_size)
 {
+    struct video_data *s = ctx->priv_data;
     switch (type) {
         case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
             struct AVDeviceCapabilitiesQuery *caps = data;
@@ -1267,7 +1272,6 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
             return 0;
         }
         case AV_APP_TO_DEV_GET_POLLFD: {
-            struct video_data *s = ctx->priv_data;
             struct pollfd *poll = data;
 
             if (!s->fd || s->poll_available)
@@ -1282,7 +1286,6 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
             return 1;
         }
         case AV_APP_TO_DEV_POLL_AVAILABLE: {
-            struct video_data *s = ctx->priv_data;
             s->poll_available = true;
 
             avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
@@ -1290,6 +1293,13 @@ static int v4l2_control_message(AVFormatContext *ctx, int type, void *data, size
             return 0;
         }
         case AV_APP_TO_DEV_START: {
+            s->stopped = false;
+            avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+
+            return 0;
+        }
+        case AV_APP_TO_DEV_STOP: {
+            s->stopped = true;
             avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
