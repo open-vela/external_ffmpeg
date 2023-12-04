@@ -199,7 +199,6 @@ static int devsink_start(AVFilterContext *ctx)
     }
     priv->ts_base  = AV_NOPTS_VALUE;
     priv->lat_base = AV_NOPTS_VALUE;
-    av_log(ctx, AV_LOG_INFO, "vsync mode %d\n", priv->mode);
 
     priv->frame_duration = av_rescale(AV_TIME_BASE, inlink->frame_rate.den, inlink->frame_rate.num);
 
@@ -441,19 +440,28 @@ static int devsink_process_command(AVFilterContext *ctx,
                                     AV_APP_TO_DEV_SET_PARAMETER,
                                     (char *)args, 0);
     } else if (!strcmp(cmd, "syncmode")) {
+        int mode;
         if (args == NULL) {
             av_log(ctx, AV_LOG_ERROR, "Invalid sync mode null\n");
             return AVERROR(EINVAL);
         }
 
         if (!strcmp(args, "audio"))
-            priv->mode = SYNC_MODE_AUDIO;
+            mode = SYNC_MODE_AUDIO;
         else if (!strcmp(args, "system"))
-            priv->mode = SYNC_MODE_SYSTEM;
+            mode = SYNC_MODE_SYSTEM;
         else {
-            av_log(ctx, AV_LOG_ERROR, "Unsupport clock mode: %s\n", args);
+            av_log(ctx, AV_LOG_ERROR, "Unsupport vsync mode: %s\n", args);
             return AVERROR(EINVAL);
         }
+
+        if (priv->mode != mode) {
+            av_log(ctx, AV_LOG_INFO, "Set vsync mode %d,%s from %d\n", mode, args, priv->mode);
+            priv->mode = mode;
+            priv->ts_base = AV_NOPTS_VALUE;
+        } else
+            av_log(ctx, AV_LOG_INFO, "vsync mode already set,%d,%s\n", priv->mode, args);
+
         return 0;
     } else if (!strcmp(cmd, "flush")) {
         devsink_timer_stop(ctx);
