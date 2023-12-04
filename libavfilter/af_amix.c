@@ -28,6 +28,9 @@
  * output.
  */
 
+#include <sys/timerfd.h>
+#include <poll.h>
+
 #include "libavutil/attributes.h"
 #include "libavutil/audio_fifo.h"
 #include "libavutil/avassert.h"
@@ -187,7 +190,8 @@ typedef struct MixContext {
     float *scale_norm;          /**< normalization factor for every input */
     int64_t next_pts;           /**< calculated pts for next output frame */
     FrameList *frame_list;      /**< list of frame info for the first input */
-    timer_t timer_id;
+    int timer_fd;
+    int timer_on;
     int fifo_samples;
 } MixContext;
 
@@ -327,51 +331,35 @@ static bool is_timeout(AVFilterContext *ctx)
     MixContext *s = ctx->priv;
     struct itimerspec its;
 
-    if (s->timer_id && timer_gettime(s->timer_id, &its) == 0 &&
+    if (s->timer_on && timerfd_gettime(s->timer_fd, &its) == 0 &&
         its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0)
         return true;
 
     return false;
 }
 
-static void timer_notify(union sigval value)
-{
-    AVFilterContext *ctx = value.sival_ptr;
-
-    ff_filter_set_ready(ctx, 10);
-}
-
 static int update_timer(AVFilterContext *ctx, bool start)
 {
     MixContext *s = ctx->priv;
     struct itimerspec its;
-    struct sigevent se = {0};
 
-    if (s->timeout <= 0 || start == !!s->timer_id)
+    if (s->timeout <= 0 || start == s->timer_on)
         return 0;
 
-    if (!start && s->timer_id) {
-        timer_delete(s->timer_id);
-        s->timer_id = NULL;
+    if (!start && s->timer_on) {
+        timerfd_settime(s->timer_fd, 0, NULL, NULL);
+        s->timer_on = false;
         return 0;
-    }
-
-    if (!s->timer_id) {
-        se.sigev_notify            = SIGEV_THREAD;
-        se.sigev_value.sival_ptr   = ctx;
-        se.sigev_notify_function   = timer_notify;
-        se.sigev_notify_attributes = NULL;
-
-        if (timer_create(CLOCK_MONOTONIC, &se, &s->timer_id) < 0)
-            return AVERROR(errno);
     }
 
     memset(&its, 0, sizeof(its));
     its.it_value.tv_sec  = s->timeout / 1000;
     its.it_value.tv_nsec = s->timeout % 1000 * 1000000;
 
-    if (timer_settime(s->timer_id, 0, &its, NULL) < 0)
+    if (timerfd_settime(s->timer_fd, 0, &its, NULL) < 0)
         return AVERROR(errno);
+
+    s->timer_on = true;
 
     return 0;
 }
@@ -620,8 +608,7 @@ static int activate(AVFilterContext *ctx)
 
     if (ff_outlink_frame_wanted(outlink)) {
         int wanted_samples;
-
-        if (!s->timer_id)
+        if (!s->timer_on)
             update_timer(ctx, true);
 
         if (s->first_input < 0 || !(s->input_state[s->first_input] & INPUT_ON))
@@ -708,6 +695,10 @@ static av_cold int init(AVFilterContext *ctx)
     if (!s->input_scale || !s->scale_norm)
         return AVERROR(ENOMEM);
 
+    s->timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (s->timer_fd < 0)
+        return AVERROR(errno);
+
     return 0;
 }
 
@@ -732,6 +723,8 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     for (i = 0; i < ctx->nb_inputs; i++)
         av_freep(&ctx->input_pads[i].name);
+
+    close(s->timer_fd);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -774,11 +767,12 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
                            char *res, int res_len, int flags)
 {
     MixContext *s = ctx->priv;
+    struct pollfd *pollfd;
     int ret;
 
     if (!strcmp(cmd, "dump")) {
         int pos = 0;
-        int ret, i;
+        int i;
 
         for (i = 0; i < s->nb_inputs; i++) {
             ret = snprintf(res + pos, res_len - pos, "%d(%u,%d) ",
@@ -790,6 +784,28 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
             pos += ret;
             if (pos >= res_len)
                 break;
+        }
+
+        return 0;
+    } else if (!strcmp(cmd, "get_pollfd")) {
+        pollfd = (struct pollfd *)res;
+
+        if (!res || res_len < sizeof(struct pollfd))
+            return AVERROR(EINVAL);
+
+        pollfd->fd      = s->timer_fd;
+        pollfd->events  = POLLIN;
+
+        return 1;
+
+    } else if (!strcmp(cmd, "poll_available")) {
+        pollfd = (struct pollfd *)res;
+
+        if (pollfd->revents & POLLIN) {
+            uint64_t exp;
+            read(pollfd->fd, &exp, sizeof(exp));
+            ff_filter_set_ready(ctx, 10);
+            return 1;
         }
 
         return 0;
@@ -859,5 +875,5 @@ const AVFilter ff_af_amix = {
     FILTER_QUERY_FUNC(query_formats),
     .process_command = process_command,
     .forward_command = forward_command,
-    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
+    .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SUPPORT_POLL,
 };
