@@ -656,6 +656,22 @@ static int movie_async_loop(AVFilterContext *ctx)
     return ret;
 }
 
+static int movie_async_send_vsyncmode(AVFilterContext *ctx, int audio_alive)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int i, ret;
+
+    for (i = 0; i < ctx->nb_outputs; i++)
+        if (movie->streams[i].type == AVMEDIA_TYPE_VIDEO) {
+            const char *mode = audio_alive ? "audio" : "system";
+            ret = avfilter_forward_command(ctx, i, NULL, "syncmode", mode, NULL, 0, 0);
+            if (ret < 0)
+                av_log(ctx, AV_LOG_ERROR, "Failed to set syncmode:%s ret %d, %s.\n", mode, ret, av_err2str(ret));
+        }
+
+    return 0;
+}
+
 static void movie_async_proc_event(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -677,14 +693,7 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                 for (i = 0; i < ctx->nb_outputs; i++)
                     avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
 
-                for (i = 0; i < ctx->nb_outputs; i++)
-                    if (movie->streams[i].type == AVMEDIA_TYPE_VIDEO) {
-                        if (ctx->nb_outputs == 1)
-                            avfilter_forward_command(ctx, i, NULL, "syncmode", "system", NULL, 0, 0);
-                        else
-                            avfilter_forward_command(ctx, i, NULL, "syncmode", "audio", NULL, 0, 0);
-                        break;
-                    }
+                movie_async_send_vsyncmode(ctx, ctx->outputs[0]->type == AVMEDIA_TYPE_AUDIO);
                 break;
 
             case AVMOVIE_ASYNC_EVENT_PAUSED:
@@ -1342,6 +1351,10 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
             av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
             return movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, 0, NULL);
         }
+
+        if (movie->streams[pad_idx].type == AVMEDIA_TYPE_AUDIO)
+            return movie_async_send_vsyncmode(ctx, false);
+
         return 0;
     } else {
         av_log(ctx, AV_LOG_ERROR, "src:%s unsupported command:%s.\n", ctx->name, cmd);
