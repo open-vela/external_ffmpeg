@@ -303,7 +303,6 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
     struct AVOptionRanges *ranges;
     int values0[64], values1[64];
     int nb_ranges, is_range = 0;
-    uint16_t samplerate;
     int ret;
 
     ranges = av_mallocz(sizeof(struct AVOptionRanges));
@@ -344,8 +343,7 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
             nb_ranges = 1;
             is_range  = (values0[0] != values1[0]);
         } else {
-            samplerate = *(uint16_t *)others.ac_controls.b;
-            ret = ff_nuttx_samplerate_convert(samplerate, values0, 64);
+            ret = ff_nuttx_samplerate_convert(others.ac_controls.hw[0], values0, 64);
             if (ret < 0)
                 goto err;
 
