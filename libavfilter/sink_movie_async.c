@@ -70,8 +70,6 @@ typedef struct MovieSinkPriv {
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
 
-    int                       eof_flag;
-
     int                       state;
     void                      *cookie;
     unsigned                  current_ms;
@@ -348,9 +346,6 @@ static void moviesink_prepare(AVFilterContext *ctx, const char *filename)
     priv->state = AVMOVIE_ASYNC_STATE_PREPARED;
 
 out:
-    if (ret < 0)
-        priv->eof_flag = 1;
-
     moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
 }
 
@@ -367,8 +362,6 @@ static void moviesink_start(AVFilterContext *ctx, const char *params)
     ret = 0;
 
 out:
-    if (ret < 0)
-        priv->eof_flag = 1;
     ff_filter_set_ready(ctx, 100);
     moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
 }
@@ -449,9 +442,6 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
 
 out:
     av_write_trailer(priv->format_ctx);
-    priv->eof_flag = 1;
-    ff_filter_set_ready(ctx, 100);
-
     moviesink_clear_dat(ctx);
 
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
@@ -553,9 +543,7 @@ static void *moviesink_thread(void *arg)
             exit = moviesink_proc_cmd(ctx, msg);
         } else if (moviesink_dat_valid(ctx)) {
             pthread_mutex_unlock(&priv->mutex);
-
-            if (moviesink_proc_dat(ctx) == AVERROR_EOF)
-                exit = true;
+            moviesink_proc_dat(ctx);
         } else if (exit) {
             priv->state  = AVMOVIE_ASYNC_STATE_NOP;
             moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
@@ -597,11 +585,6 @@ static int moviesink_activate(AVFilterContext *ctx)
     AVFilterLink *link;
     AVFrame *frame;
     int64_t pts;
-
-    if (priv->eof_flag) {
-        moviesink_set_eof(ctx);
-        moviesink_clear_dat(ctx);
-    }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (moviesink_dat_full(ctx, i))
@@ -924,8 +907,6 @@ static int moviesink_process_prepare(AVFilterContext *ctx, const char *args)
     if (!priv->format)
         return AVERROR(EINVAL);
 
-    priv->eof_flag = 0;
-
     return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
 }
 
@@ -959,24 +940,15 @@ static int moviesink_process_pause(AVFilterContext *ctx)
     return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
 }
 
-static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd, const char *args)
+static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd)
 {
     MovieSinkPriv *priv = ctx->priv;
     bool reset, close;
     MovieSinkCmd *msg;
-    int ret = 0, pending_stop;
+    int ret = 0;
 
     reset = !strcmp(cmd, "reset");
     close = !strcmp(cmd, "close");
-
-    pending_stop = (close && args && 1 == strtoul(args, NULL, 0)) ? 1 : 0;
-
-    /*
-     * If pending_stop is required, do not send close to worker thread,
-     * cause itself will close and quit.
-     */
-    if (pending_stop && priv->state == AVMOVIE_ASYNC_STATE_STARTED)
-        return ret;
 
     if (reset || close) {
         pthread_mutex_lock(&priv->mutex);
@@ -988,9 +960,15 @@ static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd, const c
     }
 
     if (close)
-        return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
+        ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
     else
-        return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
+        ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
+
+    if (ret < 0)
+        return ret;
+
+    moviesink_set_eof(ctx);
+    return ret;
 }
 
 static int moviesink_process_process_command(AVFilterContext *ctx, const char *cmd, const char *args)
@@ -1074,7 +1052,7 @@ static int moviesink_process_command(AVFilterContext *ctx, const char *cmd, cons
         return moviesink_process_pause(ctx);
     } else if (!strcmp(cmd, "stop") || !strcmp(cmd, "reset") || !strcmp(cmd, "close")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s %s. pos %d\n", __func__, ctx->name, cmd, priv->current_ms);
-        return moviesink_process_quit(ctx, cmd, args);
+        return moviesink_process_quit(ctx, cmd);
     } else if (!strcmp(cmd, "get_position")) {
         return moviesink_get_position(ctx, res, res_len);
     } else if (!strcmp(cmd, "dump")) {
