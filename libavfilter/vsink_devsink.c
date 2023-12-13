@@ -50,10 +50,10 @@ typedef struct DevSinkPriv {
     AVPacket        packet;
     bool            frame_uncoded;
     int             frame_duration;
-    int64_t         last_time;
     int             max_latency;
     int             max_outsync;
-    int             ts_offset;
+    int64_t         delta_base;
+    int64_t         lat_base;
 } DevSinkPriv;
 
 static void devsink_timer_start(AVFilterContext *ctx, int us)
@@ -76,13 +76,16 @@ static void devsink_timer_stop(AVFilterContext *ctx)
     timerfd_settime(priv->timer_fd, 0, &interval, NULL);
 }
 
-static int64_t devsink_get_audio_timestamp(AVFilterContext *ctx)
+static void devsink_get_audio_timestamp(AVFilterContext *ctx, int64_t* ts, int64_t* lat)
 {
     struct AVFilterGraph *graph = ctx->graph;
+    DevSinkPriv *priv = ctx->priv;
     AVFilterContext *sink = NULL;
     AVFilterLink *inlink;
-    int64_t pts = AV_NOPTS_VALUE;
     int i;
+
+    *ts = AV_NOPTS_VALUE;
+    *lat = 0;
 
     for (i = 0; i < graph->sink_links_count; i++) {
         AVFilterContext *tmp = graph->sink_links[i]->dst;
@@ -94,31 +97,45 @@ static int64_t devsink_get_audio_timestamp(AVFilterContext *ctx)
         }
     }
 
-    if (sink)
-        avfilter_process_command(sink, "get_timestamp", NULL, (char *)&pts, sizeof(int64_t), 0);
-
-    return pts;
+    if (sink) {
+        int64_t *res[] = { ts, lat };
+        avfilter_process_command(sink, "get_timestamp", NULL, (char *)res, sizeof(res), 0);
+    }
 }
 
-static int devsink_sync_video(AVFilterContext *ctx, int64_t apts, int64_t vpts)
+static int devsink_sync_video(AVFilterContext *ctx, int64_t pts, int64_t ts, int64_t lat)
 {
     DevSinkPriv *priv = ctx->priv;
-    int64_t now = av_gettime_relative();
-    int64_t diff = 0;
+    int64_t now, diff;
 
-    if (apts >= 0)
-        diff = (vpts + priv->ts_offset) - apts;
-    else if (priv->last_time)
-        diff = priv->frame_duration - (now - priv->last_time);
+    if (priv->delta_base == AV_NOPTS_VALUE) {
+        priv->delta_base = pts - ts;
+        priv->lat_base   = lat;
+        av_log(ctx, AV_LOG_INFO, "sync delta:%lld pts:%lld lat:%lld\n", priv->delta_base, pts, lat);
+    }
 
-    if (diff > 0)
-        return diff <= priv->max_outsync ? diff : priv->frame_duration;
+    now  = ts + priv->delta_base;
+    diff = pts - now;
 
-    priv->last_time = now;
-    if (diff >= -priv->max_latency)
+    if (FFABS(diff) > priv->max_outsync) {
+        priv->delta_base = pts - ts;
+        priv->lat_base   = lat;
+        av_log(ctx, AV_LOG_INFO, "resync delta:%lld pts:%lld lat:%lld diff%lld\n", priv->delta_base, pts, lat, diff);
         return 0;
+    }
 
-    return -1;
+    diff += priv->lat_base;
+
+    if (diff > priv->frame_duration)
+        return priv->frame_duration;
+    else if (diff >= 0)
+        return diff;
+    else if (diff >= -priv->max_latency)
+        return 0;
+    else
+        return -1;
+
+    return 0;
 }
 
 static int devsink_control_message(struct AVFormatContext *s, int type,
@@ -191,8 +208,7 @@ static int devsink_start(AVFilterContext *ctx)
         avcodec_free_context(&priv->enc_ctx);
         return ret;
     }
-
-    priv->last_time = 0;
+    priv->delta_base = AV_NOPTS_VALUE;
 
     return 0;
 }
@@ -307,8 +323,7 @@ static int devsink_activate(AVFilterContext *ctx)
     AVFilterLink *inlink = ctx->inputs[0];
     DevSinkPriv *priv = ctx->priv;
     AVFrame *frame;
-    int64_t pts;
-    int64_t apts;
+    int64_t pts, ts, lat;
     int ret;
 
     if (ff_inlink_check_available_frame(inlink)) {
@@ -319,11 +334,12 @@ static int devsink_activate(AVFilterContext *ctx)
             return ret;
         }
 
-        apts = devsink_get_audio_timestamp(ctx);
-        if (apts != AV_NOPTS_VALUE) {
+        devsink_get_audio_timestamp(ctx, &ts, &lat);
+        if (ts != AV_NOPTS_VALUE) {
             frame = ff_inlink_peek_frame(inlink, 0);
             pts = av_rescale_q(frame->pts, inlink->time_base, AV_TIME_BASE_Q);
-            ret = devsink_sync_video(ctx, apts, pts);
+
+            ret = devsink_sync_video(ctx, pts, ts, lat);
             if (ret > 0) {
                 devsink_timer_start(ctx, ret);
                 return 0;
@@ -517,7 +533,6 @@ static const AVOption devsink_options[] = {
     { "pixel_fmt",   "", OFFSET(pixel_fmt),   AV_OPT_TYPE_INT,    {.i64 = AV_PIX_FMT_NONE}, -1,       INT_MAX, FLAGSR },
     { "max_latency", "", OFFSET(max_latency), AV_OPT_TYPE_INT,    {.i64 = 10000},           0,        INT_MAX, FLAGS },
     { "max_outsync", "", OFFSET(max_outsync), AV_OPT_TYPE_INT,    {.i64 = 200000},          0,        INT_MAX, FLAGS },
-    { "ts_offset",   "", OFFSET(ts_offset),   AV_OPT_TYPE_INT,    {.i64 = 0},               -INT_MAX, INT_MAX, FLAGS },
     { NULL },
 };
 
