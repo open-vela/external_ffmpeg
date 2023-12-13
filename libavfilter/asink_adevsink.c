@@ -508,19 +508,20 @@ static int adevsink_process_command(AVFilterContext *ctx,
                                     AV_APP_TO_DEV_DUMP,
                                     res, res_len);
     } else if (!strcmp(cmd, "get_timestamp")) {
-        int64_t *ts = (int64_t *)res;
-        int64_t pts, wall;
+        int64_t *ts  = ((int64_t **)res)[0];
+        int64_t *lat = ((int64_t **)res)[1];
 
-        int ret = av_get_output_timestamp(priv->fmt_ctx, 0, &pts, &wall);
-        if (ret >= 0)
-            *ts = av_rescale_q(pts, ctx->inputs[0]->time_base, AV_TIME_BASE_Q);
+        int ret = av_get_output_timestamp(priv->fmt_ctx, 0, ts, lat);
+        if (ret >= 0) {
+            *ts  = av_rescale_q(*ts,  ctx->inputs[0]->time_base, AV_TIME_BASE_Q);
+            *lat = av_rescale_q(*lat, ctx->inputs[0]->time_base, AV_TIME_BASE_Q);
+        }
 
         return ret;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
 }
-
 
 static int adevsink_forward_command(AVFilterContext *ctx, int pad_idx, const char* target, const char *cmd,
                                     const char *arg, char *res, int res_len, int flags)
