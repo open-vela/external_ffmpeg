@@ -1135,9 +1135,12 @@ static int mov_read_ftyp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (strcmp(type, "qt  "))
         c->isom = 1;
-    av_log(c->fc, AV_LOG_DEBUG, "ISO: File Type Major Brand: %.4s\n",(char *)&type);
+    av_log(c->fc, AV_LOG_INFO, "ISO: File Type Major Brand: %.4s\n",(char *)&type);
     av_dict_set(&c->fc->metadata, "major_brand", type, 0);
     c->is_still_picture_avif = !strncmp(type, "avif", 4);
+#if MOV_DEMUXER_INDEX_SIZE
+    c->is_fmp4 = !strncmp(type, "mp42", 4);
+#endif
     minor_ver = avio_rb32(pb); /* minor version */
     av_dict_set_int(&c->fc->metadata, "minor_version", minor_ver, 0);
 
@@ -2742,6 +2745,7 @@ static int mov_read_stsc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         sc->stsc_data[i].first = avio_rb32(pb);
         sc->stsc_data[i].count = avio_rb32(pb);
         sc->stsc_data[i].id = avio_rb32(pb);
+        av_log(c->fc, AV_LOG_TRACE,"%s first:%d count:%d\n",__func__, sc->stsc_data[i].first, sc->stsc_data[i].count);
     }
 
     sc->stsc_count = i;
@@ -3073,6 +3077,7 @@ static int mov_read_stts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (duration)
         st->duration= FFMIN(st->duration, duration);
     sc->track_end = duration;
+    av_log(c->fc, AV_LOG_INFO, "stts_count %u stts_data[0].duration %u\n", sc->stts_count, sc->stts_data[0].duration);
     return 0;
 }
 
@@ -4135,7 +4140,7 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
                 av_log(mov->fc, AV_LOG_WARNING, "STSZ sample size %d invalid (too large), ignoring\n", sc->stsz_sample_size);
                 sc->stsz_sample_size = sc->sample_size;
             }
-            if (sc->stsz_sample_size>0 && sc->stsz_sample_size < sc->sample_size) {
+            if (sc->stsz_sample_size > 0 && sc->stsz_sample_size < sc->sample_size) {
                 av_log(mov->fc, AV_LOG_WARNING, "STSZ sample size %d invalid (too small), ignoring\n", sc->stsz_sample_size);
                 sc->stsz_sample_size = sc->sample_size;
             }
@@ -4326,6 +4331,324 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
     mov_estimate_video_delay(mov, st);
 }
 
+#if MOV_DEMUXER_INDEX_SIZE
+/* If the media is fmp4, there is no need for memory optimization,
+   Only audio streams will be optimized for memory */
+static bool mov_media_type_check(MOVContext *c, AVStream *st)
+{
+    return !c->is_fmp4 && st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
+}
+
+static void mov_save_last_index_info(AVStream *st, unsigned int chunk_index,
+                                     unsigned int chunk_sample, unsigned int stts_index,
+                                     unsigned int stts_sample, unsigned int stsc_index,
+                                     int64_t offset, int64_t dts)
+{
+    FFStream *const sti = ffstream(st);
+
+    sti->last_chunk_index = chunk_index;
+    sti->last_chunk_sample = chunk_sample + 1;
+    sti->last_stts_index = stts_index;
+    sti->last_stts_sample = stts_sample;
+    sti->last_stsc_index = stsc_index;
+    sti->last_offset = offset;
+    sti->last_dts = dts;
+}
+
+static void mov_build_dynamic_index_info(MOVContext *mov, AVStream *st, int chunk_index, int chunk_sample_index)
+{
+    MOVStreamContext *sc = st->priv_data;
+    FFStream *const sti = ffstream(st);
+    int64_t current_offset;
+    int64_t current_dts = 0;
+    int64_t next_offset = 0;
+    uint64_t stream_size = 0;
+    unsigned int stts_index = 0;
+    unsigned int stsc_index = 0;
+    unsigned int stss_index = 0;
+    unsigned int stps_index = 0;
+    unsigned int current_sample = 0;
+    unsigned int stts_sample = 0;
+    unsigned int sample_size;
+    unsigned int distance = 0;
+    unsigned int rap_group_index = 0;
+    unsigned int rap_group_sample = 0;
+    unsigned int build = 0;
+    unsigned int condition = 0;
+    unsigned int i, j;
+
+    int rap_group_present = sc->rap_group_count && sc->rap_group;
+    int key_off = (sc->keyframe_count && sc->keyframes[0] > 0) || (sc->stps_count && sc->stps_data[0] > 0);
+    current_dts -= sc->dts_shift;
+
+    for (i = 0; i < sc->chunk_count; i++) {
+        if (condition)
+            break;
+        next_offset = i+1 < sc->chunk_count ? sc->chunk_offsets[i+1] : INT64_MAX;
+        current_offset = sc->chunk_offsets[i];
+        sti->last_chunk_offsets = sc->chunk_offsets[i];
+        while (mov_stsc_index_valid(stsc_index, sc->stsc_count) &&
+            i + 1 == sc->stsc_data[stsc_index + 1].first)
+            stsc_index++;
+
+        if (next_offset > current_offset && sc->sample_size > 0 && sc->sample_size < sc->stsz_sample_size &&
+            sc->stsc_data[stsc_index].count * (int64_t)sc->stsz_sample_size > next_offset - current_offset) {
+            av_log(mov->fc, AV_LOG_WARNING, "STSZ sample size %d invalid (too large), ignoring\n", sc->stsz_sample_size);
+            sc->stsz_sample_size = sc->sample_size;
+        }
+        if (sc->stsz_sample_size>0 && sc->stsz_sample_size < sc->sample_size) {
+            av_log(mov->fc, AV_LOG_WARNING, "STSZ sample size %d invalid (too small), ignoring\n", sc->stsz_sample_size);
+            sc->stsz_sample_size = sc->sample_size;
+        }
+
+        for (j = 0; j < sc->stsc_data[stsc_index].count; j++) {
+            int keyframe = 0;
+            if (current_sample >= sc->sample_count) {
+                av_log(mov->fc, AV_LOG_ERROR, "wrong sample count\n");
+                return;
+            }
+            if (i == chunk_index - 1 && j == chunk_sample_index)
+                build = 1;
+
+            if (!sc->keyframe_absent && (!sc->keyframe_count || current_sample + key_off == sc->keyframes[stss_index])) {
+                keyframe = 1;
+                if (stss_index + 1 < sc->keyframe_count)
+                    stss_index++;
+            } else if (sc->stps_count && current_sample+key_off == sc->stps_data[stps_index]) {
+                keyframe = 1;
+                if (stps_index + 1 < sc->stps_count)
+                    stps_index++;
+            }
+            if (rap_group_present && rap_group_index < sc->rap_group_count) {
+                if (sc->rap_group[rap_group_index].index > 0)
+                    keyframe = 1;
+                if (++rap_group_sample == sc->rap_group[rap_group_index].count) {
+                    rap_group_sample = 0;
+                    rap_group_index++;
+                }
+            }
+            if (sc->keyframe_absent && !sc->stps_count && !rap_group_present && (i==0 && j==0))
+                keyframe = 1;
+            if (keyframe)
+                distance = 0;
+            sample_size = sc->stsz_sample_size > 0 ? sc->stsz_sample_size : sc->sample_sizes[current_sample];
+            av_log(mov->fc, AV_LOG_TRACE, "%s current_sample:%d sample_size:%d\n", __func__, current_sample, sample_size);
+            if (sc->pseudo_stream_id == -1 ||
+               sc->stsc_data[stsc_index].id - 1 == sc->pseudo_stream_id) {
+                if (build) {
+                    AVIndexEntry *e;
+                    if (sample_size > 0x3FFFFFFF) {
+                        av_log(mov->fc, AV_LOG_ERROR, "Sample size %u is too large\n", sample_size);
+                        return;
+                    }
+                    e = &sti->index_entries[sti->current_build_index++];
+                    e->pos = current_offset;
+                    e->timestamp = current_dts;
+                    e->size = sample_size;
+                    e->min_distance = distance;
+                    e->flags = keyframe ? AVINDEX_KEYFRAME : 0;
+                    av_log(mov->fc, AV_LOG_TRACE, "AVIndex stream %d, sample %u, offset %"PRIx64", dts %"PRId64", "
+                           "size %u, distance %u, keyframe %d\n", st->index, current_sample,
+                            current_offset, current_dts, sample_size, distance, keyframe);
+                }
+            }
+
+            if(sti->first_timestamp == AV_NOPTS_VALUE)
+                sti->first_timestamp = current_dts;
+            current_offset += sample_size;
+            stream_size += sample_size;
+            current_dts += sc->stts_data[stts_index].duration;
+            distance++;
+            stts_sample++;
+            current_sample++;
+            sti->build_nb_sample = current_sample;
+            if (stts_index + 1 < sc->stts_count && stts_sample == sc->stts_data[stts_index].count) {
+                stts_sample = 0;
+                stts_index++;
+            }
+
+            if (sti->current_build_index == MOV_DEMUXER_INDEX_SIZE) {
+                mov_save_last_index_info(st, i, j, stts_index, stts_sample, stsc_index, current_offset, current_dts);
+                av_log(mov,AV_LOG_INFO,"line %d last_stsc_index:%d, last_chunk_index:%d, last_chunk_sample:%d\n",
+                       __LINE__, sti->last_stsc_index, sti->last_chunk_index, sti->last_chunk_sample);
+                condition = 1;
+                break;
+            }
+        }
+    }
+
+    if (st->duration > 0)
+        st->codecpar->bit_rate = stream_size * 8 * sc->time_scale/st->duration;
+}
+
+static void mov_build_dynamic_index(MOVContext *mov, AVStream *st)
+{
+    MOVStreamContext *sc = st->priv_data;
+    FFStream *const sti = ffstream(st);
+    MOVCtts *ctts_data_old = sc->ctts_data;
+    unsigned int ctts_count_old = sc->ctts_count;
+    int i, j;
+
+    /* only use old uncompressed audio chunk demuxing when stts specifies it */
+    if (!(sc->stts_count == 1 && sc->stts_data[0].duration == 1)) {
+        if (!sc->sample_count || sti->nb_index_entries)
+            return;
+        if (sc->sample_count >= UINT_MAX / sizeof(*sti->index_entries) - sti->nb_index_entries)
+            return;
+
+        if (av_reallocp_array(&sti->index_entries,
+                              MOV_DEMUXER_INDEX_SIZE * 2,
+                              sizeof(*sti->index_entries)) < 0) {
+            sti->nb_index_entries = 0;
+            return;
+        }
+        sti->index_entries_allocated_size = MOV_DEMUXER_INDEX_SIZE * 2 * sizeof(*sti->index_entries);
+        sti->nb_index_entries = MOV_DEMUXER_INDEX_SIZE * 2;
+        sti->current_build_index = 0;
+        sti->build_nb_sample = 0;
+        sti->had_new_build = 0;
+        sti->last_stsc_index = 0;
+        if (ctts_data_old) {
+            // Expand ctts entries such that we have a 1-1 mapping with samples
+            if (sc->sample_count >= UINT_MAX / sizeof(*sc->ctts_data))
+                return;
+            sc->ctts_count = 0;
+            sc->ctts_allocated_size = 0;
+            sc->ctts_data = av_fast_realloc(NULL, &sc->ctts_allocated_size,
+                                    sc->sample_count * sizeof(*sc->ctts_data));
+            if (!sc->ctts_data) {
+                av_free(ctts_data_old);
+                return;
+            }
+
+            memset((uint8_t*)(sc->ctts_data), 0, sc->ctts_allocated_size);
+
+            for (i = 0; i < ctts_count_old &&
+                        sc->ctts_count < sc->sample_count; i++)
+                for (j = 0; j < ctts_data_old[i].count &&
+                            sc->ctts_count < sc->sample_count; j++)
+                    add_ctts_entry(&sc->ctts_data, &sc->ctts_count,
+                                   &sc->ctts_allocated_size, 1,
+                                   ctts_data_old[i].duration);
+            av_free(ctts_data_old);
+        }
+
+        mov_build_dynamic_index_info(mov, st, 1, 0);
+    } else {
+        unsigned chunk_samples, total = 0;
+        int64_t current_offset;
+        int64_t current_dts = 0;
+        unsigned int stsc_index = 0;
+
+        if (!sc->chunk_count)
+            return;
+
+        // compute total chunk count
+        for (i = 0; i < sc->stsc_count; i++) {
+            unsigned count, chunk_count;
+
+            chunk_samples = sc->stsc_data[i].count;
+            if (i != sc->stsc_count - 1 &&
+                sc->samples_per_frame && chunk_samples % sc->samples_per_frame) {
+                av_log(mov->fc, AV_LOG_ERROR, "error unaligned chunk\n");
+                return;
+            }
+
+            if (sc->samples_per_frame >= 160) { // gsm
+                count = chunk_samples / sc->samples_per_frame;
+            } else if (sc->samples_per_frame > 1) {
+                unsigned samples = (1024/sc->samples_per_frame)*sc->samples_per_frame;
+                count = (chunk_samples+samples-1) / samples;
+            } else {
+                count = (chunk_samples+1023) / 1024;
+            }
+
+            if (mov_stsc_index_valid(i, sc->stsc_count))
+                chunk_count = sc->stsc_data[i+1].first - sc->stsc_data[i].first;
+            else
+                chunk_count = sc->chunk_count - (sc->stsc_data[i].first - 1);
+            total += chunk_count * count;
+        }
+
+        av_log(mov->fc, AV_LOG_INFO, "chunk count %u nb_index_entries:%d\n", total,sti->nb_index_entries);
+        if (total >= UINT_MAX / sizeof(*sti->index_entries) - sti->nb_index_entries)
+            return;
+        if (av_reallocp_array(&sti->index_entries,
+                              MOV_DEMUXER_INDEX_SIZE * 2,
+                              sizeof(*sti->index_entries)) < 0) {
+            sti->nb_index_entries = 0;
+            return;
+        }
+        sti->index_entries_allocated_size = MOV_DEMUXER_INDEX_SIZE * 2 * sizeof(*sti->index_entries);
+
+        // populate index
+        for (i = 0; i < sc->chunk_count; i++) {
+            current_offset = sc->chunk_offsets[i];
+            if (mov_stsc_index_valid(stsc_index, sc->stsc_count) &&
+                i + 1 == sc->stsc_data[stsc_index + 1].first) {
+                stsc_index++;
+                sti->last_stsc_index = stsc_index;
+            }
+            chunk_samples = sc->stsc_data[stsc_index].count;
+
+            while (chunk_samples > 0) {
+                AVIndexEntry *e;
+                unsigned size, samples;
+
+                if (sc->samples_per_frame > 1 && !sc->bytes_per_frame) {
+                    avpriv_request_sample(mov->fc,
+                           "Zero bytes per frame, but %d samples per frame",
+                           sc->samples_per_frame);
+                    return;
+                }
+
+                if (sc->samples_per_frame >= 160) { // gsm
+                    samples = sc->samples_per_frame;
+                    size = sc->bytes_per_frame;
+                } else {
+                    if (sc->samples_per_frame > 1) {
+                        samples = FFMIN((1024 / sc->samples_per_frame)*
+                                        sc->samples_per_frame, chunk_samples);
+                        size = (samples / sc->samples_per_frame) * sc->bytes_per_frame;
+                    } else {
+                        samples = FFMIN(1024, chunk_samples);
+                        size = samples * sc->sample_size;
+                    }
+                }
+
+                if (sti->nb_index_entries >= total) {
+                    av_log(mov->fc, AV_LOG_ERROR, "wrong chunk count %u\n", total);
+                    return;
+                }
+                if (size > 0x3FFFFFFF) {
+                    av_log(mov->fc, AV_LOG_ERROR, "Sample size %u is too large\n", size);
+                    return;
+                }
+                e = &sti->index_entries[sti->nb_index_entries++];
+                e->pos = current_offset;
+                e->timestamp = current_dts;
+                e->size = size;
+                e->min_distance = 0;
+                e->flags = AVINDEX_KEYFRAME;
+                av_log(mov->fc, AV_LOG_TRACE, "AVIndex stream %d, chunk %u, offset %"PRIx64", dts %"PRId64", "
+                       "size %u, duration %u\n", st->index, i, current_offset, current_dts,
+                       size, samples);
+
+                current_offset += size;
+                current_dts += samples;
+                chunk_samples -= samples;
+                if (sti->current_build_index == MOV_DEMUXER_INDEX_SIZE) {
+                    mov_save_last_index_info(st, i, chunk_samples, 1, 0, 0, current_offset, current_dts);
+                    av_log(mov,AV_LOG_INFO,"line:%d last_stsc_index:%d, last_chunk_index:%d, last_chunk_sample:%d\n",
+                           __LINE__, sti->last_stsc_index, sti->last_chunk_index, sti->last_chunk_sample);
+                    return;
+                }
+            }
+        }
+    }
+}
+#endif
+
 static int test_same_origin(const char *src, const char *ref) {
     char src_proto[64];
     char ref_proto[64];
@@ -4483,9 +4806,17 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     fix_timescale(c, sc);
 
     avpriv_set_pts_info(st, 64, 1, sc->time_scale);
+#if MOV_DEMUXER_INDEX_SIZE
+    /* ignore media editlist info if do memory optimization */
+    c->ignore_editlist = 1;
 
+    if (mov_media_type_check(c, st))
+        mov_build_dynamic_index(c, st);
+    else
+        mov_build_index(c, st);
+#else
     mov_build_index(c, st);
-
+#endif
     if (sc->dref_id-1 < sc->drefs_count && sc->drefs[sc->dref_id-1].path) {
         MOVDref *dref = &sc->drefs[sc->dref_id - 1];
         if (c->enable_drefs) {
@@ -4557,10 +4888,7 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             ffstream(st)->need_parsing = AVSTREAM_PARSE_FULL;
     }
     /* Do not need those anymore. */
-    av_freep(&sc->chunk_offsets);
-    av_freep(&sc->sample_sizes);
     av_freep(&sc->keyframes);
-    av_freep(&sc->stts_data);
     av_freep(&sc->stps_data);
     av_freep(&sc->elst_data);
     av_freep(&sc->rap_group);
@@ -7587,9 +7915,14 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             }
         }
     }
-
+#if MOV_DEMUXER_INDEX_SIZE
+    if(mov_media_type_check(c, st))
+        mov_build_dynamic_index(c, st);
+    else
+        mov_build_index(c, st);
+#else
     mov_build_index(c, st);
-
+#endif
     // For still AVIF images, the iloc box contains all the necessary
     // information that would generally be provided by the moov box. So simply
     // mark that we have found the moov box so that parsing can continue.
@@ -8627,6 +8960,153 @@ static int mov_read_header(AVFormatContext *s)
     return 0;
 }
 
+#if MOV_DEMUXER_INDEX_SIZE
+static int mov_build_one_AVIndexEntry(MOVContext *mov, AVStream *st, AVIndexEntry *e)
+{
+    MOVStreamContext *sc = st->priv_data;
+    FFStream *const sti = ffstream(st);
+    unsigned int sample_size = 0;
+    unsigned int chunk_sample = 0;
+    int count;
+
+    if (sti->build_nb_sample >= sc->sample_count) {
+        av_log(mov,AV_LOG_TRACE,"%s : parsed sample:%d all sample:%d,all sample had been parsed\n",
+               __func__, sti->build_nb_sample, sc->sample_count);
+        return AVERROR_EOF;
+    }
+
+    chunk_sample = sti->last_chunk_sample;
+    sample_size = sc->stsz_sample_size > 0 ? sc->stsz_sample_size : sc->sample_sizes[sti->build_nb_sample];
+    count = sc->stsc_data[sti->last_stsc_index].count;
+    if(chunk_sample < count) {
+        e->pos = sti->last_offset;
+        e->timestamp = sti->last_dts;
+        e->size = sample_size;
+        e->min_distance = 0;
+        e->flags = AVINDEX_KEYFRAME;
+        sti->last_chunk_sample++;
+    }
+    else {
+        sti->last_chunk_index++;
+        sti->last_chunk_sample = 1;
+        if(sti->last_chunk_index + 1 == sc->stsc_data[sti->last_stsc_index + 1].first)
+            sti->last_stsc_index++;
+
+        e->pos = sc->chunk_offsets[sti->last_chunk_index];
+        e->timestamp = sti->last_dts;
+        e->size = sample_size;
+        e->min_distance = 0;
+        e->flags = AVINDEX_KEYFRAME;
+        av_log(mov->fc,AV_LOG_TRACE,"%s sample %d offset %"PRIx64"\n", __func__, sti->build_nb_sample, e->pos);
+    }
+    av_log(mov->fc, AV_LOG_TRACE, "%s  AVIndex stream %d, sample %u, offset %"PRIx64", dts %"PRId64", "
+                            "size %u, last_stsc_index %d last_chunk_index %d chunk_sample %d\n",
+                            __func__, st->index, sti->build_nb_sample, e->pos, e->timestamp,
+                            sample_size, sti->last_stsc_index, sti->last_chunk_index, sti->last_chunk_sample);
+    sti->last_offset = e->pos + sample_size;
+    sti->last_dts += sc->stts_data[sti->last_stts_index].duration;
+    sti->build_nb_sample++;
+    sti->last_stts_sample++;
+    if (sti->last_stts_index + 1 < sc->stts_count && sti->last_stts_sample == sc->stts_data[sti->last_stts_index].count) {
+        sti->last_stts_sample = 0;
+        sti->last_stts_index++;
+    }
+
+    return 0;
+}
+
+static AVIndexEntry *mov_find_next_sample_in_dynamic_index(AVFormatContext *s, AVStream **st)
+{
+    MOVContext *mov = s->priv_data;
+    AVIndexEntry *sample = NULL;
+    AVIndexEntry *new_sample = NULL;
+    int64_t best_dts = INT64_MAX;
+    int64_t dts;
+    bool build;
+    int sample_type = AVMEDIA_TYPE_UNKNOWN;
+    int new_index;
+    int index;
+    int ret;
+    int i;
+
+    for (i = 0; i < s->nb_streams; i++) {
+        AVStream *avst = s->streams[i];
+        FFStream *const avsti = ffstream(avst);
+        MOVStreamContext *msc = avst->priv_data;
+        AVIndexEntry *current_sample = NULL;
+
+        if (mov_media_type_check(mov, avst)) {
+            build = true;
+            if (msc->pb && msc->current_sample < avsti->build_nb_sample) {
+                if (msc->sample_count < MOV_DEMUXER_INDEX_SIZE) {
+                    current_sample = &avsti->index_entries[msc->current_sample];
+                    build = false;
+                }
+                else {
+                    if (avsti->build_nb_sample >= msc->sample_count && avsti->current_build_index < MOV_DEMUXER_INDEX_SIZE && !avsti->had_new_build) {
+                        current_sample = &avsti->index_entries[avsti->current_build_index];
+                        avsti->current_build_index++;
+                        build = false;
+                    }
+                    else {
+                        if (avsti->current_build_index >= MOV_DEMUXER_INDEX_SIZE * 2)
+                            avsti->current_build_index = 0;
+                        if (avsti->current_build_index < MOV_DEMUXER_INDEX_SIZE) {
+                            index = avsti->current_build_index + MOV_DEMUXER_INDEX_SIZE;
+                            new_index = avsti->current_build_index;
+                            current_sample = &avsti->index_entries[index];
+                            new_sample = &avsti->index_entries[new_index];
+                        }
+                        else if (avsti->current_build_index >= MOV_DEMUXER_INDEX_SIZE && avsti->current_build_index < MOV_DEMUXER_INDEX_SIZE * 2) {
+                            index = avsti->current_build_index - MOV_DEMUXER_INDEX_SIZE;
+                            new_index = avsti->current_build_index;
+                            current_sample = &avsti->index_entries[index];
+                            new_sample = &avsti->index_entries[new_index];
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            if (msc->pb && msc->current_sample < avsti->nb_index_entries)
+                current_sample = &avsti->index_entries[msc->current_sample];
+            build = false;
+        }
+
+        if (!current_sample)
+            return NULL;
+
+        dts = av_rescale(current_sample->timestamp, AV_TIME_BASE, msc->time_scale);
+        if (avst->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+            av_log(s, AV_LOG_TRACE, "stream %d, sample %d, index %d, new_index %d, timestamp %"PRId64", dts %"PRId64"\n", i, msc->current_sample, index, new_index, current_sample->timestamp, dts);
+        else
+            av_log(s, AV_LOG_TRACE, "stream %d, sample %d, timestamp:%"PRId64", dts %"PRId64"\n", i, msc->current_sample, current_sample->timestamp, dts);
+
+		if (!sample || (!(s->pb->seekable & AVIO_SEEKABLE_NORMAL) && current_sample->pos < sample->pos) ||
+            ((s->pb->seekable & AVIO_SEEKABLE_NORMAL) &&
+             ((msc->pb != s->pb && dts < best_dts) || (msc->pb == s->pb && dts != AV_NOPTS_VALUE &&
+             ((FFABS(best_dts - dts) <= AV_TIME_BASE && current_sample->pos < sample->pos) ||
+              (FFABS(best_dts - dts) > AV_TIME_BASE && dts < best_dts)))))) {
+            sample = current_sample;
+            best_dts = dts;
+            *st = avst;
+            sample_type = avst->codecpar->codec_type;
+        }
+
+        if (build && sample_type == AVMEDIA_TYPE_AUDIO) {
+            ret = mov_build_one_AVIndexEntry(mov, avst, new_sample);
+            if((ret >= 0) || (ret == AVERROR_EOF)) {
+                avsti->current_build_index++;
+                if (!avsti->had_new_build)
+                    avsti->had_new_build = 1;
+            }
+        }
+    }
+
+    return sample;
+}
+
+#else
 static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
 {
     AVIndexEntry *sample = NULL;
@@ -8653,6 +9133,7 @@ static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
     }
     return sample;
 }
+#endif
 
 static int should_retry(AVIOContext *pb, int error_code) {
     if (error_code == AVERROR_EOF || avio_feof(pb))
@@ -8748,10 +9229,15 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     AVIndexEntry *sample;
     AVStream *st = NULL;
     int64_t current_index;
+    int64_t dts;
     int ret;
     mov->fc = s;
  retry:
+#if MOV_DEMUXER_INDEX_SIZE
+    sample = mov_find_next_sample_in_dynamic_index(s, &st);
+#else
     sample = mov_find_next_sample(s, &st);
+#endif
     if (!sample || (mov->next_root_atom && sample->pos > mov->next_root_atom)) {
         if (!mov->next_root_atom)
             return AVERROR_EOF;
@@ -8759,9 +9245,13 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
             return ret;
         goto retry;
     }
+
     sc = st->priv_data;
+    dts = av_rescale(sample->timestamp, AV_TIME_BASE, sc->time_scale);
+    av_log(mov->fc, AV_LOG_TRACE, "stream %d, sample %d, dts %"PRId64"\n", st->codecpar->codec_type, sc->current_sample, dts);
     /* must be done just before reading, to avoid infinite loop on sample */
     current_index = sc->current_index;
+    av_log(mov->fc, AV_LOG_TRACE, "stream: %d current_sample:%d offset:%"PRIx64", timestamp %"PRIx64"\n ", st->codecpar->codec_type, sc->current_sample,sample->pos, sample->timestamp);
     mov_current_sample_inc(sc);
 
     if (mov->next_root_atom) {
@@ -8840,9 +9330,24 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
             sc->ctts_sample = 0;
         }
     } else {
-        int64_t next_dts = (sc->current_sample < ffstream(st)->nb_index_entries) ?
+        int64_t next_dts;
+#if MOV_DEMUXER_INDEX_SIZE
+        if (mov_media_type_check(mov, st)) {
+            int current_index;
+            if ((sc->current_sample / MOV_DEMUXER_INDEX_SIZE) % 2)
+                current_index = sc->current_sample % MOV_DEMUXER_INDEX_SIZE;
+            else
+                current_index = MOV_DEMUXER_INDEX_SIZE + sc->current_sample % MOV_DEMUXER_INDEX_SIZE;
+            next_dts = (sc->current_sample < ffstream(st)->build_nb_sample) ?
+            ffstream(st)->index_entries[current_index].timestamp : st->duration;
+        }
+        else
+            next_dts = (sc->current_sample < ffstream(st)->nb_index_entries) ?
             ffstream(st)->index_entries[sc->current_sample].timestamp : st->duration;
-
+#else
+        next_dts = (sc->current_sample < ffstream(st)->nb_index_entries) ?
+        ffstream(st)->index_entries[sc->current_sample].timestamp : st->duration;
+#endif
         if (next_dts >= pkt->dts)
             pkt->duration = next_dts - pkt->dts;
         pkt->pts = pkt->dts;
@@ -8949,10 +9454,87 @@ static int can_seek_to_key_sample(AVStream *st, int sample, int64_t requested_pt
     return 1;
 }
 
+#if MOV_DEMUXER_INDEX_SIZE
+static int mov_get_sample_by_timestap(AVFormatContext *s, AVStream *st, int64_t timestamp, int flags)
+{
+    MOVStreamContext *sc = st->priv_data;
+    FFStream *const sti = ffstream(st);
+    int time_sample;
+    int sample = 0;
+    int ret;
+    int i;
+
+    for(i = 0; i < sc->stts_count; i++) {
+        if(sc->stts_data[i].count * sc->stts_data[i].duration <= timestamp) {
+            timestamp -= sc->stts_data[i].count * sc->stts_data[i].duration;
+            sample += sc->stts_data[i].count;
+        }
+        else
+            sample = timestamp / sc->stts_data[i].duration;
+    }
+
+    return sample;
+}
+
+static void mov_get_chunkinfo_by_sample(AVFormatContext *s, AVStream *st, int sample, int *chunk_index, int *chunk_sample_index)
+{
+    MOVStreamContext *sc = st->priv_data;
+    int stsc_count;
+    int i,j;
+
+    for (i = 1; i <= sc->chunk_count; i++) {
+        for (j = 0; j < sc->stsc_count; j++) {
+            if(i >= sc->stsc_data[j].first)
+                stsc_count = sc->stsc_data[j].count;
+        }
+        if (sample >= stsc_count)
+            sample -= stsc_count;
+        else {
+            *chunk_index = i;
+            *chunk_sample_index = sample;
+            break;
+        }
+    }
+}
+
+static int mov_build_index_by_chunkinfo(AVFormatContext *s, AVStream *st, int chunk_index, int chunk_sample_index)
+{
+    MOVStreamContext *sc = st->priv_data;
+    FFStream *const sti = ffstream(st);
+    MOVContext *mov = s->priv_data;
+
+    if (!(sc->stts_count == 1 && sc->stts_data[0].duration == 1)) {
+        if (!sti->nb_index_entries) {
+            if (sc->sample_count >= UINT_MAX / sizeof(*sti->index_entries) - sti->nb_index_entries)
+                return AVERROR(ENOMEM);
+            if (av_reallocp_array(&sti->index_entries,
+                                  sti->nb_index_entries + MOV_DEMUXER_INDEX_SIZE * 2,
+                                  sizeof(*sti->index_entries)) < 0) {
+                sti->nb_index_entries = 0;
+                return AVERROR(ENOMEM);
+            }
+        }
+
+        memset(&sti->index_entries[0], 0 , 2 * MOV_DEMUXER_INDEX_SIZE * sizeof(*sti->index_entries));
+        sti->current_build_index = 0;
+        sti->had_new_build = 0;
+        mov_build_dynamic_index_info(mov, st, chunk_index, chunk_sample_index);
+        if (sti->current_build_index < MOV_DEMUXER_INDEX_SIZE) {
+            sti->current_build_index = 0;
+            av_log(mov,AV_LOG_INFO,"%s last_chunk_index %d, last_chunk_sample %d, build_nb_sample %d\n",
+                   __func__, sti->last_chunk_index, sti->last_chunk_sample, sti->build_nb_sample);
+        }
+    }
+
+    return 0;
+}
+#endif
+
 static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, int flags)
 {
     MOVStreamContext *sc = st->priv_data;
     FFStream *const sti = ffstream(st);
+    MOVContext *mov = s->priv_data;
     int sample, time_sample, ret;
     unsigned int i;
 
@@ -8964,6 +9546,24 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
     if (ret < 0)
         return ret;
 
+#if MOV_DEMUXER_INDEX_SIZE
+    if (mov_media_type_check(mov, st))
+        sample = mov_get_sample_by_timestap(s, st, timestamp, flags);
+    else {
+        for (;;) {
+            sample = av_index_search_timestamp(st, timestamp, flags);
+            av_log(s, AV_LOG_TRACE, "stream %d, timestamp %"PRId64", sample %d\n", st->index, timestamp, sample);
+            if (sample < 0 && sti->nb_index_entries && timestamp < sti->index_entries[0].timestamp)
+                sample = 0;
+            if (sample < 0) /* not sure what to do */
+                return AVERROR_INVALIDDATA;
+
+            if (!sample || can_seek_to_key_sample(st, sample, timestamp))
+                break;
+            timestamp -= FFMAX(sc->min_sample_duration, 1);
+        }
+    }
+#else
     for (;;) {
         sample = av_index_search_timestamp(st, timestamp, flags);
         av_log(s, AV_LOG_TRACE, "stream %d, timestamp %"PRId64", sample %d\n", st->index, timestamp, sample);
@@ -8976,9 +9576,10 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
             break;
         timestamp -= FFMAX(sc->min_sample_duration, 1);
     }
+#endif
 
     mov_current_sample_set(sc, sample);
-    av_log(s, AV_LOG_TRACE, "stream %d, found sample %d\n", st->index, sc->current_sample);
+    av_log(s, AV_LOG_INFO, "%s: stream %d, found sample %d\n", __func__, st->index, sc->current_sample);
     /* adjust ctts index */
     if (sc->ctts_data) {
         time_sample = 0;
@@ -9011,13 +9612,26 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
     return sample;
 }
 
-static int64_t mov_get_skip_samples(AVStream *st, int sample)
+static int64_t mov_get_skip_samples(MOVContext *c, AVStream *st, int sample)
 {
     MOVStreamContext *sc = st->priv_data;
     FFStream *const sti = ffstream(st);
-    int64_t first_ts = sti->index_entries[0].timestamp;
-    int64_t ts = sti->index_entries[sample].timestamp;
+    int64_t first_ts;
+    int64_t ts;
     int64_t off;
+
+#if MOV_DEMUXER_INDEX_SIZE
+    if (mov_media_type_check(c, st)) {
+        first_ts = sti->first_timestamp;
+        ts = sti->index_entries[0].timestamp;
+    } else {
+        first_ts = sti->index_entries[0].timestamp;
+        ts = sti->index_entries[sample].timestamp;
+    }
+#else
+    first_ts = sti->index_entries[0].timestamp;
+    ts = sti->index_entries[sample].timestamp;
+#endif
 
     if (st->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
         return 0;
@@ -9033,6 +9647,8 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
     MOVContext *mc = s->priv_data;
     AVStream *st;
     FFStream *sti;
+    int chunk_sample_index;
+    int chunk_index;
     int sample;
     int i;
 
@@ -9041,15 +9657,37 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
 
     st = s->streams[stream_index];
     sti = ffstream(st);
+    av_log(s,AV_LOG_INFO,"%s stream:%d seek sample_time:%lld\n",__func__, st->codecpar->codec_type, sample_time);
     sample = mov_seek_stream(s, st, sample_time, flags);
     if (sample < 0)
         return sample;
 
-    if (mc->seek_individually) {
-        /* adjust seek timestamp to found sample timestamp */
-        int64_t seek_timestamp = sti->index_entries[sample].timestamp;
-        sti->skip_samples = mov_get_skip_samples(st, sample);
+#if MOV_DEMUXER_INDEX_SIZE
+    if (mov_media_type_check(mc, st)) {
+        mov_get_chunkinfo_by_sample(s, st, sample, &chunk_index, &chunk_sample_index);
+        av_log(s,AV_LOG_INFO,"%s get chunk_index:%d chunk_sample_index:%d\n",__func__,chunk_index,chunk_sample_index);
+        mov_build_index_by_chunkinfo(s, st, chunk_index, chunk_sample_index);
+    }
+#endif
 
+    if (mc->seek_individually) {
+        int64_t seek_timestamp;
+#if MOV_DEMUXER_INDEX_SIZE
+        if (mov_media_type_check(mc, st)) {
+            int current_sample = sample % MOV_DEMUXER_INDEX_SIZE;
+            seek_timestamp = sti->index_entries[current_sample].timestamp;
+            sti->skip_samples = mov_get_skip_samples(mc, st, current_sample);
+        }
+        else {
+            /* adjust seek timestamp to found sample timestamp */
+            seek_timestamp = sti->index_entries[sample].timestamp;
+            sti->skip_samples = mov_get_skip_samples(mc, st, sample);
+        }
+#else
+        /* adjust seek timestamp to found sample timestamp */
+        seek_timestamp = sti->index_entries[sample].timestamp;
+        sti->skip_samples = mov_get_skip_samples(mc, st, sample);
+#endif
         for (i = 0; i < s->nb_streams; i++) {
             AVStream *const st  = s->streams[i];
             FFStream *const sti = ffstream(st);
@@ -9060,8 +9698,16 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
 
             timestamp = av_rescale_q(seek_timestamp, s->streams[stream_index]->time_base, st->time_base);
             sample = mov_seek_stream(s, st, timestamp, flags);
-            if (sample >= 0)
-                sti->skip_samples = mov_get_skip_samples(st, sample);
+            if (sample >= 0) {
+                sti->skip_samples = mov_get_skip_samples(mc, st, sample);
+#if MOV_DEMUXER_INDEX_SIZE
+                if (mov_media_type_check(mc, st)) {
+                    mov_get_chunkinfo_by_sample(s, st, sample, &chunk_index, &chunk_sample_index);
+                    av_log(s,AV_LOG_INFO,"%s get chunk_index:%d chunk_sample_index:%d\n",__func__,chunk_index,chunk_sample_index);
+	                mov_build_index_by_chunkinfo(s, st, chunk_index, chunk_sample_index);
+                }
+#endif
+            }
         }
     } else {
         for (i = 0; i < s->nb_streams; i++) {
@@ -9072,7 +9718,11 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
         }
         while (1) {
             MOVStreamContext *sc;
+#if MOV_DEMUXER_INDEX_SIZE
+            AVIndexEntry *entry = mov_find_next_sample_in_dynamic_index(s, &st);
+#else
             AVIndexEntry *entry = mov_find_next_sample(s, &st);
+#endif
             if (!entry)
                 return AVERROR_INVALIDDATA;
             sc = st->priv_data;
