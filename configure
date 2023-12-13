@@ -429,6 +429,8 @@ Advanced options (experts only):
   --swr-filter-size=N      the filter size swresample uses [$swr_filter_size_default]
   --swr-phase-shift=N      the phase shift swresample uses [$swr_phase_shift_default]
   --swr-ch-max=N           the max channel number swresample uses [$swr_ch_max_default]
+  --mov-demuxer-index-size=VALUE
+                           set mov demuxer index size
 
 Optimization options (experts only):
   --disable-asm            disable all assembly optimizations
@@ -4239,6 +4241,9 @@ for opt do
         --filter-movie-priority=*)
             test "$optval" != 0  && filter_movie_priority=$optval
         ;;
+        --mov-demuxer-index-size=*)
+            test "$optval" != 0 && mov_demuxer_index_size=$optval
+        ;;
         --list-*)
             NAME="${opt#--list-}"
             is_in $NAME $COMPONENT_LIST || die_unknown $opt
@@ -7892,6 +7897,9 @@ test -n "$assert_level" &&
 
 test -n "$filter_movie_priority" && test $filter_movie_priority != 0 &&
     echo "#define FILTER_MOVIE_PRIORITY $filter_movie_priority" >>$TMPH
+
+test -n "$mov_demuxer_index_size" && test $mov_demuxer_index_size != 0 &&
+    echo "#define MOV_DEMUXER_INDEX_SIZE $mov_demuxer_index_size" >>$TMPH
 
 test -n "$malloc_prefix" &&
     echo "#define MALLOC_PREFIX $malloc_prefix" >>$TMPH
