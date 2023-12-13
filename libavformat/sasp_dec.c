@@ -191,12 +191,11 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
 
     st = ic->streams[pkt->stream_index];
 
-    pkt->pts = av_rescale(frame_header.timestamp_s * 1000 + frame_header.timestamp_ms, st->time_base.den, 1000);
+    pkt->pts = av_rescale(frame_header.timestamp, st->time_base.den, 1000);
 
-    av_log(ic, AV_LOG_TRACE, "Sasp stream %s pkt: len %"PRIu32", pts %"PRIu64"s%"PRIu32"ms, seqnum %"PRIu32"\n",
+    av_log(ic, AV_LOG_TRACE, "Sasp stream %s pkt: len %"PRIu32", pts %"PRIu64"ms, seqnum %"PRIu32"\n",
            frame_header.codec_id == s->video_codec_id ? "video" : "audio",
-           frame_header.body_len, frame_header.timestamp_s, frame_header.timestamp_ms,
-           frame_header.sequence);
+           frame_header.body_len, frame_header.timestamp, frame_header.sequence);
 
     return ret;
 }

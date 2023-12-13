@@ -63,8 +63,7 @@ typedef struct SASPFrameHeader {
     uint32_t body_len;
     uint32_t codec_id;
     uint32_t sequence;
-    uint32_t timestamp_ms;    ///< the 'ms' part of the total time
-    uint64_t timestamp_s;     ///< the 's' part of the total time
+    uint64_t timestamp;       ///< frame timestamp: ms
     uint32_t type;            ///< frame type: video/audio
     union {
         SASPVideoInfo video;

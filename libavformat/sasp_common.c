@@ -137,11 +137,8 @@ int ff_sasp_read_frame_header(AVFormatContext *ic, SASPFrameHeader *header)
     header->sequence = avio_rb32(ic->pb);
     length += sizeof(header->sequence);
 
-    header->timestamp_ms = avio_rb32(ic->pb);
-    length += sizeof(header->timestamp_ms);
-
-    header->timestamp_s = avio_rb64(ic->pb);
-    length += sizeof(header->timestamp_s);
+    header->timestamp = avio_rb64(ic->pb);
+    length += sizeof(header->timestamp);
 
     header->type = avio_rb32(ic->pb);
     length += sizeof(header->type);
@@ -195,11 +192,8 @@ int ff_sasp_write_frame_header(char *frame_buf, const SASPFrameHeader *header)
     AV_WB32(frame_buf + length, header->sequence);
     length += sizeof(header->sequence);
 
-    AV_WB32(frame_buf + length, header->timestamp_ms);
-    length += sizeof(header->timestamp_ms);
-
-    AV_WB64(frame_buf + length, header->timestamp_s);
-    length += sizeof(header->timestamp_s);
+    AV_WB64(frame_buf + length, header->timestamp);
+    length += sizeof(header->timestamp);
 
     AV_WB32(frame_buf + length, header->type);
     length += sizeof(header->type);
