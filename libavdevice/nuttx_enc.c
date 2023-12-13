@@ -87,6 +87,7 @@ static int nuttx_write_header(AVFormatContext *s1)
     priv->codec       = st->codecpar->codec_id;
     priv->sample_rate = st->codecpar->sample_rate;
     priv->format      = st->codecpar->format;
+    priv->timestamp   = 0;
     av_channel_layout_copy(&priv->ch_layout, &st->codecpar->ch_layout);
 
     ret = ff_nuttx_open(s1->priv_data);
@@ -145,7 +146,7 @@ static int nuttx_write_packet(AVFormatContext *s1, AVPacket *pkt)
     if (ret < 0)
         return ret;
 
-    priv->timestamp = pkt->pts + ret / priv->sample_bytes;
+    priv->timestamp += ret / priv->sample_bytes;
 
     if (ret != pkt->size) {
         priv->lastpkt = av_packet_clone(pkt);
@@ -265,18 +266,16 @@ static int nuttx_write_frame(AVFormatContext *s1, int stream_index,
 }
 
 static void nuttx_get_output_timestamp(struct AVFormatContext *s1, int stream,
-                             int64_t *dts, int64_t *wall)
+                                       int64_t *ts, int64_t *lat)
 {
     NuttxPriv *priv = s1->priv_data;
     long latency;
 
-    *wall   = av_gettime_relative();
     latency = ff_nuttx_get_latency(priv);
+    latency = FFMAX(latency, 0);
 
-    if (latency < 0)
-        *dts = 0;
-    else
-        *dts = priv->timestamp - latency;
+    *lat = latency;
+    *ts = priv->timestamp - latency;
 }
 
 static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoList *device_list)
