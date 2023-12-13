@@ -301,6 +301,12 @@ AVStream *avformat_new_stream(AVFormatContext *s, const AVCodec *c)
 
     sti->last_IP_pts = AV_NOPTS_VALUE;
     sti->last_dts_for_order_check = AV_NOPTS_VALUE;
+#if MOV_DEMUXER_INDEX_SIZE
+    sti->last_chunk_offsets = 0;
+    sti->last_stsc_index = 0;
+    sti->first_timestamp = AV_NOPTS_VALUE;
+    sti->current_build_index = 0;
+#endif
     for (int i = 0; i < MAX_REORDER_DELAY + 1; i++)
         sti->pts_buffer[i] = AV_NOPTS_VALUE;
 
