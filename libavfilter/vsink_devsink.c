@@ -155,7 +155,7 @@ static int devsink_start(AVFilterContext *ctx)
                priv->fmt_ctx->oformat->video_codec : priv->fmt_ctx->video_codec_id;
 
     priv->frame_uncoded  = codec_id == AV_CODEC_ID_RAWVIDEO && av_write_uncoded_frame_query(priv->fmt_ctx, 0) == 0;
-    priv->frame_duration = AV_TIME_BASE * av_q2d(av_inv_q(inlink->frame_rate));
+    priv->frame_duration = av_rescale(AV_TIME_BASE, inlink->frame_rate.den, inlink->frame_rate.num);
 
     enc = avcodec_find_encoder(codec_id);
     if (!enc)
@@ -322,8 +322,8 @@ static int devsink_activate(AVFilterContext *ctx)
         apts = devsink_get_audio_timestamp(ctx);
         if (apts != AV_NOPTS_VALUE) {
             frame = ff_inlink_peek_frame(inlink, 0);
-            ret = devsink_sync_video(ctx, apts,
-                                     frame->pts * av_q2d(frame->time_base) * AV_TIME_BASE);
+            pts = av_rescale_q(frame->pts, inlink->time_base, AV_TIME_BASE_Q);
+            ret = devsink_sync_video(ctx, apts, pts);
             if (ret > 0) {
                 devsink_timer_start(ctx, ret);
                 return 0;

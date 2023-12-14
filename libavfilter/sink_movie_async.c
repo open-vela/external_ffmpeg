@@ -326,8 +326,9 @@ static int moviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *fram
                               priv->format_ctx->streams[pkt->stream_index]->time_base);
 
     if (pkt->pts >= 0)
-        priv->current_ms = pkt->pts * 1000 *
-                           av_q2d(priv->format_ctx->streams[pkt->stream_index]->time_base);
+        priv->current_ms = av_rescale_q(pkt->pts,
+                                        priv->format_ctx->streams[pkt->stream_index]->time_base,
+                                        av_make_q(1, 1000));
 
     return av_write_frame(priv->format_ctx, pkt);
 }

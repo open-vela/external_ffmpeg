@@ -42,7 +42,7 @@ static int lc3_write_header(AVFormatContext *s)
     int nsamples;
 
     frame_us = AV_TIME_BASE * par->frame_size / srate_hz;
-    nsamples = par->sample_rate * (st->duration * av_q2d(st->time_base));
+    nsamples = av_rescale_q(st->duration, st->time_base, av_make_q(1, par->sample_rate));
 
     hdr.file_id        = LC3_FILE_ID,
     hdr.header_size    = sizeof(LC3_header),
