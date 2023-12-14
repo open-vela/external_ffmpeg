@@ -663,6 +663,11 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                     avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
                 break;
 
+            case AVMOVIE_ASYNC_EVENT_SEEKED:
+                for (i = 0; i < ctx->nb_outputs; i++)
+                    avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
+                break;
+
             case AVMOVIE_ASYNC_EVENT_STOPPED:
                 for (i = 0; i < ctx->nb_outputs; i++) {
                     avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);

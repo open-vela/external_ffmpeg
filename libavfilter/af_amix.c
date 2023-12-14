@@ -795,6 +795,13 @@ static int forward_command(AVFilterContext *ctx, int pad_idx, const char* target
         }
     } else if (ctx->nb_inputs == 1) {
         return avfilter_forward_command(ctx, 0, target, cmd, arg, res, res_len, flags);
+    } else if (pad_idx == s->first_input) {
+        if (!strcmp(cmd, "flush")) {
+            frame_list_clear(s->frame_list);
+            s->next_pts = AV_NOPTS_VALUE;
+
+            return 0;
+        }
     }
 
     return ret;
