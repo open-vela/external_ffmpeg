@@ -1523,6 +1523,8 @@ static void graph_clear_formats(AVFilterGraph *graph, void *log_ctx)
                     f->inputs[j]->format         = -1;
                     f->inputs[j]->sample_rate    = 0;
                     f->inputs[j]->init_state     = AVLINK_UNINIT;
+                    f->inputs[j]->time_base.num  = 0;
+                    f->inputs[j]->time_base.den  = 0;
                     av_channel_layout_uninit(&f->inputs[j]->ch_layout);
                 }
             }
@@ -1539,6 +1541,8 @@ static void graph_clear_formats(AVFilterGraph *graph, void *log_ctx)
                     f->outputs[j]->format         = -1;
                     f->outputs[j]->sample_rate    = 0;
                     f->outputs[j]->init_state     = AVLINK_UNINIT;
+                    f->outputs[j]->time_base.num  = 0;
+                    f->outputs[j]->time_base.den  = 0;
                     av_channel_layout_uninit(&f->outputs[j]->ch_layout);
                 }
             }
