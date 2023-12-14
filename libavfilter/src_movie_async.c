@@ -605,7 +605,8 @@ static int movie_async_read_frame(AVFilterContext *ctx)
     /* send the packet to its decoder, if any */
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (pkt->stream_index == movie->streams[i].index) {
-            movie->current_ms = pkt->pts * av_q2d(movie->streams[i].time_base) * 1000;
+            movie->current_ms = av_rescale_q(pkt->pts,
+                                             movie->streams[i].time_base, av_make_q(1, 1000));
             ret = movie_async_send_frame(ctx, pkt, i);
             if (ret < 0)
                 goto out;
