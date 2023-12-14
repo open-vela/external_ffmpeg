@@ -513,7 +513,7 @@ static int adevsink_process_command(AVFilterContext *ctx,
 
         int ret = av_get_output_timestamp(priv->fmt_ctx, 0, &pts, &wall);
         if (ret >= 0)
-            *ts = AV_TIME_BASE * pts * av_q2d(av_make_q(1, ctx->inputs[0]->sample_rate));
+            *ts = av_rescale_q(pts, ctx->inputs[0]->time_base, AV_TIME_BASE_Q);
 
         return ret;
     } else {

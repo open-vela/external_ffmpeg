@@ -172,7 +172,8 @@ static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
         avframe = ff_framequeue_take(&priv->queue);
 
         frame->tunframe.format = vtun_format_convert(avframe->format);
-        frame->tunframe.current_ms = avframe->pts * av_q2d(avframe->time_base) * 1000;
+        frame->tunframe.current_ms = av_rescale_q(avframe->pts,
+                                                  avframe->time_base, av_make_q(1, 1000));
         frame->tunframe.addr = avframe->data[0];
         frame->tunframe.size = avframe->linesize[0] * avframe->height;
         frame->tunframe.stride = avframe->linesize[0];
