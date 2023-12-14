@@ -53,7 +53,7 @@ static int sasp_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SASPFrameHeader header = {0};
     header.magic = MKBETAG('s', 'a', 's', 'p');
-    header.timestamp_ms = pkt->pts * av_q2d(s->streams[pkt->stream_index]->time_base) * 1000;
+    header.timestamp = pkt->pts * av_q2d(s->streams[pkt->stream_index]->time_base) * 1000;
     header.body_len = pkt->size;
     header.codec_id = s->streams[pkt->stream_index]->codecpar->codec_id;
     header.header_len = sizeof(SASPFrameHeader);
