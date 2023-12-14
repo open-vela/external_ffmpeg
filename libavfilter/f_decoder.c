@@ -252,6 +252,36 @@ out:
     return ret;
 }
 
+static int decoder_process_command(AVFilterContext *ctx,
+                                   const char *cmd, const char *args,
+                                   char *res, int res_len, int flags)
+{
+    DecoderContext* priv = ctx->priv;
+
+    if (!strcmp(cmd, "flush")) {
+        avcodec_flush_buffers(priv->codec_ctx);
+        return 0;
+    }
+
+    return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+}
+
+static int decoder_forward_command(AVFilterContext *ctx,
+                                   int pad_idx, const char *target, const char *cmd,
+                                   const char *arg, char *res, int res_len, int flags)
+{
+    int ret;
+
+    ret = decoder_process_command(ctx, cmd, arg, res, res_len, flags);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Failed dec:%s forward_command %s %d,%s\n",
+               ctx->filter->name, cmd, ret, av_err2str(ret));
+        return ret;
+    }
+
+    return avfilter_forward_command(ctx, pad_idx, target, cmd, arg, res, res_len, flags);
+}
+
 static int decoder_output_props(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
@@ -301,6 +331,8 @@ const AVFilter ff_af_adecoder = {
     FILTER_QUERY_FUNC(decoder_query_formats),
     FILTER_INPUTS(avfilter_af_adecoder_inputs),
     FILTER_OUTPUTS(avfilter_af_adecoder_outputs),
+    .process_command = decoder_process_command,
+    .forward_command = decoder_forward_command,
 };
 #endif
 
@@ -337,5 +369,7 @@ const AVFilter ff_vf_decoder = {
     FILTER_QUERY_FUNC(decoder_query_formats),
     FILTER_INPUTS(avfilter_vf_decoder_inputs),
     FILTER_OUTPUTS(avfilter_vf_decoder_outputs),
+    .process_command = decoder_process_command,
+    .forward_command = decoder_forward_command,
 };
 #endif

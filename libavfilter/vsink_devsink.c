@@ -452,6 +452,16 @@ static int devsink_process_command(AVFilterContext *ctx,
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_SET_PARAMETER,
                                     (char *)args, 0);
+    } else if (!strcmp(cmd, "flush")) {
+        devsink_timer_stop(ctx);
+
+        while (ff_inlink_queued_frames(ctx->inputs[0])) {
+            AVFrame *frame = NULL;
+            ff_inlink_consume_frame(ctx->inputs[0], &frame);
+            av_frame_free(&frame);
+        }
+        ff_filter_set_ready(ctx, 100);
+        return 0;
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(
                                     priv->fmt_ctx,
@@ -460,6 +470,14 @@ static int devsink_process_command(AVFilterContext *ctx,
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
+}
+
+static int devsink_forward_command(AVFilterContext *ctx,
+                                   int pad_idx, const char *target,
+                                   const char *cmd, const char *args,
+                                   char *res, int res_len, int flags)
+{
+    return devsink_process_command(ctx, cmd, args, res, res_len, flags);
 }
 
 static const struct AVClass *devsink_child_class_iterate(void **iter)
@@ -531,6 +549,7 @@ const AVFilter ff_vsink_devsink = {
     FILTER_INPUTS(devsink_inputs),
     FILTER_QUERY_FUNC(devsink_query_formats),
     .process_command = devsink_process_command,
+    .forward_command = devsink_forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
 };
 
