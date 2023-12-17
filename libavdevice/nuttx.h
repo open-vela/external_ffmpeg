@@ -38,14 +38,16 @@ typedef struct NuttxPriv {
     AVClass        *class;
 
     bool            playback;
+    bool            nonblock;
+    bool            stopped;      ///< stop required by apps
     bool            running;
     bool            flushing;
     bool            underflow;
 
     char            devname[32];  ///< device name
-    char            mqname[16];   ///< message queue name
-    mqd_t           mq;           ///< message queue
+    char            mqname[32];   ///< message queue name
     int             fd;           ///< nuttx device fd
+    mqd_t           mq;           ///< message queue
 
     int             periods;      ///< buffer pereids
     int             period_bytes; ///< preferred size for reads and writes, in bytes
@@ -56,9 +58,7 @@ typedef struct NuttxPriv {
     int             sample_bytes; ///< bytes per sample * channels
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
-    bool            nonblock;
 
-    bool            stopped;      ///< stop required by apps
     bool            mute;
     double          volume;
 
@@ -90,7 +90,8 @@ int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute);
 int ff_nuttx_notify_changed(struct AVFormatContext *s1, NuttxPriv *priv, bool volume);
 
 long ff_nuttx_get_latency(NuttxPriv *priv);
-void ff_nuttx_pause(NuttxPriv *priv);
-void ff_nuttx_resume(NuttxPriv *priv);
-void ff_nuttx_flush(NuttxPriv *priv);
+int ff_nuttx_pause(NuttxPriv *priv);
+int ff_nuttx_resume(NuttxPriv *priv);
+int ff_nuttx_flush(NuttxPriv *priv);
+
 #endif /* AVDEVICE_NUTTX_H */

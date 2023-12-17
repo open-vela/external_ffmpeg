@@ -146,6 +146,18 @@ static int ff_nuttx_subfmt_to_smpfmt(int subfmt)
     return AV_SAMPLE_FMT_NONE;
 }
 
+static int ff_nuttx_ioctl(int fd, int cmd, unsigned long arg)
+{
+    int ret;
+
+    ret = ioctl(fd, cmd, arg);
+    if (ret < 0)
+        ret = AVERROR(errno);
+
+    return ret;
+}
+#define ff_nuttx_ioctl(fd, cmd, arg) ff_nuttx_ioctl(fd, cmd, (unsigned long)(arg))
+
 static int ff_nuttx_flush_buffer(NuttxPriv *priv)
 {
     struct audio_buf_desc_s desc;
@@ -166,7 +178,7 @@ static int ff_nuttx_flush_buffer(NuttxPriv *priv)
     buffer->nbytes  = buffer->curbyte;
     buffer->curbyte = 0;
     desc.u.buffer   = buffer;
-    return ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
+    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
 }
 
 static int ff_nuttx_get_capabilities(const char *device, int ac_type, int ac_subtype,
@@ -183,10 +195,7 @@ static int ff_nuttx_get_capabilities(const char *device, int ac_type, int ac_sub
     caps->ac_type    = ac_type;
     caps->ac_subtype = ac_subtype;
 
-    ret = ioctl(fd, AUDIOIOC_GETCAPS, caps);
-    if (ret < 0)
-        ret = AVERROR(errno);
-
+    ret = ff_nuttx_ioctl(fd, AUDIOIOC_GETCAPS, caps);
     close(fd);
     return ret;
 }
@@ -443,11 +452,9 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
         return AVERROR(errno);
 
     /* configure */
-    ret = ioctl(priv->fd, AUDIOIOC_RESERVE, 0);
-    if (ret < 0) {
-        ret = AVERROR(errno);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESERVE, 0);
+    if (ret < 0)
         goto out;
-    }
 
     /* create message queue */
     snprintf(priv->mqname, sizeof(priv->mqname), "/tmp/%p", priv);
@@ -458,11 +465,9 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
         goto out;
     }
 
-    ret = ioctl(priv->fd, AUDIOIOC_REGISTERMQ, priv->mq);
-    if (ret < 0) {
-        ret = AVERROR(errno);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_REGISTERMQ, priv->mq);
+    if (ret < 0)
         goto out;
-    }
 
     priv->playback = playback;
     priv->volume = NAN;
@@ -485,7 +490,7 @@ void ff_nuttx_deinit(NuttxPriv *priv)
     ff_nuttx_close(priv, false);
 
     if (priv->mq >= 0) {
-        ioctl(priv->fd, AUDIOIOC_UNREGISTERMQ, 0);
+        ff_nuttx_ioctl(priv->fd, AUDIOIOC_UNREGISTERMQ, 0);
 
         mq_close(priv->mq);
         priv->mq = -1;
@@ -493,7 +498,7 @@ void ff_nuttx_deinit(NuttxPriv *priv)
         mq_unlink(priv->mqname);
     }
 
-    ioctl(priv->fd, AUDIOIOC_RELEASE, 0);
+    ff_nuttx_ioctl(priv->fd, AUDIOIOC_RELEASE, 0);
 
     close(priv->fd);
     priv->fd = -1;
@@ -514,7 +519,7 @@ int ff_nuttx_open(NuttxPriv *priv)
     if (bps == 0)
         bps = av_get_bytes_per_sample(priv->format) * 8;
 
-    priv->sample_bytes = bps * priv->ch_layout.nb_channels / 8;
+    priv->sample_bytes               = bps * priv->ch_layout.nb_channels / 8;
     caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
     caps_desc.caps.ac_type           = priv->playback ?
                                        AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
@@ -525,11 +530,11 @@ int ff_nuttx_open(NuttxPriv *priv)
     caps_desc.caps.ac_controls.b[2]  = bps;
     caps_desc.caps.ac_subtype        = ff_nuttx_avcodec_to_fmt(priv->codec);
 
-    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
     av_log(NULL, AV_LOG_DEBUG, "[%s][%s] configure, sr:%"PRIu32" ch:%d ret:%d\n",
         __func__, priv->devname, priv->sample_rate, priv->ch_layout.nb_channels, ret);
     if (ret < 0)
-        return AVERROR(errno);
+        return ret;
 
     if (priv->periods) {
         /* try to set BUFINFO and don't care the returns */
@@ -540,10 +545,10 @@ int ff_nuttx_open(NuttxPriv *priv)
         buf_info.buffer_size = priv->period_bytes;
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] set buffer info, n:%d size:%d\n",
             __func__, priv->devname, buf_info.nbuffers, buf_info.buffer_size);
-        ioctl(priv->fd, AUDIOIOC_SETBUFFERINFO, &buf_info);
+        ff_nuttx_ioctl(priv->fd, AUDIOIOC_SETBUFFERINFO, &buf_info);
     }
 
-    ret = ioctl(priv->fd, AUDIOIOC_GETBUFFERINFO, &buf_info);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_GETBUFFERINFO, &buf_info);
     av_log(NULL, AV_LOG_DEBUG, "[%s][%s] get buffer info, n:%d size:%d ret:%d\n",
             __func__, priv->devname, buf_info.nbuffers, buf_info.buffer_size, ret);
     if (ret >= 0) {
@@ -561,38 +566,30 @@ int ff_nuttx_open(NuttxPriv *priv)
 
         buf_desc.numbytes  = priv->period_bytes;
         buf_desc.u.pbuffer = &buffer;
-        ret = ioctl(priv->fd, AUDIOIOC_ALLOCBUFFER, &buf_desc);
-        if (ret < 0) {
-            ret = AVERROR(errno);
+        ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ALLOCBUFFER, &buf_desc);
+        if (ret < 0)
             goto out;
-        }
 
         if (priv->playback) {
             dq_addlast(&buffer->dq_entry, &priv->bufferq);
         } else {
             buffer->nbytes    = buffer->nmaxbytes;
             buf_desc.u.buffer = buffer;
-            ret = ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
-            if (ret < 0) {
-                ret = AVERROR(errno);
+            ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
+            if (ret < 0)
                 goto out;
-            }
         }
     }
 
-    ret = ioctl(priv->fd, AUDIOIOC_REGISTERMQ, priv->mq);
-    if (ret < 0) {
-        ret = AVERROR(errno);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_REGISTERMQ, priv->mq);
+    if (ret < 0)
         goto out;
-    }
 
     if (!priv->playback) {
-        ret = ioctl(priv->fd, AUDIOIOC_START, 0);
+        ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_START, 0);
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] start ret:%d\n", __func__, priv->devname, ret);
-        if (ret < 0) {
-            ret = AVERROR(errno);
+        if (ret < 0)
             goto out;
-        }
 
         priv->running = true;
     }
@@ -611,21 +608,21 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
 
     if (!priv->running && !priv->flushing && dc > 0 && dc < priv->periods) {
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] start\n", __func__, priv->devname);
-        ioctl(priv->fd, AUDIOIOC_START, 0);
+        ff_nuttx_ioctl(priv->fd, AUDIOIOC_START, 0);
         priv->running = true;
     }
 
     if (priv->running) {
         ff_nuttx_flush_buffer(priv);
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] stop\n", __func__, priv->devname);
-        ioctl(priv->fd, AUDIOIOC_STOP, 0);
+        ff_nuttx_ioctl(priv->fd, AUDIOIOC_STOP, 0);
         priv->running  = false;
         priv->flushing = true;
     }
 
     while (!dq_empty(&priv->bufferq)) {
         buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
-        ioctl(priv->fd, AUDIOIOC_FREEBUFFER, &buf_desc);
+        ff_nuttx_ioctl(priv->fd, AUDIOIOC_FREEBUFFER, &buf_desc);
     }
 
     while (priv->flushing) {
@@ -640,7 +637,7 @@ int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter)
     if (!priv->fd)
         return AVERROR(EINVAL);
 
-    return ioctl(priv->fd, AUDIOIOC_SETPARAMTER, parameter);
+    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_SETPARAMTER, parameter);
 }
 
 int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
@@ -656,19 +653,19 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 
         ret = mq_getattr(priv->mq, &stat);
         if (ret < 0)
-            return ret;
+            return AVERROR(errno);
 
         if (nonblock && !stat.mq_curmsgs)
             break;
 
         ret = mq_receive(priv->mq, (char *)&msg, sizeof(msg), NULL);
         if (ret < 0)
-            return ret;
+            return AVERROR(errno);
 
         if (msg.msg_id == AUDIO_MSG_DEQUEUE) {
             if (priv->flushing) {
                 buf_desc.u.buffer = msg.u.ptr;
-                ioctl(priv->fd, AUDIOIOC_FREEBUFFER, &buf_desc);
+                ff_nuttx_ioctl(priv->fd, AUDIOIOC_FREEBUFFER, &buf_desc);
             } else {
                 buffer = msg.u.ptr;
                 buffer->curbyte = 0;
@@ -676,7 +673,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             }
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
             av_log(priv, AV_LOG_DEBUG, "[%s][%s] complete\n", __func__, priv->devname);
-            ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
+            ff_nuttx_ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
             priv->flushing = false;
         }
 
@@ -689,12 +686,12 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
                priv->playback ? "playback underflow" : "capture overflow");
 
         if (priv->playback) {
-            ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+            ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
             priv->underflow = true;
         } else {
             while (!dq_empty(&priv->bufferq)) {
                 buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
-                ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
+                ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
             }
         }
     }
@@ -721,20 +718,15 @@ static int ff_nuttx_peek_buffer(NuttxPriv *priv, struct ap_buffer_s **buffer)
     return 0;
 }
 
-static void ff_nuttx_drop_buffer(NuttxPriv *priv)
-{
-    dq_remfirst(&priv->bufferq);
-}
-
 long ff_nuttx_get_latency(NuttxPriv *priv)
 {
     struct ap_buffer_s *buffer;
     struct dq_entry_s *cur;
+    long latency = 0;
     int count = 0;
     int ret;
-    long latency = 0;
 
-    ret = ioctl(priv->fd, AUDIOIOC_GETLATENCY, &latency);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_GETLATENCY, &latency);
     if (ret < 0)
         return ret;
 
@@ -743,9 +735,7 @@ long ff_nuttx_get_latency(NuttxPriv *priv)
         count += buffer->curbyte;
     }
 
-    latency += count / priv->sample_bytes;
-
-    return latency;
+    return latency + count / priv->sample_bytes;
 }
 
 int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
@@ -767,35 +757,29 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
         buffer->curbyte += len;
 
         if (buffer->curbyte == buffer->nmaxbytes) {
-            ff_nuttx_drop_buffer(priv);
+            dq_remfirst(&priv->bufferq);
 
             buffer->curbyte = 0;
             buffer->nbytes  = buffer->nmaxbytes;
             desc.u.buffer   = buffer;
-            ret = ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
-            if (ret < 0) {
-                ret = AVERROR(errno);
+            ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
+            if (ret < 0)
                 break;
-            }
 
             if (!priv->running && dq_count(&priv->bufferq) == 0) {
-                ret = ioctl(priv->fd, AUDIOIOC_START, 0);
+                ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_START, 0);
                 av_log(NULL, AV_LOG_DEBUG, "[%s][%s] start ret:%d\n", __func__, priv->devname, ret);
-                if (ret < 0) {
-                    ret = AVERROR(errno);
+                if (ret < 0)
                     break;
-                }
 
                 priv->running = true;
             }
 
             if (priv->underflow && dq_count(&priv->bufferq) == 0) {
-                ret = ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+                ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
                 av_log(NULL, AV_LOG_INFO, "[%s][%s] resume ret:%d\n", __func__, priv->devname, ret);
-                if (ret < 0) {
-                    ret = AVERROR(errno);
+                if (ret < 0)
                     break;
-                }
 
                 priv->underflow = false;
             }
@@ -829,17 +813,15 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
         buffer->curbyte += len;
 
         if (buffer->curbyte == buffer->nbytes) {
-            ff_nuttx_drop_buffer(priv);
+            dq_remfirst(&priv->bufferq);
 
             buffer->curbyte = 0;
             buffer->nbytes  = buffer->nmaxbytes;
 
             desc.u.buffer = buffer;
-            ret = ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
-            if (ret < 0) {
-                ret = AVERROR(errno);
+            ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
+            if (ret < 0)
                 break;
-            }
         }
 
         data += len;
@@ -849,19 +831,19 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
     return left != size ? size - left : ret;
 }
 
-void ff_nuttx_pause(NuttxPriv *priv)
+int ff_nuttx_pause(NuttxPriv *priv)
 {
-    ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
 }
 
-void ff_nuttx_resume(NuttxPriv *priv)
+int ff_nuttx_resume(NuttxPriv *priv)
 {
-    ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
 }
 
-void ff_nuttx_flush(NuttxPriv *priv)
+int ff_nuttx_flush(NuttxPriv *priv)
 {
-    ioctl(priv->fd, AUDIOIOC_FLUSH, 0);
+    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_FLUSH, 0);
 }
 
 int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volume)
@@ -880,7 +862,7 @@ int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volu
     caps_desc.caps.ac_format.hw      = AUDIO_FU_VOLUME;
     caps_desc.caps.ac_controls.hw[0] = volume * 1000;
 
-    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
     if (ret >= 0) {
         priv->volume = volume;
         ff_nuttx_notify_changed(s1, priv, true);
@@ -902,7 +884,7 @@ int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute)
     caps_desc.caps.ac_format.hw      = AUDIO_FU_MUTE;
     caps_desc.caps.ac_controls.hw[0] = mute;
 
-    ret = ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_CONFIGURE, &caps_desc);
     if (ret >= 0) {
         priv->mute = mute;
         ff_nuttx_notify_changed(s1, priv, false);
