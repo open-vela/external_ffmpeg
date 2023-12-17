@@ -474,7 +474,6 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
     priv->mute = false;
 
     av_strlcpy(priv->devname, device, sizeof(priv->devname));
-
     return 0;
 
 out:
@@ -502,7 +501,6 @@ void ff_nuttx_deinit(NuttxPriv *priv)
 
     close(priv->fd);
     priv->fd = -1;
-    priv->mute = false;
 }
 
 int ff_nuttx_open(NuttxPriv *priv)

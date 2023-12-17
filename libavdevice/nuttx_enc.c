@@ -58,7 +58,6 @@ static int nuttx_init(struct AVFormatContext *s1)
     int ret;
 
     ret = ff_nuttx_init(priv, s1->url, true);
-
     return ret < 0 ? ret : 1;
 }
 
@@ -196,8 +195,8 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
             if (!data || data_size < sizeof(struct pollfd))
                 return AVERROR(EINVAL);
 
-            poll[0].fd      = priv->mq;
-            poll[0].events  = POLLIN;
+            poll[0].fd     = priv->mq;
+            poll[0].events = POLLIN;
 
             return 1;
         }
