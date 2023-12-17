@@ -34,6 +34,9 @@
 
 #include "nuttx.h"
 
+#undef ff_nuttx_close
+#undef ff_nuttx_poll_available
+
 static int ff_nuttx_samplerate_convert(int samplerate, int *sample_rates, int num)
 {
     int i;

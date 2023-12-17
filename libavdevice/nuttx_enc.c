@@ -101,7 +101,7 @@ static int nuttx_write_trailer(struct AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
 
-    ff_nuttx_close(priv, priv->nonblock);
+    ff_nuttx_close(priv);
     return 0;
 }
 
@@ -204,7 +204,7 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
         case AV_APP_TO_DEV_POLL_AVAILABLE: {
             int ret;
 
-            ret = ff_nuttx_poll_available(priv, true);
+            ret = ff_nuttx_poll_available(priv);
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
 
             return ret;
