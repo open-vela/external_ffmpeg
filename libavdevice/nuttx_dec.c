@@ -86,8 +86,8 @@ static int nuttx_control_message(struct AVFormatContext *s1,
             if (!data || data_size < sizeof(struct pollfd))
                 return AVERROR(EINVAL);
 
-            poll[0].fd      = priv->mq;
-            poll[0].events  = POLLIN;
+            poll[0].fd     = priv->mq;
+            poll[0].events = POLLIN;
 
             return 1;
         }
@@ -137,8 +137,6 @@ static int nuttx_read_header(AVFormatContext *s1)
     AVStream *st;
     int ret;
 
-    priv->timestamp = 0;
-
     st = avformat_new_stream(s1, NULL);
     if (!st)
         return AVERROR(ENOMEM);
@@ -157,6 +155,8 @@ static int nuttx_read_header(AVFormatContext *s1)
         ff_remove_stream(s1, st);
         return ret;
     }
+
+    priv->timestamp = 0;
 
     /* take real parameters */
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
