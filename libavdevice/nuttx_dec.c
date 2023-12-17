@@ -94,7 +94,7 @@ static int nuttx_control_message(struct AVFormatContext *s1,
         case AV_APP_TO_DEV_POLL_AVAILABLE: {
             int ret;
 
-            ret = ff_nuttx_poll_available(priv, true);
+            ret = ff_nuttx_poll_available(priv);
             avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_BUFFER_READABLE, NULL, 0);
 
             return ret;
@@ -177,7 +177,7 @@ static int nuttx_read_close(AVFormatContext *s1)
 
     st = s1->streams[0];
 
-    ff_nuttx_close(priv, priv->nonblock);
+    ff_nuttx_close(priv);
     ff_remove_stream(s1, st);
 
     return 0;
