@@ -37,6 +37,7 @@
 typedef struct NuttxPriv {
     AVClass        *class;
 
+    bool            playback;
     bool            running;
     bool            flushing;
     bool            underflow;
@@ -64,7 +65,6 @@ typedef struct NuttxPriv {
     dq_queue_t      bufferq;
 
     AVPacket       *lastpkt;
-    bool            capture;
     int64_t         timestamp;
 } NuttxPriv;
 
@@ -72,10 +72,10 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
                                     const char *key, int flags, bool playback);
 int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback);
 
-int ff_nuttx_init(NuttxPriv *priv, const char *device);
+int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback);
 void ff_nuttx_deinit(NuttxPriv *priv);
 
-int ff_nuttx_open(NuttxPriv *priv, bool playback);
+int ff_nuttx_open(NuttxPriv *priv);
 void ff_nuttx_close(NuttxPriv *priv, bool nonblock);
 int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter);
 

@@ -43,9 +43,7 @@ static int nuttx_init(struct AVFormatContext *s1)
 {
     NuttxPriv *priv = s1->priv_data;
 
-    priv->capture = true;
-
-    return ff_nuttx_init(priv, s1->url);
+    return ff_nuttx_init(priv, s1->url, false);
 }
 
 static void nuttx_deinit(struct AVFormatContext *s1)
@@ -142,7 +140,7 @@ static int nuttx_read_header(AVFormatContext *s1)
     if (s1->flags & AVFMT_FLAG_NONBLOCK)
         priv->nonblock = true;
 
-    ret = ff_nuttx_open(s1->priv_data, false);
+    ret = ff_nuttx_open(s1->priv_data);
     if (ret < 0) {
         ff_remove_stream(s1, st);
         return ret;
