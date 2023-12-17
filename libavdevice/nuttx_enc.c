@@ -38,7 +38,19 @@
 
 #include "nuttx.h"
 
-static const AVClass nuttx_cap_class;
+static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
+                                        const char *key, int flags)
+{
+    return ff_nuttx_capbility_query_ranges(ranges, obj, key, flags, true);
+}
+
+static const AVClass nuttx_cap_class = {
+    .class_name   = "NUTTX outdev capbility",
+    .item_name    = av_default_item_name,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = nuttx_capbility_query_ranges,
+};
 
 static int nuttx_init(struct AVFormatContext *s1)
 {
@@ -266,20 +278,6 @@ static void nuttx_get_output_timestamp(struct AVFormatContext *s1, int stream,
     else
         *dts = priv->timestamp - latency;
 }
-
-static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
-                                        const char *key, int flags)
-{
-    return ff_nuttx_capbility_query_ranges(ranges, obj, key, flags, true);
-}
-
-static const AVClass nuttx_cap_class = {
-    .class_name   = "NUTTX outdev capbility",
-    .item_name    = av_default_item_name,
-    .version      = LIBAVUTIL_VERSION_INT,
-    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
-    .query_ranges = nuttx_capbility_query_ranges,
-};
 
 static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoList *device_list)
 {
