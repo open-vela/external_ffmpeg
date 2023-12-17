@@ -148,7 +148,7 @@ static int ff_nuttx_flush_buffer(NuttxPriv *priv)
     struct audio_buf_desc_s desc;
     struct ap_buffer_s *buffer;
 
-    if (priv->capture)
+    if (!priv->playback)
         return 0;
 
     buffer = (struct ap_buffer_s *)dq_peek(&priv->bufferq);
@@ -425,7 +425,7 @@ err:
     return ret;
 }
 
-int ff_nuttx_init(NuttxPriv *priv, const char *device)
+int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
 {
     int ret;
 
@@ -461,6 +461,7 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device)
         goto out;
     }
 
+    priv->playback = playback;
     priv->volume = NAN;
     priv->mute = false;
 
@@ -496,7 +497,7 @@ void ff_nuttx_deinit(NuttxPriv *priv)
     priv->mute = false;
 }
 
-int ff_nuttx_open(NuttxPriv *priv, bool playback)
+int ff_nuttx_open(NuttxPriv *priv)
 {
     struct audio_caps_desc_s caps_desc = {0};
     struct audio_buf_desc_s buf_desc;
@@ -512,7 +513,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
 
     priv->sample_bytes = bps * priv->ch_layout.nb_channels / 8;
     caps_desc.caps.ac_len            = sizeof(struct audio_caps_s);
-    caps_desc.caps.ac_type           = playback ?
+    caps_desc.caps.ac_type           = priv->playback ?
                                        AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
     caps_desc.caps.ac_channels       = priv->ch_layout.nb_channels;
     caps_desc.caps.ac_chmap          = 0;
@@ -563,7 +564,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
             goto out;
         }
 
-        if (playback) {
+        if (priv->playback) {
             dq_addlast(&buffer->dq_entry, &priv->bufferq);
         } else {
             buffer->nbytes    = buffer->nmaxbytes;
@@ -582,7 +583,7 @@ int ff_nuttx_open(NuttxPriv *priv, bool playback)
         goto out;
     }
 
-    if (!playback) {
+    if (!priv->playback) {
         ret = ioctl(priv->fd, AUDIOIOC_START, 0);
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] start ret:%d\n", __func__, priv->devname, ret);
         if (ret < 0) {
@@ -681,17 +682,17 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 
     new = dq_count(&priv->bufferq);
     if (priv->periods > 1 && new == priv->periods && new > old) {
-        av_log(priv, AV_LOG_WARNING, "audio %s, %s !\n", priv->devname,
-               priv->capture ? "capture overflow" : "playback underflow");
+        av_log(priv, AV_LOG_WARNING, "audio %s, %s!\n", priv->devname,
+               priv->playback ? "playback underflow" : "capture overflow");
 
-        if (priv->capture) {
+        if (priv->playback) {
+            ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+            priv->underflow = true;
+        } else {
             while (!dq_empty(&priv->bufferq)) {
                 buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
                 ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
             }
-        } else {
-            ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
-            priv->underflow = true;
         }
     }
 

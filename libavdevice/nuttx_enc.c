@@ -45,7 +45,7 @@ static int nuttx_init(struct AVFormatContext *s1)
     NuttxPriv *priv = s1->priv_data;
     int ret;
 
-    ret = ff_nuttx_init(priv, s1->url);
+    ret = ff_nuttx_init(priv, s1->url, true);
 
     return ret < 0 ? ret : 1;
 }
@@ -77,7 +77,7 @@ static int nuttx_write_header(AVFormatContext *s1)
     priv->format      = st->codecpar->format;
     av_channel_layout_copy(&priv->ch_layout, &st->codecpar->ch_layout);
 
-    ret = ff_nuttx_open(s1->priv_data, true);
+    ret = ff_nuttx_open(s1->priv_data);
     if (ret >= 0)
         avpriv_set_pts_info(st, 64, 1, priv->sample_rate);
 
