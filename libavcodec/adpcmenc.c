@@ -599,8 +599,8 @@ static int64_t adpcm_argo_compress_block(ADPCMChannelStatus *cs, PutBitContext *
 static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                               const AVFrame *frame, int *got_packet_ptr)
 {
-    int st, pkt_size, ret;
-    const int16_t *samples;
+    int av_unused st, pkt_size, ret;
+    const int16_t av_unused *samples;
     int16_t **samples_p;
     uint8_t *dst;
     ADPCMEncodeContext *c = avctx->priv_data;
