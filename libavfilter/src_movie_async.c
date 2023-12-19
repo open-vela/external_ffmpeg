@@ -211,6 +211,51 @@ static int movie_async_send_event(AVFilterContext *ctx, int event, int ret, cons
     return 0;
 }
 
+static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    AVCodecParameters *param;
+    AVFrame *out;
+    int index;
+
+    out = av_frame_alloc();
+    if (!out)
+        return NULL;
+
+    index = movie->streams[pad_id].index;
+    param = movie->format_ctx->streams[index]->codecpar;
+    out->format = param->format;
+
+    if (movie->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
+        out->sample_rate = param->sample_rate;
+        av_channel_layout_copy(&out->ch_layout, &param->ch_layout);
+    } else {
+        out->width = param->width;
+        out->height = param->height;
+    }
+
+    return out;
+}
+
+static int movie_async_send_empty_frame(AVFilterContext *ctx, int pad_id)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    AVFrame *out;
+    int ret;
+
+    out = movie_async_alloc_empty_frame(ctx, pad_id);
+    if (!out)
+        return AVERROR(ENOMEM);
+
+    ret = movie_async_send_dat(ctx, pad_id, out);
+    if (ret < 0) {
+        av_frame_free(&out);
+        return ret;
+    }
+
+    return 0;
+}
+
 static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters **dst)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -696,8 +741,17 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
 
     if (ret >= 0 || ret == AVERROR_EXIT)
         return false;
-    else if (ret == AVERROR_EOF)
-        ret = 0;
+    else if (ret == AVERROR_EOF) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            ret = movie_async_send_empty_frame(ctx, i);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "Failed outputs %d/%d send empty frame ret,%d,%s.\n",
+                    i, ctx->nb_outputs, ret, av_err2str(ret));
+                break;
+            }
+        }
+        movie->format_ctx->pb->eof_reached = 1;
+    }
 
     movie->state = AVMOVIE_ASYNC_STATE_COMPLETED;
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
@@ -771,6 +825,13 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
     return exit;
 }
 
+static inline int movie_async_eof(AVFilterContext *ctx)
+{
+    MovieAsyncContext *movie = ctx->priv;
+
+    return movie->format_ctx && movie->format_ctx->pb && movie->format_ctx->pb->eof_reached;
+}
+
 static void *movie_async_thread(void *arg)
 {
     AVFilterContext *ctx = arg;
@@ -785,7 +846,7 @@ static void *movie_async_thread(void *arg)
             pthread_mutex_unlock(&movie->mutex);
 
             exit = movie_async_proc_cmd(ctx, msg);
-        } else if (movie->format_ctx && movie_async_dat_available(ctx)) {
+        } else if (!movie_async_eof(ctx) && movie_async_dat_available(ctx)) {
             pthread_mutex_unlock(&movie->mutex);
 
             exit = movie_async_proc_dat(ctx);
@@ -1065,7 +1126,12 @@ static int movie_async_activate(AVFilterContext *ctx)
 
         frame = movie_async_recv_dat(ctx, i);
 
-        ret = ff_filter_frame(link, frame);
+        if (frame->data[0])
+            ret = ff_filter_frame(link, frame);
+        else {
+            avfilter_forward_command(ctx, i, NULL, "drain", NULL, NULL, 0, 0);
+            av_frame_free(&frame);
+        }
     }
 
     return ret;
