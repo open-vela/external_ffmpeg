@@ -151,6 +151,13 @@ static int decoder_activate(AVFilterContext *ctx)
         return ret;
     }
 
+    ff_inlink_acknowledge_status(inlink, &ret, &pts);
+    if (ret == AVERROR_EOF) {
+        decoder_close(ctx);
+        ff_avfilter_link_set_in_status(outlink, AVERROR_EOF, AV_NOPTS_VALUE);
+        return ret;
+    }
+
     if (!priv->codec_ctx) {
         ret = decoder_open(ctx);
         if (ret < 0)
@@ -180,12 +187,6 @@ static int decoder_activate(AVFilterContext *ctx)
                 ff_inlink_request_frame(inlink);
             break;
         }
-    }
-
-    ff_inlink_acknowledge_status(inlink, &ret, &pts);
-    if (ret == AVERROR_EOF) {
-        decoder_close(ctx);
-        ff_avfilter_link_set_in_status(outlink, AVERROR_EOF, AV_NOPTS_VALUE);
     }
 
     return ret;
