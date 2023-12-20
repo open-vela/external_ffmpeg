@@ -37,6 +37,7 @@ typedef struct PCMAudioDemuxerContext {
     int channels;
 #endif
     AVChannelLayout ch_layout;
+    int64_t nb_samples;
 } PCMAudioDemuxerContext;
 
 static int pcm_read_header(AVFormatContext *s)
@@ -47,6 +48,7 @@ static int pcm_read_header(AVFormatContext *s)
     uint8_t *mime_type = NULL;
     int ret;
 
+    s1->nb_samples = 0;
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
@@ -112,6 +114,37 @@ static int pcm_read_header(AVFormatContext *s)
     return 0;
 }
 
+static int pcm_dec_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    PCMAudioDemuxerContext *s1 = s->priv_data;
+    AVCodecParameters *par = s->streams[0]->codecpar;
+    int ret;
+
+    ret = ff_pcm_read_packet(s, pkt);
+    if (ret < 0)
+        return ret;
+
+    pkt->time_base = s->streams[0]->time_base;
+    pkt->dts = pkt->pts = s1->nb_samples;
+    s1->nb_samples += pkt->size / par->block_align;
+
+    return ret;
+}
+
+static int pcm_dec_read_seek(AVFormatContext *s,
+                             int stream_index, int64_t timestamp, int flags)
+{
+    PCMAudioDemuxerContext *s1 = s->priv_data;
+    int ret;
+
+    ret = ff_pcm_read_seek(s, stream_index, timestamp, flags);
+    if (ret < 0)
+        return ret;
+
+    s1->nb_samples = ffstream(s->streams[0])->cur_dts;
+    return ret;
+}
+
 static const AVOption pcm_options[] = {
     { "sample_rate", "", offsetof(PCMAudioDemuxerContext, sample_rate), AV_OPT_TYPE_INT, {.i64 = 44100}, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM },
 #if FF_API_OLD_CHANNEL_LAYOUT
@@ -136,8 +169,8 @@ const AVInputFormat ff_pcm_ ## name_ ## _demuxer = {        \
     .long_name      = NULL_IF_CONFIG_SMALL(long_name_),     \
     .priv_data_size = sizeof(PCMAudioDemuxerContext),       \
     .read_header    = pcm_read_header,                      \
-    .read_packet    = ff_pcm_read_packet,                   \
-    .read_seek      = ff_pcm_read_seek,                     \
+    .read_packet    = pcm_dec_read_packet,                  \
+    .read_seek      = pcm_dec_read_seek,                     \
     .flags          = AVFMT_GENERIC_INDEX,                  \
     .extensions     = ext,                                  \
     .raw_codec_id   = codec,                                \
