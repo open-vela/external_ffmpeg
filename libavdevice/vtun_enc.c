@@ -64,7 +64,7 @@ typedef struct {
 
 static const VtunPixFmt ff_vtun_pixfmt_map[] = {
     { VTUN_FRAME_FORMAT_BGRA8888, AV_PIX_FMT_BGRA },
-    { VTUN_FRAME_FORMAT_YUV420SP, AV_PIX_FMT_NV12 },
+    { VTUN_FRAME_FORMAT_NV12, AV_PIX_FMT_NV12 },
     { VTUN_FRAME_FORMAT_RGB565, AV_PIX_FMT_RGB565LE },
 };
 
@@ -164,6 +164,7 @@ static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
 {
     VtunShareFrame *frame = &priv->frame;
     AVFrame *avframe;
+    int i;
 
     if (ff_framequeue_queued_frames(&priv->queue) > 0) {
         if (frame->avframe)
@@ -174,9 +175,11 @@ static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
         frame->tunframe.format = vtun_format_convert(avframe->format);
         frame->tunframe.current_ms = av_rescale_q(avframe->pts,
                                                   avframe->time_base, av_make_q(1, 1000));
-        frame->tunframe.addr = avframe->data[0];
-        frame->tunframe.size = avframe->linesize[0] * avframe->height;
-        frame->tunframe.stride = avframe->linesize[0];
+        for (i = 0; i < FFMIN(VTUN_FRAME_PLANE_NUM, AV_NUM_DATA_POINTERS); i++) {
+            frame->tunframe.plane[i].addr = avframe->data[i];
+            frame->tunframe.plane[i].stride = avframe->linesize[i];
+        }
+
         frame->tunframe.w = avframe->width;
         frame->tunframe.h = avframe->height;
         frame->tunframe.crop_info.y1 = avframe->crop_top;
@@ -184,9 +187,10 @@ static lvx_vtun_frame *vtun_get_frame(VtunCtx *priv)
         frame->tunframe.crop_info.x1 = avframe->crop_left;
         frame->tunframe.crop_info.x2 = avframe->crop_right;
         frame->avframe = avframe;
+        return &frame->tunframe;
     }
 
-    return &frame->tunframe;
+    return NULL;
 }
 
 static int vtun_handle_event(struct AVFormatContext *h)
