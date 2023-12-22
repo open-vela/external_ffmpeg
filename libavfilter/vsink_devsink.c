@@ -51,7 +51,7 @@ typedef struct DevSinkPriv {
     bool            frame_uncoded;
     int             frame_duration;
     int             max_latency;
-    int64_t         delta_base;
+    int64_t         ts_base;
     int64_t         lat_base;
 } DevSinkPriv;
 
@@ -107,13 +107,16 @@ static int devsink_sync_video(AVFilterContext *ctx, int64_t pts, int64_t ts, int
     DevSinkPriv *priv = ctx->priv;
     int64_t now, diff;
 
-    if (priv->delta_base == AV_NOPTS_VALUE) {
-        priv->delta_base = pts - ts;
-        priv->lat_base   = lat;
-        av_log(ctx, AV_LOG_INFO, "sync pts:%lld ts:%lld delta:%lld lat:%lld\n", pts, ts, priv->delta_base, lat);
+    if (priv->ts_base == AV_NOPTS_VALUE) {
+        if (priv->lat_base == AV_NOPTS_VALUE)
+            priv->ts_base = ts;
+        else
+            priv->ts_base = ts - pts;
+        priv->lat_base = lat;
+        av_log(ctx, AV_LOG_INFO, "sync pts:%lld ts:%lld base:%lld lat:%lld\n", pts, ts, priv->ts_base, lat);
     }
 
-    now   = ts + priv->delta_base;
+    now   = ts - priv->ts_base;
     diff  = pts - now;
     diff += priv->lat_base;
 
@@ -199,7 +202,8 @@ static int devsink_start(AVFilterContext *ctx)
         avcodec_free_context(&priv->enc_ctx);
         return ret;
     }
-    priv->delta_base = AV_NOPTS_VALUE;
+    priv->ts_base  = AV_NOPTS_VALUE;
+    priv->lat_base = AV_NOPTS_VALUE;
 
     return 0;
 }
@@ -468,7 +472,7 @@ static int devsink_process_command(AVFilterContext *ctx,
             av_frame_free(&frame);
         }
         ff_filter_set_ready(ctx, 100);
-        priv->delta_base = AV_NOPTS_VALUE;
+        priv->ts_base = AV_NOPTS_VALUE;
         return 0;
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(

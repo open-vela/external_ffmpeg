@@ -70,6 +70,7 @@ typedef struct MovieStream {
     FFFrameQueue     dat_queue;
     AVRational       time_base;
     AVRational       frame_rate;
+    int64_t          start_time;
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -462,8 +463,10 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         movie->streams[i].index      = stream->index;
         movie->streams[i].time_base  = stream->time_base;
         movie->streams[i].frame_rate = stream->r_frame_rate;
+        movie->streams[i].start_time = av_rescale_q(movie->format_ctx->start_time,
+                                                    AV_TIME_BASE_Q, stream->time_base);
     }
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE.\n", name);
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE start_time:%lld.\n", name, movie->format_ctx->start_time);
 
     if (movie->format_ctx->duration == AV_NOPTS_VALUE)
         movie->duration_ms = 0;
@@ -604,9 +607,10 @@ static int movie_async_read_frame(AVFilterContext *ctx)
 
     /* send the packet to its decoder, if any */
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (pkt->stream_index == movie->streams[i].index) {
-            movie->current_ms = av_rescale_q(pkt->pts + pkt->duration,
-                                             movie->streams[i].time_base, av_make_q(1, 1000));
+        MovieStream *stream = &movie->streams[i];
+        if (pkt->stream_index == stream->index) {
+            movie->current_ms = av_rescale_q(pkt->pts + pkt->duration, stream->time_base, av_make_q(1, 1000));
+            pkt->pts -= stream->start_time;
             ret = movie_async_send_frame(ctx, pkt, i);
             if (ret < 0)
                 goto out;
