@@ -199,6 +199,9 @@ static int ff_bluelet_recv_ctrl(BlueletPriv *priv, void *buffer, size_t length)
         if (ret < 0)
             return AVERROR(errno);
 
+        if (ret == 0)
+            return AVERROR(ENOTCONN);
+
         buffer = (char*)buffer + ret;
         length -= ret;
     }
