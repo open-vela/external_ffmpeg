@@ -881,6 +881,9 @@ static int moviesink_process_open(AVFilterContext *ctx)
 
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, priv->stack_size);
+#ifdef FILTER_MOVIE_PRIORITY
+    priv->priority = FILTER_MOVIE_PRIORITY;
+#endif
     param.sched_priority = priv->priority;
     pthread_attr_setschedparam(&attr, &param);
     ret = pthread_create(&thread, &attr, moviesink_thread, ctx);
