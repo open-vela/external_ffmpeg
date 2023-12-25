@@ -423,6 +423,8 @@ Advanced options (experts only):
   --disable-safe-bitstream-reader
                            disable buffer boundary checking in bitreaders
                            (faster, but may crash)
+  --filter-movie-priority=VALUE
+                           set filter related priority
   --sws-max-filter-size=N  the max filter size swscale uses [$sws_max_filter_size_default]
   --swr-filter-size=N      the filter size swresample uses [$swr_filter_size_default]
   --swr-phase-shift=N      the phase shift swresample uses [$swr_phase_shift_default]
@@ -4233,6 +4235,9 @@ for opt do
                 die_unknown $opt
             fi
         ;;
+        --filter-movie-priority=*)
+            test "$optval" != 0  && filter_movie_priority=$optval
+        ;;
         --list-*)
             NAME="${opt#--list-}"
             is_in $NAME $COMPONENT_LIST || die_unknown $opt
@@ -7883,6 +7888,9 @@ EOF
 
 test -n "$assert_level" &&
     echo "#define ASSERT_LEVEL $assert_level" >>$TMPH
+
+test -n "$filter_movie_priority" && test $filter_movie_priority != 0 &&
+    echo "#define FILTER_MOVIE_PRIORITY $filter_movie_priority" >>$TMPH
 
 test -n "$malloc_prefix" &&
     echo "#define MALLOC_PREFIX $malloc_prefix" >>$TMPH
