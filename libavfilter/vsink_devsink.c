@@ -51,7 +51,6 @@ typedef struct DevSinkPriv {
     bool            frame_uncoded;
     int             frame_duration;
     int             max_latency;
-    int             max_outsync;
     int64_t         delta_base;
     int64_t         lat_base;
 } DevSinkPriv;
@@ -111,19 +110,11 @@ static int devsink_sync_video(AVFilterContext *ctx, int64_t pts, int64_t ts, int
     if (priv->delta_base == AV_NOPTS_VALUE) {
         priv->delta_base = pts - ts;
         priv->lat_base   = lat;
-        av_log(ctx, AV_LOG_INFO, "sync delta:%lld pts:%lld lat:%lld\n", priv->delta_base, pts, lat);
+        av_log(ctx, AV_LOG_INFO, "sync pts:%lld ts:%lld delta:%lld lat:%lld\n", pts, ts, priv->delta_base, lat);
     }
 
-    now  = ts + priv->delta_base;
-    diff = pts - now;
-
-    if (FFABS(diff) > priv->max_outsync) {
-        priv->delta_base = pts - ts;
-        priv->lat_base   = lat;
-        av_log(ctx, AV_LOG_INFO, "resync delta:%lld pts:%lld lat:%lld diff%lld\n", priv->delta_base, pts, lat, diff);
-        return 0;
-    }
-
+    now   = ts + priv->delta_base;
+    diff  = pts - now;
     diff += priv->lat_base;
 
     if (diff > priv->frame_duration)
@@ -477,6 +468,7 @@ static int devsink_process_command(AVFilterContext *ctx,
             av_frame_free(&frame);
         }
         ff_filter_set_ready(ctx, 100);
+        priv->delta_base = AV_NOPTS_VALUE;
         return 0;
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(
@@ -532,7 +524,6 @@ static const AVOption devsink_options[] = {
     { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING, .flags = FLAGS },
     { "pixel_fmt",   "", OFFSET(pixel_fmt),   AV_OPT_TYPE_INT,    {.i64 = AV_PIX_FMT_NONE}, -1,       INT_MAX, FLAGSR },
     { "max_latency", "", OFFSET(max_latency), AV_OPT_TYPE_INT,    {.i64 = 10000},           0,        INT_MAX, FLAGS },
-    { "max_outsync", "", OFFSET(max_outsync), AV_OPT_TYPE_INT,    {.i64 = 200000},          0,        INT_MAX, FLAGS },
     { NULL },
 };
 
