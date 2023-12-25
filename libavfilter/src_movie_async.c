@@ -817,6 +817,9 @@ static int movie_async_proc_open(AVFilterContext *ctx)
 
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, movie->stack_size);
+#ifdef FILTER_MOVIE_PRIORITY
+    movie->priority = FILTER_MOVIE_PRIORITY;
+#endif
     param.sched_priority = movie->priority;
     pthread_attr_setschedparam(&attr, &param);
     ret = pthread_create(&thread, &attr, movie_async_thread, ctx);
