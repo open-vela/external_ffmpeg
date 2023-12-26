@@ -831,6 +831,24 @@ static int moviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AVC
     return ff_formats_ref(formats, &link->outcfg.codecs);
 }
 
+static enum AVCodecID find_encoder_id(const char *name, enum AVMediaType type)
+{
+    const AVCodecDescriptor *desc;
+    const AVCodec *codec;
+
+    codec = avcodec_find_encoder_by_name(name);
+
+    if (!codec && (desc = avcodec_descriptor_get_by_name(name)))
+        codec = avcodec_find_encoder(desc->id);
+
+    if (!codec || codec->type != type) {
+        av_log(NULL, AV_LOG_DEBUG, "sink movie cannot find proper codec for %s.", name);
+        return AV_CODEC_ID_NONE;
+    }
+
+    return codec->id;
+}
+
 static int moviesink_query_formats(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -848,13 +866,21 @@ static int moviesink_query_formats(AVFilterContext *ctx)
             case AVMEDIA_TYPE_AUDIO:
                 /* Codec id is configurable. */
                 codec_opt = av_dict_get(priv->format_opt, "audio_codec", NULL, 0);
+                if (codec_opt)
+                    codec_id = find_encoder_id(codec_opt->value, AVMEDIA_TYPE_AUDIO);
+                else
+                    codec_id = AV_CODEC_ID_NONE;
                 ret = moviesink_query_audio_fmts(ctx, i,
-                    codec_opt ? atoi(codec_opt->value): priv->format->audio_codec);
+                    codec_id != AV_CODEC_ID_NONE ? codec_id: priv->format->audio_codec);
                 break;
             case AVMEDIA_TYPE_VIDEO:
                 codec_opt = av_dict_get(priv->format_opt, "video_codec", NULL, 0);
+                if (codec_opt)
+                    codec_id = find_encoder_id(codec_opt->value, AVMEDIA_TYPE_VIDEO);
+                else
+                    codec_id = AV_CODEC_ID_NONE;
                 ret = moviesink_query_video_fmts(ctx, i,
-                    codec_opt ? atoi(codec_opt->value): priv->format->video_codec);
+                    codec_id != AV_CODEC_ID_NONE ? codec_id: priv->format->video_codec);
                 break;
             default:
                 break;
