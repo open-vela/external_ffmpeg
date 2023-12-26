@@ -14,6 +14,8 @@ OBJS = allformats.o         \
        demux_utils.o        \
        dump.o               \
        format.o             \
+       id3v1.o              \
+       id3v2.o              \
        isom_tags.o          \
        metadata.o           \
        mux.o                \
@@ -28,8 +30,6 @@ OBJS = allformats.o         \
        utils.o              \
        version.o            \
 
-OBJS-$(CONFIG_ID3)                       += id3v1.o
-OBJS-$(CONFIG_ID3)                       += id3v2.o
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
 
 # subsystems
