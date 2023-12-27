@@ -69,16 +69,24 @@ static int activate(AVFilterContext *ctx)
     AVFrame *in;
     int status, ret;
     int64_t pts;
+    int i;
 
-    for (int i = 0; i < ctx->nb_outputs; i++) {
-        FF_FILTER_FORWARD_STATUS_BACK_ALL(ctx->outputs[i], ctx);
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (!ff_outlink_get_status(ctx->outputs[i])) {
+            break;
+        }
+    }
+
+    if (i == ctx->nb_outputs) {
+        ff_inlink_set_status(inlink,AVERROR_EOF);
+        return 0;
     }
 
     ret = ff_inlink_consume_frame(inlink, &in);
     if (ret < 0)
         return ret;
     if (ret > 0) {
-        for (int i = 0; i < ctx->nb_outputs; i++) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
             AVFrame *buf_out;
 
             if (ff_outlink_get_status(ctx->outputs[i]))
@@ -100,7 +108,7 @@ static int activate(AVFilterContext *ctx)
     }
 
     if (ff_inlink_acknowledge_status(inlink, &status, &pts)) {
-        for (int i = 0; i < ctx->nb_outputs; i++) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
             if (ff_outlink_get_status(ctx->outputs[i]))
                 continue;
             ff_outlink_set_status(ctx->outputs[i], status, pts);
@@ -108,7 +116,7 @@ static int activate(AVFilterContext *ctx)
         return 0;
     }
 
-    for (int i = 0; i < ctx->nb_outputs; i++) {
+    for (i = 0; i < ctx->nb_outputs; i++) {
         if (ff_outlink_get_status(ctx->outputs[i]))
             continue;
 
