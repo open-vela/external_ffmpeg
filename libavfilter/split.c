@@ -70,6 +70,7 @@ static int activate(AVFilterContext *ctx)
     int status, ret;
     int64_t pts;
     int i;
+    bool first = true;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (!ff_outlink_get_status(ctx->outputs[i])) {
@@ -91,18 +92,28 @@ static int activate(AVFilterContext *ctx)
 
             if (ff_outlink_get_status(ctx->outputs[i]))
                 continue;
-            buf_out = av_frame_clone(in);
-            if (!buf_out) {
-                ret = AVERROR(ENOMEM);
-                break;
-            }
 
-            ret = ff_filter_frame(ctx->outputs[i], buf_out);
-            if (ret < 0)
-                break;
+            if (first) {
+                ret = ff_filter_frame(ctx->outputs[i], in);
+                if (ret < 0)
+                    break;
+                first = false;
+            } else {
+                buf_out = av_frame_clone(in);
+                if (!buf_out) {
+                    ret = AVERROR(ENOMEM);
+                    break;
+                }
+
+                ret = ff_filter_frame(ctx->outputs[i], buf_out);
+                if (ret < 0)
+                    break;
+            }
         }
 
-        av_frame_free(&in);
+        if (first)
+            av_frame_free(&in);
+
         if (ret < 0)
             return ret;
     }
