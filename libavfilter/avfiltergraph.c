@@ -346,6 +346,7 @@ static int filter_check_formats(AVFilterContext *ctx)
 
 static int filter_ref_agreed_formats(AVFilterContext *ctx)
 {
+    enum AVMediaType type = AVMEDIA_TYPE_UNKNOWN;
     AVFilterFormats *codecs = NULL;
     AVFilterFormats *formats = NULL;
     AVFilterFormats *rates = NULL;
@@ -354,6 +355,16 @@ static int filter_ref_agreed_formats(AVFilterContext *ctx)
 
     if (ctx->filter->sanitize_formats)
         return AVERROR(EPERM);
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (type == AVMEDIA_TYPE_UNKNOWN) {
+            type = ctx->outputs[i]->type;
+            continue;
+        }
+
+        if (type != ctx->outputs[i]->type)
+            return AVERROR(EPERM);
+    }
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (ctx->inputs[i]->outcfg.formats) {
