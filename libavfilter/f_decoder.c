@@ -258,7 +258,7 @@ static int decoder_process_command(AVFilterContext *ctx,
 {
     DecoderContext* priv = ctx->priv;
 
-    if (!strcmp(cmd, "flush")) {
+    if (priv->codec_ctx && !strcmp(cmd, "flush")) {
         avcodec_flush_buffers(priv->codec_ctx);
         return 0;
     }
