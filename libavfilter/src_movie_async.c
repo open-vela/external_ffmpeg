@@ -592,7 +592,6 @@ static int movie_async_read_frame(AVFilterContext *ctx)
     MovieAsyncContext *movie = ctx->priv;
     AVPacket *pkt;
     int i, ret;
-    unsigned pkt_duration_ms;
 
     pkt = av_packet_alloc();
     if (!pkt)
@@ -606,15 +605,8 @@ static int movie_async_read_frame(AVFilterContext *ctx)
     /* send the packet to its decoder, if any */
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (pkt->stream_index == movie->streams[i].index) {
-            movie->current_ms = av_rescale_q(pkt->pts,
+            movie->current_ms = av_rescale_q(pkt->pts + pkt->duration,
                                              movie->streams[i].time_base, av_make_q(1, 1000));
-
-            pkt_duration_ms = av_rescale_q(pkt->duration,
-                                           movie->streams[i].time_base, av_make_q(1, 1000));
-            /* if last packet, update current_ms to duration_ms */
-            if (movie->current_ms + pkt_duration_ms == movie->duration_ms)
-                movie->current_ms = movie->duration_ms;
-
             ret = movie_async_send_frame(ctx, pkt, i);
             if (ret < 0)
                 goto out;
