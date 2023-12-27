@@ -202,8 +202,7 @@ static int exif_decode_tag(void *logctx, GetByteContext *gbytes, int le,
                            int depth, AVDictionary **metadata)
 {
     int ret, cur_pos;
-    unsigned id, count;
-    enum TiffTypes type;
+    unsigned id, count, type;
 
     if (depth > 2) {
         return 0;
