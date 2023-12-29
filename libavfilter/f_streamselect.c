@@ -441,14 +441,11 @@ static int query_formats(AVFilterContext *ctx)
         ret = query_formats_ref(ctx->inputs[i], true, codecs, formats, rates, layouts);
 
 out:
-        if (codecs && !codecs->refcount)
-            ff_formats_unref(&codecs);
-        if (formats && !formats->refcount)
-            ff_formats_unref(&formats);
-        if (rates && !rates->refcount)
-            ff_formats_unref(&rates);
-        if (layouts && !layouts->refcount)
-            ff_channel_layouts_unref(&layouts);
+        ff_formats_unref(&codecs);
+        ff_formats_unref(&formats);
+        ff_formats_unref(&rates);
+        ff_channel_layouts_unref(&layouts);
+
         if (ret < 0)
             return ret;
     }
