@@ -1032,7 +1032,8 @@ static int process_options(AVFilterContext *ctx, AVDictionary **options,
 {
     const AVOption *o = NULL;
     int ret;
-    char *av_uninit(parsed_key), *av_uninit(value);
+    char *av_uninit(parsed_key);
+    char *av_uninit(value) = NULL;
     const char *key;
     int offset= -1;
 
