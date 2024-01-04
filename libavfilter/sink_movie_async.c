@@ -202,8 +202,10 @@ static void moviesink_close_muxer(AVFilterContext *ctx)
     MovieSinkPriv *priv = ctx->priv;
     int i;
 
-    for (i = 0; i < ctx->nb_inputs; i++)
+    for (i = 0; i < ctx->nb_inputs; i++) {
         priv->streams[i].sync_pts = 0;
+        priv->streams[i].stream_idx = -1;
+    }
 
     if (priv->format_ctx) {
         if (priv->format_ctx->pb)
@@ -286,7 +288,7 @@ static int moviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fram
     AVStream *stream;
     int ret;
 
-    if (priv->format_ctx->nb_streams >= ctx->nb_inputs)
+    if (priv->streams[pad_id].stream_idx >= 0)
         return 0;
 
     unwrap_frame(frame, NULL, &params);
@@ -656,6 +658,7 @@ static int moviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
 
     for (i = 0; i < inputs; i++) {
         priv->streams[i].type = types[base + i];
+        priv->streams[i].stream_idx = -1;
         ff_framequeue_init(&priv->streams[i].dat_queue, NULL);
 
         pad.type = types[base + i];
