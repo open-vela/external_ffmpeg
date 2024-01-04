@@ -527,7 +527,7 @@ static const AVOption devsink_options[] = {
     { "format",      "", OFFSET(format),      AV_OPT_TYPE_STRING, .flags = FLAGS },
     { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING, .flags = FLAGS },
     { "pixel_fmt",   "", OFFSET(pixel_fmt),   AV_OPT_TYPE_INT,    {.i64 = AV_PIX_FMT_NONE}, -1,       INT_MAX, FLAGSR },
-    { "max_latency", "", OFFSET(max_latency), AV_OPT_TYPE_INT,    {.i64 = 10000},           0,        INT_MAX, FLAGS },
+    { "max_latency", "", OFFSET(max_latency), AV_OPT_TYPE_INT,    {.i64 = 40000},           0,        INT_MAX, FLAGS },
     { NULL },
 };
 
