@@ -418,6 +418,19 @@ static int vtun_control_message(struct AVFormatContext *h, int type,
             }
             break;
         }
+        case AV_APP_TO_DEV_FLUSH: {
+            if (data && !strcmp(data, "eos")) {
+                if (priv->frame.avframe)
+                    av_frame_free(&priv->frame.avframe);
+            }
+
+            while (ff_framequeue_queued_frames(&priv->queue)) {
+                AVFrame *avframe = ff_framequeue_take(&priv->queue);
+                av_frame_free(&avframe);
+            }
+            break;
+        }
+
         case AV_APP_TO_DEV_PLAY: {
             priv->stop = false;
             return 0;

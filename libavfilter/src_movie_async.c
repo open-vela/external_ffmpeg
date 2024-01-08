@@ -790,7 +790,7 @@ static void movie_async_proc_event(AVFilterContext *ctx)
             case AVMOVIE_ASYNC_EVENT_STOPPED:
                 for (i = 0; i < ctx->nb_outputs; i++) {
                     if (!ff_outlink_get_status(ctx->outputs[i])) {
-                        avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
+                        avfilter_forward_command(ctx, i, NULL, "flush", "eos", NULL, 0, 0);
                         ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
                     }
                     avcodec_parameters_free(&movie->streams[i].codecpar);
