@@ -483,7 +483,11 @@ static int devsink_process_command(AVFilterContext *ctx,
         }
         ff_filter_set_ready(ctx, 100);
         priv->ts_base = AV_NOPTS_VALUE;
-        return 0;
+
+        return avdevice_app_to_dev_control_message(
+                                    priv->fmt_ctx,
+                                    AV_APP_TO_DEV_FLUSH,
+                                    (void *)args, 0);
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(
                                     priv->fmt_ctx,
