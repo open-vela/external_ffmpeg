@@ -254,7 +254,7 @@ enum AVAppToDevMessageType {
     AV_APP_TO_DEV_STOP  = MKBETAG('S', 'T', 'O', 'P'),
 
     /**
-     * Request open/close.
+     * Request flush.
      *
      * Application requests flush.
      *
@@ -345,6 +345,7 @@ enum AVDevToAppMessageType {
      */
     AV_DEV_TO_APP_BUFFER_READABLE = MKBETAG('B','R','D',' '),
     AV_DEV_TO_APP_BUFFER_WRITABLE = MKBETAG('B','W','R',' '),
+    AV_DEV_TO_APP_BUFFER_DRAINED  = MKBETAG('B','D','N',' '),
 
     /**
      * Mute state change message.
