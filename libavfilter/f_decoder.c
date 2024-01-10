@@ -195,7 +195,7 @@ static int decoder_query_formats(AVFilterContext *ctx)
     enum AVCodecID id;
     int ret, dup = 0;
 
-    /* outcfg of inlink */
+    /* Input uses compress, output uses raw. */
     while (codec = av_codec_iterate(&iterate)) {
         if (codec->type != inlink->type || av_codec_is_encoder(codec))
             continue;
@@ -217,37 +217,25 @@ static int decoder_query_formats(AVFilterContext *ctx)
     if ((ret = ff_formats_ref(codecs, &inlink->outcfg.codecs)) < 0)
         goto out;
 
-    if ((ret = ff_formats_ref(inlink->incfg.formats, &inlink->outcfg.formats)) < 0)
-        goto out;
-
-    if (inlink->type == AVMEDIA_TYPE_AUDIO) {
-        if ((ret = ff_formats_ref(inlink->incfg.samplerates, &inlink->outcfg.samplerates)) < 0)
-            goto out;
-
-        if ((ret = ff_channel_layouts_ref(inlink->incfg.channel_layouts, &inlink->outcfg.channel_layouts)) < 0)
-            goto out;
-    }
-
-    /* incfg of outlink */
     if ((ret = ff_formats_ref(ff_all_raw_codecs(outlink->type), &outlink->incfg.codecs)) < 0)
         goto out;
 
-     if ((ret = ff_formats_ref(inlink->outcfg.formats, &outlink->incfg.formats)) < 0)
+    /* Formats, samplerates, channel layouts should simply align with source. */
+    if ((ret = ff_set_common_formats(ctx, inlink->incfg.formats)) < 0)
         goto out;
 
     if (inlink->type == AVMEDIA_TYPE_AUDIO) {
-        if ((ret = ff_formats_ref(inlink->outcfg.samplerates, &outlink->incfg.samplerates)) < 0)
+        if ((ret = ff_set_common_samplerates(ctx, inlink->incfg.samplerates)) < 0)
             goto out;
 
-        if ((ret = ff_channel_layouts_ref(inlink->outcfg.channel_layouts, &outlink->incfg.channel_layouts)) < 0)
+        if ((ret = ff_set_common_channel_layouts(ctx, inlink->incfg.channel_layouts)) < 0)
             goto out;
     }
 
     return 0;
 
 out:
-    if (codecs && !codecs->refcount)
-        ff_formats_unref(&codecs);
+    ff_formats_unref(&codecs);
 
     return ret;
 }

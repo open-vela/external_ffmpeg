@@ -231,41 +231,21 @@ static int query_formats(AVFilterContext *ctx)
      * sink filter to ensure the negotiation.
      */
 
-    ret = ff_formats_ref(outlink->outcfg.codecs, &outlink->incfg.codecs);
-    if (ret < 0)
+    if ((ret = ff_formats_ref(outlink->outcfg.codecs, &outlink->incfg.codecs)) < 0)
         return ret;
 
-    ret = ff_formats_ref(outlink->outcfg.formats, &outlink->incfg.formats);
-    if (ret < 0)
+    if ((ret = ff_formats_ref(ff_all_raw_codecs(inlink->type), &inlink->outcfg.codecs)) < 0)
         return ret;
 
-    if (outlink->type == AVMEDIA_TYPE_AUDIO) {
-        ret = ff_formats_ref(outlink->outcfg.samplerates, &outlink->incfg.samplerates);
-        if (ret < 0)
+
+    if ((ret = ff_set_common_formats(ctx, outlink->outcfg.formats)) < 0)
+        return ret;
+
+    if (inlink->type == AVMEDIA_TYPE_AUDIO) {
+        if ((ret = ff_set_common_samplerates(ctx, outlink->outcfg.samplerates)) < 0)
             return ret;
 
-        ret = ff_channel_layouts_ref(outlink->outcfg.channel_layouts, &outlink->incfg.channel_layouts);
-        if (ret < 0)
-            return ret;
-    }
-
-    /* For input, also follows formats of sink, and leave convert job to other filter. */
-
-    ret = ff_formats_ref(ff_all_raw_codecs(inlink->type), &inlink->outcfg.codecs);
-    if (ret < 0)
-        return ret;
-
-    ret = ff_formats_ref(outlink->outcfg.formats, &inlink->outcfg.formats);
-    if (ret < 0)
-        return ret;
-
-    if (outlink->type == AVMEDIA_TYPE_AUDIO) {
-        ret = ff_formats_ref(outlink->outcfg.samplerates, &inlink->outcfg.samplerates);
-        if (ret < 0)
-            return ret;
-
-        ret = ff_channel_layouts_ref(outlink->outcfg.channel_layouts, &inlink->outcfg.channel_layouts);
-        if (ret < 0)
+        if ((ret = ff_set_common_channel_layouts(ctx, outlink->outcfg.channel_layouts)) < 0)
             return ret;
     }
 
