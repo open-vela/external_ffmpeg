@@ -120,18 +120,35 @@ fail:
 static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_size)
 {
     FBDevContext *fbdev = h->priv_data;
+    int bytes_to_copy, bytes_per_pixel;
+    int video_width, video_height;
+    AVCodecParameters *par;
+    struct pollfd pfd;
+    int disp_height;
+    int i, ret;
     const uint8_t *pin;
     uint8_t *pout;
-    int disp_height;
-    int bytes_to_copy;
-    AVCodecParameters *par = h->streams[0]->codecpar;
-    int video_width = par->width;
-    int video_height = par->height;
-    int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
-    int i;
+
+    par = h->streams[0]->codecpar;
+    bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
+
+    video_width = par->width;
+    video_height = par->height;
+
 
     if (fbdev->stopped)
         return AVERROR_EOF;
+
+    if (fbdev->planeinfo.yres_virtual > fbdev->varinfo.yres) {
+        pfd.fd = fbdev->fd;
+        pfd.events = POLLOUT;
+
+        ret = poll(&pfd, 1, 0);
+        if (ret <= 0) {
+            av_log(h, AV_LOG_ERROR, "No event notification.\n");
+            return ret ? AVERROR(errno) : 0;
+        }
+    }
 
     disp_height = FFMIN(fbdev->varinfo.yres, video_height);
     bytes_to_copy = FFMIN(fbdev->varinfo.xres, video_width) * bytes_per_pixel;
@@ -182,15 +199,10 @@ static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_siz
     }
 
     if (fbdev->planeinfo.yres_virtual > fbdev->varinfo.yres) {
-        struct pollfd pfd;
-        int ret;
-
-        pfd.fd = fbdev->fd;
-        pfd.events = POLLOUT;
-
-        ret = poll(&pfd, 1, 0);
-        if (ret > 0) {
-            ioctl(fbdev->fd, FBIOPAN_DISPLAY, &fbdev->planeinfo);
+        ret = ioctl(fbdev->fd, FBIOPAN_DISPLAY, &fbdev->planeinfo);
+        if (ret < 0) {
+            av_log(h, AV_LOG_ERROR, "Unable to pandisplay.\n");
+            return AVERROR(errno);
         }
     }
 
