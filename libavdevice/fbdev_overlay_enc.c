@@ -146,8 +146,16 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     if (dev_ctx->stopped)
         return AVERROR_EOF;
 
-    pfd.fd = dev_ctx->fd;
-    pfd.events = POLLOUT;
+    if (dev_ctx->oinfo.yres_virtual > dev_ctx->oinfo.yres) {
+        pfd.fd = dev_ctx->fd;
+        pfd.events = POLLOUT;
+
+        ret = poll(&pfd, 1, 0);
+        if (ret <= 0) {
+            av_log(h, AV_LOG_ERROR, "No event notification.\n");
+            return ret ? AVERROR(errno) : 0;
+        }
+    }
 
     in_y  = pkt->data;
     in_uv = pkt->data + (par->width * par->height);
@@ -170,16 +178,12 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
         row += dev_ctx->oinfo.stride;
     }
 
-    ret = poll(&pfd, 1, 0);
-    if (ret <= 0) {
-        av_log(h, AV_LOG_ERROR, "No event notification.\n");
-        return ret ? AVERROR(errno) : 0;
-    }
-
-    ret = ioctl(dev_ctx->fd, FBIOPAN_OVERLAY, &dev_ctx->oinfo);
-    if (ret < 0) {
-        av_log(h, AV_LOG_ERROR, "Unable to select pandisplayoverlay.\n");
-        return AVERROR(errno);
+    if (dev_ctx->oinfo.yres_virtual > dev_ctx->oinfo.yres) {
+        ret = ioctl(dev_ctx->fd, FBIOPAN_OVERLAY, &dev_ctx->oinfo);
+        if (ret < 0) {
+            av_log(h, AV_LOG_ERROR, "Unable to select pandisplayoverlay.\n");
+            return AVERROR(errno);
+        }
     }
 
     return 0;
