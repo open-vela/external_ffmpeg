@@ -153,10 +153,13 @@ static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_siz
     disp_height = FFMIN(fbdev->varinfo.yres, video_height);
     bytes_to_copy = FFMIN(fbdev->varinfo.xres, video_width) * bytes_per_pixel;
 
+    fbdev->planeinfo.yoffset += fbdev->varinfo.yres;
+    fbdev->planeinfo.yoffset %= fbdev->planeinfo.yres_virtual;
+
     pin  = data;
     pout = fbdev->data +
-           bytes_per_pixel * fbdev->varinfo.xoffset +
-           fbdev->varinfo.yoffset * fbdev->fixinfo.line_length;
+           bytes_per_pixel * fbdev->planeinfo.xoffset +
+           fbdev->planeinfo.yoffset * fbdev->planeinfo.stride;
 
     if (fbdev->xoffset) {
         if (fbdev->xoffset < 0) {
