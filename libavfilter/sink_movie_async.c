@@ -49,6 +49,7 @@ typedef struct MovieStream {
     FFFrameQueue     dat_queue;
     int64_t          sync_pts;
     int              stream_idx;
+    int64_t          last_pts;
 } MovieStream;
 
 typedef struct MovieSinkPriv {
@@ -245,7 +246,10 @@ static int moviesink_open_muxer(AVFilterContext *ctx, const char *filename)
     MovieSinkPriv *priv = ctx->priv;
     AVDictionary *dict = NULL;
     AVIOInterruptCB cb;
-    int ret;
+    int ret, i;
+
+    for (i = 0; i < ctx->nb_inputs; i++)
+        priv->streams[i].last_pts = AV_NOPTS_VALUE;
 
     ret = avformat_alloc_output_context2(&priv->format_ctx, priv->format,
                                          NULL, filename);
@@ -423,14 +427,14 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
             ret = AVERROR_EOF;
             goto out;
         } else if (priv->state == AVMOVIE_ASYNC_STATE_PAUSED) {
-            if (priv->streams[i].type == AVMEDIA_TYPE_AUDIO)
-                priv->streams[i].sync_pts += frame->nb_samples;
-            else
-                priv->streams[i].sync_pts++;
+            priv->streams[i].sync_pts += priv->streams[i].last_pts != AV_NOPTS_VALUE ?
+                frame->pts - priv->streams[i].last_pts : 1;
 
+            priv->streams[i].last_pts = frame->pts;
             av_frame_free(&frame);
         } else {
             ret = moviesink_write_frame(ctx, i, frame);
+            priv->streams[i].last_pts = frame->pts;
             av_frame_free(&frame);
             if (ret < 0)
                 goto out;
