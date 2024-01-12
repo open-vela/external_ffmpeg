@@ -408,6 +408,7 @@ static int wav_read_header(AVFormatContext *s)
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
+    st->start_time = 0;
 
     for (;;) {
         AVStream *vst;
