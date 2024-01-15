@@ -633,7 +633,7 @@ static int movie_async_loop(AVFilterContext *ctx)
     int ret = AVERROR_EOF;
 
     if (movie->loop_count) {
-        ret = movie_async_seek(ctx, 0, false);
+        ret = movie_async_seek(ctx, 0, true);
         movie->loop_count -= movie->loop_count > 0;
     }
 
