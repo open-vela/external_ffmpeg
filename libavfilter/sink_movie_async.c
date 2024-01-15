@@ -311,9 +311,7 @@ static int moviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fram
 static int moviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *frame)
 {
     MovieSinkPriv *priv = ctx->priv;
-    AVCodecParameters* params;
     AVPacket *pkt;
-    int ret;
 
     unwrap_frame(frame, &pkt, NULL);
     pkt->pts -= priv->streams[pad_id].sync_pts;
