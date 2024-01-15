@@ -172,8 +172,11 @@ static int decoder_activate(AVFilterContext *ctx)
         }
 
         ret = decoder_send(ctx, in);
-        if (ret < 0)
+        if (ret < 0) {
+            if (ret == AVERROR(EAGAIN))
+                ff_inlink_request_frame(inlink);
             break;
+        }
     }
 
     ff_inlink_acknowledge_status(inlink, &ret, &pts);
