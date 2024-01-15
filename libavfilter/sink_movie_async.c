@@ -993,6 +993,8 @@ static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd)
         pthread_mutex_unlock(&priv->mutex);
     }
 
+    moviesink_clear_dat(ctx);
+
     if (close)
         ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, NULL, 0);
     else
