@@ -676,6 +676,15 @@ static void movie_async_proc_event(AVFilterContext *ctx)
             case AVMOVIE_ASYNC_EVENT_STARTED:
                 for (i = 0; i < ctx->nb_outputs; i++)
                     avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
+
+                for (i = 0; i < ctx->nb_outputs; i++)
+                    if (movie->streams[i].type == AVMEDIA_TYPE_VIDEO) {
+                        if (ctx->nb_outputs == 1)
+                            avfilter_forward_command(ctx, i, NULL, "syncmode", "system", NULL, 0, 0);
+                        else
+                            avfilter_forward_command(ctx, i, NULL, "syncmode", "audio", NULL, 0, 0);
+                        break;
+                    }
                 break;
 
             case AVMOVIE_ASYNC_EVENT_PAUSED:
@@ -1449,6 +1458,7 @@ const AVFilter ff_avsrc_vmovie_async = {
     .outputs         = NULL,
     .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
     .process_command = movie_async_process_command,
+    .forward_command = movie_async_forward_command,
 };
 
 #endif /* CONFIG_VMOVIE_ASYNC_FILTER */

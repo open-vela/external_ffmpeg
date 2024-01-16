@@ -36,6 +36,11 @@
 #include "avfilter.h"
 #include "internal.h"
 
+enum SyncMode {
+    SYNC_MODE_AUDIO,
+    SYNC_MODE_SYSTEM,
+};
+
 typedef struct DevSinkPriv {
     const AVClass   *class;
 
@@ -49,6 +54,7 @@ typedef struct DevSinkPriv {
     int             timer_fd;
     int             frame_duration;
     int             max_latency;
+    enum SyncMode   mode;
     int64_t         ts_base;
     int64_t         lat_base;
 } DevSinkPriv;
@@ -73,7 +79,7 @@ static void devsink_timer_stop(AVFilterContext *ctx)
     timerfd_settime(priv->timer_fd, 0, &interval, NULL);
 }
 
-static void devsink_get_audio_timestamp(AVFilterContext *ctx, int64_t* ts, int64_t* lat)
+static void devsink_get_audio_timestamp(AVFilterContext *ctx, int64_t *ts, int64_t *lat)
 {
     struct AVFilterGraph *graph = ctx->graph;
     DevSinkPriv *priv = ctx->priv;
@@ -97,6 +103,24 @@ static void devsink_get_audio_timestamp(AVFilterContext *ctx, int64_t* ts, int64
     if (sink) {
         int64_t *res[] = { ts, lat };
         avfilter_process_command(sink, "get_timestamp", NULL, (char *)res, sizeof(res), 0);
+    }
+}
+
+static void devsink_get_timestamp(AVFilterContext *ctx, int64_t *ts, int64_t *lat)
+{
+    DevSinkPriv *priv = ctx->priv;
+    switch (priv->mode) {
+    case SYNC_MODE_AUDIO:
+        devsink_get_audio_timestamp(ctx, ts, lat);
+        break;
+    case SYNC_MODE_SYSTEM:
+        *lat = 0;
+        *ts = av_gettime_relative();
+        break;
+    default:
+        *lat = 0;
+        *ts = AV_NOPTS_VALUE;
+        break;
     }
 }
 
@@ -270,7 +294,7 @@ static int devsink_activate(AVFilterContext *ctx)
             return ret;
         }
 
-        devsink_get_audio_timestamp(ctx, &ts, &lat);
+        devsink_get_timestamp(ctx, &ts, &lat);
         if (ts != AV_NOPTS_VALUE) {
             frame = ff_inlink_peek_frame(inlink, 0);
             pts = av_rescale_q(frame->pts, inlink->time_base, AV_TIME_BASE_Q);
@@ -353,10 +377,11 @@ static int devsink_process_command(AVFilterContext *ctx,
                                     char *res, int res_len, int flags)
 {
     DevSinkPriv *priv = ctx->priv;
+    int ret = 0;
 
     if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll = (struct pollfd *)res;
-        int ret = 0, dev_ret;
+        int dev_ret;
 
         if (!res || res_len < sizeof(struct pollfd))
             return AVERROR(EINVAL);
@@ -396,9 +421,13 @@ static int devsink_process_command(AVFilterContext *ctx,
                                     AV_APP_TO_DEV_START,
                                     res, res_len);
     } else if (!strcmp(cmd, "play")) {
-        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+        ret = avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_PLAY,
                                     res, res_len);
+        if (priv->mode == SYNC_MODE_SYSTEM)
+            priv->ts_base = AV_NOPTS_VALUE; //for pause to resume
+
+        return ret;
     } else if (!strcmp(cmd, "stop")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_STOP,
@@ -408,6 +437,21 @@ static int devsink_process_command(AVFilterContext *ctx,
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_SET_PARAMETER,
                                     (char *)args, 0);
+    } else if (!strcmp(cmd, "syncmode")) {
+        if (args == NULL) {
+            av_log(ctx, AV_LOG_ERROR, "Invalid sync mode null\n");
+            return AVERROR(EINVAL);
+        }
+
+        if (!strcmp(args, "audio"))
+            priv->mode = SYNC_MODE_AUDIO;
+        else if (!strcmp(args, "system"))
+            priv->mode = SYNC_MODE_SYSTEM;
+        else {
+            av_log(ctx, AV_LOG_ERROR, "Unsupport clock mode: %s\n", args);
+            return AVERROR(EINVAL);
+        }
+        return 0;
     } else if (!strcmp(cmd, "flush")) {
         devsink_timer_stop(ctx);
 
