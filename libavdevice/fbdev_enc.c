@@ -318,6 +318,10 @@ static int fbdev_control_message(AVFormatContext *h, int type,
             avdevice_dev_to_app_control_message(h, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
             return 0;
         }
+        case AV_APP_TO_DEV_PLAY: {
+            fbdev->stopped = false;
+            return 0;
+        }
     }
 
     return AVERROR(ENOSYS);
@@ -337,6 +341,7 @@ static int fbdev_write_uncoded_frame(AVFormatContext *h, int stream_index,
 static const AVOption options[] = {
     { "xoffset", "set x coordinate of top left corner", OFFSET(xoffset), AV_OPT_TYPE_INT, {.i64 = 0}, INT_MIN, INT_MAX, ENC },
     { "yoffset", "set y coordinate of top left corner", OFFSET(yoffset), AV_OPT_TYPE_INT, {.i64 = 0}, INT_MIN, INT_MAX, ENC },
+    { "stop", "set stop flag init value", OFFSET(stopped), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, ENC },
     { NULL }
 };
 

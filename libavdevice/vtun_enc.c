@@ -410,6 +410,10 @@ static int vtun_control_message(struct AVFormatContext *h, int type,
             }
             break;
         }
+        case AV_APP_TO_DEV_PLAY: {
+            priv->stop = false;
+            return 0;
+        }
         default:
             ret = AVERROR(ENOSYS);
             break;
@@ -423,6 +427,7 @@ static int vtun_control_message(struct AVFormatContext *h, int type,
 static const AVOption options[] = {
     { "frame_count", "Set frame count", OFFSET(frame_count), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 4, ENC },
     { "server_path", "Set server path", OFFSET(server_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, ENC },
+    { "stop", "set stop flag init value", OFFSET(stop), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, ENC },
     { NULL }
 };
 
