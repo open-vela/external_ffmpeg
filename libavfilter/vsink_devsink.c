@@ -454,6 +454,10 @@ static int devsink_process_command(AVFilterContext *ctx,
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_START,
                                     res, res_len);
+    } else if (!strcmp(cmd, "play")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                    AV_APP_TO_DEV_PLAY,
+                                    res, res_len);
     } else if (!strcmp(cmd, "stop")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_STOP,
