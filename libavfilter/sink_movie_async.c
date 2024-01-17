@@ -428,7 +428,7 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
             goto out;
         } else if (priv->state == AVMOVIE_ASYNC_STATE_PAUSED) {
             priv->streams[i].sync_pts += priv->streams[i].last_pts != AV_NOPTS_VALUE ?
-                frame->pts - priv->streams[i].last_pts : 1;
+                frame->pts - priv->streams[i].last_pts : 0;
 
             priv->streams[i].last_pts = frame->pts;
             av_frame_free(&frame);
