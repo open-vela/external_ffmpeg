@@ -108,7 +108,6 @@ struct video_data {
     bool poll_available;
     int buffer_copy;
     bool stopped;       /**< stop required by apps. */
-    int use_v4l2_pts;
 
     int (*open_f)(const char *file, int oflag, ...);
     int (*close_f)(int fd);
@@ -624,10 +623,8 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
     pkt->pts = buf_ts.tv_sec * INT64_C(1000000) + buf_ts.tv_usec;
     convert_timestamp(ctx, &pkt->pts);
 
-    if (s->use_v4l2_pts && st->time_base.num && st->time_base.den) {
+    if (st->time_base.num && st->time_base.den)
         pkt->pts = av_rescale_q(pkt->pts, AV_TIME_BASE_Q, st->time_base);
-        pkt->time_base = st->time_base;
-    }
 
     return pkt->size;
 }
@@ -1367,7 +1364,6 @@ static const AVOption options[] = {
     { "use_libv4l2",  "use libv4l2 (v4l-utils) conversion functions",             OFFSET(use_libv4l2),  AV_OPT_TYPE_BOOL,   {.i64 = 0}, 0, 1, DEC },
 
     { "buffer_copy", "whether buffer copy is allowed when available buffers are not enough", OFFSET(buffer_copy), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DEC },
-    { "use_v4l2_pts", "whether v4l2 pts should be used as the frame pts",                    OFFSET(use_v4l2_pts), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DEC },
 
     { NULL },
 };

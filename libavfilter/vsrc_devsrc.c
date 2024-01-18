@@ -42,8 +42,6 @@ typedef struct DevSrcPriv {
     char            *devname;
     int             w, h;
     AVRational      frame_rate;
-    int64_t         start_pts;
-    bool            pkt_has_correct_time;
 } DevSrcPriv;
 
 static int devsrc_get_frame_size(AVFilterContext *ctx)
@@ -90,9 +88,6 @@ static int devsrc_start(AVFilterContext *ctx)
     if (priv->dec_ctx)
         return 0;
 
-    priv->start_pts = AV_NOPTS_VALUE;
-    priv->pkt_has_correct_time = false;
-
     ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
@@ -101,8 +96,10 @@ static int devsrc_start(AVFilterContext *ctx)
     if (!st)
         goto out;
 
-    /* use a high resolution time base */
-    st->time_base = AV_TIME_BASE_Q;
+    /* use a high resolution time base,
+     * the maximum timebase for mpeg4 video encoder is 1/65535
+     */
+    st->time_base = av_make_q(1, 65535);
 
     /* Find decoder for the stream */
     dec = avcodec_find_decoder(st->codecpar->codec_id);
@@ -253,21 +250,10 @@ static int devsrc_activate(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
 
-        if (!priv->pkt_has_correct_time &&
-            priv->start_pts == AV_NOPTS_VALUE &&
-            pkt->time_base.num && pkt->time_base.den)
-            priv->pkt_has_correct_time = true;
-
         ret = avcodec_send_packet(priv->dec_ctx, pkt);
         av_packet_unref(pkt);
         if (ret < 0)
             goto out;
-    }
-
-    if (!priv->pkt_has_correct_time) {
-        if (priv->start_pts == AV_NOPTS_VALUE)
-            priv->start_pts = 0;
-        frame->pts = priv->start_pts++;
     }
 
     return ff_filter_frame(link, frame);
@@ -393,8 +379,10 @@ static int devsrc_config_props(AVFilterLink *link)
     link->w = priv->w;
     link->h = priv->h;
     link->frame_rate = priv->frame_rate;
-    /* use a high resolution time base */
-    link->time_base = AV_TIME_BASE_Q;
+    /* use a high resolution time base,
+     * the maximum timebase for mpeg4 video encoder is 1/65535
+     */
+    link->time_base = av_make_q(1, 65535);
 
     return 0;
 }
