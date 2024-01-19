@@ -1198,6 +1198,7 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         av_log(ctx, AV_LOG_INFO, "%s filter %s close.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "get_state")) {
+        av_log(ctx, AV_LOG_INFO, "%s get_state %d.\n", ctx->name, movie->state);
         if (!res || !res_len)
             return AVERROR(EINVAL);
 
