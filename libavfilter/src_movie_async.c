@@ -71,6 +71,7 @@ typedef struct MovieStream {
     AVRational       time_base;
     AVRational       frame_rate;
     int64_t          start_time;
+    bool             completed;
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -412,6 +413,8 @@ static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
 
     movie->current_ms = ms;
 
+    for (i = 0; i < ctx->nb_outputs; i++)
+        movie->streams[i].completed = false;
 end:
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_SEEKED, ret, NULL);
     return ret;
@@ -510,6 +513,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
         movie->streams[i].frame_rate = stream->r_frame_rate;
         movie->streams[i].start_time = av_rescale_q(movie->format_ctx->start_time,
                                                     AV_TIME_BASE_Q, stream->time_base);
+        movie->streams[i].completed  = false;
     }
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE start_time:%lld.\n", name, movie->format_ctx->start_time);
 
@@ -753,13 +757,9 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
         movie->format_ctx->pb->eof_reached = 1;
     }
 
-    movie->state = AVMOVIE_ASYNC_STATE_COMPLETED;
-    movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
-
     if (!movie->pending_stop)
         return false;
 
-    movie_async_stop(ctx);
     return true;
 }
 
@@ -1289,6 +1289,35 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
     }
 }
 
+static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const char* target, const char *cmd,
+                                       const char *arg, char *res, int res_len, int flags)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int i;
+
+    if (!strcmp(cmd, "completed")) {
+        movie->streams[pad_idx].completed = true;
+        ctx->outputs[pad_idx]->frame_wanted_out = 1;
+        av_log(ctx, AV_LOG_INFO, "%s stream %d %s completed.\n",
+               ctx->name, pad_idx, av_get_media_type_string(movie->streams[pad_idx].type));
+
+        for (i = 0; i < ctx->nb_outputs; i++)
+            if (movie->streams[i].completed == false)
+                break;
+
+        if (i == ctx->nb_outputs) {
+            av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
+            return movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, 0, NULL);
+        }
+        return 0;
+    } else {
+        av_log(ctx, AV_LOG_ERROR, "src:%s unsupported command:%s.\n", ctx->name, cmd);
+        return AVERROR(ENOSYS);
+    }
+
+    return 0;
+}
+
 static const struct AVClass *movie_child_class_iterate(void **iter)
 {
     const AVClass *c = *iter;
@@ -1336,7 +1365,8 @@ const AVFilter ff_avsrc_movie_async = {
     .inputs          = NULL,
     .outputs         = NULL,
     .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
-    .process_command = movie_async_process_command
+    .process_command = movie_async_process_command,
+    .forward_command = movie_async_forward_command,
 };
 #endif  /* CONFIG_MOVIE_ASYNC_FILTER */
 
@@ -1365,6 +1395,7 @@ const AVFilter ff_avsrc_amovie_async = {
     .outputs         = NULL,
     .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
     .process_command = movie_async_process_command,
+    .forward_command = movie_async_forward_command,
 };
 
 #endif /* CONFIG_AMOVIE_ASYNC_FILTER */
