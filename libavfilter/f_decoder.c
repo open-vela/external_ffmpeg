@@ -148,6 +148,7 @@ static int decoder_activate(AVFilterContext *ctx)
         if (ret == AVERROR_EOF)
             decoder_close(ctx);
 
+        ff_inlink_set_status(inlink, ret);
         return ret;
     }
 
@@ -170,6 +171,9 @@ static int decoder_activate(AVFilterContext *ctx)
             ret = ff_filter_frame(outlink, out);
             break;
         } else if (ret == AVERROR_EOF) {
+            ret = avfilter_forward_command(ctx, 0, NULL, "completed", NULL, NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
+            if (ret < 0)
+                return ret;
             avcodec_flush_buffers(priv->codec_ctx);
             return 0;
         } else if (ret != AVERROR(EAGAIN))
@@ -252,11 +256,14 @@ static int decoder_forward_command(AVFilterContext *ctx,
                                    const char *arg, char *res, int res_len, int flags)
 {
     DecoderContext *priv = ctx->priv;
+    int ret;
 
     if (priv->codec_ctx && !strcmp(cmd, "flush"))
         avcodec_flush_buffers(priv->codec_ctx);
     else if (priv->codec_ctx && !strcmp(cmd, "drain")) {
-        return avcodec_send_packet(priv->codec_ctx, NULL);
+        ret = avcodec_send_packet(priv->codec_ctx, NULL);
+        ff_filter_set_ready(ctx, 100);
+        return ret;
     }
 
     return avfilter_forward_command(ctx, pad_idx, target, cmd, arg, res, res_len, flags);
