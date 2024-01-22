@@ -948,7 +948,6 @@ static int moviesink_process_start(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     bool reconfig = false;
-    char *ptr, params[64];
     AVFilterLink *link;
     int64_t pts;
     int i, ret;
@@ -966,7 +965,7 @@ static int moviesink_process_start(AVFilterContext *ctx)
     if (reconfig)
         avfilter_graph_reconfig(ctx->graph, NULL);
 
-    return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_START, params, strlen(params) + 1);
+    return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
 }
 
 static int moviesink_process_pause(AVFilterContext *ctx)
