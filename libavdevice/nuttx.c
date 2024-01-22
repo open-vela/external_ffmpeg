@@ -669,6 +669,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
                 buffer->curbyte = 0;
                 dq_addlast(&buffer->dq_entry, &priv->bufferq);
             }
+            av_log(priv, AV_LOG_DEBUG, "[%s][%s] dequeue\n", __func__, priv->devname);
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
             av_log(priv, AV_LOG_DEBUG, "[%s][%s] complete\n", __func__, priv->devname);
             ff_nuttx_ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
