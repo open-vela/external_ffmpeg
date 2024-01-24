@@ -404,6 +404,39 @@ end:
 static void (*av_log_callback)(void*, int, const char*, va_list) =
     av_log_default_callback;
 
+static av_trace_cb av_trace_begin_callback;
+static av_trace_cb av_trace_end_callback;
+
+void av_trace_begin(void *avcl, const char *fmt, ...)
+{
+    va_list vl;
+    va_start(vl, fmt);
+    if (!av_trace_begin_callback) {
+        av_vlog(avcl, AV_LOG_TRACE, fmt, vl);
+    } else {
+        av_trace_begin_callback(avcl, fmt, vl);
+    }
+    va_end(vl);
+}
+
+void av_trace_end(void *avcl, const char *fmt, ...)
+{
+    va_list vl;
+    va_start(vl, fmt);
+    if (!av_trace_end_callback) {
+        av_vlog(avcl, AV_LOG_TRACE, fmt, vl);
+    } else {
+        av_trace_end_callback(avcl, fmt, vl);
+    }
+    va_end(vl);
+}
+
+void av_trace_set_callback(av_trace_cb begin_cb, av_trace_cb end_cb)
+{
+    av_trace_begin_callback = begin_cb;
+    av_trace_end_callback = end_cb;
+}
+
 void av_log(void* avcl, int level, const char *fmt, ...)
 {
     va_list vl;

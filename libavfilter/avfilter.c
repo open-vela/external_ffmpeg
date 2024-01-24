@@ -1672,8 +1672,11 @@ int ff_filter_activate(AVFilterContext *filter)
     av_assert1(!(filter->filter->flags & AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC &&
                  filter->filter->activate));
     filter->ready = 0;
+
+    av_trace_begin(filter, filter->filter->name);
     ret = filter->filter->activate ? filter->filter->activate(filter) :
           ff_filter_activate_default(filter);
+    av_trace_end(filter, filter->filter->name);
 
     if (ret == FFERROR_NOT_READY)
         ret = 0;
