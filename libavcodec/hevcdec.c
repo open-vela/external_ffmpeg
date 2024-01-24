@@ -181,7 +181,7 @@ static int pred_weight_table(HEVCContext *s, GetBitContext *gb)
         }
     }
     if (s->ps.sps->chroma_format_idc != 0) {
-        for (i = 0; i < s->sh.nb_refs[L0]; i++)
+        for (i = 0; i < s->sh.nb_refs[L0] && i < 16; i++)
             chroma_weight_l0_flag[i] = get_bits1(gb);
     } else {
         for (i = 0; i < s->sh.nb_refs[L0]; i++)
@@ -225,10 +225,10 @@ static int pred_weight_table(HEVCContext *s, GetBitContext *gb)
             }
         }
         if (s->ps.sps->chroma_format_idc != 0) {
-            for (i = 0; i < s->sh.nb_refs[L1]; i++)
+            for (i = 0; i < s->sh.nb_refs[L1] && i < 16; i++)
                 chroma_weight_l1_flag[i] = get_bits1(gb);
         } else {
-            for (i = 0; i < s->sh.nb_refs[L1]; i++)
+            for (i = 0; i < s->sh.nb_refs[L1] && i < 16; i++)
                 chroma_weight_l1_flag[i] = 0;
         }
         for (i = 0; i < s->sh.nb_refs[L1]; i++) {
