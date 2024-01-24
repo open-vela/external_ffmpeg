@@ -58,6 +58,7 @@ typedef struct AVMovieAsyncEventCookie {
 #define AVMOVIE_ASYNC_PAUSE                   7
 #define AVMOVIE_ASYNC_SEEK                    8
 #define AVMOVIE_ASYNC_PROCESS_COMMAND         9
+#define AVMOVIE_ASYNC_COMPLETED               10
 
 #define AVMOVIE_ASYNC_STOP                    100
 #define AVMOVIE_ASYNC_RESET                   101

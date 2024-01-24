@@ -656,6 +656,21 @@ static int movie_async_loop(AVFilterContext *ctx)
     return ret;
 }
 
+static void movie_async_completed(AVFilterContext *ctx)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int ret;
+
+    ret = movie_async_loop(ctx);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
+        movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, 0, NULL);
+    } else {
+        av_log(ctx, AV_LOG_INFO, "%s loop %d.\n", ctx->name, movie->loop_count);
+        movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
+    }
+}
+
 static int movie_async_send_vsyncmode(AVFilterContext *ctx, int audio_alive)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -748,9 +763,6 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
     int ret, i;
 
     ret = movie_async_read_frame(ctx);
-    if (ret == AVERROR_EOF)
-        ret = movie_async_loop(ctx);
-
     if (ret >= 0 || ret == AVERROR_EXIT)
         return false;
 
@@ -828,6 +840,10 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
             *args++ = '\0';
 
             ff_filter_process_command(ctx, msg->data, args, NULL, 0, 0);
+            break;
+
+        case AVMOVIE_ASYNC_COMPLETED:
+            movie_async_completed(ctx);
             break;
 
         default:
@@ -1347,10 +1363,8 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
             if (movie->streams[i].completed == false)
                 break;
 
-        if (i == ctx->nb_outputs) {
-            av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
-            return movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, 0, NULL);
-        }
+        if (i == ctx->nb_outputs)
+            return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_COMPLETED, NULL, 0);
 
         if (movie->streams[pad_idx].type == AVMEDIA_TYPE_AUDIO)
             return movie_async_send_vsyncmode(ctx, false);
