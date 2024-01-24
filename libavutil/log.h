@@ -221,6 +221,14 @@ typedef struct AVClass {
  */
 #define AV_LOG_C(x) ((x) << 8)
 
+typedef void (*av_trace_cb)(void* avcl, const char *fmt, va_list vl);
+
+void av_trace_begin(void *avcl, const char *fmt, ...);
+
+void av_trace_end(void *avcl, const char *fmt, ...);
+
+void av_trace_set_callback(av_trace_cb begin_cb,av_trace_cb end_cb);
+
 /**
  * Send the specified message to the log if the level is less than or equal
  * to the current av_log_level. By default, all logging messages are sent to
