@@ -851,8 +851,10 @@ static inline int spx_strategy(AC3DecodeContext *s, int blk)
     if (s->channel_mode == AC3_CHMODE_MONO) {
         s->channel_uses_spx[1] = 1;
     } else {
-        for (ch = 1; ch <= fbw_channels; ch++)
-            s->channel_uses_spx[ch] = get_bits1(bc);
+        for (ch = 1; ch <= fbw_channels; ch++) {
+            if (ch < AC3_MAX_CHANNELS)
+                s->channel_uses_spx[ch] = get_bits1(bc);
+        }
     }
 
     /* get the frequency bins of the spx copy region and the spx start
