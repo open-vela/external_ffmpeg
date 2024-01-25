@@ -158,7 +158,7 @@ static int ff_nuttx_ioctl(int fd, int cmd, unsigned long arg)
 }
 #define ff_nuttx_ioctl(fd, cmd, arg) ff_nuttx_ioctl(fd, cmd, (unsigned long)(arg))
 
-static int ff_nuttx_flush_buffer(NuttxPriv *priv)
+static int ff_nuttx_drain_buffer(NuttxPriv *priv)
 {
     struct audio_buf_desc_s desc;
     struct ap_buffer_s *buffer;
@@ -510,7 +510,7 @@ int ff_nuttx_open(NuttxPriv *priv)
     struct ap_buffer_info_s buf_info;
     int bps, x, ret;
 
-    if (priv->running || priv->flushing)
+    if (priv->running || priv->draining)
         return AVERROR(EAGAIN);
 
     bps = av_get_bits_per_sample(priv->codec);
@@ -604,18 +604,18 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
     struct audio_buf_desc_s buf_desc;
     int dc = dq_count(&priv->bufferq);
 
-    if (!priv->running && !priv->flushing && dc > 0 && dc < priv->periods) {
+    if (!priv->running && !priv->draining && dc > 0 && dc < priv->periods) {
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] start\n", __func__, priv->devname);
         ff_nuttx_ioctl(priv->fd, AUDIOIOC_START, 0);
         priv->running = true;
     }
 
     if (priv->running) {
-        ff_nuttx_flush_buffer(priv);
+        ff_nuttx_drain_buffer(priv);
         av_log(NULL, AV_LOG_DEBUG, "[%s][%s] stop\n", __func__, priv->devname);
         ff_nuttx_ioctl(priv->fd, AUDIOIOC_STOP, 0);
         priv->running  = false;
-        priv->flushing = true;
+        priv->draining = true;
     }
 
     while (!dq_empty(&priv->bufferq)) {
@@ -623,7 +623,7 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
         ff_nuttx_ioctl(priv->fd, AUDIOIOC_FREEBUFFER, &buf_desc);
     }
 
-    while (priv->flushing) {
+    while (priv->draining) {
         ff_nuttx_poll_available(priv, nonblock);
         if (nonblock)
             break;
@@ -661,7 +661,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             return AVERROR(errno);
 
         if (msg.msg_id == AUDIO_MSG_DEQUEUE) {
-            if (priv->flushing) {
+            if (priv->draining) {
                 buf_desc.u.buffer = msg.u.ptr;
                 ff_nuttx_ioctl(priv->fd, AUDIOIOC_FREEBUFFER, &buf_desc);
             } else {
@@ -672,7 +672,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
             av_log(priv, AV_LOG_DEBUG, "[%s][%s] complete\n", __func__, priv->devname);
             ff_nuttx_ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
-            priv->flushing = false;
+            priv->draining = false;
         }
 
         nonblock = true;

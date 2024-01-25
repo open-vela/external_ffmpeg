@@ -41,7 +41,7 @@ typedef struct NuttxPriv {
     bool            nonblock;
     bool            stopped;      ///< stop required by apps
     bool            running;
-    bool            flushing;
+    bool            draining;
     bool            underflow;
 
     char            devname[32];  ///< device name
