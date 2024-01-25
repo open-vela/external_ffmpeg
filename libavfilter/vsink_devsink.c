@@ -30,6 +30,7 @@
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/pixdesc.h>
 
 #include "filters.h"
 #include "avfilter.h"
@@ -39,7 +40,6 @@ typedef struct DevSinkPriv {
     const AVClass   *class;
 
     AVFormatContext *fmt_ctx;
-    AVCodecContext  *enc_ctx;
 
     char            *format;
     char            *devname;
@@ -47,8 +47,6 @@ typedef struct DevSinkPriv {
     int             pixel_fmt;
 
     int             timer_fd;
-    AVPacket        packet;
-    bool            frame_uncoded;
     int             frame_duration;
     int             max_latency;
     int64_t         ts_base;
@@ -151,59 +149,32 @@ static int devsink_start(AVFilterContext *ctx)
 {
     AVFilterLink *inlink = ctx->inputs[0];
     DevSinkPriv *priv = ctx->priv;
-    AVRational *frame_rate = &inlink->frame_rate;
     AVStream *st = priv->fmt_ctx->streams[0];
-    AVDictionary *fmt_opt = NULL;
-    struct itimerspec interval;
-    enum AVCodecID codec_id;
-    const AVCodec *enc;
+    const AVPixFmtDescriptor *pixdesc;
     int ret;
 
-    if (priv->enc_ctx)
+    if (priv->frame_duration > 0)
         return 0;
 
-    codec_id = priv->fmt_ctx->oformat->video_codec != AV_CODEC_ID_NONE ?
-               priv->fmt_ctx->oformat->video_codec : priv->fmt_ctx->video_codec_id;
+    pixdesc = av_pix_fmt_desc_get(inlink->format);
 
-    priv->frame_uncoded  = codec_id == AV_CODEC_ID_RAWVIDEO && av_write_uncoded_frame_query(priv->fmt_ctx, 0) == 0;
-    priv->frame_duration = av_rescale(AV_TIME_BASE, inlink->frame_rate.den, inlink->frame_rate.num);
-
-    enc = avcodec_find_encoder(codec_id);
-    if (!enc)
-        return AVERROR(EINVAL);
-
-    priv->enc_ctx = avcodec_alloc_context3(enc);
-    if (!priv->enc_ctx)
-        return AVERROR(ENOMEM);
-
-    priv->enc_ctx->codec_type = inlink->type;
-    priv->enc_ctx->pix_fmt    = inlink->format;
-    priv->enc_ctx->width      = inlink->w;
-    priv->enc_ctx->height     = inlink->h;
-    priv->enc_ctx->time_base  = av_inv_q(inlink->frame_rate);
-    av_dict_set_int(&fmt_opt, "w", inlink->w, 0);
-    av_dict_set_int(&fmt_opt, "h", inlink->h, 0);
-    /* channel_layout  device->avctx->codec */
-    avdevice_app_to_dev_control_message(priv->fmt_ctx,
-            AV_APP_TO_DEV_GET_FORMAT_REQUEST,
-            &fmt_opt, sizeof(AVDictionary *));
-
-    ret = avcodec_open2(priv->enc_ctx, enc, &fmt_opt);
-    av_dict_free(&fmt_opt);
-    if (ret < 0) {
-        avcodec_free_context(&priv->enc_ctx);
-        return ret;
-    }
-
-    avcodec_parameters_from_context(st->codecpar, priv->enc_ctx);
+    st->time_base            = inlink->time_base;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id   = AV_CODEC_ID_RAWVIDEO;
+    st->codecpar->format     = inlink->format;
+    st->codecpar->width      = inlink->w;
+    st->codecpar->height     = inlink->h;
+    st->codecpar->bits_per_coded_sample = av_get_bits_per_pixel(pixdesc);
 
     ret = avformat_write_header(priv->fmt_ctx, NULL);
     if (ret < 0) {
-        avcodec_free_context(&priv->enc_ctx);
+        av_log(ctx, AV_LOG_ERROR, "Failed to vdevsink write header, %s\n", av_err2str(ret));
         return ret;
     }
     priv->ts_base  = AV_NOPTS_VALUE;
     priv->lat_base = AV_NOPTS_VALUE;
+
+    priv->frame_duration = av_rescale(AV_TIME_BASE, inlink->frame_rate.den, inlink->frame_rate.num);
 
     return 0;
 }
@@ -211,18 +182,10 @@ static int devsink_start(AVFilterContext *ctx)
 static void devsink_stop(AVFilterContext *ctx)
 {
     DevSinkPriv *priv = ctx->priv;
-    struct itimerspec interval;
-
-    if (!priv->enc_ctx)
-        return;
-
-    if (priv->packet.data)
-        av_packet_unref(&priv->packet);
 
     avformat_write_trailer(priv->fmt_ctx);
-    avcodec_free_context(&priv->enc_ctx);
-
     devsink_timer_stop(ctx);
+    priv->frame_duration = 0;
 }
 
 static int devsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
@@ -278,32 +241,9 @@ static void devsink_uninit(AVFilterContext *ctx)
 static int devsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     DevSinkPriv *priv = ctx->priv;
-    AVPacket *pkt = &priv->packet;
     int ret;
 
-    if (priv->frame_uncoded)
-        ret = frame ? av_write_uncoded_frame(priv->fmt_ctx, 0, frame) : AVERROR_EOF;
-    else {
-        if (!priv->enc_ctx)
-            return 0;
-
-        ret = avcodec_send_frame(priv->enc_ctx, frame);
-        if (ret < 0)
-            return ret;
-
-        while (1) {
-            ret = avcodec_receive_packet(priv->enc_ctx, pkt);
-            if (ret < 0) {
-                if (ret == AVERROR(EAGAIN))
-                    ret = 0;
-                break;
-            }
-
-            ret = av_write_frame(priv->fmt_ctx, pkt);
-            if (ret < 0)
-                break;
-        }
-    }
+    ret = frame ? av_write_uncoded_frame(priv->fmt_ctx, 0, frame) : AVERROR_EOF;
 
     if (ret == AVERROR_EOF) {
         ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
@@ -347,7 +287,7 @@ static int devsink_activate(AVFilterContext *ctx)
 
         if (ret == 0)
             devsink_send_frame(ctx, frame);
-        if (ret < 0 || !priv->frame_uncoded)
+        if (ret < 0)
             av_frame_free(&frame);
 
         ff_filter_set_ready(ctx, 100);
@@ -517,8 +457,6 @@ static void *devsink_child_next(void *obj, void *prev)
 
     if (!prev)
         return priv->fmt_ctx;
-    else if (prev == priv->fmt_ctx)
-        return priv->enc_ctx;
     else
         return NULL;
 }
