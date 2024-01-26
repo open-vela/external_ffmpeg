@@ -446,6 +446,11 @@ typedef struct AVPacketList {
  * be discarded by the decoder.  I.e. Non-reference frames.
  */
 #define AV_PKT_FLAG_DISPOSABLE 0x0010
+/*
+ * The packet is an event, which doesn't contain any playable data.
+ * Flag indicate this end of the stream.
+ */
+#define AV_PKT_FLAG_EVT_EOS 0x0020
 
 enum AVSideDataParamChangeFlags {
 #if FF_API_OLD_CHANNEL_LAYOUT
