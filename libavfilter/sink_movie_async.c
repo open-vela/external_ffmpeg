@@ -582,6 +582,33 @@ static void moviesink_set_eof(AVFilterContext *ctx)
         av_dict_free(&priv->format_opt);
 }
 
+static int moviesink_reconfig(AVFilterContext *ctx)
+{
+    MovieSinkPriv *priv = ctx->priv;
+    bool reconfig = false;
+    AVFilterLink *link;
+    int64_t pts;
+    int i, ret;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        link = ctx->inputs[i];
+
+        ff_inlink_acknowledge_status(link, &ret, &pts);
+        if (ret < 0) {
+            reconfig = true;
+            break;
+        }
+    }
+
+    if (reconfig && priv->format) {
+        ret = avfilter_graph_reconfig(ctx->graph, NULL);
+        if (ret < 0)
+            return ret;
+    }
+
+    return ret;
+}
+
 static int moviesink_activate(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -589,6 +616,10 @@ static int moviesink_activate(AVFilterContext *ctx)
     AVFilterLink *link;
     AVFrame *frame;
     int64_t pts;
+
+    ret = moviesink_reconfig(ctx);
+    if (ret < 0)
+        return ret;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if (moviesink_dat_full(ctx, i))
@@ -862,7 +893,7 @@ static int moviesink_query_formats(AVFilterContext *ctx)
     AVFilterLink *link;
     int ret = 0, i;
 
-    if (!priv->format)
+    if (!priv->format || priv->state != AVMOVIE_ASYNC_STATE_STARTED)
         return FFERROR_NOT_READY;
 
     for (i = 0; ret >= 0 && i < ctx->nb_inputs; i++) {
@@ -946,25 +977,6 @@ static int moviesink_process_prepare(AVFilterContext *ctx, const char *args)
 
 static int moviesink_process_start(AVFilterContext *ctx)
 {
-    MovieSinkPriv *priv = ctx->priv;
-    bool reconfig = false;
-    AVFilterLink *link;
-    int64_t pts;
-    int i, ret;
-
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        link = ctx->inputs[i];
-
-        ff_inlink_acknowledge_status(link, &ret, &pts);
-        if (ret < 0) {
-            reconfig = true;
-            break;
-        }
-    }
-
-    if (reconfig)
-        avfilter_graph_reconfig(ctx->graph, NULL);
-
     return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
 }
 
