@@ -94,6 +94,8 @@ static int decoder_send(AVFilterContext *ctx, AVFrame *in)
     int ret;
 
     unwrap_frame(in, &pkt, NULL);
+    if (pkt && (pkt->flags & AV_PKT_FLAG_EVT_EOS))
+        pkt = NULL;
     ret = avcodec_send_packet(priv->codec_ctx, pkt);
     av_frame_free(&in);
     if (ret < 0) {
@@ -260,11 +262,6 @@ static int decoder_forward_command(AVFilterContext *ctx,
 
     if (priv->codec_ctx && !strcmp(cmd, "flush"))
         avcodec_flush_buffers(priv->codec_ctx);
-    else if (priv->codec_ctx && !strcmp(cmd, "drain")) {
-        ret = avcodec_send_packet(priv->codec_ctx, NULL);
-        ff_filter_set_ready(ctx, 100);
-        return ret;
-    }
 
     return avfilter_forward_command(ctx, pad_idx, target, cmd, arg, res, res_len, flags);
 }
