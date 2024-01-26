@@ -212,51 +212,6 @@ static int movie_async_send_event(AVFilterContext *ctx, int event, int ret, cons
     return 0;
 }
 
-static AVFrame *movie_async_alloc_empty_frame(AVFilterContext *ctx, int pad_id)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVCodecParameters *param;
-    AVFrame *out;
-    int index;
-
-    out = av_frame_alloc();
-    if (!out)
-        return NULL;
-
-    index = movie->streams[pad_id].index;
-    param = movie->format_ctx->streams[index]->codecpar;
-    out->format = param->format;
-
-    if (movie->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) {
-        out->sample_rate = param->sample_rate;
-        av_channel_layout_copy(&out->ch_layout, &param->ch_layout);
-    } else {
-        out->width = param->width;
-        out->height = param->height;
-    }
-
-    return out;
-}
-
-static int movie_async_send_empty_frame(AVFilterContext *ctx, int pad_id)
-{
-    MovieAsyncContext *movie = ctx->priv;
-    AVFrame *out;
-    int ret;
-
-    out = movie_async_alloc_empty_frame(ctx, pad_id);
-    if (!out)
-        return AVERROR(ENOMEM);
-
-    ret = movie_async_send_dat(ctx, pad_id, out);
-    if (ret < 0) {
-        av_frame_free(&out);
-        return ret;
-    }
-
-    return 0;
-}
-
 static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters **dst)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -734,6 +689,28 @@ static void movie_async_proc_event(AVFilterContext *ctx)
     }
 }
 
+static int movie_async_send_eos_frame(AVFilterContext *ctx, int pad_id)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    AVPacket *pkt;
+    int ret;
+
+    pkt = av_packet_alloc();
+    if (!pkt)
+        return AVERROR(ENOMEM);
+
+    pkt->flags        = AV_PKT_FLAG_EVT_EOS;
+    pkt->stream_index = movie->streams[pad_id].index;
+
+    ret = movie_async_send_frame(ctx, pkt, pad_id);
+    if (ret < 0) {
+        av_packet_free(&pkt);
+        return ret;
+    }
+
+    return 0;
+}
+
 static bool movie_async_proc_dat(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -747,9 +724,9 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
         return false;
     else if (ret == AVERROR_EOF) {
         for (i = 0; i < ctx->nb_outputs; i++) {
-            ret = movie_async_send_empty_frame(ctx, i);
+            ret = movie_async_send_eos_frame(ctx, i);
             if (ret < 0) {
-                av_log(ctx, AV_LOG_ERROR, "Failed outputs %d/%d send empty frame ret,%d,%s.\n",
+                av_log(ctx, AV_LOG_ERROR, "Failed outputs %d/%d send eos frame ret,%d,%s.\n",
                     i, ctx->nb_outputs, ret, av_err2str(ret));
                 break;
             }
@@ -1126,12 +1103,7 @@ static int movie_async_activate(AVFilterContext *ctx)
 
         frame = movie_async_recv_dat(ctx, i);
 
-        if (frame->data[0])
-            ret = ff_filter_frame(link, frame);
-        else {
-            avfilter_forward_command(ctx, i, NULL, "drain", NULL, NULL, 0, 0);
-            av_frame_free(&frame);
-        }
+        ret = ff_filter_frame(link, frame);
     }
 
     return ret;
