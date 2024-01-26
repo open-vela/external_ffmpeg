@@ -164,7 +164,7 @@ static int moviesink_clear_dat(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
     AVFrame *frame;
-    int i = 0;
+    int i;
 
     pthread_mutex_lock(&priv->mutex);
     for (i = 0; i < ctx->nb_inputs; i++) {
@@ -615,8 +615,7 @@ static int moviesink_reconfig(AVFilterContext *ctx)
 
 static int moviesink_activate(AVFilterContext *ctx)
 {
-    MovieSinkPriv *priv = ctx->priv;
-    int frame_size, i, ret = 0;
+    int i, ret = 0;
     AVFilterLink *link;
     AVFrame *frame;
     int64_t pts;
@@ -774,7 +773,6 @@ static bool moviesink_query_audio_opts(AVFilterContext *ctx, const AVCodec *enc,
 
 static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVCodecID codec_id)
 {
-    MovieSinkPriv *priv = ctx->priv;
     AVFilterLink *link = ctx->inputs[pad_id];
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats;

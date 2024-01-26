@@ -39,9 +39,6 @@ static int encoder_open(AVFilterContext *ctx)
     const AVCodec *codec = NULL;
     int ret = AVERROR(EINVAL);
     AVDictionary *dict = NULL;
-    AVDictionaryEntry *tag;
-    int64_t bitrate;
-    int vbr, level;
 
     codec = avcodec_find_encoder(priv->codec_id);
     if (!codec) {
@@ -169,7 +166,7 @@ static int encoder_activate(AVFilterContext *ctx)
     AVFilterLink *outlink = ctx->outputs[0];
     AVFilterLink *inlink = ctx->inputs[0];
     EncoderContext *priv = ctx->priv;
-    int status, frame_size, ret;
+    int frame_size, ret;
     AVFrame *in  = NULL;
     AVFrame *out = NULL;
     int64_t pts;
