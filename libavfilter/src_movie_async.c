@@ -1121,6 +1121,51 @@ static int movie_async_get_duration(AVFilterContext *ctx, char *res, int res_len
     return 0;
 }
 
+static int movie_async_get_latency(AVFilterContext *ctx, char *res, int res_len)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int64_t timestamp = 0, sink_latency = 0, src_latency = 0;
+    int64_t *data[2] = {&timestamp, &sink_latency};
+    int ret, i, nb_frames, pad;
+    AVPacket *pkt;
+    AVFrame *frame;
+    AVFilterContext* sink_filter;
+
+    if (!res || !res_len)
+        return AVERROR(EINVAL);
+
+    for (pad = 0; pad < ctx->nb_outputs; pad++) {
+        if (movie->streams[pad].type == AVMEDIA_TYPE_AUDIO)
+            break;
+    }
+
+    if (pad == ctx->nb_outputs)
+        return AVERROR(EINVAL);
+
+    /* find the sink */
+    sink_filter = avfilter_find_on_link(ctx, "adevsink", NULL, true, NULL);
+    if (!sink_filter)
+        return AVERROR(EINVAL);
+    ret = avfilter_process_command(sink_filter, "get_timestamp", NULL, (char *)&data, sizeof(data), 0);
+    if (ret < 0)
+        return ret;
+
+    /* rescale adevsink frames as decoding sample_rate */
+    sink_latency = av_rescale_q(sink_latency, AV_TIME_BASE_Q, av_make_q(1, ctx->outputs[pad]->sample_rate));
+
+    pthread_mutex_lock(&movie->mutex);
+    nb_frames = ff_framequeue_queued_frames(&movie->streams[pad].dat_queue);
+    for (i = 0; i < nb_frames; i++) {
+        frame = ff_framequeue_peek(&movie->streams[pad].dat_queue, i);
+        unwrap_frame(frame, &pkt, NULL);
+        src_latency += av_rescale_q(pkt->duration, movie->streams[pad].time_base, av_make_q(1, ctx->outputs[pad]->sample_rate));
+    }
+    pthread_mutex_unlock(&movie->mutex);
+
+    snprintf(res, res_len, "%lld", sink_latency > src_latency ? sink_latency : src_latency);
+    return 0;
+}
+
 static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -1242,6 +1287,8 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         return movie_async_get_position(ctx, res, res_len);
     } else if (!strcmp(cmd, "get_duration")) {
         return movie_async_get_duration(ctx, res, res_len);
+    } else if (!strcmp(cmd, "get_latency")) {
+        return movie_async_get_latency(ctx, res, res_len);
     } else if (!strcmp(cmd, "dump")) {
         return movie_async_dump(ctx, res, res_len);
     } else if (!res && !res_len) {
