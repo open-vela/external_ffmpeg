@@ -233,9 +233,9 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
         case AV_APP_TO_DEV_SET_PARAMETER:
             return ff_nuttx_set_parameter(priv, data);
         case AV_APP_TO_DEV_DUMP:
-            snprintf(data, data_size, "%d|%d|%d|%d|%zu",
+            snprintf(data, data_size, "%d|%d|%d|%d|%zu|%d",
                      priv->running, priv->draining,
-                     priv->period_bytes, priv->periods, dq_count(&priv->bufferq));
+                     priv->period_bytes, priv->periods, dq_count(&priv->bufferq), priv->mq);
             return 0;
     }
 
