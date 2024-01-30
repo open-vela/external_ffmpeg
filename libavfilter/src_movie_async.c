@@ -97,6 +97,7 @@ typedef struct MovieAsyncContext {
     struct MovieEvtQueue      evt_queue;     /**< event queue which worker thread to mediad */
 
     int                       state;
+    bool                      eof_reached;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
     unsigned                  duration_ms;    /** < duration of whole stream */
@@ -418,6 +419,8 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     if (!movie->format_ctx)
         return AVERROR(ENOMEM);
 
+    movie->eof_reached = false;
+
     movie->format_ctx->interrupt_callback.callback = movie_async_interrupt;
     movie->format_ctx->interrupt_callback.opaque = ctx;
 
@@ -731,7 +734,7 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
                 break;
             }
         }
-        movie->format_ctx->pb->eof_reached = 1;
+        movie->eof_reached = true;
     }
 
     if (!movie->pending_stop)
@@ -802,13 +805,6 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
     return exit;
 }
 
-static inline int movie_async_eof(AVFilterContext *ctx)
-{
-    MovieAsyncContext *movie = ctx->priv;
-
-    return movie->format_ctx && movie->format_ctx->pb && movie->format_ctx->pb->eof_reached;
-}
-
 static void *movie_async_thread(void *arg)
 {
     AVFilterContext *ctx = arg;
@@ -823,7 +819,7 @@ static void *movie_async_thread(void *arg)
             pthread_mutex_unlock(&movie->mutex);
 
             exit = movie_async_proc_cmd(ctx, msg);
-        } else if (!movie_async_eof(ctx) && movie_async_dat_available(ctx)) {
+        } else if (movie->format_ctx && !movie->eof_reached && movie_async_dat_available(ctx)) {
             pthread_mutex_unlock(&movie->mutex);
 
             exit = movie_async_proc_dat(ctx);
