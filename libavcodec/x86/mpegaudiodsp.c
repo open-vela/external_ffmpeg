@@ -34,10 +34,14 @@ static void imdct36_blocks_ ## CPU(float *out, float *buf, float *in, int count,
 void ff_imdct36_float_ ## CPU(float *out, float *buf, float *in, float *win);
 
 #if HAVE_X86ASM
+#if HAVE_SSE
 DECL(sse2)
 DECL(sse3)
 DECL(ssse3)
+#endif
+#if HAVE_AVX_EXTERNAL
 DECL(avx)
+#endif
 #endif /* HAVE_X86ASM */
 
 void ff_four_imdct36_float_sse(float *out, float *buf, float *in, float *win,
