@@ -219,8 +219,8 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
 
             return 0;
         case AV_APP_TO_DEV_DUMP:
-            snprintf(data, data_size, "%s|%s|%d|%d",
-                     priv->server_name, priv->mode ,priv->codec_id, priv->state);
+            snprintf(data, data_size, "%s|%s|%d|%d|%d,%d",
+                     priv->server_name, priv->mode ,priv->codec_id, priv->state, priv->ctrl_fd, priv->data_fd);
             return 0;
         default:
             ret = AVERROR(ENOSYS);

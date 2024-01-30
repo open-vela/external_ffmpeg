@@ -245,8 +245,8 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             break;
         }
         case AV_APP_TO_DEV_DUMP: {
-            snprintf(data, data_size, "%s|%s|%d|%p",
-                     priv->server_name, priv->mode, priv->state, priv->lastpkt);
+            snprintf(data, data_size, "%s|%s|%d|%p|%d,%d",
+                     priv->server_name, priv->mode, priv->state, priv->lastpkt, priv->ctrl_fd, priv->data_fd);
             break;
         }
         default:
