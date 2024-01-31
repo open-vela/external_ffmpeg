@@ -61,6 +61,7 @@ static int decoder_open(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+    priv->codec_ctx->time_base    = inlink->time_base;
     priv->codec_ctx->thread_count = ff_filter_get_nb_threads(ctx);
     ret = avcodec_open2(priv->codec_ctx, codec, &frame->metadata);
     if (ret < 0) {
