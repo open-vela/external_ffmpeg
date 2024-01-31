@@ -725,16 +725,21 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
 
     if (ret >= 0 || ret == AVERROR_EXIT)
         return false;
-    else if (ret == AVERROR_EOF) {
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            ret = movie_async_send_eos_frame(ctx, i);
-            if (ret < 0) {
-                av_log(ctx, AV_LOG_ERROR, "Failed outputs %d/%d send eos frame ret,%d,%s.\n",
-                    i, ctx->nb_outputs, ret, av_err2str(ret));
-                break;
-            }
+
+    movie->eof_reached = true;
+    if (ret != AVERROR_EOF) {
+        av_log(ctx, AV_LOG_ERROR, "Failed read frame ret,%d,%s.\n", ret, av_err2str(ret));
+        movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
+        return true;
+    }
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        ret = movie_async_send_eos_frame(ctx, i);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Failed outputs %d/%d send eos frame ret,%d,%s.\n",
+                i, ctx->nb_outputs, ret, av_err2str(ret));
+            break;
         }
-        movie->eof_reached = true;
     }
 
     if (!movie->pending_stop)
