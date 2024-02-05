@@ -117,7 +117,7 @@ static int bluelet_write_packet(AVFormatContext *ctx, AVPacket *pkt)
     if (priv->lastpkt)
         return bluelet_write_lastpacket(ctx);
 
-    if (!pkt)
+    if (!pkt || !pkt->size)
         return 0;
 
     ret = ff_bluelet_write_buffer(priv, pkt->data, pkt->size);
