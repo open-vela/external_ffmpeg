@@ -311,6 +311,9 @@ static int v4l2_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
     if (ret < 0 && ret != AVERROR(EAGAIN))
         return ret;
 
+    if (s->draining)
+        return 0;
+
     if (!output->streamon) {
         ret = ff_v4l2_context_set_status(output, VIDIOC_STREAMON);
         if (ret) {
