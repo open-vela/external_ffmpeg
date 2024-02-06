@@ -1047,30 +1047,24 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 static int movie_async_reconfig(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
-    bool need_reconfig = false;
     int i, ret = 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        /* only before starting case need reconfig: link status is not 0 and data queues have frame.
-         * to avoid reconfig after stopping case: link status is is not 0 and data queues are empty.*/
-        if (ff_outlink_get_status(ctx->outputs[i]) != 0 &&
-            movie_async_dat_count(ctx, i) >= movie->dat_cnt) {
-            need_reconfig = true;
-            break;
-        }
+        if (ff_outlink_get_status(ctx->outputs[i]) == 0)
+            return 0;
+        if (movie_async_dat_count(ctx, i) < movie->dat_cnt)
+            return 0;
     }
 
-    if (need_reconfig) {
-        ret = avfilter_graph_reconfig(ctx->graph, NULL);
-        if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR, "reconfig failed:%s \n", ctx->name);
-            return ret;
-        }
+    ret = avfilter_graph_reconfig(ctx->graph, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "reconfig failed:%s \n", ctx->name);
+        return ret;
+    }
 
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            if (!ff_outlink_get_status(ctx->outputs[i]))
-                ctx->outputs[i]->frame_wanted_out = 1;
-        }
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (!ff_outlink_get_status(ctx->outputs[i]))
+            ctx->outputs[i]->frame_wanted_out = 1;
     }
 
     return 0;
