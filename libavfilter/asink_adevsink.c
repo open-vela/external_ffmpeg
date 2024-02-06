@@ -499,6 +499,9 @@ static int adevsink_process_command(AVFilterContext *ctx,
                                     AV_APP_TO_DEV_SET_PARAMETER,
                                     (char *)args, 0);
     } else if (!strcmp(cmd, "flush")) {
+        if (priv->last_pkt)
+            av_packet_unref(priv->last_pkt);
+
         return avdevice_app_to_dev_control_message(
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_FLUSH,
