@@ -183,7 +183,8 @@ static void devsink_stop(AVFilterContext *ctx)
 {
     DevSinkPriv *priv = ctx->priv;
 
-    avformat_write_trailer(priv->fmt_ctx);
+    if (priv->fmt_ctx)
+        avformat_write_trailer(priv->fmt_ctx);
     devsink_timer_stop(ctx);
     priv->frame_duration = 0;
 }
