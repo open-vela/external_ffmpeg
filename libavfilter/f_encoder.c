@@ -63,6 +63,7 @@ static int encoder_open(AVFilterContext *ctx)
         priv->codec_ctx->width     = inlink->w;
         priv->codec_ctx->height    = inlink->h;
         priv->codec_ctx->time_base = inlink->time_base;
+        priv->codec_ctx->framerate = inlink->frame_rate;
     }
 
     /**
