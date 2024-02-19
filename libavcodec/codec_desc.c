@@ -3332,6 +3332,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("LHDC5 (Huawei codec that supports high-resolution audio)"),
         .props     = AV_CODEC_PROP_LOSSY,
     },
+    {
+        .id        = AV_CODEC_ID_RAWAUDIO,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "rawaudio",
+        .long_name = NULL_IF_CONFIG_SMALL("RAW Uncompressed Audio"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
 
 #if !CONFIG_AUDIO_ONLY
     /* subtitle codecs */
