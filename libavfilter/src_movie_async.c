@@ -369,6 +369,7 @@ static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
 
     movie->current_ms = ms;
 
+    movie->eof_reached = false;
     for (i = 0; i < ctx->nb_outputs; i++)
         movie->streams[i].completed = false;
 end:
