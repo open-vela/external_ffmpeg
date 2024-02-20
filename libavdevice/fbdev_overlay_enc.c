@@ -132,7 +132,7 @@ fail:
     return AVERROR(errno);
 }
 
-static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
+static int fbdev_overlay_write_frame(AVFormatContext *h, uint8_t *data, int src_line_size)
 {
     FBDevOverlayContext *dev_ctx = h->priv_data;
     AVCodecParameters *par = h->streams[0]->codecpar;
@@ -157,8 +157,8 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
         }
     }
 
-    in_y  = pkt->data;
-    in_uv = pkt->data + (par->width * par->height);
+    in_y  = data;
+    in_uv = data + (src_line_size * par->height);
 
     dev_ctx->oinfo.yoffset += dev_ctx->oinfo.yres;
     dev_ctx->oinfo.yoffset %= dev_ctx->oinfo.yres_virtual;
@@ -166,7 +166,7 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     row = dev_ctx->data + dev_ctx->oinfo.stride * dev_ctx->oinfo.yoffset * 3 / 2;
     for (i = 0; i < par->height; i++) {
         memcpy(row, in_y, par->width);
-        in_y += par->width;
+        in_y += src_line_size;
         row += dev_ctx->oinfo.stride;
     }
 
@@ -174,7 +174,7 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     row += dev_ctx->oinfo.stride * dev_ctx->oinfo.yres;
     for (i = 0; i < par->height / 2; i++) {
         memcpy(row, in_uv, par->width);
-        in_uv += par->width;
+        in_uv += src_line_size;
         row += dev_ctx->oinfo.stride;
     }
 
@@ -187,6 +187,19 @@ static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
     }
 
     return 0;
+}
+
+static int fbdev_overlay_write_packet(AVFormatContext *h, AVPacket *pkt)
+{
+    AVCodecParameters *par = h->streams[0]->codecpar;
+
+    return fbdev_overlay_write_frame(h, pkt->data, par->width);
+}
+
+static int fbdev_overlay_write_uncoded_frame(AVFormatContext *h, int stream_index,
+                                             AVFrame **frame, unsigned flags)
+{
+    return fbdev_overlay_write_frame(h, (*frame)->data[0], (*frame)->linesize[0]);
 }
 
 static av_cold int fbdev_overlay_write_trailer(AVFormatContext *h)
@@ -338,6 +351,7 @@ const AVOutputFormat ff_fbdev_overlay_muxer = {
     .write_packet        = fbdev_overlay_write_packet,
     .write_trailer       = fbdev_overlay_write_trailer,
     .control_message     = fbdev_overlay_control_message,
+    .write_uncoded_frame = fbdev_overlay_write_uncoded_frame,
     .get_device_list     = fbdev_overlay_get_device_list,
     .flags               = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
     .priv_class          = &fbdev_overlay_class,
