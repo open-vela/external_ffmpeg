@@ -142,6 +142,8 @@ static int devsink_sync_video(AVFilterContext *ctx, int64_t pts, int64_t ts, int
     diff  = pts - now;
     diff += priv->lat_base;
 
+    av_log(ctx, AV_LOG_TRACE, "sync pts:%lld ts:%lld now:%lld diff:%lld lat:%lld\n", pts, ts, now, diff, lat);
+
     if (diff > priv->frame_duration)
         return priv->frame_duration;
     else if (diff >= 0)
@@ -197,6 +199,7 @@ static int devsink_start(AVFilterContext *ctx)
     }
     priv->ts_base  = AV_NOPTS_VALUE;
     priv->lat_base = AV_NOPTS_VALUE;
+    av_log(ctx, AV_LOG_INFO, "vsync mode %d\n", priv->mode);
 
     priv->frame_duration = av_rescale(AV_TIME_BASE, inlink->frame_rate.den, inlink->frame_rate.num);
 
