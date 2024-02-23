@@ -255,7 +255,7 @@ static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
             ac_subtype = AUDIO_FMT_PCM;
             codec = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
             format &= ~(1 << (AUDIO_FMT_PCM - 1));
-        } if (format & (1 << (AUDIO_FMT_MP3 - 1))) {
+        } else if (format & (1 << (AUDIO_FMT_MP3 - 1))) {
             ac_subtype = AUDIO_FMT_MP3;
             codec = AV_CODEC_ID_MP3;
             format &= ~(1 << (AUDIO_FMT_MP3 - 1));
