@@ -849,6 +849,8 @@ int ff_nuttx_pause(NuttxPriv *priv)
 
 int ff_nuttx_resume(NuttxPriv *priv)
 {
+    if (!priv->running)
+        return 0;
     return ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
 }
 
